@@ -149,7 +149,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
         ),
         "parameters": obj({
             "profile": {"type": "array", "items": plan_point, "minItems": 3,
-                        "description": "The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters."},
+                        "description": "The plan profile as a closed boundary in order; repeating its first point at the end is optional. Coordinates may bind @parameters."},
             "height": {**scalar, "description": "How far the profile is pulled; optional when references.top determines it."},
             "elevation": {**scalar, "description":
                 "Metres above references.base, added to that reference's own offset; defaults to zero. "
@@ -171,7 +171,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "Provide either height or references.top; a prism with neither has no height to build.",
             "With a top reference, base datum plus the reference offset plus elevation plus height must agree with it.",
             "Without a top reference, changing elevation moves the whole prism and changing height keeps its bottom fixed.",
-            "A profile needs at least three distinct points and does not repeat its first point.",
+            "A profile needs at least three distinct points; repeating the first point at the end is optional and changes nothing.",
             "rectangular_cutouts require four ordered axis-aligned profile corners.",
             "Use @parameter bindings for dimensions that subsequent changes must share.",
             "The element this one stands on is named by references.base, never inferred from proximity.",
@@ -193,7 +193,9 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
         ),
         "parameters": obj({
             "height": {**scalar, "description": "Wall height; optional when references.top determines it."},
-            "thickness": {**scalar, "description": "Positive wall thickness towards the line's inward normal."},
+            "thickness": {**scalar, "description":
+                "Positive wall thickness. The line is one face of the wall; seen from above, the thickness lies "
+                "to the left of the line walked from its from point to its to point, unless references.line.inward says otherwise."},
             "openings": {"type": "array", "items": opening},
         }),
         "references": obj({
@@ -202,14 +204,18 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "support": {**identifier, "description": "Existing support reference; bearing is declared by a named support relationship."},
             "line": obj({"from": plan, "to": plan,
                          "face": {"type": "string", "description": "The existing wall face label, when the record names one."},
-                         "inward": {"type": "array", "items": {"type": "number"},
-                                    "minItems": 2, "maxItems": 2}}, ("from", "to")),
+                         "inward": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2,
+                                    "description": "Optional plan [X, Z] direction towards the side the thickness goes; "
+                                                   "pointing to the right of from→to puts the thickness on the right. "
+                                                   "The line stays the same face either way."}}, ("from", "to")),
             "voids": voids,
         }),
         "requiredParameters": ["thickness"],
         "requiredReferences": ["base", "line"],
         "constraints": [
             "Provide either height or references.top; if both are stated they must agree.",
+            "Seen from above, thickness lies to the left of from→to; line.inward pointing to the right moves it to the right, and the line stays the wall's face.",
+            "A parapet or facade wall whose line is the facade: point line.inward into the building, or order from→to so the building is on the left, to keep the thickness inside the facade line.",
             "Each aperture needs along or at, and remains inside its wall's length and height.",
             "A semicircular aperture requires spring_height >= sill and head - spring_height = width / 2.",
             "Use @parameter bindings for dimensions that subsequent changes must share.",
@@ -230,7 +236,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
                     "type": "array", "items": scalar, "minItems": 3, "maxItems": 3,
                 }}, "description": "Ordered sections of [X, Y-up, Z] points relative to the base datum; coordinates may bind @parameters."},
             "profile_size": {"type": "integer", "minimum": 3,
-                             "description": "The same number of vertices in every section; do not repeat the first vertex."},
+                             "description": "The number of distinct vertices in every section, not counting a repeated first point."},
             "loft_type": {"type": "string", "enum": ["straight", "normal"],
                           "description": "straight (default) connects sections with ruled faces; normal interpolates between the sections."},
             "profile_basis": {"type": "string", "enum": ["polyline"],
@@ -244,7 +250,8 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
         "requiredReferences": ["base"],
         "constraints": [
             "Provide at least two simple closed polygon sections with the same vertex count and corresponding vertex order.",
-            "Each section omits the repeated closing vertex; the loft closes it without joining the first and last sections.",
+            "A section may repeat its first point at the end (profile_size + 1 points) or not (profile_size points); the loft closes each section without joining the first and last sections.",
+            "A section of exactly profile_size points whose last point repeats its first is refused: it is ambiguous whether profile_size counted the repeat.",
             "Section coordinates carry their height relative to the base datum; do not add a separate base offset, height or elevation.",
             "One loft creates one object; an uncapped loft is a surface with no invented wall thickness.",
             "Use @parameter coordinates and parameter expressions for dimensions that subsequent edits must share.",
@@ -260,8 +267,8 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "solid that would hold it up. An optional work_plane places a drawn face in any stated orientation."
         ),
         "parameters": obj({
-            "profile": {"type": "array", "items": plan_point, "minItems": 4,
-                        "description": "One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end."},
+            "profile": {"type": "array", "items": plan_point, "minItems": 3,
+                        "description": "One simple closed boundary in work_plane coordinates (XZ when omitted), in order; repeating its first point at the end is optional."},
             "elevation": {**scalar, "description":
                 "Metres above references.base, added to that reference's own offset; defaults to zero."},
             "work_plane": work_plane,
@@ -271,7 +278,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
         "requiredParameters": ["profile"],
         "requiredReferences": ["base"],
         "constraints": [
-            "The profile is one simple boundary with its first vertex explicitly repeated at the end; holes are unsupported.",
+            "The profile is one simple boundary of at least three distinct points; repeating the first point at the end is optional and changes nothing; holes are unsupported.",
             "The surface elevation is its resolved base datum plus the reference offset plus parameters.elevation.",
             "Use an explicit @parameter binding for an elevation that subsequent changes must share.",
         ],
@@ -369,6 +376,78 @@ def parameter_unit(producer: str, key: str) -> str | None:
     return _PARAMETER_UNITS.get(producer, {}).get(key)
 
 
+# A closed boundary may be written with or without its first point repeated at
+# the end (#404 F8). Each producer reads one spelling, the one its retained rows
+# and its operation already use: a prism's profile without the repeat, a planar
+# surface's with it, a loft's sections without it.
+_REPEATS_FIRST_POINT = {"prism": False, "planar-surface": True}
+
+
+def _closed(points, *, repeat: bool) -> list:
+    """One closed boundary, given in either spelling, in the stated one."""
+
+    points = list(points)
+    if len(points) > 1 and list(points[0]) == list(points[-1]):
+        points = points[:-1]
+    return [*points, points[0]] if repeat and points else points
+
+
+def _canonical(row: ElementRow) -> ElementRow:
+    """A drawn row whose closed profile is in its producer's one spelling; any other row unchanged."""
+
+    if row.producer in _REPEATS_FIRST_POINT and isinstance(row.params.get("profile"), (list, tuple)):
+        profile = _closed(row.params["profile"], repeat=_REPEATS_FIRST_POINT[row.producer])
+        if profile != list(row.params["profile"]):
+            return replace(row, params={**row.params, "profile": profile})
+    elif row.producer == "loft" and isinstance(row.params.get("profiles"), (list, tuple)):
+        profiles = _loft_sections(row)
+        if profiles != [list(section) for section in row.params["profiles"]]:
+            return replace(row, params={**row.params, "profiles": profiles})
+    return row
+
+
+def canonical_params(producer: object, params: object) -> object:
+    """A producer's params with its closed profile in the one spelling it stores (#404 F8).
+
+    The write path calls this so the same shape has one content identity,
+    whichever spelling was sent. Anything this cannot read, including a loft
+    whose sections are ambiguous, is returned as it came: the producer's own
+    validation names the problem.
+    """
+
+    if not isinstance(producer, str) or not isinstance(params, Mapping):
+        return params
+    try:
+        return dict(_canonical(ElementRow("canonical", "canonical", producer, {}, params)).params)
+    except (ElementProducerError, KeyError, TypeError, ValueError):
+        return params
+
+
+def _loft_sections(row: ElementRow) -> list[list]:
+    """A loft's sections without a repeated first point, each of ``profile_size`` vertices.
+
+    A section of ``profile_size + 1`` points whose last repeats its first is the
+    same closed section. One of exactly ``profile_size`` points whose last
+    repeats its first is refused: it cannot say whether ``profile_size``
+    counted the repeat, so its vertex correspondence would be a guess.
+    """
+
+    size = row.params["profile_size"]
+    sections = []
+    for section in row.params["profiles"]:
+        section = list(section)
+        closes = len(section) > 1 and list(section[0]) == list(section[-1])
+        if closes and len(section) == size:
+            raise ElementProducerError(f"{row.element_id}: a loft section of profile_size points repeats its first vertex; "
+                                       "give profile_size distinct vertices, optionally followed by the first one again")
+        if closes and len(section) == size + 1:
+            section = section[:-1]
+        if len(section) != size:
+            raise ElementProducerError(f"{row.element_id}: every loft section must contain profile_size vertices")
+        sections.append(section)
+    return sections
+
+
 def validate_element_contract(record, element_ids: tuple[str, ...]) -> None:
     """Check a semantic edit against the advertised producer and its real solver.
 
@@ -403,11 +482,7 @@ def validate_element_contract(record, element_ids: tuple[str, ...]) -> None:
                                signature["parameters"], f"{entity_id}.params")
         _check_signature_value(row.references, signature["references"], f"{entity_id}.references")
         if row.producer == "loft":
-            for section in row.params["profiles"]:
-                if len(section) != row.params["profile_size"]:
-                    raise ElementProducerError(f"{entity_id}: every loft section must contain profile_size vertices")
-                if section[0] == section[-1]:
-                    raise ElementProducerError(f"{entity_id}: loft sections must not repeat their first vertex")
+            _loft_sections(row)
     from archflow.state.state_record import project_grids_of, project_levels_of
 
     context = ProductionContext(
@@ -810,6 +885,9 @@ def produce_wall(row: ElementRow, context: ProductionContext) -> ProducedElement
         raise ElementProducerError(f"{row.element_id}: wall endpoints must define a finite, non-zero length")
     direction = (dx / length, dz / length)
     origin = start
+    # An inward pointing away from the side the solver lays the thickness on walks
+    # the line from its other end, so the same face carries the thickness on that
+    # side (#404 F9); ``along`` is measured from there too (wall_along_line).
     if _turned(direction, line.get("inward")):
         origin, direction = end, (-direction[0], -direction[1])
     wall = WallElement(row.element_id, origin, direction, length, _positive(p["thickness"], f"{row.element_id} thickness"), height, base_datum, context.frame_id, row.binding_id)
@@ -1069,6 +1147,7 @@ def drawn_element_placement(row: ElementRow, context: ProductionContext) -> dict
         raise ElementProducerError(f"{row.element_id}: elevation controls support drawn prisms")
     if "rectangular_cutouts" in row.params:
         raise ElementProducerError(f"{row.element_id}: local drawing controls cannot detach panel cutouts")
+    row = _canonical(row)
     base_id, reference_offset = _base(row, context)
     offset = reference_offset + _finite(row.params.get("elevation", 0), "elevation")
     profile, normal = _profile_on_work_plane(row)
@@ -1128,6 +1207,19 @@ def element_vertical_extent(row: ElementRow, context: ProductionContext) -> tupl
     raise ElementProducerError(f"{row.element_id}: {row.producer} states no vertical extent without producing its geometry")
 
 
+_COMPRESS_TOLERANCE = 1e-7
+
+
+def _compression(threshold, factor) -> tuple[float, float]:
+    """A compress-above threshold and a factor in (0, 1]."""
+
+    threshold = _finite(threshold, "compression threshold")
+    factor = _finite(factor, "compression factor")
+    if not 0 < factor <= 1:
+        raise ElementProducerError("compression factor must be greater than zero and at most one")
+    return threshold, factor
+
+
 def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str,
                        translation=None, axis=None, angle_degrees: float = 0.0,
                        scale=None, origin=None, distance: float = 0.0, normal=None,
@@ -1140,16 +1232,31 @@ def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str
     Loft sections retain their correspondence, closure and datum-relative heights.
     Compress-above fixes the lower part of a planar surface in world +Y and
     refuses a crossing face that would need to fold or acquire a new identity.
+    An element wholly at or below the threshold is returned unchanged, whatever
+    produces it; only one that would move must be a planar surface.
     """
 
+    if kind == "compress_above" and row.producer != "planar-surface":
+        # Only an element that would move is refused (#404 item 7): one wholly at or below the
+        # threshold keeps its geometry, whatever produces it, so it is returned unchanged.
+        threshold, factor = _compression(threshold, factor)
+        try:
+            top = element_vertical_extent(row, context)[1]
+        except (ElementProducerError, KeyError, TypeError, ValueError):
+            top = None  # an extent it cannot state is not known to stay below
+        if top is not None and (factor == 1 or top <= threshold + _COMPRESS_TOLERANCE):
+            return row
+        reach = "this one reaches above the threshold" if top is not None else "its extent cannot show it stays below the threshold"
+        raise ElementProducerError(f"{row.element_id}: compress-above currently supports planar-surface, not {row.producer}, and {reach}")
     if row.producer not in {"prism", "planar-surface", "loft"}:
         raise ElementProducerError(f"{row.element_id}: direct {kind} currently supports drawn faces, prisms and lofts, not {row.producer}")
-    if kind == "compress_above" and row.producer != "planar-surface":
-        raise ElementProducerError(f"{row.element_id}: compress-above currently supports planar-surface, not {row.producer}")
+    unchanged = row
     if row.producer == "loft" and kind == "push_pull":
         raise ElementProducerError(f"{row.element_id}: push/pull cannot reinterpret a loft as a prism; edit its section controls")
     if "rectangular_cutouts" in row.params or "top" in row.references:
         raise ElementProducerError(f"{row.element_id}: direct {kind} cannot detach panel cutouts or a top-reference constraint")
+    # The edit reads and returns the producer's one spelling of a closed profile (#404 F8).
+    row = _canonical(row)
     params = dict(row.params)
     base_id, base_offset = _base(row, context)
     vertical_origin = context.datum_value(base_id) + base_offset + _finite(params.get("elevation", 0), "elevation")
@@ -1178,14 +1285,11 @@ def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str
         profile, extrusion_axis = _profile_on_work_plane(row)
 
     if kind == "compress_above":
-        threshold = _finite(threshold, "compression threshold")
-        factor = _finite(factor, "compression factor")
-        if not 0 < factor <= 1:
-            raise ElementProducerError("compression factor must be greater than zero and at most one")
+        threshold, factor = _compression(threshold, factor)
         elevations = [point[1] + vertical_origin for point in profile]
-        tolerance = 1e-7
+        tolerance = _COMPRESS_TOLERANCE
         if factor == 1 or max(elevations) <= threshold + tolerance:
-            return row
+            return unchanged
         base = row.references["base"]
         if "datum" in base and base["datum"] not in context.references.level_ids():
             raise ElementProducerError(f"{row.element_id}: this element is anchored to {base['datum']}; direct transform cannot detach its host")
@@ -1407,6 +1511,7 @@ def produce_planar_surface(row: ElementRow, context: ProductionContext) -> Produ
         raise ElementProducerError(f"{row.element_id}: planar-surface does not support {sorted(unknown)}")
     if set(row.references) != {"base"}:
         raise ElementProducerError(f"{row.element_id}: planar-surface requires only an explicit base reference")
+    row = _canonical(row)
     base_datum, base_offset = _base(row, context)
     base_offset += _finite(row.params.get("elevation", 0.0), f"{row.element_id} elevation")
     profile, _normal = _profile_on_work_plane(row)
@@ -1429,6 +1534,7 @@ def produce_prism(row: ElementRow, context: ProductionContext) -> ProducedElemen
     Height is independent of elevation; rectangular panel cuts remain horizontal-only.
     """
 
+    row = _canonical(row)
     p = row.params
     base_datum, base_offset = _base(row, context)
     fixed = (context.published[base_datum],) if "elevation" in row.references["base"] else ()
@@ -1570,7 +1676,7 @@ def produce_loft(row: ElementRow, context: ProductionContext) -> ProducedElement
     closed_profile = _stated_bool(row, "closed_profile", True) if "closed_profile" in p else None
     if closed_profile is False:
         raise ElementProducerError(f"{row.element_id}: an open section profile is not produced; every loft section is a closed polygon")
-    profiles = [[_finite(c, f"{row.element_id} profile coordinate") for c in pt] for section in p["profiles"] for pt in section]
+    profiles = [[_finite(c, f"{row.element_id} profile coordinate") for c in pt] for section in _loft_sections(row) for pt in section]
     section_base = min((pt[1] for pt in profiles), default=0.0)
     voids = _void_ids(row)
     produced = _loft(row, context, profiles, int(p["profile_size"]), base_datum, section_base,

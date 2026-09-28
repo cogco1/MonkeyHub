@@ -162,9 +162,9 @@ else:
                   "result": None if result is None else {"content": [{"type": "text", "text": json.dumps(result)}],
                                                          "structured_content": None}}})
         call("item_1", "studio_schema", {"method": "POST", "path": "/api/proposals"},
-             {"path": "/api/proposals", "method": "POST", "operation": {"summary": "Create Proposal",
-              "requestBody": {"content": {"application/json": {"schema": {"filler": "s" * 4000}}}}},
-              "components": {"schemas": {"ProposalRequest": {"filler": "c" * 4000}}}})
+             {"path": "/api/proposals", "method": "POST", "summary": "Create Proposal",
+              "body": {"filler": "s" * 4000}, "components": {"schemas": {"ProposalRequest": {"filler": "c" * 4000}}},
+              "note": "Request inputs only; each $ref names an entry of components.schemas."})
         call("item_2", "studio_request", {"method": "POST", "path": "/api/proposals/p-1/candidate"},
              {"jobId": "job-1", "candidateId": "studio-cand-1", "status": "queued"})
         call("item_3", "studio_request", {"method": "POST", "path": "/api/issue"},
@@ -716,6 +716,11 @@ class ChatTests(unittest.TestCase):
         # Its own built-in tools, so it can edit and run what it is working on.
         self.assertEqual(args[args.index("--tools") + 1], "default")
         self.assertIn("--strict-mcp-config", args)
+        # #404 F7: this adapter's tools arrive with the prompt. Deferred, every
+        # turn began with a ToolSearch call before any design work.
+        config = json.loads(args[args.index("--mcp-config") + 1])
+        self.assertEqual(list(config["mcpServers"]), ["monkeyhub"])
+        self.assertIs(config["mcpServers"]["monkeyhub"]["alwaysLoad"], True)
 
     def test_usage_sources_preserve_prior_sessions_after_reset_and_reload_from_legacy_records(self):
         sessions = [(self.create(), "cli", str(uuid4()), str(uuid4())),
@@ -1020,6 +1025,7 @@ class ChatTests(unittest.TestCase):
         # Codex: its normal writable sandbox, rooted in the source, with the
         # bound project writable beside it.
         self.assertIn("workspace-write", codex_command)
+        self.assertNotIn("alwaysLoad", " ".join(codex_command), "a Claude CLI setting, not Codex's")
         self.assertNotIn("read-only", codex_command)
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", codex_command)
         self.assertEqual(codex_command[codex_command.index("-C") + 1], str(source))
@@ -1370,17 +1376,24 @@ class ChatTests(unittest.TestCase):
         for stated in ("POST /api/proposals/construction", "stateDigest", "script", "rect(", "extrude(",
                        "at=top(", "cut(", "metres", "(x, z)", "Y up",
                        "/api/proposals/{id}/candidate", "GET /api/construction/model", "/api/project/modeling",
-                       "GET /api/documents?runId=", "MonkeyDiagram's documents list",
-                        "/api/document-annotations", "baseRevisionSha256",
-                        "GET /api/drawings/styles", "POST /api/drawings/sheets",
-                        "POST /api/drawings/section-perspectives", "剖透视",
-                        "keep: 'left'|'right'", "POST /api/board/export",
-                        # Entourage on a cut plan (#244): the typed edit, its
-                        # symbols and the reads that show where each one landed.
-                        "POST /api/drawings/plans", "previousRevisionRef", "dressingOperations",
-                        "'person-plan'|'tree-plan'", "GET /api/drawings/plans/vector",
-                        "POST /api/drawings/plans/status", "GET /api/drawings/plans/dimensions"):
+                       "剖透视", "pathPrefix /api/drawings", "pathPrefix /api/board"):
             self.assertIn(stated, request_tool["description"], stated)
+        # Drawing work is one line upfront; its full text is the guide the
+        # drawing and Board prefixes answer with.
+        drawings, board = chat._guide("/api/drawings/"), chat._guide("/api/documents")
+        for stated in ("GET /api/documents?runId=", "MonkeyDiagram's documents list",
+                       "GET /api/drawings/styles", "POST /api/drawings/sheets",
+                       "POST /api/drawings/section-perspectives", "剖透视",
+                       "keep: 'left'|'right'", "POST /api/board/export",
+                       # Entourage on a cut plan (#244): the typed edit, its
+                       # symbols and the reads that show where each one landed.
+                       "POST /api/drawings/plans", "previousRevisionRef", "dressingOperations",
+                       "'person-plan'|'tree-plan'", "GET /api/drawings/plans/vector",
+                       "POST /api/drawings/plans/status", "GET /api/drawings/plans/dimensions"):
+            self.assertIn(stated, drawings, stated)
+            self.assertNotIn(stated, request_tool["description"].replace("剖透视 section perspectives", ""), stated)
+        for stated in ("/api/document-annotations", "baseRevisionSha256", "POST /api/board/export"):
+            self.assertIn(stated, board, stated)
         self.assertIn("clarify a field or correct a request", schema_tool["description"])
         plans = []
 
@@ -1527,7 +1540,7 @@ class ChatTests(unittest.TestCase):
             schema = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
                 "method": "GET", "path": "/api/documents",
             })
-            self.assertEqual(schema["operation"]["summary"], "list drawings")
+            self.assertEqual(schema["summary"], "list drawings")
             # The visual review route is reached only through its own tool, which
             # holds the allowance; a request or schema path would go around it.
             for method, path in (("POST", "/api/documents"), ("GET", "/api/documents/asset-1/bytes"),
@@ -1543,7 +1556,8 @@ class ChatTests(unittest.TestCase):
                 answer = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
                                         {"method": "POST", "path": template})
                 self.assertEqual(answer["method"], "POST")
-                self.assertIn("summary", answer["operation"])
+                self.assertIn("summary", answer)
+                self.assertNotIn("responses", json.dumps(answer), "request inputs only")
             # Reading a schema still cannot reach what calling cannot reach.
             with self.assertRaises(HubFailure):
                 chat.call_tool(self.store.hub_url, session.id, "studio_schema",
@@ -1702,12 +1716,11 @@ class ChatTests(unittest.TestCase):
                 "method": "POST", "path": "/api/proposals"})
             read = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
                 "method": "GET", "path": "/api/construction/model"})
-        self.assertEqual(set(answer), {"path", "method", "operation", "components"})
-        # A write answers its request and status codes; its answer arrives when it is sent.
+        self.assertEqual(set(answer), {"path", "method", "summary", "body", "components", "note"})
+        # Request inputs only (#404 F7): the answer arrives when the call is sent.
         self.assertEqual(set(answer["components"]["schemas"]), {"ProposalRequestDto", "SemanticEditRequestDto"})
-        self.assertEqual(answer["operation"]["responses"], {"201": {"description": "Created"}, "422": {"description": "Refused"}})
-        # A read answers what it reads.
-        self.assertEqual(set(read["components"]["schemas"]), {"ModelDto"})
+        self.assertNotIn("ProposalDto", json.dumps(answer))
+        self.assertNotIn("ModelDto", json.dumps(read))
         # A retired option is refused by name, before any runtime is resolved or
         # any request made, rather than ignored as if it had taken effect.
         with patch.object(chat, "_bound_studio") as studio, patch.object(chat, "_request_json") as request:
@@ -1962,14 +1975,12 @@ class ChatTests(unittest.TestCase):
                 with self.subTest(path=path):
                     answer = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
                                             {"method": "POST", "path": path})
-                    self.assertEqual(answer["path"], path)
-                    self.assertEqual(answer["operation"], document["paths"][path]["post"])
+                    self.assertEqual((answer["path"], answer["summary"]), (path, document["paths"][path]["post"]["summary"]))
             # A concrete id still resolves through the templated route: nothing
             # about preferring literal matches may break normal template lookup.
             schema = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
                                     {"method": "GET", "path": "/api/proposals/abc123"})
-            self.assertEqual(schema["path"], "/api/proposals/{proposal_id}")
-            self.assertEqual(schema["operation"], document["paths"]["/api/proposals/{proposal_id}"]["get"])
+            self.assertEqual((schema["path"], schema["summary"]), ("/api/proposals/{proposal_id}", "Read a proposal"))
 
     def test_construction_proposals_answer_without_the_rows_they_generated(self):
         """Like a semantic edit, a script's proposal comes back without its edits and operator; its report stays."""
@@ -1998,15 +2009,128 @@ class ChatTests(unittest.TestCase):
                     self.assertEqual(result["construction"], report)
 
     def test_the_agent_guide_does_not_grow(self):
-        """#419 replaced the producer, sketch and semanticKind lines with the construction script, not beside them.
-
-        The text is no longer than before; the script example's short code
-        lines add five lines where prose was removed.
+        """#404 F7 moved every domain but modeling behind one line each: the CLI
+        loads this description before every turn, and it was 15,972 characters.
+        #419 states the construction script there instead of a producer index.
         """
 
-        modelling = next(tool for tool in _tools_of(chat) if tool["name"] == "studio_request")["description"]
-        self.assertLessEqual(len(modelling.splitlines()), 111)
-        self.assertLessEqual(len(modelling), 15972)
+        tools = {tool["name"]: tool for tool in _tools_of(chat)}
+        modelling = tools["studio_request"]["description"]
+        self.assertLessEqual(len(modelling.splitlines()), 106)
+        self.assertLessEqual(len(modelling), 10000)
+        self.assertLessEqual(len(json.dumps(list(tools.values()), ensure_ascii=False)), 28000)
+        for prefix in chat._GUIDES:
+            self.assertIn(f"pathPrefix {prefix}", modelling, "each domain is named with where its text is")
+            self.assertNotIn(chat._GUIDES[prefix].splitlines()[-1], modelling)
+
+    def test_discovery_answers_a_domain_guide_and_refuses_bad_arguments_before_preparing(self):
+        """#404 F7: the domain text moved out of the guide; item 5: a refusal starts no runtime."""
+
+        session = self.create()
+        session.status = "running"
+        document = {"paths": {"/api/drawings/sheets": {"post": {"summary": "Make a sheet"}},
+                              "/api/documents": {"get": {"summary": "Read documents"}},
+                              "/api/exports": {"post": {"summary": "Export"}},
+                              "/api/state": {"get": {"summary": "Read state"}}}, "components": {"schemas": {}}}
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())) as bound, \
+                patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(document))):
+            for prefix, words in (("/api/drawings", "SECTION PERSPECTIVE"), ("/api/documents", "PUT /api/document-annotations"),
+                                  ("/api/intents/", "RETAINED FEEDBACK"), ("/api/exports", "MODEL CONVERSION")):
+                answer = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {"pathPrefix": prefix})
+                self.assertIn(words, answer["guide"], prefix)
+            self.assertNotIn("guide", chat.call_tool(self.store.hub_url, session.id, "studio_schema", {"pathPrefix": "/api/state"}))
+            self.assertNotIn("guide", chat.call_tool(self.store.hub_url, session.id, "studio_schema", {}))
+            bound.reset_mock()
+            for arguments in ({"limit": 500}, {"producer": "wall"}, {"body": {}}, {"pathPrefix": "drawings"},
+                              {"offset": -1}, {"method": "DELETE"}):
+                with self.subTest(arguments=arguments), self.assertRaises(HubFailure) as refused:
+                    chat.call_tool(self.store.hub_url, session.id, "studio_schema", arguments)
+                self.assertEqual(refused.exception.error.code, "CHAT_TOOL_INVALID")
+            bound.assert_not_called()
+
+    def test_schema_answers_are_request_inputs_with_repeats_named_once(self):
+        """#404 F7: a schema answer was 9-35k characters of titles, responses and repeated subtrees."""
+
+        from archflow_studio_api.main import create_app as studio_app
+        from archflow_studio_api.settings import StudioSettings
+
+        project = self.root / "compact-schema"
+        FilesystemProjectRepository.initialize(project, project_id="compact-schema",
+                                               initial_state={"project_id": "compact-schema", "version": 0})
+        with TestClient(studio_app(StudioSettings(project_dir=project, cad_export="off"))) as client:
+            document = client.get("/openapi.json").json()
+        session = self.create()
+
+        def expand(value, schemas):
+            if isinstance(value, dict):
+                reference = value.get("$ref", "")
+                if reference.startswith("#/components/schemas/Shared"):
+                    return expand(schemas[reference.rsplit("/", 1)[-1]], schemas)
+                return {key: expand(item, schemas) for key, item in value.items()}
+            if isinstance(value, list):
+                return [expand(item, schemas) for item in value]
+            return value
+
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(document))):
+            answers = {}
+            for label, arguments, most in (("construction", {"method": "POST", "path": "/api/proposals/construction"}, 6000),
+                                           ("admissions", {"method": "POST", "path": "/api/admissions"}, 4000),
+                                           ("proposals", {"method": "POST", "path": "/api/proposals"}, 12000)):
+                answer = answers[label] = chat.call_tool(self.store.hub_url, session.id, "studio_schema", arguments)
+                text = json.dumps(answer, ensure_ascii=False)
+                self.assertLessEqual(len(text), most, label)
+                self.assertNotIn('"responses"', text)
+                self.assertNotIn('"title"', text)
+                self.assertNotIn("x-monkey", text, "headers are the adapter's to send")
+                self.assertTrue(answer["note"].startswith("Request inputs only"))
+            # Naming a repeat loses nothing: expanded, the proposal answer is the
+            # compacted contract, and its references stay where they were.
+            schemas = answers["proposals"]["components"]["schemas"]
+            edit = expand(schemas["SemanticEditRequestDto"], schemas)
+            self.assertEqual(edit, expand(chat._compact(document["components"]["schemas"]["SemanticEditRequestDto"]), schemas))
+            # A nullable field reads as its type, marked, and a property named
+            # like a keyword is still a property.
+            script = answers["construction"]["components"]["schemas"]["ConstructionRequestDto"]["properties"]
+            self.assertEqual((script["summary"]["type"], script["summary"]["nullable"]), ("string", True))
+            self.assertEqual(chat._compact({"properties": {"title": {"type": "string", "title": "Title"}}}),
+                             {"properties": {"title": {"type": "string"}}})
+
+    def test_tool_rows_name_what_a_schema_or_discovery_answer_read(self):
+        """#404 comment item 1: a schema answer showed as a 320-character JSON preview."""
+
+        contract = {"path": "/api/proposals/construction", "method": "POST", "summary": "Create", "body": {"$ref": "x" * 400},
+                    "note": "Request inputs only; each $ref names an entry of components.schemas."}
+        self.assertEqual(chat._tool_values(json.dumps(contract)),
+                         (["read the schema of POST /api/proposals/construction"], None))
+        listing = {"actions": [], "total": 12, "offset": 0, "limit": 30, "guide": "DRAWINGS", "note": "..."}
+        self.assertEqual(chat._tool_values(json.dumps(listing)), (["listed 12 actions with their guide"], None))
+        # A request answer that happens to carry a path and a method is not a schema read.
+        self.assertEqual(chat._tool_values(json.dumps({"path": "/a", "method": "GET", "status": "ok"}))[0], ["status: ok"])
+        row, _, _ = chat._tool_activity({"tool": "studio_schema", "server": "monkeyhub", "status": "completed",
+                                         "arguments": {"method": "POST", "path": "/api/proposals/construction"},
+                                         "result": {"content": [{"type": "text", "text": json.dumps(contract)}]}})
+        self.assertEqual(row.splitlines()[1], "read the schema of POST /api/proposals/construction")
+        self.assertLess(len(row), 200)
+
+    def test_a_tool_call_before_the_first_turn_is_not_told_the_chat_stopped(self):
+        """#404 F12: CHAT_NOT_RUNNING said "no longer running" to a chat that had not started."""
+
+        for messages, external, words in (([], False, "has not started a turn yet"),
+                                          ([], True, "chat_present kind=user"),
+                                          ([{"role": "user", "content": "hi"}], False, "turn has ended")):
+            with self.subTest(messages=messages, external=external):
+                session = {"status": "idle", "messages": messages, "sourceSessionId": "source" if external else None}
+                failure = chat._not_running(session)
+                self.assertEqual(failure.error.code, "CHAT_NOT_RUNNING")
+                self.assertIn(words, failure.error.detail)
+                self.assertNotIn("no longer running", failure.error.detail)
+        session = self.create()
+        with patch.object(chat, "_request_json", return_value=session.model_dump()), \
+                self.assertRaises(HubFailure) as refused:
+            chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/construction/model"})
+        self.assertEqual(refused.exception.error.code, "CHAT_NOT_RUNNING")
+        self.assertIn("has not started a turn yet", refused.exception.error.detail)
 
     def test_existing_controls_and_candidate_continuation_are_discoverable(self):
         """One short pointer, and the bound path behind it — not a second hand-written contract."""

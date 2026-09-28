@@ -1594,6 +1594,47 @@ class VillaCopyTests(unittest.TestCase):
         )
 
 
+class CandidateSourceEdgesTests(unittest.TestCase):
+    """#404 F11: the edge count is the proposal's own editing base, not the project's default projection."""
+
+    def test_a_source_with_edges_is_not_reported_as_having_none(self) -> None:
+        from types import SimpleNamespace
+
+        from archflow_studio_api.application import candidate
+
+        source = SimpleNamespace(edges=tuple(f"edge-{index}" for index in range(8)), parameters=())
+        default = SimpleNamespace(edges=(), parameters=())
+        proposal = SimpleNamespace(source_run_id="run-source", source_stage_ref=None,
+                                   impact=SimpleNamespace(propagated=(), unknown_coverage=()))
+        read = []
+
+        def project_state(binding, run_id=None, *, source_stage_ref=None, **_):
+            read.append(run_id)
+            return source if run_id == "run-source" else default
+
+        with mock.patch.object(candidate, "project_state", side_effect=project_state):
+            chosen = candidate._source_projection(None, proposal, default)
+            self.assertIs(candidate._source_projection(None, _on_default_projection(proposal), default), default)
+        self.assertIs(chosen, source)
+        self.assertEqual(read, ["run-source"])
+        self.assertEqual(candidate._honesty(proposal, chosen), ())
+        # The default projection alone would have said the opposite of the source.
+        self.assertEqual(candidate._honesty(proposal, default),
+                         ("0 dependency edges: nothing downstream could be recomputed or checked",))
+        # A base that can no longer be projected leaves the edge line out rather than guess it.
+        with mock.patch.object(candidate, "project_state", side_effect=StudioError(404, "RUN_NOT_FOUND", "gone")):
+            self.assertIsNone(candidate._source_projection(None, proposal, default))
+        self.assertEqual(candidate._honesty(proposal, None), ())
+
+
+def _on_default_projection(proposal):
+    """The same proposal made against the project's default projection."""
+
+    from types import SimpleNamespace
+
+    return SimpleNamespace(**{**vars(proposal), "source_run_id": None, "source_stage_ref": None})
+
+
 def _compilation_receipt(base_state_digest: str) -> dict:
     """One ``ModelInvocationReceipt@2``, shaped as the intent compilers write it."""
 

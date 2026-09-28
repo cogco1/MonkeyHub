@@ -297,7 +297,7 @@ test("only the option that is a Stage's accepted run reads accepted; the option 
   assert.equal(api.treeWords(translator(messagesZhCN) as never, tree).status(tree.nodes.get("candidate:run-entrance-a")!), "已继续 · 已接受为 S3");
 });
 
-test("an admission recorded in a later review reads as retroactive; others keep their actor", async (t) => {
+test("an admission recorded in a later review reads as retroactive; the Agent's and a person's read apart", async (t) => {
   const api = await harness(t);
   const source = sourceOf(api.createDesignTreeFixture());
   const retroactive = source.history.candidates!.find((row) => row.candidateId === "run-facade-c")!;
@@ -306,7 +306,17 @@ test("an admission recorded in a later review reads as retroactive; others keep 
   const facts = (run: string) => tree.nodes.get(`candidate:${run}`)!.candidate!;
   const en = api.treeWords(translator(messagesEn) as never, tree), zh = api.treeWords(translator(messagesZhCN) as never, tree);
   assert.deepEqual([en.admitter(facts("run-facade-c")), zh.admitter(facts("run-facade-c"))], ["You (retroactive review)", "你（补录）"]);
-  assert.equal(en.admitter(facts("run-massing-a")), "Arch Agent");
+  // The fixture's "Arch Agent" admissions are the Hub Agent's (origin hub-agent), on the user's words in chat.
+  assert.equal(facts("run-massing-a").admittedOrigin, "hub-agent");
+  assert.deepEqual([en.admitter(facts("run-massing-a")), zh.admitter(facts("run-massing-a"))],
+    ["Agent (on your words in chat)", "智能体（按你在对话里的话）"]);
+  // A person's admission names that person, or "You" for the local Studio actor.
+  assert.equal(facts("run-facade-a2").admittedOrigin, "studio");
+  assert.equal(en.admitter(facts("run-facade-a2")), "Kaiwen");
+  const local = source.history.candidates!.find((row) => row.candidateId === "run-facade-a2")!;
+  local.admittedBy = { actorId: "studio:explicit-user-action", authenticated: false, origin: "studio" };
+  const again = api.buildGrowthTree(source).nodes.get("candidate:run-facade-a2")!.candidate!;
+  assert.deepEqual([en.admitter(again), zh.admitter(again)], ["You", "你"]);
 });
 
 test("a turned-down result cannot become a Stage: Accept says so first, and the runtime refuses it", async (t) => {

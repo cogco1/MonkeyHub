@@ -1622,15 +1622,21 @@ try {
       "An ungrouped file sharing an accepted Stage's run must remain available as a legacy model");
   });
 
-  await step("a retained Stage remains usable after canonical HEAD advances while an unbound old run remains blocked", async () => {
+  await step("a retained Stage remains usable after canonical HEAD advances while an unbound old run is only viewed", async () => {
     published.version = 1; published.stateSha256 = "9".repeat(64);
     await page.reload({ waitUntil: "domcontentloaded" }); await rendered(historyA.candidateId);
     assert.equal((await snapshot()).sourceStageRef, s1.stageRef);
     assert.deepEqual((await snapshot()).editingModelSource, historyA.artifacts[0].modelSource);
     await page.evaluate(() => window.__candidatePreview.propose("edit the retained Stage on its own exact base"));
     assert.equal(requests.findLast((row) => row.name === "/api/intents").body.sourceStageRef, s1.stageRef);
+    // #450: a verified run on an older published version opens read-only; no proposal starts from it.
     await page.evaluate(() => window.__candidatePreview.reload("legacy-unbound-old-run"));
-    assert.equal((await snapshot()).baseError, "EDITING_BASE_UNAVAILABLE");
+    assert.equal((await snapshot()).baseError, null);
+    assert.equal((await snapshot()).editingRunId, "legacy-unbound-old-run");
+    const intents = requests.filter((row) => row.name === "/api/intents").length;
+    await page.evaluate(() => window.__candidatePreview.propose("edit the old run"));
+    assert.equal(requests.filter((row) => row.name === "/api/intents").length, intents, "an old-base run proposes nothing");
+    await page.evaluate(({ runId, stageRef }) => window.__candidatePreview.reload(runId, stageRef), { runId: historyA.candidateId, stageRef: s1.stageRef });
     assert.equal((await snapshot()).sourceStageRef, s1.stageRef);
     await rendered(historyA.candidateId);
   });

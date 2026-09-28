@@ -926,7 +926,8 @@ for _ in range(5):
             manager = client.app.state.runtimes
             runtime = manager.get(runtime_id)
             wait_for(lambda: runtime.work_copy_key is not None, "The opening pass did not bind work copies", timeout=10)
-            with patch("monkeyhub_api.runtime._WORK_COPY_CHECK_S", 0.2),                     patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as checks,                     patch.object(manager, "bind_work_copies", wraps=manager.bind_work_copies) as binds:
+            with patch("monkeyhub_api.runtime._WORK_COPY_CHECK_S", 0.2), \
+                    patch("monkeyhub_api.runtime._IDLE_HEARTBEAT_S", 0.2),                     patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as checks,                     patch.object(manager, "bind_work_copies", wraps=manager.bind_work_copies) as binds:
                 # Deriving the list reads every record of every run (#314), so
                 # an idle watcher compares what decides it and derives nothing.
                 runtime.wake.set()
@@ -1275,7 +1276,7 @@ class RuntimeCostTests(unittest.TestCase):
             elif step == 4:
                 runtime.wake.set()  # a Hub mutation still refreshes at once
             elif step == 5:
-                now[0] = 120.0  # the first idle pass after it reads and records
+                now[0] = 120.0  # that read recorded its token too: nothing to read (#435)
             elif step == 6:
                 now[0] = 150.0
             else:
@@ -1289,13 +1290,96 @@ class RuntimeCostTests(unittest.TestCase):
             manager._watch(runtime)
 
         # Refresh counts after each pass: first idle read, skipped, changed,
-        # skipped, woken, recorded again, skipped.
-        self.assertEqual(refreshes, [1, 1, 2, 2, 3, 4, 4])
+        # skipped, woken, skipped, skipped.
+        self.assertEqual(refreshes, [1, 1, 2, 2, 3, 3, 3])
         # The idle check read the watch's token; only the watch walked.
         self.assertTrue(walked_by)
         self.assertEqual({name for name in walked_by if not name.startswith("layout-watch:")}, set())
         # The observer let go of the project folder when it stopped.
         self.assertFalse(watched.running)
+
+    def test_first_idle_fallback_after_an_open_reuses_the_opening_read(self):
+        # After an open, the first idle fallback read all retained history
+        # again although nothing had moved (#435). The opening read's token
+        # answers for it; a separate client's write is still read.
+        repository = self.project()
+        manager = self.manager()
+        runtime = self.runtime(manager, repository)
+        _settle(repository.layout.root)
+        runtime.binding.layout_watch().sync()
+        now = [0.0]
+        refreshes = []
+
+        def heartbeat(_timeout):
+            refreshes.append(refresh.call_count)
+            step = len(refreshes)
+            if step in (1, 2):
+                now[0] += 30.0  # the first idle fallbacks after the open
+            elif step == 3:
+                repository.create_run("external-run")  # a separate client writes
+                _settle(repository.layout.root)
+                runtime.binding.layout_watch().sync()
+                now[0] += 30.0
+            else:
+                manager._closing.set()
+
+        runtime.wake.set()  # what open() asks of its observer
+        with patch.object(manager, "refresh", wraps=manager.refresh) as refresh, \
+             patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch.object(manager, "_observe_work_copies", return_value=0), \
+             patch("monkeyhub_api.runtime.time.monotonic", side_effect=lambda: now[0]):
+            manager._watch(runtime)
+        # Opening read, two skipped fallbacks, then the external write read.
+        self.assertEqual(refreshes, [1, 1, 1, 2])
+        self.assertIn("external-run", runtime.binding.run_ids())
+
+    def test_a_simulated_idle_minute_costs_the_observer_one_pass_per_idle_interval(self):
+        repository = self.project()
+        path = str(repository.layout.root)
+        worker = WorkerSnapshot("studio:p0", "studio", self.fixture.PROJECT_ID, path, "instance", 4000,
+                                "running", "ready", True, "http://127.0.0.1:9/", None)
+        manager = self.manager([worker])
+        runtime = self.runtime(manager, repository)
+        runtime.last_workers = (("instance", "ready", True),)
+        _settle(repository.layout.root)
+        runtime.binding.layout_watch().sync()
+        now, passes = [0.0], []
+
+        def heartbeat(timeout):
+            passes.append(timeout)
+            now[0] += timeout
+            if now[0] >= 60:
+                manager._closing.set()
+            return False
+
+        with patch.object(manager, "refresh") as refresh, \
+             patch.object(manager, "_follow_worker"), \
+             patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as inputs, \
+             patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch("monkeyhub_api.runtime.time.monotonic", side_effect=lambda: now[0]):
+            manager._watch(runtime)
+        # One pass every idle interval; the old observer passed every second.
+        self.assertLessEqual(len(passes), 60 / runtime_module._IDLE_HEARTBEAT_S)
+        self.assertEqual(set(passes), {runtime_module._IDLE_HEARTBEAT_S})
+        # The retained history is read once, not on every idle fallback, and
+        # the work-copy inputs are compared on their own cadence only.
+        self.assertEqual(refresh.call_count, 1)
+        self.assertLessEqual(inputs.call_count, 1 + 60 / runtime_module._WORK_COPY_CHECK_S)
+
+    def test_a_status_change_ends_the_idle_wait_without_asking_for_a_read(self):
+        manager = self.manager()
+        runtime = self.runtime(manager, self.project())
+        supervisor = SimpleNamespace(listeners=[], add_listener=lambda listener: supervisor.listeners.append(listener))
+        watched = ProjectRuntimeManager(SimpleNamespace(supervisor=supervisor), None)
+        watched._projects[runtime.runtime_id] = runtime
+        for change in (lambda: supervisor.listeners[0](), lambda: setattr(watched, "_clients", 1),
+                       lambda: watched.chat_changed(SimpleNamespace(projectDir=runtime.project_dir))):
+            change()
+            self.assertTrue(runtime.wake.is_set())
+            self.assertFalse(runtime.wake.take(), "A status change asked for a retained read")
+            self.assertFalse(runtime.wake.is_set())
+        runtime.wake.set()  # a Hub mutation still asks for one
+        self.assertTrue(runtime.wake.take())
 
     def test_runtime_snapshot_of_five_projects_stays_in_milliseconds(self):
         workers, sessions, repositories = [], [], []

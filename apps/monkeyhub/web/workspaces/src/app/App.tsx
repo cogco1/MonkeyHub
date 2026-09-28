@@ -141,7 +141,7 @@ import { ErrorPanel } from "./ErrorPanel";
 import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { LoadingOverlay } from "./LoadingOverlay";
-import { editingDigestForView, useSession } from "./useSession";
+import { editingDigestForView, useSession, type StaleBase } from "./useSession";
 import { EMPTY_MODEL_HISTORY, recordEditingBase, redoTarget, undoTarget, type ModelHistory } from "./modelHistory";
 import { followStep, headOf, pinStep, viewerFollows } from "./workingHead";
 import { useTranscript, type SystemTextPart } from "./transcript";
@@ -243,7 +243,9 @@ export type WorkspaceDesignContext = {
    * candidate holds the edits yet: "unsynced" edits are held by the project's
    * working draft and survive a restart; "unsaved" edits are not held yet.
    */
-  unavailableReason: "unsaved" | "unsynced" | "loading" | "unavailable" | null;
+  unavailableReason: "unsaved" | "unsynced" | "loading" | "unavailable" | "readOnly" | null;
+  /** With "readOnly": the run on screen is based on an older published version (#450). */
+  staleBase?: StaleBase;
   /** While edits keep project state out of chat: record them, so the refused context can start (#302). */
   record?: () => Promise<void>;
 };
@@ -442,7 +444,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   // screen: sketch and model tools, Delete, elevation, Undo/Redo model,
   // parameter locks, Trace to 3D and the composer. Looking stays free; the
   // architect's explicit Continue is what lets the picture be edited.
-  const viewOnlyReason = viewingAnotherBase ? t("stage.base.viewOnly") : null;
+  // A verified run on an older published version is only viewed: every edit
+  // says so, and only the explicit return to the default base moves on (#450).
+  const staleBase = session.status === "ready" ? session.value.staleBase ?? null : null;
+  const staleBaseReason = staleBase ? t("stage.base.staleBase", {
+    published: staleBase.publishedVersion, base: staleBase.baseVersion }) : null;
+  const staleBaseRef = useRef(staleBaseReason);
+  staleBaseRef.current = staleBaseReason;
+  const viewOnlyReason = staleBaseReason ?? (viewingAnotherBase ? t("stage.base.viewOnly") : null);
   const viewOnlyRef = useRef(viewOnlyReason);
   viewOnlyRef.current = viewOnlyReason;
   // What the editing-base row says about the architect's last refused base
@@ -798,6 +807,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     const projectId = project?.projectId ?? binding?.projectId;
     if (!projectId) return null;
     const unavailableReason = chatDraft ?? (changingBase || session.status === "loading" ? "loading"
+      : staleBase ? "readOnly"
       : baseError || !projection?.stateDigest || sourceLabel === LOCAL_SOURCE_LABEL ? "unavailable" : null);
     const designContext: WorkspaceDesignContext["designContext"] = unavailableReason || !projection?.stateDigest ? null : {
       sourceRunId: projection.referenceRunSource === "none" ? null : projection.referenceRun.runId,
@@ -813,9 +823,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       designContext.targetComponentId = picked.componentId;
       designContext.elementId = picked.elementId;
     }
-    return { projectId, designContext, unavailableReason, ...(chatDraft ? { record: recordStable } : {}) };
+    return { projectId, designContext, unavailableReason, ...(staleBase ? { staleBase } : {}),
+      ...(chatDraft ? { record: recordStable } : {}) };
   }, [project?.projectId, binding?.projectId, projection, changingBase, session.status, baseError, sourceLabel,
-    chatDraft, picked, viewedProjection, recordStable]);
+    chatDraft, picked, viewedProjection, recordStable, staleBase]);
   useEffect(() => {
     onDesignContextChange?.(chatContext);
     return () => onDesignContextChange?.(null);
@@ -1814,6 +1825,11 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const propose = useCallback(
     async (utterance: string, override?: Selection | null, documentAnnotations: readonly DocumentAnnotationRefDto[] = [], documentModelSource?: ModelSourceDto, documentVisuals: DocumentVisualInputDto[] = []) => {
       const withDocuments = documentAnnotations.length > 0;
+      // A run on an older published version is only viewed; the composer already says why.
+      if (staleBaseRef.current) {
+        if (withDocuments) throw asStudioApiError(new Error(staleBaseRef.current));
+        return;
+      }
       if (withDocuments) {
         if (!server.capabilities.includes("document-visual-input")) throw asStudioApiError(new Error(t("document.visualUnavailable")));
         const current = documentEditingRef.current;
@@ -2582,6 +2598,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
 
   const runCandidate = useCallback(
     async (proposalId: string, preserveDocument = false) => {
+      if (staleBaseRef.current) { setBaseNotice(staleBaseRef.current); return; }
       setCandidateBusy(true);
       // The approximation has done its work: from here the picture is the
       // loaded model until the exact geometry arrives.
@@ -2699,6 +2716,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     // A session that failed is not something to wait through: it has its own
     // error on screen, and the sketch has to say it was not submitted.
     if (session.status === "failed") { refuse(session.error); return; }
+    if (session.status === "ready" && staleBaseRef.current) { refuse(new Error(staleBaseRef.current)); return; }
     if (session.status !== "ready" || changingBase || proposalBusy) return;
     // The home model auto-loads on this same ready transition and raises a view
     // request of its own. Waiting for the artifact list to settle first keeps
@@ -2959,6 +2977,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const syncLocalModel = useCallback(async (target?: LocalModelSession) => {
     const session = target ?? localModel;
     if (!session || session.busy || (!target && modelSyncBusy)) return;
+    if (staleBaseRef.current) {
+      if (session.error !== staleBaseRef.current) { session.error = staleBaseRef.current; refreshLocalModel(); }
+      return;
+    }
     syncSettling.current.delete(session);
     const snapshot = currentDraft(session.history);
     if (session.pending && !session.pending.attempt.finalProposalId &&
@@ -3380,6 +3402,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const disabledReason =
     changingBase
       ? t("stage.base.loading")
+      : staleBaseReason !== null
+        ? staleBaseReason
       : viewOnlyReason !== null && documentContinuation === null
         ? viewOnlyReason
       : modelLoading
@@ -3643,7 +3667,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             recordEdits: viewOnlyReason === null && localModel && unsynced(localModel) ? recordStable : null,
             // The same explicit Continue as the editing-base row, offered where the refusal is
             // read; the open page stays open and a refusal is reported in the panel.
-            continueViewed: viewOnlyReason === null || !loadedArtifact || (viewingExternalModel && loadedModelSource === null) ? null
+            continueViewed: viewOnlyReason === null || staleBaseReason !== null || !loadedArtifact || (viewingExternalModel && loadedModelSource === null) ? null
               : async () => {
                 const refused = { reason: null as string | null };
                 const next = loadedModelSource
@@ -3800,7 +3824,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             explicitBase={sourceRunId !== null}
             changingBase={changingBase || selectingWorkingCopy}
             baseError={baseError}
-            baseNotice={baseNotice}
+            baseNotice={staleBaseReason ?? baseNotice}
             baseNotSaved={persistenceFailed}
             baseActionBusy={session.status !== "ready" || missingChosenModel || proposalBusy || candidateBusy || refiningEntryId !== null || selectingWorkingCopy}
             /* The editing-base row's own actions answer in that row, never by throwing. */

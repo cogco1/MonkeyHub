@@ -1,13 +1,17 @@
 """Faults and recovery use only disposable, explicitly owned worker processes."""
 
 from dataclasses import replace
+import json
 import os
 from pathlib import Path
 import signal
 import socket
 import sys
 import tempfile
+import time
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -15,7 +19,9 @@ from test_monkeyhub_lifecycle import ROOT, LocalHubCase, free_ports, http_json, 
 from monkeyhub_api.applications import Applications
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import HubFailure
-from monkeyhub_api.workers import WorkerLaunch, WorkerSupervisor
+from monkeyhub_api.workers import (
+    _ACTIVE_PROBE_S, _STABLE_PROBE_S, _UNAVAILABLE_AFTER_S, WorkerLaunch, WorkerSupervisor, _Child,
+)
 
 
 WORKER = r'''
@@ -102,11 +108,11 @@ class WorkerSupervisorTests(unittest.TestCase):
             health_fields={"projectBound": True},
         ), **changes)
 
-    def wait_state(self, key, state):
+    def wait_state(self, key, state, timeout=10):
         def check():
             value = self.supervisor.snapshot(key)
             return value if value and value.state == state else None
-        return wait_for(check, f"Worker {key} did not reach {state}", timeout=10)
+        return wait_for(check, f"Worker {key} did not reach {state}", timeout=timeout)
 
     def hub_client(self):
         port = free_ports(1)[0]
@@ -214,7 +220,10 @@ class WorkerSupervisorTests(unittest.TestCase):
         original = self.wait_state(launch.worker_id, "ready")
         outage = Path(launch.environment["OUTAGE_FILE"])
         outage.touch()
-        unavailable = self.wait_state(launch.worker_id, "unavailable")
+        # An idle verified worker is next asked within one stable interval;
+        # from its first missed probe it has the outage grace (#435).
+        unavailable = self.wait_state(launch.worker_id, "unavailable",
+                                      timeout=_STABLE_PROBE_S + _ACTIVE_PROBE_S + _UNAVAILABLE_AFTER_S + 3)
         self.assertEqual(unavailable.instance_id, original.instance_id)
         self.assertEqual(unavailable.process_id, original.process_id)
         self.assertFalse(unavailable.healthy)
@@ -238,8 +247,11 @@ class WorkerSupervisorTests(unittest.TestCase):
         seen = outage.with_suffix(".health-seen")
         # Observe repeated real heartbeats beyond the five-second outage grace.
         # The full summary would exceed its former timeout even on startup.
+        # Seven of them: the busy cadence, so the count stays quick.
+        self.supervisor.set_busy(launch.worker_id, True)
         wait_for(lambda: seen.exists() and len(seen.read_text()) >= 7,
-                 "Worker did not finish seven health checks", timeout=10)
+                 "Worker did not finish seven health checks", timeout=10 + _STABLE_PROBE_S)
+        self.supervisor.set_busy(launch.worker_id, False)
         self.assertFalse(outage.with_suffix(".project-seen").exists())
         current = self.supervisor.snapshot(launch.worker_id)
         self.assertEqual(current.state, "ready")
@@ -264,7 +276,7 @@ class WorkerSupervisorTests(unittest.TestCase):
         seen = outage.with_suffix(".seen")
         outage.touch()
         wait_for(lambda: seen.exists() and len(seen.read_text()) >= 2,
-                 "Worker did not observe the short outage", timeout=4)
+                 "Worker did not observe the short outage", timeout=4 + _STABLE_PROBE_S)
         current = self.supervisor.snapshot(launch.worker_id)
         self.assertEqual(current.state, "ready")
         self.assertTrue(current.healthy)
@@ -303,11 +315,69 @@ class WorkerSupervisorTests(unittest.TestCase):
         def rejected_identity():
             value = self.supervisor.snapshot(launch.worker_id)
             return value if value.desired_state == "stopped" else None
-        rejected = wait_for(rejected_identity, "Identity mismatch was not rejected immediately", timeout=3)
+        rejected = wait_for(rejected_identity, "Identity mismatch was not rejected on the next probe",
+                            timeout=3 + _STABLE_PROBE_S)
         self.assertEqual(rejected.error.code, "SERVICE_IDENTITY_MISMATCH")
         response = client.get("/api/health", headers={"Origin": origin})
         self.assertEqual(response.status_code, 403)
         self.assertNotIn("Access-Control-Allow-Origin", response.headers)
+
+
+    def test_an_idle_worker_exit_is_seen_at_once_not_at_its_next_probe(self):
+        launch = self.launch("exit")
+        changes = []
+        self.supervisor.add_listener(lambda: changes.append(time.monotonic()))
+        self.supervisor.start(launch)
+        self.wait_state(launch.worker_id, "ready")
+        child = self.supervisor._children[launch.worker_id]
+        time.sleep(0.3)  # the watcher now waits out a stable probe interval
+        killed = time.monotonic()
+        child.process.kill()
+        # Read the watcher's own record, not a snapshot, which polls the process itself.
+        wait_for(lambda: child.state == "crashed" and any(when >= killed for when in changes),
+                 "The watcher did not record the exit", timeout=_STABLE_PROBE_S)
+        self.assertLess(min(when for when in changes if when >= killed) - killed, 1.0)
+        self.assertEqual(child.error.code, "PROCESS_EXITED")
+
+    def test_a_simulated_minute_probes_an_idle_worker_on_the_stable_cadence(self):
+        launch = self.launch("cadence")
+        health = {"managedInstanceId": "instance", "processId": 4321, "sourceRevision": "a" * 40,
+                  "serverVersion": "0.1.0", "projectBound": True,
+                  "projectId": launch.project_id, "projectDir": launch.project_dir}
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def read(self, _limit):
+                return json.dumps(health).encode()
+
+        for busy, most in ((False, 60 / _STABLE_PROBE_S), (True, 60 / _ACTIVE_PROBE_S)):
+            with self.subTest(busy=busy):
+                now, probes = [0.0], []
+                process = SimpleNamespace(pid=4321, stdin=None, poll=lambda: None if now[0] < 60 else 1)
+                child = _Child(launch, process, "instance", self.root / "worker.log", busy=busy)
+
+                def waited(interval):
+                    now[0] += interval
+                    return False
+
+                def opened(url, timeout):
+                    probes.append(now[0])
+                    return Response()
+
+                child.signal = SimpleNamespace(wait=waited, clear=lambda: None, set=lambda: None)
+                with patch("monkeyhub_api.workers.build_opener", return_value=SimpleNamespace(open=opened)), \
+                     patch("monkeyhub_api.workers.time.monotonic", side_effect=lambda: now[0]):
+                    self.supervisor._watch(child)
+                self.assertEqual(child.service_pid, 4321)
+                self.assertEqual(child.state, "crashed")
+                # One probe per interval; the old watcher asked every second whatever the worker did.
+                self.assertLessEqual(len(probes), most)
+                self.assertGreater(len(probes), 1)
 
 
 class StudioWorkerRecoveryTests(LocalHubCase):

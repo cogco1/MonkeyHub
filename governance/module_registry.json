@@ -979,7 +979,8 @@
         "wall_fields_from_block",
         "wall_along_line",
         "element_vertical_extent",
-        "parameter_unit"
+        "parameter_unit",
+        "canonical_params"
       ],
       "depends_on": [
         "monkeyarch.capabilities.opening_solver",

@@ -455,9 +455,13 @@ def _tool_values(body: str, requested_run: str | None = None) -> tuple[list[str]
         return [], None
     if not isinstance(parsed, dict):
         return [], None
-    if isinstance(parsed.get("operation"), dict) and isinstance(parsed.get("path"), str):
+    if isinstance(parsed.get("path"), str) and isinstance(parsed.get("method"), str):
         # A schema read: name the action it described, never copy the schema.
-        return [f"read the schema of {parsed.get('method', '')} {parsed['path']}".strip()], None
+        action = f"{parsed['method']} {parsed['path']}"
+        if str(parsed.get("note", "")).startswith(_CONTRACT_NOTE) or isinstance(parsed.get("operation"), dict):
+            return [f"read the schema of {action}"], None
+    if isinstance(parsed.get("actions"), list) and isinstance(parsed.get("total"), int):
+        return [f"listed {parsed['total']} actions" + (" with their guide" if "guide" in parsed else "")], None
     named = [f"{name}: {parsed[name]}" for name in _ACTIVITY_NAMES
              if isinstance(parsed.get(name), (str, int, float, bool)) and len(str(parsed[name])) <= 200]
     # A run whose result could not be read is not a candidate to open: the row
@@ -1789,7 +1793,9 @@ class ChatStore:
                        "--tools", "default", "--allowedTools", ",".join(_claude_approved(self.runtime_root)),
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
                        "--add-dir", str(scratch),
-                       "--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": {"monkeyhub": mcp}})]
+                       # alwaysLoad: the CLI otherwise defers every MCP tool behind
+                       # a ToolSearch round trip, one model call before any design work.
+                       "--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": {"monkeyhub": {**mcp, "alwaysLoad": True}}})]
             command += ["--resume", session.nativeSessionId] if session.nativeSessionId else ["--session-id", session.cliStartId or session.id]
             # Every turn reads stream-json from stdin, so a message sent while
             # it runs reaches it at its next step (#301). Each one read is
@@ -2374,6 +2380,8 @@ class ChatStore:
             trace.bind(session.nativeSessionId)
         if trace and kind == "assistant":
             trace.claude_usage(event.get("message"))
+        if trace and kind == "stream_event":
+            trace.claude_stream(event.get("event"))
         if kind in {"error", "turn.failed"} or (kind == "result" and event.get("is_error")):
             detail = event.get("message") or event.get("error") or event.get("result") or "The provider reported a failed turn."
             if isinstance(detail, Mapping):
@@ -2596,7 +2604,8 @@ def _available_actions(document: dict) -> list[dict]:
     ]
 
 
-def _discover_actions(base: str, arguments: dict) -> dict:
+def _discovery(arguments: dict) -> tuple[str | None, str, int, int]:
+    """Check an action-discovery question before anything is started to answer it."""
     if set(arguments) - {"method", "path", "pathPrefix", "offset", "limit"}:
         raise HubFailure(422, "CHAT_TOOL_INVALID", "Action discovery takes optional method, pathPrefix, offset and limit; omit path.")
     method = arguments.get("method")
@@ -2606,14 +2615,146 @@ def _discover_actions(base: str, arguments: dict) -> dict:
             or not isinstance(prefix, str) or not re.fullmatch(r"/api(?:/[A-Za-z0-9_.{}-]*)*/?", prefix)
             or type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 50):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "Use method GET/POST/PUT, pathPrefix under /api, offset >= 0 and limit 1..50.")
+    return method, prefix, offset, limit
+
+
+def _discover_actions(base: str, arguments: dict) -> dict:
+    method, prefix, offset, limit = _discovery(arguments)
     rows = [row for row in _available_actions(_request_json(base, "/openapi.json"))
             if row["path"].startswith(prefix) and (method is None or row["method"] == method.upper())]
     result = {"actions": rows[offset:offset + limit], "total": len(rows), "offset": offset, "limit": limit,
               "note": "Current Runtime actions exposed to this chat. Choose method/path for studio_schema to read inputs; "
                       "studio_request executes. Project state, input validation and action-specific authority still apply."}
+    guide = _guide(prefix) if offset == 0 else None
+    if guide:
+        # The domain's full text, once, where the upfront guide said it would be.
+        result["guide"] = guide
     if offset + limit < len(rows):
         result["next"] = {"tool": "studio_schema", "arguments": {**arguments, "offset": offset + limit, "limit": limit}}
     return result
+
+
+_CONTRACT_NOTE = "Request inputs only"
+_NULL = {"type": "null"}
+# Keys whose values are maps of names to schemas: the names are data, never
+# schema keywords, so a property called "title" is kept.
+_SCHEMA_MAPS = {"properties", "patternProperties", "$defs", "definitions"}
+
+
+def _compact(schema):
+    """A JSON Schema as a reader needs it: no generated titles, optional nulls folded.
+
+    ``{"anyOf": [X, {"type": "null"}]}`` becomes X marked nullable, and the
+    generator's per-field title (the field name again) is dropped. Everything
+    that constrains a value, descriptions, enums and bounds, is kept.
+    """
+    if isinstance(schema, list):
+        return [_compact(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    variants = schema.get("anyOf")
+    if isinstance(variants, list) and len(variants) == 2 and _NULL in variants:
+        rest = {key: value for key, value in schema.items() if key != "anyOf"}
+        folded = next(item for item in variants if item != _NULL)
+        return _compact({**folded, **rest, "nullable": True})
+    return {key: ({name: _compact(item) for name, item in value.items()} if key in _SCHEMA_MAPS and isinstance(value, dict)
+                  else _compact(value))
+            for key, value in schema.items() if key != "title" and not (key == "additionalProperties" and value is True)}
+
+
+_SHARED_MIN = 160
+
+
+def _share_repeats(parts: dict, schemas: dict) -> None:
+    """Name each subschema repeated verbatim, once, and point its repeats at that name.
+
+    Producer contracts repeat whole subtrees (a wall's references appear under
+    Element@1 and Type@1 alike, a level reference in every elevation), and a
+    reader pays for every repeat. Largest first. Only schemas are shared: a
+    map of property names is walked into, never replaced by a reference.
+    """
+    shared = 0
+    while True:
+        seen: dict[str, int] = {}
+
+        def count(value, schema: bool):
+            if isinstance(value, dict):
+                if schema and "$ref" not in value:
+                    text = json.dumps(value, sort_keys=True, ensure_ascii=False)
+                    if len(text) >= _SHARED_MIN:
+                        seen[text] = seen.get(text, 0) + 1
+                for key, item in value.items():
+                    if key in _SCHEMA_MAPS and isinstance(item, dict):
+                        for child in item.values():
+                            count(child, True)
+                    else:
+                        count(item, True)
+            elif isinstance(value, list):
+                for item in value:
+                    count(item, True)
+
+        for value in parts.values():
+            count(value, True)
+        for value in schemas.values():
+            count(value, False)  # already named
+        repeated = [text for text, times in seen.items() if times > 1]
+        if not repeated:
+            return
+        text = max(repeated, key=len)
+        shared += 1
+        name = f"Shared{shared}"
+        reference = {"$ref": f"#/components/schemas/{name}"}
+
+        def replace(value, schema: bool):
+            if isinstance(value, dict):
+                if schema and json.dumps(value, sort_keys=True, ensure_ascii=False) == text:
+                    return dict(reference)
+                return {key: ({child: replace(item[child], True) for child in item}
+                              if key in _SCHEMA_MAPS and isinstance(item, dict) else replace(item, True))
+                        for key, item in value.items()}
+            if isinstance(value, list):
+                return [replace(item, True) for item in value]
+            return value
+
+        for key in list(parts):
+            parts[key] = replace(parts[key], True)
+        for key in list(schemas):
+            schemas[key] = replace(schemas[key], False)
+        schemas[name] = json.loads(text)
+
+
+def _request_contract(document: dict, template: str, method: str, operation: dict) -> dict:
+    """What one action takes: its query/path parameters, its body and the schemas they name.
+
+    Responses are not described; the call itself answers with one. Headers are
+    this adapter's to send, and the route's own prose is for its maintainers.
+    """
+    parameters = [{key: value for key, value in row.items() if key in {"name", "in", "required", "schema", "description"}}
+                  for row in operation.get("parameters", ()) if isinstance(row, dict) and row.get("in") in {"query", "path"}]
+    request = operation.get("requestBody") or {}
+    body = request.get("content", {}).get("application/json", {}).get("schema", request if "$ref" in request else None)
+    components = document.get("components", {}).get("schemas", {})
+    schemas, pending = {}, [parameters, body]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            reference = value.get("$ref", "")
+            key = reference.rsplit("/", 1)[-1]
+            if reference.startswith("#/components/schemas/") and key not in schemas:
+                schemas[key] = components.get(key, {})
+                pending.append(schemas[key])
+            pending.extend(value.values())
+        elif isinstance(value, list):
+            pending.extend(value)
+    answer = {"path": template, "method": method, "summary": operation.get("summary") or operation.get("operationId")}
+    parts = {key: _compact(value) for key, value in (("parameters", parameters), ("body", body)) if value}
+    compacted = {key: _compact(value) for key, value in sorted(schemas.items())}
+    _share_repeats(parts, compacted)
+    answer.update(parts)
+    if compacted:
+        answer["components"] = {"schemas": compacted}
+    answer["note"] = _CONTRACT_NOTE + "; each $ref names an entry of components.schemas. The call itself answers with its result."
+    return answer
 
 
 def _action_refusal(base: str | None, method: str, path: str) -> HubFailure:
@@ -2880,6 +3021,19 @@ def _prepare_studio(hub: str, session: Mapping, budget: float) -> dict:
         held.release()
 
 
+def _not_running(session: Mapping) -> HubFailure:
+    """A tool call outside a turn, said as what it is: not started yet, or ended.
+
+    Before its first user message a chat has no turn at all, and calling that
+    "no longer running" sent a caller looking for a turn that had stopped.
+    """
+    if not any(row.get("role") == "user" for row in session.get("messages", ())):
+        waiting = ("Publish the user's message with chat_present kind=user first; project tools then answer within that turn."
+                   if session.get("sourceSessionId") else "Project tools answer once a user message starts a turn.")
+        return HubFailure(409, "CHAT_NOT_RUNNING", f"This chat has not started a turn yet. {waiting}")
+    return HubFailure(409, "CHAT_NOT_RUNNING", "This chat's turn has ended; project tools answer only while a turn runs.")
+
+
 def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, project_id: str | None = None,
                   project_dir: str | None = None, deadline: float | None = None,
                   prepare: bool = True) -> tuple[str, dict]:
@@ -2905,7 +3059,7 @@ def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, projec
     else:
         session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}", timeout=left())
         if session.get("status") != "running":
-            raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is no longer running.")
+            raise _not_running(session)
         turn = next((row.get("id") for row in reversed(session.get("messages", [])) if row.get("role") == "user"), None)
         if turn:
             _trace_headers.set({"X-Monkey-Turn-Id": turn, "X-Monkey-Parent-Span-Id": f"hub:turn:{turn}"})
@@ -3451,7 +3605,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         _attachment_read_paging(offset, limit, page)
         session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}")
         if session.get("status") != "running":
-            raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is no longer running.")
+            raise _not_running(session)
         if _project(session["projectDir"]) != (session["projectId"], session["projectDir"]):
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The conversation's project identity changed.")
         return _request_json(hub, f"/api/chat/sessions/{chat_id}/attachments/{attachment_id}/read?"
@@ -3487,7 +3641,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if name == "fab_request":
         session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}")
         if session.get("status") != "running":
-            raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is no longer running.")
+            raise _not_running(session)
         if _project(session["projectDir"]) != (session["projectId"], session["projectDir"]):
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The conversation's project identity changed.")
         if method == "GET" and path == "/api/fab/profiles":
@@ -3499,6 +3653,8 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             return _request_json(hub, path, "POST", body)
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "The chat can list Fab profiles and validate a prepared job; uploads remain explicit in MonkeyFab.")
     if name == "studio_schema" and not path:
+        # A malformed question is refused before a runtime is prepared for it.
+        _discovery(arguments)
         return _discover_actions(_bound_studio(hub, chat_id)[0], arguments)
     if any(key in arguments for key in ("pathPrefix", "offset", "limit")):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "pathPrefix, offset and limit belong to studio_schema action discovery; omit path.")
@@ -3574,26 +3730,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             if method == "POST":
                 task = document["components"]["schemas"]["AdmissionTaskDto"]["properties"]
                 task["kind"] = {**task["kind"], "enum": ["hub-chat"]}
-        if method != "GET" and isinstance(operation.get("responses"), dict):
-            # A write's answer comes back when it is sent, so its schema is the request and
-            # the status codes; the response schemas were most of what an agent read before
-            # writing (#419 benchmark: 16 kB of 16 kB for the construction route).
-            operation = {**operation, "responses": {
-                code: {"description": answer.get("description", "")} if isinstance(answer, dict) else {}
-                for code, answer in operation.get("responses", {}).items()}}
-        schemas, pending = {}, [operation]
-        while pending:
-            value = pending.pop()
-            if isinstance(value, dict):
-                reference = value.get("$ref", "")
-                key = reference.rsplit("/", 1)[-1]
-                if reference.startswith("#/components/schemas/") and key not in schemas:
-                    schemas[key] = document.get("components", {}).get("schemas", {}).get(key, {})
-                    pending.append(schemas[key])
-                pending.extend(value.values())
-            elif isinstance(value, list):
-                pending.extend(value)
-        return {"path": template, "method": method, "operation": operation, "components": {"schemas": schemas}}
+        return _request_contract(document, template, method, operation)
     if name != "studio_request":
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "Unknown chat tool.")
     wait = arguments.get("awaitSeconds")
@@ -3613,13 +3750,19 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                              "was read against. Without it, send the request without awaitSeconds and read "
                              "the job and the candidate yourself.")
     body = arguments.get("body")
+    if method == "POST" and parsed.path == "/api/project/modeling":
+        # Its only field is the project, which the chat supplies, and the chat
+        # always asks for the base it leaves: the guide's first proposal is
+        # written against that answer rather than a second state read.
+        body = {} if body is None else body
+        path = parsed.path + "?" + urlencode({**{key: values[-1] for key, values in query.items()}, "base": "true"})
     if body is not None:
         if not isinstance(body, dict):
             raise HubFailure(422, "CHAT_TOOL_INVALID", "The request body must be an object.")
         body = dict(body)
         if body.get("projectId", session["projectId"]) != session["projectId"]:
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "A tool cannot select another project.")
-        if parsed.path in {"/api/proposals", "/api/board/export"}:
+        if parsed.path in {"/api/proposals", "/api/board/export", "/api/project/modeling"}:
             body["projectId"] = session["projectId"]
         if method == "POST" and parsed.path == "/api/drawings/plans":
             # A cut plan the Agent asks for is its reading of what the user
@@ -3701,6 +3844,181 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         return started
     # One POST has happened. From here on this call only reads.
     return _finish(base, started, comparison, time.monotonic() + wait)
+
+
+# studio_request's description is what the CLI loads before every turn, so it
+# holds modeling, the common case, with each ordinary body complete: a schema
+# read is for an unusual field, not for the request the recipe already states.
+# Modeling is one construction script (#419): its vocabulary and one example
+# are stated here; meaning, capabilities and domains follow in their own
+# stages, and no runtime realisation is named.
+# Every other domain is one line here; its full text is the guide that
+# studio_schema answers with that domain's pathPrefix, read when the work
+# actually turns to it.
+_MODELLING = chr(10).join([
+    "Use the bound project's Studio API in metres; plan points are (x, z) and 3D points (x, y, z), with Y up.",
+    "Design tools prepare the project's runtime themselves; nobody needs to open a page first.",
+    "The bodies below are complete for the ordinary case: send them as written. studio_schema is for a field not shown here",
+    "or for correcting a refusal. The chat fills projectId; omit it.",
+    "",
+    "START: POST /api/project/modeling with body {} prepares an empty project once (an existing project keeps its model inputs)",
+    "and answers the default base: {stateDigest, sourceStageRef, levels: [{levelId, elevation}], components: [{componentId,",
+    "parentComponentId}], elementCount}. Write the first script against it directly; no read first.",
+    "CURRENT MODEL: GET /api/construction/model gives stateDigest, levels, parameters and one entry per geometry id:",
+    "form, bounds, cuts, cutBy, facets and the capabilities they unlock. Without ?run=<candidateId> it reads the default",
+    "source; with it, send sourceRunId on writes. Keep sourceStageRef when provided. With elementCount > 0, read it before changing geometry.",
+    "",
+    "MAKE AND CHANGE GEOMETRY: POST /api/proposals/construction {stateDigest, script, summary?, sourceRunId?, sourceProposalId?, keep?}.",
+    "The script is a small Python-like program; one script makes and changes many shapes:",
+    "  base = rect(20, 0, 12, 8)                       # plan rectangle: corner (x, z), 12 along x, 8 along z",
+    "  mass = extrude(base, 3.2)                       # push-pull up from the ground level",
+    "  upper = extrude(rect(20, 0, 10, 8), 3, at=top(mass))   # stands on mass and follows its height",
+    "  for i in range(4):",
+    "      w = extrude(rect(21.5 + 3 * i, 0, 1.2, 0.3), 1.5, at=0.9)",
+    "      cut(mass, w)                                # removes w from mass; w stays, hidden, under its own id",
+    "Verbs: rect polygon circle offset | plane front side | extrude face path loft section | move rotate scale mirror copy array |",
+    "pushpull set_height set_base | cut uncut | level top param bounds | name get delete | print.",
+    "Plain Python works: variables, arithmetic, for/if/def, lists, range, pi/sin/cos/sqrt.",
+    "A variable is the shape's id (w in a loop gives w-1..w-4); name(obj, \"id\") sets one; get(\"id\") edits",
+    "existing geometry; running a script again with the same names updates the same shapes, it never duplicates them.",
+    "A refused script saves nothing and names its line. GET /api/construction lists every verb and argument.",
+    "Never state what a part is while making it; geometry needs no classification.",
+    "",
+    "MEANING: only when the user says what a part is, POST /api/proposals/facets",
+    "{stateDigest, targets: [{id, set: {\"architectural.role\": \"wall\"}}]}. Facets never change geometry or ids.",
+    "Keys: architectural.role, architectural.enclosure, structural.role, material.name, fabrication.method.",
+    "CAPABILITIES appear per entity in the model view once its facets allow them, e.g. hosted-opening",
+    "(a door or window with its frame and leaf) on a wall: POST /api/proposals/hosted-opening.",
+    "DOMAINS: GET /api/domains/{structure|envelope}/readiness says what a domain reads or which facets to add; it never guesses.",
+    "PARAMETERS: POST /api/proposals {stateDigest, semanticEdit: {summary, parameters: [...]}} defines linked dimensions;",
+    "a script binds one with param(\"key\") as a height or an at offset. semanticEdit never carries geometry.",
+    "Parameter formulas belong in parameters[].expr with inputs, and value must match the expression; revise upstream controls for linked edits.",
+    "STAGES: explore with scripts and candidates; admission/Continue promotes; meaning, capabilities and domains come after.",
+    "",
+    "CANDIDATE: when a proposal answers status 'proposed', POST /api/proposals/{id}/candidate with no body and awaitSeconds: 60 beside method/path.",
+    "That one call builds a reversible, unaccepted candidate, waits for it and answers candidateId, candidate.stateDigest, artifacts",
+    "(with modelSource), objects and, when the proposal had a sourceRunId, compare. These are completed readbacks: no GET /api/jobs,",
+    "/api/candidates or /api/construction/model is needed after it. On timeout, follow the returned job/candidate reads; never send the request again merely to wait.",
+    "A status 'conflict' reaches something kept: inspect impact.conflicts before executing. Multiple observation and revision cycles can occur within the same Stage.",
+    "NEXT EDIT, in this turn or a later one: write against the candidate just made with {stateDigest: <its candidate.stateDigest>,",
+    "sourceRunId: <candidateId>, ...}; that stateDigest is the one GET /api/construction/model?run=<candidateId> answers, so no read is needed.",
+    "sourceProposalId continues an unexecuted chain, not a newly selected candidate base.",
+    "keep is a list of protected refs, e.g. ['entity:mass']; a kept geometry id keeps its parts. Use the actual target and source, not a guessed field.",
+    "For an existing numeric control, GET /api/capabilities/candidate.modify_existing?target=<id>&run=<candidateId> (elementId is optional)",
+    "returns its current values, units and a ready request; edit that body and POST /api/capabilities/{capabilityId}/run.",
+    "The numeric capability run also accepts awaitSeconds: 60 with sourceRunId in its body. Waiting posts the change once.",
+    "GET /api/capabilities?goal=<user request> helps discover operations; an index miss does not exclude the other listed APIs.",
+    "Chain known edits in memory by passing the last proposalId as sourceProposalId; keep stateDigest at the chain's original baseStateDigest.",
+    "sourceRunId/sourceStageRef are inherited. GET /api/proposals/{id} reads accumulated changes; inspect conflicts before executing.",
+    "",
+    "OBSERVE: GET /api/candidates/{id} lists retained objects: Z-up bbox [x, z, y], lengthUnit, upAxis or objectReadbackError.",
+    "GET /api/candidates/{id}/compare?against=<runId> compares with the required source run. The first candidate has no prior run to compare.",
+    "Use an available artifact's non-null modelSource unchanged for visual_review and model-view. A missing source cannot be reconstructed from hashes.",
+    "SEE A VIEW: GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image;",
+    "views front/back/left/right/top/axon. Read modelSource from the awaited result's artifacts.",
+    "Object bounds and successful checks are not visual inspection or proof of the user's spatial intent; for a spatial or formal task, check the result with visual_review and report gaps.",
+    "For invalid input, use the named schema to correct it. For stale state/conflicts, refresh the exact source and reconcile the change while preserving keep conditions.",
+    "A refused request made no model. Distinguish unsupported operations from correctable inputs; report unresolved limits without inventing success.",
+    "",
+    "ADMIT: when a model revision loop is complete, POST /api/admissions once with",
+    "{results: [{runId: <candidateId>, outcome: 'admitted', supersedes: [attempt runIds it replaced], label}]}; supersedes may be [].",
+    "Add study: {id, label, baseRunId} (id an ASCII slug) for several alternatives built from one run.",
+    "outcome 'rejected' only where the user's words reject that result; add feedbackQuote with their exact passage.",
+    "The chat fills projectId, task {kind: 'hub-chat'}, messageSource and rawLanguage; never supply them. A refusal names each failing",
+    "clause per run; an identical retry returns the same record. GET /api/admissions?include=rejected lists what is already admitted or tried.",
+    "CONTINUE: only when the user's words ask to continue from a result, PUT /api/working-draft {runId, baseRevisionSha256}",
+    "with revisionSha256 from GET /api/working-source, and feedbackQuote for their exact passage. It moves the Working Head",
+    "and admits nothing; generating a result never moves it.",
+    "",
+    "OTHER READS: GET /api/project, /api/state/volumes, /api/program, /api/options, /api/artifacts, /api/jobs/{id}.",
+    "OTHER ACTIONS: POST /api/state/closure, /api/program, /api/options, /api/options/{id}/select, /api/candidates/combine.",
+    "",
+    "OTHER DOMAINS: before working in one, call studio_schema with its pathPrefix (and no path) once; the answer carries that",
+    "domain's full guide beside its action list.",
+    "- Drawings (elevations, 剖透视 section perspectives, cut plans and entourage, sheets, drawing pages): pathPrefix /api/drawings.",
+    "- Retained feedback, decisions, context reads (POST /api/intents/context) and study precedents: pathPrefix /api/decisions.",
+    "- Board, documents and page annotations: pathPrefix /api/board.",
+    "- Model export or conversion (3DM, SKP, GLB, DWG): pathPrefix /api/exports.",
+    "Stage acceptance, formal issue and printer upload are separate from this tool's reversible design actions.",
+])
+
+# The full text of each domain the upfront guide names in one line. Answered
+# with studio_schema action discovery for that pathPrefix, never repeated in
+# the schema answers themselves.
+_GUIDES = {
+    "/api/drawings": chr(10).join([
+        "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list; drawing-only work admits nothing.",
+        "Before drawing, read POST /api/intents/context for the task's scoped decisions (pathPrefix /api/decisions explains it).",
+        "SECTION PERSPECTIVE (剖透视): POST /api/drawings/section-perspectives cuts the exact model with a section plane, removes the side the eye is on,",
+        "and draws the kept side in true perspective: the cut filled (poché) and true to scale at 1:scaleDenominator, farther geometry smaller,",
+        "lines perpendicular to the cut converging at the eye's point on it. Minimal body: {projectId, sourceStageRef or modelSource,",
+        "section: {line: [[x1, y1], [x2, y2]], keep: 'left'|'right'}}. The line is a plan line with the same plan numbers as the script's plan points",
+        "(the exact STEP's X/Y in its unit, Z up); keep is the side kept walking from the first point to the second; the eye stands on the other side.",
+        "The default camera looks straight through the cut from 1.6 m above the lowest cut point, fitting the cut's width in 55 degrees.",
+        "Optional: camera {eyeHeight, fovDeg} or {eye, target, up?, fovDeg?} (the target centres the frame; to move only the vanishing point,",
+        "move the eye and keep the target at the cut's centre); section {origin, normal} for any plane (normal points toward the eye);",
+        "depth, hiddenObjectIds, scaleDenominator (e.g. 50 for a room) and drawingId. Like elevations it registers the drawing in the documents list",
+        "and returns that document; see it with POST /api/board/export using its runId, assetSha256, revisionRef and pageIndex 0.",
+        "Refusals are named, e.g. SECTION_PLANE_MISSES_MODEL or SECTION_EYE_ON_KEPT_SIDE; correct the plane or camera rather than retrying.",
+        "CUT PLAN: POST /api/drawings/plans makes or rebuilds a retained cut plan from modelSource or sourceStageRef (read its schema). To place entourage",
+        "on a retained plan, send its previousRevisionRef with dressingOperations, one batch applied whole: {op: 'insert', id, object: {id, assetId: 'person-plan'|'tree-plan',",
+        "positionUv: [u, v], size, flipped?, anchorObjectId?}}, {op: 'move', id, positionUv}, {op: 'scale', id, size}, {op: 'flip', id, flipped} or {op: 'delete', id}.",
+        "Positions and sizes are in the source model's length unit; with anchorObjectId, positionUv is an offset from that object's projected centre.",
+        "Each object keeps its id and stays editable on its own; a refused batch writes nothing. Add reason with the user's correction when one asked for it.",
+        "GET /api/drawings/plans/vector?runId=&assetSha256=&revisionRef= reads the plan's SVG, symbols and anchor choices; POST /api/drawings/plans/status",
+        "{runId, assetSha256, revisionRef} says whether it is current and which objects are missing or outside the view; GET /api/drawings/plans/dimensions lists",
+        "the dimensions a plan can place. Drawing revisions never move the design. GET /api/drawings/corrections?projectId=[&drawingId=] reads how",
+        "revisions changed and which repeated corrections the architect may save as a project recipe; only the architect can save one.",
+        "SEE A VIEW: GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image",
+        "with exact source metadata. Read modelSource from the awaited result's artifacts or the candidate's 3dm artifact. Views: front/back/left/right/top/axon",
+        "(axon is isometric). This is a read-only line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
+        "GET /api/drawings/styles and POST /api/drawings/sheets compose a sheet from exact modelSource, styleId and scaleDenominator.",
+        "Top is an orthographic projection, not a cut plan. GET /api/documents?runId=<runId> reads that run's drawings.",
+        'DRAWING PAGE: POST /api/board/export is a read-only native MCP image: body {projectId, pages:[{runId, assetSha256, revisionRef, pageIndex}], format:"png", zip:false, maxEdge:2048}.',
+        "Copy exact source fields from GET /api/documents or the generated drawing result; revisionRef must be explicit (null for sources without a revision),",
+        "pageIndex is zero-based. One clean source page, no annotations, at most 2048 pixels per edge and 4 MiB; use smaller maxEdge if too large. No operationId or awaitSeconds.",
+    ]),
+    "/api/decisions": chr(10).join([
+        "CONTEXT READ: POST /api/intents/context compiles current task facts from projectId, stateDigest, utterance and exact sourceRunId/sourceStageRef; focus is optional.",
+        "Repeat the same source/task/focus with contextRefs for omitted facts or contextOffset for the next reference index page. This reads only and grants no edits; use studio_schema for its full contract.",
+        "For an explicitly selected precedent, add studyEvidence:[{studyId,ledgerRef}] (up to 3 exact revisions) to that context read. It returns the retained prior with conditions and counterevidence, not accepted design truth. Never infer that an older revision is current. If completeness is false or numerical details are needed, GET /api/studies/{studyId}?ledgerRef=<exact-ref> reopens that source; external citation summaries are not verified source text.",
+        "RETAINED FEEDBACK: When the user gives an avoid/keep direction for later work, POST /api/decisions using its studio_schema, exact observed source and narrow stated scope. Save that feedback before continuing; do not turn an ordinary change request or your own judgment into a retained preference.",
+        "The chat fills rawLanguage/messageSource from this actual user turn and sourceKind=agent for your interpretation. Never supply those fields, invent user approval or strengthen a soft preference into a hard rule. The user need not confirm an internal grant; the existing Runtime authorization still applies.",
+        "GET /api/decisions reads retained feedback; GET /api/decisions/{id} reads its history. On the user's revocation request, POST /api/decisions/{id}/revisions with action=revoke and the revisionRef you read as expectedRevisionRef; the chat binds the reason and revisionMessageSource. This tool cannot supersede rules, save lock decisions, accept a Stage or unlock a parameter.",
+        "Before drawing or writing artifact copy, read /api/intents/context with the actual Stage/targets/source; its default reads design and drawing decisions, and copy work selects decisionContext.domain=copy. Consume only scopedDecisions returned for that task, not every record in the decision list. Refresh after saving/revoking feedback or changing scope/source.",
+        "Copy feedback targets copy:style; drawing feedback targets drawing:hatch, drawing:lineweight, drawing:beyond, drawing:entourage or drawing:poche. Only design uses targetRefs. For copy/drawing context omit targetRefs; omit decisionContext.source when no exact document/Board evidence is needed, rather than putting the outer Design source there. Copy evidence is document; drawing evidence is document or Board. The outer ContextPack still binds the current Design source.",
+        "Carry applicable supported design keep refs into the existing edit's keep field and check the execution result. Preserve the actual relation or parameter asked for, not an entire unrelated object. Keep existing parameter locks; unsupported relation protection or hatch controls require explicit defer, not invented enforcement.",
+        "Use each decision once for its relevant effect: preserve/filter for supported hard constraints, a generation preference for soft wording, or defer for unsupported effects. Inspect the next artifact and name any remaining gap; a context entry alone proves no behavior changed.",
+    ]),
+    "/api/board": chr(10).join([
+        "BOARD: GET /api/board reads the Board; PUT /api/board saves it. Board arranges document references; generated drawings are saved by their drawing API.",
+        "GET /api/documents lists registered drawings and pages (?runId=<runId> for one run's); GET /api/document-annotations reads page annotations and",
+        "PUT /api/document-annotations saves them. Use their schemas for exact inputs. For page edits, read existing annotations and use",
+        "baseRevisionSha256 with the exact run/asset/page/drawingRevisionRef.",
+        'DRAWING PAGE: POST /api/board/export is a read-only native MCP image: body {projectId, pages:[{runId, assetSha256, revisionRef, pageIndex}], format:"png", zip:false, maxEdge:2048}.',
+        "Copy exact source fields from GET /api/documents or the generated drawing result; revisionRef must be explicit (null for sources without a revision),",
+        "pageIndex is zero-based. One clean source page, no annotations, at most 2048 pixels per edge and 4 MiB; use smaller maxEdge if too large. No operationId or awaitSeconds.",
+    ]),
+    "/api/exports": chr(10).join([
+        "MODEL CONVERSION: When asked to export/convert a model to 3DM, SKP, GLB or DWG, use POST /api/exports via studio_request. Do not use an export button or write a converter in the shell.",
+        "Body: {targetFormat: 'glb', attachmentId: '<exact chat attachment id>'} for an upload, or {targetFormat: 'glb', projectRevision: {runId, stateDigest, assetSha256}} for the exact current project model.",
+        "Read current project state/artifacts first; never substitute an upload for project state. If 'this model' could mean the project or an upload, or multiple uploads match, ask which model. Do not guess by filename or newest file.",
+        "Read GET /api/exports/capabilities for supported routes. Submission returns jobId/statusPath; poll that statusPath with GET, report queued/running progress, and only on succeeded return its downloadUrl as a Markdown link with warnings.",
+        "On failed/interrupted report failureReason, never invent a file link. For SKP/DWG without an available verified executor, say 当前没有配置可用的执行器; never describe the format as permanently unsupported.",
+        "Installed software does not establish conversion capability. The backend chooses providers; users do not need to choose software. Same-format validated delivery is not a conversion. Do not use awaitSeconds on exports.",
+    ]),
+}
+
+
+# Paths whose work one of those guides explains, under another prefix.
+_GUIDE_OF = {"/api/documents": "/api/board", "/api/document-annotations": "/api/board",
+             "/api/intents": "/api/decisions", "/api/studies": "/api/decisions"}
+
+
+def _guide(prefix: str) -> str | None:
+    """The domain guide a discovery prefix falls within, if any."""
+    root = "/" + "/".join(prefix.strip("/").split("/")[:2])
+    return _GUIDES.get(_GUIDE_OF.get(root, root))
 
 
 _PRESENTATION_DOCUMENTS = (
@@ -3857,123 +4175,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Refusals spend nothing: VISUAL_BUDGET_EXHAUSTED, VISUAL_REVIEW_NOT_WARRANTED, VISUAL_REVIEW_OUT_OF_ORDER,",
         "VISUAL_SOURCE_MISMATCH (read the current exact source), VISUAL_PROVIDER_UNAVAILABLE. VISUAL_PROVIDER_FAILED spends the review.",
     ])
-    # One construction script makes and changes geometry (#419). Its vocabulary
-    # and one example are stated here, so modelling needs no discovery round
-    # trip; meaning, capabilities and domains follow in their own stages, and
-    # no runtime realisation is named. The agent chooses observation points.
-    modelling = chr(10).join([
-        "Use the bound project's Studio API in metres; plan points are (x, z) and 3D points (x, y, z), with Y up.",
-        "Design tools prepare the project's runtime themselves; nobody needs to open a page first.",
-        "",
-        "CURRENT MODEL: GET /api/construction/model gives stateDigest, levels, parameters and one entry per geometry id:",
-        "form, bounds, cuts, cutBy, facets and the capabilities they unlock. Without ?run=<candidateId> it reads the default",
-        "source; with it, send sourceRunId on writes. Keep sourceStageRef when provided. An empty project first prepares a modelling base with POST /api/project/modeling {projectId}.",
-        "",
-        "MAKE AND CHANGE GEOMETRY: POST /api/proposals/construction {stateDigest, script, summary?, sourceRunId?, sourceProposalId?, keep?}.",
-        "The script is a small Python-like program; one script makes and changes many shapes:",
-        "  base = rect(20, 0, 12, 8)                       # plan rectangle: corner (x, z), 12 along x, 8 along z",
-        "  mass = extrude(base, 3.2)                       # push-pull up from the ground level",
-        "  upper = extrude(rect(20, 0, 10, 8), 3, at=top(mass))   # stands on mass and follows its height",
-        "  for i in range(4):",
-        "      w = extrude(rect(21.5 + 3 * i, 0, 1.2, 0.3), 1.5, at=0.9)",
-        "      cut(mass, w)                                # removes w from mass; w stays, hidden, under its own id",
-        "Verbs: rect polygon circle offset | plane front side | extrude face path loft section | move rotate scale mirror copy array |",
-        "pushpull set_height set_base | cut uncut | level top param bounds | name get delete | print.",
-        "Plain Python works: variables, arithmetic, for/if/def, lists, range, pi/sin/cos/sqrt.",
-        "A variable is the shape's id (w in a loop gives w-1..w-4); name(obj, \"id\") sets one; get(\"id\") edits",
-        "existing geometry; running a script again with the same names updates the same shapes, it never duplicates them.",
-        "A refused script saves nothing and names its line. GET /api/construction lists every verb and argument.",
-        "Never state what a part is while making it; geometry needs no classification.",
-        "",
-        "MEANING: only when the user says what a part is, POST /api/proposals/facets",
-        "{stateDigest, targets: [{id, set: {\"architectural.role\": \"wall\"}}]}. Facets never change geometry or ids.",
-        "Keys: architectural.role, architectural.enclosure, structural.role, material.name, fabrication.method.",
-        "CAPABILITIES appear per entity in the model view once its facets allow them, e.g. hosted-opening",
-        "(a door or window with its frame and leaf) on a wall: POST /api/proposals/hosted-opening.",
-        "DOMAINS: GET /api/domains/{structure|envelope}/readiness says what a domain reads or which facets to add; it never guesses.",
-        "PARAMETERS: POST /api/proposals {stateDigest, semanticEdit: {summary, parameters: [...]}} defines linked dimensions;",
-        "a script binds one with param(\"key\") as a height or an at offset. semanticEdit never carries geometry.",
-        "STAGES: explore with scripts and candidates; admission/Continue promotes; meaning, capabilities and domains come after.",
-        "",
-        "For an existing numeric control, GET /api/capabilities/candidate.modify_existing?target=<id>&run=<candidateId> (elementId is optional)",
-        "returns its current values, units and a ready request; edit that body and POST /api/capabilities/{capabilityId}/run.",
-        "GET /api/capabilities?goal=<user request> helps discover operations; an index miss does not exclude the other listed APIs.",
-        "keep is a list of protected refs, e.g. ['entity:mass']. Use the actual target and source, not a guessed field.",
-        "Parameter formulas belong in parameters[].expr with inputs, and value must match the expression; revise upstream controls for linked edits.",
-        "",
-        "COMPOSE / OBSERVE / CONTINUE:",
-        "Chain known edits in memory by passing the last proposalId as sourceProposalId; keep stateDigest at the chain's original baseStateDigest.",
-        "sourceRunId/sourceStageRef are inherited. GET /api/proposals/{id} reads accumulated changes; inspect conflicts before executing.",
-        "MODEL CONVERSION: When asked to export/convert a model to 3DM, SKP, GLB or DWG, use POST /api/exports via studio_request. Do not use an export button or write a converter in the shell. Body: {targetFormat: 'glb', attachmentId: '<exact chat attachment id>'} for an upload, or {targetFormat: 'glb', projectRevision: {runId, stateDigest, assetSha256}} for the exact current project model. Read current project state/artifacts first; never substitute an upload for project state. If 'this model' could mean the project or an upload, or multiple uploads match, ask which model. Do not guess by filename or newest file. Read GET /api/exports/capabilities for supported routes. Submission returns jobId/statusPath; poll that statusPath with GET, report queued/running progress, and only on succeeded return its downloadUrl as a Markdown link with warnings. On failed/interrupted report failureReason, never invent a file link. For SKP/DWG without an available verified executor, say 当前没有配置可用的执行器; never describe the format as permanently unsupported. Installed software does not establish conversion capability. The backend chooses providers; users do not need to choose software. Same-format validated delivery is not a conversion. Do not use awaitSeconds on exports.",
-        "At a useful design decision point, POST /api/proposals/{id}/candidate with no body and awaitSeconds: 60 beside method/path.",
-        "This materializes a reversible, unaccepted candidate. Multiple observation and revision cycles can occur within the same Stage.",
-        "After observing it, start further changes from GET /api/construction/model?run=<candidateId>, using that stateDigest and sourceRunId;",
-        "sourceProposalId continues an unexecuted chain, not a newly selected candidate base.",
-        "The numeric capability run also accepts awaitSeconds: 60 with sourceRunId in its body. Waiting posts the change once.",
-        "With awaitSeconds, candidate/artifacts/objects and compare, when present, are completed readbacks; reuse them for observation.",
-        "Use an available artifact's non-null modelSource unchanged for visual_review and model-view. A missing source cannot be reconstructed from hashes.",
-        "Follow next for missing reads and retain any source/state/context checks the task still requires.",
-        "On timeout, follow the returned job/candidate reads; never send the request again merely to wait.",
-        "GET /api/candidates/{id} lists retained objects: Z-up bbox [x, z, y], lengthUnit, upAxis or objectReadbackError.",
-        "GET /api/candidates/{id}/compare?against=<runId> compares with the required source run. The first candidate has no prior run to compare.",
-        "Object bounds and successful checks are not visual inspection or proof of the user's spatial intent; for a spatial or formal task, check the result with visual_review and report gaps.",
-        "For invalid input, use the named schema to correct it. For stale state/conflicts, refresh the exact source and reconcile the change while preserving keep conditions.",
-        "A refused request made no model. Distinguish unsupported operations from correctable inputs; report unresolved limits without inventing success.",
-        "",
-        "ADMIT: when a model revision loop is complete, POST /api/admissions once: {task: {kind: 'hub-chat'}, study: {id, label, baseRunId}",
-        "(id an ASCII slug) for several alternatives built from one run, results: [{runId, outcome: 'admitted', supersedes: [attempt runIds it replaced], label}]}.",
-        "outcome 'rejected' only where the user's words reject that result; add feedbackQuote with their exact passage.",
-        "The chat fills messageSource and rawLanguage; never supply them. A refusal names each failing clause per run; an identical",
-        "retry returns the same record. GET /api/admissions?include=rejected lists what is already admitted or tried.",
-        "CONTINUE: only when the user's words ask to continue from a result, PUT /api/working-draft {runId, baseRevisionSha256}",
-        "with revisionSha256 from GET /api/working-source, and feedbackQuote for their exact passage. It moves the Working Head",
-        "and admits nothing; generating a result never moves it.",
-        "",
-        "OTHER READS: GET /api/project, /api/state/volumes, /api/program, /api/options, /api/board,",
-        "/api/artifacts, /api/documents, /api/document-annotations, /api/jobs/{id}.",
-        "OTHER ACTIONS: POST /api/state/closure, /api/program, /api/options, /api/options/{id}/select, /api/candidates/combine;",
-        "CONTEXT READ: POST /api/intents/context compiles current task facts from projectId, stateDigest, utterance and exact sourceRunId/sourceStageRef; focus is optional.",
-        "Repeat the same source/task/focus with contextRefs for omitted facts or contextOffset for the next reference index page. This reads only and grants no edits; use studio_schema for its full contract.",
-        "For an explicitly selected precedent, add studyEvidence:[{studyId,ledgerRef}] (up to 3 exact revisions) to that context read. It returns the retained prior with conditions and counterevidence, not accepted design truth. Never infer that an older revision is current. If completeness is false or numerical details are needed, GET /api/studies/{studyId}?ledgerRef=<exact-ref> reopens that source; external citation summaries are not verified source text.",
-        "RETAINED FEEDBACK: When the user gives an avoid/keep direction for later work, POST /api/decisions using its studio_schema, exact observed source and narrow stated scope. Save that feedback before continuing; do not turn an ordinary change request or your own judgment into a retained preference.",
-        "The chat fills rawLanguage/messageSource from this actual user turn and sourceKind=agent for your interpretation. Never supply those fields, invent user approval or strengthen a soft preference into a hard rule. The user need not confirm an internal grant; the existing Runtime authorization still applies.",
-        "GET /api/decisions reads retained feedback; GET /api/decisions/{id} reads its history. On the user's revocation request, POST /api/decisions/{id}/revisions with action=revoke and the revisionRef you read as expectedRevisionRef; the chat binds the reason and revisionMessageSource. This tool cannot supersede rules, save lock decisions, accept a Stage or unlock a parameter.",
-        "Before drawing or writing artifact copy, read /api/intents/context with the actual Stage/targets/source; its default reads design and drawing decisions, and copy work selects decisionContext.domain=copy. Consume only scopedDecisions returned for that task, not every record in the decision list. Refresh after saving/revoking feedback or changing scope/source.",
-        "Copy feedback targets copy:style; drawing feedback targets drawing:hatch, drawing:lineweight, drawing:beyond, drawing:entourage or drawing:poche. Only design uses targetRefs. For copy/drawing context omit targetRefs; omit decisionContext.source when no exact document/Board evidence is needed, rather than putting the outer Design source there. Copy evidence is document; drawing evidence is document or Board. The outer ContextPack still binds the current Design source.",
-        "Carry applicable supported design keep refs into the existing edit's keep field and check the execution result. Preserve the actual relation or parameter asked for, not an entire unrelated object. Keep existing parameter locks; unsupported relation protection or hatch controls require explicit defer, not invented enforcement.",
-        "Use each decision once for its relevant effect: preserve/filter for supported hard constraints, a generation preference for soft wording, or defer for unsupported effects. Inspect the next artifact and name any remaining gap; a context entry alone proves no behavior changed.",
-        "PUT /api/board, /api/document-annotations. Use their schemas for exact inputs.",
-        "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list; drawing-only work admits nothing.",
-        "SECTION PERSPECTIVE (剖透视): POST /api/drawings/section-perspectives cuts the exact model with a section plane, removes the side the eye is on,",
-        "and draws the kept side in true perspective: the cut filled (poché) and true to scale at 1:scaleDenominator, farther geometry smaller,",
-        "lines perpendicular to the cut converging at the eye's point on it. Minimal body: {projectId, sourceStageRef or modelSource,",
-        "section: {line: [[x1, y1], [x2, y2]], keep: 'left'|'right'}}. The line is a plan line with the same plan numbers as the script's plan points",
-        "(the exact STEP's X/Y in its unit, Z up); keep is the side kept walking from the first point to the second; the eye stands on the other side.",
-        "The default camera looks straight through the cut from 1.6 m above the lowest cut point, fitting the cut's width in 55 degrees.",
-        "Optional: camera {eyeHeight, fovDeg} or {eye, target, up?, fovDeg?} (the target centres the frame; to move only the vanishing point,",
-        "move the eye and keep the target at the cut's centre); section {origin, normal} for any plane (normal points toward the eye);",
-        "depth, hiddenObjectIds, scaleDenominator (e.g. 50 for a room) and drawingId. Like elevations it registers the drawing in the documents list",
-        "and returns that document; see it with POST /api/board/export using its runId, assetSha256, revisionRef and pageIndex 0.",
-        "Refusals are named, e.g. SECTION_PLANE_MISSES_MODEL or SECTION_EYE_ON_KEPT_SIDE; correct the plane or camera rather than retrying.",
-        "CUT PLAN: POST /api/drawings/plans makes or rebuilds a retained cut plan from modelSource or sourceStageRef (read its schema). To place entourage",
-        "on a retained plan, send its previousRevisionRef with dressingOperations, one batch applied whole: {op: 'insert', id, object: {id, assetId: 'person-plan'|'tree-plan',",
-        "positionUv: [u, v], size, flipped?, anchorObjectId?}}, {op: 'move', id, positionUv}, {op: 'scale', id, size}, {op: 'flip', id, flipped} or {op: 'delete', id}.",
-        "Positions and sizes are in the source model's length unit; with anchorObjectId, positionUv is an offset from that object's projected centre.",
-        "Each object keeps its id and stays editable on its own; a refused batch writes nothing. Add reason with the user's correction when one asked for it.",
-        "GET /api/drawings/plans/vector?runId=&assetSha256=&revisionRef= reads the plan's SVG, symbols and anchor choices; POST /api/drawings/plans/status",
-        "{runId, assetSha256, revisionRef} says whether it is current and which objects are missing or outside the view; GET /api/drawings/plans/dimensions lists",
-        "the dimensions a plan can place. Drawing revisions never move the design. GET /api/drawings/corrections?projectId=[&drawingId=] reads how",
-        "revisions changed and which repeated corrections the architect may save as a project recipe; only the architect can save one.",
-        "SEE A VIEW: when the user asks to see a view, GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image",
-        "with exact source metadata.",
-        "Read modelSource from the awaited result's artifacts or the candidate's 3dm artifact. Views: front/back/left/right/top/axon (axon is isometric). This is a read-only line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
-        "GET /api/drawings/styles and POST /api/drawings/sheets compose a sheet from exact modelSource, styleId and scaleDenominator.",
-        "Top is an orthographic projection, not a cut plan. GET /api/documents?runId=<runId> reads that run's drawings.",
-        'DRAWING PAGE: POST /api/board/export is a read-only native MCP image: body {projectId, pages:[{runId, assetSha256, revisionRef, pageIndex}], format:"png", zip:false, maxEdge:2048}. Copy exact source fields from GET /api/documents or the generated drawing result; revisionRef must be explicit (null for sources without a revision), pageIndex is zero-based. One clean source page, no annotations, at most 2048 pixels per edge and 4 MiB; use smaller maxEdge if too large. No operationId or awaitSeconds.',
-        "For page edits, read existing annotations and use baseRevisionSha256 with the exact run/asset/page/drawingRevisionRef.",
-        "Board arranges document references; generated drawings are saved by their drawing API.",
-        "Stage acceptance, formal issue and printer upload are separate from this tool's reversible design actions.",
-    ])
+    modelling = _MODELLING
     presentation_instructions = _PRESENTATION_INSTRUCTIONS if external else _NATIVE_PRESENTATION_INSTRUCTIONS
     tools = [
         {"name": "chat_present", "description": presentation_instructions, "inputSchema": {
@@ -3984,12 +4186,14 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
                            if key not in {"projectId", "sourceSessionId"}},
             "required": ["turnId", "messageId", "kind"] if external else ["messageId", "kind"],
         }},
-        {"name": "studio_schema", "description": "Read the exact schema of an allowed Studio action: give its method/path. A write answers "
-         "its request schema and status codes (its answer arrives when you send it); a read answers its response schema. "
-         "Use it to discover inputs, clarify a field or correct a request. Paths may contain template segments, "
-         "such as /api/proposals/{id}/candidate. Omit path to discover current chat actions; optional pathPrefix "
-         "(such as /api/drawings) narrows the list. Omit method to include both reads and writes; follow next when paged. "
-         "The list comes from the bound Runtime and chat allow-list.", "inputSchema": schema_input},
+        {"name": "studio_schema", "description": "Discover current chat actions by omitting path; optional pathPrefix (such as /api/drawings) narrows the list "
+         "and, for drawings, decisions, Board or exports, also answers that domain's guide. Omit method to include both reads and writes; "
+         "follow next when paged. The list comes from the bound Runtime and chat allow-list. "
+         "With an exact method/path, read the request inputs of that allowed Studio action: query parameters, body fields, enums and bounds. "
+         "Responses are not described; the call itself answers with its result. "
+         "Use it to clarify a field or correct a request; the bodies studio_request's description gives need no schema read. "
+         "Paths may contain template segments, such as /api/proposals/{id}/candidate.",
+         "inputSchema": schema_input},
         {"name": "studio_request", "description": modelling, "inputSchema": request_schema},
         {"name": "visual_review", "description": reviewing, "inputSchema": review_schema},
         {"name": "fab_request", "description": "Use MonkeyFab GET /api/fab/profiles or POST /api/fab/send for dry-run validation only. This tool never uploads or starts printing.", "inputSchema": input_schema},

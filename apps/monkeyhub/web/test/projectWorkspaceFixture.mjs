@@ -13,6 +13,13 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
   // #285: projects whose runtime has a Design Tree, by project id: { stages, edits }, the
   // runs accepted as S0, S1, … in order, and the runs Current made after the last one.
   const designTrees = new Map();
+  // #450: how a runtime answers /api/state for particular runs, by project id and run id:
+  // { baseVersion, baseSha256, matchesReferenceReceipt, stateDigest }. Each named run also
+  // lists a model. A run based on an older published version is still a verified design.
+  const runStates = new Map();
+  // #450: projects whose Working Head is their working draft's saved run while one is saved,
+  // as the runtime's working position is; a project not named here keeps its fixed head.
+  const headsFollowDraft = new Set();
   // #363: the views a runtime answers conditionally, each tagged by the project's whole retained
   // state, the path and the query, as transport/conditional.py tags them by the project's read token.
   const conditional = new Set(["/api/design-history", "/api/worktrees", "/api/artifacts", "/api/documents",
@@ -136,16 +143,19 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
         referenceRun: { runId: current.home, baseVersion: 0, baseSha256: current.published.stateSha256 }, intentProvider: "codex", intentModel: "fixture" });
       if (name === "/api/state") {
         const runId = url.searchParams.get("run") ?? current.home;
+        const state = runStates.get(projectId)?.get(runId) ?? {};
         // The state of the Stage asked for, as a runtime answers it; no Stage otherwise.
         return json({ projectId, published: current.published, sourceStageRef: url.searchParams.get("sourceStageRef"),
-          referenceRun: { runId, baseVersion: 0, baseSha256: current.published.stateSha256 }, referenceRunSource: "fixture",
-          referenceReceipt: null, matchesReferenceReceipt: true, recordSource: "fixture", recordDigest: digest(`record:${projectId}:${runId}`),
-          stateDigest: stateDigestOf(projectId, runId), activePhase: "stage-2", counts: { entities: 0, components: 0, parameters: 0, relations: 0, obligations: 0, dependencyEdges: 0 },
+          referenceRun: { runId, baseVersion: state.baseVersion ?? current.published.version, baseSha256: state.baseSha256 ?? current.published.stateSha256 },
+          referenceRunSource: "fixture", referenceReceipt: null, matchesReferenceReceipt: state.matchesReferenceReceipt ?? true,
+          recordSource: "fixture", recordDigest: digest(`record:${projectId}:${runId}`),
+          stateDigest: "stateDigest" in state ? state.stateDigest : stateDigestOf(projectId, runId), activePhase: "stage-2", counts: { entities: 0, components: 0, parameters: 0, relations: 0, obligations: 0, dependencyEdges: 0 },
           componentTree: [], componentTreeError: null, elements: [], parameters: [], dependencyEdges: [], honesty: [], catalog: {
             components: [], elements: [], objects: [], coverage: { objects: 0, bound: 0, unbound: 0, ambiguous: 0, unknownComponent: 0 }, inspectionRun: runId, honesty: [] } });
       }
       if (name === "/api/artifacts") {
         for (const run of designTrees.get(projectId)?.stages ?? []) current.artifact(run);
+        for (const run of runStates.get(projectId)?.keys() ?? []) current.artifact(run);
         for (const session of sessions.filter((row) => row.projectId === projectId)) for (const message of session.messages) {
           if (message.candidateId) current.artifact(message.candidateId);
         }
@@ -189,6 +199,9 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
         // A Design Tree's Current continues its last Stage through the runs it made after it.
         ...(tree ? { sourceStageRef: `project://${projectId}/runs/${tree.stages.at(-1)}/review/design-stage.json`, branchId: "main",
           origin: "working-position", lineage: [current.home, ...tree.edits, tree.stages.at(-1)] } : {}) };
+      const saved = headsFollowDraft.has(projectId) ? workingDrafts.get(projectId)?.current?.runId ?? null : null;
+      if (saved) Object.assign(head, { runId: saved, stateDigest: stateDigestOf(projectId, saved), recordDigest: digest(`record:${projectId}:${saved}`),
+        sourceStageRef: null, branchId: null, accepted: false, origin: "working-position", modelSource: current.artifact(saved).modelSource, lineage: [saved] });
       if (name === "/api/working-source") return json({ projectId, workspace: url.searchParams.get("workspace") ?? "modeling", policy: "live",
         revisionSha256: null, head, compatible: false, source: null, stageRef: null, reason: "This fixture has no exact STEP to draw.", warnings: [] });
       if (name === "/api/worktrees") {
@@ -243,5 +256,5 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
     }
     throw new Error(`Unexpected project request: ${method} ${projectId} ${name}`);
   }
-  return { handle, requests, notModified, projects, workingDrafts, designTrees, studioEvents, stateDigestOf, indexes, commit, rebuild };
+  return { handle, requests, notModified, projects, workingDrafts, designTrees, runStates, headsFollowDraft, studioEvents, stateDigestOf, indexes, commit, rebuild };
 }

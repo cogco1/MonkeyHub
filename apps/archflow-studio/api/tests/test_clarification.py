@@ -240,6 +240,18 @@ class ComponentWithNoElement(PorticoTestCase):
         )
         self.assertTrue(draft["dependencyRequirements"])
 
+    def test_the_draft_and_the_options_carry_the_declared_unit(self) -> None:
+        # #404 item 11: the unit comes from the one declared-unit reading, not a hard-coded None.
+        _, payload = self.say("set height to 2.0", targetComponentId=COLUMNS)
+        self.assertEqual(payload["authoredControlDraft"]["unit"], "m")
+        projection = self.projection()
+        abutment = next(element for element in projection.elements if element.element_id == ABUTMENT)
+        option = clarification._option(abutment, "height", projection.record)
+        self.assertEqual((option.key, option.unit), ("height", "m"))
+        # A field that declares no unit is not given one.
+        legacy = replace(abutment, producer="retained-legacy", bindings={})
+        self.assertIsNone(clarification._option(legacy, "height", projection.record).unit)
+
     def test_the_resolver_answers_before_the_agent_is_asked(self) -> None:
         """A component with no control never reaches a model at all.
 

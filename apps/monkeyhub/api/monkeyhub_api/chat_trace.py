@@ -91,6 +91,10 @@ class HubTurnObserver:
         self.visible = False
         self.context_finished = False
         self.usage_ids = set()
+        # Claude messages seen but not yet counted, by native id, in arrival
+        # order: their usage is final only at the stream's message_stop.
+        self.pending_usage = {}
+        self.streaming_id = None
         self.permissions = set()
         self._start(self.root_id, "hub_turn", parent=None, timing_scope="agent_turn")
         self._start(f"{self.root_id}:context", "context_build")
@@ -222,13 +226,66 @@ class HubTurnObserver:
 
     @_optional
     def claude_usage(self, message):
-        """One finalized assistant message, deduplicated by native message id."""
+        """One assistant message's usage, counted once by native message id.
+
+        With ``--include-partial-messages`` the CLI sends an ``assistant``
+        event as each content block completes, carrying the usage of
+        ``message_start``: output_tokens is then the first few tokens, not the
+        message's. The final counts arrive in the stream's ``message_delta``
+        (see ``claude_stream``), so a message is held, merged and counted at
+        its ``message_stop``, or at the turn's end when no stream said more.
+        """
         if not isinstance(message, dict) or not isinstance(message.get("usage"), dict):
             return
         identifier = message.get("id")
         if not isinstance(identifier, str) or not re.fullmatch(r"[\w-]{1,160}", identifier) or identifier in self.usage_ids:
             return
-        usage = message["usage"]
+        held = self.pending_usage.setdefault(identifier, {
+            "usage": {}, "model": None, "parent": self.round_id or self.root_id})
+        self._merge_usage(held["usage"], message["usage"])
+        if isinstance(message.get("model"), str):
+            held["model"] = message["model"]
+
+    @staticmethod
+    def _merge_usage(held, usage):
+        # Every count here is cumulative within one message, so the larger of
+        # two reports is the later one; a missing or invalid count keeps what was held.
+        for name, value in usage.items():
+            if name in {"input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens"}:
+                if type(value) is int and value >= 0 and (type(held.get(name)) is not int or value > held[name]):
+                    held[name] = value
+            elif name == "cache_creation" and isinstance(value, dict):
+                bucket = held.setdefault("cache_creation", {})
+                for key, count in value.items():
+                    if type(count) is int and count >= 0 and (type(bucket.get(key)) is not int or count > bucket[key]):
+                        bucket[key] = count
+            elif value is not None:
+                held[name] = value
+
+    @_optional
+    def claude_stream(self, event):
+        """One ``stream_event``: where a Claude message's final usage is said."""
+        if not isinstance(event, dict):
+            return
+        kind = event.get("type")
+        if kind == "message_start":
+            message = event.get("message")
+            if isinstance(message, dict) and isinstance(message.get("id"), str):
+                self.streaming_id = message["id"]
+                self.claude_usage(message)
+        elif kind == "message_delta" and isinstance(event.get("usage"), dict):
+            held = self.pending_usage.get(self.streaming_id)
+            if held is not None:
+                self._merge_usage(held["usage"], event["usage"])
+        elif kind == "message_stop" and self.streaming_id is not None:
+            self._count_usage(self.streaming_id)
+            self.streaming_id = None
+
+    def _count_usage(self, identifier):
+        held = self.pending_usage.pop(identifier, None)
+        if held is None or identifier in self.usage_ids:
+            return
+        usage = held["usage"]
         def count(name):
             value = usage.get(name)
             return value if type(value) is int and value >= 0 else None
@@ -250,13 +307,16 @@ class HubTurnObserver:
         # The connection's plan, withheld when the message reports another tier.
         plan = billing_plan(self.provider, usage)
         self.spans[event_id] = dict(phase="model_usage", started_at=_now(), clock=perf_counter(),
-                                   timing_scope="unknown", parent_event_id=self.round_id or self.root_id,
+                                   timing_scope="unknown", parent_event_id=held["parent"],
                                    details={} if plan is None else {"billing_plan": plan})
-        if isinstance(message.get("model"), str):
-            self.model = message["model"]
+        if held["model"]:
+            self.model = held["model"]
         self._emit(event_id, status="succeeded", tokens=tokens, model_call=True)
 
     def finish(self, status):
+        # A message whose stream never reached message_stop is still a call made.
+        for identifier in list(self.pending_usage):
+            self._count_usage(identifier)
         if not self.context_finished:
             self._emit(f"{self.root_id}:context", status=status)
         self._end_round(status)

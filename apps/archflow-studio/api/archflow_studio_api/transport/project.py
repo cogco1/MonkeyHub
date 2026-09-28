@@ -48,6 +48,41 @@ class ModelingInitializeDto(BaseModel):
     initialized: bool = Field(description="Initial modeling inputs were installed; no geometry, run or issued version was created.")
 
 
+class ModelingLevelDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    level_id: str = Field(alias="levelId")
+    elevation: float
+
+
+class ModelingComponentDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    component_id: str = Field(alias="componentId")
+    parent_component_id: str | None = Field(alias="parentComponentId")
+
+
+class ModelingBaseDto(ModelingInitializeDto):
+    """``POST /api/project/modeling?base=true``: the prepared action plus the base a first proposal writes against.
+
+    The same default state ``GET /api/state`` would answer right after, cut to
+    what a first sketch needs, so preparing and reading are one request.
+    """
+
+    state_digest: str | None = Field(
+        alias="stateDigest",
+        description="The default state's stateDigest; send it as the first proposal's stateDigest. "
+        "Null when the kernel refused to view the record (read GET /api/state for why).")
+    source_stage_ref: str | None = Field(
+        alias="sourceStageRef", description="Send it unchanged on writes when not null.")
+    levels: list[ModelingLevelDto] = Field(description="Levels a baseLevel can name, elevations in metres.")
+    components: list[ModelingComponentDto] | None = Field(
+        description="Existing components; a new component names one as parentComponentId. "
+        "Null when the component tree could not be resolved.")
+    element_count: int = Field(
+        alias="elementCount",
+        description="Elements already in the default state; 0 for a project with no model yet. "
+        "Before editing existing elements, read GET /api/state?authored=true.")
+
+
 class ReferenceRunDto(BaseModel):
     """The run a projection answers for, with the base it was created against."""
 

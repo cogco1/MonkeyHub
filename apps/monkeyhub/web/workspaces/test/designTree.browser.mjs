@@ -680,7 +680,7 @@ try {
   let card = await clickNode("candidate:run-massing-d");
   assert.equal(await card.locator("strong").innerText(), "D · Terraced wedge");
   assert.match(await card.innerText(), /Option · Massing Study/);
-  assert.match(await card.innerText(), /Admitted by\s*Arch Agent/);
+  assert.match(await card.innerText(), /Admitted by\s*Agent \(on your words in chat\)/);
   assert.equal(await card.getByRole("button", { name: "View", exact: true }).isEnabled(), true);
   assert.equal(await card.getByRole("button", { name: /Compare this Study/ }).isDisabled(), true, "Compare is marked for later");
   assert.equal(await card.locator('[data-action="accept"]').count(), 0, "an option cannot be accepted");
