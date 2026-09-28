@@ -3525,8 +3525,19 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "A tool cannot select another project.")
     if name == "studio_schema":
         document = _request_json(base, "/openapi.json")
-        template = next((route for route in document["paths"] if re.fullmatch(re.sub(r"\{[^}]+\}", r"[^/]+", route), parsed.path)), None)
-        operation = document["paths"].get(template, {}).get(method.lower())
+        # A literal path and a templated one can both match the same request
+        # (e.g. /api/proposals/{proposal_id} and /api/proposals/construction);
+        # the literal route wins, then the template with the fewest {…}
+        # segments, and only the first of those tied that actually has the
+        # requested method — a template earlier in the document must not
+        # shadow a literal route it merely matches but does not serve (#419).
+        matches = sorted(
+            (route for route in document["paths"]
+             if re.fullmatch(re.sub(r"\{[^}]+\}", r"[^/]+", route), parsed.path)),
+            key=lambda route: len(re.findall(r"\{[^}]+\}", route)),
+        )
+        template = next((route for route in matches if method.lower() in document["paths"][route]), None)
+        operation = document["paths"][template][method.lower()] if template is not None else None
         if operation is None:
             raise HubFailure(422, "CHAT_ACTION_UNSUPPORTED", "The running Runtime has no matching action. Use studio_schema with no path to list this version's available actions.")
         if method == "POST" and parsed.path == "/api/exports":

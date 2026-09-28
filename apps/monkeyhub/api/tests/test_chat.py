@@ -1932,6 +1932,32 @@ class ChatTests(unittest.TestCase):
                                         {"method": method, "path": template})
                 self.assertEqual((schema["method"], schema["path"]), (method, template))
 
+    def test_studio_schema_finds_literal_routes_before_templated_ones(self):
+        """A templated route listed earlier in the OpenAPI document must not shadow a literal
+        route that also matches it (#419): /api/proposals/{proposal_id} (GET only) must not hide
+        the POST-only /api/proposals/construction and /api/proposals/facets literal routes."""
+
+        session = self.create()
+        document = {"paths": {
+            "/api/proposals/{proposal_id}": {"get": {"summary": "Read a proposal"}},
+            "/api/proposals/construction": {"post": {"summary": "Run a construction script"}},
+            "/api/proposals/facets": {"post": {"summary": "Add meaning"}},
+        }, "components": {"schemas": {}}}
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(document))):
+            for path in ("/api/proposals/construction", "/api/proposals/facets"):
+                with self.subTest(path=path):
+                    answer = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
+                                            {"method": "POST", "path": path})
+                    self.assertEqual(answer["path"], path)
+                    self.assertEqual(answer["operation"], document["paths"][path]["post"])
+            # A concrete id still resolves through the templated route: nothing
+            # about preferring literal matches may break normal template lookup.
+            schema = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
+                                    {"method": "GET", "path": "/api/proposals/abc123"})
+            self.assertEqual(schema["path"], "/api/proposals/{proposal_id}")
+            self.assertEqual(schema["operation"], document["paths"]["/api/proposals/{proposal_id}"]["get"])
+
     def test_construction_proposals_answer_without_the_rows_they_generated(self):
         """Like a semantic edit, a script's proposal comes back without its edits and operator; its report stays."""
 
