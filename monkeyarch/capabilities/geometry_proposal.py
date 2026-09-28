@@ -42,6 +42,7 @@ from monkeyarch.compilers.geometry import (
     GeometryIssueCode,
     compile_geometry_program,
 )
+from monkeyarch.capabilities.opening_solver import INTERFACE_INSIDE_OUTSIDE
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.spatial import DesignComponent, SpatialOptionProposal
@@ -2790,7 +2791,13 @@ def _validate_semantic_coverage(
     used_interface_refs = {
         ref for assembly in proposal.assemblies for ref in assembly.interface_refs
     }
-    unavailable = sorted(used_interface_refs - set(available_interface_refs))
+    # The opening solver's own interface (an opening passes through its host,
+    # one face to the other) names no spatial relation, so no record declares
+    # it: a door or window is delivered before the spaces it joins are modelled
+    # (#419 Stage C, D-419-0). Any other interface is a fact the record states.
+    unavailable = sorted(
+        used_interface_refs - set(available_interface_refs) - {INTERFACE_INSIDE_OUTSIDE}
+    )
     if unavailable:
         report(
             "assembly interface_refs are absent from the supplied spatial "

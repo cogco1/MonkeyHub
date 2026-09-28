@@ -939,7 +939,10 @@ class RowShape(Shape):
         return self.bounds(world)[1][1]
 
     def can_carry(self, world: World) -> bool:
-        """Whether its top publishes a level another shape can stand on: the record says so, or its definition does."""
+        """Whether its top publishes a level another shape can stand on: the record says so, or its definition does.
+
+        A block realised as a wall once it means one (#419 Stage C) publishes its top as the block did.
+        """
 
         unchanged = self.existing and not self.geometry_changed and self.base_anchor is None
         if unchanged and world.published_top(self.element_id) is not None:  # type: ignore[arg-type]
@@ -947,7 +950,7 @@ class RowShape(Shape):
         drawing = self.resolved_params.get("work_plane")
         horizontal = drawing is None or (list(drawing.get("normal", ())) == [0.0, 1.0, 0.0]
                                          and float(drawing["xAxis"][1]) == 0 and float(drawing["yAxis"][1]) == 0)
-        return self.producer == "prism" and horizontal and "rectangular_cutouts" not in self.params
+        return self.producer in ("prism", "wall") and horizontal and "rectangular_cutouts" not in self.params
 
 
 def lower_anchor(anchor: Anchor, element_id_of: Callable[[Shape], str]) -> tuple[dict, float | str | None]:

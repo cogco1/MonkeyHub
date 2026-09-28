@@ -11,17 +11,24 @@ words (the layer rule).
 
 ``facets_proposal`` sets or removes meaning on components and changes nothing
 else (D-419-0). ``construction_model`` reads a record back in the same words as
-the script, with what each component's facets unlock.
+the script, with what each component's facets unlock and the doors and windows
+it hosts. ``hosted_opening_proposal`` is the first capability that meaning
+unlocks (Stage C, spec §3.5): a door or a window on a component whose facets
+say ``architectural.role = wall``; a block is realised as a wall in place under
+the same element id, so it keeps its delivered object and its published top.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import re
 from typing import Any, Mapping, NamedTuple, Sequence
 
 from archflow.semantics.facets import FACET_KEYS, suggest_facet_key
-from archflow.state.state_record import apply_state_record_operator, component_facets
+from archflow.state.state_record import Entity, StateRecord, apply_state_record_operator, component_facets
+from monkeyarch.capabilities.element_producers import ElementProducerError, wall_along_line, wall_fields_from_block
+from monkeyarch.capabilities.opening_solver import DoorType, WindowType
 from monkeyarch.construction import ConstructionError, ConstructionResult, compile_construction_script, geometry_view
 
 from ..adapters.seats import SeatsError, load_seat_pack, seats_of
@@ -40,6 +47,7 @@ _UNLOCKED: tuple[tuple[str, str, Mapping[str, Any]], ...] = (
     ("architectural.role", "wall",
      {"id": "hosted-opening", "route": "POST /api/proposals/hosted-opening", "needs": {}}),
 )
+_HOSTED_OPENING = "hosted-opening"
 
 # Realisation names a runtime sentence may use, and the construction words an
 # agent reads instead. An id is never rewritten: a name directly beside a
@@ -89,6 +97,25 @@ class ConstructionProposal(NamedTuple):
 
     proposal: Proposal
     result: ConstructionResult
+
+
+class EnrichmentRequired(StudioError):
+    """409 ``ENRICHMENT_REQUIRED``: a capability asked of geometry whose facets do not unlock it yet.
+
+    The body is ``{code, detail, message, entity, facet, value}``: the facet to
+    add (``POST /api/proposals/facets``) beside the ``{code, detail}`` every
+    Studio refusal has, ``message`` being the same sentence as ``detail``.
+    """
+
+    def __init__(self, entity: str, facet: str, value: str, detail: str) -> None:
+        super().__init__(409, "ENRICHMENT_REQUIRED", detail)
+        self.entity = entity
+        self.facet = facet
+        self.value = value
+
+    def body(self) -> dict[str, object]:
+        return {**super().body(), "message": self.detail, "entity": self.entity, "facet": self.facet,
+                "value": self.value}
 
 
 def modelling_root(binding: ProjectBinding, projection: StateProjection) -> str:
@@ -236,21 +263,104 @@ def capabilities_of(facets: Mapping[str, str]) -> list[dict[str, Any]]:
             for key, value, capability in _UNLOCKED if facets.get(key) == value]
 
 
+def hosted_opening_proposal(
+    projection: StateProjection,
+    host: str,
+    *,
+    kind: str,
+    along: float,
+    width: float,
+    sill: float,
+    head: float,
+    shape: str | None = None,
+    spring_height: float | None = None,
+    family: Mapping[str, Any] | None = None,
+    summary: str | None = None,
+    keep_refs: Sequence[str] = (),
+) -> Proposal:
+    """A door or a window on ``host`` as one proposal (spec §3.5): the capability ``architectural.role = wall`` unlocks.
+
+    ``host`` is a component with one element whose facets unlock
+    ``hosted-opening``; without them the answer is ``EnrichmentRequired`` naming
+    the facet to add. An element already realised as a wall gets the opening
+    appended; a block is realised as a wall in place first
+    (``wall_fields_from_block``: same element id, same solid, same
+    ``obj-<element>`` and ``<element>-top``) or refused ``HOST_NOT_WALL_SHAPED``
+    with the reason. The opening is ``opening-<n>``, n one more than the
+    openings there are, skipping ids in use; a ``family`` becomes the type
+    ``<opening>-type``, checked by constructing it (``FAMILY_INVALID``). The
+    edit goes through the component-edit path every design edit takes; the
+    record's refusal of it (an opening outside the host, above its top, a family
+    that does not fit) answers ``OPENING_INVALID``.
+    """
+
+    element = _opening_host(projection.record, host)
+    fields = dict(element.fields)
+    if fields.get("producer") != "wall":
+        try:
+            fields = wall_fields_from_block(fields, element.entity_id)
+        except ElementProducerError as exc:
+            reason = str(exc).removeprefix(f"{element.entity_id}: ")
+            raise StudioError(422, "HOST_NOT_WALL_SHAPED",
+                              f"{host} cannot take a door or window as it is drawn: {reason}") from exc
+    params = dict(fields.get("params") or {})
+    openings = [dict(opening) for opening in params.get("openings") or ()]
+    types = [dict(item) for item in params.get("types") or ()]
+    taken = {opening.get("opening_id") for opening in openings} | {item.get("type_id") for item in types}
+    number = len(openings) + 1
+    while f"opening-{number}" in taken or f"opening-{number}-type" in taken:
+        number += 1
+    opening_id = f"opening-{number}"
+    opening: dict[str, Any] = {"opening_id": opening_id, "kind": kind, "along": along, "width": width,
+                               "sill": sill, "head": head}
+    if shape is not None and shape != "rectangular":
+        opening["shape"] = shape
+    if spring_height is not None:
+        opening["spring_height"] = spring_height
+    if family is not None:
+        filling = _opening_family(kind, f"{opening_id}-type", family)
+        types.append(filling.to_dict())
+        opening["type_id"] = filling.type_id
+    params["openings"] = [*openings, opening]
+    if types:
+        params["types"] = types
+    said = summary or f"hosted opening: {kind} {opening_id} in {host}"
+    edit = _edit(said, entities=[{"entity_id": element.entity_id, "schema": "Element@1",
+                                  "parent_id": element.parent_id, "fields": {**fields, "params": params}}],
+                 kept=keep_refs)
+    try:
+        return proposal_from(component_edit_proposal(projection, edit, utterance=said, component_id=host,
+                                                     keep_refs=keep_refs))
+    except StudioError as exc:
+        if exc.code == "SEMANTIC_EDIT_INVALID":
+            raise StudioError(422, "OPENING_INVALID", f"{host} cannot take this {kind}: {exc.detail}") from exc
+        raise
+
+
 def construction_model(projection: StateProjection) -> dict[str, Any]:
     """The record in construction terms, keyed as the wire has it.
 
     ``entities`` is one row per component with geometry (``geometry_view``:
     id, form, bounds, cuts, cutBy, hidden, and parts, ``None`` unless it has
-    several) plus its ``facets`` and the ``capabilities`` they unlock.
+    several) plus its ``facets``, the ``capabilities`` they unlock, the
+    ``openings`` a component of one element hosts, and the ``alongLine`` a
+    door's or window's ``along`` is measured on, when it can take one.
     ``levels`` and ``parameters`` are what ``level(id)`` and ``param(key)`` can name.
     """
 
     record = projection.record
     components = {entity.entity_id: entity for entity in record.entities_of("Component@1")}
+    parts_of = _parts_by_component(record)
     entities = []
     for row in geometry_view(record):
         facets = component_facets(components[row["id"]])
-        entities.append({**row, "parts": row.get("parts"), "facets": facets, "capabilities": capabilities_of(facets)})
+        capabilities = capabilities_of(facets)
+        parts = parts_of.get(row["id"], [])
+        element = parts[0] if len(parts) == 1 else None
+        hosts = element is not None and any(capability["id"] == _HOSTED_OPENING for capability in capabilities)
+        entities.append({**row, "parts": row.get("parts"), "facets": facets, "capabilities": capabilities,
+                         "openings": [] if element is None else _openings_of(element),
+                         "alongLine": _along_line_of(element) if hosts else None})
     return {
         "projectId": projection.project_id,
         "stateDigest": projection.state_digest,
@@ -331,3 +441,96 @@ def _facets_invalid(detail: str) -> StudioError:
 
 def _finite(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _parts_by_component(record: StateRecord) -> dict[str, list[Entity]]:
+    """Each component's elements, in record order: those naming it as their component, else as their parent."""
+
+    parts: dict[str, list[Entity]] = {}
+    for element in record.entities_of("Element@1"):
+        parts.setdefault(str(element.fields.get("component_id") or element.parent_id), []).append(element)
+    return parts
+
+
+def _opening_host(record: StateRecord, host: str) -> Entity:
+    """The one element a door or window goes into, once ``host``'s facets unlock ``hosted-opening``.
+
+    Refused by name: an id the record lacks (404 ``ENTITY_UNKNOWN``), anything
+    but a component of one element (422 ``HOST_INVALID``), a component without
+    the facet (409 ``ENRICHMENT_REQUIRED``) and a shape that cuts another (422
+    ``HOST_INVALID``): a cutter is kept hidden inside what it cuts, so an
+    opening in it would open nothing.
+    """
+
+    entity = next((item for item in record.entities if item.entity_id == host), None)
+    if entity is None:
+        raise StudioError(404, "ENTITY_UNKNOWN", f"{host} is not in this project; GET /api/construction/model lists its ids")
+    if entity.schema != "Component@1":
+        owner = entity.fields.get("component_id") or entity.parent_id if entity.schema == "Element@1" else None
+        raise StudioError(422, "HOST_INVALID",
+                          f"{host} is {entity.schema}; a door or window is asked of a geometry id (a component)"
+                          + (f", here {owner}" if owner else ""))
+    parts = _parts_by_component(record).get(host, [])
+    if len(parts) != 1:
+        raise StudioError(422, "HOST_INVALID", f"{host} has " + (
+            "no geometry" if not parts else "several parts (" + ", ".join(part.entity_id for part in parts) + ")")
+            + "; a door or window goes into geometry of one part")
+    facet, value, _ = next(item for item in _UNLOCKED if item[2]["id"] == _HOSTED_OPENING)
+    if component_facets(entity).get(facet) != value:
+        raise EnrichmentRequired(host, facet, value, f"{host} needs {facet} = {value} before it can host a door or "
+                                                     "window; add it with POST /api/proposals/facets")
+    [element] = parts
+    cut = sorted({str(other.fields.get("component_id") or other.parent_id) for other in record.entities_of("Element@1")
+                  if element.entity_id in _voids_named(other)})
+    if cut:
+        raise StudioError(422, "HOST_INVALID", f"{host} cuts {', '.join(cut)}; a door or window goes into geometry "
+                                               "that is delivered, so uncut it first")
+    return element
+
+
+def _voids_named(element: Entity) -> tuple[str, ...]:
+    references = element.fields.get("references")
+    voids = references.get("voids") if isinstance(references, Mapping) else None
+    return tuple(void for void in voids if isinstance(void, str)) if isinstance(voids, (list, tuple)) else ()
+
+
+def _opening_family(kind: str, type_id: str, family: Mapping[str, Any]) -> DoorType | WindowType:
+    """The family that fills a door or window, checked by constructing the type the opening solver fills it with."""
+
+    kind_type = DoorType if kind == "door" else WindowType
+    takes = [item.name for item in dataclasses.fields(kind_type) if item.name != "type_id"]
+    unknown, missing = sorted(set(family) - set(takes)), [name for name in takes if name not in family]
+    if unknown or missing:
+        raise StudioError(422, "FAMILY_INVALID", f"a {kind} family takes {', '.join(takes)}"
+                          + (f"; not {', '.join(unknown)}" if unknown else "")
+                          + (f"; {', '.join(missing)} missing" if missing else ""))
+    try:
+        return kind_type(type_id=type_id, **family)
+    except (TypeError, ValueError) as exc:
+        raise StudioError(422, "FAMILY_INVALID", f"the {kind} family: {exc}") from exc
+
+
+def _openings_of(element: Entity) -> list[dict[str, Any]]:
+    """The doors and windows an element realised as a wall hosts, as asked for; never raises."""
+
+    params = element.fields.get("params")
+    openings = params.get("openings") if isinstance(params, Mapping) and element.fields.get("producer") == "wall" else None
+    if not isinstance(openings, (list, tuple)):
+        return []
+    return [{"id": opening["opening_id"], "kind": opening["kind"],
+             **{key: float(opening[key]) if _finite(opening.get(key)) else None for key in ("along", "width", "sill", "head")}}
+            for opening in openings if isinstance(opening, Mapping)
+            and isinstance(opening.get("opening_id"), str) and isinstance(opening.get("kind"), str)]
+
+
+def _along_line_of(element: Entity) -> dict[str, list[float]] | None:
+    """Where ``along`` is measured on an element that is, or can be realised as, a wall; ``None`` when it cannot."""
+
+    fields = element.fields
+    try:
+        if fields.get("producer") != "wall":
+            fields = wall_fields_from_block(fields, element.entity_id)
+        start, end = wall_along_line(fields["references"]["line"])
+    except (ElementProducerError, KeyError, TypeError):
+        return None
+    return {"start": list(start), "end": list(end)}

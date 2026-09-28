@@ -23,6 +23,7 @@ this module on 2026-09-02; the runner reads Element@1 rows and calls
 """
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Mapping
@@ -792,11 +793,8 @@ def produce_wall(row: ElementRow, context: ProductionContext) -> ProducedElement
         raise ElementProducerError(f"{row.element_id}: wall endpoints must define a finite, non-zero length")
     direction = (dx / length, dz / length)
     origin = start
-    inward = line.get("inward")
-    if inward is not None:
-        nx, nz = direction[1], -direction[0]
-        if nx * float(inward[0]) + nz * float(inward[1]) < 0:
-            origin, direction = end, (-direction[0], -direction[1])
+    if _turned(direction, line.get("inward")):
+        origin, direction = end, (-direction[0], -direction[1])
     wall = WallElement(row.element_id, origin, direction, length, _positive(p["thickness"], f"{row.element_id} thickness"), height, base_datum, context.frame_id, row.binding_id)
     context.references.hosts[row.element_id] = HostLine(origin, direction)
     openings = []
@@ -832,12 +830,137 @@ def produce_wall(row: ElementRow, context: ProductionContext) -> ProducedElement
         for fill in fills:
             ops.extend(fill.operations); bindings.extend(fill.datum_bindings); assemblies.append(fill.assembly)
     relations = tuple(ProducedRelation(f"{row.element_id}-hosts-{v.opening_id}", "hosts_void", row.element_id, v.opening_id, None) for v in solution.voids)
-    return ProducedElement(tuple(ops), tuple(bindings), (), relations, HostLine(origin, direction), tuple(assemblies), solution.voids)
+    # A wall's top is as horizontal as a block's: it publishes <id>-top the way
+    # a horizontal prism does, so a block realised as a wall (#419 Stage C)
+    # keeps carrying whatever stands on it.
+    top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + height, row.basis_refs)
+    context.published[top.datum_id] = top
+    return ProducedElement(tuple(ops), tuple(bindings), (top,), relations, HostLine(origin, direction), tuple(assemblies), solution.voids)
+
+
+def _turned(direction: tuple[float, float], inward: Any) -> bool:
+    """True when ``inward`` lies left of the line: the wall solver grows thickness to its right (normal ``(dz, -dx)``),
+    so the wall runs from the line's other end and ``along`` is measured from there."""
+
+    if inward is None:
+        return False
+    nx, nz = direction[1], -direction[0]
+    return nx * float(inward[0]) + nz * float(inward[1]) < 0
 
 
 def _rel(reference: Mapping[str, Any], base_datum: str, context: ProductionContext) -> float:
     level_id, offset = resolve_elevation(parse_reference(reference), context.references)
     return context.datum_value(level_id) - context.datum_value(base_datum) + offset
+
+
+def wall_along_line(line: Mapping[str, Any]) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Where a wall's ``along`` starts and where it ends, for a line of two stated points: ``(start, end)``.
+
+    The same turn ``produce_wall`` makes, read off the authored line: the start is
+    ``from`` unless ``inward`` lies left of the line, then it is ``to``. A line on
+    a grid, a host or parameters states no point here and is refused.
+    """
+
+    points = []
+    for key in ("from", "to"):
+        reference = line.get(key) if isinstance(line, Mapping) else None
+        point = reference.get("point") if isinstance(reference, Mapping) and set(reference) == {"point"} else None
+        if (not isinstance(point, (list, tuple)) or len(point) != 2
+                or not all(_is_number(value) and math.isfinite(value) for value in point)):
+            raise ElementProducerError(f"the line's {key} is not a stated point")
+        points.append((float(point[0]), float(point[1])))
+    inward = line.get("inward")
+    if inward is not None and (not isinstance(inward, (list, tuple)) or len(inward) != 2
+                               or not all(_is_number(value) for value in inward)):
+        raise ElementProducerError("the line's inward is not a plan vector")
+    (x0, z0), (x1, z1) = points
+    length = math.hypot(x1 - x0, z1 - z0)
+    if not math.isfinite(length) or length <= 0:
+        raise ElementProducerError("the line's points are the same point")
+    return (points[1], points[0]) if _turned(((x1 - x0) / length, (z1 - z0) / length), inward) else (points[0], points[1])
+
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+# Why a block cannot be realised as a wall in place (#419 Stage C, spec §3.5): said to the agent as they are.
+_NOT_A_BLOCK = "the shape is not a block extruded up from a plan outline"
+_TILTED = "the block is drawn on a tilted plane"
+_CUTOUTS = "the block has panel cutouts"
+_BOUND_OUTLINE = "the block's outline is bound to project parameters"
+_NOT_A_RECTANGLE = "the block's footprint is not a rectangle"
+_LIFTED = "the block is lifted off its base; place it on a level or another solid's top first"
+
+
+def wall_fields_from_block(fields: Mapping[str, Any], element_id: str) -> dict[str, Any]:
+    """A block's ``Element@1`` fields, realised by the ``wall`` producer instead of ``prism`` (#419 Stage C, spec §3.5).
+
+    The element keeps its id, so it keeps ``obj-<element>`` and ``<element>-top``:
+    the wall is the same solid on the same base, and whatever stood on the block
+    keeps standing. The line runs along the block's longest side (the first of
+    equal ones, in the outline's order) from its first corner to its second,
+    with ``inward`` the unit vector toward the opposite side; the thickness is
+    the side next to it and ``openings`` starts empty. The base (a zero datum
+    offset is no offset), the height or top, the voids and every other field
+    stay as they are; the fields given are not changed.
+
+    Refused with the reason (``ElementProducerError``, ``"<element>: <reason>"``):
+    anything but a block extruded up from a plan outline, a drawing plane,
+    panel cutouts, an outline bound to parameters or not a rectangle (four
+    corners, no side of no length, adjacent sides perpendicular within 1e-9
+    relative), and a block lifted off its base by an elevation, an offset or
+    an absolute base.
+    """
+
+    def refused(reason: str) -> ElementProducerError:
+        return ElementProducerError(f"{element_id}: {reason}")
+
+    fields = copy.deepcopy(dict(fields))
+    params, references = fields.get("params"), fields.get("references")
+    if fields.get("producer") != "prism" or not isinstance(params, Mapping) or not isinstance(references, Mapping):
+        raise refused(_NOT_A_BLOCK)
+    params, references = dict(params), dict(references)
+    if "work_plane" in params:
+        raise refused(_TILTED)
+    if "rectangular_cutouts" in params:
+        raise refused(_CUTOUTS)
+    profile = params.pop("profile", None)
+    if (not isinstance(profile, (list, tuple)) or len(profile) != 4
+            or any(not isinstance(point, (list, tuple)) or len(point) != 2 for point in profile)):
+        raise refused(_NOT_A_RECTANGLE)
+    if any(isinstance(value, str) and value.startswith("@") for point in profile for value in point):
+        raise refused(_BOUND_OUTLINE)
+    if not all(_is_number(value) and math.isfinite(value) for point in profile for value in point):
+        raise refused(_NOT_A_RECTANGLE)
+    sides = [(float(profile[(k + 1) % 4][0]) - float(profile[k][0]), float(profile[(k + 1) % 4][1]) - float(profile[k][1]))
+             for k in range(4)]
+    lengths = [math.hypot(*side) for side in sides]
+    if any(length <= 0.0 for length in lengths) or any(
+            abs(sides[k][0] * sides[(k + 1) % 4][0] + sides[k][1] * sides[(k + 1) % 4][1])
+            > 1e-9 * lengths[k] * lengths[(k + 1) % 4] for k in range(4)):
+        raise refused(_NOT_A_RECTANGLE)
+    elevation = params.pop("elevation", 0)
+    base = references.get("base")
+    if not _is_number(elevation) or elevation != 0:
+        raise refused(_LIFTED)
+    if isinstance(base, Mapping) and set(base) == {"level"} and isinstance(base["level"], str):
+        pass
+    elif (isinstance(base, Mapping) and "datum" in base and set(base) <= {"datum", "offset"}
+          and isinstance(base["datum"], str) and _is_number(base.get("offset", 0)) and base.get("offset", 0) == 0):
+        references["base"] = {"datum": base["datum"]}
+    else:
+        raise refused(_LIFTED)
+    # The first longest side; float noise does not make an equal later side longer.
+    k = next(index for index, length in enumerate(lengths) if length >= max(lengths) * (1.0 - 1e-9))
+    across, thickness = sides[(k + 1) % 4], lengths[(k + 1) % 4]
+    references["line"] = {
+        "from": {"point": list(profile[k])}, "to": {"point": list(profile[(k + 1) % 4])},
+        "inward": [round(across[0] / thickness, 9) + 0.0, round(across[1] / thickness, 9) + 0.0],
+    }
+    params["thickness"] = thickness
+    params["openings"] = []
+    return {**fields, "producer": "wall", "references": references, "params": params}
 
 
 def element_rows_of(record) -> tuple[ElementRow, ...]:

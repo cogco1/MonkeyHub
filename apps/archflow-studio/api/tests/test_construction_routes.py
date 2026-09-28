@@ -467,6 +467,7 @@ class ConstructionModelTestCase(ConstructionTestCase):
         self.assertEqual(portico, {
             "id": "portico", "form": "solid", "bounds": [[0, 0, 0], [4, 0.9, 2]], "cuts": [], "cutBy": [],
             "hidden": False, "parts": ["portico-base", "portico-cornice"], "facets": {}, "capabilities": [],
+            "openings": [], "alongLine": None,
         })
 
     def test_forms_bounds_cuts_and_facets_read_back_and_capabilities_follow_facets(self) -> None:
