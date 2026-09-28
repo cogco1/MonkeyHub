@@ -1,4 +1,47 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-366",
+      "lanes": [
+        {
+          "id": "events-store",
+          "status": "active",
+          "branch": "codex/366-change-events-store",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-366-change-events-store",
+          "base_ref": "de3d5abf",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "studio.shell",
+            "studio.binding",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "archflow/project/index/",
+            "apps/archflow-studio/api/archflow_studio_api/application/events.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/index.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/events.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/index.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/index.py",
+            "apps/archflow-studio/api/archflow_studio_api/main.py",
+            "apps/archflow-studio/api/tests/",
+            "tests/test_project_index.py",
+            "apps/monkeyhub/api/monkeyhub_api/main.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+            "apps/monkeyhub/api/tests/",
+            "apps/monkeyhub/web/src/",
+            "apps/monkeyhub/web/workspaces/src/",
+            "apps/monkeyhub/web/test/",
+            "apps/monkeyhub/web/workspaces/test/",
+            "docs/adr/ADR-008-one-tree-many-projections.md",
+            "governance/module_registry.json",
+            "docs/SYSTEM_MAP.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
