@@ -300,8 +300,9 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   );
   // The session opens on the saved position even when a Board note brought this
   // page up: a note on another model version asks before the base moves (#302).
+  const prefetchModelRef = useRef<(source: ModelSourceDto) => void>(() => undefined);
   const { binding, session, changingBase, baseError, persistenceFailed, reload, failure: sessionFailure, refreshWorkingCopies, refreshWorkingDraft, saveSyncedBase, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
-    undefined, true, expectedProjectId);
+    undefined, true, expectedProjectId, (source) => prefetchModelRef.current(source));
   const [documentIntentStatus, setDocumentIntentStatus] = useState<"pending" | "asking" | "switching" | "ready" | "done">(initialDocumentIntent ? "pending" : "done");
   // Why the note could not continue yet, when recording the edits would let it (#302).
   const [documentIntentNotice, setDocumentIntentNotice] = useState<string | null>(null);
@@ -1163,11 +1164,26 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
 
   useEffect(() => {
     if (session.status === "failed") { artifactsPrefetch.current = null; return; }
-    if (!binding || session.status === "ready" || artifactsPrefetch.current?.projectId === binding.projectId) return;
+    // The project this workspace was opened for is known before its binding is read (#449).
+    const projectId = binding?.projectId ?? expectedProjectId;
+    if (!projectId || session.status === "ready" || artifactsPrefetch.current?.projectId === projectId) return;
     const answer = studio.artifacts();
     answer.catch(() => undefined);
-    artifactsPrefetch.current = { projectId: binding.projectId, answer };
-  }, [binding?.projectId, session.status]);
+    artifactsPrefetch.current = { projectId, answer };
+  }, [binding?.projectId, session.status, expectedProjectId]);
+  // The opening's model bytes, asked for as soon as the session names the model and the
+  // listing has it, beside the state read (#449). Bytes are addressed by their digest,
+  // so the auto-load below shares this download or its kept bytes, and whatever it
+  // decides to show, it shows no other bytes than it would have.
+  prefetchModelRef.current = (source) => {
+    const listing = artifactsPrefetch.current;
+    if (!active || initialRunId || !listing) return;
+    void listing.answer.then((answer) => {
+      const row = answer.projectId === listing.projectId ? answer.artifacts.find((artifact) =>
+        artifact.runId === source.runId && artifact.sha256 === source.assetSha256 && artifact.available && isViewable(artifact)) : undefined;
+      if (row?.sha256) return studio.artifactFile(row.sha256, row.fileName);
+    }).catch(() => undefined);
+  };
   useEffect(() => {
     if (session.status === "ready") void loadArtifacts();
   }, [session.status, project?.projectId, loadArtifacts]);
@@ -1589,8 +1605,14 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const [headFollow, setHeadFollow] = useState<{ runId: string; viewRequest: number } | null>(null);
   const followRead = useRef(0);
   const editingRunId = projection === null || projection.referenceRunSource === "none" ? null : projection.referenceRun.runId;
+  // The opening's own model is still on its way (#449). Its base was read with the head a moment ago,
+  // so the head is read again once that model is on screen (or the opening found none to show),
+  // not in the round the model's bytes are downloaded in; a head that moves meanwhile is still followed then.
+  const openingModel = active && !initialRunId && session.status === "ready" && sourceLabel === null &&
+    loadedArtifacts.length === 0 && (artifactLoadingSha !== null || artifacts.status === "idle" ||
+      artifacts.status === "loading" || (homeArtifacts !== null && !autoLoadedRef.current));
   const followBusy = changingBase || proposalBusy || candidateBusy || modelSyncBusy || selectingWorkingCopy ||
-    historyBusy || refiningEntryId !== null || documentIntentStatus !== "done";
+    historyBusy || refiningEntryId !== null || documentIntentStatus !== "done" || openingModel;
   // Read when a follow is decided, which may be after an awaited read.
   const followGate = useRef<{ baseRunId: string | null; busy: boolean; localEdits(): boolean; viewed(): string | null }>(
     { baseRunId: editingRunId, busy: followBusy, localEdits: () => false, viewed: () => null });
