@@ -16,11 +16,14 @@ it hosts. ``hosted_opening_proposal`` is the first capability that meaning
 unlocks (Stage C, spec §3.5): a door or a window on a component whose facets
 say ``architectural.role = wall``; a block is realised as a wall in place under
 the same element id, so it keeps its delivered object and its published top.
+``design_proposal`` makes one proposal of the in-app agent's answer: a script
+with its parameters, or parameters alone, then facets on what that leaves.
 """
 
 from __future__ import annotations
 
 import dataclasses
+from dataclasses import replace
 import math
 import re
 from typing import Any, Mapping, NamedTuple, Sequence
@@ -35,8 +38,8 @@ from ..adapters.seats import SeatsError, load_seat_pack, seats_of
 from ..transport.errors import StudioError
 from .binding import ProjectBinding
 from .intent import buildable_components, component_edit_proposal
-from .projection import StateProjection
-from .proposals import Proposal, proposal_from
+from .projection import StateProjection, project_proposed_record
+from .proposals import Proposal, continue_proposal, operator_of, proposal_from
 
 # The component a fresh project models under (binding.py writes it with its seat).
 MODEL_ROOT = "model"
@@ -110,10 +113,14 @@ class ConstructionRefused(StudioError):
 
 
 class ConstructionProposal(NamedTuple):
-    """A script's proposal, and what the script reported (its shapes, and what it printed)."""
+    """A script's proposal, and what the script reported (its shapes, and what it printed).
+
+    ``result`` is ``None`` for a proposal no script made (``design_proposal``
+    with facets or parameters alone).
+    """
 
     proposal: Proposal
-    result: ConstructionResult
+    result: ConstructionResult | None
 
 
 class EnrichmentRequired(StudioError):
@@ -203,6 +210,52 @@ def construction_proposal(
             raise
         raise refused from exc
     return ConstructionProposal(proposal, result)
+
+
+def design_proposal(
+    binding: ProjectBinding,
+    projection: StateProjection,
+    *,
+    script: str | None = None,
+    parameters: Sequence[Mapping[str, Any]] = (),
+    facets: Sequence[Mapping[str, Any]] = (),
+    summary: str | None = None,
+    keep_refs: Sequence[str] = (),
+) -> ConstructionProposal:
+    """An agent's construction answer as one proposal against ``projection``.
+
+    A script goes through ``construction_proposal`` with its parameters, and
+    parameters without a script are a parameters-only component edit. Facets
+    come last, so they may name geometry the same script makes: they are read
+    against the successor the first part proposes (``facets_proposal``) and
+    folded onto the same exact base (``continue_proposal``), so everything
+    they do not name stays as that part left it. ``result`` is the script's
+    report, ``None`` without a script.
+    """
+
+    made: ConstructionProposal | None = None
+    if script is not None:
+        made = construction_proposal(binding, projection, script, parameters=parameters, summary=summary,
+                                     keep_refs=keep_refs)
+    elif parameters:
+        said = summary or "parameters: " + ", ".join(dict.fromkeys(str(row.get("key")) for row in parameters))
+        made = ConstructionProposal(proposal_from(component_edit_proposal(
+            projection, _edit(said, parameters=parameters, kept=keep_refs), utterance=said, keep_refs=keep_refs,
+        )), None)
+    if not facets:
+        if made is None:
+            raise StudioError(422, "CONSTRUCTION_INVALID",
+                              "the answer carries no script, parameters or facets, so there is nothing to propose")
+        return made
+    if made is None:
+        return ConstructionProposal(facets_proposal(projection, facets, summary=summary, keep_refs=keep_refs), None)
+    successor = apply_state_record_operator(projection.record, operator_of(made.proposal, projection.record))
+    faceted = facets_proposal(project_proposed_record(projection, successor), facets, summary=summary,
+                              keep_refs=keep_refs)
+    said = summary or "; ".join(str((proposal.semantic_edit or {}).get("summary") or proposal.utterance)
+                                for proposal in (made.proposal, faceted))
+    return ConstructionProposal(continue_proposal(projection, made.proposal, replace(faceted, utterance=said)),
+                                made.result)
 
 
 def in_construction_words(message: str) -> str:

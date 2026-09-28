@@ -14,6 +14,7 @@ from archflow_studio_api.application.intent_agent import _parse_answer, _strict_
 from archflow_studio_api.application.intent_context import IntentContext, compile_context, model_context
 from archflow_studio_api.application.intent_requests import action_answer, action_preflight, provider_schema, request_schema, validate_request_answer
 from archflow_studio_api.application.projection import _elements
+from archflow_studio_api.transport.errors import StudioError
 
 
 def _record(*, bound=False, producer="wall", parameter_unit="m"):
@@ -73,22 +74,24 @@ def _answer(*actions, status="compiled", question=None, refs=()):
             "question": question, "contextRefs": list(refs)}
 
 
-def _design_answer():
-    return {
-        "status": "compiled", "targetComponentId": "facade", "elementId": "new-wall",
-        "utterance": None, "why": "Add a wall.", "question": None, "contextRefs": [],
-        "semanticEdit": {
-            "summary": "Add a wall.", "entities": [{
-                "entity_id": "new-wall", "schema": "Element@1", "parent_id": "facade", "basis_refs": ["studio:intent"],
-                "fields": {"component_id": "facade", "producer": "wall", "type_ref": None,
-                           "name": None, "label": None, "note": None,
-                           "references": {"base": {"level": "level-02"}, "top": None, "support": None,
-                                          "line": {"from": {"grid": "A"}, "to": {"grid": "B"}, "face": None, "inward": [1, 0]}},
-                           "params": {"height": 3.0, "thickness": 0.2, "openings": []}},
-            }], "parameters": [], "relations": [], "removeEntityIds": ["old-wall"],
-            "removeParameterKeys": [], "removeRelationIds": [], "protected": [], "kept": [],
-        },
+def _design_answer(**changes):
+    """A design answer in the construction contract: one script, nothing classified."""
+
+    answer = {
+        "status": "compiled", "script": "block = extrude(rect(0, 0, 2, 2), 3, at=level('level-02'))",
+        "facets": None, "parameters": None, "utterance": None, "targetId": None,
+        "why": "Add a block beside the selected geometry.", "question": None, "contextRefs": [],
     }
+    answer.update(changes)
+    return answer
+
+
+def _strict_facets(**values):
+    """One facet target as a strict provider writes it: every registered key present, unset ones null."""
+
+    from archflow.semantics.facets import FACETS
+
+    return {"id": "facade", "set": {key: values.get(key) for key in FACETS}, "remove": None}
 
 
 class IntentRequestSchemaTests(unittest.TestCase):
@@ -99,61 +102,35 @@ class IntentRequestSchemaTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_request_answer(answer, context, self.schema(context))
 
-    def test_local_semantic_edit_uses_typed_contract_without_dependency_write_grants(self):
+    def test_local_design_answers_in_the_construction_contract_only(self):
         record = _record()
         sheet = record_sheet(_projection(record), Selection("facade", "wall-07"))
         context = compile_context("replace wall-07 while keeping its support", sheet, record=record)
         self.assertIsNotNone(context.design_sheet)
-        answer = _design_answer()
-        answer["elementId"] = "wall-07"
-        answer["semanticEdit"]["entities"][0]["entity_id"] = "wall-07"
-        answer["semanticEdit"]["entities"][0]["fields"]["references"] = deepcopy(record.entity("wall-07").fields["references"])
-        answer["semanticEdit"]["removeEntityIds"] = []
-        validate_request_answer(answer, context, self.schema(context))
-        for target in ("support-wall", "wall-type"):
-            wrong = deepcopy(answer)
-            wrong["semanticEdit"]["entities"][0]["entity_id"] = target
-            self.assertRejected(wrong, context)
-            wrong = deepcopy(answer)
-            wrong["semanticEdit"]["removeEntityIds"] = [target]
-            self.assertRejected(wrong, context)
-        wrong = {**answer, "semanticEdit": None, "utterance": "set parameter:wall_height to 4"}
-        self.assertRejected(wrong, context)
-
-    def test_local_reading_must_name_a_target_in_its_subjects(self):
-        record = _record()
-        sheet = record_sheet(_projection(record), Selection("facade", "wall-07"))
-        context = compile_context("add a condition to wall-07 while keeping its base", sheet, record=record)
-        answer = _design_answer()
-        answer["elementId"] = "wall-07"
-        answer["semanticEdit"]["removeEntityIds"] = []
-        reading = {"entity_id": "entry-condition", "schema": "Reading@1", "parent_id": None,
-                   "basis_refs": ["studio:intent"],
-                   "fields": {"note": "Keep the south entry open.", "subject_refs": ["entity:wall-07"],
-                              "source_ref": "studio:intent"}}
-        answer["semanticEdit"]["entities"] = [reading]
-        validate_request_answer(answer, context, self.schema(context))
-        for subjects in ([], ["entity:support-wall"]):
-            reading["fields"]["subject_refs"] = subjects
-            self.assertRejected(answer, context)
-
-    def test_local_new_member_requires_declared_connection_to_existing_target(self):
-        record = _record()
-        sheet = record_sheet(_projection(record), Selection("facade", "wall-07"))
-        context = compile_context("add a member to wall-07 while keeping its base", sheet, record=record)
-        answer = _design_answer()
-        answer["semanticEdit"]["removeEntityIds"] = []
-        answer["semanticEdit"]["entities"][0]["fields"]["references"] = deepcopy(record.entity("wall-07").fields["references"])
-        self.assertRejected(answer, context)
-        # Updating the target alongside a new member does not let their shared
-        # broad parent or common level stand in for an explicit connection.
-        with_target = deepcopy(answer)
-        target = deepcopy(with_target["semanticEdit"]["entities"][0])
-        target["entity_id"] = "wall-07"
-        with_target["semanticEdit"]["entities"].append(target)
-        self.assertRejected(with_target, context)
-        answer["semanticEdit"]["entities"][0]["fields"]["references"]["support"] = "wall-07"
-        validate_request_answer(answer, context, self.schema(context))
+        schema = self.schema(context)
+        # A script is typed here and its writes are checked against the targets once it is compiled.
+        validate_request_answer(_design_answer(), context, schema)
+        validate_request_answer(_design_answer(script=None, facets=[{"id": "facade", "set": {"architectural.role": "wall"}}]),
+                                context, schema)
+        for wrong in (
+            # A scalar sentence is not a local design answer, and it excludes every other change.
+            _design_answer(script=None, utterance="set parameter:wall_height to 4"),
+            _design_answer(utterance="set height to 4"),
+            # Compiled says what changes.
+            _design_answer(script=None),
+            # A question or a limitation changes nothing.
+            _design_answer(status="question", question="Which side?"),
+            _design_answer(status="unsupported"),
+            # The old component edit and its two ids are no part of the answer.
+            {**_design_answer(), "semanticEdit": None},
+            {**_design_answer(), "targetComponentId": "facade"},
+            {**_design_answer(), "elementId": "wall-07"},
+            # Facets are text values of registered keys, and only registered values of a closed key.
+            _design_answer(script=None, facets=[{"id": "facade", "set": {"architectural.kind": "wall"}}]),
+            _design_answer(script=None, facets=[{"id": "facade", "set": {"architectural.role": "tower"}}]),
+        ):
+            with self.subTest(answer=wrong):
+                self.assertRejected(wrong, context)
 
     def test_local_design_cannot_write_locked_shared_or_unrelated_parameters(self):
         for blocker in ("locked", "shared", "unrelated"):
@@ -169,15 +146,17 @@ class IntentRequestSchemaTests(unittest.TestCase):
                     record = replace(record, parameters=(*record.parameters, Parameter("unrelated", 2, "m")))
                 sheet = record_sheet(_projection(record), Selection("facade", "wall-07"))
                 context = compile_context("reconfigure wall-07 while keeping its base", sheet, record=record)
-                answer = _design_answer()
-                answer["elementId"] = "wall-07"
-                answer["semanticEdit"]["entities"] = []
-                answer["semanticEdit"]["removeEntityIds"] = []
-                answer["semanticEdit"]["parameters"] = [{
+                answer = _design_answer(script=None, parameters=[{
                     "key": "unrelated" if blocker == "unrelated" else "wall_height", "value": 4,
-                    "unit": "m", "expr": None, "inputs": [], "epistemic_status": "declared", "source_ref": None,
-                }]
+                    "unit": "m", "inputs": [], "epistemic_status": "declared",
+                }])
                 self.assertRejected(answer, context)
+        # The target's own control, neither locked, derived nor shared, may change.
+        record = _record(bound=True)
+        sheet = record_sheet(_projection(record), Selection("facade", "wall-07"))
+        context = compile_context("reconfigure wall-07 while keeping its base", sheet, record=record)
+        validate_request_answer(_design_answer(script=None, parameters=[{"key": "wall_height", "value": 4}]),
+                                context, self.schema(context))
 
     def test_narrow_schema_accepts_actions_without_ids_or_upsert_payloads(self):
         record = _record()
@@ -185,7 +164,8 @@ class IntentRequestSchemaTests(unittest.TestCase):
             context = _context(record, tier=tier, fields=fields)
             answer = _answer(*(_action(field) for field in fields))
             validate_request_answer(answer, context, self.schema(context))
-            for key, value in (("elementId", "wall-08"), ("semanticEdit", {}), ("utterance", "set height to 4")):
+            for key, value in (("targetId", "wall-08"), ("script", "block = extrude(rect(0, 0, 1, 1), 1)"),
+                               ("semanticEdit", {}), ("utterance", "set height to 4")):
                 with self.subTest(tier=tier, field=key):
                     self.assertRejected({**answer, key: value}, context)
             for key, value in (("target", "wall-08"), ("basis_refs", []), ("expr", "2 * other")):
@@ -303,8 +283,17 @@ class IntentRequestSchemaTests(unittest.TestCase):
         context = _context(record, tier="component", fields=("height", "thickness"))
         before = record.to_dict()
         result = action_answer(_answer(_action(value=4000, unit="mm"), _action("thickness", 30, "cm")), context, record)
+        # The component tier's own edit travels beside the answer, never inside the provider contract.
+        edit = result.pop("semanticEdit")
         compilation = _parse_answer(json.dumps(result), provider="test", model="test", latency_ms=0,
-                                    prompt_sha="a" * 64, normalize_fields=False)
+                                    prompt_sha="a" * 64, normalize_fields=False, derived_edit=edit)
+        self.assertEqual((compilation.status, compilation.target_id), ("compiled", "wall-07"))
+        self.assertTrue(compilation.proposes_change)
+        self.assertIsNone(compilation.script)
+        # Without the tier's own edit, the same envelope compiles nothing and is refused.
+        with self.assertRaises(StudioError):
+            _parse_answer(json.dumps(result), provider="test", model="test", latency_ms=0,
+                          prompt_sha="a" * 64, normalize_fields=False)
         proposal = component_edit_proposal(_projection(record), compilation.semantic_edit,
                                           utterance="Raise and thicken the wall.", component_id="facade")
         successor = apply_state_record_operator(record, proposal["state_record_operator"])
@@ -331,7 +320,8 @@ class IntentRequestSchemaTests(unittest.TestCase):
                 result = action_answer(_answer(_action()), context, changed)
                 self.assertEqual(result["status"], expected)
                 self.assertIsNone(result["utterance"])
-                self.assertIsNone(result["semanticEdit"])
+                self.assertNotIn("semanticEdit", result)
+                self.assertEqual(result["targetId"], "wall-07")
         wall = record.entity("wall-07")
         wall = replace(wall, fields={**wall.fields, "references": {**wall.fields["references"], "top": {"level": "level-02"}}})
         changed = replace(record, entities=tuple(wall if item.entity_id == wall.entity_id else item for item in record.entities))
@@ -354,7 +344,7 @@ class IntentRequestSchemaTests(unittest.TestCase):
                 result = action_answer(_answer(_action()), context, changed)
                 self.assertEqual(result["status"], "question")
                 self.assertNotIn("wall_height", result["question"])
-                self.assertIsNone(result["semanticEdit"])
+                self.assertNotIn("semanticEdit", result)
 
     def test_same_object_coupling_rejects_unrequested_field_and_conflicting_values(self):
         record = _record(bound=True)
@@ -392,10 +382,15 @@ class IntentRequestSchemaTests(unittest.TestCase):
             valid = _design_answer() if tier == "design" else _answer(*(_action(field) for field in fields))
             samples = [valid, {**valid, "unknown": "extra"}, {**valid, "status": "approve"}]
             if tier == "design":
-                invalid = deepcopy(valid)
-                invalid["semanticEdit"]["entities"][0]["fields"]["references"]["line"]["inward"] = [1, 0, 0]
-                samples.append(invalid)
-                self.assertLess(len(json.dumps(factored)), len(json.dumps(strict)))
+                # Every key a strict provider writes; then an unregistered facet value, and a parameter value as text.
+                samples[0] = _design_answer(script=None, facets=[_strict_facets(**{"architectural.role": "wall"})],
+                                            parameters=[{"key": "module", "value": 1.5, "unit": "m", "expr": None,
+                                                         "inputs": None, "epistemic_status": None, "source_ref": None}])
+                samples.append(_design_answer(facets=[_strict_facets(**{"architectural.role": "tower"})]))
+                samples.append(_design_answer(parameters=[{"key": "module", "value": "1.5", "unit": "m", "expr": None,
+                                                           "inputs": None, "epistemic_status": None, "source_ref": None}]))
+                # Factoring never grows a schema; the construction contract has no repeated variants left to share.
+                self.assertLessEqual(len(json.dumps(factored)), len(json.dumps(strict)))
             else:
                 invalid = deepcopy(valid)
                 invalid["actions"][0]["field"] = "removeEntityIds"

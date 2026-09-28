@@ -1,12 +1,21 @@
 """Compile a request's read context; the record still owns change propagation.
 
 Known numeric requests use actions; explicitly located design work uses a
-dependency slice with the existing semantic output contract. Unresolved or
-global work retains the complete sheet. More reads never enlarge permitted edits.
+dependency slice with the construction answer contract. Unresolved or global
+work retains the complete sheet. More reads never enlarge permitted edits.
+
+The sheet the agent is given (``intent_agent.record_sheet``) says nothing about
+how the runtime realises a shape. ``_complete_sheet`` adds that back privately
+from the record - each element's realisation, params and references, the
+project types and the advertised signatures - because scoping and validation
+read it; ``model_context`` then shows a model only the construction terms
+(``controls`` by geometry id, the model, facets), never the private rows.
+``pack_context`` is the ContextPack's reading of the same context.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass, replace
 import json
@@ -138,15 +147,24 @@ def confirmed_stage_context(
 
 
 def _complete_sheet(sheet: Mapping[str, Any], record: StateRecord | None) -> dict[str, Any]:
+    """The private validation sheet: the agent's sheet plus what only scoping and checks may read."""
+
     result = deepcopy(dict(sheet))
     if record is None:
         return result
+    from archflow.state.state_record import component_semantics
+    from monkeyarch.capabilities.element_producers import producer_signatures
+
     entities = {item.entity_id: item for item in record.entities}
     for row in result.get("components", ()):
-        entity = entities.get(row["componentId"])
+        entity = entities.get(row["id"])
         if entity is not None:
             row["parentId"] = entity.parent_id
-            extra_fields = {key: deepcopy(value) for key, value in entity.fields.items() if key not in {"semantic_kind", "intent"}}
+            # A legacy classification still says which kind words name a
+            # component; it is read here and never shown to a model.
+            row["semanticKind"] = component_semantics(entity)
+            extra_fields = {key: deepcopy(value) for key, value in entity.fields.items()
+                            if key not in {"semantic_kind", "intent", "facets"}}
             if extra_fields:
                 row["authoredContext"] = extra_fields
     for row in result.get("elements", ()):
@@ -154,6 +172,7 @@ def _complete_sheet(sheet: Mapping[str, Any], record: StateRecord | None) -> dic
         if entity is None:
             continue
         row["parentId"] = entity.parent_id
+        row["producer"] = entity.fields.get("producer")
         # Flat reference forms and authored arrays are as material as the
         # projected numbers. Preserve them rather than guessing dependencies.
         for key in ("base_level", "top_level", "sill_level", "host"):
@@ -175,6 +194,8 @@ def _complete_sheet(sheet: Mapping[str, Any], record: StateRecord | None) -> dic
             row.update(expr=parameter.expr, inputs=list(parameter.reads()), lockAuthority=parameter.lock_authority,
                        sourceRef=parameter.source_ref, epistemicStatus=parameter.epistemic_status)
     result["obligations"] = [item.to_dict() for item in record.obligations]
+    result["types"] = [item.to_dict() for item in record.entities_of("Type@1")]
+    result["producerSignatures"] = producer_signatures()
     represented = {"Component@1", "Element@1", "Level@1", "GridAxis@1", "Type@1", "Reading@1"}
     extra = [item.to_dict() for item in record.entities if item.schema not in represented]
     if extra:
@@ -185,7 +206,7 @@ def _complete_sheet(sheet: Mapping[str, Any], record: StateRecord | None) -> dic
 def _rows(sheet: Mapping[str, Any]) -> dict[str, tuple[str, Mapping[str, Any]]]:
     result = {}
     for name, key, prefix in (
-        ("components", "componentId", "entity:"), ("elements", "elementId", "entity:"),
+        ("components", "id", "entity:"), ("elements", "elementId", "entity:"),
         ("parameters", "key", "parameter:"), ("frame", "entity_id", "entity:"),
         ("types", "entity_id", "entity:"), ("readings", "entity_id", "entity:"),
         ("contextEntities", "entity_id", "entity:"), ("relationships", "relation_id", "relation:"),
@@ -239,12 +260,25 @@ def _grid_roles(value: Any) -> set[str]:
     return result
 
 
+def _selected_element(sheet: Mapping[str, Any]) -> str | None:
+    """The element the sheet's selected geometry id is: that part, or the one part of that geometry."""
+
+    selected = (sheet.get("selection") or {}).get("id")
+    if not isinstance(selected, str):
+        return None
+    elements = list(sheet.get("elements", ()))
+    if any(row["elementId"] == selected for row in elements):
+        return selected
+    own = [row["elementId"] for row in elements if row.get("componentId") == selected]
+    return own[0] if len(own) == 1 else None
+
+
 def _scope(message: str, sheet: Mapping[str, Any]):
     # Import at call time: clarification consumes the intent-agent seam.
     from .clarification import component_edit_requested, declares_a_control, kinds_in, property_in, scope_in
 
     elements = list(sheet.get("elements", ()))
-    selected = sheet.get("selection", {})
+    selected_element = _selected_element(sheet)
     scope, _ = scope_in(message)
     if scope in {"stack", "datum"} or component_edit_requested(message) or declares_a_control(message):
         return (), (), "architectural_or_extended_scope"
@@ -255,14 +289,16 @@ def _scope(message: str, sheet: Mapping[str, Any]):
     named = [item for item in elements if _has_id(message, item["elementId"])]
     if len(named) > 1:
         return (), (), "multiple_explicit_targets"
-    target = named[0] if named else next((item for item in elements if item["elementId"] == selected.get("elementId")), None)
+    target = named[0] if named else next((item for item in elements if item["elementId"] == selected_element), None)
     if target is None:
         return (), (), "target_not_unambiguously_resolved"
     named_kinds = kinds_in(message)
     target_kinds = kinds_in(" ".join(str(target.get(key, "")) for key in ("elementId", "componentId", "producer")))
-    component = next((item for item in sheet.get("components", ()) if item["componentId"] == target.get("componentId")), {})
+    component = next((item for item in sheet.get("components", ()) if item["id"] == target.get("componentId")), {})
     if not target_kinds:
-        target_kinds = kinds_in(str(component.get("semanticKind") or ""))
+        # What the geometry has been said to be: its facet role, or a legacy classification.
+        target_kinds = kinds_in(" ".join(str(value or "") for value in (
+            (component.get("facets") or {}).get("architectural.role"), component.get("semanticKind"))))
     if named_kinds and not named_kinds.issubset(target_kinds):
         return (), (), "request_kind_disagrees_with_selection"
     fields = set()
@@ -296,7 +332,7 @@ def _scope(message: str, sheet: Mapping[str, Any]):
 
 
 def _design_targets(message: str, sheet: Mapping[str, Any]) -> tuple[str, ...]:
-    """Only explicit local anchors can bound a semantic design request."""
+    """Only explicit local anchors can bound a local design request."""
     if sheet.get("documentVisuals") or sheet.get("gestures"):
         return ()
     if re.search(r"\b(all|every|entire|whole|building|circulation|stack|datum)\b|全部|所有|整体|整层|整栋|流线|交通组织", message, re.I):
@@ -307,16 +343,16 @@ def _design_targets(message: str, sheet: Mapping[str, Any]) -> tuple[str, ...]:
     action = re.split(r"\b(?:keep|keeping|preserve|preserving|retain|retaining)\b|保持|保留|不改变", message, maxsplit=1, flags=re.I)[0]
     elements = list(sheet.get("elements", ()))
     targets = {row["elementId"] for row in elements if _has_id(action, row["elementId"])}
-    components = {row["componentId"] for row in sheet.get("components", ()) if _has_id(action, row["componentId"])}
+    components = {row["id"] for row in sheet.get("components", ()) if _has_id(action, row["id"])}
     # An explicitly named component includes its authored descendants.
     while True:
-        nested = components | {row["componentId"] for row in sheet.get("components", ()) if row.get("parentId") in components}
+        nested = components | {row["id"] for row in sheet.get("components", ()) if row.get("parentId") in components}
         if nested == components:
             break
         components = nested
     targets.update(row["elementId"] for row in elements if row.get("componentId") in components)
     if not targets and re.search(r"\b(this|selected)\b|这个|这扇|这面|选中", action, re.I):
-        selected = sheet.get("selection", {}).get("elementId")
+        selected = _selected_element(sheet)
         target = next((row for row in elements if row["elementId"] == selected), None)
         if target is not None:
             from .clarification import kinds_in
@@ -407,13 +443,15 @@ def _slice(sheet: Mapping[str, Any], seeds: set[str], record: StateRecord, *, ch
     for name in {value[0] for value in rows.values()}:
         result[name] = [deepcopy(row) for ref, (group, row) in rows.items() if group == name and ref in included]
     result.update(deepcopy(retained_global))
-    producers = {row["producer"] for row in result.get("elements", ())}
+    producers = {row.get("producer") for row in result.get("elements", ())}
     producers.update(row.get("fields", {}).get("producer") for row in result.get("types", ()))
     result["producerSignatures"] = {key: deepcopy(value) for key, value in sheet.get("producerSignatures", {}).items() if key in producers}
-    # Broad semantic vocabulary is needed for authoring new components, not
-    # for changing the declared numeric controls of one current element.
+    # The construction language and the model are needed for authoring
+    # geometry, not for changing the declared numeric controls of one current
+    # element; a local design slice keeps them.
     if include_global_locks:
-        result.pop("semanticIds", None)
+        result.pop("construction", None)
+        result.pop("model", None)
     return result, tuple(sorted(included.intersection(rows)))
 
 
@@ -424,7 +462,7 @@ def compile_context(message: str, sheet: Mapping[str, Any], *, record: StateReco
         reason = "dependency_record_unavailable"
     if reason is None and len(fields) > 1:
         target = next(row for row in full["elements"] if row["elementId"] == targets[0])
-        signature = full.get("producerSignatures", {}).get(target["producer"])
+        signature = full.get("producerSignatures", {}).get(target.get("producer"))
         if signature is None:
             reason = "component_signature_unavailable"
         elif not set(fields).issubset(signature.get("parameters", {}).get("properties", {})):
@@ -450,7 +488,7 @@ def compile_context(message: str, sheet: Mapping[str, Any], *, record: StateReco
         if binding:
             changed.add("parameter:" + binding.removeprefix("@"))
     narrowed, refs = _slice(full, set(changed), record, changed=changed)
-    return IntentContext("scalar" if len(fields) == 1 else "component", narrowed, targets, (target["producer"],), fields, refs)
+    return IntentContext("scalar" if len(fields) == 1 else "component", narrowed, targets, (target.get("producer"),), fields, refs)
 
 
 def compile_task_context(
@@ -592,7 +630,7 @@ def _display_name(row: Mapping[str, Any]) -> str:
     for key in ("label", "name"):
         if isinstance(authored.get(key), str) and authored[key].strip():
             return authored[key]
-    return str(row.get("elementId", row.get("componentId", row.get("entity_id", row.get("key", "Selected object")))))
+    return str(row.get("elementId", row.get("id", row.get("entity_id", row.get("key", "Selected object")))))
 
 
 def _affected_parameters(context: IntentContext, parameter_key: str) -> set[str]:
@@ -649,17 +687,93 @@ def _design_value(value: Any) -> Any:
 
 
 def model_context(context: IntentContext) -> dict[str, Any]:
-    """Facts for proposing a numeric action, separate from the validation closure.
+    """What the in-app model reads, separate from the validation closure.
 
-    The complete sheet stays private on IntentContext. This projection never
-    grants edits, changes references or evaluates a candidate's constraints.
+    A numeric request reads its controls and the facts they depend on; a
+    design request reads the design in construction terms
+    (``_construction_facts``). The complete sheet stays private on
+    IntentContext. This projection never grants edits, changes references or
+    evaluates a candidate's constraints.
     """
     if context.tier == "design":
-        result = deepcopy(dict(context.design_sheet if context.design_sheet is not None else context.sheet))
-        result.pop("producerSignatures", None)  # The response schema supplies authoring vocabulary.
-        if context.design_sheet is not None and "focusElementIds" not in result:
-            result["editTargets"] = list(context.target_ids)
-        return result
+        return _construction_facts(context)
+    return _numeric_facts(context)
+
+
+def pack_context(context: IntentContext) -> dict[str, Any]:
+    """The facts ``POST /api/intents/context`` returns for this reading: its numeric facts, or its design sheet."""
+
+    if context.tier != "design":
+        return _numeric_facts(context)
+    result = deepcopy(dict(context.design_sheet if context.design_sheet is not None else context.sheet))
+    result.pop("producerSignatures", None)
+    if context.design_sheet is not None and "focusElementIds" not in result:
+        result["editTargets"] = list(context.target_ids)
+    return result
+
+
+# The sections of a design sheet a model reads as they are: conditions, the
+# frame, and the provenance, honesty and grammar that go with them.
+_READ_SECTIONS = ("frame", "readings", "relationships", "obligations", "contextEntities", "preferences",
+                  "constraints", "basisRefs", "honesty", "grammar")
+_PARAMETER_FIELDS = ("key", "value", "unit", "lockAuthority", "expr", "inputs", "sourceRef", "epistemicStatus")
+
+
+def _geometry_ids(sheet: Mapping[str, Any]) -> dict[str, str]:
+    """Each element's one id to an agent: its component when that has no other part, else its own id."""
+
+    parts = Counter(row.get("componentId") for row in sheet.get("elements", ()))
+    return {row["elementId"]: row["componentId"] if parts[row.get("componentId")] == 1 else row["elementId"]
+            for row in sheet.get("elements", ())}
+
+
+def _construction_facts(context: IntentContext) -> dict[str, Any]:
+    """A design request's sheet in construction terms: nothing about how the runtime realises a shape.
+
+    The language, the model by geometry id and the components' intent and
+    facets; each part's numeric controls under its geometry id (``controls``);
+    parameters, the frame, readings, relationships and conditions. A local
+    request reads only its slice, with ``editTargets`` as geometry ids. The
+    private rows the checks read (realisations, params, references, types,
+    signatures, legacy classifications) are left out.
+    """
+
+    source = context.design_sheet if context.design_sheet is not None else context.sheet
+    geometry = _geometry_ids(context.sheet)
+    result: dict[str, Any] = {key: deepcopy(source[key]) for key in (
+        "projectId", "selection", "gestures", "documentVisuals", "construction") if key in source}
+    components = [{"id": row["id"], "intent": row.get("intent"), "facets": deepcopy(row.get("facets") or {})}
+                  for row in source.get("components", ())]
+    elements = list(source.get("elements", ()))
+    model = list(source.get("model", ()))
+    if context.design_sheet is not None:
+        # A slice reads the geometry of the components it kept, and of the parts it kept.
+        kept = {row["id"] for row in components}
+        parts = {row["elementId"] for row in elements}
+        model = [row for row in model if row.get("id") in kept or parts.intersection(row.get("parts") or ())]
+    result["model"] = deepcopy(model)
+    result["components"] = components
+    result["controls"] = [
+        {"id": geometry.get(row["elementId"], row["elementId"]),
+         "numericFields": deepcopy(dict(row.get("numericFields", {}))),
+         "parameterBindings": deepcopy(dict(row.get("parameterBindings", {})))}
+        for row in elements if row.get("numericFields")
+    ]
+    result["parameters"] = [{key: deepcopy(row[key]) for key in _PARAMETER_FIELDS if key in row}
+                            for row in source.get("parameters", ())]
+    result["types"] = [deepcopy(row) for row in source.get("types", ())
+                       if "producer" not in (row.get("fields") or {})]
+    for key in _READ_SECTIONS:
+        if key in source:
+            result[key] = deepcopy(source[key])
+    if context.design_sheet is not None:
+        result["editTargets"] = sorted({geometry.get(target, target) for target in context.target_ids})
+    return result
+
+
+def _numeric_facts(context: IntentContext) -> dict[str, Any]:
+    """Facts for proposing a numeric action: the requested controls and what they depend on."""
+
     rows = _rows(context.sheet)
     elements = {row["elementId"]: row for row in context.sheet.get("elements", ())}
     parameters = {row["key"]: row for row in context.sheet.get("parameters", ())}

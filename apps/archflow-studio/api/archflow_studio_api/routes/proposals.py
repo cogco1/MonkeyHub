@@ -28,7 +28,6 @@ accepted by this route, and the latest run is never assumed.
 from __future__ import annotations
 
 from dataclasses import replace
-import json
 
 from fastapi import APIRouter
 from pydantic import ValidationError
@@ -38,7 +37,7 @@ from starlette.requests import Request
 from archflow.project.repository import ProjectRepositoryError
 from archflow.state.state_record import apply_state_record_operator
 
-from ..application import episodes
+from ..application import clarification, episodes
 from ..application.authentication import request_attribution
 from ..application.elevation import elevation_proposal
 from ..application.binding import ProjectBinding, bound_project
@@ -54,7 +53,7 @@ from ..application.intent import (
     delete_element_proposal,
     sketch_prism_proposal,
 )
-from ..application.intent_agent import DeterministicCompiler, Selection
+from ..application.intent_agent import DeterministicCompiler, Selection, context_refs as compiled_context_refs
 from ..application.jobs import SUCCEEDED, Job
 from ..application.projection import (
     StateProjection,
@@ -622,25 +621,46 @@ def _reproposed(
             raise StudioError(409, "STALE_BASE", "the proposal's design base has changed; read the selected run again")
         if isinstance(state.intent_compiler, DeterministicCompiler):
             raise StudioError(422, "SEMANTIC_EDIT_UNAVAILABLE", "this process has no design agent for component changes")
+        # The agent reads the design with the proposal applied, in construction
+        # terms, and answers the change to make on top of it; the replacement is
+        # that change folded onto the same exact base. It is shown no record
+        # row: the proposal travels as its summary and the model it would make.
+        proposed = project_proposed_record(
+            projection, apply_state_record_operator(projection.record, operator_of(proposal, projection.record)),
+        )
+        summary = str(proposal.semantic_edit.get("summary") or proposal.utterance)
         compilation = state.intent_compiler.compile(
             message=(
-                "Revise this unexecuted proposal against the supplied record. Return the complete revised edit.\n"
-                + json.dumps(proposal.semantic_edit, ensure_ascii=False)
-                + "\nArchitect's change: " + utterance
+                "The sheet shows the design with an unexecuted proposal already applied. It proposes: "
+                + summary + "\nAnswer the change the architect now asks for, made on top of it.\n"
+                + "Architect's change: " + utterance
             ),
             selection=Selection(proposal.component_id, proposal.element_id),
-            projection=projection,
+            projection=proposed,
         )
-        if compilation.semantic_edit is None:
-            if compilation.question:
-                raise BlockedNeedsHuman(compilation.why, question=compilation.question)
-            raise StudioError(422, "SEMANTIC_EDIT_INVALID", "the agent did not return the revised component edit")
-        replacement = proposal_from(component_edit_proposal(
-            projection, compilation.semantic_edit, utterance=utterance,
-            component_id=compilation.component_id, keep_refs=proposal.protected,
-        ))
+        compilation = clarification.targeted(proposed, compilation)
+        if compilation.status == "question":
+            raise BlockedNeedsHuman(compilation.why, question=compilation.question or "")
+        if compilation.status != "compiled":
+            raise StudioError(422, "SEMANTIC_EDIT_INVALID",
+                              compilation.why or "the agent did not return a change to the proposal")
+        if compilation.proposes_change:
+            revision = clarification.compiled_proposal(
+                binding, proposed, compilation, utterance=utterance, keep_refs=proposal.protected,
+            ).proposal
+        else:
+            revision = proposal_from(DeterministicIntentProvider(proposed).propose(
+                session_ref=f"project:{binding.project_id}",
+                message=merge_keep(compilation.utterance or "", proposal.protected),
+                context_refs=compiled_context_refs(
+                    proposed.state_digest or "", compilation,
+                    Selection(proposal.component_id, proposal.element_id),
+                ),
+            ))
+        replacement = continue_proposal(projection, proposal, revision)
         return state.proposals.put(replace(
-            replacement, source_run_id=proposal.source_run_id, source_stage_ref=proposal.source_stage_ref,
+            replacement, utterance=utterance, pending=None,
+            source_run_id=proposal.source_run_id, source_stage_ref=proposal.source_stage_ref,
             compilation_receipt=None if compilation.receipt is None else compilation.receipt.to_dict(),
             document_comment_ref=proposal.document_comment_ref,
             model_source=proposal.model_source,
