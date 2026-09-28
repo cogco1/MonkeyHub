@@ -286,6 +286,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         initialize_drawing_runtime()
         app.state.stop_projection_commits = _project_commits(app.state.settings, app.state)
+    if getattr(app.state, "prepare_first_reads", False):
+        threading.Thread(target=_prepare_first_reads, args=(app,), name="studio-first-reads", daemon=True).start()
 
     yield
     app.state.stop_index_events()
@@ -498,6 +500,32 @@ def _watch_managed_stdin(server: uvicorn.Server, jobs: JobRegistry, stream: Text
     server.should_exit = True
 
 
+def _prepare_first_reads(app: FastAPI) -> None:
+    """What every first request would otherwise build for itself, built once while the process is idle (#449).
+
+    FastAPI builds each included router's route state on the first request
+    routed through it, and the workspace's first reads also list every run's
+    records (``prepare_bound_project``). Both are done here, on a thread of
+    their own, once the process serves: a first request arriving meanwhile
+    waits for the one build instead of repeating it beside it. ``main`` asks
+    for it; an application a test builds binds on its first request as
+    before. A path no route has walks every router; nothing is answered or
+    recorded.
+    """
+
+    unmatched = {"type": "http", "method": "GET", "path": "/api/\0", "raw_path": b"/api/%00",
+                 "root_path": "", "query_string": b"", "headers": [], "app": app}
+    try:
+        if app.state.settings.service_role != SHARED_PROJECT_ROLE:
+            from .application.binding import prepare_bound_project
+
+            prepare_bound_project(app.state)
+        for route in app.router.routes:
+            route.matches(dict(unmatched))
+    except Exception:  # noqa: BLE001 - the first request opens and refuses for itself
+        logging.getLogger(__name__).debug("first-read preparation did not finish", exc_info=True)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="archflow-studio-api", description="Serve the ArchFlow Studio API."
@@ -531,6 +559,7 @@ def main(argv: list[str] | None = None) -> None:
     app.state.parent_process_id = os.getppid()
     app.state.source_revision = _source_revision()
     app.state.managed_instance_id = args.managed_instance_id
+    app.state.prepare_first_reads = True
     if not args.managed_stdin:
         uvicorn.run(app, host=settings.bind_host, port=args.port)
         return
