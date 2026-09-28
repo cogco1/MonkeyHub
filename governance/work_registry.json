@@ -37,7 +37,8 @@
             "apps/monkeyhub/web/workspaces/test/",
             "docs/adr/ADR-008-one-tree-many-projections.md",
             "governance/module_registry.json",
-            "docs/SYSTEM_MAP.md"
+            "docs/SYSTEM_MAP.md",
+            "docs/PROJECT_RUNTIME.md"
           ],
           "depends_on": []
         }
