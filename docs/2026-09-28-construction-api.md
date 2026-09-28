@@ -271,17 +271,21 @@ event stream (`run_native_baseline.py`).
 | Hub, producer path (main `a1df9b2b`) | ✓ | 154 s | 127 s | 12 | 1 (`COMPONENT_NOT_BUILT`) | 13 | 507k | five prisms composed around the holes |
 | Hub, construction path, run 1 | ✓ | 86 s | 59 s | 10 | 0 | 11 | 433k | `cut` (cutters kept, hidden) |
 | Hub, construction path, run 2 | ✓ | 80 s | 53 s | 8 | 0 | 9 | 312k | `cut` (cutters kept, hidden) |
+| Hub, construction path, run 3 (write schemas without responses) | ✓ | 47 s | 33 s | 8 | 0 | 9 | 294k | `cut` (cutters kept, hidden) |
 
 No run needed a human correction. On the producer path, seven of twelve calls read state or schemas
 (about 64 kB: state, the producer index, the 20 kB proposal schema, the action index, the 22 kB
 sketch schema, push-pull and admission schemas), and one write was refused because a new component
 had to be placed under an existing one. On the construction path the script was written once and
-accepted the first time.
+accepted the first time. Runs 1 and 2 read the construction route's schema with its response
+schemas (16 169 characters each); after runs 1–2, `studio_schema` stopped answering response schemas
+for writes (4 801 characters for that route), and run 3 read 9.8 kB of schemas in all. The runs were
+made on a machine doing other work, so wall times vary by a few tens of seconds.
 
 Against the owner's bar ("if the construction path cannot come significantly close to the native
-baseline, keep deleting abstractions"): wall time now matches the native path and the first result
-arrives more than twice as fast as on the producer path; tool calls and input tokens are still about
-twice and three times the native path's. What remains is Hub workflow and context, not authoring:
-the Hub's tool descriptions sent every round, `studio_schema` answering response schemas along with
-request schemas (16 kB for the construction route), and the admission step the native path does not
+baseline, keep deleting abstractions"): wall time now matches or beats the native path, and the first
+result arrives two to four times as fast as on the producer path; tool calls and input tokens are
+still about twice and three times the native path's. What remains is Hub workflow and context, not
+authoring: the Hub's tool descriptions, sent again every round (most of the 294k input tokens are
+those, cached), a separate read of the vocabulary, and the admission step the native path does not
 have. Those are the next abstractions to delete.

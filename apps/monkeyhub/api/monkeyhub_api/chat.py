@@ -3862,13 +3862,12 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
     # trip; meaning, capabilities and domains follow in their own stages, and
     # no runtime realisation is named. The agent chooses observation points.
     modelling = chr(10).join([
-        "Use the bound project's Studio API in metres; 3D points are (x, y-up, z), plan points (x, z).",
+        "Use the bound project's Studio API in metres; plan points are (x, z) and 3D points (x, y, z), with Y up.",
         "Design tools prepare the project's runtime themselves; nobody needs to open a page first.",
         "",
         "CURRENT MODEL: GET /api/construction/model gives stateDigest, levels, parameters and one entry per geometry id:",
         "form, bounds, cuts, cutBy, facets and the capabilities they unlock. Without ?run=<candidateId> it reads the default",
-        "source; with it, send sourceRunId on writes. Keep sourceStageRef when provided.",
-        "An empty project first prepares a modelling base with POST /api/project/modeling {projectId}.",
+        "source; with it, send sourceRunId on writes. Keep sourceStageRef when provided. An empty project first prepares a modelling base with POST /api/project/modeling {projectId}.",
         "",
         "MAKE AND CHANGE GEOMETRY: POST /api/proposals/construction {stateDigest, script, summary?, sourceRunId?, sourceProposalId?, keep?}.",
         "The script is a small Python-like program; one script makes and changes many shapes:",
