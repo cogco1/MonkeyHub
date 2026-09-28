@@ -1,23 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-432",
-      "status": "active",
-      "branch": "codex/chat-action-cards",
-      "worktree": "C:\\Users\\asus\\.codex\\worktrees\\drawing-rule-memory\\ARCHFLOW_V4",
-      "base_ref": "3fc09a68d14417e7799e594ca1e26e61b9d97155",
-      "contributor": "Codex",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-        "apps/monkeyhub/api/tests/test_project_runtime.py"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
