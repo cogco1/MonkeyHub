@@ -1,4 +1,36 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-403",
+      "lanes": [
+        {
+          "id": "studio-leftovers",
+          "status": "active",
+          "branch": "codex/403-studio-migration-leftovers",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-403-studio-migration-leftovers",
+          "base_ref": "1bea11da",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "hub.shell",
+            "studio.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/i18n/",
+            "apps/monkeyhub/desktop/README.md",
+            "apps/monkeyhub/README.md",
+            "apps/archflow-studio/README.md",
+            "docs/",
+            "governance/module_registry.json",
+            "pyproject.toml",
+            "apps/monkeyhub/api/tests/",
+            "tests/"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
