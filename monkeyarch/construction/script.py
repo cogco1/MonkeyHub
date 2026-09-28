@@ -3,25 +3,47 @@
 A script is parsed with ``ast`` and walked by an allow-list interpreter: Python
 never compiles or runs it. The whole tree is checked before anything runs, so a
 refused construct anywhere in the script is refused at its line even if it would
-never be reached. Evaluation counts every node it evaluates (the step limit),
-every loop's iterations and the call depth.
+never be reached.
+
+Work is bounded, not only counted: every node evaluated is a step, every walk
+over a sequence costs steps by its length, a wall-clock deadline is checked with
+each step, every list or tuple the script creates is measured with its nested
+elements (per value and in total), ``+=`` extends a list in place as Python does
+and counts only what it adds (to that list and to every list or tuple holding
+it), a comparison costs what it may walk, profile checks draw on a budget of
+edge pairs, and the shapes hold 100 000 points at most. No single step can do
+unbounded work, and no message repeats a script value at length.
 
 Verbs are bound from ``vocabulary.VERBS`` - the table an agent reads - and
-implemented by ``Session``, which keeps the script's shapes, the existing
-geometry it reached with ``get()`` and the ``print`` log. What a verb refuses it
-refuses with one sentence; the interpreter adds the line, the column and the
-source line (``ConstructionError``).
+implemented by ``Session``, which keeps the script's shapes (each with the
+chain of statements that made it - the module-level statement, the statements
+it called, down to the one that made the shape - which its id is hashed from if
+it has no name), the existing geometry it reached, what cuts what and what
+stands on what as far as the script knows it (the record's own relations are
+checked when lowering), and the ``print`` log. The session is also the script's
+model for every top a shape reads: a row the script changed, or a new shape
+whose id (as the script now names it) is that of existing geometry, is the
+current version of that geometry. What a verb refuses it refuses with one sentence; the
+interpreter adds the line, the column and the source line
+(``ConstructionError``), and the lines a function was called from.
 """
 from __future__ import annotations
 
 import ast
+import io
 import math
+import time
+import tokenize
+from itertools import groupby
 from typing import Any, Callable
 
 from archflow.project.refs import require_identifier
 from archflow.state.state_record import StateRecord
+from monkeyarch.construction.identity import ELEMENT_SUFFIX, Naming, identify
 from monkeyarch.construction.shapes import (
     MAX_PATH_POINTS,
+    MIN_LENGTH,
+    NO_LEVEL,
     Anchor,
     Drawn,
     ParamRef,
@@ -33,30 +55,44 @@ from monkeyarch.construction.shapes import (
     Shape,
     ShapeError,
     World,
-    as_profile,
     binding_refusal,
     circle,
+    closed_profile,
     combine,
+    coordinate,
     describe,
     front,
     is_number,
+    length,
     number,
     offset,
     path_frame,
     plane,
     point2,
     point3,
-    polygon,
+    profile_points,
     rect,
+    render,
+    short,
+    shown,
     side,
 )
 from monkeyarch.construction.vocabulary import BUILTINS, LIMITS, MATH, REQUIRED, VERBS, Verb, verb
 
-MAX_SEQUENCE = 10_000
-MAX_NESTING = 100
-MAX_LOG_LINES = 1_000
+MAX_NESTING = LIMITS["nesting"]
+MAX_ELEMENTS = LIMITS["listElements"]
+MAX_CREATED = LIMITS["createdElements"]
+MAX_TEXT = LIMITS["textCharacters"]
+MAX_LOG_LINES = LIMITS["printLines"]
 MAX_LOG_LINE = 2_000
-MAX_ID = 90
+MAX_ID = LIMITS["idLength"]
+MAX_PAIRS = LIMITS["profileEdgePairs"]
+MAX_CUTTERS = LIMITS["cuttersPerShape"]
+MAX_SECTIONS = LIMITS["loftSections"]
+MAX_ROUND_DIGITS = LIMITS["roundDigits"]
+MAX_POINTS = LIMITS["totalPoints"]
+TIME_OUT = "the script ran longer than 5 s; split it"
+_WALK = 100  # elements walked per extra step
 
 
 class ConstructionError(ValueError):
@@ -68,6 +104,7 @@ class ConstructionError(ValueError):
         self.line = line
         self.column = column
         self.source_line = source_line
+        self.calls: list[int] = []  # the lines of the calls it happened inside, innermost first
         where = "" if line is None else (f"line {line}, column {column}: " if column is not None else f"line {line}: ")
         super().__init__(where + message)
 
@@ -75,9 +112,19 @@ class ConstructionError(ValueError):
         return {"code": "CONSTRUCTION_INVALID", "line": self.line, "column": self.column,
                 "sourceLine": self.source_line, "message": self.message}
 
+    def with_calls(self) -> ConstructionError:
+        """The same refusal, naming the calls it happened inside."""
+
+        if not self.calls:
+            return self
+        chain = ", from ".join(f"line {line}" + (f" ({count} times)" if count > 1 else "")
+                               for line, count in ((line, len(list(group))) for line, group in groupby(self.calls)))
+        return ConstructionError(f"{self.message} (called from {chain})", line=self.line, column=self.column,
+                                 source_line=self.source_line)
+
 
 def _source_line(lines: list[str], line: int | None) -> str | None:
-    return lines[line - 1].strip() if line is not None and 1 <= line <= len(lines) else None
+    return short(lines[line - 1].strip(), 1_000) if line is not None and 1 <= line <= len(lines) else None
 
 
 def _error_at(lines: list[str], node: object, message: str) -> ConstructionError:
@@ -85,6 +132,14 @@ def _error_at(lines: list[str], node: object, message: str) -> ConstructionError
     column = getattr(node, "col_offset", None)
     return ConstructionError(message, line=line, column=None if column is None else column + 1,
                              source_line=_source_line(lines, line))
+
+
+def _statement_error(lines: list[str], line: int | None, message: str) -> ConstructionError:
+    """A refusal at a statement's line; its column is where that statement starts."""
+
+    text = lines[line - 1] if line is not None and 1 <= line <= len(lines) else None
+    column = None if text is None else len(text) - len(text.lstrip()) + 1
+    return ConstructionError(message, line=line, column=column, source_line=_source_line(lines, line))
 
 
 # ---------------------------------------------------------------- the allow-list
@@ -123,6 +178,14 @@ def _read_only(name: str) -> str | None:
     return None
 
 
+def _constant_kind(value: object) -> str:
+    if isinstance(value, bytes):
+        return "bytes"
+    if isinstance(value, complex):
+        return "a complex number"
+    return "..." if value is Ellipsis else "this value"
+
+
 class _Checker:
     """The allow-list pass over the whole tree, before anything runs."""
 
@@ -151,7 +214,7 @@ class _Checker:
         if not isinstance(node, _ALLOWED):
             raise self.refuse(position, f"{type(node).__name__} is not part of the construction language")
         if isinstance(node, ast.Constant) and not (node.value is None or isinstance(node.value, (bool, int, float, str))):
-            raise self.refuse(position, f"the value {node.value!r} is not part of the construction language")
+            raise self.refuse(position, f"{_constant_kind(node.value)} is not part of the construction language")
         if isinstance(node, ast.Name):
             self.name(node, node.id, stored=isinstance(node.ctx, ast.Store))
         elif isinstance(node, ast.FunctionDef):
@@ -222,7 +285,7 @@ def parse(script: object) -> tuple[ast.Module, list[str]]:
     try:
         tree = ast.parse(script, mode="exec")
     except SyntaxError as exc:
-        raise ConstructionError(exc.msg or "invalid syntax", line=exc.lineno, column=exc.offset,
+        raise ConstructionError(short(exc.msg or "invalid syntax", 120), line=exc.lineno, column=exc.offset,
                                 source_line=_source_line(lines, exc.lineno)) from None
     except (ValueError, RecursionError, MemoryError):
         raise ConstructionError("the script cannot be read: it nests too deeply or is not valid text") from None
@@ -238,24 +301,256 @@ def parse(script: object) -> tuple[ast.Module, list[str]]:
 
 
 # ---------------------------------------------------------------- the session: shapes, reached geometry, log
+_UNKEYED = frozenset({tokenize.NL, tokenize.NEWLINE, tokenize.COMMENT, tokenize.INDENT, tokenize.DEDENT,
+                      tokenize.ENDMARKER})
+
+
+def _statement_key(source: str, node: ast.stmt) -> str:
+    """A statement's text as the ids of the shapes it makes are hashed from: its tokens one space apart, so
+    whitespace, line breaks and comments do not matter. A for or if statement is keyed by its header only."""
+
+    def text(part: ast.AST) -> str:
+        try:
+            found = ast.get_source_segment(source, part)
+        except (IndexError, ValueError):  # a statement from other text than ``source``
+            found = None
+        return found or ast.unparse(part)
+
+    if isinstance(node, ast.For):
+        written = f"for {text(node.target)} in {text(node.iter)}"
+    elif isinstance(node, ast.If):
+        written = f"if {text(node.test)}"
+    elif isinstance(node, ast.FunctionDef):
+        written = f"def {node.name}"
+    else:
+        written = text(node)
+    try:
+        return " ".join(token.string for token in tokenize.generate_tokens(io.StringIO(written).readline)
+                        if token.type not in _UNKEYED)
+    except (tokenize.TokenError, SyntaxError):
+        return " ".join(written.split())
+
+
+def _weight(value: object) -> int:
+    """What comparing ``value`` with == or in can cost, in elements: one per value, nested ones included, and more
+    for long text and for profiles and sections, which compare point by point. An anchor or a binding inside is
+    refused as it is on its own."""
+
+    total, pending = 0, [value]
+    while pending:
+        item = pending.pop()
+        total += 1
+        if isinstance(item, (list, tuple)):
+            pending.extend(item)
+        elif isinstance(item, str):
+            total += len(item) // _WALK
+        elif isinstance(item, (Profile, Section)):
+            total += 3 * len((item if isinstance(item, Profile) else item.profile).points)
+        elif isinstance(item, Plane):
+            total += 12
+        elif isinstance(item, ParamRef):
+            raise binding_refusal(item)
+        elif isinstance(item, Anchor):
+            raise ShapeError("an anchor cannot be compared; bounds() gives numbers")
+    return total
+
+
 def _flatten(value: object) -> list:
     if isinstance(value, (list, tuple)):
         return [item for element in value for item in _flatten(element)]
     return [value]
 
 
-class Session:
-    """What one script run holds: the shapes it made, the existing geometry it reached, the print log."""
+def _range_length(start: int, stop: int, step: int) -> int:
+    if step > 0:
+        return max(0, (stop - start + step - 1) // step)
+    return max(0, (start - stop - step - 1) // (-step))
 
-    def __init__(self, record: StateRecord) -> None:
+
+class Session:
+    """What one script run holds: its shapes, the existing geometry it reached, relations, work done, the log."""
+
+    def __init__(self, record: StateRecord, source: str = "") -> None:
         self.world = World(record)
+        self.world.current_shape, self.world.spend = self.current_shape, self.tick
+        self.source = source
+        self.statement: ast.stmt | None = None  # the statement running now: what makes a new shape
+        self.callers: list[ast.stmt | None] = []  # the statements whose calls the running statement is inside
+        self._keys: dict[ast.stmt, str] = {}
+        self.occurrences: dict[str, int] = {}  # statement chain key -> shapes it has made so far
+        self.naming_epoch = 0  # bumped whenever what names a shape changes; the naming is worked out per epoch
+        self._naming: tuple[int, Naming] | None = None
+        self.points = 0  # points of the script's shapes still alive
         self.shapes: list[Shape] = []  # new shapes, in creation order
-        self.rows: dict[str, RowShape] = {}  # existing geometry reached with get(), by element id
+        self.rows: dict[str, RowShape] = {}  # existing geometry loaded by element id, reached or as context
+        self.explicit: set[str] = set()  # element ids the script reached with get()
         self.log: list[str] = []
         self.line = 0
         self.order = 0
         self.seq = 0
         self.results = 0
+        self.steps = 0
+        self.deadline = time.monotonic() + LIMITS["seconds"]
+        self.created_total = 0
+        self.sizes: dict[int, tuple[object, int, int, bool]] = {}  # id -> (value, elements, nesting, holds shapes)
+        # Which lists and tuples hold a list (or a tuple that holds one), and how many times: what += must re-measure.
+        self.kids: dict[int, dict[int, int]] = {}  # a list's or tuple's id -> {id of what it holds: times}
+        self.holders: dict[int, dict[int, int]] = {}  # the reverse: id -> {id of a list or tuple holding it: times}
+        self.pairs = 0
+        self.profiles: dict[tuple, Profile] = {}
+        self.hosts_by_cutter: dict[Shape, dict[Shape, None]] = {}
+        self.carried: dict[Shape, dict[Shape, None]] = {}  # a shape -> the shapes standing on its top
+        self.stand_targets: dict[Shape, tuple[Shape, ...]] = {}
+
+    # ---- work
+    def tick(self, amount: int = 1) -> None:
+        self.steps += amount
+        if self.steps > LIMITS["steps"]:
+            raise ShapeError("the script takes more than 20 000 evaluation steps")
+        if time.monotonic() >= self.deadline:
+            raise ShapeError(TIME_OUT)
+
+    def charge(self, elements: int) -> None:
+        """Walking a sequence costs steps by its length."""
+
+        self.tick(elements // _WALK)
+
+    def measure(self, value: object) -> tuple[int, int, bool]:
+        """(elements with nested ones, nesting depth, whether it holds shapes) of a list or tuple; recorded the first
+        time it is measured, with the lists it holds (kept current by ``grow``)."""
+
+        if not isinstance(value, (list, tuple)):
+            return 0, 0, isinstance(value, Shape)
+        known = self.sizes.get(id(value))
+        if known is not None and known[0] is value:
+            return known[1], known[2], known[3]
+        size, depth, shapes = len(value), 1, False
+        kids: dict[int, int] = {}
+        for item in value:
+            if isinstance(item, Shape):
+                shapes = True
+            elif isinstance(item, (list, tuple)):
+                inner, nested, held = self.measure(item)
+                size, depth, shapes = size + inner, max(depth, nested + 1), shapes or held
+                if self.can_grow(item):
+                    kids[id(item)] = kids.get(id(item), 0) + 1
+        self.remember(value, size, depth, shapes, kids)
+        return size, depth, shapes
+
+    def can_grow(self, value: object) -> bool:
+        """Whether ``value``'s size can still change: a list, or a tuple that holds one."""
+
+        return isinstance(value, list) or (isinstance(value, tuple) and id(value) in self.kids)
+
+    def kids_of(self, value: object) -> dict[int, int]:
+        return self.kids.get(id(value), {})
+
+    def admit(self, size: int, depth: int) -> None:
+        """A new list or tuple of ``size`` elements (nested ones included) and ``depth`` levels, if within bounds."""
+
+        if size > MAX_ELEMENTS:
+            raise ShapeError("a list or tuple may hold at most 10 000 elements, nested ones included")
+        if depth > MAX_NESTING:
+            raise ShapeError(f"lists and tuples may nest at most {MAX_NESTING} levels")
+        self.count_created(size)
+
+    def count_created(self, elements: int) -> None:
+        self.created_total += elements
+        if self.created_total > MAX_CREATED:
+            raise ShapeError("the script creates more than 200 000 list and tuple elements; "
+                             "build a long list once with a comprehension, or grow it with +=")
+        self.charge(elements)
+
+    def remember(self, value: object, size: int, depth: int, shapes: bool, kids: dict[int, int] | None = None) -> object:
+        """Record a new list or tuple; ``kids`` are the lists (and list-holding tuples) it holds, by id and times."""
+
+        known = self.sizes.get(id(value))
+        if known is not None and known[0] is value:
+            return value  # the same tuple back (t + (), t * 1): already recorded
+        self.sizes[id(value)] = (value, size, depth, shapes)
+        if kids:
+            self.kids[id(value)] = kids
+            for kid, times in kids.items():
+                holders = self.holders.setdefault(kid, {})
+                holders[id(value)] = holders.get(id(value), 0) + times
+        return value
+
+    def grow(self, target: list, addition: list | tuple) -> None:
+        """``target += addition`` on a list: extended in place, as Python does, counting only what it gains.
+
+        Every list or tuple that holds ``target`` (directly or not) gains the same elements, as many times as it
+        holds ``target``, so each of them is checked and re-measured too.
+        """
+
+        added, depth, shapes = self.measure(addition)
+        own = self.measure(target)[1]
+        new_kids = dict(self.kids_of(addition))
+        order, times, below = self._lineage(target)
+        if any(kid in times for kid in new_kids):
+            raise ShapeError("+= cannot put a list inside itself")
+        nesting = max(own, depth)
+        for key in order:
+            _, size, levels, _ = self.sizes[key]
+            if size + times[key] * added > MAX_ELEMENTS:
+                if key == id(target):
+                    raise ShapeError("a list or tuple may hold at most 10 000 elements, nested ones included")
+                raise ShapeError("a list or tuple that holds this list would then hold more than 10 000 elements, "
+                                 "nested ones included")
+            if max(levels, below[key] + nesting) > MAX_NESTING:
+                raise ShapeError(f"lists and tuples may nest at most {MAX_NESTING} levels")
+        self.count_created(added)
+        target.extend(addition)
+        for key in order:
+            value, size, levels, held = self.sizes[key]
+            self.sizes[key] = (value, size + times[key] * added, max(levels, below[key] + nesting), held or shapes)
+        if new_kids:
+            mine = self.kids.setdefault(id(target), {})
+            for kid, count in new_kids.items():
+                mine[kid] = mine.get(kid, 0) + count
+                holders = self.holders.setdefault(kid, {})
+                holders[id(target)] = holders.get(id(target), 0) + count
+
+    def _lineage(self, target: list) -> tuple[list[int], dict[int, int], dict[int, int]]:
+        """``target`` and every list or tuple holding it, directly or not, each before what holds it; with how many
+        times each holds ``target`` and how many levels below it ``target`` is at most."""
+
+        start = id(target)
+        finished: list[int] = []
+        seen = {start}
+        stack = [(start, iter(self.holders.get(start, ())))]
+        visited = 0
+        while stack:
+            key, above = stack[-1]
+            holder = next(above, None)
+            if holder is None:
+                stack.pop()
+                finished.append(key)
+                continue
+            visited += 1
+            if holder not in seen:
+                seen.add(holder)
+                stack.append((holder, iter(self.holders.get(holder, ()))))
+        self.tick(visited // 10)
+        order = finished[::-1]  # topological: each after everything it holds on the way down to target
+        times, below = {start: 1}, {start: 0}
+        for key in order:
+            for holder, count in self.holders.get(key, {}).items():
+                times[holder] = times.get(holder, 0) + count * times[key]
+                below[holder] = max(below.get(holder, 0), below[key] + 1)
+        return order, times, below
+
+    def created(self, value: object) -> object:
+        if isinstance(value, (list, tuple)):
+            size, depth, _ = self.measure(value)
+            self.admit(size, depth)
+        return value
+
+    def spend_pairs(self, pairs: int) -> None:
+        self.pairs += pairs
+        if self.pairs > MAX_PAIRS:
+            raise ShapeError("the script checks more than 1 000 000 pairs of profile edges; "
+                             "reuse a profile instead of rebuilding it")
+        self.charge(pairs // 10)
 
     # ---- bookkeeping
     def _next(self) -> int:
@@ -266,11 +561,62 @@ class Session:
         self.results += 1
         if self.results > LIMITS["geometryResults"]:
             raise ShapeError("the script makes more than 300 geometry results")
+        self.points += shape.point_count  # type: ignore[attr-defined]
+        if self.points > MAX_POINTS:
+            raise ShapeError("the script's shapes would have more than 100 000 points in all; use fewer or simpler "
+                             "profiles, sections and paths")
+        key = self.statement_key()
+        shape.made_by = (key, self.occurrences.get(key, 0))
+        self.occurrences[key] = shape.made_by[1] + 1
         self.shapes.append(shape)
+        self.renamed()
+        self._reindex(shape)
         return shape
 
-    def live(self) -> list[Shape]:
-        return [shape for shape in (*self.shapes, *self.rows.values()) if shape.deleted_line is None]
+    def renamed(self) -> None:
+        """What names a shape changed: the naming is worked out again, and so is every top, since a new shape or a
+        new name may now stand for existing geometry."""
+
+        self.naming_epoch += 1
+        self.world.tops.clear()
+
+    def statement_key(self) -> str:
+        """The text a new shape's id is hashed from: the chain of statements running now - the module-level one,
+        then each statement it called, down to the running one - each as ``_statement_key`` reads it."""
+
+        return "\x00".join(self._key(node) for node in (*self.callers, self.statement) if node is not None)
+
+    def _key(self, node: ast.stmt) -> str:
+        key = self._keys.get(node)
+        if key is None:
+            key = self._keys[node] = _statement_key(self.source, node)
+        return key
+
+    # ---- the script's model: what it names, and the current version of what it changed or redefined
+    def naming(self) -> Naming:
+        """The ids the shapes have as the script now names them (lowering gives the final, checked ones)."""
+
+        if self._naming is None or self._naming[0] != self.naming_epoch:
+            self._naming = (self.naming_epoch, identify(self.shapes))
+        return self._naming[1]
+
+    def redefines(self, element_id: str) -> Shape | None:
+        """The new shape whose id, as the script now names it, is that of the existing element: the current
+        version of that geometry."""
+
+        if not element_id.endswith(ELEMENT_SUFFIX):
+            return None
+        return self.naming().unique(element_id[:-len(ELEMENT_SUFFIX)])
+
+    def current_shape(self, element_id: str) -> Shape | None:
+        """The shape that now stands for the element: the new shape that redefines it, else the row the script
+        reached; None for an element the script never reached, which the record describes."""
+
+        shape: Shape | None = self.redefines(element_id)
+        if shape is not None:
+            return shape
+        row = self.rows.get(element_id)
+        return row if row is not None and row.deleted_line is None else None
 
     def note_assignment(self, name: str, value: object) -> None:
         """A module-level assignment: the variable a new shape was last assigned to names it."""
@@ -279,8 +625,14 @@ class Session:
         if isinstance(value, Shape):
             if value.is_new:
                 value.direct = (name, self.order, self.line)
+                self.renamed()
             return
         if isinstance(value, (list, tuple)):
+            size, _, shapes = self.measure(value)
+            if not shapes:
+                return
+            self.charge(size)
+            self.renamed()
             for item in _flatten(value):
                 if isinstance(item, Shape) and item.is_new:
                     item.listed = (name, self.order, self.line)
@@ -292,48 +644,75 @@ class Session:
             raise ShapeError(f"{value.label()} was deleted on line {value.deleted_line}")
         return value
 
-    def changed(self, shape: Shape) -> Shape:
+    def _shapes_in(self, value: object, what: str) -> list[Shape]:
+        if isinstance(value, (list, tuple)):
+            self.charge(self.measure(value)[0])
+        return [self.alive(item, what) for item in _flatten(value)]
+
+    def changed(self, shape: Shape, *, extent: bool = True) -> Shape:
+        if extent:
+            shape.check_extent()  # type: ignore[attr-defined]
         shape.touched(self.line)
+        self.world.tops.clear()  # a top may have moved: work the tops out again when next asked
         return shape
 
-    def world_label(self, element_id: str) -> str:
-        component = self.world.component_of(element_id)
-        return component if len(self.world.elements_of.get(component, [])) == 1 else element_id
+    def profile(self, value: object, what: str) -> Profile:
+        """A profile, or a list of points read as ``polygon(points)``: checked once per distinct outline."""
 
-    # ---- relations between shapes
-    @staticmethod
-    def _names(entry: object, target: Shape) -> bool:
-        return entry is target or (isinstance(target, RowShape) and target.existing and entry == target.element_id)
+        if isinstance(value, Profile):
+            return value
+        if not isinstance(value, (list, tuple)):
+            raise ShapeError(f"{what} needs a profile from rect, polygon, circle or offset, not {describe(value)}")
+        self.charge(self.measure(value)[0])
+        points = profile_points(value, what)
+        key = tuple(points)
+        found = self.profiles.get(key)
+        if found is None:
+            found = self.profiles[key] = closed_profile(points, what, self.spend_pairs)
+        return found
+
+    # ---- relations: what cuts what, what stands on what
+    def _link_cut(self, host: Shape, cutter: Any) -> None:
+        host.voids[cutter] = None
+        if isinstance(cutter, Shape):
+            self.hosts_by_cutter.setdefault(cutter, {})[host] = None
+
+    def _unlink_cut(self, host: Shape, cutter: Any) -> None:
+        host.voids.pop(cutter, None)
+        if isinstance(cutter, Shape):
+            self.hosts_by_cutter.get(cutter, {}).pop(host, None)
+
+    def _reindex(self, shape: Shape) -> None:
+        """Record what ``shape`` stands on after its anchors changed (nothing, once it is deleted)."""
+
+        for target in self.stand_targets.get(shape, ()):
+            self.carried.get(target, {}).pop(shape, None)
+        targets = () if shape.deleted_line is not None else tuple(
+            anchor.target for anchor in shape.anchors() if anchor.kind == "top")  # type: ignore[attr-defined]
+        for target in targets:
+            self.carried.setdefault(target, {})[shape] = None
+        self.stand_targets[shape] = targets
 
     def hosts_of(self, target: Shape) -> list[str]:
-        """What ``target`` currently cuts."""
+        """What ``target`` cuts as this script knows it: the script's own cuts and those of the geometry it reached.
 
-        found = [shape.label() for shape in self.live() if any(self._names(entry, target) for entry in shape.voids)]
-        if isinstance(target, RowShape) and target.existing:
-            for host in self.world.void_hosts.get(target.element_id, ()):  # type: ignore[arg-type]
-                if host not in self.rows:
-                    found.append(self.world_label(host))
-        return found
+        What the record's other geometry cuts may still change - a new shape that redefines a host replays its
+        cuts only when lowering - so those cuts are checked there, against the final model.
+        """
+
+        return [host.label() for host in self.hosts_by_cutter.get(target, {}) if host.deleted_line is None]
 
     def standing_on(self, target: Shape) -> list[str]:
-        """What currently stands on ``target``'s top."""
+        """What stands on ``target``'s top as this script knows it; the record's own supports are checked when
+        lowering, against the final model."""
 
-        found = [shape.label() for shape in self.live()
-                 if shape is not target and any(a.kind == "top" and a.target is target for a in shape.anchors())]  # type: ignore[attr-defined]
-        if isinstance(target, RowShape) and target.existing:
-            for user in self.world.top_users.get(target.element_id, ()):  # type: ignore[arg-type]
-                row = self.rows.get(user)
-                if row is not None and (row.deleted_line is not None or row.base_anchor is not None):
-                    continue
-                found.append(self.world_label(user))
-        return found
+        return [shape.label() for shape in self.carried.get(target, {})
+                if shape is not target and shape.deleted_line is None]
 
     def _record_dependents(self, shape: RowShape) -> list[str]:
         ids = {shape.element_id} | ({shape.component_id} if shape.owns_component else set())
-        refs = {f"entity:{identifier}" for identifier in ids}
         handled = set(self.world.void_hosts.get(shape.element_id, ())) | set(self.world.top_users.get(shape.element_id, ()))  # type: ignore[arg-type]
-        found = {edge.downstream_ref.removeprefix("entity:") for edge in self.world.record.dependency_edges()
-                 if edge.upstream_ref in refs and edge.downstream_ref.startswith("entity:")}
+        found = set().union(*(self.world.downstream(identifier) for identifier in ids))  # type: ignore[arg-type]
         found -= ids | handled
         found = {item for item in found if not (item in self.rows and self.rows[item].deleted_line is not None)}
         found |= {relation.relation_id for relation in self.world.record.relations if {relation.subject, relation.object} & ids}
@@ -341,25 +720,22 @@ class Session:
                   if entity.parent_id in ids and entity.entity_id not in ids}
         return sorted(found)
 
-    def anchor(self, value: object, what: str, *, absolute_ok: bool = True) -> Anchor:
+    def anchor(self, value: object, what: str) -> Anchor:
         default = self.world.default_level
         if isinstance(value, Anchor):
             anchor = value
+        elif default is None and (isinstance(value, ParamRef) or is_number(value)):
+            raise ShapeError(NO_LEVEL)
         elif isinstance(value, ParamRef):
-            if default is None:
-                raise ShapeError(f"{value!r} as a base needs a project level; the project has none")
-            if default[1] != 0:
+            if default[1] != 0:  # type: ignore[index]
                 raise ShapeError(f"{value!r} alone is measured from the project's zero; write "
-                                 f"level('{default[0]}') + {value!r}")
-            anchor = Anchor("level", default[0], 0.0, value.key)
+                                 f"level('{short(default[0])}') + {value!r}")  # type: ignore[index]
+            anchor = Anchor("level", default[0], 0.0, value.key)  # type: ignore[index]
         elif is_number(value):
-            height = number(value, what)
-            anchor = Anchor("level", default[0], height - default[1]) if default else Anchor("absolute", None, height)
+            anchor = Anchor("level", default[0], coordinate(value, what) - default[1])  # type: ignore[index]
         else:
             raise ShapeError(f"{what} takes a number, level(id) or top(obj), optionally plus a number, "
                              f"not {describe(value)}")
-        if anchor.kind == "absolute" and not absolute_ok:
-            raise ShapeError(f"{what} needs a project level; the project has none")
         if anchor.kind == "top":
             self.alive(anchor.target, what)
             if self.hosts_of(anchor.target):
@@ -367,32 +743,52 @@ class Session:
         return anchor
 
     def _stands_on_itself(self, shape: Shape, anchor: Anchor) -> bool:
-        seen: set[int] = set()
-        pending = [anchor]
+        """Whether standing on ``anchor`` would lead back to ``shape``, through the script or the record."""
+
+        if anchor.kind != "top":
+            return False
+        pending: list[Any] = [anchor.target]
+        seen: set = set()
         while pending:
-            current = pending.pop()
-            if current.kind != "top":
-                continue
-            if current.target is shape:
+            node = pending.pop()
+            if isinstance(node, str):
+                if node in self.rows:
+                    node = self.rows[node]
+                else:
+                    if isinstance(shape, RowShape) and shape.existing and shape.element_id == node:
+                        return True
+                    if node not in seen:
+                        seen.add(node)
+                        pending.extend(self.world.stands_on.get(node, ()))
+                    continue
+            if node is shape:
                 return True
-            if id(current.target) in seen:
+            if id(node) in seen:
                 continue
-            seen.add(id(current.target))
-            pending.extend(current.target.anchors())
+            seen.add(id(node))
+            if isinstance(node, RowShape) and node.existing and node.base_anchor is None:
+                pending.extend(self.world.stands_on.get(node.element_id, ()))  # type: ignore[arg-type]
+            else:
+                pending.extend(item.target for item in node.anchors() if item.kind == "top")  # type: ignore[attr-defined]
         return False
+
+    def _default_level(self) -> tuple[str, float]:
+        if self.world.default_level is None:
+            raise ShapeError(NO_LEVEL)
+        return self.world.default_level
 
     # ---- profiles and planes
     def verb_rect(self, a: dict, given: frozenset) -> Profile:
         return rect(a["x"], a["z"], a["width"], a["depth"])
 
     def verb_polygon(self, a: dict, given: frozenset) -> Profile:
-        return polygon(a["points"])
+        return self.profile(a["points"], "polygon()")
 
     def verb_circle(self, a: dict, given: frozenset) -> Profile:
         return circle(a["x"], a["z"], a["radius"], a["segments"])
 
     def verb_offset(self, a: dict, given: frozenset) -> Profile:
-        return offset(a["profile"], a["distance"])
+        return offset(self.profile(a["profile"], "offset()"), a["distance"], self.spend_pairs)
 
     def verb_plane(self, a: dict, given: frozenset) -> Plane:
         return plane(a["origin"], a["x_axis"], a["y_axis"])
@@ -407,10 +803,9 @@ class Session:
     def _height(self, value: object, what: str) -> float | ParamRef:
         if isinstance(value, ParamRef):
             return value
-        height = number(value, what)
-        if height == 0:
+        if is_number(value) and number(value, what) == 0:
             raise ShapeError("a height of zero makes no solid; use face() for a flat face")
-        return height
+        return length(value, what)
 
     @staticmethod
     def _plane(value: object, what: str) -> Plane | None:
@@ -418,48 +813,57 @@ class Session:
             return value
         raise ShapeError(f"{what} plane takes plane(), front() or side(), not {describe(value)}")
 
+    def _drawn(self, shape: Drawn) -> Shape:
+        shape.check_extent()
+        return self.new(shape)
+
     def verb_extrude(self, a: dict, given: frozenset) -> Shape:
-        profile = as_profile(a["profile"], "extrude()")
+        profile = self.profile(a["profile"], "extrude()")
         height = self._height(a["height"], "extrude() height")
         drawing = self._plane(a["plane"], "extrude()")
         if drawing is not None:
             if "at" in given:
                 raise ShapeError("at is not given with plane: the plane's origin places the profile")
-            return self.new(Drawn(self._next(), self.line, "extrude", profile=profile, height=height, plane=drawing))
+            self._default_level()
+            return self._drawn(Drawn(self._next(), self.line, "extrude", profile=profile, height=height, plane=drawing))
         anchor = self.anchor(a["at"], "extrude() at")
-        return self.new(Drawn(self._next(), self.line, "extrude", profile=profile, height=height, anchor=anchor))
+        return self._drawn(Drawn(self._next(), self.line, "extrude", profile=profile, height=height, anchor=anchor))
 
     def verb_face(self, a: dict, given: frozenset) -> Shape:
-        profile = as_profile(a["profile"], "face()")
+        profile = self.profile(a["profile"], "face()")
         drawing = self._plane(a["plane"], "face()")
         if drawing is not None:
             if "at" in given:
                 raise ShapeError("at is not given with plane: the plane's origin places the profile")
-            return self.new(Drawn(self._next(), self.line, "face", profile=profile, plane=drawing))
-        return self.new(Drawn(self._next(), self.line, "face", profile=profile, anchor=self.anchor(a["at"], "face() at")))
+            self._default_level()
+            return self._drawn(Drawn(self._next(), self.line, "face", profile=profile, plane=drawing))
+        return self._drawn(Drawn(self._next(), self.line, "face", profile=profile,
+                                 anchor=self.anchor(a["at"], "face() at")))
 
     def verb_path(self, a: dict, given: frozenset) -> Shape:
         points = a["points"]
         if not isinstance(points, (list, tuple)):
             raise ShapeError(f"path() takes a list of points (x, y, z), not {describe(points)}")
-        checked = [point3(point, "path()") for point in points]
-        if not 2 <= len(checked) <= MAX_PATH_POINTS:
+        if not 2 <= len(points) <= MAX_PATH_POINTS:
             raise ShapeError(f"path() takes 2 to {MAX_PATH_POINTS} points")
+        self.charge(self.measure(points)[0])
+        checked = [point3(point, "path()") for point in points]
         for p, q in zip(checked, checked[1:]):
-            if math.dist(p, q) <= 1e-9:
+            if math.dist(p, q) < MIN_LENGTH:
                 raise ShapeError(f"path() repeats the point ({p[0]!r}, {p[1]!r}, {p[2]!r})")
         path_frame(checked)
-        if self.world.default_level is None:
-            raise ShapeError("a path needs a project level; the project has none")
-        return self.new(Drawn(self._next(), self.line, "path", points=tuple(checked)))
+        self._default_level()
+        return self._drawn(Drawn(self._next(), self.line, "path", points=tuple(checked)))
 
     def verb_section(self, a: dict, given: frozenset) -> Section:
-        return Section(as_profile(a["profile"], "section()"), self.anchor(a["at"], "section() at", absolute_ok=False))
+        return Section(self.profile(a["profile"], "section()"), self.anchor(a["at"], "section() at"))
 
     def verb_loft(self, a: dict, given: frozenset) -> Shape:
         sections = a["sections"]
         if not isinstance(sections, (list, tuple)) or len(sections) < 2:
             raise ShapeError("loft() needs a list of two or more sections")
+        if len(sections) > MAX_SECTIONS:
+            raise ShapeError(f"loft() takes at most {MAX_SECTIONS} sections")
         for item in sections:
             if not isinstance(item, Section):
                 raise ShapeError(f"loft() takes sections made with section(profile, at), not {describe(item)}")
@@ -469,11 +873,12 @@ class Session:
         for item in sections:
             if item.anchor.param is not None:
                 raise ShapeError(f"a loft section cannot be bound to param('{item.anchor.param}')")
-            if item.anchor.kind != first.kind or item.anchor.target is not first.target:
+            if not item.anchor.base_of(first):
                 raise ShapeError("all loft sections are measured from the same level or the same top")
         if not isinstance(a["cap"], bool):
             raise ShapeError(f"loft() cap must be True or False, not {describe(a['cap'])}")
-        return self.new(Drawn(self._next(), self.line, "loft", sections=tuple(sections), cap=a["cap"]))
+        self.tick(len(sections) * len(sections[0].profile.points) // 10)  # per point, as a copy is
+        return self._drawn(Drawn(self._next(), self.line, "loft", sections=tuple(sections), cap=a["cap"]))
 
     # ---- transforms
     @staticmethod
@@ -491,12 +896,13 @@ class Session:
 
     def _transform(self, value: object, what: str, change: PlanMap) -> Shape:
         shape = self.alive(value, what)
+        self.tick(shape.size // 10)  # type: ignore[attr-defined]
         self._edit(shape, lambda: shape.apply(change))  # type: ignore[attr-defined]
         return self.changed(shape)
 
     def verb_move(self, a: dict, given: frozenset) -> Shape:
-        change = PlanMap("move", dx=number(a["dx"], "move() dx"), dy=number(a["dy"], "move() dy"),
-                         dz=number(a["dz"], "move() dz"))
+        change = PlanMap("move", dx=coordinate(a["dx"], "move() dx"), dy=coordinate(a["dy"], "move() dy"),
+                         dz=coordinate(a["dz"], "move() dz"))
         return self._transform(a["obj"], "move()", change)
 
     def verb_rotate(self, a: dict, given: frozenset) -> Shape:
@@ -513,47 +919,48 @@ class Session:
         if (a["x"] is None) == (a["z"] is None):
             raise ShapeError("mirror() takes exactly one of x or z")
         axis = "x" if a["x"] is not None else "z"
-        return self._transform(a["obj"], "mirror()", PlanMap("mirror", axis=axis, at=number(a[axis], f"mirror() {axis}")))
+        return self._transform(a["obj"], "mirror()", PlanMap("mirror", axis=axis, at=coordinate(a[axis], f"mirror() {axis}")))
 
     def _copy(self, shape: Shape, dx: float, dy: float, dz: float) -> Shape:
         if isinstance(shape, RowShape) and shape.producer == "wall":
             raise ShapeError(f"{shape.label()} can be moved, rotated, mirrored, given a height or a base, cut or "
                              "deleted; it cannot be copied")
-        twin = self.new(shape.clone(self._next(), self.line))  # type: ignore[attr-defined]
+        self.tick(shape.size // 10)  # type: ignore[attr-defined]
+        twin = shape.clone(self._next(), self.line)  # type: ignore[attr-defined]
         if dx or dy or dz:
-            twin.apply(PlanMap("move", dx=dx, dy=dy, dz=dz))  # type: ignore[attr-defined]
-        return twin
+            twin.apply(PlanMap("move", dx=dx, dy=dy, dz=dz))
+        twin.check_extent()
+        return self.new(twin)
 
     def verb_copy(self, a: dict, given: frozenset) -> Shape:
         shape = self.alive(a["obj"], "copy()")
-        return self._copy(shape, number(a["dx"], "copy() dx"), number(a["dy"], "copy() dy"), number(a["dz"], "copy() dz"))
+        return self._copy(shape, coordinate(a["dx"], "copy() dx"), coordinate(a["dy"], "copy() dy"),
+                          coordinate(a["dz"], "copy() dz"))
 
     def verb_array(self, a: dict, given: frozenset) -> list:
         shape = self.alive(a["obj"], "array()")
         count = a["count"]
-        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
-            raise ShapeError(f"array() count must be a whole number of at least 1, not {count!r}")
-        step = (number(a["dx"], "array() dx"), number(a["dy"], "array() dy"), number(a["dz"], "array() dz"))
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= LIMITS["geometryResults"]:
+            raise ShapeError(f"array() count must be a whole number from 1 to 300, not {shown(count)}")
+        step = (coordinate(a["dx"], "array() dx"), coordinate(a["dy"], "array() dy"), coordinate(a["dz"], "array() dz"))
         return [shape] + [self._copy(shape, *(k * c for c in step)) for k in range(1, count)]
 
     # ---- solid edits
     def verb_pushpull(self, a: dict, given: frozenset) -> Shape:
         shape = self.alive(a["obj"], "pushpull()")
-        distance = number(a["distance"], "pushpull() distance")
+        distance = coordinate(a["distance"], "pushpull() distance")
         if isinstance(shape, RowShape):
             self._edit(shape, lambda: shape.pushpull(distance))
         elif shape.kind == "face":  # type: ignore[attr-defined]
-            if distance == 0:
-                raise ShapeError("pushpull(0) makes no solid")
-            shape.kind, shape.height = "extrude", distance  # type: ignore[attr-defined]
+            shape.kind, shape.height = "extrude", length(distance, "pushpull() distance")  # type: ignore[attr-defined]
         elif shape.kind == "extrude":  # type: ignore[attr-defined]
             if isinstance(shape.height, ParamRef):  # type: ignore[attr-defined]
                 raise ShapeError(f"the height of {shape.label()} is bound to {shape.height!r}; set_height() changes it")  # type: ignore[attr-defined]
             height = float(shape.height)  # type: ignore[attr-defined]
-            length = abs(height) + distance
-            if length <= 0:
+            size = abs(height) + distance
+            if size < MIN_LENGTH:
                 raise ShapeError(f"pushpull({distance!r}) would leave {shape.label()} with no height")
-            shape.height = math.copysign(length, height)  # type: ignore[attr-defined]
+            shape.height = math.copysign(size, height)  # type: ignore[attr-defined]
         else:
             raise ShapeError(f"pushpull() lengthens a solid or pulls a face; {shape.label()} is a {shape.word}")
         return self.changed(shape)
@@ -575,16 +982,15 @@ class Session:
 
     def verb_set_base(self, a: dict, given: frozenset) -> Shape:
         shape = self.alive(a["obj"], "set_base()")
+        self.tick(shape.size // 10)  # type: ignore[attr-defined]
         anchor = self.anchor(a["at"], "set_base() at")
         if self._stands_on_itself(shape, anchor):
-            raise ShapeError(f"{shape.label()} cannot stand on its own top")
+            raise ShapeError(f"{shape.label()} would stand on its own top")
         if isinstance(shape, RowShape):
             self._edit(shape, lambda: shape.set_base(anchor))
         elif shape.kind in ("extrude", "face") and shape.plane is None:  # type: ignore[attr-defined]
             shape.anchor = anchor  # type: ignore[attr-defined]
         elif shape.kind == "loft":  # type: ignore[attr-defined]
-            if anchor.kind == "absolute":
-                raise ShapeError("a loft solid needs a project level; the project has none")
             if anchor.param is not None:
                 raise ShapeError(f"a loft solid's base cannot be bound to param('{anchor.param}')")
             low = min(section.anchor.offset for section in shape.sections)  # type: ignore[attr-defined]
@@ -595,6 +1001,7 @@ class Session:
             raise ShapeError(f"{shape.label()} is placed by its points; move() it instead")
         else:
             raise ShapeError(f"{shape.label()} is drawn on a plane, which places it; move() it instead")
+        self._reindex(shape)
         return self.changed(shape)
 
     # ---- cuts
@@ -602,54 +1009,64 @@ class Session:
         host = self.alive(a["host"], "cut()")
         if not host.is_solid:  # type: ignore[attr-defined]
             raise ShapeError(f"cut() needs a solid to cut; {host.label()} is a {host.word}")
-        cutters = _flatten(a["cutters"])
+        cutters = self._shapes_in(a["cutters"], "cut()")
         if not cutters:
             raise ShapeError("cut() needs at least one cutter")
-        for value in cutters:
-            cutter = self.alive(value, "cut()")
+        hosting = self.hosts_of(host)
+        if hosting:
+            raise ShapeError(f"{host.label()} is itself a cutter of {hosting[0]} and cannot be cut")
+        for cutter in cutters:
             if cutter is host:
                 raise ShapeError("a shape cannot cut itself")
-            solid = cutter.can_cut if isinstance(cutter, RowShape) else cutter.is_solid  # type: ignore[attr-defined]
-            if not solid:
+            if not cutter.can_cut:  # type: ignore[attr-defined]
                 raise ShapeError(f"{cutter.label()} is a {cutter.word}; only an extruded or lofted solid can cut")
             if cutter.voids:
                 raise ShapeError(f"{cutter.label()} has cutters of its own and cannot cut another shape")
-            hosting = self.hosts_of(host)
-            if hosting:
-                raise ShapeError(f"{host.label()} is itself a cutter of {', '.join(hosting)} and cannot be cut")
             standing = self.standing_on(cutter)
             if standing:
                 raise ShapeError(f"{standing[0]} stands on the top of {cutter.label()}; a cutter carries nothing")
-            if not any(self._names(entry, cutter) for entry in host.voids):
-                host.voids.append(cutter)
+            if cutter not in host.voids:
+                if len(host.voids) >= MAX_CUTTERS:
+                    raise ShapeError(f"a shape can be cut by at most {MAX_CUTTERS} cutters")
+                self._link_cut(host, cutter)
+                if host.is_new:
+                    host.void_events.append(("cut", cutter, self.line))
             if host not in cutter.cut_into:
-                cutter.cut_into.append(host)
-        return self.changed(host)
+                cutter.cut_into[host] = None
+                self.renamed()  # an unnamed cutter is named after its first host
+        return self.changed(host, extent=False)
 
     def verb_uncut(self, a: dict, given: frozenset) -> Shape:
         host = self.alive(a["host"], "uncut()")
-        cutters = _flatten(a["cutters"])
+        cutters = self._shapes_in(a["cutters"], "uncut()")
         if not cutters:
-            raise ShapeError("uncut() needs at least one cutter")
-        for value in cutters:
-            cutter = self.alive(value, "uncut()")
-            kept = [entry for entry in host.voids if not self._names(entry, cutter)]
-            if len(kept) == len(host.voids):
+            for cutter in list(host.voids):
+                self._unlink_cut(host, cutter)
+            if host.is_new:
+                host.void_events.append(("clear", None, self.line))
+            return self.changed(host, extent=False)
+        for cutter in cutters:
+            if cutter in host.voids:
+                self._unlink_cut(host, cutter)
+                if host.is_new:
+                    host.void_events.append(("uncut", cutter, self.line))
+            elif host.is_new:
+                # It may still cut the geometry this new shape redefines; lowering checks that.
+                host.void_events.append(("uncut", cutter, self.line))
+            else:
                 raise ShapeError(f"{cutter.label()} does not cut {host.label()}")
-            host.voids = kept
-        return self.changed(host)
+        return self.changed(host, extent=False)
 
     # ---- anchors and bindings
     def verb_level(self, a: dict, given: frozenset) -> Anchor:
         identifier = a["id"]
         if not isinstance(identifier, str) or identifier not in self.world.levels:
-            raise ShapeError(f"the project has no level {identifier}")
+            raise ShapeError(f"the project has no level {shown(identifier)}")
         return Anchor("level", identifier, 0.0)
 
     def verb_top(self, a: dict, given: frozenset) -> Anchor:
         shape = self.alive(a["obj"], "top()")
-        carries = shape.can_carry(self.world) if isinstance(shape, RowShape) else shape.upward  # type: ignore[attr-defined]
-        if not carries:
+        if not shape.can_carry(self.world):  # type: ignore[attr-defined]
             raise ShapeError(f"top() needs a solid extruded upward from a plan profile; {shape.label()} is not one")
         if self.hosts_of(shape):
             raise ShapeError(f"{shape.label()} cuts another shape; nothing can stand on a cutter's top")
@@ -658,11 +1075,12 @@ class Session:
     def verb_param(self, a: dict, given: frozenset) -> ParamRef:
         key = a["key"]
         if not isinstance(key, str) or key not in self.world.parameter_keys:
-            raise ShapeError(f"the project has no parameter {key}")
+            raise ShapeError(f"the project has no parameter {shown(key)}")
         return ParamRef(key)
 
     def verb_bounds(self, a: dict, given: frozenset) -> tuple:
         shape = self.alive(a["obj"], "bounds()")
+        self.tick(shape.size // 10)  # type: ignore[attr-defined]
         low, high = shape.bounds(self.world)  # type: ignore[attr-defined]
         return tuple(low), tuple(high)
 
@@ -674,16 +1092,17 @@ class Session:
             raise ShapeError(f"{shape.label()} already has its id")
         if not isinstance(identifier, str):
             raise ShapeError(f"name() takes the id as text, not {describe(identifier)}")
+        if len(identifier) > MAX_ID:
+            raise ShapeError(f"an id has at most {MAX_ID} characters")
         try:
             require_identifier(identifier, "id")
         except ValueError:
-            raise ShapeError(f"{identifier!r} is not a usable id: letters, digits, '.', '-' and '_', "
+            raise ShapeError(f"{shown(identifier)} is not a usable id: letters, digits, '.', '-' and '_', "
                              "starting with a letter or a digit") from None
         if identifier.endswith("-body"):
             raise ShapeError(f"{identifier} ends with -body, which is kept for a shape's geometry; choose another id")
-        if len(identifier) > MAX_ID:
-            raise ShapeError(f"an id has at most {MAX_ID} characters")
         shape.explicit = (identifier, self.line)
+        self.renamed()
         return shape
 
     def verb_get(self, a: dict, given: frozenset) -> Shape:
@@ -691,7 +1110,9 @@ class Session:
         if not isinstance(identifier, str):
             raise ShapeError(f"get() takes an id as text, not {describe(identifier)}")
         element_id, component_id, geometry_id = self.world.editable(identifier)
-        return self._row(element_id, component_id, geometry_id)
+        row = self._row(element_id, component_id, geometry_id)
+        self.explicit.add(element_id)
+        return row
 
     def _row(self, element_id: str, component_id: str, geometry_id: str) -> RowShape:
         found = self.rows.get(element_id)
@@ -709,30 +1130,36 @@ class Session:
         except (TypeError, ValueError) as exc:
             if isinstance(exc, ShapeError):
                 raise
-            raise ShapeError(f"{geometry_id} is stored in a form a script cannot read") from None
+            raise ShapeError(f"{short(geometry_id)} is stored in a form a script cannot read") from None
         self.rows[element_id] = row
-        loaded = []
-        for void in row.voids:
+        stored, row.voids = list(row.voids), {}
+        for void in stored:  # its cutters, loaded as context: the script may reach them, or not
             try:
-                loaded.append(self._row(*self.world.editable(void)))
+                self._link_cut(row, self._row(*self.world.editable(void)))
             except ShapeError:
-                loaded.append(void)
-        row.voids = loaded
+                self._link_cut(row, void)
         return row
 
     def verb_delete(self, a: dict, given: frozenset) -> None:
         shape = self.alive(a["obj"], "delete()")
         hosting = self.hosts_of(shape)
         if hosting:
-            raise ShapeError(f"{shape.label()} still cuts {', '.join(hosting)}; uncut it first")
+            raise ShapeError(f"{shape.label()} still cuts {hosting[0]}; uncut it first")
         standing = self.standing_on(shape)
         if standing:
             raise ShapeError(f"{standing[0]} stands on the top of {shape.label()}; delete or move it first")
         if isinstance(shape, RowShape) and shape.existing:
             dependents = self._record_dependents(shape)
             if dependents:
-                raise ShapeError(f"{', '.join(dependents)} still depend on {shape.label()}; change them first")
+                listed = short(", ".join(dependents), 80)
+                raise ShapeError(f"{listed} still depend on {shape.label()}; change them first")
         shape.deleted_line = self.line
+        self.renamed()  # what stood on it, if anything, is measured anew
+        if shape.is_new:
+            self.points -= shape.point_count  # type: ignore[attr-defined]
+        for cutter in list(shape.voids):
+            self._unlink_cut(shape, cutter)
+        self._reindex(shape)
         return None
 
 
@@ -765,7 +1192,7 @@ class _Function:
         self.body = body
 
     def __repr__(self) -> str:
-        return f"<function {self.name}>"
+        return f"<function {short(self.name)}>"
 
 
 class _Callable:
@@ -811,7 +1238,7 @@ def _bind(spec: Verb, args: list, keywords: dict) -> tuple[dict, frozenset]:
         values[rest.name] = list(args[len(positional):])
     for key, value in keywords.items():
         if key not in {param.name for param in positional}:
-            raise ShapeError(f"{spec.name}() has no parameter {key}: {spec.signature}")
+            raise ShapeError(f"{spec.name}() has no parameter {short(key)}: {spec.signature}")
         if key in values:
             raise ShapeError(f"{spec.name}() is given {key} twice: {spec.signature}")
         values[key] = value
@@ -834,17 +1261,25 @@ class Interpreter:
     def __init__(self, lines: list[str], session: Session) -> None:
         self.lines = lines
         self.session = session
-        self.steps = 0
         self.depth = 0
         self.module = _Frame({}, None, True)
 
     def error(self, node: object, message: str) -> ConstructionError:
         return _error_at(self.lines, node, message)
 
+    def guarded(self, node: ast.AST, work: Callable[[], Any]) -> Any:
+        """Run bookkeeping that may refuse, refusing at ``node``."""
+
+        try:
+            return work()
+        except ShapeError as exc:
+            raise self.error(node, str(exc)) from None
+
     def step(self, node: ast.AST) -> None:
-        self.steps += 1
-        if self.steps > LIMITS["steps"]:
-            raise self.error(node, "the script takes more than 20 000 evaluation steps")
+        try:
+            self.session.tick()
+        except ShapeError as exc:
+            raise self.error(node, str(exc)) from None
 
     def run(self, tree: ast.Module) -> None:
         self.block(tree.body, self.module)
@@ -857,6 +1292,7 @@ class Interpreter:
     def execute(self, node: ast.stmt, frame: _Frame) -> None:
         self.step(node)
         self.session.line = node.lineno
+        self.session.statement = node
         if isinstance(node, ast.Expr):
             self.evaluate(node.value, frame)
         elif isinstance(node, ast.Assign):
@@ -865,7 +1301,12 @@ class Interpreter:
                 self.assign(target, value, frame, naming=True)
         elif isinstance(node, ast.AugAssign):
             current = self.lookup(node.target.id, frame, node.target)  # type: ignore[attr-defined]
-            value = self.binary(node.op, current, self.evaluate(node.value, frame), node)
+            operand = self.evaluate(node.value, frame)
+            if isinstance(node.op, ast.Add) and isinstance(current, list) and isinstance(operand, (list, tuple)):
+                self.guarded(node, lambda: self.session.grow(current, operand))  # in place, as Python extends a list
+                value = current
+            else:
+                value = self.binary(node.op, current, operand, node)
             self.assign(node.target, value, frame, naming=True)
         elif isinstance(node, ast.For):
             self.loop(node, frame)
@@ -906,28 +1347,29 @@ class Interpreter:
         if isinstance(target, ast.Name):
             frame.names[target.id] = value
             if naming and frame.module_level:
-                self.session.note_assignment(target.id, value)
+                self.guarded(target, lambda: self.session.note_assignment(target.id, value))
             return
         elements = target.elts  # type: ignore[attr-defined]
         if not isinstance(value, (list, tuple, range)):
             raise self.error(target, f"cannot unpack {describe(value)} into {len(elements)} names")
-        items = list(value)
-        if len(items) != len(elements):
-            raise self.error(target, f"cannot unpack {len(items)} values into {len(elements)} names")
-        for element, item in zip(elements, items):
+        if len(value) != len(elements):
+            raise self.error(target, f"cannot unpack {len(value)} values into {len(elements)} names")
+        for element, item in zip(elements, value):
             self.assign(element, item, frame, naming=naming)
 
     # ---- expressions
     def evaluate(self, node: ast.AST, frame: _Frame) -> Any:
         self.step(node)
         if isinstance(node, ast.Constant):
-            return self.checked(node.value, node) if is_number(node.value) else node.value
+            return self.checked(node.value, node) if is_number(node.value) else self.text(node.value, node)
         if isinstance(node, ast.Name):
             return self.lookup(node.id, frame, node)
         if isinstance(node, ast.List):
-            return self.sized([self.evaluate(element, frame) for element in node.elts], node)
+            items = [self.evaluate(element, frame) for element in node.elts]
+            return self.guarded(node, lambda: self.session.created(items))
         if isinstance(node, ast.Tuple):
-            return tuple(self.evaluate(element, frame) for element in node.elts)
+            items = tuple(self.evaluate(element, frame) for element in node.elts)
+            return self.guarded(node, lambda: self.session.created(items))
         if isinstance(node, ast.BinOp):
             return self.binary(node.op, self.evaluate(node.left, frame), self.evaluate(node.right, frame), node)
         if isinstance(node, ast.UnaryOp):
@@ -971,11 +1413,11 @@ class Interpreter:
             return _Callable(name, "builtin")
         if name in _CONSTANTS:
             return _CONSTANTS[name]
-        raise self.error(node, f"{name} is not defined")
+        raise self.error(node, f"{short(name)} is not defined")
 
-    def sized(self, value: Any, node: ast.AST) -> Any:
-        if len(value) > MAX_SEQUENCE:
-            raise self.error(node, f"a list or tuple may hold at most {MAX_SEQUENCE:,} items".replace(",", " "))
+    def text(self, value: Any, node: ast.AST) -> Any:
+        if isinstance(value, str) and len(value) > MAX_TEXT:
+            raise self.error(node, "text may hold at most 10 000 characters")
         return value
 
     def checked(self, value: Any, node: ast.AST) -> Any:
@@ -990,20 +1432,29 @@ class Interpreter:
     def binary(self, operator: ast.operator, left: Any, right: Any, node: ast.AST) -> Any:
         symbol = _OPERATORS[type(operator)]
         if isinstance(left, (Anchor, ParamRef)) or isinstance(right, (Anchor, ParamRef)):
-            try:
-                return combine(symbol, left, right)
-            except ShapeError as exc:
-                raise self.error(node, str(exc)) from None
+            return self.guarded(node, lambda: combine(symbol, left, right))
         if is_number(left) and is_number(right):
             return self.arithmetic(symbol, left, right, node)
-        if symbol == "+" and type(left) is type(right) and isinstance(left, (str, list, tuple)):
-            return self.sized(left + right, node)
+        session = self.session
+        if symbol == "+" and type(left) is type(right) and isinstance(left, str):
+            return self.text(left + right, node)
+        if symbol == "+" and type(left) is type(right) and isinstance(left, (list, tuple)):
+            (ls, ld, lh), (rs, rd, rh) = session.measure(left), session.measure(right)
+            self.guarded(node, lambda: session.admit(ls + rs, max(ld, rd)))
+            kids = dict(session.kids_of(left))
+            for kid, times in session.kids_of(right).items():
+                kids[kid] = kids.get(kid, 0) + times
+            return session.remember(left + right, ls + rs, max(ld, rd), lh or rh, kids)
         if symbol == "*":
             sequence, count = (left, right) if isinstance(left, (list, tuple)) else (right, left)
             if isinstance(sequence, (list, tuple)) and isinstance(count, int) and not isinstance(count, bool):
-                if len(sequence) * max(count, 0) > MAX_SEQUENCE:
-                    raise self.error(node, f"a list or tuple may hold at most {MAX_SEQUENCE:,} items".replace(",", " "))
-                return sequence * count
+                size, depth, shapes = session.measure(sequence)
+                if count <= 0:  # an empty list or tuple: nothing nested, nothing held
+                    size, depth, shapes = 0, 1, False
+                total = size * max(count, 0)
+                self.guarded(node, lambda: session.admit(total, depth))
+                kids = {kid: times * count for kid, times in session.kids_of(sequence).items()} if count > 0 else {}
+                return session.remember(sequence * count, total, depth, shapes, kids)
         if symbol == "%" and isinstance(left, str):
             raise self.error(node, "formatting text with % is not part of the construction language; join text with +")
         raise self.error(node, f"{symbol} does not apply to {describe(left)} and {describe(right)}")
@@ -1048,10 +1499,11 @@ class Interpreter:
                 raise self.error(node, str(binding_refusal(value)))
             if isinstance(value, Anchor) and not isinstance(operator, (ast.Is, ast.IsNot)):
                 raise self.error(node, "an anchor cannot be compared; bounds() gives numbers")
-        if isinstance(operator, ast.Eq):
-            return left == right
-        if isinstance(operator, ast.NotEq):
-            return left != right
+        session = self.session
+        if isinstance(operator, (ast.Eq, ast.NotEq)):
+            # Nested lists and tuples compare item by item, as in Python; the comparison costs what it may walk.
+            self.guarded(node, lambda: session.charge(_weight(left) + _weight(right)))
+            return (left == right) == isinstance(operator, ast.Eq)
         if isinstance(operator, ast.Is):
             return left is right
         if isinstance(operator, ast.IsNot):
@@ -1059,6 +1511,10 @@ class Interpreter:
         if isinstance(operator, (ast.In, ast.NotIn)):
             if not isinstance(right, (list, tuple, range, str)) or (isinstance(right, str) and not isinstance(left, str)):
                 raise self.error(node, f"cannot look for {describe(left)} in {describe(right)}")
+            if isinstance(right, range):
+                self.guarded(node, lambda: session.charge(_weight(left) + len(right)))
+            elif isinstance(right, (list, tuple)):
+                self.guarded(node, lambda: session.charge(_weight(left) * len(right) + _weight(right)))
             return (left in right) == isinstance(operator, ast.In)
         if not ((is_number(left) and is_number(right)) or (isinstance(left, str) and isinstance(right, str))):
             raise self.error(node, f"cannot compare {describe(left)} with {describe(right)}")
@@ -1083,7 +1539,8 @@ class Interpreter:
                 parts.append(item)
             if parts[2] == 0:
                 raise self.error(node, "a slice step cannot be zero")
-            return value[slice(*parts)]
+            result = value[slice(*parts)]
+            return self.guarded(node, lambda: self.session.created(result))
         index = self.evaluate(node.slice, frame)
         if isinstance(index, bool) or not isinstance(index, int):
             raise self.error(node, f"an index must be a whole number, not {describe(index)}")
@@ -1095,11 +1552,15 @@ class Interpreter:
     def comprehension(self, node: ast.ListComp, frame: _Frame) -> list:
         scope = _Frame({}, frame, False)
         result: list = []
+        counted = {"size": 0}
 
         def walk(index: int) -> None:
             if index == len(node.generators):
-                result.append(self.evaluate(node.elt, scope))
-                self.sized(result, node)
+                item = self.evaluate(node.elt, scope)
+                counted["size"] += 1 + self.session.measure(item)[0]
+                if counted["size"] > MAX_ELEMENTS:
+                    raise self.error(node, "a list or tuple may hold at most 10 000 elements, nested ones included")
+                result.append(item)
                 return
             generator = node.generators[index]
             count = 0
@@ -1112,7 +1573,8 @@ class Interpreter:
                     walk(index + 1)
 
         walk(0)
-        return result
+        # Measured whole at the end: a function called for a later item may have grown (+=) an earlier one.
+        return self.guarded(node, lambda: self.session.created(result))
 
     # ---- calls
     def call(self, node: ast.Call, frame: _Frame) -> Any:
@@ -1123,87 +1585,99 @@ class Interpreter:
         if isinstance(callee, _Function):
             return self.call_function(callee, args, keywords, node)
         if not isinstance(callee, _Callable):
-            raise self.error(node, f"{name} is {describe(callee)}, which cannot be called")
+            raise self.error(node, f"{short(name)} is {describe(callee)}, which cannot be called")
         try:
             if callee.kind == "verb":
                 values, given = _bind(verb(callee.name), args, keywords)
-                return getattr(self.session, f"verb_{callee.name}")(values, given)
-            return self.builtin(callee.name, args, keywords, node)
+                result = getattr(self.session, f"verb_{callee.name}")(values, given)
+            else:
+                result = self.builtin(callee.name, args, keywords, node)
+            return self.session.created(result)
         except ShapeError as exc:
             raise self.error(node, str(exc)) from None
 
     def call_function(self, function: _Function, args: list, keywords: dict, node: ast.AST) -> Any:
         names = [name for name, _ in function.parameters]
+        title = short(function.name)
         if len(args) > len(names):
-            raise self.error(node, f"{function.name}() takes {len(names)} arguments, not {len(args)}")
+            raise self.error(node, f"{title}() takes {len(names)} arguments, not {len(args)}")
         bound = dict(zip(names, args))
         for key, value in keywords.items():
             if key not in names:
-                raise self.error(node, f"{function.name}() has no parameter {key}")
+                raise self.error(node, f"{title}() has no parameter {short(key)}")
             if key in bound:
-                raise self.error(node, f"{function.name}() is given {key} twice")
+                raise self.error(node, f"{title}() is given {short(key)} twice")
             bound[key] = value
         for name, default in function.parameters:
             if name not in bound:
                 if default is _MISSING:
-                    raise self.error(node, f"{function.name}() needs {name}")
+                    raise self.error(node, f"{title}() needs {short(name)}")
                 bound[name] = default
         if self.depth >= LIMITS["callDepth"]:
             raise self.error(node, "calls nest deeper than 16")
         self.depth += 1
-        line = self.session.line
+        line, statement = self.session.line, self.session.statement
+        self.session.callers.append(statement)  # what the body makes is keyed by the statement that called it too
         try:
             self.block(function.body, _Frame(bound, self.module, False))
         except _Return as result:
             return result.value
+        except ConstructionError as exc:
+            exc.calls.append(getattr(node, "lineno", line))
+            raise
         finally:
             self.depth -= 1
-            self.session.line = line
+            self.session.callers.pop()
+            self.session.line, self.session.statement = line, statement
         return None
 
     def builtin(self, name: str, args: list, keywords: dict, node: ast.AST) -> Any:
         allowed = {"enumerate": {"start"}, "round": {"ndigits"}, "sum": {"start"}}.get(name, set())
         unknown = sorted(set(keywords) - allowed)
         if unknown:
-            raise ShapeError(f"{name}() takes no keyword {unknown[0]}")
+            raise ShapeError(f"{name}() takes no keyword {short(unknown[0])}")
         handler: Callable[..., Any] = getattr(self, f"_builtin_{name}")
         try:
             result = handler(*args, **keywords)
         except ShapeError:
             raise
         except TypeError:
-            given = ", ".join(describe(a) for a in args)
+            given = ", ".join(describe(a) for a in args[:4])
             raise ShapeError(f"{name}() cannot take {given}" if args else f"{name}() needs an argument") from None
         except (ValueError, OverflowError, ZeroDivisionError):
-            raise ShapeError(f"{name}() of {', '.join(describe(a) for a in args)} is not defined") from None
+            raise ShapeError(f"{name}() of {', '.join(describe(a) for a in args[:4])} is not defined") from None
         return self.checked(result, node)
 
-    # ---- builtins: numbers only for arithmetic, sequences bounded
-    @staticmethod
-    def _numbers(values: object, name: str) -> list:
+    # ---- builtins: numbers only for arithmetic, flat and bounded sequences
+    def _numbers(self, values: object, name: str) -> list:
         if not isinstance(values, (list, tuple, range)):
-            raise ShapeError(f"{name}() takes numbers or a list of numbers, not {describe(values)}")
+            raise ShapeError(f"{name}() takes numbers or a flat list of numbers, not {describe(values)}")
+        self.session.charge(len(values))
         for value in values:
             if not is_number(value):
                 raise ShapeError(f"{name}() takes numbers, not {describe(value)}")
         return list(values)
 
-    def _sequence(self, value: object, name: str) -> list:
+    def _sequence(self, value: object, name: str) -> Any:
         if not isinstance(value, (list, tuple, range, str)):
             raise ShapeError(f"{name}() takes a list, a tuple, a range or text, not {describe(value)}")
-        if len(value) > MAX_SEQUENCE:
-            raise ShapeError(f"a list or tuple may hold at most {MAX_SEQUENCE} items")
-        return list(value)
+        self.session.charge(len(value))
+        return value
 
     def _builtin_range(self, *args: object) -> range:
         if not 1 <= len(args) <= 3 or any(isinstance(a, bool) or not isinstance(a, int) for a in args):
             raise ShapeError("range() takes one to three whole numbers")
-        if len(args) == 3 and args[2] == 0:
+        start, stop, step = (0, args[0], 1) if len(args) == 1 else (args[0], args[1], args[2] if len(args) == 3 else 1)
+        if step == 0:
             raise ShapeError("range() step cannot be zero")
-        return range(*args)  # type: ignore[arg-type]
+        if _range_length(start, stop, step) > LIMITS["rangeItems"]:  # type: ignore[arg-type]
+            raise ShapeError("range() may give at most 10 000 numbers")
+        return range(start, stop, step)  # type: ignore[arg-type]
 
     def _builtin_len(self, value: object) -> int:
-        return len(self._sequence(value, "len"))
+        if not isinstance(value, (list, tuple, range, str)):
+            raise ShapeError(f"len() takes a list, a tuple, a range or text, not {describe(value)}")
+        return len(value)
 
     def _extreme(self, name: str, args: tuple) -> Any:
         values = self._numbers(args[0] if len(args) == 1 else args, name)
@@ -1221,8 +1695,9 @@ class Interpreter:
         return abs(self._numbers((value,), "abs")[0])
 
     def _builtin_round(self, value: object, ndigits: object = None) -> Any:
-        if ndigits is not None and (isinstance(ndigits, bool) or not isinstance(ndigits, int)):
-            raise ShapeError("round() digits must be a whole number")
+        if ndigits is not None and (isinstance(ndigits, bool) or not isinstance(ndigits, int)
+                                    or not -MAX_ROUND_DIGITS <= ndigits <= MAX_ROUND_DIGITS):
+            raise ShapeError(f"round() digits must be a whole number from -{MAX_ROUND_DIGITS} to {MAX_ROUND_DIGITS}")
         return round(self._numbers((value,), "round")[0], ndigits)  # type: ignore[call-overload]
 
     def _builtin_sum(self, values: object, start: object = 0) -> Any:
@@ -1237,7 +1712,7 @@ class Interpreter:
         return list(zip(*(self._sequence(value, "zip") for value in values)))
 
     def _builtin_list(self, *values: object) -> list:
-        return [] if not values else self._sequence(values[0], "list")
+        return [] if not values else list(self._sequence(values[0], "list"))
 
     def _builtin_tuple(self, *values: object) -> tuple:
         return () if not values else tuple(self._sequence(values[0], "tuple"))
@@ -1251,8 +1726,7 @@ class Interpreter:
     def _builtin_print(self, *values: object) -> None:
         if len(self.session.log) >= MAX_LOG_LINES:
             raise ShapeError(f"print() may write at most {MAX_LOG_LINES:,} lines".replace(",", " "))
-        text = " ".join(value if isinstance(value, str) else str(value) for value in values)
-        self.session.log.append(text if len(text) <= MAX_LOG_LINE else text[:MAX_LOG_LINE] + "...")
+        self.session.log.append(render(values, MAX_LOG_LINE))
         return None
 
     def _builtin_sqrt(self, value: object) -> float:
@@ -1286,13 +1760,15 @@ class Interpreter:
         return math.ceil(number(value, "ceil()"))
 
 
-def run_script(script: object, record: StateRecord) -> Session:
-    """Parse, check and interpret a script against a record: the session it leaves, or a refusal."""
+def run_script(script: object, record: StateRecord) -> tuple[Session, list[str]]:
+    """Parse, check and interpret a script against a record: the session it leaves and its lines, or a refusal."""
 
     tree, lines = parse(script)
-    session = Session(record)
+    session = Session(record, source=script)  # type: ignore[arg-type]
     try:
         Interpreter(lines, session).run(tree)
+    except ConstructionError as exc:
+        raise exc.with_calls() from None
     except RecursionError:
-        raise ConstructionError("the script nests calls and expressions too deeply") from None
-    return session
+        raise _statement_error(lines, session.line, "the script nests calls and expressions too deeply") from None
+    return session, lines

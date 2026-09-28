@@ -1321,6 +1321,22 @@ class VoidRelationTests(unittest.TestCase):
         with self.assertRaisesRegex(ElementProducerError, "shelf: stands on the top of block-9, which is a void of block-7"):
             with_void_hosts(rows)
 
+    def test_a_void_standing_on_its_hosts_top_is_produced_after_its_host(self) -> None:
+        """#419: a host names its voids only as objects to consume, so naming one is no ordering dependency; a
+        recess read from the host's top orders after the host, while a support cycle is still refused."""
+
+        recess = _prism_row("recess", NICHE, 0.5, base={"datum": "block-7-top"}, elevation=-0.2)
+        rows = (recess, _prism_row("block-7", BLOCK, 3.0, voids=["recess"]))
+        self.assertEqual([row.element_id for row in production_order(rows)], ["block-7", "recess"])
+        produced = self._produce_all(*rows)
+        self.assertEqual(produced["block-7"].operations[1].input_object_ids, ("obj-block-7-body", "obj-recess"))
+        self.assertEqual([binding.datum_id for binding in produced["recess"].bindings], ["block-7-top"])
+        self.assertEqual(_op_params(produced["recess"].operations[0])["base_offset"], -0.2)
+        cyclic = (_prism_row("block-7", BLOCK, 3.0, base={"datum": "block-9-top"}),
+                  _prism_row("block-9", NICHE, 1.2, base={"datum": "block-7-top"}))
+        with self.assertRaisesRegex(ElementProducerError, "cycle"):
+            production_order(cyclic)
+
     def test_what_cannot_be_a_void_or_a_host_is_refused_by_name(self) -> None:
         surface = ElementRow("face", "building", "planar-surface", {"base": {"level": PN}, "voids": ["block-9"]},
                              {"profile": [[0, 0], [1, 0], [1, 1], [0, 0]]}, BASIS)

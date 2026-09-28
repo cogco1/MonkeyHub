@@ -181,7 +181,7 @@ class ConstructionVocabularyDto(BaseModel):
     vocabulary_schema: str = Field(alias="schema")
     conventions: dict[str, str]
     language: ConstructionLanguageDto
-    limits: dict[str, int]
+    limits: dict[str, int | float]
     verbs: list[ConstructionVerbDto]
     example: str
 

@@ -1,13 +1,26 @@
 """A construction script lowered to design-state rows (#419, L1 -> L2).
 
-The script's surviving shapes get their ids here (``name()``, then module
-variables, then ``<host>-cut-<n>`` for a cutter made inside ``cut()``, then
-``shape-<n>``), and each becomes one ``Component@1 <id>`` with one
-``Element@1 <id>-body``. Producers are chosen here and nowhere else: a plan
-extrusion is a prism, a face a planar surface, a path a curve, a loft a loft.
-A ``get()`` handle rewrites only its element's ``params`` and ``references``;
-``delete`` removes the component and its element. Cuts are the voids relation:
-the host element's ``references.voids`` names its cutters' elements.
+The script's surviving shapes get their final ids here (the rules are
+``identity``: ``name()``, then module variables, then ``<host>-cut-<12 hex>``
+for an unnamed cutter and ``shape-<12 hex>`` for any other unnamed shape, the
+digits hashed from the chain of statements that made it, so that running a
+script again updates the same shapes), and each becomes one ``Component@1
+<id>`` with one ``Element@1 <id>-body``.
+Producers are chosen here and nowhere else: a plan extrusion is a prism, a
+face a planar surface, a path a curve, a loft a loft. A ``get()`` handle
+rewrites only its element's ``params`` and ``references``; ``delete`` removes
+the component and its element. Cuts are the voids relation: the host element's
+``references.voids`` names its cutters' elements. A new shape that redefines
+existing geometry keeps what that geometry cut, unless the script uncuts it.
+
+Before any row is written, the relations the result leaves - what cuts what,
+what stands on what - are checked where the script touched them, including
+against geometry of the record the script never reached, and refused at the
+script line in construction words. Lowering runs under the script's deadline.
+The report's bounds are what the model view will predict for the rows the
+script leaves: the record's rows overlaid with the script's, produced for the
+reported elements and every element they mention (supports, cutters, hosts) -
+never the whole project, which is neither applied nor validated here.
 
 ``geometry_view`` is the other direction: what a record's geometry is, per
 component, in the same words (form, bounds, cuts) and without producers.
@@ -15,13 +28,30 @@ component, in the same words (form, bounds, cuts) and without producers.
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Mapping
 
 from archflow.state.state_record import StateRecord
-from monkeyarch.construction.script import MAX_ID, ConstructionError, Session, run_script
+from monkeyarch.capabilities.element_producers import (
+    ElementProducerError,
+    produce_rows,
+    production_order,
+    with_void_hosts,
+)
+from monkeyarch.construction.identity import ELEMENT_SUFFIX, Naming, identify, identity_of
+from monkeyarch.construction.script import (
+    MAX_CUTTERS,
+    MAX_ID,
+    TIME_OUT,
+    ConstructionError,
+    Session,
+    _statement_error,
+    run_script,
+)
 from monkeyarch.construction.shapes import (
+    _PRODUCTION_ERRORS,
     EDITABLE_PRODUCERS,
     Box,
     Drawn,
@@ -31,14 +61,16 @@ from monkeyarch.construction.shapes import (
     ShapeError,
     World,
     clean,
+    datum_targets,
     lower_anchor,
+    mentioned_elements,
     object_bounds,
     path_frame,
+    short,
     union,
+    within_reach,
 )
 
-ELEMENT_SUFFIX = "-body"
-_VARIABLE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _DOWNWARD = {"origin": [0.0, 0.0, 0.0], "xAxis": [1.0, 0.0, 0.0], "yAxis": [0.0, 0.0, 1.0], "normal": [0.0, -1.0, 0.0]}
 
 
@@ -83,71 +115,43 @@ class _Lowering:
         self.world = session.world
         self.lines = lines
         self.root = root
-        self.ids: dict[Shape, tuple[str, int]] = {}
+        self.naming = Naming()
+        self.ids = self.naming.ids
+        self.survivors = [shape for shape in session.shapes if shape.deleted_line is None]
+        self._voids: dict[Shape, list[str]] = {}
+        self._labels: dict[str, str] = {}
 
     def error(self, line: int | None, message: str) -> ConstructionError:
-        """A refusal at a statement's line; its column is where that statement starts."""
+        return _statement_error(self.lines, line, message)
 
-        text = self.lines[line - 1] if line is not None and 1 <= line <= len(self.lines) else None
-        column = None if text is None else len(text) - len(text.lstrip()) + 1
-        return ConstructionError(message, line=line, column=column, source_line=None if text is None else text.strip())
+    def clock(self, line: int | None) -> None:
+        """Lowering stays under the script's deadline: the clock is read for every shape it lowers."""
+
+        if time.monotonic() >= self.session.deadline:
+            raise self.error(line, TIME_OUT)
 
     # ---- identity
     def assign_ids(self) -> None:
-        survivors = [shape for shape in self.session.shapes if shape.deleted_line is None]
-        claimed: dict[str, list[Shape]] = {}
+        """The final ids by the rules of ``identity``, refused where a shape cannot be named."""
 
-        def give(shape: Shape, identifier: str, line: int) -> None:
-            self.ids[shape] = (identifier, line)
-            claimed.setdefault(identifier, []).append(shape)
-
-        for shape in survivors:
-            if shape.explicit is not None:
-                give(shape, *shape.explicit)
-        groups: dict[str, list[Shape]] = {}
-        for shape in survivors:
-            chosen = shape.direct or shape.listed
-            if shape not in self.ids and chosen is not None:
-                groups.setdefault(chosen[0], []).append(shape)
-        for variable, members in groups.items():
-            base = variable.replace("_", "-").lower()
-            if not _VARIABLE_ID.fullmatch(base):
-                line = (members[0].direct or members[0].listed)[2]  # type: ignore[index]
-                raise self.error(line, f"the variable {variable} cannot name a shape; give it an id with "
-                                       f"name(obj, \"...\")")
-            for index, member in enumerate(members, start=1):
-                line = (member.direct or member.listed)[2]  # type: ignore[index]
-                give(member, base if len(members) == 1 else f"{base}-{index}", line)
-        cutters = [shape for shape in survivors if shape not in self.ids
-                   and any(host.deleted_line is None for host in shape.cut_into)]
-        counter = 0
-        for shape in survivors:
-            if shape in self.ids or shape in cutters:
-                continue
-            counter += 1
-            while f"shape-{counter}" in claimed:
-                counter += 1
-            give(shape, f"shape-{counter}", shape.created_line)
-        per_host: dict[str, int] = {}
-        for shape in cutters:
-            host = next(host for host in shape.cut_into if host.deleted_line is None)
-            host_id = self.identity(host)
-            number = per_host.get(host_id, 0) + 1
-            while f"{host_id}-cut-{number}" in claimed:
-                number += 1
-            per_host[host_id] = number
-            give(shape, f"{host_id}-cut-{number}", shape.created_line)
-        for identifier, members in claimed.items():
+        for shape in self.survivors:
+            self.clock(shape.line)
+        self.naming = identify(self.survivors)
+        self.ids = self.naming.ids
+        if self.naming.unspellable is not None:
+            variable, line = self.naming.unspellable
+            raise self.error(line, f"the variable {short(variable)} cannot name a shape; give it an id with "
+                                   f"name(obj, \"...\")")
+        for identifier, members in self.naming.claimed.items():
             if len(members) > 1:
                 second = sorted(members, key=lambda shape: shape.seq)[1]
                 raise self.error(self.ids[second][1], f"two shapes would both be called {identifier}; give one of "
                                                       f"them another id with name(obj, \"...\")")
         self.check_ids()
+        self._labels = {identifier + ELEMENT_SUFFIX: identifier for identifier, _ in self.ids.values()}
 
     def identity(self, shape: Shape) -> str:
-        if isinstance(shape, RowShape) and shape.existing:
-            return shape.geometry_id  # type: ignore[return-value]
-        return self.ids[shape][0]
+        return identity_of(shape, self.naming)
 
     def element_id_of(self, shape: Shape) -> str:
         if isinstance(shape, RowShape) and shape.existing:
@@ -166,11 +170,13 @@ class _Lowering:
         return self.world.entities[element_id].fields.get("producer") in EDITABLE_PRODUCERS
 
     def check_ids(self) -> None:
-        reached = {row.geometry_id for row in self.session.rows.values()} | set(self.session.rows)
+        reached: set[str] = set()
+        for element_id in self.session.explicit:
+            reached |= {element_id, self.session.rows[element_id].geometry_id}  # type: ignore[arg-type]
         for shape, (identifier, line) in self.ids.items():
             if len(identifier) > MAX_ID:
-                raise self.error(line, f"the id {identifier} is longer than {MAX_ID} characters; give the shape a "
-                                       "shorter one with name(obj, \"...\")")
+                raise self.error(line, f"the id {short(identifier)} is longer than {MAX_ID} characters; give the "
+                                       "shape a shorter one with name(obj, \"...\")")
             if identifier.endswith(ELEMENT_SUFFIX):
                 raise self.error(line, f"{identifier} ends with {ELEMENT_SUFFIX}, which is kept for a shape's "
                                        "geometry; name the shape differently")
@@ -178,6 +184,11 @@ class _Lowering:
                 raise self.error(line, f"{identifier} is also reached with get() in this script; name the new "
                                        "shape differently")
             if self.reusable(identifier):
+                if self.world.entities[identifier + ELEMENT_SUFFIX].fields.get("producer") == "wall":
+                    # Re-realized with support for doors and windows: a new definition would make it a plain
+                    # solid again and drop its openings; get() keeps the realization.
+                    raise self.error(line, f"{identifier} is realized with support for openings; change it with "
+                                           "get(), or delete it and draw it again: a new definition would drop them")
                 continue
             for taken in (identifier, identifier + ELEMENT_SUFFIX):
                 entity = self.world.entities.get(taken)
@@ -185,10 +196,149 @@ class _Lowering:
                     raise self.error(line, f"{taken} is already {entity.schema} in this project; name the new shape "
                                            "differently or get() it")
 
+    # ---- cuts
+    def void_key(self, cutter: Any) -> str:
+        if isinstance(cutter, Shape):
+            if cutter.deleted_line is not None and cutter.is_new:
+                return f"\x00deleted-{id(cutter)}"
+            return self.element_id_of(cutter)
+        return str(cutter)
+
+    def final_voids(self, shape: Shape) -> list[str]:
+        """The element ids a shape finally cuts; a new shape replays its cuts over what its id already cut."""
+
+        found = self._voids.get(shape)
+        if found is not None:
+            return found
+        if isinstance(shape, RowShape) and shape.existing:
+            current = dict.fromkeys(self.void_key(entry) for entry in shape.voids)
+        else:
+            identifier = self.ids[shape][0]
+            element_id = identifier + ELEMENT_SUFFIX
+            current = dict.fromkeys(self.world.voids_of.get(element_id, ()) if self.reusable(identifier) else ())
+            for kind, cutter, line in shape.void_events:
+                if kind == "clear":
+                    current.clear()
+                    continue
+                key = self.void_key(cutter)
+                if kind == "cut":
+                    current[key] = None
+                elif key in current:
+                    del current[key]
+                else:
+                    raise self.error(line, f"{cutter.label()} does not cut {identifier}")
+            if len(current) > MAX_CUTTERS:
+                raise self.error(shape.line, f"a shape can be cut by at most {MAX_CUTTERS} cutters")
+        found = self._voids[shape] = sorted(key for key in current if not key.startswith("\x00"))
+        return found
+
+    def label_of(self, element_id: str) -> str:
+        """The id the agent knows an element by."""
+
+        identifier = self._labels.get(element_id)
+        return short(identifier if identifier is not None else self.world.geometry_id(element_id))
+
+    # ---- the relations the result leaves
+    def check_relations(self) -> None:
+        """Refuse what the runtime would refuse about cuts and supports, where the script touched them."""
+
+        world = self.world
+        voids = {element_id: set(cutters) for element_id, cutters in world.voids_of.items()}
+        stands = {element_id: set(targets) for element_id, targets in world.stands_on.items()}
+        touched: dict[str, Shape] = {}
+        gone: dict[str, int] = {}  # geometry of the record the script deleted -> the line that deleted it
+        for element_id, row in self.session.rows.items():
+            self.clock(row.line)
+            if row.deleted_line is not None:
+                voids.pop(element_id, None)
+                stands.pop(element_id, None)
+                gone[element_id] = row.deleted_line
+                continue
+            voids[element_id] = set(self.final_voids(row))
+            stands[element_id] = datum_targets(row.lowered(self.element_id_of)[1])
+            if row.geometry_changed or tuple(sorted(voids[element_id])) != row.original_voids:
+                touched[element_id] = row
+        for shape in self.survivors:
+            self.clock(shape.line)
+            element_id = self.element_id_of(shape)
+            voids[element_id] = set(self.final_voids(shape))
+            if isinstance(shape, Drawn):
+                stands[element_id] = {self.element_id_of(anchor.target) for anchor in shape.anchors()
+                                      if anchor.kind == "top"}
+            else:
+                stands[element_id] = datum_targets(shape.lowered(self.element_id_of)[1])  # type: ignore[attr-defined]
+            touched[element_id] = shape
+
+        def refuse(element_id: str, message: str) -> ConstructionError:
+            return self.error(touched[element_id].line, message)
+
+        def first_touched(*element_ids: str) -> str | None:
+            return next((element_id for element_id in element_ids if element_id in touched), None)
+
+        name = self.label_of
+        # What the script deleted is neither cut by nor carrying anything in the final model: refused at the
+        # first delete that leaves it so.
+        orphaned = [(gone[cutter], f"{name(cutter)} still cuts {name(host)}; uncut it first")
+                    for host in sorted(voids) for cutter in sorted(voids[host] & gone.keys())]
+        orphaned += [(gone[target], f"{name(user)} stands on the top of {name(target)}; delete or move it first")
+                     for user in sorted(stands) for target in sorted(stands[user] & gone.keys())]
+        if orphaned:
+            raise self.error(*min(orphaned, key=lambda item: item[0]))
+        users_of: dict[str, list[str]] = {}
+        for user, targets in stands.items():
+            for target in targets:
+                users_of.setdefault(target, []).append(user)
+        for host in sorted(voids):
+            cutters = voids[host]
+            if not cutters:
+                continue
+            if host in touched and not touched[host].is_solid:  # type: ignore[attr-defined]
+                raise refuse(host, f"{name(host)} has cuts; it must stay a solid")
+            for cutter in sorted(cutters):
+                involved = first_touched(host, cutter)  # the cut, where the script made it; else the cutter
+                if involved is not None:
+                    if cutter in touched and not touched[cutter].can_cut:  # type: ignore[attr-defined]
+                        raise refuse(cutter, f"{name(cutter)} cuts {name(host)}; it must stay a solid")
+                    if voids.get(cutter):
+                        raise refuse(involved, f"{name(cutter)} has cutters of its own and cannot cut {name(host)}")
+                for user in sorted(users_of.get(cutter, ())):
+                    culprit = first_touched(user, host, cutter)  # the shape that now stands on a cutter's top
+                    if culprit is not None:
+                        raise refuse(culprit, f"{name(user)} stands on the top of {name(cutter)}, which cuts "
+                                              f"{name(host)}; a cutter carries nothing")
+        for target in sorted(users_of):
+            if target in touched and not touched[target].can_carry(world):  # type: ignore[attr-defined]
+                raise refuse(target, f"{name(sorted(users_of[target])[0])} stands on the top of {name(target)}; "
+                                     f"{name(target)} must stay a solid extruded upward")
+        grey, black = 1, 2
+        color: dict[str, int] = {}
+        for start in sorted(touched):
+            if color.get(start):
+                continue
+            color[start] = grey
+            path, stack = [start], [iter(sorted(stands.get(start, ())))]
+            while stack:
+                child = next(stack[-1], None)
+                if child is None:
+                    color[path.pop()] = black
+                    stack.pop()
+                    continue
+                if child not in stands:
+                    continue
+                if color.get(child) == grey:
+                    culprit = first_touched(*path[path.index(child):])
+                    if culprit is not None:
+                        raise refuse(culprit, f"{name(culprit)} would stand on its own top")
+                    continue
+                if not color.get(child):
+                    color[child] = grey
+                    path.append(child)
+                    stack.append(iter(sorted(stands.get(child, ()))))
+
     # ---- rows
     def base(self) -> tuple[dict, float]:
         default = self.world.default_level
-        return ({"level": default[0]}, default[1]) if default is not None else ({"elevation": 0.0}, 0.0)
+        return {"level": default[0]}, default[1]  # type: ignore[index]
 
     def work_plane(self, shape: Drawn, level_elevation: float, normal) -> dict:
         drawing = shape.plane
@@ -196,9 +346,6 @@ class _Lowering:
         return {"origin": [clean(origin[0]), clean(origin[1] - level_elevation), clean(origin[2])],
                 "xAxis": [clean(c) for c in drawing.x_axis], "yAxis": [clean(c) for c in drawing.y_axis],  # type: ignore[union-attr]
                 "normal": [clean(c) for c in normal]}
-
-    def voids(self, shape: Shape) -> list[str]:
-        return sorted({self.element_id_of(entry) if isinstance(entry, Shape) else entry for entry in shape.voids})
 
     def drawn_row(self, shape: Drawn) -> tuple[str, dict, dict]:
         """The producer, params and references of a drawn shape: the only place a producer is chosen."""
@@ -220,9 +367,8 @@ class _Lowering:
                 base, level_elevation = self.base()
                 normal = tuple(-c for c in shape.plane.normal) if downward else shape.plane.normal
                 params["work_plane"] = self.work_plane(shape, level_elevation, normal)
-            references: dict[str, Any] = {"base": base}
-            producer = "prism" if shape.kind == "extrude" else "planar-surface"
-        elif shape.kind == "path":
+            return ("prism" if shape.kind == "extrude" else "planar-surface"), params, {"base": base}
+        if shape.kind == "path":
             base, level_elevation = self.base()
             frame = path_frame(shape.points)
             first = shape.points[0]
@@ -237,39 +383,90 @@ class _Lowering:
                                        clean(sum(r[i] * y_axis[i] for i in range(3)))] for r in relative],
                           "work_plane": {"origin": [clean(first[0]), clean(first[1] - level_elevation), clean(first[2])],
                                          "xAxis": list(x_axis), "yAxis": list(y_axis), "normal": list(normal)}}
-            references = {"base": base}
-            producer = "curve"
-        else:
-            base, _ = lower_anchor(replace(shape.sections[0].anchor, offset=0.0, param=None), self.element_id_of)
-            params = {"profiles": [[[clean(x), clean(section.anchor.offset), clean(z)] for x, z in section.profile.points]
-                                   for section in shape.sections],
-                      "profile_size": len(shape.sections[0].profile.points), "cap_ends": shape.cap}
-            references = {"base": base}
-            producer = "loft"
-        voids = self.voids(shape)
-        if voids:
-            references["voids"] = voids
-        return producer, params, references
+            return "curve", params, {"base": base}
+        base, _ = lower_anchor(replace(shape.sections[0].anchor, offset=0.0, param=None), self.element_id_of)
+        params = {"profiles": [[[clean(x), clean(section.anchor.offset), clean(z)] for x, z in section.profile.points]
+                               for section in shape.sections],
+                  "profile_size": len(shape.sections[0].profile.points), "cap_ends": shape.cap}
+        return "loft", params, {"base": base}
 
-    def bounds(self, shape: Shape) -> list[list[float]] | None:
+    def within_reach(self, shape: Shape) -> None:
+        """A shape whose definition reaches beyond the world is refused at its line."""
+
         try:
-            return _box_list(shape.bounds(self.world))  # type: ignore[attr-defined]
+            box = shape.bounds(self.world)  # type: ignore[attr-defined]
         except ShapeError:
-            return None
+            return
+        if not within_reach(box):
+            raise self.error(shape.line, f"{shape.label()} reaches beyond 100 000 m from the project origin")
 
-    def cut_ids(self, shape: Shape) -> list[str]:
-        return sorted({self.identity(entry) if isinstance(entry, Shape) else self.session.world_label(entry)
-                       for entry in shape.voids})
+    def report_boxes(self, entities: list[dict], removed: list[str]) -> dict[str, Box | None] | None:
+        """The bounds of the reported elements as the model view will predict them for the rows the script leaves.
+
+        The rows are the record's overlaid with the script's (fields merged over the existing entity, as the edit
+        path merges them); produced, in production order, are the reported elements and every element they
+        mention, directly or not - what they stand on, cut and are placed on - never the whole project, which is
+        neither applied nor validated here (the edit path does that once the proposal is placed). None when the
+        rows cannot be produced together; the edit path then says why.
+        """
+
+        world = self.world
+        gone = set(removed)
+        script = {row["entity_id"]: row["fields"] for row in entities if row["schema"] == "Element@1"}
+        known = (set(world.voids_of) - gone) | set(script)
+        fields_by_id: dict[str, dict | None] = {}
+
+        def fields_of(element_id: str) -> dict | None:
+            if element_id not in fields_by_id:
+                entity = world.entities.get(element_id)
+                kept = entity is not None and entity.schema == "Element@1" and element_id not in gone
+                base = dict(entity.fields) if kept else None  # type: ignore[union-attr]
+                fields = {**(base or {}), **script[element_id]} if element_id in script else base
+                if fields is not None and not fields.get("component_id") and entity is not None:
+                    fields["component_id"] = entity.parent_id
+                fields_by_id[element_id] = fields
+            return fields_by_id[element_id]
+
+        needed: dict[str, None] = {}
+        pending = list(script)
+        while pending:
+            element_id = pending.pop()
+            if element_id in needed:
+                continue
+            fields = fields_of(element_id)
+            if fields is None:
+                continue
+            needed[element_id] = None
+            mentioned = mentioned_elements(fields.get("references"), known)
+            openings = (fields.get("params") or {}).get("openings")
+            for opening in openings if isinstance(openings, (list, tuple)) else ():
+                if isinstance(opening, dict):
+                    mentioned |= mentioned_elements(opening.get("at"), known)
+            pending.extend(mentioned - needed.keys())
+        try:
+            rows = tuple(world.element_row(element_id, fields_by_id[element_id]) for element_id in needed)  # type: ignore[arg-type]
+            ordered = production_order(with_void_hosts(rows))
+        except (ShapeError, ElementProducerError, ValueError, KeyError, TypeError):
+            return None
+        context = world.base_context()
+        produced = {}
+        for row in ordered:
+            try:
+                produced[row.element_id] = produce_rows((row,), context)[0]
+            except _PRODUCTION_ERRORS:
+                continue
+        return _boxes_of(ordered, context, produced)
 
     def lower(self) -> ConstructionResult:
+        self.check_relations()
         entities: list[dict] = []
         report: list[dict] = []
         removed: list[str] = []
         line_of: dict[str, int] = {}
         created, updated, deleted, cut, uncut = [], [], [], [], []
-        for shape in self.session.shapes:
-            if shape.deleted_line is not None:
-                continue
+        measured: list[tuple[dict, str]] = []  # report rows whose bounds the successor states, by element id
+        for shape in self.survivors:
+            self.clock(shape.line)
             identifier, _ = self.ids[shape]
             element_id = identifier + ELEMENT_SUFFIX
             reuse = self.reusable(identifier)
@@ -279,47 +476,66 @@ class _Lowering:
             else:
                 params, references = shape.lowered(self.element_id_of)  # type: ignore[attr-defined]
                 producer, extra = shape.producer, dict(shape.extra)  # type: ignore[attr-defined]
+            voids = self.final_voids(shape)
+            if voids:
+                references["voids"] = voids
             if not reuse:
                 entities.append({"entity_id": identifier, "schema": "Component@1", "parent_id": self.root,
                                  "fields": {"intent": identifier}})
             entities.append({"entity_id": element_id, "schema": "Element@1", "parent_id": identifier,
                              "fields": {"component_id": identifier, "producer": producer, **extra,
                                         "references": references, "params": params}})
+            self.within_reach(shape)
             report.append({"id": identifier, "form": shape.form, "status": "updated" if reuse else "created",  # type: ignore[attr-defined]
-                           "bounds": self.bounds(shape), "cuts": self.cut_ids(shape), "line": shape.line})
+                           "bounds": None, "cuts": sorted(self.label_of(v) for v in voids), "line": shape.line})
+            measured.append((report[-1], element_id))
             line_of[identifier] = line_of[element_id] = shape.line
             (updated if reuse else created).append(identifier)
-            if shape.voids:
+            inherited = set(self.world.voids_of.get(element_id, ())) if reuse else set()
+            if set(voids) - inherited:
                 cut.append(identifier)
-        for row in self.session.rows.values():
+            if inherited - set(voids):
+                uncut.append(identifier)
+        for element_id, row in self.session.rows.items():
+            self.clock(row.line)
             identifier = row.geometry_id
             if row.deleted_line is not None:
-                removed.extend([row.element_id] + ([row.component_id] if row.owns_component else []))  # type: ignore[list-item]
+                removed.extend([element_id] + ([row.component_id] if row.owns_component else []))  # type: ignore[list-item]
                 report.append({"id": identifier, "form": row.form, "status": "deleted", "bounds": None, "cuts": [],
                                "line": row.deleted_line})
-                line_of[identifier] = line_of[row.element_id] = row.deleted_line  # type: ignore[index]
+                line_of[identifier] = line_of[element_id] = row.deleted_line  # type: ignore[index]
                 deleted.append(identifier)
                 continue
-            now = tuple(self.voids(row))
+            now = tuple(self.final_voids(row))
             if not row.geometry_changed and now == row.original_voids:
                 continue
             params, references = row.lowered(self.element_id_of)
+            if now:
+                references["voids"] = list(now)
             fields: dict[str, Any] = {}
             if row.has_params or params:
                 fields["params"] = params
             if row.has_references or references:
                 fields["references"] = references
-            entities.append({"entity_id": row.element_id, "schema": "Element@1", "parent_id": row.parent_id,
+            entities.append({"entity_id": element_id, "schema": "Element@1", "parent_id": row.parent_id,
                              "fields": fields})
-            report.append({"id": identifier, "form": row.form, "status": "updated", "bounds": self.bounds(row),
-                           "cuts": self.cut_ids(row), "line": row.line})
-            line_of[identifier] = line_of[row.element_id] = row.line  # type: ignore[index]
+            self.within_reach(row)
+            report.append({"id": identifier, "form": row.form, "status": "updated", "bounds": None,
+                           "cuts": sorted(self.label_of(v) for v in now), "line": row.line})
+            measured.append((report[-1], element_id))
+            line_of[identifier] = line_of[element_id] = row.line  # type: ignore[index]
             if row.geometry_changed:
                 updated.append(identifier)  # type: ignore[arg-type]
             if set(now) - set(row.original_voids):
                 cut.append(identifier)  # type: ignore[arg-type]
             if set(row.original_voids) - set(now):
                 uncut.append(identifier)  # type: ignore[arg-type]
+        if measured:
+            self.clock(measured[0][0]["line"])
+            boxes = self.report_boxes(entities, removed)
+            for row, element_id in measured:
+                row["bounds"] = _box_list(boxes.get(element_id)) if boxes is not None else None
+            self.clock(measured[0][0]["line"])
         parts = [f"{verb} {_compact(ids)}" for verb, ids in (("create", created), ("update", updated),
                                                              ("delete", deleted), ("cut", cut), ("uncut", uncut)) if ids]
         return ConstructionResult(
@@ -333,11 +549,14 @@ def compile_construction_script(script: str, record: StateRecord, *, root_compon
 
     root = next((entity for entity in record.entities if entity.entity_id == root_component_id), None)
     if root is None or root.schema != "Component@1":
-        raise ConstructionError(f"{root_component_id} is not a component of this project to add shapes under")
-    session = run_script(script, record)
-    lowering = _Lowering(session, script.splitlines(), root_component_id)
-    lowering.assign_ids()
-    return lowering.lower()
+        raise ConstructionError(f"{short(str(root_component_id))} is not a component of this project to add shapes under")
+    session, lines = run_script(script, record)
+    lowering = _Lowering(session, lines, root_component_id)
+    try:
+        lowering.assign_ids()
+        return lowering.lower()
+    except RecursionError:
+        raise ConstructionError("the shapes of this script depend on each other too deeply to lower") from None
 
 
 # ---------------------------------------------------------------- the model, in construction terms
@@ -355,14 +574,16 @@ def _form(world: World, element_id: str) -> str:
     return {"planar-surface": "face", "curve": "path"}.get(str(producer), "other")
 
 
-def geometry_view(record: StateRecord) -> tuple[dict, ...]:
-    """Per component with geometry: its form, bounds, cuts (what it removes), cutBy (what removes it) and whether
-    it is hidden (named as a cutter). A component with several elements lists them as ``parts``. Bounds that
-    cannot be predicted are ``None``; the view never raises.
-    """
+def _element_boxes(world: World) -> dict[str, Box | None]:
+    """The predicted bounds of every element the record produces, each element's cuts applied."""
 
-    world = World(record)
-    rows, context, produced = world.production()
+    return _boxes_of(*world.production())
+
+
+def _boxes_of(rows, context, produced: dict) -> dict[str, Box | None]:
+    """The predicted bounds of the produced elements, each element's cuts applied; ``None`` where the prediction
+    fails, and no entry for an element that did not produce."""
+
     voids_of = {row.element_id: tuple(row.references.get("voids") or ()) for row in rows}
     element_bounds: dict[str, Box | None] = {}
     for element_id, element in produced.items():
@@ -377,6 +598,17 @@ def geometry_view(record: StateRecord) -> tuple[dict, ...]:
             element_bounds[element_id] = union(box for object_id, box in boxes.items() if object_id in own)
         except (ValueError, KeyError, TypeError, IndexError, ArithmeticError):
             element_bounds[element_id] = None
+    return element_bounds
+
+
+def geometry_view(record: StateRecord) -> tuple[dict, ...]:
+    """Per component with geometry: its form, bounds, cuts (what it removes), cutBy (what removes it) and whether
+    it is hidden (named as a cutter). A component with several elements lists them as ``parts``. Bounds that
+    cannot be predicted are ``None``; the view never raises.
+    """
+
+    world = World(record)
+    element_bounds = _element_boxes(world)
     view = []
     for component in record.entities_of("Component@1"):
         parts = world.elements_of.get(component.entity_id)
@@ -384,12 +616,7 @@ def geometry_view(record: StateRecord) -> tuple[dict, ...]:
             continue
         forms = {_form(world, element_id) for element_id in parts}
         boxes = [element_bounds.get(element_id) for element_id in parts]
-        authored_voids: list[str] = []
-        for element_id in parts:  # read defensively: the view never raises
-            references = world.entities[element_id].fields.get("references")
-            voids = references.get("voids") if isinstance(references, dict) else None
-            if isinstance(voids, (list, tuple)):
-                authored_voids.extend(void for void in voids if isinstance(void, str))
+        authored_voids = [void for element_id in parts for void in world.voids_of.get(element_id, ())]
         row: dict[str, Any] = {
             "id": component.entity_id,
             "form": forms.pop() if len(forms) == 1 else "other",
