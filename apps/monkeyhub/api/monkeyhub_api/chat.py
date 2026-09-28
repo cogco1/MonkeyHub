@@ -2513,9 +2513,38 @@ def _stop_process(process: subprocess.Popen) -> None:
             process.kill()
 
 
-_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view|plans/vector|plans/dimensions|corrections)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision)$")
-_POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives|plans|plans/status)|admissions)$")
+_READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|construction(?:/model)?|domains/[a-z]+/readiness|state/(?:frame|volumes)|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view|plans/vector|plans/dimensions|corrections)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision)$")
+_POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(?:construction|facets|hosted-opening)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives|plans|plans/status)|admissions)$")
 _WRITE = re.compile(r"^/api/(board|document-annotations|working-draft)$")
+# The agent routes the construction contract replaced (#419). The Studio still
+# serves them to its own web client, so a refusal names the agent's route
+# instead of calling them unknown or listing look-alike actions.
+_REPLACED_ACTIONS = {
+    ("GET", "/api/state"): "GET /api/construction/model (add ?run=<candidateId> for a candidate)",
+    **{("POST", f"/api/proposals/{name}"): "POST /api/proposals/construction with one script"
+       for name in ("sketch", "transform", "push-pull", "delete", "elevation")},
+}
+# The proposal routes that answer a Proposal the client has just authored; its
+# generated edits and operator are left out of the immediate answer.
+_AUTHORED_PROPOSALS = {"/api/proposals", "/api/proposals/construction", "/api/proposals/facets",
+                       "/api/proposals/hosted-opening"}
+# What an agent's semanticEdit may still carry (#419): parameters, relations,
+# readings and component intents. Geometry has one route, meaning another; an
+# upsert that leaves out schema is recognised by the fields only geometry has.
+_GEOMETRY_SCHEMAS = frozenset({"Element@1", "Type@1"})
+_GEOMETRY_FIELDS = frozenset({"producer", "params", "references", "type_ref"})
+_MEANING_FIELDS = frozenset({"semantic_kind", "semanticKind", "roles", "conditions", "facets"})
+_GEOMETRY_REFUSAL = ("Geometry is authored with POST /api/proposals/construction; semanticEdit carries parameters, "
+                     "relations, readings and component intents.")
+_MEANING_REFUSAL = "Meaning is added with POST /api/proposals/facets."
+# What each bound tool takes, exactly as its advertised input schema says.
+# Anything else is refused by name rather than ignored, so a retired option
+# such as a producer cannot pass for one that took effect.
+_TOOL_ARGUMENTS = {
+    "studio_schema": frozenset({"method", "path", "body", "pathPrefix", "offset", "limit"}),
+    "studio_request": frozenset({"method", "path", "body", "operationId", "feedbackQuote", "awaitSeconds"}),
+    "fab_request": frozenset({"method", "path", "body"}),
+}
 # POSTs that only read. They go to the bound Studio as a GET would, with no
 # mutation admission: there is nothing to admit, recover or replay.
 _POST_READS = {"/api/intents/context", "/api/drawings/plans/status"}
@@ -2533,6 +2562,27 @@ def _schema_allowed(method: str, path: str) -> bool:
         pattern.fullmatch(re.sub(r"\{[^}/]+\}", sample, path))
         for sample in ("id", "0" * 64)
     )
+
+
+def _semantic_edit_refusal(body) -> HubFailure | None:
+    """Why an agent's semanticEdit may not be sent, or None when it carries neither geometry nor meaning.
+
+    Studio's web client keeps authoring its own rows; this narrows only what
+    the chat can ask for, and says which route does the refused part.
+    """
+    if not isinstance(body, Mapping):
+        return None
+    for edit in (body.get("semanticEdit"), body.get("semantic_edit")):
+        rows = edit.get("entities") if isinstance(edit, Mapping) else None
+        for row in rows if isinstance(rows, list) else ():
+            if not isinstance(row, Mapping):
+                continue  # the Runtime's own validation answers a malformed row
+            fields = row.get("fields") if isinstance(row.get("fields"), Mapping) else {}
+            if row.get("schema") in _GEOMETRY_SCHEMAS or _GEOMETRY_FIELDS.intersection(fields):
+                return HubFailure(422, "CHAT_TOOL_INVALID", _GEOMETRY_REFUSAL)
+            if _MEANING_FIELDS.intersection(fields):
+                return HubFailure(422, "CHAT_TOOL_INVALID", _MEANING_REFUSAL)
+    return None
 
 
 def _available_actions(document: dict) -> list[dict]:
@@ -3415,8 +3465,6 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if "feedbackQuote" in arguments and (name != "studio_request" or not _binds_words(method, parsed.path)
                                          or not isinstance(arguments["feedbackQuote"], str)):
         raise HubFailure(422, "CHAT_FEEDBACK_QUOTE", "feedbackQuote only selects the user's words for feedback, an admission or a Continue.")
-    if "producer" in arguments and name != "studio_schema":
-        raise HubFailure(422, "CHAT_TOOL_INVALID", "producer selects an authoring schema; it belongs to studio_schema.")
     if "operationId" in arguments and (name != "studio_request" or method == "GET" or (
             method == "POST" and parsed.path in {"/api/board/export", "/api/drawings/plans/status"})):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "operationId identifies a Studio mutation request.")
@@ -3426,6 +3474,10 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         raise HubFailure(422, "CHAT_TOOL_INVALID",
                          f"{name} has nothing to wait for; awaitSeconds is studio_request's option for "
                          f"POST {_FINISHABLE}.")
+    unknown = sorted(set(arguments) - _TOOL_ARGUMENTS.get(name, frozenset(arguments)))
+    if unknown:
+        raise HubFailure(422, "CHAT_TOOL_INVALID", f"{name} has no argument {', '.join(unknown)}; "
+                         f"it takes {', '.join(sorted(_TOOL_ARGUMENTS[name]))}.")
     if name == "fab_request":
         session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}")
         if session.get("status") != "running":
@@ -3453,11 +3505,20 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "This action is not exposed to the chat.")
     permitted = _schema_allowed(method, parsed.path) if name == "studio_schema" else allowed[method].fullmatch(parsed.path)
     if not permitted:
+        replacement = _REPLACED_ACTIONS.get((method, parsed.path))
+        if replacement is not None:
+            raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"{method} {parsed.path} is not exposed to the chat; "
+                             f"use {replacement}. Nothing was executed.")
         try:
             running = _bound_studio(hub, chat_id, prepare=False)[0]
         except (HubFailure, OSError, ValueError):
             running = None
         raise _action_refusal(running, method, parsed.path)
+    if name == "studio_request" and method == "POST" and parsed.path == "/api/proposals":
+        # Checked, like the path, before the Studio is resolved.
+        refusal = _semantic_edit_refusal(arguments.get("body"))
+        if refusal is not None:
+            raise refusal
     base, session = _bound_studio(hub, chat_id)
     query = parse_qs(parsed.query, keep_blank_values=True)
     if any(query[key] != [session["projectId"]] for key in ("projectId", "project_id") if key in query):
@@ -3496,39 +3557,6 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             if method == "POST":
                 task = document["components"]["schemas"]["AdmissionTaskDto"]["properties"]
                 task["kind"] = {**task["kind"], "enum": ["hub-chat"]}
-        producer = arguments.get("producer")
-        if producer is not None and (method != "POST" or parsed.path != "/api/proposals" or not isinstance(producer, str)):
-            raise HubFailure(422, "CHAT_TOOL_INVALID", "producer selects the input schema of POST /api/proposals.")
-        entity = document.get("components", {}).get("schemas", {}).get("SemanticEditRequestDto", {}).get("properties", {}).get("entities", {}).get("items", {})
-        offered: dict[str, str] = {}
-        for variant in entity.get("anyOf", []):
-            for item in variant.get("properties", {}).get("fields", {}).get("anyOf", ()):
-                for offer in item.get("properties", {}).get("producer", {}).get("enum", []):
-                    # One line of the producer's own description, in contract order.
-                    offered.setdefault(offer, str(item.get("description", "")).split(". ")[0].rstrip("."))
-        if method == "POST" and parsed.path == "/api/proposals" and producer is None and offered:
-            # The union of every producer's contract is far larger than one tool
-            # answer; this question is which producer to ask about.
-            return {"path": template, "method": method,
-                    "producers": [{"producer": offer, "summary": summary} for offer, summary in offered.items()],
-                    "next": "Ask again with producer set to one of these for its authoring contract."}
-        if producer is not None:
-            matched = False
-            for variant in entity.get("anyOf", []):
-                fields = variant.get("properties", {}).get("fields", {})
-                alternatives = fields.get("anyOf")
-                if alternatives is None:
-                    continue
-                selected = [item for item in alternatives
-                            if producer in item.get("properties", {}).get("producer", {}).get("enum", [])]
-                if selected:
-                    matched = True
-                    fields["anyOf"] = selected
-            if not matched:
-                raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"No authoring schema for {producer!r}; available producers: {sorted(offered)}")
-            # This query asks for one author's inputs; the response arrives
-            # with the request itself.
-            operation = {key: value for key, value in operation.items() if key != "responses"}
         schemas, pending = {}, [operation]
         while pending:
             value = pending.pop()
@@ -3541,8 +3569,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                 pending.extend(value.values())
             elif isinstance(value, list):
                 pending.extend(value)
-        return {"path": template, "method": method, "operation": operation, "components": {"schemas": schemas},
-                **({"producer": producer, "scope": "request inputs for this producer"} if producer is not None else {})}
+        return {"path": template, "method": method, "operation": operation, "components": {"schemas": schemas}}
     if name != "studio_request":
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "Unknown chat tool.")
     wait = arguments.get("awaitSeconds")
@@ -3625,10 +3652,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                 "note": "These registered workflows are not the complete action list. studio_schema without path lists "
                         "the actual Runtime actions exposed to this chat; optional pathPrefix narrows the list.",
             }}
-        if method == "POST" and parsed.path in {
-            "/api/proposals", "/api/proposals/sketch", "/api/proposals/transform",
-            "/api/proposals/push-pull", "/api/proposals/delete", "/api/proposals/elevation",
-        } and isinstance(started, dict) and "proposalId" in started:
+        if method == "POST" and parsed.path in _AUTHORED_PROPOSALS and isinstance(started, dict) and "proposalId" in started:
             # The client just authored these edits. Echoing both the edits and
             # their full operator makes each model continuation read them twice.
             # Keep the checked change, source, impact and conflicts; the ordinary
@@ -3738,7 +3762,6 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "pathPrefix": {"type": "string", "description": "Discover actions below this API prefix (for example /api/drawings); omit path. Omit method to include reads AND writes."},
         "offset": {"type": "integer", "minimum": 0, "description": "Action discovery page offset; omit path."},
         "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Action discovery page size, default 30; omit path."},
-        "producer": {"type": "string", "description": "For POST /api/proposals authoring, name one producer the running Studio advertises to read only its request contract, excluding unrelated geometry and response schemas. Without it, POST /api/proposals answers the index of available producers, most general first; an unknown name is answered with that list."},
     }}
     request_schema = {
         "type": "object", "properties": {
@@ -3810,41 +3833,49 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "Refusals spend nothing: VISUAL_BUDGET_EXHAUSTED, VISUAL_REVIEW_NOT_WARRANTED, VISUAL_REVIEW_OUT_OF_ORDER,",
         "VISUAL_SOURCE_MISMATCH (read the current exact source), VISUAL_PROVIDER_UNAVAILABLE. VISUAL_PROVIDER_FAILED spends the review.",
     ])
-    # Keep common actions usable without a schema round trip. Detailed producer
-    # contracts remain discoverable on demand; the agent chooses observation points.
+    # One construction script makes and changes geometry (#419). Its vocabulary
+    # and one example are stated here, so modelling needs no discovery round
+    # trip; meaning, capabilities and domains follow in their own stages, and
+    # no runtime realisation is named. The agent chooses observation points.
     modelling = chr(10).join([
-        "Use the bound project's Studio API. Lengths are metres; plan points are [x, z], with Y up.",
+        "Use the bound project's Studio API. Lengths are metres; plan points are (x, z), with Y up.",
         "Design tools prepare the project's runtime themselves; nobody needs to open a page first.",
         "",
-        "CURRENT STATE: GET /api/state and GET /api/state/frame provide stateDigest, components/elements and levels.",
-        "To continue a retained candidate, read these with ?run=<candidateId> and send sourceRunId on writes.",
-        "Keep its sourceStageRef when provided. Viewing a candidate alone does not change the editing base.",
-        "An empty project can prepare a modeling base with POST /api/project/modeling {projectId}, then read state/frame.",
+        "CURRENT MODEL: GET /api/construction/model (add ?run=<candidateId> for a candidate) gives stateDigest, levels,",
+        "parameters and one entry per geometry id: form, bounds, cuts, cutBy, facets and the capabilities they unlock.",
+        "Keep sourceStageRef when provided. An empty project first prepares a modelling base with POST /api/project/modeling {projectId}.",
         "",
-        "CREATE: POST /api/proposals/sketch with",
-        "{stateDigest, componentId, elementId, profile: [[x,z], ...], height, baseLevel}.",
-        "A closed profile does not repeat its first point. Reusing elementId updates that form.",
-        "For several forms, use {stateDigest, sketches: [{componentId, elementId, profile, height, baseLevel}, ...]}.",
-        "Items run in order; baseDatum: '<elementId>-top' can replace baseLevel to stack on an earlier form.",
-        "sourceRunId, sourceStageRef, sourceProposalId and keep are top-level fields. A rejected batch saves nothing.",
-        "A new component needs only parentComponentId under a built component; semanticKind is optional and stated only when the user says what the part is.",
-        "GEOMETRY FIRST: early modeling uses the lowest sufficient expression: a sketched profile, face or path (POST /api/proposals/sketch) or the most general producer that fits.",
-        "Use a specialized producer such as wall only when the user asks for it or the meaning is already established.",
-        "Never ask for a GridAxis or a semanticKind for ordinary geometry; project-local points and levels are enough, and meaning can be added later to the same component.",
+        "MAKE AND CHANGE GEOMETRY: POST /api/proposals/construction {stateDigest, script, summary?, sourceRunId?, sourceProposalId?, keep?}.",
+        "The script is a small Python-like program; one script makes and changes many shapes:",
+        "  base = rect(20, 0, 12, 8)                       # plan rectangle: corner (x, z), 12 along x, 8 along z",
+        "  mass = extrude(base, 3.2)                       # push-pull up from the ground level",
+        "  upper = extrude(rect(20, 0, 10, 8), 3, at=top(mass))   # stands on mass and follows its height",
+        "  for i in range(4):",
+        "      w = extrude(rect(21.5 + 3 * i, 0, 1.2, 0.3), 1.5, at=0.9)",
+        "      cut(mass, w)                                # removes w from mass; w stays, hidden, under its own id",
+        "Verbs: rect polygon circle offset | extrude face path loft section | move rotate scale mirror copy array |",
+        "pushpull set_height set_base | cut uncut | level top param bounds | name get delete | print.",
+        "Plain Python works: variables, arithmetic, for/if/def, lists, range, pi/sin/cos/sqrt.",
+        "A variable is the shape's id (w in a loop gives w-1..w-4); name(obj, \"id\") sets one; get(\"id\") edits",
+        "existing geometry; running a script again with the same names updates the same shapes, it never duplicates them.",
+        "A refused script saves nothing and names its line. GET /api/construction lists every verb and argument.",
+        "Never state what a part is while making it; geometry needs no classification.",
         "",
-        "EDIT: POST /api/proposals/transform, /api/proposals/push-pull, /api/proposals/elevation or /api/proposals/delete; lower planar surfaces above a height with one transform kind=compress-above, not hand-computed polygons.",
-        "Read each action's schema for its fields; tool errors identify unsupported operations. Choose methods that preserve design meaning.",
-        "For an existing numeric control, GET /api/capabilities/candidate.modify_existing?target=<componentId>&elementId=<the element>&run=<candidateId>",
+        "MEANING: only when the user says what a part is, POST /api/proposals/facets",
+        "{stateDigest, targets: [{id, set: {\"architectural.role\": \"wall\"}}]}. Facets never change geometry or ids.",
+        "Keys: architectural.role, architectural.enclosure, structural.role, material.name, fabrication.method.",
+        "CAPABILITIES appear per entity in the model view once its facets allow them, e.g. hosted-opening",
+        "(a door or window with its frame and leaf) on a wall: POST /api/proposals/hosted-opening.",
+        "DOMAINS: GET /api/domains/{structure|envelope}/readiness says what a domain reads or which facets to add; it never guesses.",
+        "PARAMETERS: POST /api/proposals {stateDigest, semanticEdit: {summary, parameters: [...]}} defines linked dimensions;",
+        "a script binds one with param(\"key\") as a height or an at offset. semanticEdit never carries geometry.",
+        "STAGES: explore with scripts and candidates; admission/Continue promotes; meaning, capabilities and domains come after.",
+        "",
+        "For an existing numeric control, GET /api/capabilities/candidate.modify_existing?target=<id>&run=<candidateId> (elementId is optional)",
         "returns its current values, units and a ready request; edit that body and POST /api/capabilities/{capabilityId}/run.",
         "GET /api/capabilities?goal=<user request> helps discover operations; an index miss does not exclude the other listed APIs.",
-        "keep is a list of protected refs, e.g. ['entity:portico-base']. Use the actual target and source, not a guessed field.",
-        "For linked dimensions, use POST /api/proposals with {stateDigest, semanticEdit: {summary, parameters: [...], entities: [...]}}.",
-        "Use semanticEdit or utterance, not both. Existing omitted fields/dependencies are retained; revise upstream controls for linked edits.",
-        "studio_schema POST /api/proposals answers the index of producers the running Studio offers; with producer set to one, its authoring contract.",
-        "Geometry binds parameters with '@key'; formulas belong in parameters[].expr with inputs, and value must match the expression.",
-        "When the user says what a part is, send their word as semanticKind: Studio maps a registered alias or keeps the word as the part's intent, never a refusal, so do not read /api/semantics first; never guess a nearby id, and role.* or condition.* IDs are not kinds.",
-        "Keep early forms generic until their role is established; enrich them by upserting the same component id, never by recreating them.",
-        "Existing object identity, hosted features and intended relationships matter when changing representation.",
+        "keep is a list of protected refs, e.g. ['entity:mass']. Use the actual target and source, not a guessed field.",
+        "Parameter formulas belong in parameters[].expr with inputs, and value must match the expression; revise upstream controls for linked edits.",
         "",
         "COMPOSE / OBSERVE / CONTINUE:",
         "Chain known edits in memory by passing the last proposalId as sourceProposalId; keep stateDigest at the chain's original baseStateDigest.",
@@ -3852,7 +3883,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "MODEL CONVERSION: When asked to export/convert a model to 3DM, SKP, GLB or DWG, use POST /api/exports via studio_request. Do not use an export button or write a converter in the shell. Body: {targetFormat: 'glb', attachmentId: '<exact chat attachment id>'} for an upload, or {targetFormat: 'glb', projectRevision: {runId, stateDigest, assetSha256}} for the exact current project model. Read current project state/artifacts first; never substitute an upload for project state. If 'this model' could mean the project or an upload, or multiple uploads match, ask which model. Do not guess by filename or newest file. Read GET /api/exports/capabilities for supported routes. Submission returns jobId/statusPath; poll that statusPath with GET, report queued/running progress, and only on succeeded return its downloadUrl as a Markdown link with warnings. On failed/interrupted report failureReason, never invent a file link. For SKP/DWG without an available verified executor, say 当前没有配置可用的执行器; never describe the format as permanently unsupported. Installed software does not establish conversion capability. The backend chooses providers; users do not need to choose software. Same-format validated delivery is not a conversion. Do not use awaitSeconds on exports.",
         "At a useful design decision point, POST /api/proposals/{id}/candidate with no body and awaitSeconds: 60 beside method/path.",
         "This materializes a reversible, unaccepted candidate. Multiple observation and revision cycles can occur within the same Stage.",
-        "After observing it, start further changes from GET /api/state?run=<candidateId>, using that stateDigest and sourceRunId;",
+        "After observing it, start further changes from GET /api/construction/model?run=<candidateId>, using that stateDigest and sourceRunId;",
         "sourceProposalId continues an unexecuted chain, not a newly selected candidate base.",
         "The numeric capability run also accepts awaitSeconds: 60 with sourceRunId in its body. Waiting posts the change once.",
         "With awaitSeconds, candidate/artifacts/objects and compare, when present, are completed readbacks; reuse them for observation.",
@@ -3892,7 +3923,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "SECTION PERSPECTIVE (剖透视): POST /api/drawings/section-perspectives cuts the exact model with a section plane, removes the side the eye is on,",
         "and draws the kept side in true perspective: the cut filled (poché) and true to scale at 1:scaleDenominator, farther geometry smaller,",
         "lines perpendicular to the cut converging at the eye's point on it. Minimal body: {projectId, sourceStageRef or modelSource,",
-        "section: {line: [[x1, y1], [x2, y2]], keep: 'left'|'right'}}. The line is a plan line with the same plan numbers as profile/wall points",
+        "section: {line: [[x1, y1], [x2, y2]], keep: 'left'|'right'}}. The line is a plan line with the same plan numbers as the script's plan points",
         "(the exact STEP's X/Y in its unit, Z up); keep is the side kept walking from the first point to the second; the eye stands on the other side.",
         "The default camera looks straight through the cut from 1.6 m above the lowest cut point, fitting the cut's width in 55 degrees.",
         "Optional: camera {eyeHeight, fovDeg} or {eye, target, up?, fovDeg?} (the target centres the frame; to move only the vanishing point,",
@@ -3929,11 +3960,11 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
                            if key not in {"projectId", "sourceSessionId"}},
             "required": ["turnId", "messageId", "kind"] if external else ["messageId", "kind"],
         }},
-        {"name": "studio_schema", "description": "Discover current chat actions by omitting path; optional pathPrefix (such as /api/drawings) narrows the list. "
-         "Omit method to include both reads and writes; follow next when paged. The list comes from the bound Runtime and chat allow-list. "
-         "With an exact method/path, read the request/response schema of that allowed Studio action. "
+        {"name": "studio_schema", "description": "Read the exact request/response schema of an allowed Studio action: give its method/path. "
          "Use it to discover inputs, clarify a field or correct a request. Paths may contain template segments, "
-         "such as /api/proposals/{id}/candidate. For semantic authoring, supply producer to select its request inputs.", "inputSchema": schema_input},
+         "such as /api/proposals/{id}/candidate. Omit path to discover current chat actions; optional pathPrefix "
+         "(such as /api/drawings) narrows the list. Omit method to include both reads and writes; follow next when paged. "
+         "The list comes from the bound Runtime and chat allow-list.", "inputSchema": schema_input},
         {"name": "studio_request", "description": modelling, "inputSchema": request_schema},
         {"name": "visual_review", "description": reviewing, "inputSchema": review_schema},
         {"name": "fab_request", "description": "Use MonkeyFab GET /api/fab/profiles or POST /api/fab/send for dry-run validation only. This tool never uploads or starts printing.", "inputSchema": input_schema},
