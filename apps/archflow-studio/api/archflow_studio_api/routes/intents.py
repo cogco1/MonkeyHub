@@ -41,6 +41,7 @@ from ..application.intent import (
 )
 from ..application.capability import capability, describe_capability
 from ..application.decisions import compile_scoped_decisions, decision_context_for, focus_refs
+from ..application.memory import memory_for
 from ..application.intent_agent import (
     AGENT_FAILED,
     DETERMINISTIC,
@@ -337,11 +338,16 @@ def read_intent_context(request: Request, body: ContextPackRequestDto) -> Contex
         binding, _decision_context(binding, body, projection, element_ids or context.target_ids),
         projection.record,
     )
+    # How the project works, for what these words are about: scope, then
+    # appliesWhen (this Stage, the one domain a turn named), then the words.
+    memory = memory_for(binding, body.utterance,
+                        stage_ref=None if projection.source_stage_ref is None else projection.source_stage_ref.uri,
+                        domain=None if body.decision_context is None else body.decision_context.domain)
     study_evidence = [study_evidence_context(read_study(binding, item.study_id, item.ledger_ref))
                       for item in body.study_evidence]
     return context_pack_dto(description, context, preflight, pack_context(context),
                             confirmed_stage=confirmed_stage, scoped_decisions=decisions,
-                            study_evidence=study_evidence)
+                            memory=memory, study_evidence=study_evidence)
 
 
 def _decision_context(

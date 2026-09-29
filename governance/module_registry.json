@@ -2527,7 +2527,8 @@
         "seat-blender-execution (BlenderExecutionReceipt@1): the existing runner retains a verified Blender scene export and its exact source binding in the run-record area",
         "audit-event (AuditEvent@1): the actor/origin binding the studio retains beside an authoritative decision, in the review area of the run that decision produced",
         "studio-scoped-decision (StudioScopedDecision@1): one immutable revision of one scoped project decision, written by the studio into the review area of its fixed studio-decisions run",
-        "candidate-admission (CandidateAdmission@1): one closed loop's admission verdict, written by the studio into the review area of its fixed studio-admissions run"
+        "candidate-admission (CandidateAdmission@1): one closed loop's admission verdict, written by the studio into the review area of its fixed studio-admissions run",
+        "studio-memory-record (StudioMemoryRecord@1): one immutable revision of one project memory item, written by studio.memory into the review area of its fixed studio-memory run"
       ],
       "does_not_own": [
         "the file name a record is stored under, and reading a kind back out of one - project.refs",
@@ -5228,7 +5229,8 @@
         "the HTTP error body and the DTOs - studio.shell",
         "acquiring, releasing or verifying anything about a parameter lock beyond recording the lock the record already carries (state.record owns locks; state.decision_operator changes them)",
         "the provider tool, chat surface and product loop that saves or revokes a decision from a real conversation, and the message identities it claims (GH-183)",
-        "rendering the images a visual review reads (studio.artifacts model-view, studio.board page export, studio.render results) and deciding what a visual finding means for the task, a Candidate or its admission (the evaluator, the Agent and GH-294)"
+        "rendering the images a visual review reads (studio.artifacts model-view, studio.board page export, studio.render results) and deciding what a visual finding means for the task, a Candidate or its admission (the evaluator, the Agent and GH-294)",
+        "project memory (locators, source policies), its studio-memory run and /api/memory routes - studio.memory; the context read only composes memory_for into ContextPack.memory"
       ],
       "inputs": [
         "utterance text",
@@ -5389,6 +5391,8 @@
         "focus_refs",
         "DecisionRevision",
         "DecisionContext",
+        "revision_chains",
+        "fixed_run",
         "project_recipe",
         "RecipeValue",
         "recipe_export",
@@ -5461,7 +5465,8 @@
         "archflow.adapters.occt_backend",
         "monkeyarch.construction",
         "monkeyarch.construction.vocabulary",
-        "semantics.facets"
+        "semantics.facets",
+        "studio.memory"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -5626,6 +5631,86 @@
         "tools/benchmark_visual_observation.py",
         "tools/export_drawing_recipe.py"
       ]
+    },
+    {
+      "module_id": "studio.memory",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/memory.py",
+      "purpose": "Remember how this project works - where its retained content is and where to look first for a topic - as its own revisioned records, apart from what the project settled.",
+      "owns": [
+        "project memory items (StudioMemoryRecord@1) in the one fixed explicit studio-memory P036 run: key, kind (locator | source_policy; recipe, preference, habit and standard reserved), scope (project; organization, team and user reserved for the library project), appliesWhen (domains, topics, keys, optional Stage), a kind-specific value, authority (explicit; observed and inferred reserved), provenance (the user's raw words, messageSource, sourceKind, evidence refs), version and status",
+        "the locator: the user's label for one piece of retained project content (a registered document page at its exact revision, an artifact by sha256, a board revision element), refusing an absolute machine path or a URL with its reason, and re-verifying the target through P036 on every read",
+        "the source policy: a research topic in the user's words, its normalized keys (materials, regulations, products, precedents), ordered prefer and avoid sources and a note",
+        "memory retrieval: scope, then appliesWhen, then deterministic lexical matching (NFKC, casefold, CJK bigrams; no embeddings); memory_for, the one read ContextPack.memory is compiled from, and locate, the where-is read",
+        "revoking and superseding a memory item against the revision the caller read; one active item per key and reach; a supersession keeps its kind",
+        "POST /api/memory, GET /api/memory, GET /api/memory/locate, GET /api/memory/{memoryId}, POST /api/memory/{memoryId}/revisions"
+      ],
+      "does_not_own": [
+        "project decisions, the drawing recipe included, and their studio-decisions run - studio.intent (Project State under #185)",
+        "the revision-chain check, the fixed-run lookup and message provenance it reuses - studio.intent (decisions.revision_chains, fixed_run)",
+        "the documents, artifacts and board a locator points at - studio.artifacts, studio.board",
+        "composing the ContextPack a turn reads - studio.intent",
+        "the chat surface that saves and revokes memory from a user's message and binds its words - hub.shell",
+        "cross-project items (the library project and its pinned import) and skills",
+        "confidence, support and contradiction counts, and anything inferred from behaviour (#253)"
+      ],
+      "inputs": [
+        "One memory item as the caller states it: kind, value ({label, target} or {topic, keys, prefer, avoid, note}), optional appliesWhen.stageRef, rawLanguage, optional messageSource claim, sourceKind human | agent, optional evidenceRefs",
+        "A turn's utterance, its Stage and the one domain it named, for memory_for; words and an optional Stage for locate"
+      ],
+      "outputs": [
+        "retained StudioMemoryRecord@1 revisions and their DTOs",
+        "memory on ContextPack@1: the locators (current or stale with the reason) and source policies a turn's words are about"
+      ],
+      "public_api": [
+        "POST /api/memory",
+        "GET /api/memory",
+        "GET /api/memory/locate",
+        "GET /api/memory/{memoryId}",
+        "POST /api/memory/{memoryId}/revisions",
+        "save_memory",
+        "revise_memory",
+        "list_memory",
+        "memory_history",
+        "memory_for",
+        "locate",
+        "stale_reason",
+        "lexical_terms",
+        "MemoryRevision",
+        "MemoryMatch"
+      ],
+      "depends_on": [
+        "project.ports",
+        "project.record_kinds",
+        "project.refs",
+        "project.repository",
+        "studio.binding",
+        "studio.artifacts",
+        "studio.board",
+        "studio.intent",
+        "studio.shell"
+      ],
+      "used_by": [
+        "studio.intent",
+        "hub.shell"
+      ],
+      "invariants": [
+        "every revision of a memory item is retained in the one fixed explicit studio-memory run under record kind studio-memory-record and read only from it; nothing is written to studio-decisions, so a build that knows only decisions never reads one, and memory reads never enumerate the project's runs",
+        "an item is one complete chain (stable memoryId, exact previousRevisionRef, version counting from 1); competing, branching or incomplete chains fail closed; superseded is derived and no retained revision is rewritten",
+        "authority is explicit: an item is saved from the user's words (sourceKind agent names the messageSource) or a person's own action (human); an evaluator, a rule or behaviour never retains one, and confidence is not a field until something computes it",
+        "a locator copies no content it names and points only at retained project content; its target resolves when saved, is read again on every lookup, and one that no longer resolves is returned stale with its reason, never dropped or guessed",
+        "a turn is handed only the items its words are about: a source policy applies in research and in a turn that named no domain, never in a turn that named design, drawing or copy; no item count cutoff, no embeddings"
+      ],
+      "status": "provisional",
+      "tests": [
+        "apps/archflow-studio/api/tests/test_project_memory.py"
+      ],
+      "notes": [],
+      "files": [
+        "apps/archflow-studio/api/archflow_studio_api/application/memory.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/memory.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/memory.py"
+      ],
+      "reason": "Created, not extended (#252, owner decision 2026-09-28, boundary comment 5877462835): memory is its own layer - how the project works, not the Project State decisions studio.intent keeps under #185 - so it gets its own owner, records and routes, and reuses the decisions' revision and provenance machinery by import."
     },
     {
       "module_id": "studio.render",

@@ -3,6 +3,12 @@
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import textwrap
 from threading import Barrier
 import unittest
 from unittest.mock import patch
@@ -784,6 +790,44 @@ class CutPlanTests(CandidateTestCase):
             self.assertEqual(self.generate(previousRevisionRef=before["revisionRef"]), before)
         self.assertEqual(self.repository.read_head(), self.head)
         self.assertEqual(self.repository.read_design_branches(), self.branches)
+
+    def test_a_fresh_process_finds_the_project_recipe_and_a_new_drawing_starts_from_it(self):
+        """Cold start (#252): only the project directory; no transcript, no memo, no app state."""
+        first = self.generate()
+        decision = self.confirm_recipe(first, "drawing:hatch", {"hatchSpacingMm": 3})
+        script = textwrap.dedent("""
+            import json, sys
+            from fastapi.testclient import TestClient
+            from archflow_studio_api.main import create_app
+            from archflow_studio_api.settings import StudioSettings
+
+            project_dir, project_id, stage_ref = sys.argv[1:4]
+            with TestClient(create_app(StudioSettings(project_dir=project_dir, cad_export="occt"))) as client:
+                state = client.get("/api/state", params={"sourceStageRef": stage_ref})
+                pack = client.post("/api/intents/context", json={
+                    "projectId": project_id, "sourceStageRef": stage_ref, "stateDigest": state.json()["stateDigest"],
+                    "utterance": "出一张新的平面图"})
+                drawing = client.post("/api/drawings/plans", json={
+                    "projectId": project_id, "sourceStageRef": stage_ref, "drawingId": "cold-plan",
+                    "cutHeight": 1.2, "bottom": 0, "scaleDenominator": 50})
+            print(json.dumps({"pack": [pack.status_code, pack.json()],
+                              "drawing": [drawing.status_code, drawing.json()]}))
+        """)
+        api_root = str(Path(drawing_plans.__file__).resolve().parents[2])
+        path = os.pathsep.join(filter(None, (api_root, os.environ.get("PYTHONPATH"))))
+        ran = subprocess.run([sys.executable, "-c", script, str(self.root / PROJECT_ID), PROJECT_ID,
+                              self.stage["stageRef"]], capture_output=True, text=True, timeout=300,
+                             env={**os.environ, "PYTHONPATH": path})
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        cold = json.loads(ran.stdout.strip().splitlines()[-1])
+        self.assertEqual(cold["pack"][0], 200, cold["pack"][1])
+        # The turn about to draw is handed the recipe, in the person's words.
+        self.assertEqual([(row["decisionId"], row["typedBinding"]["graphics"]["hatchSpacingMm"])
+                          for row in cold["pack"][1]["scopedDecisions"]], [(decision["decisionId"], 3.0)])
+        # And the new drawing starts from it; what the recipe leaves open is the default.
+        self.assertEqual(cold["drawing"][0], 201, cold["drawing"][1])
+        self.assertEqual(cold["drawing"][1]["viewRecipe"]["graphics"],
+                         {**first["viewRecipe"]["graphics"], "hatchSpacingMm": 3.0})
 
     def test_revoking_the_recipe_returns_a_new_drawing_to_the_code_default(self):
         first = self.generate()
