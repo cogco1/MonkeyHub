@@ -1,4 +1,28 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-419",
+      "lanes": [
+        {
+          "id": "chat-labels",
+          "status": "active",
+          "branch": "codex/419-chat-labels",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-419-chat-labels",
+          "base_ref": "6005d4c8",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "The Hub chat names the agent's #419 proposal routes (construction, facets, hosted-opening) as drafts of a model change instead of project data updates; the producer route names stay for transcripts retained from before #419. Independent of GH-419/construction-voids (#461): no shared write_scope.",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/chatProcess.ts",
+            "apps/monkeyhub/web/test/chatProcess.test.ts"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
