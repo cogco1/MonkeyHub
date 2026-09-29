@@ -22,6 +22,7 @@
             "apps/monkeyhub/api/monkeyhub_api/chat.py",
             "apps/monkeyhub/api/tests/test_chat_render.py",
             "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/api/tests/test_chat_presentation.py",
             "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardRender.ts",
             "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
             "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/board.css",
@@ -37,7 +38,9 @@
             "apps/monkeyhub/web/src/api/generated/",
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/monkeyhub/web/test/chatProcess.test.ts",
-            "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs"
+            "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+            "apps/monkeyhub/web/src/chatError.ts",
+            "apps/monkeyhub/web/test/chatError.test.ts"
           ],
           "depends_on": []
         }
