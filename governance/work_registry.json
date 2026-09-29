@@ -1,4 +1,41 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-252",
+      "lanes": [
+        {
+          "id": "skill-library",
+          "status": "active",
+          "branch": "codex/252-skill-library",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-252-skill-library",
+          "base_ref": "574601b4",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "hub.shell",
+            "studio.shell"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/skills.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/skills.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/skills.py",
+            "apps/archflow-studio/api/archflow_studio_api/main.py",
+            "archflow/project/record_kinds.py",
+            "apps/archflow-studio/api/archflow_studio_api/settings.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/settings.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
+            "apps/monkeyhub/api/monkeyhub_api/main.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/api/tests/test_skill_library.py",
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "docs/PROJECT_RUNTIME.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
