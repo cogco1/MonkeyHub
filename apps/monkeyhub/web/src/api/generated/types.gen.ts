@@ -102,6 +102,10 @@ export type ApplicationSettingsDto = {
      */
     workspaceDir?: string | null;
     /**
+     * Librarydir
+     */
+    libraryDir?: string | null;
+    /**
      * Referencerun
      */
     referenceRun?: string | null;

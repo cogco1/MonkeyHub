@@ -115,8 +115,12 @@ NO_VERSION_IDENTITY = {
     "StudioModelAsset@1": "an asset by digest; no base",
     "StudioModelExport@1": "source/output artifact hashes and an optional source run/state content digest; no canonical version",
     "StudioRenderJob@2": "an image attempt bound to document, model-content and Stage refs; its run manifest owns the canonical base",
+    "StudioSkill@1": "a procedure's immutable version: it names its previous version's record URI, "
+    "and no canonical version or base",
     "StudioScopedDecision@1": "a scoped judgement: it names content digests, run ids and record "
     "refs, and embeds no canonical version; its fixed run manifest owns that base",
+    "StudioMemoryRecord@1": "a project memory item: it names content digests and record refs, and embeds no "
+    "canonical version; its fixed run manifest owns that base",
     "StudioSourceDocument@1": "an uploaded document by digest; no base",
     "StudioWorkingCopy@1": "a work copy by digest; no base",
 }

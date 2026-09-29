@@ -2495,7 +2495,8 @@
         "seat-blender-execution (BlenderExecutionReceipt@1): the existing runner retains a verified Blender scene export and its exact source binding in the run-record area",
         "audit-event (AuditEvent@1): the actor/origin binding the studio retains beside an authoritative decision, in the review area of the run that decision produced",
         "studio-scoped-decision (StudioScopedDecision@1): one immutable revision of one scoped project decision, written by the studio into the review area of its fixed studio-decisions run",
-        "candidate-admission (CandidateAdmission@1): one closed loop's admission verdict, written by the studio into the review area of its fixed studio-admissions run"
+        "candidate-admission (CandidateAdmission@1): one closed loop's admission verdict, written by the studio into the review area of its fixed studio-admissions run",
+        "studio-memory-record (StudioMemoryRecord@1): one immutable revision of one project memory item, written by studio.memory into the review area of its fixed studio-memory run"
       ],
       "does_not_own": [
         "the file name a record is stored under, and reading a kind back out of one - project.refs",
@@ -5145,7 +5146,8 @@
         "the HTTP error body and the DTOs - studio.shell",
         "acquiring, releasing or verifying anything about a parameter lock beyond recording the lock the record already carries (state.record owns locks; state.decision_operator changes them)",
         "the provider tool, chat surface and product loop that saves or revokes a decision from a real conversation, and the message identities it claims (GH-183)",
-        "rendering the images a visual review reads (studio.artifacts model-view, studio.board page export, studio.render results) and deciding what a visual finding means for the task, a Candidate or its admission (the evaluator, the Agent and GH-294)"
+        "rendering the images a visual review reads (studio.artifacts model-view, studio.board page export, studio.render results) and deciding what a visual finding means for the task, a Candidate or its admission (the evaluator, the Agent and GH-294)",
+        "project memory (locators, source policies), its studio-memory run and /api/memory routes - studio.memory; the context read only composes memory_for into ContextPack.memory"
       ],
       "inputs": [
         "utterance text",
@@ -5306,6 +5308,8 @@
         "focus_refs",
         "DecisionRevision",
         "DecisionContext",
+        "revision_chains",
+        "fixed_run",
         "project_recipe",
         "RecipeValue",
         "recipe_export",
@@ -5373,7 +5377,8 @@
         "studio.board",
         "studio.study",
         "adapters.drawing_svg",
-        "archflow.adapters.occt_backend"
+        "archflow.adapters.occt_backend",
+        "studio.memory"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -5538,6 +5543,86 @@
       ]
     },
     {
+      "module_id": "studio.memory",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/memory.py",
+      "purpose": "Remember how this project works - where its retained content is and where to look first for a topic - as its own revisioned records, apart from what the project settled.",
+      "owns": [
+        "project memory items (StudioMemoryRecord@1) in the one fixed explicit studio-memory P036 run: key, kind (locator | source_policy; recipe, preference, habit and standard reserved), scope (project; organization, team and user reserved for the library project), appliesWhen (domains, topics, keys, optional Stage), a kind-specific value, authority (explicit; observed and inferred reserved), provenance (the user's raw words, messageSource, sourceKind, evidence refs), version and status",
+        "the locator: the user's label for one piece of retained project content (a registered document page at its exact revision, an artifact by sha256, a board revision element), refusing an absolute machine path or a URL with its reason, and re-verifying the target through P036 on every read",
+        "the source policy: a research topic in the user's words, its normalized keys (materials, regulations, products, precedents), ordered prefer and avoid sources and a note",
+        "memory retrieval: scope, then appliesWhen, then deterministic lexical matching (NFKC, casefold, CJK bigrams; no embeddings); memory_for, the one read ContextPack.memory is compiled from, and locate, the where-is read",
+        "revoking and superseding a memory item against the revision the caller read; one active item per key and reach; a supersession keeps its kind",
+        "POST /api/memory, GET /api/memory, GET /api/memory/locate, GET /api/memory/{memoryId}, POST /api/memory/{memoryId}/revisions"
+      ],
+      "does_not_own": [
+        "project decisions, the drawing recipe included, and their studio-decisions run - studio.intent (Project State under #185)",
+        "the revision-chain check, the fixed-run lookup and message provenance it reuses - studio.intent (decisions.revision_chains, fixed_run)",
+        "the documents, artifacts and board a locator points at - studio.artifacts, studio.board",
+        "composing the ContextPack a turn reads - studio.intent",
+        "the chat surface that saves and revokes memory from a user's message and binds its words - hub.shell",
+        "cross-project items (the library project and its pinned import) and skills",
+        "confidence, support and contradiction counts, and anything inferred from behaviour (#253)"
+      ],
+      "inputs": [
+        "One memory item as the caller states it: kind, value ({label, target} or {topic, keys, prefer, avoid, note}), optional appliesWhen.stageRef, rawLanguage, optional messageSource claim, sourceKind human | agent, optional evidenceRefs",
+        "A turn's utterance, its Stage and the one domain it named, for memory_for; words and an optional Stage for locate"
+      ],
+      "outputs": [
+        "retained StudioMemoryRecord@1 revisions and their DTOs",
+        "memory on ContextPack@1: the locators (current or stale with the reason) and source policies a turn's words are about"
+      ],
+      "public_api": [
+        "POST /api/memory",
+        "GET /api/memory",
+        "GET /api/memory/locate",
+        "GET /api/memory/{memoryId}",
+        "POST /api/memory/{memoryId}/revisions",
+        "save_memory",
+        "revise_memory",
+        "list_memory",
+        "memory_history",
+        "memory_for",
+        "locate",
+        "stale_reason",
+        "lexical_terms",
+        "MemoryRevision",
+        "MemoryMatch"
+      ],
+      "depends_on": [
+        "project.ports",
+        "project.record_kinds",
+        "project.refs",
+        "project.repository",
+        "studio.binding",
+        "studio.artifacts",
+        "studio.board",
+        "studio.intent",
+        "studio.shell"
+      ],
+      "used_by": [
+        "studio.intent",
+        "hub.shell"
+      ],
+      "invariants": [
+        "every revision of a memory item is retained in the one fixed explicit studio-memory run under record kind studio-memory-record and read only from it; nothing is written to studio-decisions, so a build that knows only decisions never reads one, and memory reads never enumerate the project's runs",
+        "an item is one complete chain (stable memoryId, exact previousRevisionRef, version counting from 1); competing, branching or incomplete chains fail closed; superseded is derived and no retained revision is rewritten",
+        "authority is explicit: an item is saved from the user's words (sourceKind agent names the messageSource) or a person's own action (human); an evaluator, a rule or behaviour never retains one, and confidence is not a field until something computes it",
+        "a locator copies no content it names and points only at retained project content; its target resolves when saved, is read again on every lookup, and one that no longer resolves is returned stale with its reason, never dropped or guessed",
+        "a turn is handed only the items its words are about: a source policy applies in research and in a turn that named no domain, never in a turn that named design, drawing or copy; no item count cutoff, no embeddings"
+      ],
+      "status": "provisional",
+      "tests": [
+        "apps/archflow-studio/api/tests/test_project_memory.py"
+      ],
+      "notes": [],
+      "files": [
+        "apps/archflow-studio/api/archflow_studio_api/application/memory.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/memory.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/memory.py"
+      ],
+      "reason": "Created, not extended (#252, owner decision 2026-09-28, boundary comment 5877462835): memory is its own layer - how the project works, not the Project State decisions studio.intent keeps under #185 - so it gets its own owner, records and routes, and reuses the decisions' revision and provenance machinery by import."
+    },
+    {
       "module_id": "studio.render",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
       "purpose": "Retain and execute independent image attempts in the existing project Runtime. CREATE: candidate jobs require proposals and design runs; artifacts owns saving, not paid image execution.",
@@ -5614,6 +5699,60 @@
         "Uploaded images without models are valid and never acquire fabricated modelSource",
         "Source freshness follows retained input requests, explicit page replacements and Drawing read-set status; a prior revision alone is not a replacement decision",
         "No render action changes Design HEAD or accepts a Stage; hidden UI does not cancel a running attempt"
+      ]
+    },
+    {
+      "module_id": "studio.skills",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/skills.py",
+      "purpose": "Retain reusable agent procedures (skills) as immutable versions in a project, read by the Hub from the library project. CREATE: no owner held reusable procedures; a scoped decision is a judgement compiled into later turns and a recipe is typed paper-space values, and neither carries a procedure (#252).",
+      "status": "canonical",
+      "owns": [
+        "The StudioSkill@1 record: id skill:<kebab-name>, version, name, description, SKILL.md body without frontmatter (at most 64 KiB) and an optional declared manifest of inputs, outputs and permissions",
+        "The fixed studio-skills run, created only by the first added skill, and the per-skill version chain 1..n with each version naming the ref it supersedes",
+        "POST /api/skills, GET /api/skills (the index, no bodies) and GET /api/skills/{skill_id} with ?version="
+      ],
+      "does_not_own": [
+        "Loading skills into an agent: hub.shell materializes the library's current versions into a plugin directory in its cache and the agent's native mechanism loads it",
+        "Any permission or grant: a skill is a procedure, and its manifest's permissions are declared and never enforced",
+        "Which project is the library: the Hub's ApplicationSettingsDto libraryDir",
+        "Recipes and scoped decisions: studio.intent"
+      ],
+      "public_api": [
+        "POST /api/skills",
+        "GET /api/skills",
+        "GET /api/skills/{skill_id}",
+        "add_skill",
+        "list_skills",
+        "read_skill",
+        "skill_versions"
+      ],
+      "depends_on": [
+        "studio.binding",
+        "studio.shell",
+        "project.ports",
+        "project.record_kinds",
+        "project.repository"
+      ],
+      "files": [
+        "apps/archflow-studio/api/archflow_studio_api/application/skills.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/skills.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/skills.py"
+      ],
+      "tests": [
+        "apps/archflow-studio/api/tests/test_skills.py",
+        "apps/monkeyhub/api/tests/test_skill_library.py"
+      ],
+      "inputs": [
+        "An explicit skill version: name, description, body, optional manifest and, for a successor, the version it supersedes"
+      ],
+      "outputs": [
+        "Immutable retained versions; an index of current versions without bodies; one exact version with its body and the latest version number"
+      ],
+      "invariants": [
+        "A retained version is never rewritten; a superseded version stays readable by its number",
+        "Adding an existing name without superseding, or superseding a version that is not the latest, refuses",
+        "Competing or missing versions refuse on read rather than being resolved by picking a file",
+        "No skill operation accepts a Stage, moves HEAD or grants a permission"
       ]
     },
     {
@@ -7142,7 +7281,8 @@
         "Modeling-to-Render preview borrows the mounted project scene and camera; explicit capture freezes an exact retained model view as the AI source. Local edits, loading and blended/unbound views cannot claim a saved model source.",
         "The project Design Tree (状态树) surface and its Stage chip: a planar growth tree of Stages, admitted Candidates and Studies (the #294 design-history contract), the Working Head and running work; View is read-only, Continue uses the working-draft route and Accept as next Stage the existing accept route, on Current only",
         "The shared project canvas host (features/canvas): Excalidraw mount defaults, the local font path, theme mapping, wheel zoom and scene-point click hit testing, used by MonkeyBoard and the Design Tree",
-        "Hub-local integration diagnostic snapshot and explicit bounded rescan; qualification and bridge execution stay with the existing adapter owner."
+        "Hub-local integration diagnostic snapshot and explicit bounded rescan; qualification and bridge execution stay with the existing adapter owner.",
+        "The configured skill library (#252): reading the library project's current skills through its Runtime and materializing them into a Claude plugin directory under <runtime root>/cache/skill-plugins/<index digest>/, passed with --plugin-dir; nothing is written into any project, and no library means an unchanged command"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7307,6 +7447,7 @@
         "apps/monkeyhub/run.py",
         "apps/monkeyhub/launch-hub.ps1",
         "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
         "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
         "apps/monkeyhub/api/monkeyhub_api/computer_tools.py",
         "apps/monkeyhub/api/monkeyhub_api/acp_session.py",
@@ -7391,6 +7532,7 @@
         "apps/monkeyhub/api/tests/test_applications.py",
         "apps/monkeyhub/api/tests/test_monkeyfab.py",
         "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/monkeyhub/api/tests/test_skill_library.py",
         "apps/monkeyhub/api/tests/test_chat_trace.py",
         "apps/monkeyhub/api/tests/test_acp_session.py",
         "apps/monkeyhub/api/tests/test_acp_chat.py",
@@ -7456,7 +7598,8 @@
         "tools.package_monkeyapps",
         "project.layout",
         "adapters.cad_execution",
-        "archflow.adapters.integration_packs"
+        "archflow.adapters.integration_packs",
+        "studio.skills"
       ]
     },
     {

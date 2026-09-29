@@ -3077,7 +3077,7 @@ class ChatTests(unittest.TestCase):
                   "targetComponentId": "portico", "elementId": "portico-cornice"}
         return ChatDesignContext(**{**values, **overrides})
 
-    def studio(self, session, packs, refusal=None):
+    def studio(self, session, packs, refusal=None, memory=None):
         """A stand-in Hub and Studio for the one read a prepared turn makes."""
 
         def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
@@ -3095,6 +3095,11 @@ class ChatTests(unittest.TestCase):
                 if refusal is not None:
                     raise refusal
                 return self.PACK
+            if path == "/api/memory/about" and (memory is not None or refusal is not None):
+                packs.append({"method": method, "base": base, "path": path, "body": body})
+                if refusal is not None:
+                    raise refusal
+                return {"projectId": session.projectId, "memory": memory}
             raise AssertionError(f"a prepared turn asked for something unexpected: {method} {path}")
 
         return request
@@ -3666,6 +3671,78 @@ class ChatTests(unittest.TestCase):
         plain = self.calls()[-1]["prompt"]
         self.assertTrue(plain.endswith("\n\nand what did that change?"))
         self.assertNotIn(chat._CONTEXT_NOTE, plain)
+
+    # ---- project memory reaches a turn with no design context (#252)
+
+    LOCATOR = {"memory": {"memoryId": "mem-frame", "kind": "locator",
+                          "value": {"label": "项目图框", "target": {"kind": "document", "runId": "documents",
+                                                                  "assetSha256": "b" * 64, "pageIndex": 0}}},
+               "status": "current", "staleReason": None, "matchedTerms": ["图框"]}
+
+    def test_a_turn_with_no_design_context_is_handed_the_memory_its_words_are_about(self):
+        session = self.create()
+        packs = []
+        words = "项目图框在哪？"
+        with patch.object(chat, "_request_json", side_effect=self.studio(session, packs, memory=[self.LOCATOR])):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content=words))
+            self.assertEqual(self.finished(session).status, "idle")
+        # The whole message, once, to the bound Studio's read-only route.
+        self.assertEqual(packs, [{"method": "POST", "base": "http://127.0.0.1:8791", "path": "/api/memory/about",
+                                  "body": {"projectId": session.projectId, "utterance": words}}])
+        prompt = self.calls()[-1]["prompt"]
+        self.assertIn("\n\n" + words + "\n\n" + chat._MEMORY_NOTE + "\n", prompt)
+        self.assertTrue(prompt.endswith(json.dumps([self.LOCATOR], ensure_ascii=False, separators=(",", ":"))))
+        self.assertEqual(chat._MEMORY_NOTE.count("\n"), 1, "the note is two lines")
+        self.assertNotIn(chat._CONTEXT_NOTE, prompt)
+
+    def test_words_that_match_no_memory_add_no_block(self):
+        session = self.create()
+        packs = []
+        with patch.object(chat, "_request_json", side_effect=self.studio(session, packs, memory=[])):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="接着往下调"))
+            self.assertEqual(self.finished(session).status, "idle")
+        self.assertEqual([row["path"] for row in packs], ["/api/memory/about"])
+        prompt = self.calls()[-1]["prompt"]
+        self.assertTrue(prompt.endswith("\n\n接着往下调"))
+        self.assertNotIn(chat._MEMORY_NOTE, prompt)
+        self.assertNotIn("Project memory could not be read", prompt)
+
+    def test_a_refused_memory_read_is_one_line_and_the_provider_still_starts(self):
+        session = self.create()
+        packs = []
+        before = len(self.turns())
+        refusal = HubFailure(403, "ACTION_FORBIDDEN", "The authenticated actor is not granted this action.")
+        with patch.object(chat, "_request_json", side_effect=self.studio(session, packs, refusal=refusal)):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="项目图框在哪？"))
+            finished = self.finished(session)
+        self.assertEqual(finished.status, "idle", finished.error)
+        self.assertEqual(len(packs), 1)
+        self.assertEqual(len(self.turns()), before + 1, "the provider starts without memory")
+        prompt = self.calls()[-1]["prompt"]
+        # One line, before the request, which is still the last thing said.
+        self.assertTrue(prompt.endswith("\n\nProject memory could not be read for this turn: "
+                                        "The authenticated actor is not granted this action.\n\n项目图框在哪？"))
+        self.assertNotIn(chat._MEMORY_NOTE, prompt)
+
+    def test_a_turn_with_design_context_reads_no_separate_memory(self):
+        session = self.create()
+        packs = []
+        with patch.object(chat, "_request_json", side_effect=self.studio(session, packs, memory=[self.LOCATOR])):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="项目图框在哪？",
+                                                        designContext=self.selected()))
+            self.assertEqual(self.finished(session).status, "idle")
+        # The prepared context already carries ContextPack.memory.
+        self.assertEqual([row.get("path", "/api/intents/context") for row in packs], ["/api/intents/context"])
+        prompt = self.calls()[-1]["prompt"]
+        self.assertIn(chat._CONTEXT_NOTE, prompt)
+        self.assertNotIn(chat._MEMORY_NOTE, prompt)
+
+    def test_the_memory_read_is_a_post_read_the_agent_may_make_and_binds_no_words(self):
+        self.assertTrue(chat._POST.fullmatch("/api/memory/about"))
+        self.assertIn("/api/memory/about", chat._POST_READS)
+        self.assertFalse(chat._binds_words("POST", "/api/memory/about"))
+        self.assertTrue(chat._binds_words("POST", "/api/memory"))
+        self.assertIn("POST /api/memory/about", chat._GUIDES["/api/memory"])
 
     def test_a_refused_preparation_ends_the_turn_in_its_own_words_and_starts_no_cli(self):
         session = self.create()

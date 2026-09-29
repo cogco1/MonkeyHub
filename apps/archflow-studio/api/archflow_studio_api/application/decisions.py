@@ -159,8 +159,8 @@ def _export_invalid(message: str) -> StudioError:
 # ---- the fixed run ---------------------------------------------------------
 
 
-def _run(binding: ProjectBinding, *, create: bool):
-    """The decisions run, asked for by name; created only on an explicit save.
+def fixed_run(binding: ProjectBinding, run_id: str, *, create: bool, noun: str = "decision", prefix: str = "DECISION"):
+    """One fixed run, asked for by name; created only on an explicit save.
 
     Never ``binding.run_ids()``: reading decisions must not cost a scan of
     every run in the project. "Not there" is one bounded read-only question
@@ -168,17 +168,24 @@ def _run(binding: ProjectBinding, *, create: bool):
     ``load_run`` answers every repository failure with the same 404 - and a
     damaged manifest has to refuse rather than quietly answer that this
     project holds no decisions, which would make active constraints vanish.
+    Project memory (``memory``) keeps its own fixed run the same way.
     """
 
-    if not binding.repository.layout.run(DECISIONS_RUN_ID).root.is_dir():
+    if not binding.repository.layout.run(run_id).root.is_dir():
         if not create:
             return None
         try:
-            return binding.repository.create_run(DECISIONS_RUN_ID)
+            return binding.repository.create_run(run_id)
         except (ProjectRepositoryError, OSError) as failure:
-            raise StudioError(409, "DECISION_WRITE_FAILED",
-                              "The decision run could not be created in this project.") from failure
-    return binding.load_run(DECISIONS_RUN_ID)
+            raise StudioError(409, f"{prefix}_WRITE_FAILED",
+                              f"The {noun} run could not be created in this project.") from failure
+    return binding.load_run(run_id)
+
+
+def _run(binding: ProjectBinding, *, create: bool):
+    """The decisions run (``fixed_run``)."""
+
+    return fixed_run(binding, DECISIONS_RUN_ID, create=create)
 
 
 def _revisions(binding: ProjectBinding) -> dict[str, Mapping[str, Any]]:
@@ -202,45 +209,56 @@ def _revisions(binding: ProjectBinding) -> dict[str, Mapping[str, Any]]:
     return revisions
 
 
-def _chains(revisions: Mapping[str, Mapping[str, Any]]) -> dict[str, tuple[DecisionRevision, ...]]:
-    """Each decision's one complete chain, oldest first, or a refusal.
+def revision_chains(
+    revisions: Mapping[str, Mapping[str, Any]], *, identity: str = "decisionId", noun: str = "decision",
+    prefix: str = "DECISION",
+) -> dict[str, tuple[tuple[str, Mapping[str, Any]], ...]]:
+    """Each record's one complete chain of ``(ref, payload)``, oldest first, or a refusal.
 
     A decision is a chain, not a heap of records with timestamps: exactly one
     root, exactly one tip, and every named parent present. Competing tips, a
     missing parent and a cycle all fail here rather than being resolved by
-    picking the newest file.
+    picking the newest file. Project memory (``memory``) chains its items the
+    same way, keyed by ``identity``.
     """
 
     grouped: dict[str, dict[str, Mapping[str, Any]]] = {}
     for ref, payload in revisions.items():
-        grouped.setdefault(str(payload.get("decisionId")), {})[ref] = payload
-    chains: dict[str, tuple[DecisionRevision, ...]] = {}
+        grouped.setdefault(str(payload.get(identity)), {})[ref] = payload
+    chains: dict[str, tuple[tuple[str, Mapping[str, Any]], ...]] = {}
     for decision_id, group in grouped.items():
         parents = {payload.get("previousRevisionRef") for payload in group.values()}
         roots = [ref for ref, payload in group.items() if payload.get("previousRevisionRef") is None]
         tips = group.keys() - (parents - {None})
         if len(roots) != 1 or len(tips) != 1 or not (parents - {None}).issubset(group):
-            raise StudioError(409, "DECISION_CONFLICT",
-                              f"decision {decision_id} has competing or incomplete revisions. "
+            raise StudioError(409, f"{prefix}_CONFLICT",
+                              f"{noun} {decision_id} has competing or incomplete revisions. "
                               "Every revision has been retained.")
         children: dict[str | None, list[str]] = {}
         for ref, payload in group.items():
             children.setdefault(payload.get("previousRevisionRef"), []).append(ref)
         if any(len(siblings) != 1 for siblings in children.values()):
-            raise StudioError(409, "DECISION_CONFLICT",
-                              f"decision {decision_id} has a branching revision chain. "
+            raise StudioError(409, f"{prefix}_CONFLICT",
+                              f"{noun} {decision_id} has a branching revision chain. "
                               "Every revision has been retained.")
-        ordered: list[DecisionRevision] = []
+        ordered: list[tuple[str, Mapping[str, Any]]] = []
         cursor: str | None = roots[0]
         while cursor is not None:
-            ordered.append(DecisionRevision(cursor, group[cursor]))
+            ordered.append((cursor, group[cursor]))
             cursor = next(iter(children.get(cursor, ())), None)
         if len(ordered) != len(group):
-            raise StudioError(409, "DECISION_CONFLICT",
-                              f"decision {decision_id} has revisions outside its own chain. "
+            raise StudioError(409, f"{prefix}_CONFLICT",
+                              f"{noun} {decision_id} has revisions outside its own chain. "
                               "Every revision has been retained.")
         chains[decision_id] = tuple(ordered)
     return chains
+
+
+def _chains(revisions: Mapping[str, Mapping[str, Any]]) -> dict[str, tuple[DecisionRevision, ...]]:
+    """Each decision's one complete chain, oldest first (``revision_chains``)."""
+
+    return {decision_id: tuple(DecisionRevision(ref, payload) for ref, payload in chain)
+            for decision_id, chain in revision_chains(revisions).items()}
 
 
 def _latest(binding: ProjectBinding) -> dict[str, DecisionRevision]:

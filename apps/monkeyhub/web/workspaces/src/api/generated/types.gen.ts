@@ -345,6 +345,58 @@ export type AgentReadingDto = {
 };
 
 /**
+ * AppliesWhenDto
+ */
+export type AppliesWhenDto = {
+    /**
+     * Domains
+     *
+     * the task domains it applies in; empty means every domain
+     */
+    domains: Array<'design' | 'drawing' | 'copy' | 'research'>;
+    /**
+     * Topics
+     */
+    topics: Array<string>;
+    /**
+     * Keys
+     */
+    keys: Array<'materials' | 'regulations' | 'products' | 'precedents'>;
+    /**
+     * Stageref
+     */
+    stageRef: string | null;
+};
+
+/**
+ * AppliesWhenRequestDto
+ */
+export type AppliesWhenRequestDto = {
+    /**
+     * Stageref
+     *
+     * an exact Stage of this project the item applies under; omitted, it applies project-wide
+     */
+    stageRef?: string | null;
+};
+
+/**
+ * ArtifactContentRefDto
+ *
+ * One retained artifact, by the sha256 its receipt certifies.
+ */
+export type ArtifactContentRefDto = {
+    /**
+     * Kind
+     */
+    kind: 'artifact';
+    /**
+     * Sha256
+     */
+    sha256: string;
+};
+
+/**
  * ArtifactListDto
  *
  * The wire form of ``GET /api/artifacts``.
@@ -438,6 +490,26 @@ export type AuthoredControlDraftDto = {
      * the model's objects of the component, as the catalog binds them
      */
     objectNames?: Array<string>;
+};
+
+/**
+ * BoardContentRefDto
+ *
+ * One element on one exact retained board revision.
+ */
+export type BoardContentRefDto = {
+    /**
+     * Kind
+     */
+    kind: 'board';
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string;
+    /**
+     * Elementid
+     */
+    elementId: string;
 };
 
 /**
@@ -1956,6 +2028,12 @@ export type ContextPackDto = {
      */
     scopedDecisions?: Array<DecisionDto>;
     /**
+     * Memory
+     *
+     * the project's memory this utterance is about (studio.memory): locators, each target re-read now and a stale one kept with its reason, and source policies saying where to look first for its topic. Found by scope, then appliesWhen, then the words; it is how the project works, not a decision, and it copies no content it names
+     */
+    memory?: Array<MemoryMatchDto>;
+    /**
      * Studyevidence
      *
      * Read-only projections of explicitly selected Study revisions. Check each completeness and applicability result before using a prior; evidence never becomes a design decision or constraint.
@@ -2960,6 +3038,34 @@ export type DocumentCommentsDto = {
      * Comments
      */
     comments: Array<DocumentCommentDto>;
+};
+
+/**
+ * DocumentContentRefDto
+ *
+ * One registered document at its exact revision, and one page of it when named.
+ */
+export type DocumentContentRefDto = {
+    /**
+     * Kind
+     */
+    kind: 'document';
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex?: number | null;
 };
 
 /**
@@ -5004,6 +5110,55 @@ export type LocalDraftSourceDto = {
 };
 
 /**
+ * LocatorValueDto
+ */
+export type LocatorValueDto = {
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Target
+     */
+    target: ({
+        kind: 'document';
+    } & DocumentContentRefDto) | ({
+        kind: 'artifact';
+    } & ArtifactContentRefDto) | ({
+        kind: 'board';
+    } & BoardContentRefDto);
+};
+
+/**
+ * LocatorValueRequestDto
+ *
+ * Where one piece of retained project content is, under the name the user calls it.
+ *
+ * The target must resolve now. A string target (an absolute machine path or a
+ * URL) is refused with its reason: register the file as a project document first.
+ */
+export type LocatorValueRequestDto = {
+    /**
+     * Label
+     *
+     * the user's short name for it, e.g. 项目图框
+     */
+    label: string;
+    /**
+     * Target
+     *
+     * the retained content itself; a string is accepted only to be refused with its reason
+     */
+    target: ({
+        kind: 'document';
+    } & DocumentContentRefDto) | ({
+        kind: 'artifact';
+    } & ArtifactContentRefDto) | ({
+        kind: 'board';
+    } & BoardContentRefDto) | string;
+};
+
+/**
  * MassingMetricsDto
  *
  * What one massing measures, and what could not be measured.
@@ -5201,6 +5356,295 @@ export type MassingOptionRequestDto = {
     programTargets?: {
         [key: string]: number;
     } | null;
+};
+
+/**
+ * MemoryAboutDto
+ */
+export type MemoryAboutDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Memory
+     *
+     * what ContextPack.memory would hand for the same words: locators first, each re-read now
+     */
+    memory: Array<MemoryMatchDto>;
+};
+
+/**
+ * MemoryAboutRequestDto
+ *
+ * A turn's words, to read the memory they are about without any design source.
+ */
+export type MemoryAboutRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Utterance
+     *
+     * the user's whole message, unedited
+     */
+    utterance: string;
+    /**
+     * Stageref
+     *
+     * the exact Stage the turn is under, if any
+     */
+    stageRef?: string | null;
+    /**
+     * Domain
+     *
+     * the one task domain the turn named, if any
+     */
+    domain?: 'design' | 'drawing' | 'copy' | 'research' | null;
+};
+
+/**
+ * MemoryDto
+ *
+ * One memory item at one revision, as this project retains it.
+ */
+export type MemoryDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Memoryid
+     */
+    memoryId: string;
+    /**
+     * Revisionref
+     */
+    revisionRef: string;
+    /**
+     * Previousrevisionref
+     */
+    previousRevisionRef: string | null;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Status
+     *
+     * 'superseded' is derived: a revision that is no longer its chain's tip
+     */
+    status: 'active' | 'superseded' | 'revoked';
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Kind
+     */
+    kind: 'locator' | 'source_policy';
+    /**
+     * Scope
+     */
+    scope: 'project';
+    appliesWhen: AppliesWhenDto;
+    /**
+     * Value
+     */
+    value: LocatorValueDto | SourcePolicyValueDto;
+    /**
+     * Authority
+     */
+    authority: 'explicit';
+    provenance: MemoryProvenanceDto;
+    attribution: DecisionAttributionDto;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    revisionMessageSource?: MessageSourceDto | null;
+};
+
+/**
+ * MemoryHistoryDto
+ */
+export type MemoryHistoryDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Memoryid
+     */
+    memoryId: string;
+    /**
+     * Revisions
+     */
+    revisions: Array<MemoryDto>;
+};
+
+/**
+ * MemoryListDto
+ */
+export type MemoryListDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Memory
+     */
+    memory: Array<MemoryDto>;
+};
+
+/**
+ * MemoryLocateDto
+ */
+export type MemoryLocateDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Query
+     */
+    query: string;
+    /**
+     * Locators
+     */
+    locators: Array<MemoryMatchDto>;
+};
+
+/**
+ * MemoryMatchDto
+ *
+ * One item a turn's words are about.
+ *
+ * A locator's 'stale' is never dropped: the content moved or went, and
+ * staleReason says how. Nothing is guessed in its place. A source policy is
+ * always 'current'.
+ */
+export type MemoryMatchDto = {
+    memory: MemoryDto;
+    /**
+     * Status
+     */
+    status: 'current' | 'stale';
+    /**
+     * Stalereason
+     */
+    staleReason: string | null;
+    /**
+     * Matchedterms
+     *
+     * the normalized terms the words shared with this item
+     */
+    matchedTerms: Array<string>;
+};
+
+/**
+ * MemoryProvenanceDto
+ */
+export type MemoryProvenanceDto = {
+    /**
+     * Rawlanguage
+     */
+    rawLanguage: string;
+    messageSource: MessageSourceDto | null;
+    /**
+     * Sourcekind
+     */
+    sourceKind: 'human' | 'agent';
+    /**
+     * Evidencerefs
+     */
+    evidenceRefs: Array<DocumentContentRefDto | ArtifactContentRefDto | BoardContentRefDto>;
+};
+
+/**
+ * MemoryRequestDto
+ *
+ * One memory item, saved from the user's own words or a person's explicit action.
+ *
+ * 'agent' names the user's message in messageSource: an agent never saves one
+ * as the user's on its own, and nothing is inferred from behaviour.
+ */
+export type MemoryRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Kind
+     *
+     * 'locator' (value {label, target}) or 'source_policy' (value {topic, keys, prefer, avoid, note}); recipe, preference, habit and standard are reserved
+     */
+    kind: 'locator' | 'source_policy';
+    /**
+     * Value
+     */
+    value: LocatorValueRequestDto | SourcePolicyValueDto;
+    /**
+     * Scope
+     *
+     * organization, team and user are reserved for the library project
+     */
+    scope?: 'project';
+    appliesWhen?: AppliesWhenRequestDto | null;
+    /**
+     * Authority
+     *
+     * observed and inferred are reserved
+     */
+    authority?: 'explicit';
+    /**
+     * Rawlanguage
+     *
+     * the user's own words, unedited
+     */
+    rawLanguage: string;
+    messageSource?: MessageSourceDto | null;
+    /**
+     * Sourcekind
+     */
+    sourceKind: 'human' | 'agent';
+    /**
+     * Evidencerefs
+     *
+     * retained content the words were said about, if any; the user's message alone is enough
+     */
+    evidenceRefs?: Array<DocumentContentRefDto | ArtifactContentRefDto | BoardContentRefDto>;
+};
+
+/**
+ * MemoryRevisionRequestDto
+ *
+ * Revoke or supersede one memory item, against the revision the caller read.
+ */
+export type MemoryRevisionRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Expectedrevisionref
+     */
+    expectedRevisionRef: string;
+    /**
+     * Action
+     */
+    action: 'revoke' | 'supersede';
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    revisionMessageSource?: MessageSourceDto | null;
+    replacement?: MemoryRequestDto | null;
 };
 
 /**
@@ -10506,6 +10950,153 @@ export type SketchPrismRequestDto = {
 };
 
 /**
+ * SkillAttributionDto
+ */
+export type SkillAttributionDto = {
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Authenticated
+     */
+    authenticated: boolean;
+    /**
+     * Origin
+     */
+    origin: string;
+};
+
+/**
+ * SkillDto
+ *
+ * One exact version, with its body, and the version that is current now.
+ */
+export type SkillDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Latestversion
+     */
+    latestVersion: number;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Body
+     */
+    body: string;
+    manifest: SkillManifestDto | null;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    attribution: SkillAttributionDto;
+};
+
+/**
+ * SkillIndexDto
+ */
+export type SkillIndexDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Skills
+     */
+    skills: Array<SkillIndexRowDto>;
+};
+
+/**
+ * SkillIndexRowDto
+ *
+ * What an agent sees before it uses a skill: no body.
+ */
+export type SkillIndexRowDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+};
+
+/**
+ * SkillManifestDto
+ *
+ * What a procedure reads, produces and says it needs; declared, never enforced.
+ */
+export type SkillManifestDto = {
+    /**
+     * Inputs
+     */
+    inputs?: Array<string>;
+    /**
+     * Outputs
+     */
+    outputs?: Array<string>;
+    /**
+     * Permissions
+     */
+    permissions?: Array<string>;
+};
+
+/**
+ * SkillRequestDto
+ *
+ * One new version. A new skill names no version; a successor names the one it supersedes.
+ */
+export type SkillRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Body
+     */
+    body: string;
+    manifest?: SkillManifestDto | null;
+    /**
+     * Supersedesversion
+     */
+    supersedesVersion?: number | null;
+};
+
+/**
  * SourceDocumentDto
  *
  * An imported reference document, separate from certified model artifacts.
@@ -10655,6 +11246,43 @@ export type SourceDocumentRequestDto = {
      * Replace one registered document whole, page for page. The upload must have the same media type and page count as the document it replaces. Mutually exclusive with replacesPages.
      */
     replacesDocument?: DocumentReplacementTargetDto | null;
+};
+
+/**
+ * SourcePolicyValueDto
+ *
+ * Where to look first for a research topic, and what to avoid.
+ *
+ * A soft default the current request can override unless the user's words
+ * say it must be followed; say which sources were used.
+ */
+export type SourcePolicyValueDto = {
+    /**
+     * Topic
+     *
+     * the topic in the user's words
+     */
+    topic: string;
+    /**
+     * Keys
+     */
+    keys: Array<'materials' | 'regulations' | 'products' | 'precedents'>;
+    /**
+     * Prefer
+     *
+     * sources to look in first, in order: site domains or names
+     */
+    prefer?: Array<string>;
+    /**
+     * Avoid
+     *
+     * sources not to use: site domains or names
+     */
+    avoid?: Array<string>;
+    /**
+     * Note
+     */
+    note?: string | null;
 };
 
 /**
@@ -17684,6 +18312,242 @@ export type ReadWorkingSourceApiWorkingSourceGetResponses = {
 
 export type ReadWorkingSourceApiWorkingSourceGetResponse = ReadWorkingSourceApiWorkingSourceGetResponses[keyof ReadWorkingSourceApiWorkingSourceGetResponses];
 
+export type ReadMemoryApiMemoryGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Kind
+         */
+        kind?: 'locator' | 'source_policy' | null;
+    };
+    url: '/api/memory';
+};
+
+export type ReadMemoryApiMemoryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadMemoryApiMemoryGetError = ReadMemoryApiMemoryGetErrors[keyof ReadMemoryApiMemoryGetErrors];
+
+export type ReadMemoryApiMemoryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MemoryListDto;
+};
+
+export type ReadMemoryApiMemoryGetResponse = ReadMemoryApiMemoryGetResponses[keyof ReadMemoryApiMemoryGetResponses];
+
+export type CreateMemoryApiMemoryPostData = {
+    body: MemoryRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/memory';
+};
+
+export type CreateMemoryApiMemoryPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateMemoryApiMemoryPostError = CreateMemoryApiMemoryPostErrors[keyof CreateMemoryApiMemoryPostErrors];
+
+export type CreateMemoryApiMemoryPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: MemoryDto;
+};
+
+export type CreateMemoryApiMemoryPostResponse = CreateMemoryApiMemoryPostResponses[keyof CreateMemoryApiMemoryPostResponses];
+
+export type LocateApiMemoryLocateGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Q
+         *
+         * the words asking where something is
+         */
+        q: string;
+        /**
+         * Stageref
+         */
+        stageRef?: string | null;
+    };
+    url: '/api/memory/locate';
+};
+
+export type LocateApiMemoryLocateGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LocateApiMemoryLocateGetError = LocateApiMemoryLocateGetErrors[keyof LocateApiMemoryLocateGetErrors];
+
+export type LocateApiMemoryLocateGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MemoryLocateDto;
+};
+
+export type LocateApiMemoryLocateGetResponse = LocateApiMemoryLocateGetResponses[keyof LocateApiMemoryLocateGetResponses];
+
+export type AboutApiMemoryAboutPostData = {
+    body: MemoryAboutRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/memory/about';
+};
+
+export type AboutApiMemoryAboutPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AboutApiMemoryAboutPostError = AboutApiMemoryAboutPostErrors[keyof AboutApiMemoryAboutPostErrors];
+
+export type AboutApiMemoryAboutPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: MemoryAboutDto;
+};
+
+export type AboutApiMemoryAboutPostResponse = AboutApiMemoryAboutPostResponses[keyof AboutApiMemoryAboutPostResponses];
+
+export type ReadMemoryItemApiMemoryMemoryIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Memory Id
+         */
+        memory_id: string;
+    };
+    query?: never;
+    url: '/api/memory/{memory_id}';
+};
+
+export type ReadMemoryItemApiMemoryMemoryIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadMemoryItemApiMemoryMemoryIdGetError = ReadMemoryItemApiMemoryMemoryIdGetErrors[keyof ReadMemoryItemApiMemoryMemoryIdGetErrors];
+
+export type ReadMemoryItemApiMemoryMemoryIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MemoryHistoryDto;
+};
+
+export type ReadMemoryItemApiMemoryMemoryIdGetResponse = ReadMemoryItemApiMemoryMemoryIdGetResponses[keyof ReadMemoryItemApiMemoryMemoryIdGetResponses];
+
+export type ReviseMemoryApiMemoryMemoryIdRevisionsPostData = {
+    body: MemoryRevisionRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Memory Id
+         */
+        memory_id: string;
+    };
+    query?: never;
+    url: '/api/memory/{memory_id}/revisions';
+};
+
+export type ReviseMemoryApiMemoryMemoryIdRevisionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReviseMemoryApiMemoryMemoryIdRevisionsPostError = ReviseMemoryApiMemoryMemoryIdRevisionsPostErrors[keyof ReviseMemoryApiMemoryMemoryIdRevisionsPostErrors];
+
+export type ReviseMemoryApiMemoryMemoryIdRevisionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: MemoryDto;
+};
+
+export type ReviseMemoryApiMemoryMemoryIdRevisionsPostResponse = ReviseMemoryApiMemoryMemoryIdRevisionsPostResponses[keyof ReviseMemoryApiMemoryMemoryIdRevisionsPostResponses];
+
 export type RequestProjectionApiProjectionsGetData = {
     body?: never;
     headers?: {
@@ -17875,3 +18739,118 @@ export type ReadProjectionApiProjectionsKeyGetResponses = {
 };
 
 export type ReadProjectionApiProjectionsKeyGetResponse = ReadProjectionApiProjectionsKeyGetResponses[keyof ReadProjectionApiProjectionsKeyGetResponses];
+
+export type ReadSkillIndexApiSkillsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/skills';
+};
+
+export type ReadSkillIndexApiSkillsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillIndexApiSkillsGetError = ReadSkillIndexApiSkillsGetErrors[keyof ReadSkillIndexApiSkillsGetErrors];
+
+export type ReadSkillIndexApiSkillsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: SkillIndexDto;
+};
+
+export type ReadSkillIndexApiSkillsGetResponse = ReadSkillIndexApiSkillsGetResponses[keyof ReadSkillIndexApiSkillsGetResponses];
+
+export type AddSkillApiSkillsPostData = {
+    body: SkillRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/skills';
+};
+
+export type AddSkillApiSkillsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AddSkillApiSkillsPostError = AddSkillApiSkillsPostErrors[keyof AddSkillApiSkillsPostErrors];
+
+export type AddSkillApiSkillsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SkillDto;
+};
+
+export type AddSkillApiSkillsPostResponse = AddSkillApiSkillsPostResponses[keyof AddSkillApiSkillsPostResponses];
+
+export type ReadSkillApiSkillsSkillIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Version
+         */
+        version?: number | null;
+    };
+    url: '/api/skills/{skill_id}';
+};
+
+export type ReadSkillApiSkillsSkillIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillApiSkillsSkillIdGetError = ReadSkillApiSkillsSkillIdGetErrors[keyof ReadSkillApiSkillsSkillIdGetErrors];
+
+export type ReadSkillApiSkillsSkillIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: SkillDto;
+};
+
+export type ReadSkillApiSkillsSkillIdGetResponse = ReadSkillApiSkillsSkillIdGetResponses[keyof ReadSkillApiSkillsSkillIdGetResponses];
