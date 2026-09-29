@@ -130,6 +130,10 @@ CANDIDATE_ADMISSION = "candidate-admission"
 # of one exact Candidate or Stage, nor reversible archival.  This separate
 # judgement is revisioned and changes no design position.
 CANDIDATE_REVIEW = "candidate-review"
+# A skill is a reusable procedure an agent may follow (#252). No existing kind
+# holds one: a scoped decision is a judgement compiled into later turns, and a
+# recipe is a decision's typed paper-space values; neither carries a procedure.
+STUDIO_SKILL = "studio-skill"
 
 # ---- read by the spine, written by nobody on it
 
@@ -192,6 +196,15 @@ _TABLE: tuple[RecordKind, ...] = (
         "scope, when it applies, its value, explicit authority, the user's "
         "own words and message it was saved from, and the revision it "
         "supersedes; it copies no content it names and changes no design state",
+    ),
+    RecordKind(
+        STUDIO_SKILL,
+        "StudioSkill@1",
+        PersistenceArea.RUN_REVIEW.value,
+        "one immutable version of one skill in the fixed studio-skills run of "
+        "the library project: its name, description, SKILL.md body and the "
+        "inputs, outputs and permissions it declares; a skill is a procedure, "
+        "grants no permission and changes no design state",
     ),
     RecordKind(
         CANDIDATE_ADMISSION,

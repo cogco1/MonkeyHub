@@ -58,6 +58,7 @@ from archflow_studio_api.settings import read_application_settings, read_user_se
 from pydantic import Field
 
 from . import credentials
+from . import skill_plugins
 
 from .models import (
     ChatAttachment, ChatAttention, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
@@ -1826,6 +1827,13 @@ class ChatStore:
             command.append("-")
         else:
             scratch = self._scratch_path(session.id)
+            # The library project's skills, as a plugin Claude loads natively
+            # (#252). None when no library is set: the command is then as before.
+            # Nothing is added to --allowedTools for them: under dontAsk the CLI
+            # (2.1.283) does not gate its Skill tool, so an allow rule restricts
+            # nothing. It also lists this machine's personal skills and plugins,
+            # which a chat can load too; only a deny rule refuses one.
+            skills = skill_plugins.library_plugin_dir(self.runtime_root, self.hub_url)
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
                        "--include-partial-messages", "--permission-mode", "dontAsk", "--permission-prompts", "none",
                        # Two different questions, and both have to be answered.
@@ -1836,6 +1844,7 @@ class ChatStore:
                        # plus this adapter's own tools and nothing else.
                        "--tools", "default", "--allowedTools", ",".join(_claude_approved(self.runtime_root)),
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
+                       *(("--plugin-dir", str(skills)) if skills is not None else ()),
                        "--add-dir", str(scratch),
                        # alwaysLoad: the CLI otherwise defers every MCP tool behind
                        # a ToolSearch round trip, one model call before any design work.

@@ -325,6 +325,18 @@
       "reason": "Saves chat attachment bytes and atomically saves their transcript metadata and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Studio/P036 interfaces."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
+      "function": "materialize",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "rename"
+      ],
+      "kind": "application_cache",
+      "owner": "hub.shell",
+      "reason": "Builds the skill library's Claude plugin directory (#252) only under the caller-supplied nonproject Hub runtime cache/skill-plugins/<index digest>, staged beside its final name and renamed into place. It is derived from the library project's Runtime API, rebuilt only for a new index and never written into a project."
+    },
+    {
       "path": "tools/workspace.py",
       "function": "create_worktree",
       "operations": [

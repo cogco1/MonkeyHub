@@ -5702,6 +5702,60 @@
       ]
     },
     {
+      "module_id": "studio.skills",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/skills.py",
+      "purpose": "Retain reusable agent procedures (skills) as immutable versions in a project, read by the Hub from the library project. CREATE: no owner held reusable procedures; a scoped decision is a judgement compiled into later turns and a recipe is typed paper-space values, and neither carries a procedure (#252).",
+      "status": "canonical",
+      "owns": [
+        "The StudioSkill@1 record: id skill:<kebab-name>, version, name, description, SKILL.md body without frontmatter (at most 64 KiB) and an optional declared manifest of inputs, outputs and permissions",
+        "The fixed studio-skills run, created only by the first added skill, and the per-skill version chain 1..n with each version naming the ref it supersedes",
+        "POST /api/skills, GET /api/skills (the index, no bodies) and GET /api/skills/{skill_id} with ?version="
+      ],
+      "does_not_own": [
+        "Loading skills into an agent: hub.shell materializes the library's current versions into a plugin directory in its cache and the agent's native mechanism loads it",
+        "Any permission or grant: a skill is a procedure, and its manifest's permissions are declared and never enforced",
+        "Which project is the library: the Hub's ApplicationSettingsDto libraryDir",
+        "Recipes and scoped decisions: studio.intent"
+      ],
+      "public_api": [
+        "POST /api/skills",
+        "GET /api/skills",
+        "GET /api/skills/{skill_id}",
+        "add_skill",
+        "list_skills",
+        "read_skill",
+        "skill_versions"
+      ],
+      "depends_on": [
+        "studio.binding",
+        "studio.shell",
+        "project.ports",
+        "project.record_kinds",
+        "project.repository"
+      ],
+      "files": [
+        "apps/archflow-studio/api/archflow_studio_api/application/skills.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/skills.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/skills.py"
+      ],
+      "tests": [
+        "apps/archflow-studio/api/tests/test_skills.py",
+        "apps/monkeyhub/api/tests/test_skill_library.py"
+      ],
+      "inputs": [
+        "An explicit skill version: name, description, body, optional manifest and, for a successor, the version it supersedes"
+      ],
+      "outputs": [
+        "Immutable retained versions; an index of current versions without bodies; one exact version with its body and the latest version number"
+      ],
+      "invariants": [
+        "A retained version is never rewritten; a superseded version stays readable by its number",
+        "Adding an existing name without superseding, or superseding a version that is not the latest, refuses",
+        "Competing or missing versions refuse on read rather than being resolved by picking a file",
+        "No skill operation accepts a Stage, moves HEAD or grants a permission"
+      ]
+    },
+    {
       "module_id": "studio.shell",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/main.py",
       "purpose": "The Project Runtime: assemble the project-scoped FastAPI boundary MonkeyHub starts once per open project, read its configuration only from the environment the Hub resolved, and serve the settings routes the Hub mounts (contract: docs/PROJECT_RUNTIME.md).",
@@ -7227,7 +7281,8 @@
         "Modeling-to-Render preview borrows the mounted project scene and camera; explicit capture freezes an exact retained model view as the AI source. Local edits, loading and blended/unbound views cannot claim a saved model source.",
         "The project Design Tree (状态树) surface and its Stage chip: a planar growth tree of Stages, admitted Candidates and Studies (the #294 design-history contract), the Working Head and running work; View is read-only, Continue uses the working-draft route and Accept as next Stage the existing accept route, on Current only",
         "The shared project canvas host (features/canvas): Excalidraw mount defaults, the local font path, theme mapping, wheel zoom and scene-point click hit testing, used by MonkeyBoard and the Design Tree",
-        "Hub-local integration diagnostic snapshot and explicit bounded rescan; qualification and bridge execution stay with the existing adapter owner."
+        "Hub-local integration diagnostic snapshot and explicit bounded rescan; qualification and bridge execution stay with the existing adapter owner.",
+        "The configured skill library (#252): reading the library project's current skills through its Runtime and materializing them into a Claude plugin directory under <runtime root>/cache/skill-plugins/<index digest>/, passed with --plugin-dir; nothing is written into any project, and no library means an unchanged command"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7392,6 +7447,7 @@
         "apps/monkeyhub/run.py",
         "apps/monkeyhub/launch-hub.ps1",
         "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
         "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
         "apps/monkeyhub/api/monkeyhub_api/computer_tools.py",
         "apps/monkeyhub/api/monkeyhub_api/acp_session.py",
@@ -7476,6 +7532,7 @@
         "apps/monkeyhub/api/tests/test_applications.py",
         "apps/monkeyhub/api/tests/test_monkeyfab.py",
         "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/monkeyhub/api/tests/test_skill_library.py",
         "apps/monkeyhub/api/tests/test_chat_trace.py",
         "apps/monkeyhub/api/tests/test_acp_session.py",
         "apps/monkeyhub/api/tests/test_acp_chat.py",
@@ -7541,7 +7598,8 @@
         "tools.package_monkeyapps",
         "project.layout",
         "adapters.cad_execution",
-        "archflow.adapters.integration_packs"
+        "archflow.adapters.integration_packs",
+        "studio.skills"
       ]
     },
     {
