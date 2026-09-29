@@ -6,6 +6,7 @@ export class CameraLink {
   private listeners=new Set<()=>void>();
   subscribe(listener:()=>void){this.listeners.add(listener);return ()=>{this.listeners.delete(listener);};}
   linked(){return !!this.view();}
+  hasModel(){return this.model !== null;}
   private notify(){this.listeners.forEach(fn=>fn());}
   private physical: { geometry: Geometry; scene: PhysicalScene; edit(camera: Camera): void } | null = null;
   private model: { read(): RenderView | null; apply(camera: Camera, aspect: number): void } | null = null;

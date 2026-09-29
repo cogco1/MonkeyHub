@@ -36,6 +36,9 @@ Evidence: `camera-native.json` contains actual rendered camera/matrix/viewport r
 
 ## Failed attempts retained
 
+- Initial PR #477 CI on `ee8c44b8` failed Candidate review: 18 unexpected `GET /api/render/scene` reads in the tree fixture, which has no real Modeling viewport. `failure-ci-candidate.log` retains the Linux job. The shared link object's existence wrongly activated hidden Physical reads. The follow-up gates reads on an attached Modeling viewport or visible Physical, keeping cold camera restoration and all original tree assertions. This is a product activation fix, not a relaxed fixture. The original camera-refresh PNG comparisons in that failed job were zero-difference.
+- After this fix, `candidate-retest.log` passes the unchanged tree regression; `browser-retest.log` passes all 18 Render scenarios using the original Penguin and facade; `unit-retest.log` has 439 PASS / 2 existing SKIP; `typecheck-retest.log` and `architecture-retest.log` pass. `camera-native-retest.json`, `camera-imports-retest.json` and `cold-trace-retest.json` retain the new actual readbacks. The initial local candidate attempt lacked the external Playwright module (`failure-local-playwright.log`); supplying the already-installed module resolved setup without dependency changes.
+
 - `failure-initial-types.log`: the view-reader callback widened a source-state union; explicit return typing fixed the compile error.
 - `failure-controls-type.log`: rebuilding controls for both projection types needed the existing common OrbitControls type, not inferred perspective-only controls.
 - `failure-fixture-url.log`: an initial test routing change stripped Vite's `?url` query, breaking the PDF worker module. The middleware now examines a pathname without modifying module requests. No assertion removed.

@@ -1,0 +1,1989 @@
+{
+  "modelCamera": {
+    "time": 6039.899999991059,
+    "model": "82a9a1ba-672a-4fdd-a7e6-3bd3b36f332a",
+    "position": [
+      -1.8187862379587667,
+      -12.587912333842693,
+      7.5595365465741295
+    ],
+    "quaternion": [
+      0.5195566246297294,
+      -0.0716214669913244,
+      -0.11627089833231473,
+      0.8434526409173011
+    ],
+    "target": [
+      2,
+      1,
+      0.449999988079071
+    ],
+    "up": [
+      0,
+      0,
+      1
+    ],
+    "projection": "perspective",
+    "fov": 35,
+    "zoom": 1,
+    "near": 0.001,
+    "far": 100000,
+    "frustum": null,
+    "worldMatrix": [
+      0.9627028873340143,
+      -0.27056080780251995,
+      0,
+      0,
+      0.12171517723835158,
+      0.43308398400871795,
+      0.8930977989139673,
+      0,
+      -0.2416372619208155,
+      -0.8597878296861293,
+      0.44986255853874624,
+      0,
+      -1.8187862379587667,
+      -12.587912333842693,
+      7.5595365465741295,
+      1
+    ],
+    "projectionMatrix": [
+      2.057131628755028,
+      0,
+      0,
+      0,
+      0,
+      3.1715948023632126,
+      0,
+      0,
+      0,
+      0,
+      -1.0000000200000003,
+      -1,
+      0,
+      0,
+      -0.0020000000200000004,
+      0
+    ],
+    "rect": {
+      "x": 0,
+      "y": 88,
+      "width": 1440,
+      "height": 934,
+      "top": 88,
+      "right": 1440,
+      "bottom": 1022,
+      "left": 0
+    },
+    "renderSize": [
+      1440,
+      934
+    ],
+    "pixelRatio": 1,
+    "devicePixelRatio": 1
+  },
+  "saved": {
+    "geometry": {
+      "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+      "format": "3dm",
+      "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+      "kind": "working-head",
+      "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+      "modelSource": {
+        "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+        "runId": "run-001",
+        "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+      },
+      "projectId": "demo-project",
+      "runId": "run-001",
+      "warnings": [],
+      "workingRevision": null
+    },
+    "projectId": "demo-project",
+    "scene": {
+      "assignments": {
+        "0": "neutral",
+        "1": "neutral"
+      },
+      "camera": {
+        "fov": 35,
+        "orthoScale": 5.2,
+        "position": [
+          -1.8187862379587667,
+          -12.587912333842699,
+          7.559536546574135
+        ],
+        "projection": "perspective",
+        "target": [
+          2,
+          1,
+          0.449999988079071
+        ],
+        "up": [
+          0,
+          0,
+          1
+        ]
+      },
+      "environment": {
+        "background": null,
+        "color": "#c6d8e8",
+        "environmentMap": null,
+        "strength": 0.4
+      },
+      "exposure": 0,
+      "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+      "lights": [
+        {
+          "color": "#fff0dd",
+          "id": "key",
+          "intensity": 120,
+          "position": [
+            8,
+            -7,
+            8.449999988079071
+          ],
+          "size": 6,
+          "target": [
+            2,
+            1,
+            0.44999998807907104
+          ],
+          "type": "area"
+        },
+        {
+          "color": "#d5e8ff",
+          "id": "fill",
+          "intensity": 55,
+          "position": [
+            -6,
+            -3,
+            4.449999988079071
+          ],
+          "size": 8,
+          "target": [
+            2,
+            1,
+            0.44999998807907104
+          ],
+          "type": "area"
+        }
+      ],
+      "materials": [
+        {
+          "baseColor": "#b9bec8",
+          "id": "neutral",
+          "metallic": 0,
+          "name": "Neutral",
+          "normalMap": null,
+          "roughness": 0.65,
+          "texture": null
+        }
+      ],
+      "regions": [],
+      "settings": {
+        "denoise": true,
+        "height": 1200,
+        "samples": 128,
+        "width": 1000
+      }
+    },
+    "sceneRevision": "2c5d7e9104b876e46781019e7ab7aaa946ef6056dc26ea6640059f2010720ad9",
+    "schema": "StudioRenderScene@1",
+    "sequence": 1,
+    "status": "current",
+    "currentGeometry": {
+      "projectId": "demo-project",
+      "runId": "run-001",
+      "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+      "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+      "format": "3dm",
+      "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+      "kind": "working-head",
+      "modelSource": {
+        "runId": "run-001",
+        "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1",
+        "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901"
+      },
+      "workingRevision": null,
+      "warnings": []
+    },
+    "cyclesAvailable": false
+  },
+  "cameraEvidence": [
+    {
+      "expected": {
+        "geometry": {
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "projectId": "demo-project",
+        "scene": {
+          "assignments": {
+            "0": "neutral",
+            "1": "neutral"
+          },
+          "camera": {
+            "fov": 51,
+            "orthoScale": 9,
+            "position": [
+              -1.8187862379587667,
+              -12.587912333842699,
+              7.559536546574135
+            ],
+            "projection": "orthographic",
+            "target": [
+              0.375,
+              1,
+              0.449999988079071
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ]
+          },
+          "environment": {
+            "background": null,
+            "color": "#c6d8e8",
+            "environmentMap": null,
+            "strength": 0.4
+          },
+          "exposure": 0,
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "lights": [
+            {
+              "color": "#fff0dd",
+              "id": "key",
+              "intensity": 120,
+              "position": [
+                8,
+                -7,
+                8.449999988079071
+              ],
+              "size": 6,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            },
+            {
+              "color": "#d5e8ff",
+              "id": "fill",
+              "intensity": 55,
+              "position": [
+                -6,
+                -3,
+                4.449999988079071
+              ],
+              "size": 8,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            }
+          ],
+          "materials": [
+            {
+              "baseColor": "#b9bec8",
+              "id": "neutral",
+              "metallic": 0,
+              "name": "Neutral",
+              "normalMap": null,
+              "roughness": 0.65,
+              "texture": null
+            }
+          ],
+          "regions": [],
+          "settings": {
+            "denoise": true,
+            "height": 1200,
+            "samples": 128,
+            "width": 1000
+          }
+        },
+        "sceneRevision": "ac9ca70e7f52287bb2acfd4e14e69c04e5f56334fc7b33776e309836f283b9d2",
+        "schema": "StudioRenderScene@1",
+        "sequence": 2,
+        "status": "current",
+        "currentGeometry": {
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "kind": "working-head",
+          "modelSource": {
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1",
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901"
+          },
+          "workingRevision": null,
+          "warnings": []
+        },
+        "cyclesAvailable": false
+      },
+      "actual": {
+        "time": 7598.5999999940395,
+        "model": "82a9a1ba-672a-4fdd-a7e6-3bd3b36f332a",
+        "position": [
+          -1.8187862379587663,
+          -12.587912333842695,
+          7.5595365465741295
+        ],
+        "quaternion": [
+          0.5184654864452168,
+          -0.04158422008267764,
+          -0.06828389432822753,
+          0.8513528068789175
+        ],
+        "target": [
+          0.375,
+          1,
+          0.44999998807907093
+        ],
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "projection": "orthographic",
+        "fov": 35,
+        "zoom": 1,
+        "near": 0.001,
+        "far": 100000,
+        "frustum": [
+          -6.937901498929337,
+          6.937901498929337,
+          4.5,
+          -4.5
+        ],
+        "worldMatrix": [
+          0.9872161248309738,
+          -0.15938733598914062,
+          -2.7755575615628914e-17,
+          0,
+          0.07314740441469897,
+          0.4530616982809922,
+          0.888473159289652,
+          0,
+          -0.14161136995703305,
+          -0.8771150293302628,
+          0.4589285840104802,
+          0,
+          -1.8187862379587663,
+          -12.587912333842695,
+          7.5595365465741295,
+          1
+        ],
+        "projectionMatrix": [
+          0.1441358024691358,
+          0,
+          0,
+          0,
+          0,
+          0.2222222222222222,
+          0,
+          0,
+          0,
+          0,
+          -0.0000200000002,
+          0,
+          0,
+          0,
+          -1.0000000200000003,
+          1
+        ],
+        "rect": {
+          "x": 0,
+          "y": 88,
+          "width": 1440,
+          "height": 934,
+          "top": 88,
+          "right": 1440,
+          "bottom": 1022,
+          "left": 0
+        },
+        "renderSize": [
+          1440,
+          934
+        ],
+        "pixelRatio": 1,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "expected": {
+        "geometry": {
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "projectId": "demo-project",
+        "scene": {
+          "assignments": {
+            "0": "neutral",
+            "1": "neutral"
+          },
+          "camera": {
+            "fov": 51,
+            "orthoScale": 9,
+            "position": [
+              -1.8187862379587667,
+              -12.587912333842699,
+              7.559536546574135
+            ],
+            "projection": "perspective",
+            "target": [
+              0.375,
+              1,
+              0.449999988079071
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ]
+          },
+          "environment": {
+            "background": null,
+            "color": "#c6d8e8",
+            "environmentMap": null,
+            "strength": 0.4
+          },
+          "exposure": 0,
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "lights": [
+            {
+              "color": "#fff0dd",
+              "id": "key",
+              "intensity": 120,
+              "position": [
+                8,
+                -7,
+                8.449999988079071
+              ],
+              "size": 6,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            },
+            {
+              "color": "#d5e8ff",
+              "id": "fill",
+              "intensity": 55,
+              "position": [
+                -6,
+                -3,
+                4.449999988079071
+              ],
+              "size": 8,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            }
+          ],
+          "materials": [
+            {
+              "baseColor": "#b9bec8",
+              "id": "neutral",
+              "metallic": 0,
+              "name": "Neutral",
+              "normalMap": null,
+              "roughness": 0.65,
+              "texture": null
+            }
+          ],
+          "regions": [],
+          "settings": {
+            "denoise": true,
+            "height": 1200,
+            "samples": 128,
+            "width": 1000
+          }
+        },
+        "sceneRevision": "c733a71c57dfc7618666a2b8a0201602945448ce9d2b23054ad07ecd03d58f8b",
+        "schema": "StudioRenderScene@1",
+        "sequence": 3,
+        "status": "current",
+        "currentGeometry": {
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "kind": "working-head",
+          "modelSource": {
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1",
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901"
+          },
+          "workingRevision": null,
+          "warnings": []
+        },
+        "cyclesAvailable": false
+      },
+      "actual": {
+        "time": 9782.39999999106,
+        "model": "82a9a1ba-672a-4fdd-a7e6-3bd3b36f332a",
+        "position": [
+          -1.8187862379587663,
+          -12.587912333842695,
+          7.5595365465741295
+        ],
+        "quaternion": [
+          0.5184654864452168,
+          -0.04158422008267764,
+          -0.06828389432822753,
+          0.8513528068789175
+        ],
+        "target": [
+          0.375,
+          1,
+          0.44999998807907093
+        ],
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "projection": "perspective",
+        "fov": 51,
+        "zoom": 1,
+        "near": 0.001,
+        "far": 100000,
+        "frustum": null,
+        "worldMatrix": [
+          0.9872161248309738,
+          -0.15938733598914062,
+          -2.7755575615628914e-17,
+          0,
+          0.07314740441469897,
+          0.4530616982809922,
+          0.888473159289652,
+          0,
+          -0.14161136995703305,
+          -0.8771150293302628,
+          0.4589285840104802,
+          0,
+          -1.8187862379587663,
+          -12.587912333842695,
+          7.5595365465741295,
+          1
+        ],
+        "projectionMatrix": [
+          1.3546897101800512,
+          0,
+          0,
+          0,
+          0,
+          2.0965435990881747,
+          0,
+          0,
+          0,
+          0,
+          -1.0000000200000003,
+          -1,
+          0,
+          0,
+          -0.0020000000200000004,
+          0
+        ],
+        "rect": {
+          "x": 0,
+          "y": 88,
+          "width": 1430,
+          "height": 924,
+          "top": 88,
+          "right": 1430,
+          "bottom": 1012,
+          "left": 0
+        },
+        "renderSize": [
+          1430,
+          924
+        ],
+        "pixelRatio": 1,
+        "devicePixelRatio": 1
+      }
+    },
+    {
+      "preset": "Top",
+      "actual": {
+        "time": 10139.5,
+        "model": "82a9a1ba-672a-4fdd-a7e6-3bd3b36f332a",
+        "position": [
+          1.9999999999999996,
+          0.9999999999999992,
+          5.461797862637185
+        ],
+        "quaternion": [
+          7.753266758649268e-17,
+          -4.430438147799582e-17,
+          3.4350368817586136e-33,
+          1
+        ],
+        "target": [
+          2,
+          1,
+          0.449999988079071
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ],
+        "projection": "orthographic",
+        "fov": 51,
+        "zoom": 1,
+        "near": 0.001,
+        "far": 100000,
+        "frustum": [
+          -2.2,
+          2.2,
+          1.4269444444444443,
+          -1.4269444444444443
+        ],
+        "worldMatrix": [
+          1,
+          0,
+          8.860876295599164e-17,
+          0,
+          -1.3740147527034455e-32,
+          1,
+          1.5506533517298536e-16,
+          0,
+          -8.860876295599164e-17,
+          -1.5506533517298536e-16,
+          1,
+          0,
+          1.9999999999999996,
+          0.9999999999999992,
+          5.461797862637185,
+          1
+        ],
+        "projectionMatrix": [
+          0.45454545454545453,
+          0,
+          0,
+          0,
+          0,
+          0.7007981312049835,
+          0,
+          0,
+          0,
+          0,
+          -0.0000200000002,
+          0,
+          0,
+          0,
+          -1.0000000200000003,
+          1
+        ],
+        "rect": {
+          "x": 0,
+          "y": 88,
+          "width": 1440,
+          "height": 934,
+          "top": 88,
+          "right": 1440,
+          "bottom": 1022,
+          "left": 0
+        },
+        "renderSize": [
+          1440,
+          934
+        ],
+        "pixelRatio": 1,
+        "devicePixelRatio": 1
+      },
+      "expected": {
+        "geometry": {
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "projectId": "demo-project",
+        "scene": {
+          "assignments": {
+            "0": "neutral",
+            "1": "neutral"
+          },
+          "camera": {
+            "fov": 51,
+            "orthoScale": 2.8538888888888887,
+            "position": [
+              1.9999999999999996,
+              0.9999999999999992,
+              5.461797862637185
+            ],
+            "projection": "orthographic",
+            "target": [
+              2,
+              1,
+              0.449999988079071
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ]
+          },
+          "environment": {
+            "background": null,
+            "color": "#c6d8e8",
+            "environmentMap": null,
+            "strength": 0.4
+          },
+          "exposure": 0,
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "lights": [
+            {
+              "color": "#fff0dd",
+              "id": "key",
+              "intensity": 120,
+              "position": [
+                8,
+                -7,
+                8.449999988079071
+              ],
+              "size": 6,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            },
+            {
+              "color": "#d5e8ff",
+              "id": "fill",
+              "intensity": 55,
+              "position": [
+                -6,
+                -3,
+                4.449999988079071
+              ],
+              "size": 8,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            }
+          ],
+          "materials": [
+            {
+              "baseColor": "#b9bec8",
+              "id": "neutral",
+              "metallic": 0,
+              "name": "Neutral",
+              "normalMap": null,
+              "roughness": 0.65,
+              "texture": null
+            }
+          ],
+          "regions": [],
+          "settings": {
+            "denoise": true,
+            "height": 1200,
+            "samples": 128,
+            "width": 1000
+          }
+        },
+        "sceneRevision": "cc0ccefadff63c00f5ec43bdc94b27374585cfe7a82ec87777970d7875a853b5",
+        "schema": "StudioRenderScene@1",
+        "sequence": 4,
+        "status": "current",
+        "currentGeometry": {
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "kind": "working-head",
+          "modelSource": {
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1",
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901"
+          },
+          "workingRevision": null,
+          "warnings": []
+        },
+        "cyclesAvailable": false
+      }
+    },
+    {
+      "preset": "Front",
+      "actual": {
+        "time": 12580.09999999404,
+        "model": "82a9a1ba-672a-4fdd-a7e6-3bd3b36f332a",
+        "position": [
+          1.9999999999999998,
+          -4.561797886479036,
+          0.4499999880790719
+        ],
+        "quaternion": [
+          0.7071067811865475,
+          -1.411497226913563e-17,
+          -1.411497226913563e-17,
+          0.7071067811865476
+        ],
+        "target": [
+          2,
+          1,
+          0.449999988079071
+        ],
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "projection": "orthographic",
+        "fov": 51,
+        "zoom": 1,
+        "near": 0.001,
+        "far": 100000,
+        "frustum": [
+          -2.2,
+          2.2,
+          1.4269444444444443,
+          -1.4269444444444443
+        ],
+        "worldMatrix": [
+          1,
+          -3.992317043106349e-17,
+          3.0814879110195774e-33,
+          0,
+          3.0814879110195774e-33,
+          2.220446049250313e-16,
+          1,
+          0,
+          -3.992317043106349e-17,
+          -1,
+          2.220446049250313e-16,
+          0,
+          1.9999999999999998,
+          -4.561797886479036,
+          0.4499999880790719,
+          1
+        ],
+        "projectionMatrix": [
+          0.45454545454545453,
+          0,
+          0,
+          0,
+          0,
+          0.7007981312049835,
+          0,
+          0,
+          0,
+          0,
+          -0.0000200000002,
+          0,
+          0,
+          0,
+          -1.0000000200000003,
+          1
+        ],
+        "rect": {
+          "x": 0,
+          "y": 88,
+          "width": 1440,
+          "height": 934,
+          "top": 88,
+          "right": 1440,
+          "bottom": 1022,
+          "left": 0
+        },
+        "renderSize": [
+          1440,
+          934
+        ],
+        "pixelRatio": 1,
+        "devicePixelRatio": 1
+      },
+      "expected": {
+        "geometry": {
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "projectId": "demo-project",
+        "scene": {
+          "assignments": {
+            "0": "neutral",
+            "1": "neutral"
+          },
+          "camera": {
+            "fov": 51,
+            "orthoScale": 2.8538888888888887,
+            "position": [
+              1.9999999999999998,
+              -4.561797886479038,
+              0.4499999880790719
+            ],
+            "projection": "orthographic",
+            "target": [
+              2,
+              1,
+              0.449999988079071
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ]
+          },
+          "environment": {
+            "background": null,
+            "color": "#c6d8e8",
+            "environmentMap": null,
+            "strength": 0.4
+          },
+          "exposure": 0,
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "lights": [
+            {
+              "color": "#fff0dd",
+              "id": "key",
+              "intensity": 120,
+              "position": [
+                8,
+                -7,
+                8.449999988079071
+              ],
+              "size": 6,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            },
+            {
+              "color": "#d5e8ff",
+              "id": "fill",
+              "intensity": 55,
+              "position": [
+                -6,
+                -3,
+                4.449999988079071
+              ],
+              "size": 8,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            }
+          ],
+          "materials": [
+            {
+              "baseColor": "#b9bec8",
+              "id": "neutral",
+              "metallic": 0,
+              "name": "Neutral",
+              "normalMap": null,
+              "roughness": 0.65,
+              "texture": null
+            }
+          ],
+          "regions": [],
+          "settings": {
+            "denoise": true,
+            "height": 1200,
+            "samples": 128,
+            "width": 1000
+          }
+        },
+        "sceneRevision": "e74b1fe59ade28af17605b8c0ea038568914bf0a7280c8a34c64ff95cb3cae65",
+        "schema": "StudioRenderScene@1",
+        "sequence": 5,
+        "status": "current",
+        "currentGeometry": {
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "kind": "working-head",
+          "modelSource": {
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1",
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901"
+          },
+          "workingRevision": null,
+          "warnings": []
+        },
+        "cyclesAvailable": false
+      }
+    },
+    {
+      "preset": "Right",
+      "actual": {
+        "time": 13645.5,
+        "model": "82a9a1ba-672a-4fdd-a7e6-3bd3b36f332a",
+        "position": [
+          8.561797886479042,
+          0.9999999999999996,
+          0.4499999880790714
+        ],
+        "quaternion": [
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        "target": [
+          2,
+          1,
+          0.449999988079071
+        ],
+        "up": [
+          0,
+          0,
+          1
+        ],
+        "projection": "orthographic",
+        "fov": 51,
+        "zoom": 1,
+        "near": 0.001,
+        "far": 100000,
+        "frustum": [
+          -1.1,
+          1.1,
+          0.7134722222222222,
+          -0.7134722222222222
+        ],
+        "worldMatrix": [
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          8.561797886479042,
+          0.9999999999999996,
+          0.4499999880790714,
+          1
+        ],
+        "projectionMatrix": [
+          0.9090909090909091,
+          0,
+          0,
+          0,
+          0,
+          1.401596262409967,
+          0,
+          0,
+          0,
+          0,
+          -0.0000200000002,
+          0,
+          0,
+          0,
+          -1.0000000200000003,
+          1
+        ],
+        "rect": {
+          "x": 0,
+          "y": 88,
+          "width": 1440,
+          "height": 934,
+          "top": 88,
+          "right": 1440,
+          "bottom": 1022,
+          "left": 0
+        },
+        "renderSize": [
+          1440,
+          934
+        ],
+        "pixelRatio": 1,
+        "devicePixelRatio": 1
+      },
+      "expected": {
+        "geometry": {
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "projectId": "demo-project",
+        "scene": {
+          "assignments": {
+            "0": "neutral",
+            "1": "neutral"
+          },
+          "camera": {
+            "fov": 51,
+            "orthoScale": 1.4269444444444443,
+            "position": [
+              8.561797886479042,
+              0.9999999999999996,
+              0.4499999880790714
+            ],
+            "projection": "orthographic",
+            "target": [
+              2,
+              1,
+              0.449999988079071
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ]
+          },
+          "environment": {
+            "background": null,
+            "color": "#c6d8e8",
+            "environmentMap": null,
+            "strength": 0.4
+          },
+          "exposure": 0,
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "lights": [
+            {
+              "color": "#fff0dd",
+              "id": "key",
+              "intensity": 120,
+              "position": [
+                8,
+                -7,
+                8.449999988079071
+              ],
+              "size": 6,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            },
+            {
+              "color": "#d5e8ff",
+              "id": "fill",
+              "intensity": 55,
+              "position": [
+                -6,
+                -3,
+                4.449999988079071
+              ],
+              "size": 8,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            }
+          ],
+          "materials": [
+            {
+              "baseColor": "#b9bec8",
+              "id": "neutral",
+              "metallic": 0,
+              "name": "Neutral",
+              "normalMap": null,
+              "roughness": 0.65,
+              "texture": null
+            }
+          ],
+          "regions": [],
+          "settings": {
+            "denoise": true,
+            "height": 1200,
+            "samples": 128,
+            "width": 1000
+          }
+        },
+        "sceneRevision": "e20a056c292ae57cffe9017e4b8666d149cdda68b582f3da8614cb6183a33571",
+        "schema": "StudioRenderScene@1",
+        "sequence": 6,
+        "status": "current",
+        "currentGeometry": {
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "kind": "working-head",
+          "modelSource": {
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1",
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901"
+          },
+          "workingRevision": null,
+          "warnings": []
+        },
+        "cyclesAvailable": false
+      }
+    },
+    {
+      "preset": "Isometric",
+      "actual": {
+        "time": 15028.79999999702,
+        "model": "82a9a1ba-672a-4fdd-a7e6-3bd3b36f332a",
+        "position": [
+          5.783755233773698,
+          -2.7837552337737006,
+          4.23375522185277
+        ],
+        "quaternion": [
+          0.424708200277867,
+          0.1759198966061611,
+          0.3398511429799874,
+          0.8204732385702832
+        ],
+        "target": [
+          2,
+          1,
+          0.449999988079071
+        ],
+        "up": [
+          -0.4082482904638631,
+          0.4082482904638631,
+          0.8164965809277261
+        ],
+        "projection": "orthographic",
+        "fov": 51,
+        "zoom": 1,
+        "near": 0.001,
+        "far": 100000,
+        "frustum": [
+          -2.7002083766079856,
+          2.7002083766079856,
+          1.7513851553832351,
+          -1.7513851553832351
+        ],
+        "worldMatrix": [
+          0.7071067811865475,
+          0.7071067811865476,
+          2.7755575615628914e-16,
+          0,
+          -0.408248290463863,
+          0.4082482904638627,
+          0.8164965809277261,
+          0,
+          0.5773502691896257,
+          -0.5773502691896258,
+          0.5773502691896255,
+          0,
+          5.783755233773698,
+          -2.7837552337737006,
+          4.23375522185277,
+          1
+        ],
+        "projectionMatrix": [
+          0.37034178867936285,
+          0,
+          0,
+          0,
+          0,
+          0.5709766335099384,
+          0,
+          0,
+          0,
+          0,
+          -0.0000200000002,
+          0,
+          0,
+          0,
+          -1.0000000200000003,
+          1
+        ],
+        "rect": {
+          "x": 0,
+          "y": 88,
+          "width": 1440,
+          "height": 934,
+          "top": 88,
+          "right": 1440,
+          "bottom": 1022,
+          "left": 0
+        },
+        "renderSize": [
+          1440,
+          934
+        ],
+        "pixelRatio": 1,
+        "devicePixelRatio": 1
+      },
+      "expected": {
+        "geometry": {
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "projectId": "demo-project",
+        "scene": {
+          "assignments": {
+            "0": "neutral",
+            "1": "neutral"
+          },
+          "camera": {
+            "fov": 51,
+            "orthoScale": 3.5027703107664703,
+            "position": [
+              5.783755233773698,
+              -2.7837552337737006,
+              4.23375522185277
+            ],
+            "projection": "orthographic",
+            "target": [
+              2,
+              1,
+              0.449999988079071
+            ],
+            "up": [
+              -0.4082482904638631,
+              0.4082482904638631,
+              0.8164965809277261
+            ]
+          },
+          "environment": {
+            "background": null,
+            "color": "#c6d8e8",
+            "environmentMap": null,
+            "strength": 0.4
+          },
+          "exposure": 0,
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "lights": [
+            {
+              "color": "#fff0dd",
+              "id": "key",
+              "intensity": 120,
+              "position": [
+                8,
+                -7,
+                8.449999988079071
+              ],
+              "size": 6,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            },
+            {
+              "color": "#d5e8ff",
+              "id": "fill",
+              "intensity": 55,
+              "position": [
+                -6,
+                -3,
+                4.449999988079071
+              ],
+              "size": 8,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            }
+          ],
+          "materials": [
+            {
+              "baseColor": "#b9bec8",
+              "id": "neutral",
+              "metallic": 0,
+              "name": "Neutral",
+              "normalMap": null,
+              "roughness": 0.65,
+              "texture": null
+            }
+          ],
+          "regions": [],
+          "settings": {
+            "denoise": true,
+            "height": 1200,
+            "samples": 128,
+            "width": 1000
+          }
+        },
+        "sceneRevision": "e7490a3e059c38dce19c45e6df9b08b086f85fa15e35664958bd862231292a8d",
+        "schema": "StudioRenderScene@1",
+        "sequence": 7,
+        "status": "current",
+        "currentGeometry": {
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "kind": "working-head",
+          "modelSource": {
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1",
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901"
+          },
+          "workingRevision": null,
+          "warnings": []
+        },
+        "cyclesAvailable": false
+      }
+    },
+    {
+      "preset": "Perspective",
+      "actual": {
+        "time": 16880.79999999702,
+        "model": "82a9a1ba-672a-4fdd-a7e6-3bd3b36f332a",
+        "position": [
+          4.119946667275089,
+          -1.1199466672750904,
+          2.5699466553541606
+        ],
+        "quaternion": [
+          0.424708200277867,
+          0.1759198966061611,
+          0.3398511429799874,
+          0.8204732385702832
+        ],
+        "target": [
+          2,
+          1,
+          0.449999988079071
+        ],
+        "up": [
+          -0.4082482904638631,
+          0.4082482904638631,
+          0.8164965809277261
+        ],
+        "projection": "perspective",
+        "fov": 51,
+        "zoom": 1,
+        "near": 0.001,
+        "far": 100000,
+        "frustum": null,
+        "worldMatrix": [
+          0.7071067811865475,
+          0.7071067811865476,
+          2.7755575615628914e-16,
+          0,
+          -0.408248290463863,
+          0.4082482904638627,
+          0.8164965809277261,
+          0,
+          0.5773502691896257,
+          -0.5773502691896258,
+          0.5773502691896255,
+          0,
+          4.119946667275089,
+          -1.1199466672750904,
+          2.5699466553541606,
+          1
+        ],
+        "projectionMatrix": [
+          1.3598414732974689,
+          0,
+          0,
+          0,
+          0,
+          2.0965435990881747,
+          0,
+          0,
+          0,
+          0,
+          -1.0000000200000003,
+          -1,
+          0,
+          0,
+          -0.0020000000200000004,
+          0
+        ],
+        "rect": {
+          "x": 0,
+          "y": 88,
+          "width": 1440,
+          "height": 934,
+          "top": 88,
+          "right": 1440,
+          "bottom": 1022,
+          "left": 0
+        },
+        "renderSize": [
+          1440,
+          934
+        ],
+        "pixelRatio": 1,
+        "devicePixelRatio": 1
+      },
+      "expected": {
+        "geometry": {
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "kind": "working-head",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "modelSource": {
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1"
+          },
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "warnings": [],
+          "workingRevision": null
+        },
+        "projectId": "demo-project",
+        "scene": {
+          "assignments": {
+            "0": "neutral",
+            "1": "neutral"
+          },
+          "camera": {
+            "fov": 51,
+            "orthoScale": 3.5027703107664703,
+            "position": [
+              4.119946667275089,
+              -1.1199466672750904,
+              2.5699466553541606
+            ],
+            "projection": "perspective",
+            "target": [
+              2,
+              1,
+              0.449999988079071
+            ],
+            "up": [
+              -0.4082482904638631,
+              0.4082482904638631,
+              0.8164965809277261
+            ]
+          },
+          "environment": {
+            "background": null,
+            "color": "#c6d8e8",
+            "environmentMap": null,
+            "strength": 0.4
+          },
+          "exposure": 0,
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "lights": [
+            {
+              "color": "#fff0dd",
+              "id": "key",
+              "intensity": 120,
+              "position": [
+                8,
+                -7,
+                8.449999988079071
+              ],
+              "size": 6,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            },
+            {
+              "color": "#d5e8ff",
+              "id": "fill",
+              "intensity": 55,
+              "position": [
+                -6,
+                -3,
+                4.449999988079071
+              ],
+              "size": 8,
+              "target": [
+                2,
+                1,
+                0.44999998807907104
+              ],
+              "type": "area"
+            }
+          ],
+          "materials": [
+            {
+              "baseColor": "#b9bec8",
+              "id": "neutral",
+              "metallic": 0,
+              "name": "Neutral",
+              "normalMap": null,
+              "roughness": 0.65,
+              "texture": null
+            }
+          ],
+          "regions": [],
+          "settings": {
+            "denoise": true,
+            "height": 1200,
+            "samples": 128,
+            "width": 1000
+          }
+        },
+        "sceneRevision": "d08892b0f630841f1800202b7218c9292ba3f748323beb54e7fdd86751a0a7ba",
+        "schema": "StudioRenderScene@1",
+        "sequence": 8,
+        "status": "current",
+        "currentGeometry": {
+          "projectId": "demo-project",
+          "runId": "run-001",
+          "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "geometryRevision": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901",
+          "format": "3dm",
+          "label": "studio-candidate-seat-portico@fa6ea5b1d3ea.preview.3dm",
+          "kind": "working-head",
+          "modelSource": {
+            "runId": "run-001",
+            "stateDigest": "76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1",
+            "assetSha256": "72d657ee472e5706a32e5710bd727268c700f88b851d90de25706ce1b9b96901"
+          },
+          "workingRevision": null,
+          "warnings": []
+        },
+        "cyclesAvailable": false
+      }
+    },
+    {
+      "delayedSave": {
+        "before": {
+          "time": 21091.39999999106,
+          "model": "82a9a1ba-672a-4fdd-a7e6-3bd3b36f332a",
+          "position": [
+            4.119946667275089,
+            -1.1199466672750904,
+            2.5699466553541606
+          ],
+          "quaternion": [
+            0.424708200277867,
+            0.1759198966061611,
+            0.3398511429799874,
+            0.8204732385702832
+          ],
+          "target": [
+            2,
+            1,
+            0.449999988079071
+          ],
+          "up": [
+            -0.4082482904638631,
+            0.4082482904638631,
+            0.8164965809277261
+          ],
+          "projection": "perspective",
+          "fov": 51,
+          "zoom": 1,
+          "near": 0.001,
+          "far": 100000,
+          "frustum": null,
+          "worldMatrix": [
+            0.7071067811865475,
+            0.7071067811865476,
+            2.7755575615628914e-16,
+            0,
+            -0.408248290463863,
+            0.4082482904638627,
+            0.8164965809277261,
+            0,
+            0.5773502691896257,
+            -0.5773502691896258,
+            0.5773502691896255,
+            0,
+            4.119946667275089,
+            -1.1199466672750904,
+            2.5699466553541606,
+            1
+          ],
+          "projectionMatrix": [
+            1.3598414732974689,
+            0,
+            0,
+            0,
+            0,
+            2.0965435990881747,
+            0,
+            0,
+            0,
+            0,
+            -1.0000000200000003,
+            -1,
+            0,
+            0,
+            -0.0020000000200000004,
+            0
+          ],
+          "rect": {
+            "x": 0,
+            "y": 88,
+            "width": 1440,
+            "height": 934,
+            "top": 88,
+            "right": 1440,
+            "bottom": 1022,
+            "left": 0
+          },
+          "renderSize": [
+            1440,
+            934
+          ],
+          "pixelRatio": 1,
+          "devicePixelRatio": 1
+        },
+        "newer": {
+          "time": 21157.79999999702,
+          "model": "82a9a1ba-672a-4fdd-a7e6-3bd3b36f332a",
+          "position": [
+            4.324997261802702,
+            -1.3249972618027033,
+            2.774997249881774
+          ],
+          "quaternion": [
+            0.42470820027786693,
+            0.17591989660616106,
+            0.33985114297998736,
+            0.8204732385702834
+          ],
+          "target": [
+            2,
+            1,
+            0.449999988079071
+          ],
+          "up": [
+            -0.4082482904638631,
+            0.4082482904638631,
+            0.8164965809277261
+          ],
+          "projection": "perspective",
+          "fov": 51,
+          "zoom": 1,
+          "near": 0.001,
+          "far": 100000,
+          "frustum": null,
+          "worldMatrix": [
+            0.7071067811865476,
+            0.7071067811865476,
+            1.6653345369377348e-16,
+            0,
+            -0.40824829046386324,
+            0.4082482904638629,
+            0.8164965809277261,
+            0,
+            0.5773502691896257,
+            -0.5773502691896261,
+            0.5773502691896257,
+            0,
+            4.324997261802702,
+            -1.3249972618027033,
+            2.774997249881774,
+            1
+          ],
+          "projectionMatrix": [
+            1.3598414732974689,
+            0,
+            0,
+            0,
+            0,
+            2.0965435990881747,
+            0,
+            0,
+            0,
+            0,
+            -1.0000000200000003,
+            -1,
+            0,
+            0,
+            -0.0020000000200000004,
+            0
+          ],
+          "rect": {
+            "x": 0,
+            "y": 88,
+            "width": 1440,
+            "height": 934,
+            "top": 88,
+            "right": 1440,
+            "bottom": 1022,
+            "left": 0
+          },
+          "renderSize": [
+            1440,
+            934
+          ],
+          "pixelRatio": 1,
+          "devicePixelRatio": 1
+        },
+        "after": {
+          "time": 21278.59999999404,
+          "model": "82a9a1ba-672a-4fdd-a7e6-3bd3b36f332a",
+          "position": [
+            4.324997261802702,
+            -1.3249972618027033,
+            2.774997249881774
+          ],
+          "quaternion": [
+            0.42470820027786693,
+            0.17591989660616106,
+            0.33985114297998736,
+            0.8204732385702834
+          ],
+          "target": [
+            2,
+            1,
+            0.449999988079071
+          ],
+          "up": [
+            -0.4082482904638631,
+            0.4082482904638631,
+            0.8164965809277261
+          ],
+          "projection": "perspective",
+          "fov": 51,
+          "zoom": 1,
+          "near": 0.001,
+          "far": 100000,
+          "frustum": null,
+          "worldMatrix": [
+            0.7071067811865476,
+            0.7071067811865476,
+            1.6653345369377348e-16,
+            0,
+            -0.40824829046386324,
+            0.4082482904638629,
+            0.8164965809277261,
+            0,
+            0.5773502691896257,
+            -0.5773502691896261,
+            0.5773502691896257,
+            0,
+            4.324997261802702,
+            -1.3249972618027033,
+            2.774997249881774,
+            1
+          ],
+          "projectionMatrix": [
+            1.3598414732974689,
+            0,
+            0,
+            0,
+            0,
+            2.0965435990881747,
+            0,
+            0,
+            0,
+            0,
+            -1.0000000200000003,
+            -1,
+            0,
+            0,
+            -0.0020000000200000004,
+            0
+          ],
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 0,
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "renderSize": [
+            1440,
+            934
+          ],
+          "pixelRatio": 1,
+          "devicePixelRatio": 1
+        }
+      }
+    }
+  ]
+}

@@ -17,8 +17,11 @@ function VectorInput({ label, value, onChange }: { label: string; value: Vec3; o
 export default function PhysicalWorkspace({ projectId, active, zh, refreshKey = 0, cameraLink }: { projectId: string; active: boolean; zh: boolean; refreshKey?: number | string; cameraLink?: CameraLink }) {
   const connection = useConnection(), studio = useStudio();
   const [state, setState] = useState<SceneState | null>(null), [value, setValue] = useState<PhysicalScene | null>(null), [geometry, setGeometry] = useState<Geometry | null>(null);
-  const [linked,setLinked]=useState(false);
-  useEffect(()=>cameraLink?.subscribe(()=>setLinked(cameraLink.linked())),[cameraLink]);
+  const [linked,setLinked]=useState(false), [modelAttached,setModelAttached]=useState(false);
+  useEffect(()=>{
+    const update=()=>{setLinked(cameraLink?.linked() ?? false);setModelAttached(cameraLink?.hasModel() ?? false);};
+    update();return cameraLink?.subscribe(update);
+  },[cameraLink]);
   const [dirty, setDirty] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]), [drawings, setDrawings] = useState<Drawing[]>([]), [jobs, setJobs] = useState<RenderJobDto[]>([]);
   const [selectedMaterial, setSelectedMaterial] = useState(""), [selectedMesh, setSelectedMesh] = useState(0), [features, setFeatures] = useState("");
@@ -45,7 +48,9 @@ export default function PhysicalWorkspace({ projectId, active, zh, refreshKey = 
   }, [request, studio]);
   useEffect(() => () => { readSequence.current++; }, [refresh]);
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
-  useEffect(() => { if ((active || cameraLink) && !dirtyRef.current) void act(refresh); }, [active, refresh, refreshKey, cameraLink]);
+  // A retained workspace alone is not a camera consumer. Read for an actual
+  // Modeling viewport (including cold reopen) or the visible Physical workspace.
+  useEffect(() => { if ((active || modelAttached) && !dirtyRef.current) void act(refresh); }, [active, refresh, refreshKey, modelAttached]);
   useEffect(() => {
     if (!active || !jobs.some(j => j.status === "queued" || j.status === "running")) return;
     const timer = window.setInterval(() => { void studio.renderJobs().then(result => setJobs(result.jobs.filter(j => j.execution === "host"))).catch(cause => setError(String(cause))); }, 2000);

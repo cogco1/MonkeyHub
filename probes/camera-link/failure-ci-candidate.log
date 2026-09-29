@@ -1,0 +1,1557 @@
+﻿2026-09-29T23:28:02.7825891Z Current runner version: '2.337.0'
+2026-09-29T23:28:02.7849054Z ##[group]Runner Image Provisioner
+2026-09-29T23:28:02.7849926Z Hosted Compute Agent
+2026-09-29T23:28:02.7850519Z Version: 20260828.587
+2026-09-29T23:28:02.7851198Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+2026-09-29T23:28:02.7851910Z Build Date: 2026-08-28T16:44:25Z
+2026-09-29T23:28:02.7852586Z Worker ID: {ef36ebe8-48a5-472a-8fcd-b7de74c0dd65}
+2026-09-29T23:28:02.7853310Z Azure Region: westcentralus
+2026-09-29T23:28:02.7853960Z ##[endgroup]
+2026-09-29T23:28:02.7855249Z ##[group]Operating System
+2026-09-29T23:28:02.7855851Z Ubuntu
+2026-09-29T23:28:02.7856377Z 24.04.5
+2026-09-29T23:28:02.7856897Z LTS
+2026-09-29T23:28:02.7857426Z ##[endgroup]
+2026-09-29T23:28:02.7858275Z ##[group]Runner Image
+2026-09-29T23:28:02.7858900Z Image: ubuntu-24.04
+2026-09-29T23:28:02.7859443Z Version: 20260920.314.1
+2026-09-29T23:28:02.7860695Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260920.314/images/ubuntu/Ubuntu2404-Readme.md
+2026-09-29T23:28:02.7862203Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260920.314
+2026-09-29T23:28:02.7863132Z ##[endgroup]
+2026-09-29T23:28:02.7864241Z ##[group]GITHUB_TOKEN Permissions
+2026-09-29T23:28:02.7866241Z Contents: read
+2026-09-29T23:28:02.7866889Z Metadata: read
+2026-09-29T23:28:02.7867447Z ##[endgroup]
+2026-09-29T23:28:02.7869571Z Secret source: Actions
+2026-09-29T23:28:02.7870480Z Cache mode: write
+2026-09-29T23:28:02.7871156Z Prepare workflow directory
+2026-09-29T23:28:02.8192703Z Prepare all required actions
+2026-09-29T23:28:02.8240565Z Getting action download info
+2026-09-29T23:28:03.1368496Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-09-29T23:28:03.2711334Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+2026-09-29T23:28:03.4184496Z Download action repository 'actions/setup-node@v4' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+2026-09-29T23:28:03.5944663Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-09-29T23:28:03.8950764Z Complete job name: Studio web
+2026-09-29T23:28:03.9860520Z ##[group]Run actions/checkout@v4
+2026-09-29T23:28:03.9861970Z with:
+2026-09-29T23:28:03.9862861Z   repository: cogco1/MonkeyHub
+2026-09-29T23:28:03.9871251Z   token: ***
+2026-09-29T23:28:03.9872156Z   ssh-strict: true
+2026-09-29T23:28:03.9873021Z   ssh-user: git
+2026-09-29T23:28:03.9873948Z   persist-credentials: true
+2026-09-29T23:28:03.9875005Z   clean: true
+2026-09-29T23:28:03.9875919Z   sparse-checkout-cone-mode: true
+2026-09-29T23:28:03.9876975Z   fetch-depth: 1
+2026-09-29T23:28:03.9877916Z   fetch-tags: false
+2026-09-29T23:28:03.9878883Z   show-progress: true
+2026-09-29T23:28:03.9879823Z   lfs: false
+2026-09-29T23:28:03.9880682Z   submodules: false
+2026-09-29T23:28:03.9881607Z   set-safe-directory: true
+2026-09-29T23:28:03.9882612Z   allow-unsafe-pr-checkout: false
+2026-09-29T23:28:03.9883851Z ##[endgroup]
+2026-09-29T23:28:04.0929893Z Syncing repository: cogco1/MonkeyHub
+2026-09-29T23:28:04.0933616Z ##[group]Getting Git version info
+2026-09-29T23:28:04.0935950Z Working directory is '/home/runner/work/MonkeyHub/MonkeyHub'
+2026-09-29T23:28:04.0939203Z [command]/usr/bin/git version
+2026-09-29T23:28:04.0950432Z git version 2.55.0
+2026-09-29T23:28:04.0969855Z ##[endgroup]
+2026-09-29T23:28:04.0982757Z Temporarily overriding HOME='/home/runner/work/_temp/e4aa9e1a-576e-47a0-b7d1-54f3c4a0d255' before making global git config changes
+2026-09-29T23:28:04.0986680Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-29T23:28:04.0990144Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/MonkeyHub/MonkeyHub
+2026-09-29T23:28:04.1037463Z Deleting the contents of '/home/runner/work/MonkeyHub/MonkeyHub'
+2026-09-29T23:28:04.1043523Z ##[group]Initializing the repository
+2026-09-29T23:28:04.1052264Z [command]/usr/bin/git init /home/runner/work/MonkeyHub/MonkeyHub
+2026-09-29T23:28:04.1169478Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-09-29T23:28:04.1174001Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-09-29T23:28:04.1177248Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-09-29T23:28:04.1179798Z hint: call:
+2026-09-29T23:28:04.1181067Z hint:
+2026-09-29T23:28:04.1182598Z hint: 	git config --global init.defaultBranch <name>
+2026-09-29T23:28:04.1184458Z hint:
+2026-09-29T23:28:04.1186132Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-09-29T23:28:04.1189041Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-09-29T23:28:04.1191631Z hint:
+2026-09-29T23:28:04.1192816Z hint: 	git branch -m <name>
+2026-09-29T23:28:04.1193839Z hint:
+2026-09-29T23:28:04.1195976Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-09-29T23:28:04.1199398Z Initialized empty Git repository in /home/runner/work/MonkeyHub/MonkeyHub/.git/
+2026-09-29T23:28:04.1204360Z [command]/usr/bin/git remote add origin https://github.com/cogco1/MonkeyHub
+2026-09-29T23:28:04.1241177Z ##[endgroup]
+2026-09-29T23:28:04.1243454Z ##[group]Disabling automatic garbage collection
+2026-09-29T23:28:04.1245484Z [command]/usr/bin/git config --local gc.auto 0
+2026-09-29T23:28:04.1276855Z ##[endgroup]
+2026-09-29T23:28:04.1279195Z ##[group]Setting up auth
+2026-09-29T23:28:04.1281526Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-09-29T23:28:04.1312609Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-09-29T23:28:04.1639091Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-29T23:28:04.1671777Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-09-29T23:28:04.1879730Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-29T23:28:04.1911021Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-09-29T23:28:04.2098583Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-09-29T23:28:04.2138511Z ##[endgroup]
+2026-09-29T23:28:04.2140235Z ##[group]Fetching the repository
+2026-09-29T23:28:04.2149982Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +836f79d42ee19b2f1898bc4f540560273d5da7ae:refs/remotes/pull/477/merge
+2026-09-29T23:28:06.2799776Z From https://github.com/cogco1/MonkeyHub
+2026-09-29T23:28:06.2800969Z  * [new ref]         836f79d42ee19b2f1898bc4f540560273d5da7ae -> pull/477/merge
+2026-09-29T23:28:06.2804259Z ##[endgroup]
+2026-09-29T23:28:06.2805236Z ##[group]Determining the checkout info
+2026-09-29T23:28:06.2806196Z ##[endgroup]
+2026-09-29T23:28:06.2812171Z [command]/usr/bin/git sparse-checkout disable
+2026-09-29T23:28:06.2863752Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-09-29T23:28:06.2902524Z ##[group]Checking out the ref
+2026-09-29T23:28:06.2905268Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/477/merge
+2026-09-29T23:28:06.5342509Z Note: switching to 'refs/remotes/pull/477/merge'.
+2026-09-29T23:28:06.5343092Z 
+2026-09-29T23:28:06.5343338Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-09-29T23:28:06.5343932Z changes and commit them, and you can discard any commits you make in this
+2026-09-29T23:28:06.5344540Z state without impacting any branches by switching back to a branch.
+2026-09-29T23:28:06.5344842Z 
+2026-09-29T23:28:06.5345122Z If you want to create a new branch to retain commits you create, you may
+2026-09-29T23:28:06.5345969Z do so (now or later) by using -c with the switch command. Example:
+2026-09-29T23:28:06.5346269Z 
+2026-09-29T23:28:06.5346465Z   git switch -c <new-branch-name>
+2026-09-29T23:28:06.5346693Z 
+2026-09-29T23:28:06.5346838Z Or undo this operation with:
+2026-09-29T23:28:06.5347069Z 
+2026-09-29T23:28:06.5347174Z   git switch -
+2026-09-29T23:28:06.5347419Z 
+2026-09-29T23:28:06.5347684Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-09-29T23:28:06.5348226Z 
+2026-09-29T23:28:06.5348611Z HEAD is now at 836f79d Merge ee8c44b8ca7e20f5627ae214ee93e8881cbdeadd into 9c816070d93703193484830c24059ef40f1afd16
+2026-09-29T23:28:06.5357532Z ##[endgroup]
+2026-09-29T23:28:06.5398729Z [command]/usr/bin/git log -1 --format=%H
+2026-09-29T23:28:06.5423630Z 836f79d42ee19b2f1898bc4f540560273d5da7ae
+2026-09-29T23:28:06.5694594Z ##[group]Run actions/setup-python@v5
+2026-09-29T23:28:06.5694976Z with:
+2026-09-29T23:28:06.5695329Z   python-version: 3.12
+2026-09-29T23:28:06.5695654Z   cache: pip
+2026-09-29T23:28:06.5696131Z   cache-dependency-path: pyproject.toml
+apps/archflow-studio/api/requirements.txt
+
+2026-09-29T23:28:06.5696692Z   check-latest: false
+2026-09-29T23:28:06.5699309Z   token: ***
+2026-09-29T23:28:06.5699707Z   update-environment: true
+2026-09-29T23:28:06.5700066Z   allow-prereleases: false
+2026-09-29T23:28:06.5700392Z   freethreaded: false
+2026-09-29T23:28:06.5700718Z ##[endgroup]
+2026-09-29T23:28:06.7029723Z ##[group]Installed versions
+2026-09-29T23:28:06.7125404Z (node:2367) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-29T23:28:06.7126258Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-29T23:28:06.7126965Z Successfully set up CPython (3.12.14)
+2026-09-29T23:28:06.7128147Z ##[endgroup]
+2026-09-29T23:28:06.7435826Z [command]/opt/hostedtoolcache/Python/3.12.14/x64/bin/pip cache dir
+2026-09-29T23:28:07.0412410Z /home/runner/.cache/pip
+2026-09-29T23:28:07.2500505Z Cache hit for: setup-python-Linux-x64-24.04-Ubuntu-python-3.12.14-pip-45d9052e74c84788b0a94559629438d4cd6e3866be2c57989b866593157bd249
+2026-09-29T23:28:07.2600118Z (node:2367) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-29T23:28:08.4569564Z Received 46137344 of 319241780 (14.5%), 44.0 MBs/sec
+2026-09-29T23:28:09.4563866Z Received 251658240 of 319241780 (78.8%), 119.9 MBs/sec
+2026-09-29T23:28:09.9260096Z Received 319241780 of 319241780 (100.0%), 123.4 MBs/sec
+2026-09-29T23:28:09.9288945Z Cache Size: ~304 MB (319241780 B)
+2026-09-29T23:28:09.9357807Z [command]/usr/bin/tar -xf /home/runner/work/_temp/fd9ee416-64e5-4e26-849a-a004ff313f3c/cache.tzst -P -C /home/runner/work/MonkeyHub/MonkeyHub --use-compress-program unzstd
+2026-09-29T23:28:10.2415968Z Cache restored successfully
+2026-09-29T23:28:10.2535171Z Cache restored from key: setup-python-Linux-x64-24.04-Ubuntu-python-3.12.14-pip-94e78c42500ef9590239afce0db3710a6e26ec59754a1d6fadd8b87a4f1cc1d8
+2026-09-29T23:28:10.2744050Z ##[group]Run actions/setup-node@v4
+2026-09-29T23:28:10.2744438Z with:
+2026-09-29T23:28:10.2744776Z   node-version: 24
+2026-09-29T23:28:10.2745086Z   cache: npm
+2026-09-29T23:28:10.2745753Z   cache-dependency-path: apps/monkeyhub/web/package-lock.json
+apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
+
+2026-09-29T23:28:10.2746411Z   always-auth: false
+2026-09-29T23:28:10.2746744Z   check-latest: false
+2026-09-29T23:28:10.2749330Z   token: ***
+2026-09-29T23:28:10.2749633Z env:
+2026-09-29T23:28:10.2750014Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:10.2750553Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-29T23:28:10.2751131Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:10.2751619Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:10.2752212Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:10.2752793Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-29T23:28:10.2753258Z ##[endgroup]
+2026-09-29T23:28:10.4204116Z Found in cache @ /opt/hostedtoolcache/node/24.21.0/x64
+2026-09-29T23:28:10.4208341Z (node:2400) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-29T23:28:10.4209259Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-29T23:28:10.4211073Z ##[group]Environment details
+2026-09-29T23:28:11.0107225Z node: v24.21.0
+2026-09-29T23:28:11.0108359Z npm: 11.19.0
+2026-09-29T23:28:11.0108884Z yarn: 1.22.22
+2026-09-29T23:28:11.0109587Z ##[endgroup]
+2026-09-29T23:28:11.0130281Z [command]/opt/hostedtoolcache/node/24.21.0/x64/bin/npm config get cache
+2026-09-29T23:28:11.1257154Z /home/runner/.npm
+2026-09-29T23:28:11.3525909Z Cache hit for: node-cache-Linux-x64-npm-6806533e81645a04c302bc45f2594508e341e13958a2e7d8999c5eb3b906dd4b
+2026-09-29T23:28:11.3629485Z (node:2400) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-29T23:28:12.5668258Z Received 58720256 of 151976052 (38.6%), 55.9 MBs/sec
+2026-09-29T23:28:13.2540092Z Received 151976052 of 151976052 (100.0%), 85.9 MBs/sec
+2026-09-29T23:28:13.2541025Z Cache Size: ~145 MB (151976052 B)
+2026-09-29T23:28:13.2674578Z [command]/usr/bin/tar -xf /home/runner/work/_temp/33c9c312-5044-4c75-82ba-e5ee3d1ab7cf/cache.tzst -P -C /home/runner/work/MonkeyHub/MonkeyHub --use-compress-program unzstd
+2026-09-29T23:28:13.4335426Z Cache restored successfully
+2026-09-29T23:28:13.4398712Z Cache restored from key: node-cache-Linux-x64-npm-6806533e81645a04c302bc45f2594508e341e13958a2e7d8999c5eb3b906dd4b
+2026-09-29T23:28:13.4534173Z ##[group]Run python -m pip install -e . -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt
+2026-09-29T23:28:13.4535385Z [36;1mpython -m pip install -e . -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt[0m
+2026-09-29T23:28:13.4744320Z shell: /usr/bin/bash -e {0}
+2026-09-29T23:28:13.4744717Z env:
+2026-09-29T23:28:13.4745149Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:13.4745689Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-29T23:28:13.4746243Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:13.4746745Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:13.4747252Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:13.4747734Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-29T23:28:13.4748479Z ##[endgroup]
+2026-09-29T23:28:14.0113511Z Obtaining file:///home/runner/work/MonkeyHub/MonkeyHub
+2026-09-29T23:28:14.0123077Z   Installing build dependencies: started
+2026-09-29T23:28:14.8127778Z   Installing build dependencies: finished with status 'done'
+2026-09-29T23:28:14.8133415Z   Checking if build backend supports build_editable: started
+2026-09-29T23:28:15.1593491Z   Checking if build backend supports build_editable: finished with status 'done'
+2026-09-29T23:28:15.1619565Z   Getting requirements to build editable: started
+2026-09-29T23:28:15.4882370Z   Getting requirements to build editable: finished with status 'done'
+2026-09-29T23:28:15.4889505Z   Preparing editable metadata (pyproject.toml): started
+2026-09-29T23:28:15.6836962Z   Preparing editable metadata (pyproject.toml): finished with status 'done'
+2026-09-29T23:28:15.8553071Z Collecting fastapi<1,>=0.141 (from -r apps/archflow-studio/api/requirements.txt (line 1))
+2026-09-29T23:28:15.9558883Z   Downloading fastapi-0.142.1-py3-none-any.whl.metadata (27 kB)
+2026-09-29T23:28:16.0051793Z Collecting uvicorn>=0.52 (from -r apps/archflow-studio/api/requirements.txt (line 2))
+2026-09-29T23:28:16.0064155Z   Using cached uvicorn-0.54.0-py3-none-any.whl.metadata (6.6 kB)
+2026-09-29T23:28:16.1147678Z Collecting pydantic>=2.13 (from -r apps/archflow-studio/api/requirements.txt (line 3))
+2026-09-29T23:28:16.1160008Z   Using cached pydantic-2.13.5-py3-none-any.whl.metadata (110 kB)
+2026-09-29T23:28:16.2628738Z Collecting Pillow<13,>=12.3 (from -r apps/archflow-studio/api/requirements.txt (line 4))
+2026-09-29T23:28:16.2643006Z   Using cached pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (9.1 kB)
+2026-09-29T23:28:16.2972255Z Collecting pypdf<7,>=6.14 (from -r apps/archflow-studio/api/requirements.txt (line 5))
+2026-09-29T23:28:16.2984063Z   Using cached pypdf-6.19.0-py3-none-any.whl.metadata (7.5 kB)
+2026-09-29T23:28:16.4252359Z Collecting PyMuPDF<2,>=1.28 (from -r apps/archflow-studio/api/requirements.txt (line 6))
+2026-09-29T23:28:16.4266017Z   Using cached pymupdf-1.28.2-cp310-abi3-manylinux_2_28_x86_64.whl.metadata (26 kB)
+2026-09-29T23:28:16.4592615Z Collecting jsonschema<5,>=4.26 (from -r apps/archflow-studio/api/requirements.txt (line 7))
+2026-09-29T23:28:16.4604354Z   Using cached jsonschema-4.26.0-py3-none-any.whl.metadata (7.6 kB)
+2026-09-29T23:28:16.5563481Z Collecting reportlab==5.0.0 (from -r apps/archflow-studio/api/requirements.txt (line 8))
+2026-09-29T23:28:16.5576780Z   Using cached reportlab-5.0.0-py3-none-any.whl.metadata (1.6 kB)
+2026-09-29T23:28:16.6952901Z Collecting ezdxf==1.4.4 (from -r apps/archflow-studio/api/requirements.txt (line 9))
+2026-09-29T23:28:16.6967212Z   Using cached ezdxf-1.4.4-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (9.9 kB)
+2026-09-29T23:28:16.8797640Z Collecting fonttools==4.64.0 (from -r apps/archflow-studio/api/requirements.txt (line 10))
+2026-09-29T23:28:16.8810534Z   Using cached fonttools-4.64.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (123 kB)
+2026-09-29T23:28:16.9670138Z Collecting shapely==2.1.2 (from -r apps/archflow-studio/api/requirements.txt (line 11))
+2026-09-29T23:28:16.9681755Z   Using cached shapely-2.1.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (6.8 kB)
+2026-09-29T23:28:16.9945170Z Collecting python-pptx==1.0.2 (from -r apps/archflow-studio/api/requirements.txt (line 12))
+2026-09-29T23:28:16.9956762Z   Using cached python_pptx-1.0.2-py3-none-any.whl.metadata (2.5 kB)
+2026-09-29T23:28:17.0225207Z Collecting agent-client-protocol==0.12.1 (from -r apps/monkeyhub/api/requirements.txt (line 1))
+2026-09-29T23:28:17.0236887Z   Using cached agent_client_protocol-0.12.1-py3-none-any.whl.metadata (5.8 kB)
+2026-09-29T23:28:17.1319597Z Collecting charset-normalizer (from reportlab==5.0.0->-r apps/archflow-studio/api/requirements.txt (line 8))
+2026-09-29T23:28:17.1335976Z   Using cached charset_normalizer-3.5.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (45 kB)
+2026-09-29T23:28:17.1695460Z Collecting pyparsing>=3.0.0 (from ezdxf==1.4.4->-r apps/archflow-studio/api/requirements.txt (line 9))
+2026-09-29T23:28:17.1706199Z   Using cached pyparsing-3.3.3-py3-none-any.whl.metadata (5.9 kB)
+2026-09-29T23:28:17.1992542Z Collecting typing_extensions>=4.6.0 (from ezdxf==1.4.4->-r apps/archflow-studio/api/requirements.txt (line 9))
+2026-09-29T23:28:17.2003346Z   Using cached typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+2026-09-29T23:28:17.3699516Z Collecting numpy (from ezdxf==1.4.4->-r apps/archflow-studio/api/requirements.txt (line 9))
+2026-09-29T23:28:17.3712422Z   Using cached numpy-2.5.3-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (6.6 kB)
+2026-09-29T23:28:17.4152347Z Collecting XlsxWriter>=0.5.7 (from python-pptx==1.0.2->-r apps/archflow-studio/api/requirements.txt (line 12))
+2026-09-29T23:28:17.4162077Z   Using cached xlsxwriter-3.2.9-py3-none-any.whl.metadata (2.7 kB)
+2026-09-29T23:28:17.6372807Z Collecting lxml>=3.1.0 (from python-pptx==1.0.2->-r apps/archflow-studio/api/requirements.txt (line 12))
+2026-09-29T23:28:17.6387736Z   Using cached lxml-6.1.3-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl.metadata (3.3 kB)
+2026-09-29T23:28:17.6761593Z Collecting starlette>=0.46.0 (from fastapi<1,>=0.141->-r apps/archflow-studio/api/requirements.txt (line 1))
+2026-09-29T23:28:17.6773287Z   Using cached starlette-1.7.0-py3-none-any.whl.metadata (6.6 kB)
+2026-09-29T23:28:17.7067241Z Collecting typing-inspection>=0.4.2 (from fastapi<1,>=0.141->-r apps/archflow-studio/api/requirements.txt (line 1))
+2026-09-29T23:28:17.7078862Z   Using cached typing_inspection-0.4.4-py3-none-any.whl.metadata (2.6 kB)
+2026-09-29T23:28:17.7318067Z Collecting annotated-doc>=0.0.2 (from fastapi<1,>=0.141->-r apps/archflow-studio/api/requirements.txt (line 1))
+2026-09-29T23:28:17.7329459Z   Using cached annotated_doc-0.0.5-py3-none-any.whl.metadata (6.5 kB)
+2026-09-29T23:28:17.7631660Z Collecting opentelemetry-api>=1.44.0 (from fastapi<1,>=0.141->-r apps/archflow-studio/api/requirements.txt (line 1))
+2026-09-29T23:28:17.7821940Z   Downloading opentelemetry_api-1.45.0-py3-none-any.whl.metadata (1.4 kB)
+2026-09-29T23:28:17.8150434Z Collecting attrs>=22.2.0 (from jsonschema<5,>=4.26->-r apps/archflow-studio/api/requirements.txt (line 7))
+2026-09-29T23:28:17.8161457Z   Using cached attrs-26.1.0-py3-none-any.whl.metadata (8.8 kB)
+2026-09-29T23:28:17.8421846Z Collecting jsonschema-specifications>=2023.03.6 (from jsonschema<5,>=4.26->-r apps/archflow-studio/api/requirements.txt (line 7))
+2026-09-29T23:28:17.8432712Z   Using cached jsonschema_specifications-2025.9.1-py3-none-any.whl.metadata (2.9 kB)
+2026-09-29T23:28:17.8766016Z Collecting referencing>=0.28.4 (from jsonschema<5,>=4.26->-r apps/archflow-studio/api/requirements.txt (line 7))
+2026-09-29T23:28:17.8775952Z   Using cached referencing-0.37.0-py3-none-any.whl.metadata (2.8 kB)
+2026-09-29T23:28:18.0903749Z Collecting rpds-py>=0.25.0 (from jsonschema<5,>=4.26->-r apps/archflow-studio/api/requirements.txt (line 7))
+2026-09-29T23:28:18.0916252Z   Using cached rpds_py-2026.6.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.1 kB)
+2026-09-29T23:28:18.1215465Z Collecting click>=7.0 (from uvicorn>=0.52->-r apps/archflow-studio/api/requirements.txt (line 2))
+2026-09-29T23:28:18.1227400Z   Using cached click-8.5.0-py3-none-any.whl.metadata (2.6 kB)
+2026-09-29T23:28:18.1481760Z Collecting h11>=0.8 (from uvicorn>=0.52->-r apps/archflow-studio/api/requirements.txt (line 2))
+2026-09-29T23:28:18.1493529Z   Using cached h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+2026-09-29T23:28:18.1744113Z Collecting annotated-types>=0.6.0 (from pydantic>=2.13->-r apps/archflow-studio/api/requirements.txt (line 3))
+2026-09-29T23:28:18.1755843Z   Using cached annotated_types-0.8.0-py3-none-any.whl.metadata (15 kB)
+2026-09-29T23:28:18.7399359Z Collecting pydantic-core==2.46.5 (from pydantic>=2.13->-r apps/archflow-studio/api/requirements.txt (line 3))
+2026-09-29T23:28:18.7412919Z   Using cached pydantic_core-2.46.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.6 kB)
+2026-09-29T23:28:18.7804736Z Collecting anyio<5,>=4.0.0 (from starlette>=0.46.0->fastapi<1,>=0.141->-r apps/archflow-studio/api/requirements.txt (line 1))
+2026-09-29T23:28:18.7817661Z   Using cached anyio-4.15.1-py3-none-any.whl.metadata (4.7 kB)
+2026-09-29T23:28:18.8103719Z Collecting idna>=2.8 (from anyio<5,>=4.0.0->starlette>=0.46.0->fastapi<1,>=0.141->-r apps/archflow-studio/api/requirements.txt (line 1))
+2026-09-29T23:28:18.8115745Z   Using cached idna-3.20-py3-none-any.whl.metadata (7.2 kB)
+2026-09-29T23:28:18.8182249Z Using cached reportlab-5.0.0-py3-none-any.whl (2.0 MB)
+2026-09-29T23:28:18.8202500Z Using cached ezdxf-1.4.4-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (5.8 MB)
+2026-09-29T23:28:18.8235194Z Using cached fonttools-4.64.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (5.4 MB)
+2026-09-29T23:28:18.8268363Z Using cached shapely-2.1.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (3.1 MB)
+2026-09-29T23:28:18.8290654Z Using cached python_pptx-1.0.2-py3-none-any.whl (472 kB)
+2026-09-29T23:28:18.8303997Z Using cached agent_client_protocol-0.12.1-py3-none-any.whl (85 kB)
+2026-09-29T23:28:18.8499362Z Downloading fastapi-0.142.1-py3-none-any.whl (144 kB)
+2026-09-29T23:28:18.8805169Z Using cached pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (6.9 MB)
+2026-09-29T23:28:18.8841126Z Using cached pypdf-6.19.0-py3-none-any.whl (395 kB)
+2026-09-29T23:28:18.8853612Z Using cached pymupdf-1.28.2-cp310-abi3-manylinux_2_28_x86_64.whl (25.8 MB)
+2026-09-29T23:28:18.8954280Z Using cached jsonschema-4.26.0-py3-none-any.whl (90 kB)
+2026-09-29T23:28:18.8964697Z Using cached uvicorn-0.54.0-py3-none-any.whl (87 kB)
+2026-09-29T23:28:18.8975115Z Using cached pydantic-2.13.5-py3-none-any.whl (472 kB)
+2026-09-29T23:28:18.8988160Z Using cached pydantic_core-2.46.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.1 MB)
+2026-09-29T23:28:18.9006432Z Using cached annotated_doc-0.0.5-py3-none-any.whl (5.3 kB)
+2026-09-29T23:28:18.9016443Z Using cached annotated_types-0.8.0-py3-none-any.whl (13 kB)
+2026-09-29T23:28:18.9026468Z Using cached attrs-26.1.0-py3-none-any.whl (67 kB)
+2026-09-29T23:28:18.9036800Z Using cached click-8.5.0-py3-none-any.whl (125 kB)
+2026-09-29T23:28:18.9047351Z Using cached h11-0.16.0-py3-none-any.whl (37 kB)
+2026-09-29T23:28:18.9058396Z Using cached jsonschema_specifications-2025.9.1-py3-none-any.whl (18 kB)
+2026-09-29T23:28:18.9068506Z Using cached lxml-6.1.3-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl (5.2 MB)
+2026-09-29T23:28:18.9098342Z Using cached numpy-2.5.3-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (16.7 MB)
+2026-09-29T23:28:18.9348264Z Downloading opentelemetry_api-1.45.0-py3-none-any.whl (60 kB)
+2026-09-29T23:28:18.9404235Z Using cached pyparsing-3.3.3-py3-none-any.whl (126 kB)
+2026-09-29T23:28:18.9415968Z Using cached referencing-0.37.0-py3-none-any.whl (26 kB)
+2026-09-29T23:28:18.9426801Z Using cached rpds_py-2026.6.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (366 kB)
+2026-09-29T23:28:18.9438154Z Using cached starlette-1.7.0-py3-none-any.whl (78 kB)
+2026-09-29T23:28:18.9449022Z Using cached anyio-4.15.1-py3-none-any.whl (132 kB)
+2026-09-29T23:28:18.9459531Z Using cached idna-3.20-py3-none-any.whl (69 kB)
+2026-09-29T23:28:18.9469819Z Using cached typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+2026-09-29T23:28:18.9480223Z Using cached typing_inspection-0.4.4-py3-none-any.whl (14 kB)
+2026-09-29T23:28:18.9490210Z Using cached xlsxwriter-3.2.9-py3-none-any.whl (175 kB)
+2026-09-29T23:28:18.9501809Z Using cached charset_normalizer-3.5.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (248 kB)
+2026-09-29T23:28:19.1010057Z Building wheels for collected packages: archflow-v4
+2026-09-29T23:28:19.1020725Z   Building editable for archflow-v4 (pyproject.toml): started
+2026-09-29T23:28:19.3304808Z   Building editable for archflow-v4 (pyproject.toml): finished with status 'done'
+2026-09-29T23:28:19.3309410Z   Created wheel for archflow-v4: filename=archflow_v4-0.1.0-0.editable-py3-none-any.whl size=27236 sha256=cb08f6a3311e22ae555af8b0b4f002c25a92c628fc652bac0f31ec19e03025b2
+2026-09-29T23:28:19.3310901Z   Stored in directory: /tmp/pip-ephem-wheel-cache-qsw64fcp/wheels/a9/ea/47/1f33a5cc86092fb8bc9bf5752875249c64d110215ac670b43d
+2026-09-29T23:28:19.3370387Z Successfully built archflow-v4
+2026-09-29T23:28:19.4089291Z Installing collected packages: XlsxWriter, typing_extensions, rpds-py, pypdf, pyparsing, PyMuPDF, Pillow, numpy, lxml, idna, h11, fonttools, click, charset-normalizer, attrs, archflow-v4, annotated-types, annotated-doc, uvicorn, typing-inspection, shapely, reportlab, referencing, python-pptx, pydantic-core, opentelemetry-api, ezdxf, anyio, starlette, pydantic, jsonschema-specifications, jsonschema, fastapi, agent-client-protocol
+2026-09-29T23:28:26.8862249Z 
+2026-09-29T23:28:26.8893283Z Successfully installed Pillow-12.3.0 PyMuPDF-1.28.2 XlsxWriter-3.2.9 agent-client-protocol-0.12.1 annotated-doc-0.0.5 annotated-types-0.8.0 anyio-4.15.1 archflow-v4-0.1.0 attrs-26.1.0 charset-normalizer-3.5.1 click-8.5.0 ezdxf-1.4.4 fastapi-0.142.1 fonttools-4.64.0 h11-0.16.0 idna-3.20 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 lxml-6.1.3 numpy-2.5.3 opentelemetry-api-1.45.0 pydantic-2.13.5 pydantic-core-2.46.5 pyparsing-3.3.3 pypdf-6.19.0 python-pptx-1.0.2 referencing-0.37.0 reportlab-5.0.0 rpds-py-2026.6.3 shapely-2.1.2 starlette-1.7.0 typing-inspection-0.4.4 typing_extensions-4.16.0 uvicorn-0.54.0
+2026-09-29T23:28:27.0418364Z ##[group]Run npm ci
+2026-09-29T23:28:27.0418777Z [36;1mnpm ci[0m
+2026-09-29T23:28:27.0460623Z shell: /usr/bin/bash -e {0}
+2026-09-29T23:28:27.0461119Z env:
+2026-09-29T23:28:27.0461550Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:27.0462110Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-29T23:28:27.0462659Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:27.0463162Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:27.0463672Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:27.0464162Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-29T23:28:27.0464610Z ##[endgroup]
+2026-09-29T23:28:30.1152975Z npm warn deprecated sliced@1.0.1: Unsupported
+2026-09-29T23:28:32.8341780Z 
+2026-09-29T23:28:32.8342910Z added 295 packages, and audited 296 packages in 6s
+2026-09-29T23:28:32.8343431Z 
+2026-09-29T23:28:32.8344141Z 20 packages are looking for funding
+2026-09-29T23:28:32.8344738Z   run `npm fund` for details
+2026-09-29T23:28:32.8354216Z 
+2026-09-29T23:28:32.8355147Z found 0 vulnerabilities
+2026-09-29T23:28:32.8845187Z ##[group]Run npm ci --prefix workspaces/tools/openapi-ts
+2026-09-29T23:28:32.8845811Z [36;1mnpm ci --prefix workspaces/tools/openapi-ts[0m
+2026-09-29T23:28:32.8886944Z shell: /usr/bin/bash -e {0}
+2026-09-29T23:28:32.8887366Z env:
+2026-09-29T23:28:32.8887751Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:32.8888548Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-29T23:28:32.8889076Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:32.8889587Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:32.8890090Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:32.8890612Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-29T23:28:32.8891032Z ##[endgroup]
+2026-09-29T23:28:33.5469329Z 
+2026-09-29T23:28:33.5470609Z added 51 packages, and audited 52 packages in 597ms
+2026-09-29T23:28:33.5471408Z 
+2026-09-29T23:28:33.5472287Z 23 packages are looking for funding
+2026-09-29T23:28:33.5475300Z   run `npm fund` for details
+2026-09-29T23:28:33.5483837Z 
+2026-09-29T23:28:33.5484722Z found 0 vulnerabilities
+2026-09-29T23:28:33.5605564Z ##[group]Run npm run api:check
+2026-09-29T23:28:33.5606046Z [36;1mnpm run api:check[0m
+2026-09-29T23:28:33.5646936Z shell: /usr/bin/bash -e {0}
+2026-09-29T23:28:33.5647350Z env:
+2026-09-29T23:28:33.5648077Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:33.5648688Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-29T23:28:33.5649226Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:33.5649697Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:33.5650242Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:33.5650751Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-29T23:28:33.5651184Z ##[endgroup]
+2026-09-29T23:28:33.6652121Z 
+2026-09-29T23:28:33.6652786Z > api:check
+2026-09-29T23:28:33.6653334Z > node workspaces/scripts/check-generated.mjs
+2026-09-29T23:28:33.6653787Z 
+2026-09-29T23:28:35.4454452Z warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+2026-09-29T23:28:39.2805099Z Dumped ArchFlow Studio API OpenAPI to /home/runner/work/MonkeyHub/MonkeyHub/apps/monkeyhub/web/workspaces/.generated/openapi.json
+2026-09-29T23:28:39.2806352Z Dumped MonkeyHub API OpenAPI to /home/runner/work/MonkeyHub/MonkeyHub/apps/monkeyhub/web/.generated/openapi.json
+2026-09-29T23:28:39.9335624Z [90m@hey-api/openapi-ts v0.99.0[39m
+2026-09-29T23:28:39.9336297Z 
+2026-09-29T23:28:40.0097118Z [90m[Job 1] [39m[90m~[39m [36mGenerating...[39m
+2026-09-29T23:28:40.0097813Z [90m[Job 1] [39m[36m  [1] [39m.generated/openapi.json
+2026-09-29T23:28:40.7780886Z [90m[Job 1] [39m[32m✓[39m [96m./workspaces/.generated/api-check[39m [90m· 4 files · 766ms[39m
+2026-09-29T23:28:41.2128956Z [90m@hey-api/openapi-ts v0.99.0[39m
+2026-09-29T23:28:41.2129399Z 
+2026-09-29T23:28:41.2319353Z [90m[Job 1] [39m[90m~[39m [36mGenerating...[39m
+2026-09-29T23:28:41.2320126Z [90m[Job 1] [39m[36m  [1] [39m.generated/openapi.json
+2026-09-29T23:28:41.5044703Z [90m[Job 1] [39m[32m✓[39m [96m./.generated/api-check[39m [90m· 4 files · 272ms[39m
+2026-09-29T23:28:41.5205505Z Both API clients match their schemas.
+2026-09-29T23:28:41.5340163Z ##[group]Run npm run typecheck
+2026-09-29T23:28:41.5340698Z [36;1mnpm run typecheck[0m
+2026-09-29T23:28:41.5400180Z shell: /usr/bin/bash -e {0}
+2026-09-29T23:28:41.5400691Z env:
+2026-09-29T23:28:41.5401407Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:41.5402191Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-29T23:28:41.5403013Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:41.5403761Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:41.5404514Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:41.5405343Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-29T23:28:41.5405754Z ##[endgroup]
+2026-09-29T23:28:41.6671009Z 
+2026-09-29T23:28:41.6671561Z > typecheck
+2026-09-29T23:28:41.6671965Z > tsc --noEmit
+2026-09-29T23:28:41.6672299Z 
+2026-09-29T23:28:43.0573252Z ##[group]Run npm test && npm run build
+2026-09-29T23:28:43.0573750Z [36;1mnpm test && npm run build[0m
+2026-09-29T23:28:43.0615729Z shell: /usr/bin/bash -e {0}
+2026-09-29T23:28:43.0616123Z env:
+2026-09-29T23:28:43.0616544Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:43.0617084Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-29T23:28:43.0617641Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:43.0618354Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:43.0618817Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:28:43.0619779Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-29T23:28:43.0620216Z ##[endgroup]
+2026-09-29T23:28:43.1626824Z 
+2026-09-29T23:28:43.1627783Z > test
+2026-09-29T23:28:43.1628737Z > node --test test/*.test.ts && node --test --test-concurrency=1 workspaces/test/*.test.ts
+2026-09-29T23:28:43.1629325Z 
+2026-09-29T23:28:43.3790455Z ✔ the first reading is a baseline and raises nothing (4.20179ms)
+2026-09-29T23:28:43.3820530Z ✔ each transition raises one notice, keyed by chat, kind and updatedAt (0.610808ms)
+2026-09-29T23:28:43.3849408Z ✔ a permission that keeps waiting is announced once (0.307526ms)
+2026-09-29T23:28:43.3859163Z ✔ a failure is news; a stop the architect asked for is not (0.927049ms)
+2026-09-29T23:28:43.3883674Z ✔ a turn that failed between two readings is still announced (2.237681ms)
+2026-09-29T23:28:43.3930084Z ✔ the chat on screen raises nothing, and its news is not held back for later (0.336349ms)
+2026-09-29T23:28:43.3939413Z ✔ a chat seen for the first time raises nothing, unless a permission already waits (0.224625ms)
+2026-09-29T23:28:43.3941477Z ✔ the same moment is never announced twice, even when an older reading comes back (0.352777ms)
+2026-09-29T23:28:43.3942847Z ✔ the stack keeps one notice per chat and at most three, permissions last (0.477922ms)
+2026-09-29T23:28:43.3944394Z ✔ an answered permission and an archived chat take their notices with them (0.668094ms)
+2026-09-29T23:28:43.3945611Z ✔ the title counts unseen notices and drops the count at zero (0.282361ms)
+2026-09-29T23:28:43.3947364Z ✔ the words name the chat in both languages, short enough for one line (0.364478ms)
+2026-09-29T23:28:43.3949367Z ✔ the stack sits left of the rail and above the composer when they would share columns (0.37149ms)
+2026-09-29T23:28:43.4007471Z ✔ English and Chinese catalogs keep the same keys and interpolation parameters (8.785034ms)
+2026-09-29T23:28:43.4016912Z ✔ identical English and Chinese copy is limited to named product, format, unit, or Stage terms (1.151105ms)
+2026-09-29T23:28:43.4030381Z ✔ the tracing-paper review controls are clear in both languages (0.222829ms)
+2026-09-29T23:28:43.4031958Z ✔ a provider's model refusal reads as a sentence and offers the picker (1.586807ms)
+2026-09-29T23:28:43.4033766Z ✔ an unknown failure is not guessed at, and keeps its whole text (0.433918ms)
+2026-09-29T23:28:43.4035233Z ✔ a Hub refusal keeps its own short wording and its code (0.215713ms)
+2026-09-29T23:28:43.4036570Z ✔ a CLI's stderr tail stays diagnostics rather than becoming the headline (0.225582ms)
+2026-09-29T23:28:43.4037822Z ✔ both languages answer, and nothing is dropped in either (0.325442ms)
+2026-09-29T23:28:43.5483289Z ✔ the calls the Agent makes read as plain actions in both languages (4.368609ms)
+2026-09-29T23:28:43.5557786Z ✔ a permission row names the choice that answered it (0.303609ms)
+2026-09-29T23:28:43.5584039Z ✔ a transcript folds each turn's calls and keeps text, progress, results and waiting prompts visible (1.658554ms)
+2026-09-29T23:28:43.5609673Z ✔ an interjection the running turn takes in stays inside that turn; a restarted one starts the next (0.303603ms)
+2026-09-29T23:28:43.5659904Z ✔ one request's results make one Study card: each option once, in the order it was read back (0.420078ms)
+2026-09-29T23:28:43.5688940Z ✔ elapsed time reads naturally and unreadable times are not guessed (0.354597ms)
+2026-09-29T23:28:43.5704564Z ✔ an unfinished operation is named by what it did, in both languages (0.357979ms)
+2026-09-29T23:28:43.5708332Z ✔ the notice stands for undismissed failures, newest first, then what needs recovery (0.405824ms)
+2026-09-29T23:28:43.5710095Z ✔ GH-58: one the Hub cannot recover can be dismissed and then leaves; one that says nothing stays as before (0.870098ms)
+2026-09-29T23:28:43.5782203Z ✔ usage summary keeps cache inside total input and uses request p50 (1.92987ms)
+2026-09-29T23:28:43.5798259Z ✔ aggregate tokens stays unknown when any model call is missing the field (0.478418ms)
+2026-09-29T23:28:43.5799949Z ✔ Codex turn boundaries and Hub rounds do not inflate calls or erase the calculator's known tokens (2.239336ms)
+2026-09-29T23:28:43.5801988Z ✔ legacy model requests, explicit non-calls and missing usage have the same summary/detail/estimate scope (0.307055ms)
+2026-09-29T23:28:43.5803724Z ✔ loading more detail rows changes the visible subtotal, not the project total (0.533996ms)
+2026-09-29T23:28:43.5805095Z ✔ project list combines trace and usage identities without duplicates (0.262376ms)
+2026-09-29T23:28:43.5806506Z ✔ durations are compact without inventing missing timing (0.286312ms)
+2026-09-29T23:28:43.5807824Z ✔ manual estimate inputs survive two successive diagnostic refreshes (0.498939ms)
+2026-09-29T23:28:43.5849515Z ✔ calculating freezes the exact automatic snapshot until an explicit reset (0.58786ms)
+2026-09-29T23:28:43.5873767Z ✔ identical polling preserves input identity but changed automatic totals replace it (0.341616ms)
+2026-09-29T23:28:43.5890912Z ✔ switching projects replaces manual inputs with the new project's totals (0.422291ms)
+2026-09-29T23:28:43.5909522Z ✔ unknown reset counters remain empty rather than becoming zero (0.186955ms)
+2026-09-29T23:28:43.5911212Z ✔ the sidebar's week of usage counts model calls from the last seven days only (1.111345ms)
+2026-09-29T23:28:43.5913042Z ✔ Monitor reads from one page take turns, and a failed read does not block the next (13.308515ms)
+2026-09-29T23:28:43.5981568Z ✔ running conversations and their operations are one task each, named by project and chat (1.882641ms)
+2026-09-29T23:28:43.5986352Z ✔ queued and unattributed work is listed after running work, across open projects only (1.359833ms)
+2026-09-29T23:28:43.5988276Z ✔ a candidate job still running after its request was answered stays listed under its chat (0.403458ms)
+2026-09-29T23:28:43.5989763Z ✔ the new-schemes badge waits for admission data instead of guessing (0.220629ms)
+2026-09-29T23:28:43.6677358Z ✔ the project status counts current, stale, kept and background work without naming candidates (1.403669ms)
+2026-09-29T23:28:43.6679394Z ✔ owners come from the Hub journal: a conversation, the project tools, or unattributed (0.198863ms)
+2026-09-29T23:28:43.6680729Z ✔ retained refs read as element and parameter names (0.273331ms)
+2026-09-29T23:28:43.6695046Z ✔ rows list running work first, conflicts before other results, and never the head itself (0.308732ms)
+2026-09-29T23:28:43.6799487Z ℹ tests 52
+2026-09-29T23:28:43.6799967Z ℹ suites 0
+2026-09-29T23:28:43.6800668Z ℹ pass 52
+2026-09-29T23:28:43.6801096Z ℹ fail 0
+2026-09-29T23:28:43.6801624Z ℹ cancelled 0
+2026-09-29T23:28:43.6802146Z ℹ skipped 0
+2026-09-29T23:28:43.6802687Z ℹ todo 0
+2026-09-29T23:28:43.6803181Z ℹ duration_ms 482.054171
+2026-09-29T23:28:44.4148646Z ✔ straight annotations persist and sample only their two endpoints (440.875188ms)
+2026-09-29T23:28:45.2930845Z ✔ an arc retains three defining points and refuses a collinear third point (874.227885ms)
+2026-09-29T23:28:46.2265060Z ✔ an arc previews its endpoints before the third point and retains view-change fading (935.523365ms)
+2026-09-29T23:28:47.2290197Z ✔ a ruler label is rendered beside its annotation and cannot alter older geometry (996.585734ms)
+2026-09-29T23:28:48.2550182Z ✔ a single point and short freehand stroke remain visible and retain model samples (1033.558057ms)
+2026-09-29T23:28:49.3364968Z ✔ whole-stroke erasing intersects actual ink across fast cursor moves (1080.33914ms)
+2026-09-29T23:28:50.6706332Z ✔ Tracing Paper framing includes orthographic zoom when the live gesture carries it (1335.454759ms)
+2026-09-29T23:28:51.4300429Z ✔ Tracing Paper captures before an asynchronous save and refuses unknown or resized framing (756.311349ms)
+2026-09-29T23:28:52.7436295Z ✔ only a 3dm is handed to the viewer; the exact STEP is for saving (0.831763ms)
+2026-09-29T23:28:52.7453277Z ✔ one receipt's two files become one picture: the preview, not the STEP, and never twice (0.717778ms)
+2026-09-29T23:28:52.7455850Z ✔ an unavailable or digestless preview is not shown (0.171808ms)
+2026-09-29T23:28:52.7456682Z ✔ what a file is comes off the receipt's words, and a preview is never called exact (0.145633ms)
+2026-09-29T23:28:52.7457734Z ✔ an editable copy is the same delivery, so the viewer is not handed it twice (0.197376ms)
+2026-09-29T23:28:52.7459006Z ✔ the source is the exact STEP of the model actually on screen (0.25746ms)
+2026-09-29T23:28:52.7459898Z ✔ nothing on screen, a registered model, or several seats: no source is invented (0.353714ms)
+2026-09-29T23:28:52.7460707Z ✔ a copy that failed, or belongs to another stage or program, is not this model's (1.251731ms)
+2026-09-29T23:28:52.7461573Z ✔ an external Rhino source is viewable without being called a native export (0.315934ms)
+2026-09-29T23:28:53.1412445Z ✔ a target mark inside one page frame keeps another model-linked page as explicit visual reference (169.18261ms)
+2026-09-29T23:28:53.2072946Z ✔ a connector drawn between two references stays Board evidence instead of becoming edit-page ink (66.433745ms)
+2026-09-29T23:28:53.2632780Z ✔ a reference's own marks are refused rather than converted against the edit page (55.672361ms)
+2026-09-29T23:28:53.3113357Z ✔ a frame shared by the edit page and a reference keeps the edit page's own marks and ink (48.162144ms)
+2026-09-29T23:28:53.3806532Z ✔ marks on more than one model-linked page name the real mistake instead of ambiguity (69.207682ms)
+2026-09-29T23:28:53.4358297Z ✔ a connector chained onto another connector never stands in for the edit drawing (55.152696ms)
+2026-09-29T23:28:53.4949633Z ✔ two model-linked pages without an explicit framed target mark remain ambiguous (58.807539ms)
+2026-09-29T23:28:54.1834615Z ✔ concept references travel as reference visuals while only the exact target page is saved and model-bound (686.699463ms)
+2026-09-29T23:28:55.1224235Z ✔ a reference page that changed since selection names the reference and writes no annotation (941.725896ms)
+2026-09-29T23:28:56.5526379Z ✔ returning a board arrow replaces its previous group and preserves other page work (808.130349ms)
+2026-09-29T23:28:57.5264437Z ✔ a second send does not accumulate copies or overwrite an unrelated Diagram comment (974.009788ms)
+2026-09-29T23:28:57.9425159Z ✔ the reviewed selected-text message reaches intent once, with keeps and user edits preserved (411.351679ms)
+2026-09-29T23:29:00.7755573Z ✔ missing, rebound, mismatched or resized drawing sources fail before annotation writes (2838.361068ms)
+2026-09-29T23:29:00.8622806Z ✔ a page save conflict keeps the current page and never produces an intent handoff (88.555379ms)
+2026-09-29T23:29:01.3307295Z ✔ a translated and resized source maps marks to page coordinates without mutating the scene (129.051284ms)
+2026-09-29T23:29:01.3309064Z ✔ all image flips reverse the correct page axes (0.883488ms)
+2026-09-29T23:29:01.3310309Z ✔ image rotation and flip are undone while native PDF rotation is not applied twice (0.369044ms)
+2026-09-29T23:29:01.3311707Z ✔ rotated rectangles keep their contour rather than their world bounding box (0.899172ms)
+2026-09-29T23:29:01.3313195Z ✔ rotated ellipses retain their full affine outline and test extrema between sampled points (1.227697ms)
+2026-09-29T23:29:01.3322651Z ✔ negative local stroke points rotate around their actual point bounds (0.37479ms)
+2026-09-29T23:29:01.3323838Z ✔ polyline arrows keep every bend and the direction of both arrowheads (0.334623ms)
+2026-09-29T23:29:01.3325822Z ✔ selecting one frame includes its unique source and children without importing unrelated marks (0.738677ms)
+2026-09-29T23:29:01.3333996Z ✔ no image, multiple images and a mismatched registration never infer a target (0.410276ms)
+2026-09-29T23:29:01.3335293Z ✔ outside marks are rejected rather than clamped into a different annotation (0.594059ms)
+2026-09-29T23:29:01.3336877Z ✔ cropped images, unsupported selected content and unsupported line styles have explicit failures (0.649959ms)
+2026-09-29T23:29:01.3338591Z ✔ native frame, shape and explicit label selection includes each bound text object once (0.710636ms)
+2026-09-29T23:29:01.3340075Z ✔ selected text uses stable reading order, original line breaks and no nearby or deleted text (0.415684ms)
+2026-09-29T23:29:01.3341329Z ✔ annotation groups are stable and escape image/element id separators (0.262217ms)
+2026-09-29T23:29:01.3342511Z ✔ malformed geometry fails before producing invalid page DTOs (0.575569ms)
+2026-09-29T23:29:01.7324169Z ✔ a double click names the exact page under it, not a neighbouring one (161.505519ms)
+2026-09-29T23:29:01.8102571Z ✔ marks, frames, deleted pages and unbound images never name a page (78.354081ms)
+2026-09-29T23:29:01.8882114Z ✔ the topmost page wins where two pages overlap (77.921439ms)
+2026-09-29T23:29:01.9564289Z ✔ a rotated page keeps its own rectangle (68.297302ms)
+2026-09-29T23:29:02.0088941Z ✔ the place on the board survives the visit, minus what the board no longer has (53.719058ms)
+2026-09-29T23:29:02.4431865Z ✔ in-flight edits save only the latest draft after the sent snapshot receives its revision (160.873543ms)
+2026-09-29T23:29:02.5310043Z ✔ BOARD_STALE pauses local edits and an explicit retry cannot overwrite another revision (87.00986ms)
+2026-09-29T23:29:02.6199283Z ✔ BOARD_CONFLICT pauses local edits and an explicit retry cannot overwrite another revision (90.115472ms)
+2026-09-29T23:29:02.6948579Z ✔ BOARD_BINDING_MISMATCH pauses local edits and an explicit retry cannot overwrite another revision (74.712511ms)
+2026-09-29T23:29:02.7530437Z ✔ a transient failure retries the latest draft against the last acknowledged revision (58.473778ms)
+2026-09-29T23:29:02.8236542Z ✔ unchanged canvas captures from app-only updates never dirty the board or duplicate a save (70.109348ms)
+2026-09-29T23:29:02.8607151Z ✔ dispose immediately flushes a pending final edit and suppresses all subsequent notifications (37.266668ms)
+2026-09-29T23:29:02.9060021Z ✔ dispose during a write still saves the final local draft after that write is acknowledged (44.226766ms)
+2026-09-29T23:29:02.9570129Z ✔ a headless page replacement rebases local ink and moved frames, including edits made during readback (51.806671ms)
+2026-09-29T23:29:03.0302982Z ✔ a quiet board receives an external revision without echoing another save (72.499484ms)
+2026-09-29T23:29:03.0680007Z ✔ replacement keeps a locally deleted page deleted and preserves unrelated remote notes (38.553995ms)
+2026-09-29T23:29:03.1115923Z ✔ two different edits to the same annotation stay unresolved instead of overwriting either (43.679251ms)
+2026-09-29T23:29:03.1455907Z ✔ two different edits to the same annotation stay unresolved instead of overwriting either (33.765849ms)
+2026-09-29T23:29:03.2111947Z ✔ a refresh from another project never changes the current scene or its save base (64.731822ms)
+2026-09-29T23:29:03.2504924Z ✔ automatic conflict recovery is bounded when another writer keeps changing the board (41.090064ms)
+2026-09-29T23:29:03.5900074Z ✔ drawing revisions remain distinct when their file bytes are identical (88.030984ms)
+2026-09-29T23:29:03.6185759Z ✔ explicit page replacements resolve reordered deliveries without guessing names or page numbers (27.76128ms)
+2026-09-29T23:29:03.6400920Z ✔ retained received identities keep a removed drawing absent while allowing its next revision (22.154028ms)
+2026-09-29T23:29:03.6599063Z ✔ persisted image metadata resolves only its exact run, file, drawing revision and page (20.528755ms)
+2026-09-29T23:29:03.6792077Z ✔ source actions resolve one explicit image or native frame independently of model and mark geometry (19.199466ms)
+2026-09-29T23:29:03.6977527Z ✔ source actions refuse multiple images, unregistered sources and frame metadata without a page (18.630549ms)
+2026-09-29T23:29:03.7134715Z ✔ a new drawing is placed beyond existing visible work without repositioning it (15.681193ms)
+2026-09-29T23:29:03.7309900Z ✔ Tracing Paper reviews are named as review items on Board (18.421555ms)
+2026-09-29T23:29:04.1015604Z ✔ a rectangle becomes a counter-clockwise footprint in metres with y flipped (87.589883ms)
+2026-09-29T23:29:04.1017042Z ✔ a rotated rectangle keeps its rotated corners (0.662365ms)
+2026-09-29T23:29:04.1018057Z ✔ an ellipse is sampled with 32 points (0.989173ms)
+2026-09-29T23:29:04.1019073Z ✔ a closed freehand loop is simplified; an open one is skipped (1.710243ms)
+2026-09-29T23:29:04.1020428Z ✔ arrows, text and elements outside the frame are never footprints (0.428811ms)
+2026-09-29T23:29:04.1030543Z ✔ a clockwise outline is reversed to counter-clockwise (0.461134ms)
+2026-09-29T23:29:04.1032400Z ✔ sending without a calibration is refused (0.461221ms)
+2026-09-29T23:29:04.1033210Z ✔ an empty frame is refused rather than sent (0.19315ms)
+2026-09-29T23:29:04.1034313Z ✔ calibration derives metres per unit from a two-point line (0.440023ms)
+2026-09-29T23:29:04.1035202Z ✔ the calibration line itself is never a footprint (0.345057ms)
+2026-09-29T23:29:04.1036308Z ✔ a stroke closed exactly onto its own first point is still a polygon (0.602058ms)
+2026-09-29T23:29:04.1037388Z ✔ a diamond is the rhombus through its edge midpoints, not its bounding box (0.172271ms)
+2026-09-29T23:29:04.1038875Z ✔ an outline that visits one point twice is skipped, and the rest are still sent (0.209749ms)
+2026-09-29T23:29:04.1049075Z ✔ an outline that crosses itself is skipped before the kernel is asked to build it (0.391596ms)
+2026-09-29T23:29:04.1050376Z ✔ a rotated round line is refused; a rotated sharp one is converted (0.284854ms)
+2026-09-29T23:29:04.1052046Z ✔ a shape Excalidraw still calls a child, but which lies outside the frame, is skipped (0.15998ms)
+2026-09-29T23:29:04.1053251Z ✔ a sliver under a millimetre is refused, however much signed area it has (0.187826ms)
+2026-09-29T23:29:04.1054502Z ✔ footprint ids are stable, identifier-safe and never fold two shapes into one (0.304609ms)
+2026-09-29T23:29:04.1055966Z ✔ two shapes that would author the same element refuse the whole send (0.193073ms)
+2026-09-29T23:29:04.1057129Z ✔ the frame data round-trips and defaults a missing storey height (0.136316ms)
+2026-09-29T23:29:04.1060327Z ✔ a sketch frame and its shapes are not marks a board-wide clear may delete (0.173125ms)
+2026-09-29T23:29:04.1061509Z ✔ too many footprints is its own refusal, not the empty-frame one (4.208671ms)
+2026-09-29T23:29:04.1062922Z ✔ a coarse scale is stated, not rounded away, and a long name is cut between characters (0.555727ms)
+2026-09-29T23:29:04.1064273Z ✔ the summary names frame, count, level, scale and board revision (0.286582ms)
+2026-09-29T23:29:04.2605604Z ✔ camera link converts millimetres and preserves the output gate instead of copying viewport FOV (2.371152ms)
+2026-09-29T23:29:04.2616898Z ✔ orthographic zoom and viewport margin map to one world-space output height (0.594331ms)
+2026-09-29T23:29:04.2623122Z ✔ resize restores the retained composition without writing another scene revision (0.905152ms)
+2026-09-29T23:29:04.2624797Z ✔ camera link refuses unknownUnits rather than overwriting the retained scene (0.42492ms)
+2026-09-29T23:29:04.2626613Z ✔ camera link refuses negativeUnits rather than overwriting the retained scene (0.293289ms)
+2026-09-29T23:29:04.2628433Z ✔ camera link refuses loading rather than overwriting the retained scene (0.251999ms)
+2026-09-29T23:29:04.2629980Z ✔ camera link refuses unsaved rather than overwriting the retained scene (0.249132ms)
+2026-09-29T23:29:04.2631332Z ✔ camera link refuses foreignModel rather than overwriting the retained scene (0.300796ms)
+2026-09-29T23:29:04.2632939Z ✔ stale geometry and a detached project cannot publish to an earlier scene (0.518434ms)
+2026-09-29T23:29:04.2634279Z ✔ retained external files link without fabricating an OCCT modelSource (0.702576ms)
+2026-09-29T23:29:04.4105855Z ✔ projection transfer preserves apparent vertical scale (3.528975ms)
+2026-09-29T23:29:04.4108581Z ✔ orthographic resize changes width but not vertical world scale (0.322117ms)
+2026-09-29T23:29:04.4114853Z ✔ top fit keeps equal plan lengths equal at different depths (0.931572ms)
+2026-09-29T23:29:04.4128740Z ✔ standard view frames follow the Z-up model coordinates (1.018663ms)
+2026-09-29T23:29:04.4132512Z ✔ isometric fit has equal axis scale and no depth-dependent perspective (2.48955ms)
+2026-09-29T23:29:04.4134231Z ✔ framing selected bounds preserves perspective view direction (0.662847ms)
+2026-09-29T23:29:04.4135204Z ✔ framing selected bounds reuses orthographic zoom framing (0.352191ms)
+2026-09-29T23:29:05.4165180Z ✔ concurrent project clients retain their runtime, token, exact source and responses (784.527516ms)
+2026-09-29T23:29:06.0747021Z ✔ sibling project providers expose independent clients and require an explicit binding (659.321144ms)
+2026-09-29T23:29:07.2660223Z ✔ only Hub forwarding adds idempotency keys while retries preserve supplied keys (1190.941226ms)
+2026-09-29T23:29:08.1880375Z ✔ candidate requests carry their explicit source without changing default requests (920.167338ms)
+2026-09-29T23:29:09.1414455Z ✔ project draft survives a new browser session and outranks old localStorage without submitting work (955.947988ms)
+2026-09-29T23:29:10.0884389Z ✔ unexecuted recovery restores its exact source before the later candidate position (947.05033ms)
+2026-09-29T23:29:11.0219234Z ✔ first upgrade carries the prior explicit browser choice into P036 without losing it (933.36803ms)
+2026-09-29T23:29:12.0224452Z ✔ explicit selection persists with CAS; a concurrent refusal keeps the prior session (999.898654ms)
+2026-09-29T23:29:12.9713171Z ✔ a project mismatch in the retained draft refuses cold recovery (949.224941ms)
+2026-09-29T23:29:13.9193661Z ✔ a quiet adoption the saved position already names does not write it again (947.587722ms)
+2026-09-29T23:29:14.8783646Z ✔ the architect's own Sync becomes the saved base without re-projecting the tab (959.243358ms)
+2026-09-29T23:29:15.8139481Z ✔ a Sync result never overrides a base chosen in another window or one this tab moved to (934.221272ms)
+2026-09-29T23:29:16.7183418Z ✔ saving a Sync result over an empty position rereads once an autosave moved the revision (905.522226ms)
+2026-09-29T23:29:17.6942280Z ✔ working-copy capability permits a cold list read without selecting its option as the editing base (975.492989ms)
+2026-09-29T23:29:18.6399520Z ✔ fresh working-copy selections restore on reload and reopen while an explicit candidate remains the editing base (945.499449ms)
+2026-09-29T23:29:19.5830850Z ✔ background session reload keeps the ready base unlocked until the exact candidate arrives (941.352754ms)
+2026-09-29T23:29:20.5331904Z ✔ a later explicit base switch wins over a delayed background session reload (951.851633ms)
+2026-09-29T23:29:21.4831469Z ✔ background reload still refuses an unverified candidate and retains the previous explicit base (950.211752ms)
+2026-09-29T23:29:22.4354306Z ✔ quiet candidate reload reuses its one state read and preserves default selection policy (950.937074ms)
+2026-09-29T23:29:23.4072839Z ✔ a temporary background project read preserves the ready editing context while a rebound project is refused (970.16116ms)
+2026-09-29T23:29:24.3569129Z ✔ a reused projection still rejects a foreign project, run, published base, receipt or Stage (951.223665ms)
+2026-09-29T23:29:25.2961788Z ✔ session metadata reads start together after project identity is checked (939.98804ms)
+2026-09-29T23:29:26.3144289Z ✔ a late reused projection cannot supersede a newer explicit run or its preference (1017.316125ms)
+2026-09-29T23:29:27.3124226Z ✔ background version refresh changes only the list and never reloads or selects the editing base (998.563958ms)
+2026-09-29T23:29:28.2598369Z ✔ a failed or foreign background version list preserves the ready session and saved choice (947.440245ms)
+2026-09-29T23:29:29.2189875Z ✔ late background lists cannot replace a newer list, an explicit continuation, or a cancelled session (954.093458ms)
+2026-09-29T23:29:30.1738631Z ✔ a failed working-copy list read remains visible and retry preserves the saved explicit base (958.593807ms)
+2026-09-29T23:29:31.1243853Z ✔ explicit continuation survives reopening, while browsing never records a choice (951.737817ms)
+2026-09-29T23:29:32.0823722Z ✔ failed restoration retains the choice and blocks editing until retry or explicit default (958.124692ms)
+2026-09-29T23:29:33.0489792Z ✔ a storage read exception blocks restoration until retry or an explicit default choice (965.301703ms)
+2026-09-29T23:29:33.9957520Z ✔ an inspectable but unverified or stale record is not restored as an editing choice (943.844309ms)
+2026-09-29T23:29:34.9315445Z ✔ a mounted runtime refuses project rebinding and new runtimes restore only their own choice (939.85887ms)
+2026-09-29T23:29:35.8692452Z ✔ late and cancelled reads cannot replace a newer explicit choice (937.071135ms)
+2026-09-29T23:29:36.8148574Z ✔ legacy preferences and cleared site data use the default; unreadable pointers offer recovery (945.972044ms)
+2026-09-29T23:29:37.7390416Z ✔ a refused explicit switch keeps the previous base; failed revalidation does not (922.161159ms)
+2026-09-29T23:29:38.6960067Z ✔ storage failure is reported without losing the valid in-tab editing choice (958.313123ms)
+2026-09-29T23:29:39.6437799Z ▶ the protocol handshake accepts major 2 and refuses major 1
+2026-09-29T23:29:39.6439413Z   ✔ archflow/2 (1.687705ms)
+2026-09-29T23:29:39.6440448Z   ✔ archflow/1 (0.700955ms)
+2026-09-29T23:29:39.6441654Z ✔ the protocol handshake accepts major 2 and refuses major 1 (949.454592ms)
+2026-09-29T23:29:40.5778390Z ✔ design mode labels an identified object without displaying its raw id (80.084862ms)
+2026-09-29T23:29:41.5750437Z ✔ the Riverside Library fixture grows one trunk through the chosen options (717.506356ms)
+2026-09-29T23:29:42.2398506Z ✔ Continue from an older twig re-roots the trunk and keeps the abandoned future (667.987899ms)
+2026-09-29T23:29:43.2815385Z ✔ Accept after Continue adds the next Stage on the trunk, from the chosen option (1041.281689ms)
+2026-09-29T23:29:44.2270398Z ✔ Undo is the same Continue write, onto the exact Current the Continue replaced (944.758018ms)
+2026-09-29T23:29:44.5599520Z ✔ no Undo rather than a guess: a line-head Current, a Continue that moved nothing, a Current that moved on (332.670263ms)
+2026-09-29T23:29:45.7930226Z ✔ the toasts and an Undo refusal read in both languages (1232.456839ms)
+2026-09-29T23:29:46.9840726Z ✔ options are named once: a lone option has no letter and a label that carries one gets no second (1192.023052ms)
+2026-09-29T23:29:47.9294588Z ✔ only the option that is a Stage's accepted run reads accepted; the option it grew from says so (945.474445ms)
+2026-09-29T23:29:48.8831795Z ✔ an admission recorded in a later review reads as retroactive; others keep their actor (954.528123ms)
+2026-09-29T23:29:49.4850488Z ✔ a turned-down result cannot become a Stage: Accept says so first, and the runtime refuses it (600.029995ms)
+2026-09-29T23:29:50.5950550Z ✔ processed Candidates are hidden by default, retain their Study identity, and leave the head and acceptance unchanged (1110.375912ms)
+2026-09-29T23:29:51.6310699Z ✔ a runtime without the admission contract shows Stages, Current and running work only (1036.749949ms)
+2026-09-29T23:29:52.3048141Z ✔ an unstaged project starts from the project root, and a Stage's own legacy admission is that Stage (673.687791ms)
+2026-09-29T23:29:53.1339576Z ✔ a long history stays planar at every fork (825.912793ms)
+2026-09-29T23:29:54.2820261Z ✔ the scene draws three levels of detail and hit targets for every node (1149.821732ms)
+2026-09-29T23:29:55.2520185Z ✔ text fits its box, and a turned rectangle keeps its own hit area (973.171991ms)
+2026-09-29T23:29:56.8280902Z ✔ calibration and corrected contours share page revision, undo, retry and cold reopen (781.303883ms)
+2026-09-29T23:29:57.8091172Z ✔ strokes, erase and undo/redo save serial snapshots without blocking input or changing a captured ref (983.211832ms)
+2026-09-29T23:29:58.7150458Z ✔ late loads and saves remain bound to their page, source and run, with each page history retained (907.3669ms)
+2026-09-29T23:29:59.6930473Z ✔ historical revisions load their exact ref and cannot change, undo or save (976.007701ms)
+2026-09-29T23:30:00.6441396Z ✔ network failure pauses that page and an explicit save retries its retained snapshots in order (952.218826ms)
+2026-09-29T23:30:01.0639243Z ✔ a conflict cannot retry over a newer revision; explicit reload preserves the local present in Undo (418.100395ms)
+2026-09-29T23:30:03.6309668Z ✔ text is debounced and save flushes the current comment before returning its exact revision (2569.007067ms)
+2026-09-29T23:30:03.8064382Z ✔ text creation, editing, moving and deletion each occupy one mixed-page history step (175.364601ms)
+2026-09-29T23:30:03.8861915Z ✔ a rebuilt controller reads multiline text, its font ratio and anchor without changing legacy ink (81.214103ms)
+2026-09-29T23:30:04.3849456Z ✔ documents use the selected run and preserve original upload and download bytes (203.054651ms)
+2026-09-29T23:30:04.4809782Z ✔ page revisions and annotation ratios pass through unchanged, including an empty page (96.54028ms)
+2026-09-29T23:30:04.5630946Z ✔ document authorization and revision conflicts remain StudioApiError failures (82.061525ms)
+2026-09-29T23:30:04.6541382Z ✔ external model import sends original bytes without inventing a semantic run/state (91.108374ms)
+2026-09-29T23:30:04.7289596Z ✔ invalid or cancelled local model imports never send a registration request (76.136638ms)
+2026-09-29T23:30:05.0612727Z ✔ closed editable outlines render and erase their closing edge; open paths do not (74.188894ms)
+2026-09-29T23:30:05.0871487Z ✔ page ink uses visible rectangular page coordinates and pointer-centred zoom (23.712501ms)
+2026-09-29T23:30:05.1075588Z ✔ eraser sweeps remove whole strokes without changing missed strokes (21.954192ms)
+2026-09-29T23:30:05.1283590Z ✔ circle and arrow hits follow their visible outlines, with short-side line widths (21.828533ms)
+2026-09-29T23:30:05.1434720Z ✔ retained closed circles, three-point arcs, ruler ticks and semantic marks remain erasable (16.316003ms)
+2026-09-29T23:30:05.4746510Z ✔ a camel-case retained Study reopens only against its exact source page (71.898095ms)
+2026-09-29T23:30:05.4963732Z ✔ editing a confirmed contour requires confirmation again and keeps its identity and classification (21.390664ms)
+2026-09-29T23:30:05.5153393Z ✔ erasures remain rejected evidence and an open curve never becomes a confirmed polygon (19.537265ms)
+2026-09-29T23:30:05.5299273Z ✔ research save strips computed outcomes and preserves unresolved human preference (14.709644ms)
+2026-09-29T23:30:05.5468824Z ✔ returning a saved research revision to editing does not silently rerun or endorse it (16.392957ms)
+2026-09-29T23:30:05.5596103Z ✔ archived comparisons reopen their exact inputs while computed results never return as save inputs (14.333161ms)
+2026-09-29T23:30:05.7168404Z ✔ a retained cut-plan restores its actual frame and keeps dimension identity, placement and hidden intent (2.280057ms)
+2026-09-29T23:30:05.7181669Z ✔ the initial cut is expressed in the exact source length unit (0.255759ms)
+2026-09-29T23:30:05.7186135Z ✔ the newest revision of each drawing opens by default and older revisions stay history (8.588444ms)
+2026-09-29T23:30:05.7187725Z ✔ a LIVE drawing rebinds once to the Working Head and never loops on its own broken anchors (0.277048ms)
+2026-09-29T23:30:05.7193926Z ✔ only a drawing made from a chosen version is kept off the Working Head (0.147987ms)
+2026-09-29T23:30:06.1493989Z ✔ a refusal says what happened and the next step, with the server's words folded beneath (FN-4) (212.659768ms)
+2026-09-29T23:30:06.2906064Z ✔ a flat face split into triangles offers no diagonal (1.793195ms)
+2026-09-29T23:30:06.2908171Z ✔ a box offers its twelve real edges and nothing across a face (1.734649ms)
+2026-09-29T23:30:06.2909604Z ✔ face preselection crosses a flat diagonal and stops at each box fold (0.988919ms)
+2026-09-29T23:30:06.2919712Z ✔ indexed face preselection accepts reversed winding but requires a full shared edge (0.244432ms)
+2026-09-29T23:30:06.2921504Z ✔ translated, sloped Float32 planes stay connected after coordinate rounding (0.546457ms)
+2026-09-29T23:30:06.2929447Z ✔ thin translated Float32 triangles cannot use large uncertainty to cross real folds (0.200318ms)
+2026-09-29T23:30:06.2931079Z ✔ preselection rejects offset planes, folded and degenerate triangles (0.271366ms)
+2026-09-29T23:30:06.2932598Z ✔ one topology build reads source arrays once and reuses them for many new seeds (11.372924ms)
+2026-09-29T23:30:06.2933757Z ✔ an edge offers its ends and its middle, in model coordinates (0.518262ms)
+2026-09-29T23:30:06.2935127Z ✔ the pointer takes the nearest candidate, preferring an end over a middle (0.604886ms)
+2026-09-29T23:30:06.2936091Z ✔ measuring two model points gives the model's own distance (0.376146ms)
+2026-09-29T23:30:06.2937572Z ✔ open curve snapping keeps authored endpoints and segment middles without closing a face (0.357778ms)
+2026-09-29T23:30:06.2938699Z ✔ disconnected and indexed line geometry does not invent connecting edges (0.241856ms)
+2026-09-29T23:30:06.2939590Z ✔ snap hysteresis retains noisy ties, releases at 21px, and permits deliberate target changes (0.291506ms)
+2026-09-29T23:30:06.3980537Z ✔ selected translated mesh defines region bounds and assignment without changing geometry (2.292233ms)
+2026-09-29T23:30:06.3982106Z ✔ unnamed source remains a generic mesh and empty selection is refused (0.573787ms)
+2026-09-29T23:30:06.8027550Z ✔ a response for another model source cannot replace ink or become its CAS base (193.597579ms)
+2026-09-29T23:30:06.9047814Z ✔ server defaults in the saved gesture do not leave an acknowledged local draft dirty (102.445465ms)
+2026-09-29T23:30:06.9890946Z ✔ 3D strokes, erase and undo/redo save serial CAS snapshots while newer input remains live (84.025834ms)
+2026-09-29T23:30:07.0765494Z ✔ late GET/PUT cannot cross run, state, asset or project histories (87.470467ms)
+2026-09-29T23:30:07.1568048Z ✔ local and legacy models retain memory-only undo/redo without GET or PUT (80.108443ms)
+2026-09-29T23:30:07.2332213Z ✔ a new unbound file cannot undo into the previous file while bound and other-project drafts survive (76.54248ms)
+2026-09-29T23:30:07.3282407Z ✔ network failure retains queued drafts and only explicit save retries them in order (94.710809ms)
+2026-09-29T23:30:07.4058492Z ✔ 409 cannot retry over remote ink; explicit reload keeps the local draft available in Undo (77.506291ms)
+2026-09-29T23:30:07.4909180Z ✔ reload waits for the in-flight write and rejects queued save promises before adopting remote state (85.089495ms)
+2026-09-29T23:30:07.5708681Z ✔ reopening reads full 3D geometry and source identity; caller mutations cannot alter saved history (79.895899ms)
+2026-09-29T23:30:07.6472330Z ✔ a missing PUT revision pauses the queue and preserves its unsaved draft (77.481725ms)
+2026-09-29T23:30:07.8968954Z (node:3083) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+2026-09-29T23:30:07.8970655Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-09-29T23:30:07.8986190Z ✔ loaded identity groups only explicit file bindings and expires with its model (2.573891ms)
+2026-09-29T23:30:07.8987536Z ✔ returning to model restores every original visibility, layer and material (0.944682ms)
+2026-09-29T23:30:07.8991083Z ✔ unassigned loader meshes use saved display colors without changing native materials or shared defaults (2.008365ms)
+2026-09-29T23:30:07.8992173Z ✔ semantic highlight matches only complete catalog object names (0.179577ms)
+2026-09-29T23:30:07.8996275Z ✔ an element maps only to its bound catalog objects (0.261808ms)
+2026-09-29T23:30:07.8999545Z ✔ a component maps to exact catalog names in its component subtree (0.198368ms)
+2026-09-29T23:30:07.9001444Z ✔ a cross-fade scales each material's own opacity and gives it back exactly (0.527786ms)
+2026-09-29T23:30:07.9003376Z ✔ a prepared model hides what the file saved hidden, on top of what its layer hides (0.699758ms)
+2026-09-29T23:30:07.9004969Z ✔ the appearance captured after preparation restores without reviving a hidden object (0.401223ms)
+2026-09-29T23:30:07.9006493Z ✔ only an object on screen through every ancestor is displayed (0.400094ms)
+2026-09-29T23:30:07.9007799Z ✔ curve picking keeps its eight-pixel reach under scaled and rotated instance parents (20.855796ms)
+2026-09-29T23:30:07.9009599Z ✔ curves share front-to-back occlusion with unchanged native mesh picking (5.007852ms)
+2026-09-29T23:30:07.9010617Z ✔ comparison downloads cannot outlive a model switch, a clear or a newer comparison (8.995395ms)
+2026-09-29T23:30:07.9012419Z ✔ secondary file reading stays bound to the primary model present before the await (2.030933ms)
+2026-09-29T23:30:07.9043491Z ✔ clearing a comparison prevents a late parse from restoring it (8.361534ms)
+2026-09-29T23:30:07.9056627Z ✔ the last secondary request wins when its parse finishes before the earlier request (2.840031ms)
+2026-09-29T23:30:07.9058902Z ✔ saved model curves restore their original visibility and material after a temporary selection (0.413085ms)
+2026-09-29T23:30:08.0362129Z (node:3090) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+2026-09-29T23:30:08.0364000Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-09-29T23:30:08.0399405Z ✔ draft conversion preserves recorded tilted placement and a flat producer's closing endpoint (2.206307ms)
+2026-09-29T23:30:08.0401823Z ✔ two local pulls accumulate and undo/redo restores immutable source-bound snapshots (2.351551ms)
+2026-09-29T23:30:08.0403648Z ✔ local drawing and deletion have no net Sync commands, while undo restores the drawing (0.687502ms)
+2026-09-29T23:30:08.0405982Z ✔ copies retain their stable IDs and deleted local sources stay in replay only while needed (0.979758ms)
+2026-09-29T23:30:08.0422684Z ✔ translation, positive CAD rotation and mirrored nonuniform scaling keep the actual object centre (0.868126ms)
+2026-09-29T23:30:08.0435481Z ✔ a downward drawing and bottom pulls preserve their opposite end (0.64479ms)
+2026-09-29T23:30:08.0437824Z ✔ invalid direct operations leave history unchanged and preserve parameter bindings (1.316364ms)
+2026-09-29T23:30:08.0439614Z ✔ open curves remain unfilled local objects and refuse unsupported direct edits (0.457041ms)
+2026-09-29T23:30:08.0441286Z ✔ unprojected original objects can be deleted and restored without inventing a shape (0.437268ms)
+2026-09-29T23:30:08.0442905Z ✔ Sync comparison follows net object state, independently of snapshot identity or undo route (0.743964ms)
+2026-09-29T23:30:08.0444956Z ✔ explicit stacked masses propagate while free neighbors, immutable undo and redo stay independent (0.795398ms)
+2026-09-29T23:30:08.0450709Z ✔ datum edits and numeric overrides preserve offsets and height/top algebra (0.538635ms)
+2026-09-29T23:30:08.0452757Z ✔ binding alone is dirty, cycles and dependency deletion are atomic, and datum creation is undoable (0.569248ms)
+2026-09-29T23:30:08.0454838Z ✔ retained free copies keep vertical displacement and base-bound direct edits preserve offsets (0.860137ms)
+2026-09-29T23:30:08.0456737Z ✔ a deleted local source survives replay when earlier elevation bindings need it (0.362036ms)
+2026-09-29T23:30:08.0458859Z ✔ top-constrained and supporting-mass transforms refuse locally just as the producer does (0.602274ms)
+2026-09-29T23:30:08.0460834Z ✔ a flattened bound face follows datum changes but cannot supply a mass top (0.455277ms)
+2026-09-29T23:30:08.1445681Z ✔ viewing other runs is not a model step: the unchanged base leaves the history as it was (1.332128ms)
+2026-09-29T23:30:08.1450529Z ✔ an adopted edit result and an explicit Continue each add one step (0.23457ms)
+2026-09-29T23:30:08.1467171Z ✔ Undo and Redo move the position without adding runs (0.242262ms)
+2026-09-29T23:30:08.1481353Z ✔ a new base after Undo drops what was undone, and a revisited run moves to the end (0.157662ms)
+2026-09-29T23:30:08.1484655Z ✔ a navigation that no longer names a known run is recorded as a new step (0.125168ms)
+2026-09-29T23:30:08.2944653Z ✔ perspective 9,-12,8: signed face normal 0,0,1 (4.177194ms)
+2026-09-29T23:30:08.2952608Z ✔ perspective 9,-12,8: signed face normal 0,0,-1 (0.745695ms)
+2026-09-29T23:30:08.2955355Z ✔ perspective 9,-12,8: signed face normal 1,0,0 (1.721799ms)
+2026-09-29T23:30:08.2958885Z ✔ perspective 9,-12,8: signed face normal -1,0,0 (0.379765ms)
+2026-09-29T23:30:08.2960182Z ✔ perspective 9,-12,8: signed face normal 0,1,0 (0.521857ms)
+2026-09-29T23:30:08.2962773Z ✔ perspective 9,-12,8: signed face normal 0,-1,0 (0.298929ms)
+2026-09-29T23:30:08.2964013Z ✔ perspective -9,12,8: signed face normal 0,0,1 (0.297915ms)
+2026-09-29T23:30:08.2965040Z ✔ perspective -9,12,8: signed face normal 0,0,-1 (0.355164ms)
+2026-09-29T23:30:08.2966103Z ✔ perspective -9,12,8: signed face normal 1,0,0 (0.591046ms)
+2026-09-29T23:30:08.2967103Z ✔ perspective -9,12,8: signed face normal -1,0,0 (0.963702ms)
+2026-09-29T23:30:08.2968282Z ✔ perspective -9,12,8: signed face normal 0,1,0 (0.341122ms)
+2026-09-29T23:30:08.2969300Z ✔ perspective -9,12,8: signed face normal 0,-1,0 (0.259ms)
+2026-09-29T23:30:08.2970310Z ✔ orthographic 9,-12,8: signed face normal 0,0,1 (1.671159ms)
+2026-09-29T23:30:08.2971392Z ✔ orthographic 9,-12,8: signed face normal 0,0,-1 (0.3423ms)
+2026-09-29T23:30:08.2972322Z ✔ orthographic 9,-12,8: signed face normal 1,0,0 (0.362883ms)
+2026-09-29T23:30:08.2980831Z ✔ orthographic 9,-12,8: signed face normal -1,0,0 (0.287585ms)
+2026-09-29T23:30:08.2981850Z ✔ orthographic 9,-12,8: signed face normal 0,1,0 (0.297581ms)
+2026-09-29T23:30:08.2982709Z ✔ orthographic 9,-12,8: signed face normal 0,-1,0 (0.199144ms)
+2026-09-29T23:30:08.2983699Z ✔ orthographic -9,12,8: signed face normal 0,0,1 (0.248594ms)
+2026-09-29T23:30:08.2984699Z ✔ orthographic -9,12,8: signed face normal 0,0,-1 (0.220695ms)
+2026-09-29T23:30:08.2985700Z ✔ orthographic -9,12,8: signed face normal 1,0,0 (0.179187ms)
+2026-09-29T23:30:08.2986578Z ✔ orthographic -9,12,8: signed face normal -1,0,0 (0.175336ms)
+2026-09-29T23:30:08.2988256Z ✔ orthographic -9,12,8: signed face normal 0,1,0 (0.149521ms)
+2026-09-29T23:30:08.2989199Z ✔ orthographic -9,12,8: signed face normal 0,-1,0 (0.15897ms)
+2026-09-29T23:30:08.2990399Z ✔ the frozen pointer mapping survives camera mutation but refuses the new view at commit (0.372561ms)
+2026-09-29T23:30:08.2994110Z ✔ end-on and nearly end-on normals expose numeric-only input, never huge pointer jumps (0.438408ms)
+2026-09-29T23:30:08.3004404Z ✔ invalid normals, zero viewports, behind-camera points and nonfinite samples refuse explicitly (0.817747ms)
+2026-09-29T23:30:08.3007121Z ✔ native DOMRect-style prototype getters survive the frozen viewport snapshot (1.233878ms)
+2026-09-29T23:30:08.5463094Z ✔ fallback omits hidden objects and layers, including visible children of hidden ancestors (50.330356ms)
+2026-09-29T23:30:08.5465586Z ✔ fallback inherits root and nested instance visibility while preserving visible transforms (16.67341ms)
+2026-09-29T23:30:08.5468595Z ✔ visible planar Breps still produce face loops and non-planar Breps remain edge-only (11.593512ms)
+2026-09-29T23:30:08.8577679Z ✔ workspace appearance follows the host and never reads or persists display defaults (77.176739ms)
+2026-09-29T23:30:08.8826244Z ✔ editing pointers preserve old records and new writes do not create appearance defaults (22.332723ms)
+2026-09-29T23:30:08.8978799Z ✔ exact Stage choices reopen within their runtime and project without rewriting storage (19.530342ms)
+2026-09-29T23:30:09.4193986Z ✔ design cards distinguish component edits from scalar controls and fold compiler details (245.948529ms)
+2026-09-29T23:30:09.5628168Z ✔ autosave keeps newer edits, serializes writes and flushes the final snapshot (12.777316ms)
+2026-09-29T23:30:09.5630272Z ✔ failure retains edits and retries exactly once without silently rebasing a conflict (1.320678ms)
+2026-09-29T23:30:09.5650503Z ✔ leaving before debounce flushes to the original project without later UI callbacks (1.121311ms)
+2026-09-29T23:30:09.5652057Z ✔ a mismatched project response cannot clear unsaved content (0.645782ms)
+2026-09-29T23:30:09.5653712Z ✔ a failed draft can reconnect after its project surface closes and retry against its original base (0.651598ms)
+2026-09-29T23:30:09.5668638Z ✔ Board import remains pending across unmount and hands its new revision to the remounted editor (1.262944ms)
+2026-09-29T23:30:09.5670420Z ✔ retry after remount replays the failed Board import instead of acknowledging an empty save (0.523255ms)
+2026-09-29T23:30:09.6934432Z ✔ upper and lower caps keep the opposite end fixed in CAD world coordinates (2.467206ms)
+2026-09-29T23:30:09.6944753Z ✔ a prism can become a true face while zero motion and invalid distances never form a candidate (0.895713ms)
+2026-09-29T23:30:09.6946816Z ✔ a flat face extrudes in either picked direction without inventing thickness (0.339578ms)
+2026-09-29T23:30:09.6950780Z ✔ tilted and mirrored work planes retain their placement and selected side (1.884463ms)
+2026-09-29T23:30:09.6956300Z ✔ all four rectangle sides move their own boundary without changing height or the opposite side (0.734715ms)
+2026-09-29T23:30:09.6958563Z ✔ a triangular side re-intersects its adjacent edges but cannot invert beyond its opposite vertex (0.689918ms)
+2026-09-29T23:30:09.6960263Z ✔ unavailable normals and unsupported side profiles fail before they can show a misleading preview (0.508642ms)
+2026-09-29T23:30:09.6962000Z ✔ parameter bindings reject only the producer fields changed by this preview (0.576911ms)
+2026-09-29T23:30:09.6963624Z ✔ repeated distances use the captured source and leave both its DTO and earlier results unchanged (0.562989ms)
+2026-09-29T23:30:09.8197491Z ✔ perspective: borrowed model and camera preserve the projected geometry (5.896536ms)
+2026-09-29T23:30:09.8201481Z ✔ orthographic: borrowed model and camera preserve the projected geometry (1.022173ms)
+2026-09-29T23:30:09.8212189Z ✔ preview letterboxes wide and narrow hosts without changing source aspect (0.236662ms)
+2026-09-29T23:30:09.9522946Z ﹣ the current preview's native materials reach the viewer through the installed loader (0.736128ms) # no current preview: tests/test_occt_execution.py exports one and hands its path in ARCHFLOW_PREVIEW_3DM
+2026-09-29T23:30:09.9527393Z ﹣ the aperture the export saved hidden is not displayed, and nothing brings it back (0.118644ms) # no current preview: tests/test_occt_execution.py exports one and hands its path in ARCHFLOW_PREVIEW_3DM
+2026-09-29T23:30:10.2645235Z {"fixture":"400 boxes / Top / 1000px","buildMs":8.014650999999986,"builds":1,"outlines":400,"queries":600,"queryMs":{"median":0.0912230000000136,"p95":0.2337959999999839}}
+2026-09-29T23:30:10.2770242Z (node:3180) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+2026-09-29T23:30:10.2789459Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-09-29T23:30:10.2802214Z ✔ adjacent objects and empty pixels acquire true features: perspective (16.064946ms)
+2026-09-29T23:30:10.2803566Z ✔ adjacent objects and empty pixels acquire true features: ortho (7.667538ms)
+2026-09-29T23:30:10.2805127Z ✔ candidate visibility is tested at its own pixel; held targets cannot survive occlusion, hiding or deletion (11.561944ms)
+2026-09-29T23:30:10.2806873Z ✔ a hidden ancestor and changed geometry invalidate candidates without pointer-time topology builds (17.280367ms)
+2026-09-29T23:30:10.2813731Z ✔ hysteresis holds small noise, releases outside 21 pixels and rechecks the current constraint (3.121371ms)
+2026-09-29T23:30:10.2815266Z ✔ plane and normal projections expose the actual result and decline distant incompatible points (2.572669ms)
+2026-09-29T23:30:10.2825861Z ✔ screen tolerance survives zoom: perspective (3.27969ms)
+2026-09-29T23:30:10.2826831Z ✔ screen tolerance survives zoom: ortho (3.179991ms)
+2026-09-29T23:30:10.2828703Z ✔ 400 shared boxes: one geometry build, no rebuilds during 600 scene queries (107.556417ms)
+2026-09-29T23:30:10.2830081Z ✔ a receding perspective edge inside 14 screen pixels is not lost to ray-distance minimization (3.370679ms)
+2026-09-29T23:30:10.2831617Z ✔ near/far clipping governs source faces and occluders before constraint projection (3.689237ms)
+2026-09-29T23:30:10.2832894Z ✔ an object's bound centred on the eye plane defers to exact edge clipping (2.79915ms)
+2026-09-29T23:30:10.3859599Z ✔ two corners make a rectangle in order (1.877042ms)
+2026-09-29T23:30:10.3864128Z ✔ circles close into a usable extrusion profile with the requested radius (0.468424ms)
+2026-09-29T23:30:10.3865570Z ✔ two-point arcs preserve endpoints, signed bulge and major-arc direction (1.68687ms)
+2026-09-29T23:30:10.3866945Z ✔ open paths keep every settled point and never acquire a face or height (0.375635ms)
+2026-09-29T23:30:10.3868381Z ✔ typed rectangles support independent dimensions and deliberate local axis locks (0.382188ms)
+2026-09-29T23:30:10.3869702Z ✔ elevation and selected drawing frames retain their actual world positions (0.261584ms)
+2026-09-29T23:30:10.3871076Z ✔ a closed polygon submits a real face only on explicit confirmation, or a signed extrusion (0.172442ms)
+2026-09-29T23:30:10.3872170Z ✔ a profile that encloses nothing is not a face (0.139213ms)
+2026-09-29T23:30:10.3873132Z ✔ snapping moves the point to something real, and says which (0.607163ms)
+2026-09-29T23:30:10.3874242Z ✔ an axis lock straightens one coordinate against the action's anchor (0.331169ms)
+2026-09-29T23:30:10.3875330Z ✔ a number typed during the action sizes it exactly (0.17808ms)
+2026-09-29T23:30:10.3876362Z ✔ only a finished action has anything to submit, and Esc leaves nothing (0.220847ms)
+2026-09-29T23:30:10.3877634Z ✔ axis continuation holds small noise, slides, releases, and yields to real points (0.218637ms)
+2026-09-29T23:30:10.6320675Z ✔ autosave retains its final proposal and request before dispatch; failed storage cannot submit (2.559556ms)
+2026-09-29T23:30:10.6322479Z ✔ two windows cannot overwrite or clear each other's local draft even after a fresh index read (2.018286ms)
+2026-09-29T23:30:10.6324169Z ✔ a write that lost the position between its read and its write reads it again and lands (0.419881ms)
+2026-09-29T23:30:10.6326046Z ✔ the read before a retry still refuses a local draft another window wrote in between (0.358817ms)
+2026-09-29T23:30:10.6327696Z ✔ only a stale position is read again, at most three times; any other refusal answers at once (0.804975ms)
+2026-09-29T23:30:10.6329592Z ✔ mixed actions preserve their exact base and stable copy dependency; only the last proposal runs (0.793255ms)
+2026-09-29T23:30:10.6331374Z ✔ default horizontal drawings keep signed extrusion, closure default and level-relative elevation (0.591646ms)
+2026-09-29T23:30:10.6332979Z ✔ net-zero prefixes clear the old proposal and later edits start from the original base (0.591517ms)
+2026-09-29T23:30:10.6334495Z ✔ an interrupted proposal retries only its unconfirmed action against the same prefix (0.381783ms)
+2026-09-29T23:30:10.6336150Z ✔ a lost prefix is replayed once from the unchanged base, before any candidate submission (0.470886ms)
+2026-09-29T23:30:10.6337633Z ✔ candidate response loss freezes proposal and request IDs across retries (0.346574ms)
+2026-09-29T23:30:10.6339619Z ✔ candidate recovery returns an existing job, but not an unverified runtime placeholder (0.488886ms)
+2026-09-29T23:30:10.6341155Z ✔ a missing final proposal never changes an already attempted candidate request (0.249652ms)
+2026-09-29T23:30:10.6342379Z ✔ simultaneous Sync calls share the same attempt and candidate submission (0.135532ms)
+2026-09-29T23:30:10.6343436Z ✔ incomplete frozen inputs fail before their API request (0.404913ms)
+2026-09-29T23:30:10.8085424Z ✔ client keeps the explicit Sync idempotency key, diagnostic trace and targeted runtime read (183.594759ms)
+2026-09-29T23:30:10.8086927Z ✔ new upright masses are detached before later explicit bindings and only final elevation proposal runs (0.527158ms)
+2026-09-29T23:30:10.8088381Z ✔ rejected elevation Sync preserves its confirmed prefix without candidate submission (0.229612ms)
+2026-09-29T23:30:10.8089472Z ✔ sketch uses the datum at its replay prefix, including retries, rather than old or final levels (0.294123ms)
+2026-09-29T23:30:11.2208880Z ✔ one numeric constraint leaves all other World coordinates exactly zero (1.626025ms)
+2026-09-29T23:30:11.2216098Z ✔ real handle picking and signed axis/plane drag: perspective 8,-10,9 (104.5531ms)
+2026-09-29T23:30:11.2217642Z ✔ real handle picking and signed axis/plane drag: perspective -8,10,9 (42.262041ms)
+2026-09-29T23:30:11.2221297Z ✔ real handle picking and signed axis/plane drag: orthographic 8,-10,9 (43.418403ms)
+2026-09-29T23:30:11.2359957Z ✔ real handle picking and signed axis/plane drag: orthographic -8,10,9 (35.547354ms)
+2026-09-29T23:30:11.2361856Z ✔ numeric override updates only the projection and changing constraint clears other axes (4.566991ms)
+2026-09-29T23:30:11.2363110Z ✔ end-on axes and edge-on planes have no active drag handle; numbers still work (6.372614ms)
+2026-09-29T23:30:11.3723544Z (node:3219) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+2026-09-29T23:30:11.3749310Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-09-29T23:30:11.3750996Z ✔ the whole model is inside the frame at every panel shape (0.904882ms)
+2026-09-29T23:30:11.3758977Z ✔ a narrower panel stands the camera further back, a wider one no further than needed (0.172986ms)
+2026-09-29T23:30:11.3767709Z ✔ an empty or tiny model still gets a usable distance (0.167666ms)
+2026-09-29T23:30:11.3769250Z ✔ selection-panel resize never moves a camera, even immediately after Fit (7.697127ms)
+2026-09-29T23:30:11.3787466Z ✔ a hand-placed view keeps target, up and lens through workspace resizing (2.737123ms)
+2026-09-29T23:30:11.3789828Z ✔ initial and explicitly requested Fit still frame the model after a layout change (2.991919ms)
+2026-09-29T23:30:11.3791224Z ✔ hiding Modeling for Render preserves the last visible aspect and projection (4.349979ms)
+2026-09-29T23:30:11.4689751Z ✔ PNG encoding redraws the viewport immediately before serialization (1.426225ms)
+2026-09-29T23:30:11.4698943Z ✔ PNG encoding rejects an empty canvas without rendering or encoding (0.45829ms)
+2026-09-29T23:30:11.4699779Z ✔ PNG encoding rejects a null or empty browser result (0.294948ms)
+2026-09-29T23:30:11.5657674Z ✔ headOf reads only the resolved head (1.391241ms)
+2026-09-29T23:30:11.5659438Z ✔ a delivered pin follows the head through the same gate; an explicit open stays a comparison (0.229457ms)
+2026-09-29T23:30:11.5665256Z ✔ the base follows the head unless this tab is working or holds unsynced edits (0.182792ms)
+2026-09-29T23:30:11.5666329Z ✔ the viewer follows only when it was showing the base (0.127537ms)
+2026-09-29T23:30:11.5744573Z ℹ tests 389
+2026-09-29T23:30:11.5744985Z ℹ suites 0
+2026-09-29T23:30:11.5745322Z ℹ pass 387
+2026-09-29T23:30:11.5745663Z ℹ fail 0
+2026-09-29T23:30:11.5745989Z ℹ cancelled 0
+2026-09-29T23:30:11.5746398Z ℹ skipped 2
+2026-09-29T23:30:11.5746706Z ℹ todo 0
+2026-09-29T23:30:11.5747077Z ℹ duration_ms 87857.876401
+2026-09-29T23:30:11.6797267Z 
+2026-09-29T23:30:11.6799395Z > build
+2026-09-29T23:30:11.6799954Z > npm run sync && tsc --noEmit && vite build
+2026-09-29T23:30:11.6800189Z 
+2026-09-29T23:30:11.7758949Z 
+2026-09-29T23:30:11.7759703Z > sync
+2026-09-29T23:30:11.7760774Z > node workspaces/scripts/sync-rhino3dm.mjs
+2026-09-29T23:30:11.7761263Z 
+2026-09-29T23:30:15.1045833Z Synced Rhino3dm runtime to /home/runner/work/MonkeyHub/MonkeyHub/apps/monkeyhub/web/.generated/public/rhino3dm
+2026-09-29T23:30:16.6152060Z [36mvite v8.2.2 [32mbuilding client environment for production...[36m[39m
+2026-09-29T23:30:16.6257226Z transforming...
+2026-09-29T23:30:17.3745773Z ✓ 2523 modules transformed.
+2026-09-29T23:30:17.8895998Z rendering chunks...
+2026-09-29T23:30:19.5179087Z computing gzip size...
+2026-09-29T23:30:19.6079613Z dist/index.html                                           0.61 kB │ gzip:   0.34 kB
+2026-09-29T23:30:19.6080331Z dist/assets/Assistant-SemiBold-SCI4bEL9.woff2            20.21 kB
+2026-09-29T23:30:19.6080997Z dist/assets/Assistant-Regular-DVxZuzxb.woff2             20.23 kB
+2026-09-29T23:30:19.6081699Z dist/assets/Assistant-Medium-DrcxCXg3.woff2              20.32 kB
+2026-09-29T23:30:19.6082419Z dist/assets/Assistant-Bold-gm-uSS1B.woff2                20.38 kB
+2026-09-29T23:30:19.6083150Z dist/assets/pdf.worker.min-Dswkl-cV.mjs               1,265.41 kB
+2026-09-29T23:30:19.6083899Z dist/assets/RecipeTransfer-CdhyZEvA.css                   1.24 kB │ gzip:   0.50 kB
+2026-09-29T23:30:19.6084573Z dist/assets/PublishWorkspace-CUHfjeRX.css                 3.10 kB │ gzip:   1.08 kB
+2026-09-29T23:30:19.6085240Z dist/assets/DrawingCanvas-CTy5UNt8.css                    8.78 kB │ gzip:   2.04 kB
+2026-09-29T23:30:19.6085890Z dist/assets/RenderWorkspace-Cs9fCl5Z.css                  8.94 kB │ gzip:   2.17 kB
+2026-09-29T23:30:19.6086541Z dist/assets/Board-ULhdEHSR.css                           11.74 kB │ gzip:   2.49 kB
+2026-09-29T23:30:19.6087188Z dist/assets/ProjectWorkspace-LBUpT5iI.css                39.28 kB │ gzip:   7.42 kB
+2026-09-29T23:30:19.6087821Z dist/assets/index-DRCKxHXl.css                          120.20 kB │ gzip:  21.20 kB
+2026-09-29T23:30:19.6088739Z dist/assets/sceneHit-Ygnta7Q1.css                       143.33 kB │ gzip:  22.60 kB
+2026-09-29T23:30:19.6089643Z dist/assets/percentages-BXMCSKIN-DeIlcmJN.js              0.09 kB │ gzip:   0.10 kB
+2026-09-29T23:30:19.6090564Z dist/assets/image-GAAHSSAO-CDssJaqv.js                    0.10 kB │ gzip:   0.10 kB
+2026-09-29T23:30:19.6091599Z dist/assets/pdf.worker.min-CK5g4dXo.js                    0.11 kB │ gzip:   0.11 kB │ map:     0.26 kB
+2026-09-29T23:30:19.6092589Z dist/assets/pie-WAS4IAKB-DdCUK8g-.js                      0.12 kB │ gzip:   0.12 kB
+2026-09-29T23:30:19.6093592Z dist/assets/info-A6RAGUB7-C0D4Y6sl.js                     0.12 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6094593Z dist/assets/radar-RG4KPBEZ-DecDgLNC.js                    0.12 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6095635Z dist/assets/packet-AYTQ26CC-BQgPUYEk.js                   0.12 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6096520Z dist/assets/cynefin-OW5HDTMX-CBxppfxn.js                  0.12 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6098058Z dist/assets/treemap-WGGIJYW6-OGGDJa0y.js                  0.12 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6099062Z dist/assets/wardley-WFR3VGLG-DYxAeN5J.js                  0.12 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6100056Z dist/assets/gitGraph-4MIJSDKK-DtXsTIrD.js                 0.12 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6101045Z dist/assets/railroad-74A4TZTK-CiA4uTKK.js                 0.12 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6101958Z dist/assets/treeView-Q6P3EWNA-Y0nsDI7z.js                 0.12 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6102635Z dist/assets/railroad-peg-WCYAUIDC-CeZ0ZAnN.js             0.13 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6103316Z dist/assets/architecture-7GRP2DOG-Cjwc1g2V.js             0.13 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6103996Z dist/assets/railroad-abnf-HS5TGJTU-UCBrxqho.js            0.13 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6104659Z dist/assets/railroad-ebnf-LZEXJU2U-WMg_LITl.js            0.13 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6105341Z dist/assets/eventmodeling-NTZA5JFV-6wn_oJk-.js            0.13 kB │ gzip:   0.13 kB
+2026-09-29T23:30:19.6106039Z dist/assets/array-BifhSqXX.js                             0.15 kB │ gzip:   0.15 kB │ map:     0.52 kB
+2026-09-29T23:30:19.6106749Z dist/assets/channel-B5tjPnH1.js                           0.15 kB │ gzip:   0.16 kB │ map:     0.49 kB
+2026-09-29T23:30:19.6107413Z dist/assets/subset-shared.chunk-DppXXay4.js               0.17 kB │ gzip:   0.15 kB
+2026-09-29T23:30:19.6108332Z dist/assets/init-C-OQMol4.js                              0.18 kB │ gzip:   0.16 kB │ map:     1.00 kB
+2026-09-29T23:30:19.6109055Z dist/assets/chunk-Y2CYZVJY-DsF7k-Jl.js                    0.20 kB │ gzip:   0.19 kB │ map:     0.69 kB
+2026-09-29T23:30:19.6109944Z dist/assets/chunk-2Q5K7J3B-C1jixKkw.js                    0.24 kB │ gzip:   0.21 kB │ map:     0.79 kB
+2026-09-29T23:30:19.6110680Z dist/assets/chunk-JWPE2WC7-DVXcaiue.js                    0.27 kB │ gzip:   0.21 kB │ map:     0.79 kB
+2026-09-29T23:30:19.6111428Z dist/assets/chunk-XXDRQBXY-BvKO0v-W.js                    0.31 kB │ gzip:   0.27 kB │ map:     0.99 kB
+2026-09-29T23:30:19.6112168Z dist/assets/subset-worker.chunk-CvufpVLd.js               0.41 kB │ gzip:   0.31 kB │ map:     0.87 kB
+2026-09-29T23:30:19.6112902Z dist/assets/chunk-5VM5RSS4-ZNzvKenW.js                    0.41 kB │ gzip:   0.31 kB │ map:     0.73 kB
+2026-09-29T23:30:19.6113631Z dist/assets/file-open-7c801643-DZtJT5zp.js                0.50 kB │ gzip:   0.36 kB │ map:     1.26 kB
+2026-09-29T23:30:19.6114324Z dist/assets/flowDiagram-HODETNUW-DYHE4_tV.js              0.56 kB │ gzip:   0.31 kB
+2026-09-29T23:30:19.6115041Z dist/assets/file-open-002ab408-BHUWm0Sh.js                0.58 kB │ gzip:   0.37 kB │ map:     1.42 kB
+2026-09-29T23:30:19.6115794Z dist/assets/chunk-POPQ4Y6H-BNcw_yPd.js                    0.62 kB │ gzip:   0.44 kB │ map:     2.04 kB
+2026-09-29T23:30:19.6116651Z dist/assets/directory-open-01563666-D4xXyWb_.js           0.64 kB │ gzip:   0.41 kB │ map:     1.55 kB
+2026-09-29T23:30:19.6117703Z dist/assets/infoDiagram-27XIBGKW-CTUJ-J4_.js              0.70 kB │ gzip:   0.46 kB │ map:     2.07 kB
+2026-09-29T23:30:19.6118816Z dist/assets/file-save-3189631c-CO9S4HFW.js                0.74 kB │ gzip:   0.49 kB │ map:     1.74 kB
+2026-09-29T23:30:19.6119774Z dist/assets/classDiagram-ZZMXUADV-Co9tJGBA.js             0.82 kB │ gzip:   0.49 kB │ map:     1.51 kB
+2026-09-29T23:30:19.6120543Z dist/assets/classDiagram-v2-VYDZK3BY-Co9tJGBA.js          0.83 kB │ gzip:   0.49 kB │ map:     1.52 kB
+2026-09-29T23:30:19.6121328Z dist/assets/stateDiagram-v2-MP3YSRHH-CQD0Tdmp.js          0.83 kB │ gzip:   0.49 kB │ map:     1.50 kB
+2026-09-29T23:30:19.6122088Z dist/assets/en-B4ZKOASM-DGotJRBT.js                       0.86 kB │ gzip:   0.46 kB
+2026-09-29T23:30:19.6122822Z dist/assets/swimlanesDiagram-VR7AAH4N-COJikDMj.js         0.88 kB │ gzip:   0.52 kB │ map:     1.51 kB
+2026-09-29T23:30:19.6123581Z dist/assets/file-save-745eba88-Bwdfz6OZ.js                0.91 kB │ gzip:   0.54 kB │ map:     2.15 kB
+2026-09-29T23:30:19.6124351Z dist/assets/sizeCapture-INFHLROL-B0uUizjq.js              0.93 kB │ gzip:   0.56 kB │ map:     3.04 kB
+2026-09-29T23:30:19.6125328Z dist/assets/line-CFsVHYU2.js                              0.98 kB │ gzip:   0.51 kB │ map:     3.42 kB
+2026-09-29T23:30:19.6125997Z dist/assets/rolldown-runtime-Dd_uD5pT.js                  1.10 kB │ gzip:   0.62 kB
+2026-09-29T23:30:19.6126675Z dist/assets/ordinal-BDEzSJ7C.js                           1.21 kB │ gzip:   0.61 kB │ map:     4.73 kB
+2026-09-29T23:30:19.6127382Z dist/assets/chunk-GVQU2GXP-hzV-wnXq.js                    1.46 kB │ gzip:   0.83 kB │ map:     4.52 kB
+2026-09-29T23:30:19.6128349Z dist/assets/directory-open-4ed118d0-1i309Asm.js           1.57 kB │ gzip:   0.82 kB │ map:     3.76 kB
+2026-09-29T23:30:19.6129146Z dist/assets/railroadDiagram-O6MQD6OU-CwSca8ek.js          1.71 kB │ gzip:   0.81 kB │ map:     4.75 kB
+2026-09-29T23:30:19.6130132Z dist/assets/abnfDiagram-VCTEODGH-B3QjXFnr.js              1.89 kB │ gzip:   0.94 kB │ map:     5.73 kB
+2026-09-29T23:30:19.6131104Z dist/assets/chunk-P2QGCYS3-D24FzPva.js                    1.99 kB │ gzip:   1.00 kB │ map:     6.51 kB
+2026-09-29T23:30:19.6131997Z dist/assets/chunk-F27PBJKO-BQmrOB8F.js                    2.02 kB │ gzip:   0.93 kB │ map:     6.53 kB
+2026-09-29T23:30:19.6133103Z dist/assets/pegDiagram-XKGWAZYB-CVdrKEIY.js               2.05 kB │ gzip:   0.98 kB │ map:     6.09 kB
+2026-09-29T23:30:19.6134080Z dist/assets/ebnfDiagram-PWID7BFC-zG0OTzcr.js              2.10 kB │ gzip:   0.93 kB │ map:     6.24 kB
+2026-09-29T23:30:19.6134947Z dist/assets/dist-B_J_HbC0.js                              2.21 kB │ gzip:   1.01 kB │ map:     6.74 kB
+2026-09-29T23:30:19.6135763Z dist/assets/path-fybaL0A-.js                              2.32 kB │ gzip:   1.02 kB │ map:     8.96 kB
+2026-09-29T23:30:19.6136588Z dist/assets/boardScene-Dq__1UlI.js                        2.88 kB │ gzip:   1.29 kB │ map:     9.98 kB
+2026-09-29T23:30:19.6137449Z dist/assets/roundRect-D01gJrlt.js                         2.92 kB │ gzip:   1.03 kB │ map:    12.01 kB
+2026-09-29T23:30:19.6138420Z dist/assets/arc-DgcGdgmL.js                               3.51 kB │ gzip:   1.50 kB │ map:    15.26 kB
+2026-09-29T23:30:19.6139298Z dist/assets/diagram-Z3DM3KII-D0RT2soo.js                  4.32 kB │ gzip:   1.88 kB │ map:    12.34 kB
+2026-09-29T23:30:19.6140193Z dist/assets/defaultLocale-BFoDCU3G.js                     4.68 kB │ gzip:   2.16 kB │ map:    20.77 kB
+2026-09-29T23:30:19.6141127Z dist/assets/linear-n-3HSMUF.js                            5.56 kB │ gzip:   2.29 kB │ map:    25.10 kB
+2026-09-29T23:30:19.6141983Z dist/assets/chunk-PWAF6VOD-B--pkDaP.js                    5.88 kB │ gzip:   2.73 kB │ map:    25.28 kB
+2026-09-29T23:30:19.6142902Z dist/assets/RecipeTransfer-C0ahp2yb.js                    6.02 kB │ gzip:   2.49 kB │ map:    16.06 kB
+2026-09-29T23:30:19.6143854Z dist/assets/diagram-UQ7AKVKN-CpGs8Qly.js                  6.11 kB │ gzip:   2.61 kB │ map:    19.42 kB
+2026-09-29T23:30:19.6145077Z dist/assets/pieDiagram-E7YTZNPT-AGuD00Hu.js               6.26 kB │ gzip:   2.63 kB │ map:    20.97 kB
+2026-09-29T23:30:19.6145930Z dist/assets/jsx-runtime-BpzPEenQ.js                       7.94 kB │ gzip:   3.02 kB │ map:    28.99 kB
+2026-09-29T23:30:19.6146666Z dist/assets/diagram-S7CK7UJ4-BSlgvEt2.js                  8.24 kB │ gzip:   3.70 kB │ map:    26.22 kB
+2026-09-29T23:30:19.6147391Z dist/assets/si-LK-N5RQ5JYF-DucU49KB.js                    8.63 kB │ gzip:   3.40 kB │ map:    16.40 kB
+2026-09-29T23:30:19.6148350Z dist/assets/az-AZ-76LH7QW2-ByfGqG-6.js                    8.65 kB │ gzip:   3.63 kB │ map:    15.87 kB
+2026-09-29T23:30:19.6149267Z dist/assets/zh-HK-E62DVLB3-OM_Bdrem.js                    9.13 kB │ gzip:   4.14 kB │ map:    17.57 kB
+2026-09-29T23:30:19.6149929Z [33m[plugin builtin:vite-reporter] 
+2026-09-29T23:30:19.6150383Z (!) Some chunks are larger than 500 kB after minification. Consider:
+2026-09-29T23:30:19.6150991Z - Using dynamic import() to code-split the application
+2026-09-29T23:30:19.6152032Z - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+2026-09-29T23:30:19.6152899Z - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+2026-09-29T23:30:19.6153607Z dist/assets/chunk-L3NEJ4N5-BeOGSA9R.js                    9.73 kB │ gzip:   2.98 kB │ map:    32.72 kB
+2026-09-29T23:30:19.6154368Z dist/assets/cynefinDiagram-5FMLGOSQ-C3eHdgrr.js           9.99 kB │ gzip:   3.55 kB │ map:    31.89 kB
+2026-09-29T23:30:19.6155121Z dist/assets/kk-KZ-P5N5QNE5-DwUc7aDW.js                   10.17 kB │ gzip:   4.24 kB │ map:    22.53 kB
+2026-09-29T23:30:19.6155955Z dist/assets/kaa-6HZHGXH3-CrNUvoHj.js                     10.21 kB │ gzip:   4.22 kB │ map:    17.95 kB
+2026-09-29T23:30:19.6156698Z dist/assets/stateDiagram-D77RDMKH-DhM24sm_.js            10.69 kB │ gzip:   3.78 kB │ map:    34.60 kB
+2026-09-29T23:30:19.6157450Z dist/assets/diagram-VSXAHHWV-DOfXEQ2D.js                 10.72 kB │ gzip:   4.16 kB │ map:    35.25 kB
+2026-09-29T23:30:19.6158321Z dist/assets/dagre-GXQ25YYZ-CVnkyHZW.js                   11.02 kB │ gzip:   4.19 kB │ map:    38.03 kB
+2026-09-29T23:30:19.6159057Z dist/assets/lt-LT-XHIRWOB4-vDba0eFT.js                   12.55 kB │ gzip:   5.40 kB │ map:    20.69 kB
+2026-09-29T23:30:19.6159780Z dist/assets/chunk-GMAD6QVW-De0XzVoW.js                   12.56 kB │ gzip:   5.05 kB │ map:    48.72 kB
+2026-09-29T23:30:19.6160509Z dist/assets/vi-VN-M7AON7JQ-BxHl4O2t.js                   13.90 kB │ gzip:   5.83 kB │ map:    24.75 kB
+2026-09-29T23:30:19.6161224Z dist/assets/da-DK-5WZEPLOC-DbwRQUXH.js                   14.46 kB │ gzip:   6.11 kB │ map:    21.76 kB
+2026-09-29T23:30:19.6161951Z dist/assets/th-TH-HPSO5L25-BZMiNh-1.js                   15.57 kB │ gzip:   5.23 kB │ map:    32.52 kB
+2026-09-29T23:30:19.6162657Z dist/assets/chunk-SVP7TREG-B1nfRvfY.js                   15.68 kB │ gzip:   4.39 kB │ map:    49.19 kB
+2026-09-29T23:30:19.6163390Z dist/assets/diagram-VX7I27RA-BYJXg0N2.js                 15.80 kB │ gzip:   5.56 kB │ map:    57.21 kB
+2026-09-29T23:30:19.6164104Z dist/assets/nn-NO-6E72VCQL-Bs-1so0C.js                   16.00 kB │ gzip:   6.76 kB │ map:    23.29 kB
+2026-09-29T23:30:19.6164839Z dist/assets/mermaid-parser.core-r-R91fC3.js              16.64 kB │ gzip:   3.96 kB │ map:    63.99 kB
+2026-09-29T23:30:19.6165584Z dist/assets/PublishWorkspace-G1YI16Ae.js                 16.64 kB │ gzip:   6.34 kB │ map:    47.32 kB
+2026-09-29T23:30:19.6166318Z dist/assets/nl-NL-IS3SIHDZ-CHHILIB8.js                   16.77 kB │ gzip:   6.96 kB │ map:    23.77 kB
+2026-09-29T23:30:19.6167063Z dist/assets/ishikawaDiagram-5VMMS53U-BIMrUhZu.js         17.36 kB │ gzip:   6.57 kB │ map:    58.81 kB
+2026-09-29T23:30:19.6167825Z dist/assets/my-MM-5M5IBNSE-DSV0SSq2.js                   17.62 kB │ gzip:   5.33 kB │ map:    37.28 kB
+2026-09-29T23:30:19.6168772Z dist/assets/hu-HU-A5ZG7DT2-Bcq8uUN_.js                   18.13 kB │ gzip:   7.63 kB │ map:    28.51 kB
+2026-09-29T23:30:19.6169572Z dist/assets/fi-FI-Z5N7JZ37-D9ES-Fyr.js                   18.45 kB │ gzip:   7.58 kB │ map:    26.96 kB
+2026-09-29T23:30:19.6170300Z dist/assets/kab-KAB-ZGHBKWFO-z8VM7ssj.js                 18.83 kB │ gzip:   7.60 kB │ map:    28.32 kB
+2026-09-29T23:30:19.6171021Z dist/assets/zh-TW-RAJ6MFWO-Bh2MSRHh.js                   19.04 kB │ gzip:   8.91 kB │ map:    39.26 kB
+2026-09-29T23:30:19.6171730Z dist/assets/zh-CN-LNUGB5OW-ORu3BT-f.js                   19.10 kB │ gzip:   8.92 kB │ map:    39.68 kB
+2026-09-29T23:30:19.6172438Z dist/assets/lv-LV-5QDEKY6T-BV0hFOIY.js                   19.18 kB │ gzip:   7.84 kB │ map:    31.00 kB
+2026-09-29T23:30:19.6173148Z dist/assets/gl-ES-HMX3MZ6V-DM0vIGCV.js                   19.43 kB │ gzip:   7.77 kB │ map:    27.12 kB
+2026-09-29T23:30:19.6173864Z dist/assets/tr-TR-DEFEU3FU-9oUT_KKn.js                   19.55 kB │ gzip:   8.00 kB │ map:    31.35 kB
+2026-09-29T23:30:19.6174652Z dist/assets/cs-CZ-2BRQDIVT-x9WRzsgz.js                   19.57 kB │ gzip:   8.44 kB │ map:    30.81 kB
+2026-09-29T23:30:19.6175373Z dist/assets/pt-PT-UZXXM6DQ-DqQZEVCk.js                   19.70 kB │ gzip:   7.84 kB │ map:    27.64 kB
+2026-09-29T23:30:19.6176092Z dist/assets/id-ID-SAP4L64H-EDrRNKST.js                   19.72 kB │ gzip:   7.72 kB │ map:    26.72 kB
+2026-09-29T23:30:19.6176801Z dist/assets/ca-ES-6MX7JW3Y-CpjgEcW-.js                   19.83 kB │ gzip:   7.94 kB │ map:    27.54 kB
+2026-09-29T23:30:19.6177523Z dist/assets/oc-FR-POXYY2M6-BQcCZsJi.js                   19.88 kB │ gzip:   7.84 kB │ map:    28.17 kB
+2026-09-29T23:30:19.6178367Z dist/assets/nb-NO-T6EIAALU-CyYvxVAe.js                   20.15 kB │ gzip:   8.23 kB │ map:    27.83 kB
+2026-09-29T23:30:19.6179138Z dist/assets/kanban-definition-UXKFOSKX-BW8mQtpU.js       20.31 kB │ gzip:   7.20 kB │ map:    64.55 kB
+2026-09-29T23:30:19.6179965Z dist/assets/he-IL-6SHJWFNN-BrhFmKJz.js                   20.37 kB │ gzip:   7.59 kB │ map:    54.89 kB
+2026-09-29T23:30:19.6180699Z dist/assets/bg-BG-XCXSNQG7-Vfky4ORD.js                   20.81 kB │ gzip:   7.44 kB │ map:    57.54 kB
+2026-09-29T23:30:19.6181429Z dist/assets/pt-BR-5N22H2LF-CyjcvtEX.js                   21.08 kB │ gzip:   8.26 kB │ map:    29.17 kB
+2026-09-29T23:30:19.6182152Z dist/assets/eu-ES-A7QVB2H4-B0-uOLNe.js                   21.25 kB │ gzip:   8.27 kB │ map:    28.36 kB
+2026-09-29T23:30:19.6182870Z dist/assets/es-ES-U4NZUMDT-Cego5BWJ.js                   21.40 kB │ gzip:   8.53 kB │ map:    29.10 kB
+2026-09-29T23:30:19.6183596Z dist/assets/sl-SI-NN7IZMDC-DwO9vkXa.js                   21.41 kB │ gzip:   8.63 kB │ map:    30.29 kB
+2026-09-29T23:30:19.6184318Z dist/assets/sv-SE-XGPEYMSR-DtZCgReQ.js                   21.56 kB │ gzip:   8.60 kB │ map:    30.13 kB
+2026-09-29T23:30:19.6185111Z dist/assets/it-IT-JPQ66NNP-C3f7R9uM.js                   22.11 kB │ gzip:   8.62 kB │ map:    29.38 kB
+2026-09-29T23:30:19.6185879Z dist/assets/sk-SK-C5VTKIMK-BF7RF5-D.js                   22.36 kB │ gzip:   9.15 kB │ map:    34.69 kB
+2026-09-29T23:30:19.6186608Z dist/assets/pl-PL-T2D74RX3-YpKHV4mL.js                   22.55 kB │ gzip:   9.27 kB │ map:    33.53 kB
+2026-09-29T23:30:19.6187358Z dist/assets/sankeyDiagram-P5KCCOFB-CIVHTHVW.js           22.85 kB │ gzip:   8.30 kB │ map:    82.59 kB
+2026-09-29T23:30:19.6188248Z dist/assets/ro-RO-JPDTUUEW-BdEL3W5d.js                   23.19 kB │ gzip:   8.98 kB │ map:    33.65 kB
+2026-09-29T23:30:19.6189005Z dist/assets/journeyDiagram-3NMN7TZE-K_-B0jyO.js          23.21 kB │ gzip:   8.21 kB │ map:    75.35 kB
+2026-09-29T23:30:19.6189753Z dist/assets/de-DE-XR44H4JA-ByH-wT0V.js                   23.39 kB │ gzip:   9.01 kB │ map:    31.25 kB
+2026-09-29T23:30:19.6190463Z dist/assets/ja-JP-DBVTYXUO-Crhvpt1c.js                   23.45 kB │ gzip:   8.83 kB │ map:    50.14 kB
+2026-09-29T23:30:19.6191228Z dist/assets/mindmap-definition-YA3MSWOX-CKJhNd29.js      23.49 kB │ gzip:   8.06 kB │ map:    72.98 kB
+2026-09-29T23:30:19.6191986Z dist/assets/fr-FR-RHASNOE6-CY5FVxy6.js                   23.49 kB │ gzip:   8.91 kB │ map:    31.90 kB
+2026-09-29T23:30:19.6192784Z dist/assets/bn-BD-2XOGV67Q-CKpnvc8n.js                   23.65 kB │ gzip:   6.72 kB │ map:    50.56 kB
+2026-09-29T23:30:19.6193496Z dist/assets/ko-KR-MTYHY66A-DsTTHddy.js                   23.93 kB │ gzip:   9.22 kB │ map:    49.53 kB
+2026-09-29T23:30:19.6194207Z dist/assets/graphlib-DS17s2tU.js                         23.95 kB │ gzip:   8.35 kB │ map:   193.07 kB
+2026-09-29T23:30:19.6194910Z dist/assets/fa-IR-HGAKTJCU-CFNV8pgC.js                   24.29 kB │ gzip:   8.49 kB │ map:    67.41 kB
+2026-09-29T23:30:19.6195661Z dist/assets/wardleyDiagram-VM6X3IG4-CJkuHkrx.js          25.25 kB │ gzip:   6.59 kB │ map:    77.39 kB
+2026-09-29T23:30:19.6196410Z dist/assets/ar-SA-G6X2FPQ2-DXOqGSva.js                   25.71 kB │ gzip:   9.16 kB │ map:    72.26 kB
+2026-09-29T23:30:19.6197124Z dist/assets/rough.esm-Dy-Kn_BL.js                        27.15 kB │ gzip:   8.89 kB │ map:    72.94 kB
+2026-09-29T23:30:19.6197924Z dist/assets/pa-IN-N4M65BXN-B55eQp7Q.js                   28.02 kB │ gzip:   8.03 kB │ map:    59.94 kB
+2026-09-29T23:30:19.6198797Z dist/assets/gitGraphDiagram-WWUBYQGX-CDVMSr_r.js         29.07 kB │ gzip:   8.62 kB │ map:   110.82 kB
+2026-09-29T23:30:19.6199551Z dist/assets/ku-TR-6OUDTVRD-B7BZraFq.js                   29.37 kB │ gzip:   9.31 kB │ map:    85.26 kB
+2026-09-29T23:30:19.6200267Z dist/assets/el-GR-BZB4AONW-BQywOgZF.js                   29.72 kB │ gzip:   9.65 kB │ map:    86.35 kB
+2026-09-29T23:30:19.6201032Z dist/assets/timeline-definition-24CTP7MA-Dhye96RQ.js     30.42 kB │ gzip:  10.01 kB │ map:   101.19 kB
+2026-09-29T23:30:19.6201819Z dist/assets/erDiagram-RLTQ6QDP-C76Wspgb.js               30.73 kB │ gzip:  10.61 kB │ map:    99.13 kB
+2026-09-29T23:30:19.6202548Z dist/assets/ru-RU-B4JR7IUQ-v13XDaIm.js                   30.79 kB │ gzip:   9.91 kB │ map:    89.84 kB
+2026-09-29T23:30:19.6203331Z dist/assets/chunk-75Z2AOVW-CoYT3uuf.js                   30.81 kB │ gzip:   8.55 kB │ map:   123.97 kB
+2026-09-29T23:30:19.6204098Z dist/assets/requirementDiagram-BXWQKSXE-C-CGvFjM.js      31.05 kB │ gzip:   9.82 kB │ map:    94.83 kB
+2026-09-29T23:30:19.6204864Z dist/assets/uk-UA-QMV73CPH-BrEW_AWt.js                   31.69 kB │ gzip:  10.15 kB │ map:    92.74 kB
+2026-09-29T23:30:19.6205553Z dist/assets/pica-xkWDouSg.js                             31.84 kB │ gzip:  12.50 kB │ map:   115.99 kB
+2026-09-29T23:30:19.6206270Z dist/assets/DesignTreeSurface-BMz0yfQp.js                32.37 kB │ gzip:  10.92 kB │ map:   109.42 kB
+2026-09-29T23:30:19.6206998Z dist/assets/hi-IN-IWLTKZ5I-ZtPWPDAK.js                   32.40 kB │ gzip:   9.12 kB │ map:    69.66 kB
+2026-09-29T23:30:19.6207752Z dist/assets/quadrantDiagram-AXDQQJYC-BBxomz_b.js         33.57 kB │ gzip:   9.78 kB │ map:   105.96 kB
+2026-09-29T23:30:19.6208744Z dist/assets/ProjectRuntimeContext-5tU1a8fw.js            35.21 kB │ gzip:   9.76 kB │ map:   248.10 kB
+2026-09-29T23:30:19.6209503Z dist/assets/ta-IN-2NMHFXQM-C66PmL7f.js                   35.31 kB │ gzip:   8.55 kB │ map:    77.57 kB
+2026-09-29T23:30:19.6210231Z dist/assets/chunk-OSK3NFVY-Dt8zYpYg.js                   36.52 kB │ gzip:   8.01 kB │ map:   112.73 kB
+2026-09-29T23:30:19.6210966Z dist/assets/km-KH-HSX4SM5Z-C9sZBUi5.js                   36.69 kB │ gzip:   9.25 kB │ map:    81.00 kB
+2026-09-29T23:30:19.6211663Z dist/assets/dagre-PrKaheQc.js                            36.89 kB │ gzip:  13.26 kB │ map:   241.33 kB
+2026-09-29T23:30:19.6212373Z dist/assets/chunk-IMKFNOWR-BslZLLT3.js                   37.68 kB │ gzip:  12.31 kB │ map:   119.88 kB
+2026-09-29T23:30:19.6213117Z dist/assets/vennDiagram-4TSXK5OY-By30qEjj.js             41.20 kB │ gzip:  15.15 kB │ map:   175.63 kB
+2026-09-29T23:30:19.6213887Z dist/assets/blockDiagram-I7D4REHJ-D2XkNAOu.js            41.50 kB │ gzip:  13.40 kB │ map:   129.55 kB
+2026-09-29T23:30:19.6214639Z dist/assets/mr-IN-CRQNXWMA-D-m-xWx5.js                   42.29 kB │ gzip:  10.72 kB │ map:    92.27 kB
+2026-09-29T23:30:19.6215398Z dist/assets/xychartDiagram-S5SC5T6Z-wjsJC4Y4.js          44.20 kB │ gzip:  12.26 kB │ map:   140.39 kB
+2026-09-29T23:30:19.6216234Z dist/assets/image-blob-reduce.esm-Dj7YBvMv.js            45.47 kB │ gzip:  16.35 kB │ map:   164.78 kB
+2026-09-29T23:30:19.6216952Z dist/assets/src-oBChb5qS.js                              45.72 kB │ gzip:  16.04 kB │ map:   185.30 kB
+2026-09-29T23:30:19.6217646Z dist/assets/DrawingCanvas-DtIs1WmA.js                    47.47 kB │ gzip:  16.42 kB │ map:   135.29 kB
+2026-09-29T23:30:19.6218507Z dist/assets/chunk-TICWLB2K-DrzkmTGi.js                   48.83 kB │ gzip:  15.79 kB │ map:   145.73 kB
+2026-09-29T23:30:19.6219270Z dist/assets/chunk-SHT3W25Y-DcXWCYqp.js                   61.24 kB │ gzip:  19.87 kB │ map:   186.09 kB
+2026-09-29T23:30:19.6220027Z dist/assets/c4Diagram-7LVT6UL2-wVQYdQDT.js               64.79 kB │ gzip:  18.57 kB │ map:   182.32 kB
+2026-09-29T23:30:19.6220783Z dist/assets/ganttDiagram-EL5Y4UJY-D8B_T_n1.js            69.41 kB │ gzip:  22.79 kB │ map:   230.69 kB
+2026-09-29T23:30:19.6221499Z dist/assets/Board-C1ge2fCU.js                            78.04 kB │ gzip:  26.03 kB │ map:   239.84 kB
+2026-09-29T23:30:19.6222225Z dist/assets/cose-bilkent-JH36ORCC-DAm37GyB.js            81.32 kB │ gzip:  21.60 kB │ map:   289.41 kB
+2026-09-29T23:30:19.6222968Z dist/assets/chunk-4HAMMTFA-4CJyDEAk.js                  104.90 kB │ gzip:  25.66 kB │ map:   388.21 kB
+2026-09-29T23:30:19.6223701Z dist/assets/swimlanes-42K2YHIH-D4yGzgGH.js              111.20 kB │ gzip:  38.05 kB │ map:   491.60 kB
+2026-09-29T23:30:19.6224485Z dist/assets/sequenceDiagram-WJ2MYXX4-SOMYPHLd.js        115.79 kB │ gzip:  30.62 kB │ map:   333.65 kB
+2026-09-29T23:30:19.6225207Z dist/assets/dist-B3f8XId0.js                            147.44 kB │ gzip:  49.47 kB │ map:   570.46 kB
+2026-09-29T23:30:19.6225945Z dist/assets/architectureDiagram-5GKGNRK7-CFLE-02W.js    148.98 kB │ gzip:  41.18 kB │ map:   564.72 kB
+2026-09-29T23:30:19.6226784Z dist/assets/chunk-DU6HZSFF-UGSjsRQc.js                  235.66 kB │ gzip:  38.29 kB │ map:   623.87 kB
+2026-09-29T23:30:19.6227496Z dist/assets/katex-CXMH3UgJ.js                           258.73 kB │ gzip:  77.47 kB │ map:   933.22 kB
+2026-09-29T23:30:19.6228418Z dist/assets/RenderWorkspace-B22Fxa3Q.js                 291.22 kB │ gzip: 120.32 kB │ map:   600.76 kB
+2026-09-29T23:30:19.6229153Z dist/assets/pdf-CrPkd4yJ.js                             430.98 kB │ gzip: 129.08 kB │ map: 1,376.21 kB
+2026-09-29T23:30:19.6229848Z dist/assets/cytoscape.esm-CECbKnxF.js                   434.97 kB │ gzip: 137.86 kB │ map: 1,709.99 kB
+2026-09-29T23:30:19.6230542Z dist/assets/index-CQ2cR8Eb.js                           571.82 kB │ gzip: 181.14 kB │ map: 1,739.50 kB
+2026-09-29T23:30:19.6231245Z dist/assets/chunk-FOHPRMQF-DHwB1DNv.js                  662.17 kB │ gzip: 143.20 kB │ map: 1,952.97 kB
+2026-09-29T23:30:19.6232033Z dist/assets/sceneHit-D3GbAGxq.js                      1,132.87 kB │ gzip: 360.76 kB │ map: 2,893.21 kB
+2026-09-29T23:30:19.6232763Z dist/assets/ProjectWorkspace-DepxTAEV.js              1,138.86 kB │ gzip: 313.91 kB │ map: 4,872.32 kB
+2026-09-29T23:30:19.6233495Z dist/assets/chunk-EIO257PC-DLqyEACh.js                1,821.08 kB │ gzip: 744.27 kB │ map: 1,880.47 kB
+2026-09-29T23:30:19.6233839Z 
+2026-09-29T23:30:19.6234038Z [32m✓ built in 3.00s[39m
+2026-09-29T23:30:19.6786313Z ##[group]Run npm install --no-save --package-lock=false playwright
+2026-09-29T23:30:19.6786811Z [36;1mnpm install --no-save --package-lock=false playwright[0m
+2026-09-29T23:30:19.6787215Z [36;1mnpx playwright install --with-deps chrome[0m
+2026-09-29T23:30:19.6831155Z shell: /usr/bin/bash -e {0}
+2026-09-29T23:30:19.6831456Z env:
+2026-09-29T23:30:19.6831754Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:30:19.6832174Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-29T23:30:19.6832582Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:30:19.6832945Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:30:19.6833305Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:30:19.6833843Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-29T23:30:19.6834154Z ##[endgroup]
+2026-09-29T23:30:35.3501433Z 
+2026-09-29T23:30:35.3502360Z added 2 packages, removed 3 packages, changed 12 packages, and audited 295 packages in 16s
+2026-09-29T23:30:35.3502948Z 
+2026-09-29T23:30:35.3503185Z 18 packages are looking for funding
+2026-09-29T23:30:35.3503599Z   run `npm fund` for details
+2026-09-29T23:30:35.3514052Z 
+2026-09-29T23:30:35.3514237Z found 0 vulnerabilities
+2026-09-29T23:30:36.0470064Z Installing dependencies...
+2026-09-29T23:30:36.0546545Z Switching to root user to install dependencies...
+2026-09-29T23:30:36.1349620Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-09-29T23:30:36.1779545Z Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+2026-09-29T23:30:36.1800598Z Get:6 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+2026-09-29T23:30:36.1869135Z Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+2026-09-29T23:30:36.1929345Z Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+2026-09-29T23:30:36.1957740Z Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+2026-09-29T23:30:36.2873330Z Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [454 kB]
+2026-09-29T23:30:36.3000282Z Get:8 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [503 kB]
+2026-09-29T23:30:36.3287257Z Get:9 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1322 kB]
+2026-09-29T23:30:36.3353998Z Get:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [299 kB]
+2026-09-29T23:30:36.3375067Z Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [181 kB]
+2026-09-29T23:30:36.3390542Z Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1698 kB]
+2026-09-29T23:30:36.3472255Z Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [340 kB]
+2026-09-29T23:30:36.3493700Z Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [388 kB]
+2026-09-29T23:30:36.3518746Z Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1662 kB]
+2026-09-29T23:30:36.3612693Z Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [379 kB]
+2026-09-29T23:30:36.3617147Z Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
+2026-09-29T23:30:36.3792382Z Get:18 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Packages [40.6 kB]
+2026-09-29T23:30:36.4229752Z Get:19 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5788 B]
+2026-09-29T23:30:36.4231052Z Get:20 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Packages [31.0 kB]
+2026-09-29T23:30:36.4240482Z Get:21 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe Translation-en [18.6 kB]
+2026-09-29T23:30:36.4248447Z Get:22 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [12.6 kB]
+2026-09-29T23:30:36.4256607Z Get:23 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [1063 kB]
+2026-09-29T23:30:36.4303765Z Get:24 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [220 kB]
+2026-09-29T23:30:36.4319933Z Get:25 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [46.3 kB]
+2026-09-29T23:30:36.4331973Z Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1216 kB]
+2026-09-29T23:30:36.4387148Z Get:27 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [244 kB]
+2026-09-29T23:30:36.4404342Z Get:28 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.3 kB]
+2026-09-29T23:30:36.4415226Z Get:29 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1559 kB]
+2026-09-29T23:30:36.4483116Z Get:30 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [359 kB]
+2026-09-29T23:30:41.0195100Z Fetched 12.5 MB in 1s (8682 kB/s)
+2026-09-29T23:30:41.8908860Z Reading package lists...
+2026-09-29T23:30:41.9193185Z Reading package lists...
+2026-09-29T23:30:42.1105596Z Building dependency tree...
+2026-09-29T23:30:42.1115379Z Reading state information...
+2026-09-29T23:30:42.2857252Z fonts-noto-color-emoji is already the newest version (2.047-0ubuntu0.24.04.1).
+2026-09-29T23:30:42.2858288Z libfontconfig1 is already the newest version (2.15.0-1.1ubuntu2).
+2026-09-29T23:30:42.2858724Z libfontconfig1 set to manually installed.
+2026-09-29T23:30:42.2859182Z libfreetype6 is already the newest version (2.13.2+dfsg-1ubuntu0.1).
+2026-09-29T23:30:42.2859600Z libfreetype6 set to manually installed.
+2026-09-29T23:30:42.2860023Z fonts-liberation is already the newest version (1:2.1.5-3).
+2026-09-29T23:30:42.2860433Z fonts-liberation set to manually installed.
+2026-09-29T23:30:42.2860840Z The following additional packages will be installed:
+2026-09-29T23:30:42.2861259Z   xfonts-encodings xfonts-utils xserver-common
+2026-09-29T23:30:42.2863406Z Recommended packages:
+2026-09-29T23:30:42.2863915Z   fonts-ipafont-mincho fonts-tlwg-loma xfonts-base
+2026-09-29T23:30:42.3036082Z The following NEW packages will be installed:
+2026-09-29T23:30:42.3036867Z   fonts-freefont-ttf fonts-ipafont-gothic fonts-tlwg-loma-otf fonts-unifont
+2026-09-29T23:30:42.3043613Z   fonts-wqy-zenhei xfonts-cyrillic xfonts-encodings xfonts-scalable
+2026-09-29T23:30:42.3044176Z   xfonts-utils
+2026-09-29T23:30:42.3056313Z The following packages will be upgraded:
+2026-09-29T23:30:42.3056933Z   xserver-common xvfb
+2026-09-29T23:30:42.3222041Z 2 upgraded, 9 newly installed, 0 to remove and 40 not upgraded.
+2026-09-29T23:30:42.3222704Z Need to get 22.0 MB of archives.
+2026-09-29T23:30:42.3223338Z After this operation, 79.5 MB of additional disk space will be used.
+2026-09-29T23:30:42.3224140Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-09-29T23:30:42.4239960Z Get:2 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 fonts-ipafont-gothic all 00303-21ubuntu1 [3513 kB]
+2026-09-29T23:30:42.8025617Z Get:3 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 fonts-freefont-ttf all 20211204+svn4273-2 [5641 kB]
+2026-09-29T23:30:43.4398974Z Get:4 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 fonts-tlwg-loma-otf all 1:0.7.3-1 [107 kB]
+2026-09-29T23:30:43.5008198Z Get:5 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 fonts-unifont all 1:15.1.01-1build1 [2993 kB]
+2026-09-29T23:30:43.7806149Z Get:6 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 fonts-wqy-zenhei all 0.9.45-8 [7472 kB]
+2026-09-29T23:30:44.4730734Z Get:7 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 xfonts-encodings all 1:1.0.5-0ubuntu2 [578 kB]
+2026-09-29T23:30:44.5506569Z Get:8 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 xfonts-utils amd64 1:7.7+6build3 [94.4 kB]
+2026-09-29T23:30:44.6045370Z Get:9 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 xfonts-cyrillic all 1:1.0.5+nmu1 [384 kB]
+2026-09-29T23:30:44.6773750Z Get:10 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 xfonts-scalable all 1:1.0.3-1.3 [304 kB]
+2026-09-29T23:30:44.7429990Z Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 xserver-common all 2:21.1.12-1ubuntu1.8 [34.8 kB]
+2026-09-29T23:30:44.7934743Z Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 xvfb amd64 2:21.1.12-1ubuntu1.8 [877 kB]
+2026-09-29T23:30:45.1057564Z Fetched 22.0 MB in 3s (8678 kB/s)
+2026-09-29T23:30:45.1289628Z Selecting previously unselected package fonts-ipafont-gothic.
+2026-09-29T23:30:45.1485575Z (Reading database ... 
+2026-09-29T23:30:45.1486040Z (Reading database ... 5%
+2026-09-29T23:30:45.1486459Z (Reading database ... 10%
+2026-09-29T23:30:45.1486726Z (Reading database ... 15%
+2026-09-29T23:30:45.1486976Z (Reading database ... 20%
+2026-09-29T23:30:45.1487644Z (Reading database ... 25%
+2026-09-29T23:30:45.1488129Z (Reading database ... 30%
+2026-09-29T23:30:45.1488742Z (Reading database ... 35%
+2026-09-29T23:30:45.1489040Z (Reading database ... 40%
+2026-09-29T23:30:45.1489326Z (Reading database ... 45%
+2026-09-29T23:30:45.1489579Z (Reading database ... 50%
+2026-09-29T23:30:45.1534145Z (Reading database ... 55%
+2026-09-29T23:30:45.2529759Z (Reading database ... 60%
+2026-09-29T23:30:45.4578907Z (Reading database ... 65%
+2026-09-29T23:30:45.6648501Z (Reading database ... 70%
+2026-09-29T23:30:45.8511401Z (Reading database ... 75%
+2026-09-29T23:30:46.0117414Z (Reading database ... 80%
+2026-09-29T23:30:46.2059212Z (Reading database ... 85%
+2026-09-29T23:30:46.4170279Z (Reading database ... 90%
+2026-09-29T23:30:46.6228556Z (Reading database ... 95%
+2026-09-29T23:30:46.6229147Z (Reading database ... 100%
+2026-09-29T23:30:46.6229760Z (Reading database ... 202190 files and directories currently installed.)
+2026-09-29T23:30:46.6276314Z Preparing to unpack .../00-fonts-ipafont-gothic_00303-21ubuntu1_all.deb ...
+2026-09-29T23:30:46.6413731Z Unpacking fonts-ipafont-gothic (00303-21ubuntu1) ...
+2026-09-29T23:30:46.9431152Z Selecting previously unselected package fonts-freefont-ttf.
+2026-09-29T23:30:46.9556609Z Preparing to unpack .../01-fonts-freefont-ttf_20211204+svn4273-2_all.deb ...
+2026-09-29T23:30:46.9568885Z Unpacking fonts-freefont-ttf (20211204+svn4273-2) ...
+2026-09-29T23:30:47.0574395Z Selecting previously unselected package fonts-tlwg-loma-otf.
+2026-09-29T23:30:47.0700330Z Preparing to unpack .../02-fonts-tlwg-loma-otf_1%3a0.7.3-1_all.deb ...
+2026-09-29T23:30:47.0709498Z Unpacking fonts-tlwg-loma-otf (1:0.7.3-1) ...
+2026-09-29T23:30:47.0900564Z Selecting previously unselected package fonts-unifont.
+2026-09-29T23:30:47.1027245Z Preparing to unpack .../03-fonts-unifont_1%3a15.1.01-1build1_all.deb ...
+2026-09-29T23:30:47.1035609Z Unpacking fonts-unifont (1:15.1.01-1build1) ...
+2026-09-29T23:30:47.3186331Z Selecting previously unselected package fonts-wqy-zenhei.
+2026-09-29T23:30:47.3312315Z Preparing to unpack .../04-fonts-wqy-zenhei_0.9.45-8_all.deb ...
+2026-09-29T23:30:47.3405577Z Unpacking fonts-wqy-zenhei (0.9.45-8) ...
+2026-09-29T23:30:47.9356936Z Selecting previously unselected package xfonts-encodings.
+2026-09-29T23:30:47.9483958Z Preparing to unpack .../05-xfonts-encodings_1%3a1.0.5-0ubuntu2_all.deb ...
+2026-09-29T23:30:47.9496043Z Unpacking xfonts-encodings (1:1.0.5-0ubuntu2) ...
+2026-09-29T23:30:47.9770441Z Selecting previously unselected package xfonts-utils.
+2026-09-29T23:30:47.9897980Z Preparing to unpack .../06-xfonts-utils_1%3a7.7+6build3_amd64.deb ...
+2026-09-29T23:30:47.9910312Z Unpacking xfonts-utils (1:7.7+6build3) ...
+2026-09-29T23:30:48.0237680Z Selecting previously unselected package xfonts-cyrillic.
+2026-09-29T23:30:48.0365232Z Preparing to unpack .../07-xfonts-cyrillic_1%3a1.0.5+nmu1_all.deb ...
+2026-09-29T23:30:48.0377373Z Unpacking xfonts-cyrillic (1:1.0.5+nmu1) ...
+2026-09-29T23:30:48.0672800Z Selecting previously unselected package xfonts-scalable.
+2026-09-29T23:30:48.0801161Z Preparing to unpack .../08-xfonts-scalable_1%3a1.0.3-1.3_all.deb ...
+2026-09-29T23:30:48.0810851Z Unpacking xfonts-scalable (1:1.0.3-1.3) ...
+2026-09-29T23:30:48.1161064Z Preparing to unpack .../09-xserver-common_2%3a21.1.12-1ubuntu1.8_all.deb ...
+2026-09-29T23:30:48.1186537Z Unpacking xserver-common (2:21.1.12-1ubuntu1.8) over (2:21.1.12-1ubuntu1.6) ...
+2026-09-29T23:30:48.1540237Z Preparing to unpack .../10-xvfb_2%3a21.1.12-1ubuntu1.8_amd64.deb ...
+2026-09-29T23:30:48.1566055Z Unpacking xvfb (2:21.1.12-1ubuntu1.8) over (2:21.1.12-1ubuntu1.6) ...
+2026-09-29T23:30:48.2209109Z Setting up fonts-wqy-zenhei (0.9.45-8) ...
+2026-09-29T23:30:48.2330295Z Setting up fonts-freefont-ttf (20211204+svn4273-2) ...
+2026-09-29T23:30:48.2352673Z Setting up fonts-tlwg-loma-otf (1:0.7.3-1) ...
+2026-09-29T23:30:48.2372652Z Setting up xfonts-encodings (1:1.0.5-0ubuntu2) ...
+2026-09-29T23:30:48.2393484Z Setting up fonts-ipafont-gothic (00303-21ubuntu1) ...
+2026-09-29T23:30:48.2454573Z update-alternatives: using /usr/share/fonts/opentype/ipafont-gothic/ipag.ttf to provide /usr/share/fonts/truetype/fonts-japanese-gothic.ttf (fonts-japanese-gothic.ttf) in auto mode
+2026-09-29T23:30:48.2470859Z Setting up xserver-common (2:21.1.12-1ubuntu1.8) ...
+2026-09-29T23:30:48.2492048Z Setting up fonts-unifont (1:15.1.01-1build1) ...
+2026-09-29T23:30:48.2512669Z Setting up xvfb (2:21.1.12-1ubuntu1.8) ...
+2026-09-29T23:30:48.2534708Z Setting up xfonts-utils (1:7.7+6build3) ...
+2026-09-29T23:30:48.2577576Z Setting up xfonts-cyrillic (1:1.0.5+nmu1) ...
+2026-09-29T23:30:48.2854639Z Setting up xfonts-scalable (1:1.0.3-1.3) ...
+2026-09-29T23:30:48.3103849Z Processing triggers for man-db (2.12.0-4build2) ...
+2026-09-29T23:30:48.3125578Z Not building database; man-db/auto-update is not 'true'.
+2026-09-29T23:30:48.3141682Z Processing triggers for fontconfig (2.15.0-1.1ubuntu2) ...
+2026-09-29T23:30:48.9489692Z 
+2026-09-29T23:30:48.9490232Z Running kernel seems to be up-to-date.
+2026-09-29T23:30:48.9490492Z 
+2026-09-29T23:30:48.9490651Z No services need to be restarted.
+2026-09-29T23:30:48.9490865Z 
+2026-09-29T23:30:48.9491012Z No containers need to be restarted.
+2026-09-29T23:30:48.9491195Z 
+2026-09-29T23:30:48.9491380Z No user sessions are running outdated binaries.
+2026-09-29T23:30:48.9491609Z 
+2026-09-29T23:30:48.9491870Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
+2026-09-29T23:30:49.8526408Z Switching to root user to install dependencies...
+2026-09-29T23:30:49.8606031Z ++ arch
+2026-09-29T23:30:49.8620292Z + [[ x86_64 == \a\a\r\c\h\6\4 ]]
+2026-09-29T23:30:49.8620632Z + '[' -z '' ']'
+2026-09-29T23:30:49.8620898Z + [[ ! -f /etc/os-release ]]
+2026-09-29T23:30:49.8622828Z ++ bash -c 'source /etc/os-release && echo $ID'
+2026-09-29T23:30:49.8634265Z + ID=ubuntu
+2026-09-29T23:30:49.8634625Z + [[ ubuntu != \u\b\u\n\t\u ]]
+2026-09-29T23:30:49.8637212Z + dpkg --get-selections
+2026-09-29T23:30:49.8638218Z + grep -q '^google-chrome[[:space:]]*install$'
+2026-09-29T23:30:49.8754889Z + apt-get update
+2026-09-29T23:30:49.9229122Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-09-29T23:30:49.9572015Z Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+2026-09-29T23:30:49.9573089Z Hit:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease
+2026-09-29T23:30:49.9574065Z Hit:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease
+2026-09-29T23:30:49.9575876Z Hit:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease
+2026-09-29T23:30:49.9764005Z Hit:6 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease
+2026-09-29T23:30:51.1611247Z Reading package lists...
+2026-09-29T23:30:51.1719924Z + command -v curl
+2026-09-29T23:30:51.1720315Z + cd /tmp
+2026-09-29T23:30:51.1721041Z + curl -L -O https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+2026-09-29T23:30:51.1793792Z   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+2026-09-29T23:30:51.1794642Z                                  Dload  Upload   Total   Spent    Left  Speed
+2026-09-29T23:30:51.1795041Z 
+2026-09-29T23:30:51.8251329Z   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+2026-09-29T23:30:52.0624766Z  30  136M   30 41.3M    0     0  63.9M      0  0:00:02 --:--:--  0:00:02 63.9M
+2026-09-29T23:30:52.0625416Z 100  136M  100  136M    0     0   154M      0 --:--:-- --:--:-- --:--:--  154M
+2026-09-29T23:30:52.0643639Z + apt-get install -y ./google-chrome-stable_current_amd64.deb
+2026-09-29T23:30:52.1124769Z Reading package lists...
+2026-09-29T23:30:52.2944516Z Building dependency tree...
+2026-09-29T23:30:52.2950026Z Reading state information...
+2026-09-29T23:30:52.4839675Z The following packages will be upgraded:
+2026-09-29T23:30:52.4844691Z   google-chrome-stable
+2026-09-29T23:30:53.1966050Z 1 upgraded, 0 newly installed, 0 to remove and 40 not upgraded.
+2026-09-29T23:30:53.1966647Z Need to get 0 B/143 MB of archives.
+2026-09-29T23:30:53.1967237Z After this operation, 8145 kB of additional disk space will be used.
+2026-09-29T23:30:53.1968433Z Get:1 /tmp/google-chrome-stable_current_amd64.deb google-chrome-stable amd64 154.0.8037.92-1 [143 MB]
+2026-09-29T23:30:53.5451692Z (Reading database ... 
+2026-09-29T23:30:53.5452737Z (Reading database ... 5%
+2026-09-29T23:30:53.5453947Z (Reading database ... 10%
+2026-09-29T23:30:53.5454800Z (Reading database ... 15%
+2026-09-29T23:30:53.5455619Z (Reading database ... 20%
+2026-09-29T23:30:53.5456417Z (Reading database ... 25%
+2026-09-29T23:30:53.5457214Z (Reading database ... 30%
+2026-09-29T23:30:53.5458264Z (Reading database ... 35%
+2026-09-29T23:30:53.5459084Z (Reading database ... 40%
+2026-09-29T23:30:53.5459875Z (Reading database ... 45%
+2026-09-29T23:30:53.5460675Z (Reading database ... 50%
+2026-09-29T23:30:53.5480799Z (Reading database ... 55%
+2026-09-29T23:30:53.5586114Z (Reading database ... 60%
+2026-09-29T23:30:53.5614752Z (Reading database ... 65%
+2026-09-29T23:30:53.5635844Z (Reading database ... 70%
+2026-09-29T23:30:53.5675901Z (Reading database ... 75%
+2026-09-29T23:30:53.5701472Z (Reading database ... 80%
+2026-09-29T23:30:53.5730707Z (Reading database ... 85%
+2026-09-29T23:30:53.5952880Z (Reading database ... 90%
+2026-09-29T23:30:53.6214475Z (Reading database ... 95%
+2026-09-29T23:30:53.6215041Z (Reading database ... 100%
+2026-09-29T23:30:53.6215509Z (Reading database ... 202457 files and directories currently installed.)
+2026-09-29T23:30:53.6260947Z Preparing to unpack .../google-chrome-stable_current_amd64.deb ...
+2026-09-29T23:30:53.9745772Z Unpacking google-chrome-stable (154.0.8037.92-1) over (153.0.8010.52-1) ...
+2026-09-29T23:31:02.6185005Z Setting up google-chrome-stable (154.0.8037.92-1) ...
+2026-09-29T23:31:02.8146712Z Processing triggers for man-db (2.12.0-4build2) ...
+2026-09-29T23:31:02.8163234Z Not building database; man-db/auto-update is not 'true'.
+2026-09-29T23:31:03.2941794Z 
+2026-09-29T23:31:03.2942565Z Running kernel seems to be up-to-date.
+2026-09-29T23:31:03.2942952Z 
+2026-09-29T23:31:03.2943186Z No services need to be restarted.
+2026-09-29T23:31:03.2943434Z 
+2026-09-29T23:31:03.2943627Z No containers need to be restarted.
+2026-09-29T23:31:03.2943926Z 
+2026-09-29T23:31:03.2944203Z No user sessions are running outdated binaries.
+2026-09-29T23:31:03.2944515Z 
+2026-09-29T23:31:03.2944928Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
+2026-09-29T23:31:04.1943057Z + rm -rf ./google-chrome-stable_current_amd64.deb
+2026-09-29T23:31:04.2115131Z + cd -
+2026-09-29T23:31:04.2115991Z /home/runner/work/MonkeyHub/MonkeyHub/apps/monkeyhub/web/node_modules/playwright-core/bin
+2026-09-29T23:31:04.2116793Z + google-chrome --version
+2026-09-29T23:31:04.2567170Z Google Chrome 154.0.8037.92 
+2026-09-29T23:31:04.2616708Z Downloading FFmpeg (playwright ffmpeg v1011) from https://cdn.playwright.dev/dbazure/download/playwright/builds/ffmpeg/1011/ffmpeg-linux.zip
+2026-09-29T23:31:04.6902125Z |                                                                                |   0% of 2.3 MiB
+2026-09-29T23:31:04.7278904Z |■■■■■■■■                                                                        |  10% of 2.3 MiB
+2026-09-29T23:31:04.7508386Z |■■■■■■■■■■■■■■■■                                                                |  20% of 2.3 MiB
+2026-09-29T23:31:04.7672477Z |■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 2.3 MiB
+2026-09-29T23:31:04.7792623Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 2.3 MiB
+2026-09-29T23:31:04.7873463Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 2.3 MiB
+2026-09-29T23:31:04.8108382Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 2.3 MiB
+2026-09-29T23:31:04.8155350Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 2.3 MiB
+2026-09-29T23:31:04.8231586Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 2.3 MiB
+2026-09-29T23:31:04.8318852Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 2.3 MiB
+2026-09-29T23:31:04.8382815Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 2.3 MiB
+2026-09-29T23:31:04.8982160Z FFmpeg (playwright ffmpeg v1011) downloaded to /home/runner/.cache/ms-playwright/ffmpeg-1011
+2026-09-29T23:31:04.9263604Z ##[group]Run node test/chatShell.browser.mjs
+2026-09-29T23:31:04.9263989Z [36;1mnode test/chatShell.browser.mjs[0m
+2026-09-29T23:31:04.9304325Z shell: /usr/bin/bash -e {0}
+2026-09-29T23:31:04.9304611Z env:
+2026-09-29T23:31:04.9304900Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:31:04.9305327Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-29T23:31:04.9305745Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:31:04.9306114Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:31:04.9306492Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:31:04.9306865Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-29T23:31:04.9307329Z   MONKEYHUB_TEST_ARTIFACTS: /home/runner/work/_temp/monkeyhub-browser-evidence
+2026-09-29T23:31:04.9307710Z ##[endgroup]
+2026-09-29T23:31:20.2117083Z {"toolbar":940,"layout":{"width":582,"height":50,"overflow":false,"groups":[{"height":48,"overflow":false},{"height":48,"overflow":false},{"height":48,"overflow":false}]}}
+2026-09-29T23:31:20.8238446Z {"toolbar":620,"layout":{"width":500,"height":44,"overflow":false,"groups":[{"height":42,"overflow":false},{"height":42,"overflow":false},{"height":42,"overflow":false}]}}
+2026-09-29T23:31:21.3068079Z {"toolbar":332,"layout":{"width":304,"height":86,"overflow":false,"groups":[{"height":42,"overflow":false},{"height":42,"overflow":false},{"height":42,"overflow":false}]}}
+2026-09-29T23:31:23.7679537Z {"screenshotComparison":"the chosen camera view survives Board/model switches","name":"after-switch-overlay","required":false,"dimensions":{"actual":[620,801],"expected":[620,801]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+2026-09-29T23:31:23.7913221Z {"screenshotComparison":"the chosen camera view survives Board/model switches","name":"after-switch-canvas","required":true,"dimensions":{"actual":[620,801],"expected":[620,801]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+2026-09-29T23:31:39.2497055Z {"screenshotComparison":"refreshing keeps the camera chosen after the candidate appeared","name":"after-refresh-960-overlay","required":false,"dimensions":{"actual":[755,801],"expected":[755,801]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+2026-09-29T23:31:39.2822681Z {"screenshotComparison":"refreshing keeps the camera chosen after the candidate appeared","name":"after-refresh-960-canvas","required":true,"dimensions":{"actual":[755,801],"expected":[755,801]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+2026-09-29T23:31:39.9349368Z {"screenshotComparison":"refreshing keeps the camera chosen after the candidate appeared","name":"after-refresh-1079-overlay","required":false,"dimensions":{"actual":[755,920],"expected":[755,920]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+2026-09-29T23:31:39.9690286Z {"screenshotComparison":"refreshing keeps the camera chosen after the candidate appeared","name":"after-refresh-1079-canvas","required":true,"dimensions":{"actual":[755,920],"expected":[755,920]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+2026-09-29T23:32:55.6566778Z {"passed":true,"sessions":0,"writes":138,"screenshots":"/home/runner/work/_temp/monkeyhub-browser-evidence/monkeyhub-chat-ui-0Dm0dx"}
+2026-09-29T23:32:55.8073725Z ##[group]Run actions/upload-artifact@v4
+2026-09-29T23:32:55.8074027Z with:
+2026-09-29T23:32:55.8074373Z   name: project-usage-browser-836f79d42ee19b2f1898bc4f540560273d5da7ae
+2026-09-29T23:32:55.8074831Z   path: /home/runner/work/_temp/monkeyhub-browser-evidence/
+2026-09-29T23:32:55.8075177Z   retention-days: 14
+2026-09-29T23:32:55.8075419Z   if-no-files-found: error
+2026-09-29T23:32:55.8075670Z   compression-level: 6
+2026-09-29T23:32:55.8075909Z   overwrite: false
+2026-09-29T23:32:55.8076139Z   include-hidden-files: false
+2026-09-29T23:32:55.8076400Z env:
+2026-09-29T23:32:55.8076674Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:32:55.8077086Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-29T23:32:55.8077502Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:32:55.8078036Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:32:55.8078585Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:32:55.8078961Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-29T23:32:55.8079295Z ##[endgroup]
+2026-09-29T23:32:55.9654313Z (node:4817) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-29T23:32:55.9655085Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-29T23:32:55.9896809Z With the provided path, there will be 99 files uploaded
+2026-09-29T23:32:55.9897624Z Artifact name is valid!
+2026-09-29T23:32:55.9898262Z Root directory input is valid!
+2026-09-29T23:32:56.3072730Z Beginning upload of artifact content to blob storage
+2026-09-29T23:32:56.5636853Z (node:4817) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-29T23:32:57.2845067Z Uploaded bytes 4784921
+2026-09-29T23:32:57.3436604Z Finished uploading artifact content to blob storage!
+2026-09-29T23:32:57.3437687Z SHA256 digest of uploaded artifact zip is ab3c85f7be06789bc17cff0cd2f21f29dd608daf433c93a2776dbae72739aa3c
+2026-09-29T23:32:57.3438900Z Finalizing artifact upload
+2026-09-29T23:32:57.5627525Z Artifact project-usage-browser-836f79d42ee19b2f1898bc4f540560273d5da7ae.zip successfully finalized. Artifact ID 11068303197
+2026-09-29T23:32:57.5629160Z Artifact project-usage-browser-836f79d42ee19b2f1898bc4f540560273d5da7ae has been successfully uploaded! Final size is 4784921 bytes. Artifact ID is 11068303197
+2026-09-29T23:32:57.5631714Z Artifact download URL: https://github.com/cogco1/MonkeyHub/actions/runs/36645347342/artifacts/11068303197
+2026-09-29T23:32:57.5769306Z ##[group]Run node workspaces/test/designTree.browser.mjs
+2026-09-29T23:32:57.5769734Z [36;1mnode workspaces/test/designTree.browser.mjs[0m
+2026-09-29T23:32:57.5812255Z shell: /usr/bin/bash -e {0}
+2026-09-29T23:32:57.5812583Z env:
+2026-09-29T23:32:57.5812899Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:32:57.5813363Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-29T23:32:57.5813801Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:32:57.5814208Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:32:57.5814620Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:32:57.5815020Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-29T23:32:57.5815555Z ##[endgroup]
+2026-09-29T23:33:23.0150041Z FAILED: AssertionError [ERR_ASSERTION]: the tree reads only what it declares
+2026-09-29T23:33:23.0158587Z + actual - expected
+2026-09-29T23:33:23.0173862Z 
+2026-09-29T23:33:23.0174194Z + [
+2026-09-29T23:33:23.0174603Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0175161Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0175685Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0176213Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0176678Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0177122Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0177568Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0178226Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0179152Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0180766Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0181202Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0181651Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0182086Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0182524Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0182985Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0183423Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0183906Z +   'GET /api/render/scene',
+2026-09-29T23:33:23.0184347Z +   'GET /api/render/scene'
+2026-09-29T23:33:23.0184725Z + ]
+2026-09-29T23:33:23.0185039Z - []
+2026-09-29T23:33:23.0185252Z 
+2026-09-29T23:33:23.0185908Z     at file:///home/runner/work/MonkeyHub/MonkeyHub/apps/monkeyhub/web/workspaces/test/designTree.browser.mjs:773:10 {
+2026-09-29T23:33:23.0186709Z   generatedMessage: false,
+2026-09-29T23:33:23.0187125Z   code: 'ERR_ASSERTION',
+2026-09-29T23:33:23.0187527Z   actual: [Array],
+2026-09-29T23:33:23.0188032Z   expected: [],
+2026-09-29T23:33:23.0189147Z   operator: 'deepStrictEqual',
+2026-09-29T23:33:23.0189744Z   diff: 'simple'
+2026-09-29T23:33:23.0190116Z }
+2026-09-29T23:33:23.0190404Z {
+2026-09-29T23:33:23.0190694Z  "errors": [
+2026-09-29T23:33:23.0191311Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0192212Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0192977Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0193783Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0194610Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0195402Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0196128Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0196859Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0197587Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0198448Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0199224Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0200577Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0201342Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0202101Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0202882Z   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+2026-09-29T23:33:23.0203633Z   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+2026-09-29T23:33:23.0204244Z  ],
+2026-09-29T23:33:23.0204563Z  "unexpected": [
+2026-09-29T23:33:23.0204901Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0205262Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0205663Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0206011Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0206336Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0206892Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0207224Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0207544Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0208007Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0208356Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0208813Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0209167Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0209502Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0209825Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0210157Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0210500Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0210822Z   "GET /api/render/scene",
+2026-09-29T23:33:23.0211168Z   "GET /api/render/scene"
+2026-09-29T23:33:23.0211488Z  ],
+2026-09-29T23:33:23.0211751Z  "external": [],
+2026-09-29T23:33:23.0212027Z  "writes": [
+2026-09-29T23:33:23.0212311Z   "PUT /api/working-draft",
+2026-09-29T23:33:23.0212644Z   "PUT /api/working-draft",
+2026-09-29T23:33:23.0212962Z   "PUT /api/working-draft",
+2026-09-29T23:33:23.0213293Z   "PUT /api/working-draft",
+2026-09-29T23:33:23.0213703Z   "POST /api/candidates/run-entrance-a/accept",
+2026-09-29T23:33:23.0214144Z   "PUT /api/working-draft",
+2026-09-29T23:33:23.0214484Z   "PUT /api/working-draft",
+2026-09-29T23:33:23.0214976Z   "POST /api/candidate-reviews",
+2026-09-29T23:33:23.0215446Z   "POST /api/candidate-reviews",
+2026-09-29T23:33:23.0215846Z   "POST /api/candidate-reviews"
+2026-09-29T23:33:23.0216186Z  ]
+2026-09-29T23:33:23.0216453Z }
+2026-09-29T23:33:23.1173975Z ##[error]Process completed with exit code 1.
+2026-09-29T23:33:23.1222395Z ##[group]Run node workspaces/test/drawingCanvas.browser.mjs
+2026-09-29T23:33:23.1222858Z [36;1mnode workspaces/test/drawingCanvas.browser.mjs[0m
+2026-09-29T23:33:23.1262369Z shell: /usr/bin/bash -e {0}
+2026-09-29T23:33:23.1262657Z env:
+2026-09-29T23:33:23.1262949Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:33:23.1263382Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib/pkgconfig
+2026-09-29T23:33:23.1263823Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:33:23.1264191Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:33:23.1264561Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
+2026-09-29T23:33:23.1264931Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
+2026-09-29T23:33:23.1265252Z ##[endgroup]
+2026-09-29T23:33:25.1344602Z PASS the newest drawing opens LIVE on the Working Head and a new cut plan draws the head
+2026-09-29T23:33:26.1591423Z PASS appearance updates retain semantic dimension and previous revision without design calls
+2026-09-29T23:33:26.7993053Z PASS when the Working Head moves the LIVE drawing rebuilds once on it, while an earlier revision stays frozen
+2026-09-29T23:33:26.9149113Z PASS a Working Head that cannot be drawn is stated, not silently rebound
+2026-09-29T23:33:27.1249718Z PASS drawing another version is explicit, never rebuilds by itself and preserves dimension intention
+2026-09-29T23:33:27.6262991Z PASS a drawing made from a chosen version stays on it after reopening until it follows again
+2026-09-29T23:33:27.8258833Z PASS broken anchors remain visible and cannot drive, while prior revisions remain selectable
+2026-09-29T23:33:29.5929826Z PASS a late generation response never changes another workspace selection
+2026-09-29T23:33:29.7900853Z PASS an empty representation field cannot silently reuse old values during rebuild
+2026-09-29T23:33:31.9517052Z PASS SVG people and trees remain independently editable through drag, keyboard, mirror, save and reopen
+2026-09-29T23:33:33.0361517Z PASS SVG download preserves exact saved vector bytes, scale, source objects and entourage
+2026-09-29T23:33:33.9270994Z PASS retained dimensions can be removed without rewriting their original revision
+2026-09-29T23:33:36.5761575Z PASS a refused appearance save keeps its edits, says so and can be retried
+2026-09-29T23:33:36.8064071Z PASS keyboard controls and English/Chinese narrow layouts keep the drawing usable
+2026-09-29T23:33:37.9732254Z PASS an imported 3DM draws from its retained asset and reopens without following HEAD
+2026-09-29T23:33:38.1326285Z PASS a SketchUp upload selects the server-returned 3DM for drawing
+2026-09-29T23:33:39.0251798Z PASS a response for a previous project never opens a document in the new project
+2026-09-29T23:33:39.4221361Z PASS a section perspective is generated on the drawing's target from its own form and opens as a drawing
+2026-09-29T23:33:39.7266038Z PASS a section perspective from an imported SKP keeps its exact asset and warning on reopen
+2026-09-29T23:33:39.9305457Z PASS a projected line says which object it draws: its component, material and role
+2026-09-29T23:33:41.9798571Z PASS a hidden object stays hidden through its rebuild, and no design request is made
+2026-09-29T23:33:43.5055724Z PASS a plan past the inline line limit is an image whose objects can still be hidden from the list
+2026-09-29T23:33:43.7106454Z PASS a new drawing sends only the pens a person set and shows the ones it was drawn with
+2026-09-29T23:33:43.7108293Z PASS every revision the Drawing asks for is a person's own edit
+2026-09-29T23:33:44.0656413Z PASS a correction repeated on two drawings is offered, and Ignore writes nothing for the rest of the session
+2026-09-29T23:33:44.3017608Z PASS saving an offer writes one human project recipe, and a new drawing starts from it
+2026-09-29T23:33:45.4151407Z PASS the linework controls save an open drawing's values as the project recipe, superseding a value it changes
+2026-09-29T23:33:45.4166184Z {"passed":["the newest drawing opens LIVE on the Working Head and a new cut plan draws the head","appearance updates retain semantic dimension and previous revision without design calls","when the Working Head moves the LIVE drawing rebuilds once on it, while an earlier revision stays frozen","a Working Head that cannot be drawn is stated, not silently rebound","drawing another version is explicit, never rebuilds by itself and preserves dimension intention","a drawing made from a chosen version stays on it after reopening until it follows again","broken anchors remain visible and cannot drive, while prior revisions remain selectable","a late generation response never changes another workspace selection","an empty representation field cannot silently reuse old values during rebuild","SVG people and trees remain independently editable through drag, keyboard, mirror, save and reopen","SVG download preserves exact saved vector bytes, scale, source objects and entourage","retained dimensions can be removed without rewriting their original revision","a refused appearance save keeps its edits, says so and can be retried","keyboard controls and English/Chinese narrow layouts keep the drawing usable","an imported 3DM draws from its retained asset and reopens without following HEAD","a SketchUp upload selects the server-returned 3DM for drawing","a response for a previous project never opens a document in the new project","a section perspective is generated on the drawing's target from its own form and opens as a drawing","a section perspective from an imported SKP keeps its exact asset and warning on reopen","a projected line says which object it draws: its component, material and role","a hidden object stays hidden through its rebuild, and no design request is made","a plan past the inline line limit is an image whose objects can still be hidden from the list","a new drawing sends only the pens a person set and shows the ones it was drawn with","every revision the Drawing asks for is a person's own edit","a correction repeated on two drawings is offered, and Ignore writes nothing for the rest of the session","saving an offer writes one human project recipe, and a new drawing starts from it","the linework controls save an open drawing's values as the project recipe, superseding a value it changes"],"screenshots":"/tmp/archflow-drawing-canvas-vSP34j","generationRequests":24,"dimensionProposals":0}
+2026-09-29T23:33:45.5132731Z Post job cleanup.
+2026-09-29T23:33:45.5955677Z [command]/usr/bin/git version
+2026-09-29T23:33:45.5999895Z git version 2.55.0
+2026-09-29T23:33:45.6040171Z Temporarily overriding HOME='/home/runner/work/_temp/fa6ebc92-5075-4fc4-9834-22b1a42e6dcd' before making global git config changes
+2026-09-29T23:33:45.6041285Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-29T23:33:45.6046639Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/MonkeyHub/MonkeyHub
+2026-09-29T23:33:45.6086085Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-09-29T23:33:45.6119463Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-09-29T23:33:45.6344056Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-29T23:33:45.6372700Z http.https://github.com/.extraheader
+2026-09-29T23:33:45.6383728Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-09-29T23:33:45.6419657Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-09-29T23:33:45.6634146Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-29T23:33:45.6666447Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-09-29T23:33:45.7040751Z Cleaning up orphan processes
+2026-09-29T23:33:45.7268805Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/setup-python@v5, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+
