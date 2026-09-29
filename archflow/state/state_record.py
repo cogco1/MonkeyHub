@@ -40,6 +40,7 @@ from archflow.state.derivation import (
 from archflow.state.operational_state import DependencyEdge, DependencyEffect, DesignObligation
 from archflow.relations.contracts import ArchitecturalRelationKind
 from archflow.semantics.conditions import CONDITION_IDS
+from archflow.semantics.facets import FACET_KEYS, FREE_TEXT_MAX, FREE_TEXT_MIN, allowed_facet_values, suggest_facet_key
 from archflow.semantics.registry import resolve_semantic_kind, suggest_semantic, suggest_semantic_kind
 from archflow.semantics.roles import ROLE_IDS
 from archflow.state.design_portfolio import BranchRevisionRef
@@ -497,6 +498,27 @@ class StateRecord:
                 for item in component.fields.get(field_name, ()):
                     if item not in allowed:
                         raise StateRecordError(f"component {component.entity_id}: {field_name} names {item!r}, which is not registered; nearest: {', '.join(suggest_semantic(item)) or 'none close'}")
+            # Facets are the component's only L3 meaning (spec §3.4): namespaced
+            # key/value strings validated against archflow/semantics/facets.py.
+            # Absence is "no facets yet", not invalid, same as semantic_kind (#400).
+            facets = component.fields.get("facets")
+            if facets is not None:
+                if not isinstance(facets, Mapping):
+                    raise StateRecordError(f"component {component.entity_id}: facets must be a mapping of string keys to string values")
+                for facet_key, facet_value in facets.items():
+                    if not isinstance(facet_key, str) or not isinstance(facet_value, str):
+                        raise StateRecordError(f"component {component.entity_id}: facets must be a mapping of string keys to string values")
+                    if facet_key not in FACET_KEYS:
+                        near = ", ".join(suggest_facet_key(facet_key)) or "none close"
+                        raise StateRecordError(f"component {component.entity_id}: facet {facet_key!r} is not registered; nearest: {near}")
+                    allowed_values = allowed_facet_values(facet_key)
+                    if allowed_values is None:
+                        if not (FREE_TEXT_MIN <= len(facet_value) <= FREE_TEXT_MAX):
+                            raise StateRecordError(
+                                f"component {component.entity_id}: facet {facet_key} must be {FREE_TEXT_MIN}-{FREE_TEXT_MAX} characters, got {len(facet_value)}")
+                    elif facet_value not in allowed_values:
+                        raise StateRecordError(
+                            f"component {component.entity_id}: facet {facet_key} names {facet_value!r}, which is not registered; allowed: {', '.join(allowed_values)}")
 
     # ---- views
     def entity(self, entity_id: str) -> Entity:
@@ -688,6 +710,11 @@ def _entity_references(fields: Mapping[str, Any]) -> tuple[tuple[str, str, str],
                 target = target.removeprefix("entity:")
             out.append((key, "entity", target))
 
+    voids = fields.get("references", {}).get("voids")
+    if isinstance(voids, (list, tuple)):
+        # An element named as a void carves its host, so the host follows it (#419).
+        out.extend(("voids", "entity", target) for target in voids if isinstance(target, str))
+
     def walk(key: str, value: object) -> None:
         if not isinstance(value, Mapping):
             return
@@ -728,6 +755,19 @@ def component_semantics(entity: Entity) -> str | None:
         return kind
     ids = [*entity.fields.get("roles", ()), *entity.fields.get("conditions", ())]
     return "+".join(ids) if ids else None
+
+
+def component_facets(entity: Entity) -> dict[str, str]:
+    """The ``facets`` a ``Component@1`` carries: its only L3 meaning (spec §3.4).
+
+    A plain dict, empty when the component carries none. Unrelated to
+    ``component_semantics`` (``semantic_kind``/``roles``/``conditions``,
+    ADR-006): a wall-faced block may carry both, or facets alone. Changing
+    facets changes no element, object, datum or dependency edge (D-419-0).
+    """
+
+    facets = entity.fields.get("facets")
+    return dict(facets) if isinstance(facets, Mapping) else {}
 
 
 def design_components_of(record: StateRecord, *, source_ref: str | None = None) -> tuple:

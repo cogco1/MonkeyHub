@@ -162,7 +162,7 @@ class CutPlanTests(CandidateTestCase):
         self.assertIn('data-dressing="person-a"', vector.json()["svg"])
         self.assertNotIn('data-object="person-a"', vector.json()["svg"])
         self.assertEqual({row["id"] for row in vector.json()["assets"]}, {"person-plan", "tree-plan"})
-        self.assertIn("obj-passage-wall-cut", {row["objectId"] for row in vector.json()["anchors"]})
+        self.assertIn("obj-passage-wall", {row["objectId"] for row in vector.json()["anchors"]})
         second = self.generate(previousRevisionRef=first["revisionRef"], dressingOperations=[
             {"op": "move", "id": "person-a", "positionUv": [3, 2]},
             {"op": "scale", "id": "person-a", "size": .9},
@@ -245,7 +245,7 @@ class CutPlanTests(CandidateTestCase):
     def test_dressing_anchor_follows_exact_object_and_survives_deleted_anchor_without_rebinding(self):
         fixed = {"id": "fixed", "assetId": "tree-plan", "positionUv": [1, 2], "size": .5}
         anchored = {"id": "anchored", "assetId": "person-plan", "positionUv": [0, 1], "size": .5,
-                    "anchorObjectId": "obj-passage-wall-cut"}
+                    "anchorObjectId": "obj-passage-wall"}
         first = self.generate(dimensions=[], dressing=[fixed, anchored])
         first_read = self.status(first)["dressing"]
         newer, model = self.commit_edit({"summary": "Move wall", "parameters": [{"key": "front_shift", "value": .4}]})
@@ -294,7 +294,7 @@ class CutPlanTests(CandidateTestCase):
         self.assertEqual(reading["dimensions"][0]["label"], "2000 mm")
         drawing = read_model_axis_elevation(self.repository, record_ref_from_uri(first["revisionRef"], PROJECT_ID))
         self.assertNotIn(b'data-object="obj-passage-wall-aperture-passage-arch"', drawing.svg)
-        self.assertIn(b'data-object="obj-passage-wall-cut"', drawing.svg)
+        self.assertIn(b'data-object="obj-passage-wall"', drawing.svg)
         second = self.generate(previousRevisionRef=first["revisionRef"], scaleDenominator=100, cutLineMm=.5,
             dimensions=[{"id": "door-width", "entityRef": "entity:passage-wall", "openingId": "passage-arch", "placement": {"offsetMm": 4}}])
         self.assertNotEqual(first["revisionRef"], second["revisionRef"])

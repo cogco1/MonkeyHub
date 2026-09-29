@@ -254,6 +254,11 @@ _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
                 GeometryParameterKind.BOOLEAN,
                 required=False,
             ),
+            _function_parameter(
+                "retain_for_inspection",
+                GeometryParameterKind.BOOLEAN,
+                required=False,
+            ),
         ),
     ),
     "planar_surface": _function_contract(
@@ -275,6 +280,16 @@ _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
             _function_parameter("cap_ends", GeometryParameterKind.BOOLEAN),
             _function_parameter(
                 "closed_profile",
+                GeometryParameterKind.BOOLEAN,
+                required=False,
+            ),
+            _function_parameter(
+                "hidden_for_inspection",
+                GeometryParameterKind.BOOLEAN,
+                required=False,
+            ),
+            _function_parameter(
+                "retain_for_inspection",
                 GeometryParameterKind.BOOLEAN,
                 required=False,
             ),
@@ -425,30 +440,17 @@ def _relational_authoring_invariants() -> tuple[dict[str, str], ...]:
             ),
         },
         {
-            "id": "host_cut_depends_on_named_host",
+            "id": "host_cut_relates_to_named_host",
             "field": (
                 "proposal_body.assemblies[*].members[role=host_cut].object_ids[*]"
             ),
-            "relation": "produced_by_operation_with_input",
+            "relation": "derived_from_or_consumed_with",
             "target": "proposal_body.assemblies[*].host_object_id",
             "instruction": (
-                "For every host_cut member object, its producing operation must "
-                "include that assembly's host_object_id in input_object_ids."
-            ),
-        },
-        {
-            "id": "host_cut_is_aperture_volume",
-            "field": (
-                "proposal_body.assemblies[*].members[role=host_cut].object_ids[*]"
-            ),
-            "relation": "produced_by_boolean_intersection",
-            "target": "named_host_intersected_with_explicit_cutter_volume",
-            "instruction": (
-                "Every host_cut member must be the boolean_intersection output "
-                "of its named host and an explicit cutter: it represents the "
-                "aperture volume used as opening evidence, never host-minus-cutter, "
-                "cutter-minus-host, or a residual wall. Author a separate "
-                "boolean_difference output when residual host material is needed."
+                "Relate every host_cut member to its assembly's host_object_id by "
+                "construction: its producing operation consumes the host, or one "
+                "operation consumes the member together with the host. Any operation "
+                "that does so is accepted; the backend chooses how to realize it."
             ),
         },
         {
@@ -478,47 +480,30 @@ def _realization_authoring_contract(
 ) -> dict[str, object]:
     instructions = [
         (
-            "Treat every unconsumed non-reference non-curve output object as "
-            "terminal physical geometry in deterministic realization."
+            "An output that no operation consumes is delivered geometry. An output "
+            "that another operation consumes is construction; it is delivered too "
+            "only when its operation states retain_for_inspection."
         ),
         (
-            "A terminal solid occupies its full origin-plus-size volume as "
-            "material; it is not an abstract room or envelope. Consume solids "
-            "through explicit boolean operations when the terminal result must "
-            "contain usable void."
+            "A delivered solid is occupied material over its whole extent; it is not "
+            "an abstract room or envelope. Express a region removed from a solid by "
+            "one operation that consumes both, such as boolean_difference; the "
+            "backend chooses how to realize it."
         ),
         (
-            "Boolean results affect only their explicit output and inputs; a "
-            "host_cut member does not automatically cut an unrelated terminal "
-            "solid."
-        ),
-        (
-            "The validation voxel resolution is supplied as an exact realization "
-            "requirement. Physical geometry occupies every cell with positive-volume "
-            "overlap, even when most of that cell is empty."
-        ),
-        (
-            "Clear height is the integer Y-cell offset from each walkable cell to "
-            "the nearest occupied cell above. A minimum N requires that nearest "
-            "blocker offset to be at least N under positive-overlap occupancy."
-        ),
-        (
-            "An exterior entrance is counted only where a host_cut aperture-volume "
-            "cell is unoccupied, walkable, and lies on the minimum or maximum X or "
-            "Z column of the derived occupied envelope."
+            "Construction needs no semantic binding; every delivered object needs one."
         ),
     ]
     required_properties: list[dict[str, object]] = [
         dict(item) for item in supplied_requirements
     ]
     if "commitment:maintain-egress" in commitments:
-        walkable_instruction = (
-            "The supplied commitment:maintain-egress requires terminal geometry "
+        instructions.append(
+            "The supplied commitment:maintain-egress requires delivered geometry "
             "to realize at least one connected walkable region with occupied "
             "support below and clear space above; do not leave a full-envelope "
-            "terminal solid filling the required use zones."
+            "delivered solid filling the required use zones."
         )
-        instructions.append(walkable_instruction)
         required_properties.append(
             {
                 "schema": "GeometryRealizationPropertyRequirement@1",
@@ -530,21 +515,13 @@ def _realization_authoring_contract(
             }
         )
     return {
-        "schema": "GeometryRealizationAuthoringContract@1",
-        "terminal_physical_rule": (
-            "output_not_consumed_and_not_reference_and_not_curve"
-        ),
-        "terminal_solid_semantics": "occupied_material_volume",
-        "boolean_scope": "explicit_inputs_and_result_only",
-        "host_cut_scope": "aperture_volume_equals_host_intersection_cutter",
-        "voxel_occupancy_rule": "positive_volume_overlap",
-        "clear_height_rule": "nearest_occupied_positive_y_cell_offset",
-        "exterior_opening_rule": (
-            "host_cut_cell_and_unoccupied_and_walkable_and_envelope_xz_boundary"
-        ),
+        "schema": "GeometryRealizationAuthoringContract@2",
+        "delivered_rule": "not_consumed_or_retained_for_inspection",
+        "delivered_solid_semantics": "occupied_material_volume",
+        "construction_rule": "consumed_and_not_retained_needs_no_binding",
         "required_properties": required_properties,
         "instructions": instructions,
-        "proof_authority": "deterministic_runtime_realization_and_usability",
+        "realization_authority": "backend_lowering_then_exact_readback",
     }
 
 
@@ -773,7 +750,16 @@ def _authoring_output_contract(
                     "Unique parameter name; order is canonicalized by name."
                 ),
             ),
-            "semantic_binding_ids": _array_contract(identifier, minimum=1, unique=True),
+            "semantic_binding_ids": _array_contract(
+                identifier,
+                minimum=0,
+                unique=True,
+                description=(
+                    "Bindings that own this operation's delivered outputs. Leave it "
+                    "empty only when every output is consumed by another operation "
+                    "and not retained for inspection."
+                ),
+            ),
             "asset_id": nullable_identifier,
             "asset_socket_id": nullable_identifier,
             "asset_scale": {"anyOf": [{"type": "null"}, vector3]},
@@ -839,7 +825,7 @@ def _authoring_output_contract(
                     "canonicalized lexicographically by role."
                 ),
             ),
-            "interface_refs": _array_contract(interface_ref, minimum=1, unique=True),
+            "interface_refs": _array_contract(interface_ref, minimum=0, unique=True),
             "semantic_binding_ids": _array_contract(identifier, minimum=1, unique=True),
             "maturity": {
                 "type": "string",
@@ -2497,7 +2483,7 @@ def _request_payload(
             "Every component_id in required_geometry_component_ids changed in the exact semantic predecessor transition and must retain a dedicated semantic binding with at least one realized object; omitting it cannot satisfy repair or lifecycle compilation.",
             "When predecessor_revision_contract.predecessor_program_digest is non-null, copy expected_digest only from its exact object_revision_tokens when revising a retained object, and acknowledge every changed retained semantic binding through the producing operation responds_to_binding_ids; never guess a predecessor digest.",
             "Include the current spatial option record URI in every new or changed semantic binding evidence_refs. An exact unchanged binding copied from available_predecessor_program may retain its predecessor evidence because predecessor_program_digest supplies the immutable lineage proof.",
-            "Every assembly interface_refs value must be selected exactly from available_interface_refs.refs and match available_interface_refs.pattern.",
+            "Every assembly interface_refs value must be selected exactly from available_interface_refs.refs and match available_interface_refs.pattern: name only connections the record declares; leave it empty when none is declared.",
             "When a supplied semantic component requires a hosted assembly, represent its semantic identity and geometry together through semantic_binding_ids and typed assembly members.",
             "For every hosted assembly include all roles named by required_output_contract.required_assembly_roles[kind]; missing or duplicate roles are invalid.",
             *(
@@ -2811,7 +2797,6 @@ def _validate_semantic_coverage(
             f"option; unavailable={unavailable}"
         )
     for validator in (
-        lambda: _validate_host_cut_apertures(proposal),
         lambda: _validate_hosted_component_bindings(
             proposal,
             required_hosted_component_bindings,
@@ -2957,30 +2942,6 @@ def _validate_hosted_component_bindings(
                 f"hosted component {component_id} assembly objects are not "
                 "produced under its dedicated binding; "
                 f"objects={wrong_producers}"
-            )
-
-
-def _validate_host_cut_apertures(
-    proposal: GeometryProgramProposal,
-) -> None:
-    producer_by_object = {
-        object_id: operation
-        for operation in proposal.operations
-        for object_id in operation.output_object_ids
-    }
-    for assembly in proposal.assemblies:
-        invalid = sorted(
-            object_id
-            for object_id in assembly.objects_for(AssemblyRole.HOST_CUT)
-            if object_id not in producer_by_object
-            or producer_by_object[object_id].kind
-            is not GeometryOperationKind.BOOLEAN_INTERSECTION
-        )
-        if invalid:
-            raise GeometryProposalProductionError(
-                f"assembly {assembly.assembly_id} host_cut must be a "
-                "boolean_intersection aperture volume, not a residual boolean "
-                f"result; objects={invalid}"
             )
 
 

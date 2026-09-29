@@ -262,6 +262,17 @@ class ProviderRefusalTests(unittest.TestCase):
                 for fragment in expected:
                     self.assertIn(fragment, question)
 
+    def test_the_keep_resolver_is_one_public_function(self) -> None:
+        # #419: the grammar's keep clause and an agent's stated keep are read by this one resolver.
+        from archflow_studio_api.application.intent import resolve_keep_refs
+
+        self.assertEqual(resolve_keep_refs(self.projection, ("span", "portico-base", "entity:portico", "span")),
+                         ("entity:portico", "entity:portico-base", "parameter:span"))
+        for ref in ("east-loggia", "parameter:column-spacing", "entity:nothing-here"):
+            with self.subTest(ref=ref), self.assertRaises(BlockedNeedsHuman) as raised:
+                resolve_keep_refs(self.projection, (ref,))
+            self.assertIn(ref, raised.exception.question)
+
     def test_only_an_unparseable_utterance_repeats_the_grammar(self) -> None:
         with self.assertRaises(BlockedNeedsHuman) as raised:
             self.propose("make it taller", "portico-base")

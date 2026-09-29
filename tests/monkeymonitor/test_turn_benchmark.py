@@ -86,6 +86,25 @@ class BenchmarkTests(unittest.TestCase):
         wrong["objects"].append(wrong["objects"][0])
         self.assertFalse(benchmark.expected_geometry(wrong, "assembly-edit"))
 
+    def test_last_candidate_tried_picks_the_most_recent_admitted_attempt(self):
+        # #419: an agent may retry the stage-a-massing study; only a
+        # candidate with both a candidateId and an admitted jobId counts.
+        runtime = {"operations": [
+            {"sessionId": "s1", "candidateId": "c1", "jobId": "j1"},
+            {"sessionId": "s1", "candidateId": "c2", "jobId": "j2"},
+            {"sessionId": "other-session", "candidateId": "c9", "jobId": "j9"},
+            {"sessionId": "s1", "candidateId": None, "jobId": "j3"},
+            {"sessionId": "s1", "candidateId": "c4"},
+        ]}
+        candidate, tried = benchmark.last_candidate_tried(runtime, "s1")
+        self.assertEqual(candidate, "c2")
+        self.assertEqual(tried, ["c1", "c2"])
+
+    def test_last_candidate_tried_is_none_without_admitted_attempts(self):
+        candidate, tried = benchmark.last_candidate_tried({"operations": []}, "s1")
+        self.assertIsNone(candidate)
+        self.assertEqual(tried, [])
+
     def test_pair_preparation_uses_identical_retained_bytes_and_refuses_reuse(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

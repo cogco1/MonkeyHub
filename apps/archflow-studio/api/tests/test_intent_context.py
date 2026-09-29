@@ -13,7 +13,7 @@ from archflow.state.operational_state import DesignObligation
 from archflow.state.state_record import Entity, Parameter, Relation, StateRecord, ValidatorBinding
 from archflow_studio_api.application.intent_agent import Selection, record_sheet
 from archflow_studio_api.application import intent_context
-from archflow_studio_api.application.intent_context import compile_context, compile_task_context, confirmed_stage_context, expand_context, control_unit, model_context
+from archflow_studio_api.application.intent_context import compile_context, compile_task_context, confirmed_stage_context, expand_context, control_unit, model_context, pack_context
 from archflow_studio_api.application.projection import _elements
 from fastapi.testclient import TestClient
 from archflow_studio_api.main import create_app
@@ -55,11 +55,19 @@ def fixture(*, shared=False):
     return record, sheet_of(record)
 
 
+def controls(public):
+    """The geometry ids a model-facing design sheet offers numeric controls for."""
+
+    return {row["id"] for row in public["controls"]}
+
+
 def sheet_of(record, selection=Selection("facade", "window-23")):
     elements, error = _elements(record)
     if error:
         raise AssertionError(error)
-    projection = SimpleNamespace(project_id=record.project_id, record=record, components=None, elements=elements, parameters=record.parameters, honesty=())
+    projection = SimpleNamespace(project_id=record.project_id, record=record, components=None, elements=elements,
+                                 parameters=record.parameters, honesty=(), state_digest="c" * 64,
+                                 record_digest=record.digest)
     return record_sheet(projection, selection)
 
 
@@ -74,7 +82,7 @@ class TaskContextTests(unittest.TestCase):
         sheet = sheet_of(record, Selection(None, None))
         context = compile_task_context("Improve the relation between these openings", sheet, record=record,
                                        element_ids=("window-23", "window-24"))
-        facts = model_context(context)
+        facts = pack_context(context)
         self.assertEqual(context.target_ids, ("window-23", "window-24"))
         self.assertEqual(facts["focusElementIds"], ["window-23", "window-24"])
         self.assertIn("entity:wall-07", facts["readOnlyRefs"])
@@ -94,7 +102,7 @@ class TaskContextTests(unittest.TestCase):
         sheet = sheet_of(record, Selection(None, None))
         original = deepcopy(sheet)
         context = compile_task_context("Explore an overall courtyard arrangement", sheet, record=record)
-        facts = model_context(context)
+        facts = pack_context(context)
         self.assertEqual(context.target_ids, ())
         self.assertNotIn("editTargets", facts)
         self.assertFalse(facts["coverage"]["complete"])
@@ -102,7 +110,7 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(len(facts["index"]["items"]), 64)
         self.assertEqual(facts["index"]["nextOffset"], 64)
         self.assertLess(len(json.dumps(facts)), 50000)
-        second = model_context(compile_task_context("Explore an overall courtyard arrangement", sheet, record=record,
+        second = pack_context(compile_task_context("Explore an overall courtyard arrangement", sheet, record=record,
                                context_refs=("entity:mass-159",), context_offset=64))
         self.assertIn("mass-159", {row["elementId"] for row in second["elements"]})
         self.assertEqual(second["focusElementIds"], [])
@@ -116,7 +124,7 @@ class TaskContextTests(unittest.TestCase):
         record = replace(record, obligations=record.obligations + (
             DesignObligation("long-unresolved", "Unresolved evidence " * 3000, "studio:intent"),))
         sheet = sheet_of(record, Selection(None, None))
-        facts = model_context(compile_task_context("Review the whole design", sheet, record=record))
+        facts = pack_context(compile_task_context("Review the whole design", sheet, record=record))
         self.assertFalse(facts["coverage"]["complete"])
         self.assertEqual(facts["coverage"]["omittedConditionCount"], 1)
         self.assertIn("Incomplete coverage", facts["supplement"]["instruction"])
@@ -145,7 +153,10 @@ class IntentContextTests(unittest.TestCase):
         self.assertEqual({row["obligation_id"] for row in context.sheet["obligations"]}, {"local-keep", "global-keep"})
         self.assertEqual(context.sheet["relationships"][0]["validator"]["check_kind"], "support_contact")
         self.assertEqual(sheet, original)
-        self.assertLess(len(json.dumps(context.sheet)), len(json.dumps(sheet)) / 2)
+        # The private slice is a fraction of the complete private sheet; it needs no construction language.
+        complete = intent_context._complete_sheet(sheet, record)
+        self.assertLess(len(json.dumps(context.sheet)), len(json.dumps(complete)) / 2)
+        self.assertNotIn("construction", context.sheet)
 
     def test_changed_shared_parameter_includes_other_consumers_without_edit_grant(self):
         record, sheet = fixture(shared=True)
@@ -167,9 +178,14 @@ class IntentContextTests(unittest.TestCase):
     def test_component_request_without_advertised_producer_uses_design_tier(self):
         # Inject a missing advertised contract independently of which producers
         # the owner supports today; the retained record still names its producer.
+        # The owner's signatures are read privately: the sheet a model reads carries none.
+        from monkeyarch.capabilities import element_producers
+
         record, sheet = fixture()
-        sheet["producerSignatures"].pop("prism")
-        context = compile_context("set this window width to 1.2 and height to 1.5", sheet, record=record)
+        self.assertNotIn("producerSignatures", sheet)
+        advertised = {key: value for key, value in element_producers.producer_signatures().items() if key != "prism"}
+        with patch.object(element_producers, "producer_signatures", return_value=advertised):
+            context = compile_context("set this window width to 1.2 and height to 1.5", sheet, record=record)
         self.assertEqual(context.tier, "design")
         self.assertEqual(context.escalation, ("component_signature_unavailable",))
 
@@ -184,7 +200,8 @@ class IntentContextTests(unittest.TestCase):
                     if item.entity_id in {"window-23", "window-type"} else item
                     for item in record.entities))
                 sheet = sheet_of(record, Selection("facade", "window-23"))
-                properties = sheet["producerSignatures"][producer]["parameters"]["properties"]
+                from monkeyarch.capabilities.element_producers import producer_signatures
+                properties = producer_signatures()[producer]["parameters"]["properties"]
                 self.assertNotIn("width", properties)
                 if producer == "loft":
                     self.assertTrue({"profiles", "profile_size"}.issubset(properties))
@@ -235,7 +252,7 @@ class IntentContextTests(unittest.TestCase):
                 self.assertEqual(context.tier, "design")
                 self.assertEqual(context.sheet["elements"], compile_context("design", sheet, record=record).sheet["elements"])
                 self.assertTrue(context.escalation)
-        sheet["selection"]["elementId"] = None
+        sheet["selection"]["id"] = None
         self.assertEqual(compile_context("set window width to 1.2", sheet, record=record).tier, "design")
 
     def test_record_is_required_to_claim_complete_dependency_context(self):
@@ -250,7 +267,7 @@ class IntentContextTests(unittest.TestCase):
         self.assertEqual(context.target_ids, ("window-23",))
         public = model_context(context)
         self.assertEqual(public["editTargets"], ["window-23"])
-        self.assertEqual({row["elementId"] for row in public["elements"]}, {"window-23", "wall-07"})
+        self.assertEqual(controls(public), {"window-23", "wall-07"})
         self.assertIn("parameter:module", context.included_refs)
         self.assertIn("Keep the opening daylight ratio", json.dumps(public))
         self.assertIn("Preserve agreed project limits", json.dumps(public))
@@ -265,8 +282,8 @@ class IntentContextTests(unittest.TestCase):
         expanded = expand_context(context, sheet, ["entity:remote-wall"], record=record)
         self.assertEqual(expanded.target_ids, context.target_ids)
         self.assertEqual(model_context(expanded)["editTargets"], ["window-23"])
-        self.assertIn("remote-wall", {row["elementId"] for row in model_context(expanded)["elements"]})
-        self.assertNotIn("remote-wall", {row["elementId"] for row in model_context(context)["elements"]})
+        self.assertIn("remote-wall", controls(model_context(expanded)))
+        self.assertNotIn("remote-wall", controls(model_context(context)))
 
     def test_local_design_keeps_declared_downstream_dependency_without_a_relation(self):
         record, _ = fixture()
@@ -276,14 +293,14 @@ class IntentContextTests(unittest.TestCase):
         context = compile_context("reconfigure wall-07 while keeping its base", sheet_of(record), record=record)
         self.assertEqual(context.target_ids, ("wall-07",))
         self.assertIn("entity:remote-wall", record.closure(("entity:wall-07",)))
-        self.assertIn("remote-wall", {row["elementId"] for row in model_context(context)["elements"]})
+        self.assertIn("remote-wall", controls(model_context(context)))
         self.assertIn("Unrelated wall finish", json.dumps(model_context(context)))
 
     def test_clear_component_and_multiple_named_local_targets_are_supported(self):
         record, sheet = fixture()
         context = compile_context("reconfigure window-23 and window-24 while preserving daylight", sheet, record=record)
         self.assertEqual(context.target_ids, ("window-23", "window-24"))
-        self.assertNotIn("remote-wall", {row["elementId"] for row in model_context(context)["elements"]})
+        self.assertNotIn("remote-wall", controls(model_context(context)))
         component = compile_context("reconfigure facade while keeping its material", sheet, record=record)
         self.assertEqual(set(component.target_ids), {"wall-07", "window-23", "window-24", "remote-wall"})
 
@@ -445,13 +462,38 @@ class ModelContextTests(unittest.TestCase):
         self.assertNotIn("parameters", public)
         self.assertNotIn("relationships", public)
 
-    def test_design_path_keeps_full_context_without_repeated_signatures(self):
+    def test_design_path_reads_the_model_in_construction_terms(self):
+        from monkeyarch.construction import vocabulary
+        from archflow_studio_api.application.intent_agent import _design_facts
+
         record, sheet = fixture()
         context = compile_context("reorganize the gallery", sheet, record=record)
+        # The record sheet carries neither: the in-app compiler adds them to a design request's sheet only.
+        self.assertFalse({"construction", "model"} & set(model_context(context)))
+        design = _design_facts(SimpleNamespace(project_id=record.project_id, record=record, state_digest="c" * 64,
+                                               record_digest=record.digest))
+        context = replace(context, sheet={**context.sheet, **design})
         public = model_context(context)
-        self.assertEqual(public["elements"], context.sheet["elements"])
-        self.assertNotIn("producerSignatures", public)
+        # One id per piece of geometry, the model and its language, and meaning as facets.
+        self.assertEqual(controls(public), {"wall-07", "window-23", "window-24", "remote-wall"})
+        window = next(row for row in public["controls"] if row["id"] == "window-23")
+        self.assertEqual((window["numericFields"], window["parameterBindings"]),
+                         ({"width": 1.2, "height": 1.0}, {"width": "window-width"}))
+        self.assertEqual(public["construction"], vocabulary())
+        self.assertEqual([row["id"] for row in public["model"]], ["facade"])
+        self.assertEqual(public["components"], [{"id": "building", "intent": None, "facets": {}},
+                                                {"id": "facade", "intent": None, "facets": {}}])
+        self.assertEqual(public["selection"], {"id": "window-23"})
+        # How the runtime realises a part and the old classification stay on the private sheet.
+        for key in ("elements", "producerSignatures", "semanticIds"):
+            self.assertNotIn(key, public)
+        # The one type names how its instances are realised, so the model does not read it.
+        self.assertEqual(public["types"], [])
+        self.assertIn("window-type", {row["entity_id"] for row in context.sheet["types"]})
+        for word in ('"producer"', "semanticKind", "semantic_kind", "params", "references"):
+            self.assertNotIn(word, json.dumps(public))
         self.assertIn("producerSignatures", context.sheet)
+        self.assertEqual({row["producer"] for row in context.sheet["elements"]}, {"prism"})
 
     def test_closure_reads_each_row_once_however_wide_it_grows(self):
         """The dependency closure widens a set of ids; the rows do not change.

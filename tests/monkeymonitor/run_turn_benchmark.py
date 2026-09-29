@@ -158,8 +158,13 @@ def summarize_pair(output):
 def request(base, path, body=None):
     req = Request(base + path, data=None if body is None else json.dumps(body).encode(),
                   headers={"Content-Type": "application/json"})
-    with build_opener(ProxyHandler({})).open(req, timeout=30) as response:
-        return json.load(response)
+    try:
+        with build_opener(ProxyHandler({})).open(req, timeout=30) as response:
+            return json.load(response)
+    except HTTPError as exc:
+        # Keep the service's own refusal: a bare status hides which check failed.
+        exc.msg = f"{exc.msg}: {exc.read().decode('utf-8', errors='replace')[:2000]}"
+        raise
 
 
 def monitor_snapshot(base, observations):
@@ -201,7 +206,7 @@ def expected_geometry(readback, scenario):
 
 def expected_authored_fields(repository, candidate, scenario, fixture):
     """Geometry alone cannot prove the support/keep conditions survived."""
-    if not candidate or scenario == "simple-create":
+    if not candidate or scenario in ("simple-create", "stage-a-massing"):
         return None
     run = RunRef(fixture.PROJECT_ID, candidate, repository.read_head())
     records = [repository.load_json(ref) for ref in repository.list_json(
@@ -233,6 +238,13 @@ def candidate_for_readback(detail, runtime):
     return next(iter(candidates)) if len(candidates) == 1 else None
 
 
+def last_candidate_tried(runtime, session_id):
+    """#419: an agent may try more than once; the study is judged on its last candidate."""
+    tried = [row["candidateId"] for row in runtime.get("operations", [])
+             if row.get("sessionId") == session_id and row.get("candidateId") and row.get("jobId")]
+    return (tried[-1] if tried else None), tried
+
+
 def prime_session(base, session, message, timeout, output):
     """Establish genuine provider continuity without modifying the paired input."""
     primer = {**message, "content": (
@@ -258,7 +270,7 @@ def prime_session(base, session, message, timeout, output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scenario", choices=("simple-create", "incremental-edit", "assembly-edit"), required=True)
+    parser.add_argument("--scenario", choices=("simple-create", "incremental-edit", "assembly-edit", "stage-a-massing"), required=True)
     parser.add_argument("--output", type=Path, required=True, help="Explicit nonproject directory for this benchmark's trace/report")
     parser.add_argument("--timeout", type=int, default=240)
     parser.add_argument("--model", help="Pin the installed provider's model for comparable runs")
@@ -410,11 +422,26 @@ def main():
             write_json(args.output / "chat.json", detail)
             runtime_snapshot = request(base, f"/api/runtime/projects/{opened['runtimeId']}")
             candidate = candidate_for_readback(detail, runtime_snapshot)
+            if candidate is None and scenario["id"] == "stage-a-massing":
+                candidate, tried = last_candidate_tried(runtime_snapshot, detail["id"])
+                write_json(args.output / "candidates-tried.json", tried)
             readback = request(studio["apiUrl"].rstrip("/"), f"/api/candidates/{candidate}") if candidate else None
             write_json(args.output / "candidate.json", readback)
             readback_ok = bool(readback and readback["status"] == "succeeded" and readback["seatExecutionComplete"]
                                and readback.get("objects") and not readback.get("objectReadbackError"))
-            geometry_ok = expected_geometry(readback, scenario["id"])
+            if scenario["id"] == "stage-a-massing":
+                # #419: name-agnostic; the study's exact STEP is measured cold.
+                sys.path.insert(0, str(Path(__file__).resolve().parent))
+                from massing_check import check_massing, study_step_and_hidden
+                step, hidden = study_step_and_hidden(project, candidate) if candidate else (None, ())
+                massing = check_massing(step, hidden_names=hidden) if step else {"ok": False, "reason": "no STEP"}
+                if step:
+                    shutil.copy2(step, args.output / "study.step")
+                    write_json(args.output / "study-hidden.json", list(hidden))
+                write_json(args.output / "massing-check.json", massing)
+                geometry_ok = bool(readback_ok and massing["ok"])
+            else:
+                geometry_ok = expected_geometry(readback, scenario["id"])
             authored_ok = expected_authored_fields(repository, candidate, scenario["id"], fixture)
             preview_url = studio["url"] + "&candidate=" + (candidate or "")
             connection = {"monitor_url": monitor, "preview_url": preview_url, "turn_id": turn_id, "candidate_id": candidate}

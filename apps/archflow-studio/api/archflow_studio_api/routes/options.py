@@ -210,9 +210,9 @@ def _require_current_base(
         "STALE_BASE",
         f"this option was made against record {record_digest} / state "
         f"{state_digest}, and {binding.project_id} now has record "
-        f"{live_record} / state {live_state}. Re-read /api/state and "
-        "make the option again: a massing is only meaningful against the "
-        "state it was measured on.",
+        f"{live_record} / state {live_state}. Re-read GET "
+        "/api/construction/model (or /api/state) and make the option again: "
+        "a massing is only meaningful against the state it was measured on.",
     )
 
 

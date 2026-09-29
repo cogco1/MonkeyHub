@@ -58,6 +58,24 @@ class ModelingErrorTests(unittest.TestCase):
         self.assertEqual(json.loads(result["content"][0]["text"]),{"code":"STALE_BASE","detail":"Re-read the exact source","httpStatus":409})
         call.assert_called_once()
 
+    def test_geometry_rows_in_a_semantic_edit_are_refused_before_any_request(self):
+        """#419: the Hub names the construction route across MCP; no Hub, runtime or Studio is asked."""
+        body={"stateDigest":"a"*64,"semanticEdit":{"summary":"a block","entities":[
+            {"entity_id":"block-1-body","schema":"Element@1","fields":{"component_id":"block-1","producer":"prism"}}]}}
+        incoming=Stream(json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"studio_request",
+            "arguments":{"method":"POST","path":"/api/proposals","body":body}}})+"\n")
+        outgoing=Stream()
+        with patch.object(chat.sys,"stdin",incoming),patch.object(chat.sys,"stdout",outgoing), \
+                patch.object(chat,"_request_json") as request,patch.object(chat,"_bound_studio") as studio:
+            chat._mcp("http://127.0.0.1:8790","fixture-chat")
+        result=json.loads(outgoing.getvalue())["result"]
+        self.assertTrue(result["isError"])
+        failure=json.loads(result["content"][0]["text"])
+        self.assertEqual((failure["code"],failure["httpStatus"]),("CHAT_TOOL_INVALID",422))
+        self.assertTrue(failure["detail"].startswith("Geometry is authored with POST /api/proposals/construction;"))
+        request.assert_not_called()
+        studio.assert_not_called()
+
 
 @contextmanager
 def _serving():

@@ -679,6 +679,20 @@ class StateRecordTests(unittest.TestCase):
         self.assertEqual(closure, ("entity:columns-west", "entity:entablature-west", "entity:level-piano-nobile"))
         self.assertEqual(record.closure(("entity:axis-1",)), ("entity:axis-1",))                                             # nothing references the axis yet
 
+    def test_a_host_depends_on_the_elements_it_names_as_voids(self) -> None:
+        record = _record()
+        record = replace(record, entities=(
+            *record.entities,
+            Entity("block-7", "Element@1", {"component_id": "portico-west", "producer": "prism",
+                                            "references": {"base": {"level": "level-piano-nobile"}, "voids": ["block-9"]}}),
+            Entity("block-9", "Element@1", {"component_id": "portico-west", "producer": "prism",
+                                            "references": {"base": {"level": "level-piano-nobile"}}}),
+        ))
+        edges = {(e.upstream_ref, e.downstream_ref, e.relation, e.effect)
+                 for e in record.dependency_edges() if e.relation == "voids"}
+        self.assertEqual(edges, {("entity:block-9", "entity:block-7", "voids", DependencyEffect.INVALIDATES)})
+        self.assertIn("entity:block-7", record.closure(("entity:block-9",)))
+
     def test_batched_closures_remain_independent_through_cycles_and_unchanged_relations(self) -> None:
         record = _record()
         record = replace(record, relations=(*record.relations,

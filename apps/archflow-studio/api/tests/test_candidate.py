@@ -228,16 +228,15 @@ class CandidateRunTests(CandidateTestCase):
             "fields": type_fields, "basis_refs": ["studio:intent"],
         })
         wall["fields"] = {"component_id": "portico", "producer": "wall", "type_ref": "passage-wall-type", "params": {}, "references": {}}
-        self.app.state.intent_compiler = scripted(semantic_edit=edit, component_id="portico")
         before_head = self.repository.read_head()
         before_input = self.repository.layout.resolve_relative(RUNNER_RECORD_PATH).read_bytes()
-        response = self.client.post("/api/intents", json={
+        # The architect's own component edit, as the Studio's editors send it: no agent, no model.
+        response = self.client.post("/api/proposals", json={
             "stateDigest": self.state_digest, "sourceRunId": REFERENCE_RUN_ID,
-            "targetComponentId": "portico", "elementId": "portico-base",
-            "utterance": "Add a supporting wall with an arched passage, keeping the base unchanged.",
+            "targetComponentId": "portico", "semanticEdit": edit,
         })
         self.assertEqual(response.status_code, 201, response.text)
-        proposal = response.json()["proposal"]
+        proposal = response.json()
         self.assertEqual(proposal["sourceRunId"], REFERENCE_RUN_ID)
         accepted = self.start(proposal["proposalId"])
         job = self.finished(accepted["jobId"])
@@ -249,12 +248,11 @@ class CandidateRunTests(CandidateTestCase):
         wall_type = next(entity for entity in restored["entities"] if entity["entity_id"] == "passage-wall-type")
         self.assertEqual(wall_type["fields"]["params"]["openings"][0]["width"], "@passage_width")
         state = self.client.get("/api/state", params={"run": accepted["candidateId"]}).json()
-        edit = semantic_wall_edit()
-        edit.update(
-            summary="Narrow the same arched passage to 1.8 metres.", entities=[],
-            parameters=[{"key": "passage_width", "value": 1.8, "unit": "m"}],
+        # The agent answers in the construction contract: the parameter the passage follows.
+        self.app.state.intent_compiler = scripted(
+            parameters=({"key": "passage_width", "value": 1.8, "unit": "m"},),
+            why="Narrow the same arched passage to 1.8 metres.",
         )
-        self.app.state.intent_compiler = scripted(semantic_edit=edit, component_id="portico")
         response = self.client.post("/api/intents", json={
             "stateDigest": state["stateDigest"], "sourceRunId": accepted["candidateId"],
             "targetComponentId": "portico", "elementId": "passage-wall",
@@ -274,15 +272,14 @@ class CandidateRunTests(CandidateTestCase):
         # Editing only the type must validate its instantiated opening before
         # another proposal or candidate can be offered.
         state = self.client.get("/api/state", params={"run": following["candidateId"]}).json()
-        edit.update(entities=[{
+        edit = semantic_wall_edit()
+        edit.update(summary="Lower the wall type to one metre, keeping the same opening.", entities=[{
             "entity_id": "passage-wall-type", "schema": "Type@1",
             "fields": {"params": {**type_fields["params"], "height": 1}},
         }], parameters=[])
-        self.app.state.intent_compiler = scripted(semantic_edit=edit, component_id="portico")
-        refused = self.client.post("/api/intents", json={
+        refused = self.client.post("/api/proposals", json={
             "stateDigest": state["stateDigest"], "sourceRunId": following["candidateId"],
-            "targetComponentId": "portico", "elementId": "passage-wall",
-            "utterance": "Lower this wall type to one metre while keeping the same opening.",
+            "targetComponentId": "portico", "semanticEdit": edit,
         })
         self.assertEqual(refused.status_code, 422, refused.text)
         self.assertEqual(refused.json()["code"], "SEMANTIC_EDIT_INVALID")

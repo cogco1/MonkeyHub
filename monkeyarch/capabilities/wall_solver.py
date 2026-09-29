@@ -9,6 +9,8 @@ its tool — which is the HOST_CUT member of the opening's assembly: the
 kernel's opening evidence (never the residual wall), exported hidden. Levels never appear
 as numbers in the operations: the wall and every tool bind ``base_level``
 to the storey datum, and an opening's sill rides on it as ``base_offset``.
+The wall itself is always delivered as ``obj-<wall>``; once anything cuts
+it, its uncut extrusion is the internal ``obj-<wall>-body``.
 
 Zero typology constants: every dimension is an input. Exclusions (from
 portico or roof obligations) are refused at solve time, so an opening
@@ -320,7 +322,7 @@ class HostedVoid:
     """What the wall grants an opening: its aperture in wall coordinates.
 
     ``aperture_object_id`` is the wall-∩-tool volume (the assembly's
-    HOST_CUT member); ``cut_object_id`` the residual wall it leaves.
+    HOST_CUT member); ``cut_object_id`` the delivered wall it leaves (``obj-<wall>``).
     """
 
     opening_id: str
@@ -470,6 +472,7 @@ def solve_wall(
     exclusions: tuple[Bounds, ...] = (),
     base_elevation: float | None = None,
     cut_margin: float = 0.05,
+    void_object_ids: tuple[str, ...] = (),
 ) -> WallSolution:
     """Enumerate the wall solid, a tool and an aperture per opening, and the cut.
 
@@ -481,6 +484,8 @@ def solve_wall(
     structure seat. Checking them needs the storey's elevation, which is
     an evaluation input (``base_elevation``, the bound datum's value),
     never authored into an operation.
+    ``void_object_ids`` are other elements' solids the wall loses through the
+    same cut (#419); the delivered wall is always ``obj-<wall>``.
     """
 
     if not isinstance(wall, WallElement):
@@ -488,6 +493,8 @@ def solve_wall(
     if not isinstance(openings, tuple) or any(not isinstance(o, OpeningRequest) for o in openings):
         raise WallSolverError("openings must be OpeningRequest items")
     margin = _positive(cut_margin, "cut_margin")
+    if not isinstance(void_object_ids, tuple) or len(set(void_object_ids)) != len(void_object_ids):
+        raise WallSolverError("void_object_ids must name each object once")
     if exclusions and base_elevation is None:
         raise WallSolverError("exclusions need the storey elevation to be evaluated")
     ids = [o.opening_id for o in openings]
@@ -522,10 +529,15 @@ def solve_wall(
                             f"void {box} overlaps {exclusion}"
                         )
 
-    host = f"obj-{wall.wall_id}"
+    # The delivered wall is always obj-<wall> (#419): with anything to cut, the
+    # extrusion becomes its internal body and the cut takes the wall's own id.
+    cut = bool(ordered) or bool(void_object_ids)
+    body_op = f"{wall.wall_id}-body" if cut else wall.wall_id
+    host = f"obj-{body_op}"
+    delivered = f"obj-{wall.wall_id}"
     operations = [
         GeometryOperation(
-            op_id=wall.wall_id,
+            op_id=body_op,
             kind=GeometryOperationKind.EXTRUSION,
             output_object_ids=(host,),
             input_object_ids=(),
@@ -539,15 +551,13 @@ def solve_wall(
     ]
     bindings = [
         DatumBinding(
-            binding_id=f"bind-{wall.wall_id}",
+            binding_id=f"bind-{body_op}",
             datum_id=wall.base_level_datum_id,
-            op_id=wall.wall_id,
+            op_id=body_op,
             parameter_name="base_level",
         )
     ]
     voids: list[HostedVoid] = []
-    cut_id = f"{wall.wall_id}-cut" if ordered else None
-    cut_object = f"obj-{cut_id}" if cut_id else None
     tool_objects = []
     for opening in ordered:
         # P099: one tool and one aperture per placement. Booleans consume
@@ -613,26 +623,26 @@ def solve_wall(
         voids.append(
             HostedVoid(
                 opening_id=opening.opening_id, kind=opening.kind, wall=wall,
-                host_object_id=host, cut_object_id=cut_object or host, tool_object_id=first_tool,
+                host_object_id=host, cut_object_id=delivered, tool_object_id=first_tool,
                 aperture_object_id=apertures[0], aperture_object_ids=tuple(apertures),
                 along0=opening.along0, along1=opening.along1, sill=opening.sill, head=opening.head,
                 count=opening.count, step=opening.step,
                 shape=opening.shape, spring_height=opening.spring_height,
             )
         )
-    if cut_id:
-        inputs = (host, *tool_objects)
+    if cut:
+        inputs = tuple(sorted((host, *tool_objects, *void_object_ids)))
         operations.append(
             GeometryOperation(
-                op_id=cut_id,
+                op_id=wall.wall_id,
                 kind=GeometryOperationKind.BOOLEAN_DIFFERENCE,
-                output_object_ids=(cut_object,),
+                output_object_ids=(delivered,),
                 input_object_ids=inputs,
                 frame_id=wall.frame_id,
                 parameters=(
                     GeometryParameter.create(
                         name="base_index", kind=GeometryParameterKind.INTEGER,
-                        value=sorted(inputs).index(host),
+                        value=inputs.index(host),
                     ),
                 ),
                 semantic_binding_ids=(wall.binding_id,),
@@ -644,5 +654,5 @@ def solve_wall(
         datum_bindings=tuple(sorted(bindings, key=lambda b: b.binding_id)),
         voids=tuple(voids),
         host_object_id=host,
-        cut_object_id=cut_object,
+        cut_object_id=delivered if cut else None,
     )
