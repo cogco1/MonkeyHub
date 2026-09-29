@@ -730,12 +730,13 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // DC-9: what the next message changes. It always works on Current, the editing base the design
   // context names; the label adds where Current stands, and says so when another model is on screen.
   const position = projectRuntime && workspaceContext?.projectId === project?.projectId ? positions[projectRuntime.runtimeId] ?? null : null;
+  const running = chat?.id === chatId && chat.status === "running";
   // #253: a message carrying an image discussion names its own pages and no editing base (unless a New topic starts one).
-  const imageTurn = Boolean(renderDraft) && contextMode !== "project";
+  // While a reply runs nothing is about the images: they wait for the next message, and a mid-turn one is text alone.
+  const imageTurn = Boolean(renderDraft) && contextMode !== "project" && !running;
   const target = imageTurn ? t.renderContextTarget : staleBase ? w.targetStale(staleBase.publishedVersion, staleBase.baseVersion) : [w.target, position?.current,
     workspaceContext?.projectId === project?.projectId && (workspaceContext?.unavailableReason === "unsaved" || workspaceContext?.unavailableReason === "unsynced")
       ? w.targetUnrecorded : null].filter(Boolean).join(" · ");
-  const running = chat?.id === chatId && chat.status === "running";
   // #285: a turn's tool calls fold into one process row; the Agent's text,
   // results, permission prompts and errors stay in the conversation.
   const shownMessages = chat?.id === chatId ? chat.messages : undefined;
@@ -780,7 +781,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const connection = chat?.id === chatId ? { provider: chat.provider, model: chat.model ?? null } : defaults;
   const availableProvider = providers.find((item) => item.id === connection.provider);
   const composerDisabledReason = !project ? t.projectRequired : busy ? t.actionPending : undefined;
-  const sendDisabledReason = running ? (!draft.trim() ? t.interjectEmpty : undefined)
+  const sendDisabledReason = running ? (renderDraft ? t.renderContextAfterReply : !draft.trim() ? t.interjectEmpty : undefined)
     : composerDisabledReason ?? (!draft.trim() && !attachments.length ? t.sendEmpty
       : !chatId && !availableProvider?.available ? availableProvider?.detail ?? t.noProvider : undefined);
   // The connection as the Hub named it, short enough to read in a sentence.
@@ -1266,6 +1267,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       // carries only its text: no new design source, and files being gathered
       // stay in the draft for the next turn. The composer stays open.
       if (!draft.trim()) return;
+      // #253: words beside attached images go with them after this reply. Sent now they would reach
+      // the running turn as text alone, which could take them as a change to the model.
+      if (renderDraft) { setError({ code: "CHAT_INTERJECTION_IMAGES", detail: t.renderContextAfterReply }); return; }
       const target = chat.id, content = draft.trim(), key = draftKey;
       actionLock.current = true; setError(null); setSending("posting");
       setDrafts((value) => ({ ...value, [key]: "" }));
@@ -2060,7 +2064,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
               input.current?.focus();
             }}><Icon name="close" /></button>
           </li>)}</ul>}
-          <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} aria-describedby={project ? "chat-target" : undefined} aria-description={composerDisabledReason} aria-keyshortcuts="Enter Shift+Enter" placeholder={!project ? t.projectRequired : running ? t.interjectPlaceholder : t.placeholder} disabled={!project || busy}
+          <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} aria-describedby={project ? "chat-target" : undefined} aria-description={composerDisabledReason} aria-keyshortcuts="Enter Shift+Enter" placeholder={!project ? t.projectRequired : running && !renderDraft ? t.interjectPlaceholder : t.placeholder} disabled={!project || busy}
             onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
           <input ref={fileInput} type="file" multiple hidden aria-label={t.attach} disabled={!project || busy} onChange={(event) => { addAttachments(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
           <div className="chat-composer__bottom"><ComposerMenu label={w.composerMenu} disabled={!project || busy} disabledReason={composerDisabledReason} items={[
@@ -2083,7 +2087,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {modelBusy && <span className="chat-connection__note" role="status">{t.modelSaving}</span>}
           </div>
           {running ? <><button className="chat-icon chat-stop" type="button" aria-label={t.stop} title={t.stop} onClick={() => void stop()}><Icon name="stop" /></button>
-            <button className="chat-send" type="submit" aria-label={t.interject} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.interject} disabled={!draft.trim()}><Icon name="send" /></button></> : <button className="chat-send" type="submit" aria-label={t.send} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.send} disabled={busy || !project || (!draft.trim() && !attachments.length) || (!chatId && !availableProvider?.available)}><Icon name="send" /></button>}</div>
+            <button className="chat-send" type="submit" aria-label={t.interject} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.interject} disabled={!draft.trim() || Boolean(renderDraft)}><Icon name="send" /></button></> : <button className="chat-send" type="submit" aria-label={t.send} aria-description={sendDisabledReason} aria-keyshortcuts="Enter" title={sendDisabledReason ?? t.send} disabled={busy || !project || (!draft.trim() && !attachments.length) || (!chatId && !availableProvider?.available)}><Icon name="send" /></button>}</div>
         </form>}
         {!archived && customModel !== null && <form className="chat-custom-model" onSubmit={(event) => { event.preventDefault(); const value = customModel.trim(); if (value) void chooseModel(value); else setCustomModel(null); }}>
           <label htmlFor="chat-custom-model">{t.modelCustomLabel}</label>

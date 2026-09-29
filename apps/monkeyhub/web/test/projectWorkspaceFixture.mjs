@@ -27,6 +27,13 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
   const notModified = [];
   // Projects whose runtime reports its event stream (the Studio's "events" capability), by project id.
   const studioEvents = new Set();
+  // #253: registered documents a runtime lists, by project id: [{ dto, bytes }], single-page PNG images.
+  // The runtime answers their bytes, their page raster (the image itself) and empty saved marks.
+  const documents = new Map();
+  // A project's saved Board before its runtime first answers, by project id.
+  const boards = new Map();
+  // Projects whose Board writes the runtime refuses, with the detail it answers, by project id.
+  const boardWriteFailures = new Map();
   // #366: each project's index, as the runtime's keeper keeps it: an epoch, and a revision that moves
   // once whenever what the project's views are derived from changed. `onIndex` hears each commit,
   // as the Hub relays it on its stream; a test that changed a project behind the runtime's back
@@ -85,7 +92,7 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
     };
     artifact(home);
     const value = { runtime, published, home, assets, artifact,
-      board: { projectId: id, title: `Board ${id}`, elements: [], seenDocuments: [], revisionSha256: null },
+      board: boards.get(id) ?? { projectId: id, title: `Board ${id}`, elements: [], seenDocuments: [], revisionSha256: null },
       // #300: Layout, Board's second mode, edits the project's publication; none is saved yet.
       publication: { projectId: id, revisionSha256: null, title: `Layout ${id}`, spec: { width: 1280, height: 720, template: "hero" }, pages: [], sources: [] } };
     projects.set(id, value); return value;
@@ -95,7 +102,8 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
     const id = current.runtime.projectId;
     // Model rows are made on first listing from the Stages and chat results named here, so they are not listed again.
     return JSON.stringify([designTrees.get(id) ?? null, workingDrafts.get(id) ? workingDraftDto(id) : null, current.board, current.publication,
-      sessions.filter((row) => row.projectId === id).map((row) => row.messages.map((message) => message.candidateId ?? null))]);
+      sessions.filter((row) => row.projectId === id).map((row) => row.messages.map((message) => message.candidateId ?? null)),
+      (documents.get(id) ?? []).map((row) => row.dto)]);
   };
   async function handle(route, url) {
     const match = url.pathname.match(/^\/api\/runtime\/projects\/([^/]+)\/studio(\/.*)$/);
@@ -171,7 +179,29 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
       if (name === "/api/projections") return json({ key: digest(`projection:${projectId}:${url.search}`), status: "pending",
         kind: "model-axon", recipe: {}, renderer: "fixture", inputSha256: digest(url.search), source: null, blobSha256: null,
         blobUrl: null, attempts: 0, error: null, loadMs: null, renderMs: null });
-      if (name === "/api/documents") return json({ projectId, runId: null, documents: [] });
+      if (name === "/api/documents") return json({ projectId, runId: null, documents: (documents.get(projectId) ?? []).map((row) => row.dto) });
+      // #253: one registered image of this project, named exactly; its page raster is the image itself.
+      const registered = (assetSha256) => {
+        const row = (documents.get(projectId) ?? []).find((item) => item.dto.assetSha256 === assetSha256
+          && item.dto.runId === url.searchParams.get("runId") && (item.dto.revisionRef ?? null) === (url.searchParams.get("revisionRef") || null));
+        assert.ok(row, `${name} names a document registered in this project`);
+        return row;
+      };
+      if (name === "/api/projections/pages") {
+        const row = registered(url.searchParams.get("assetSha256"));
+        assert.equal(url.searchParams.get("pageIndex"), "0");
+        await route.fulfill({ body: row.bytes, contentType: "image/png" }); return true;
+      }
+      if (name === "/api/document-annotations") {
+        const row = registered(url.searchParams.get("assetSha256"));
+        return json({ projectId, runId: row.dto.runId, assetSha256: row.dto.assetSha256, pageIndex: Number(url.searchParams.get("pageIndex")),
+          revisionSha256: null, annotations: [], comment: "", drawingRevisionRef: null });
+      }
+      const documentBytes = name.match(/^\/api\/documents\/([0-9a-f]{64})\/bytes$/);
+      if (documentBytes) {
+        const row = registered(documentBytes[1]);
+        await route.fulfill({ body: row.bytes, contentType: row.dto.mimeType }); return true;
+      }
       if (name === "/api/render/capabilities") return json({ providers: [] });
       if (name === "/api/render/jobs") return json({ projectId, jobs: [] });
       if (name === "/api/design-history") {
@@ -251,10 +281,14 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
     }
     if (method === "PUT" && name === "/api/board") {
       assert.equal(body.baseRevisionSha256, current.board.revisionSha256, "Board writes preserve their exact retained base");
+      if (boardWriteFailures.has(projectId)) {
+        await route.fulfill({ status: 503, json: { code: "BOARD_UNAVAILABLE", detail: boardWriteFailures.get(projectId) } }); return true;
+      }
       current.board = { projectId, title: body.title, elements: body.elements, seenDocuments: body.seenDocuments, revisionSha256: digest(JSON.stringify(body)) };
       return json(current.board);
     }
     throw new Error(`Unexpected project request: ${method} ${projectId} ${name}`);
   }
-  return { handle, requests, notModified, projects, workingDrafts, designTrees, runStates, headsFollowDraft, studioEvents, stateDigestOf, indexes, commit, rebuild };
+  return { handle, requests, notModified, projects, workingDrafts, designTrees, runStates, headsFollowDraft, studioEvents, documents, boards,
+    boardWriteFailures, stateDigestOf, indexes, commit, rebuild };
 }

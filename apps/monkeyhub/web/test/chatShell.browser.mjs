@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
+import { crc32, deflateSync } from "node:zlib";
 
 // Real built Hub UI; all provider and project calls are local, synthetic fixtures.
 const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new URL("../dist/", import.meta.url)));
@@ -122,6 +123,19 @@ let chatMessageFailureFor = null;
 let chatMessageResponseGate = Promise.resolve();
 const uploadedAttachments = new Map();
 const externalImage = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jB8sAAAAASUVORK5CYII=";
+/** A plain RGB PNG of one colour, large enough to be seen and clicked on a Board. */
+const solidPng = (width, height, [red, green, blue]) => {
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]), size = Buffer.alloc(4), check = Buffer.alloc(4);
+    size.writeUInt32BE(data.length); check.writeUInt32BE(crc32(body));
+    return Buffer.concat([size, body, check]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 2;
+  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: width }, () => [red, green, blue]).flat())]);
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header),
+    chunk("IDAT", deflateSync(Buffer.concat(Array.from({ length: height }, () => row)))), chunk("IEND", Buffer.alloc(0))]);
+};
 let projectListGate = null;
 let runtimeOpenGate = null;
 let runtimeOpenCaptured = null;
@@ -950,6 +964,136 @@ async function idleMinute() {
     assert.equal(opened.most, 1, `one stream open at a time: ${JSON.stringify(opened)}`);
     assert.equal(opened.live, 1);
   } finally { await idle.close(); }
+}
+/**
+ * #253: a Board image discussion in the real built Hub, against the synthetic project runtime. The
+ * Board hands the composer a draft and saves nothing: a Board change the runtime refused stays
+ * unsaved and does not hold the discussion back. Sent, the message names exactly the chosen pages and
+ * no editing base. While its reply runs the images stay attached, nothing is sent into the running
+ * turn and the composer never says a mid-turn message is about them; afterwards a correction goes
+ * with the same pages.
+ */
+async function boardImageDiscussion() {
+  preferences = { ...preferences, language: "en" };
+  const projectId = "R", projectDir = "D:\\fixture\\R", name = "Render project";
+  if (!projects.some((row) => row.projectId === projectId)) projects.push({ projectId, projectDir, name, chatCount: 0, version: 0, stage: null });
+  const registered = (fileName, color) => {
+    const bytes = solidPng(160, 120, color);
+    return { bytes, dto: { projectId, runId: "studio-documents", assetSha256: createHash("sha256").update(bytes).digest("hex"), fileName,
+      mimeType: "image/png", sizeBytes: bytes.length, pageCount: 1, pages: [{ pageIndex: 0, width: 160, height: 120, rotation: 0 }],
+      revisionRef: null, modelSource: null, generatedAt: "2026-09-29T10:00:00Z" } };
+  };
+  const source = registered("Courtyard-A.png", [70, 110, 160]), reference = registered("Material.png", [200, 150, 90]);
+  const pageOf = ({ dto }) => ({ runId: dto.runId, assetSha256: dto.assetSha256, revisionRef: null, pageIndex: 0 });
+  const renderContext = { source: pageOf(source), references: [pageOf(reference)] };
+  workspaceFixture.documents.set(projectId, [source, reference]);
+  // The Board already knows the reference, so only the source arrives on it; the dialog offers the reference from the project's images.
+  workspaceFixture.boards.set(projectId, { projectId, title: "Render board", elements: [],
+    seenDocuments: [JSON.stringify([reference.dto.runId, reference.dto.assetSha256])], revisionSha256: "f".repeat(64) });
+  const board = () => workspaceFixture.projects.get(projectId)?.board;
+  const boardWrites = () => workspaceFixture.requests.filter((row) => row.projectId === projectId && row.method === "PUT" && row.name === "/api/board").length;
+  const chatWrites = () => writes.filter(([method, pathname]) => method === "POST" && pathname.startsWith("/api/chat/sessions"));
+  const messagePosts = () => chatWrites().filter(([, pathname]) => pathname.endsWith("/messages"));
+
+  await page.setViewportSize({ width: 1440, height: 960 });
+  if (page.url().startsWith(origin)) await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
+  await page.goto(origin);
+  await page.getByRole("button", { name, exact: true }).first().click();
+  await studioReady();
+  await showEntry("Board");
+  await waitWorkspace("board");
+  for (let attempt = 0; !board()?.elements.some((element) => element.type === "image" && !element.isDeleted); attempt++) {
+    assert.ok(attempt < 200, "the registered source image arrives on the Board");
+    await page.waitForTimeout(50);
+  }
+  assert.deepEqual(board().elements.filter((element) => element.type === "image" && !element.isDeleted)
+    .map((element) => element.customData.sourceDocument), [renderContext.source], "only the unseen source image was placed");
+
+  // A Board change the runtime refuses stays the architect's unsaved change.
+  workspaceFixture.boardWriteFailures.set(projectId, "Fixture board store is read-only.");
+  await visibleWorkspace().locator(".project-bar input.monkeyboard-title").fill("Render board, retitled");
+  const refused = visibleWorkspace().locator(".monkeyboard-alert").filter({ hasText: "Changes have not been saved." });
+  await refused.waitFor();
+  const boardWritesBefore = boardWrites(), chatWritesBefore = chatWrites().length;
+
+  await visibleWorkspace().locator("summary").filter({ hasText: "More board actions" }).click();
+  await visibleWorkspace().getByRole("button", { name: "Fit board", exact: true }).click();
+  const discuss = visibleWorkspace().getByRole("button", { name: "Discuss image / render", exact: true });
+  const canvas = await visibleWorkspace().locator(".monkeyboard-canvas").boundingBox();
+  for (const across of [0.5, 0.42, 0.58]) {
+    await page.mouse.click(canvas.x + canvas.width * across, canvas.y + canvas.height / 2);
+    if (await discuss.isVisible()) break;
+  }
+  await discuss.click();
+  const dialog = page.getByRole("dialog", { name: "Discuss this image", exact: true });
+  await dialog.waitFor();
+  assert.equal(await dialog.getByRole("radio", { name: "Courtyard-A.png · Page 1/1", exact: true }).isChecked(), true,
+    "the one selected image is the source");
+  await dialog.getByLabel("Add a project image…", { exact: true }).selectOption({ label: "Material.png · Page 1/1" });
+  assert.equal(await dialog.getByRole("checkbox", { name: "Material.png · Page 1/1", exact: true }).isChecked(), true);
+  const words = "Keep the roof and the viewpoint; make the concrete warmer, like the reference.";
+  await dialog.getByLabel("What would you like to discuss or render?", { exact: true }).fill(words);
+  await dialog.getByRole("button", { name: "Continue in chat", exact: true }).click();
+  await dialog.waitFor({ state: "hidden" });
+
+  // The draft waits in the composer; the Board saved nothing and nothing was sent.
+  const composer = page.locator("#chat-input");
+  const card = page.locator(".chat-render-context");
+  const target = page.locator(".chat-target__text");
+  assert.equal(await composer.inputValue(), words);
+  await card.locator(".chat-render-context__name").filter({ hasText: "Material.png" }).waitFor();
+  assert.deepEqual(await card.locator(".chat-render-context__name").allInnerTexts(), ["Courtyard-A.png", "Material.png"]);
+  assert.deepEqual(await card.locator(".chat-render-context__role").allInnerTexts(), ["Source image", "Reference"]);
+  assert.equal(await target.innerText(), "About the attached images, not a model change");
+  assert.equal(await refused.isVisible(), true, "the refused Board change is still unsaved");
+  assert.equal(await visibleWorkspace().locator(".monkeyboard-save-state").innerText(), "Unsaved changes");
+  assert.equal(boardWrites(), boardWritesBefore, "handing over wrote nothing to the Board");
+  assert.equal(chatWrites().length, chatWritesBefore, "nothing is sent until the architect sends");
+  await page.screenshot({ path: path.join(temporary, "board-image-discussion.png") });
+  // The Board's own retry saves the change once the runtime takes it again.
+  workspaceFixture.boardWriteFailures.delete(projectId);
+  await refused.getByRole("button", { name: "Retry", exact: true }).click();
+  await refused.waitFor({ state: "hidden" });
+  assert.equal(board().title, "Render board, retitled");
+
+  // Sent, the message names exactly the chosen pages and no editing base.
+  const postsBefore = messagePosts().length;
+  await composer.press("Enter");
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  assert.deepEqual(messagePosts().slice(postsBefore).map(([, , body]) => body), [{ content: words, projectId, renderContext }]);
+  const chat = sessions.find((row) => row.projectId === projectId && row.messages.some((message) => message.content === words));
+  assert.equal(chat.status, "running");
+
+  // While the reply runs the images wait for the next message: nothing goes into the running turn,
+  // and the composer never says a mid-turn message is about them.
+  await card.locator(".chat-render-context__status").filter({ hasText: "Goes with your next message after this reply." }).waitFor();
+  assert.notEqual(await target.innerText(), "About the attached images, not a model change");
+  const correction = "Not the light: the concrete is too cold.";
+  await composer.fill(correction);
+  const interject = page.getByRole("button", { name: "Interject", exact: true });
+  assert.equal(await interject.isDisabled(), true, "a draft holding images does not interject");
+  assert.equal(await interject.getAttribute("aria-description"), "Goes with your next message after this reply.");
+  await composer.press("Enter");
+  await page.locator(".chat-error").filter({ hasText: "Send the selected images after this reply finishes." }).waitFor();
+  assert.equal(messagePosts().length, postsBefore + 1, "nothing was sent into the running turn");
+  assert.equal(await composer.inputValue(), correction, "the words stay in the draft");
+  assert.equal(await card.count(), 1, "the images stay attached");
+  assert.equal(chat.status, "running");
+  assert.notEqual(await target.innerText(), "About the attached images, not a model change");
+
+  // After the reply the correction goes with the same exact pages.
+  chat.messages.push({ id: `a-${chat.messages.length}`, role: "assistant", status: "complete",
+    content: "The source reads as a cool courtyard. Which surface should warm?" });
+  chat.status = "idle";
+  emitRuntime();
+  await page.getByRole("button", { name: "Send", exact: true }).waitFor();
+  await page.waitForFunction(() => document.querySelector(".chat-target__text")?.textContent === "About the attached images, not a model change");
+  await composer.press("Enter");
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  assert.deepEqual(messagePosts().slice(postsBefore + 1).map(([, , body]) => body), [{ content: correction, projectId, renderContext }]);
+  chat.status = "idle";
+  emitRuntime();
+  await page.getByRole("button", { name: "Send", exact: true }).waitFor();
 }
 /** GH-432: retained structured suggestions in the real built UI, with synthetic local APIs. */
 async function suggestionCards() {
@@ -1872,6 +2016,8 @@ try {
     await page.locator(".chat-composer").screenshot({ path: path.join(temporary, "composer-zh.png") });
   } else if (process.env.MONKEYHUB_UI_FOCUS === "idle") {
     await idleMinute();
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "render") {
+    await boardImageDiscussion();
   } else {
   if (process.env.MONKEYHUB_UI_FOCUS !== "updates") {
   await page.goto(origin);
@@ -4358,7 +4504,7 @@ try {
   await page.keyboard.press("Escape");
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false, error: null };
-  if (!process.env.MONKEYHUB_UI_FOCUS) await suggestionCards();
+  if (!process.env.MONKEYHUB_UI_FOCUS) { await suggestionCards(); await boardImageDiscussion(); }
   await idleMinute();
   }
   assert.deepEqual(errors, []);
