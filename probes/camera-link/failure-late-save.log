@@ -1,0 +1,91 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+arch
+render
+No Stage yet — Current
+Render
+AI
+Physical
+Refresh status
+
+Camera linked to Modeling
+
+Import / replace geometry (GLB or 3DM)
+Reload saved scene
+Save scene
+
+Saved scene · geometry_revision: 18f31929cc43 · scene_revision: 5009b38a596b
+
+Following the current Working Head. Saved appearances require review after geometry changes.
+
+Materials and regions
+Material
+Neutral
+Material name
+Base color
+Roughness
+Metallic
+Base color texture (UV required)
+None
+viewport-d1c00477988bd8471c219766b626dfa5de8a5715345209390092058b306baa9a.png
+Normal map (UV required)
+None
+viewport-d1c00477988bd8471c219766b626dfa5de8a5715345209390092058b306baa9a.png
+Add material
+Mesh 0
+Neutral
+Mesh 1
+Neutral
+Source mesh for new region
+obj-portico-base · 0
+obj-portico-cornice · 1
+
+Choose a source mesh, then add and name its region. Adjust the box or ellipsoid to select part of that mesh. Regions use whole triangle centroids; fine boundaries are not supported.
+
+Add region
+Lighting
+Environment and exposure
+Camera and quality
+Projection
+perspective
+orthographic
+Camera position
+Camera position X
+Camera position Y
+Camera position Z
+Camera target
+Camera target X
+Camera target Y
+Camera target Z
+FOV
+Orthographic height
+width
+height
+samples
+Denoise
+DOF is not implemented.
+Render saved scene with Cycles
+
+Cycles host is not configured.
+
+Associated drawings
+Feature references (optional)
+Generate / update four views
+FAIL Modeling and Physical exchange the actual Working Head camera; C:\Users\jiayu\AppData\Local\Temp\monkeyhub-render-browser-bIKj7B
+[]
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: {"before":{"time":17263.5,"model":"f85bbf95-1915-4cc4-985d-092ac35219f4","position":[4.119946667275089,-1.1199466672750904,2.5699466553541606],"quaternion":[0.424708200277867,0.1759198966061611,0.3398511429799874,0.8204732385702832],"target":[2,1,0.449999988079071],"up":[-0.4082482904638631,0.4082482904638631,0.8164965809277261],"projection":"perspective","fov":51,"zoom":1,"near":0.001,"far":100000,"frustum":null,"worldMatrix":[0.7071067811865475,0.7071067811865476,2.7755575615628914e-16,0,-0.408248290463863,0.4082482904638627,0.8164965809277261,0,0.5773502691896257,-0.5773502691896258,0.5773502691896255,0,4.119946667275089,-1.1199466672750904,2.5699466553541606,1],"projectionMatrix":[1.3598414732974689,0,0,0,0,2.0965435990881747,0,0,0,0,-1.0000000200000003,-1,0,0,-0.0020000000200000004,0],"rect":{"x":0,"y":88,"width":1440,"height":934,"top":88,"right":1440,"bottom":1022,"left":0},"renderSize":[1440,934],"pixelRatio":1,"devicePixelRatio":1},"newer":{"time":17294.20000000298,"model":"f85bbf95-1915-4cc4-985d-092ac35219f4","position":[4.324997261802702,-1.3249972618027033,2.774997249881774],"quaternion":[0.42470820027786693,0.17591989660616106,0.33985114297998736,0.8204732385702834],"target":[2,1,0.449999988079071],"up":[-0.4082482904638631,0.4082482904638631,0.8164965809277261],"projection":"perspective","fov":51,"zoom":1,"near":0.001,"far":100000,"frustum":null,"worldMatrix":[0.7071067811865476,0.7071067811865476,1.6653345369377348e-16,0,-0.40824829046386324,0.4082482904638629,0.8164965809277261,0,0.5773502691896257,-0.5773502691896261,0.5773502691896257,0,4.324997261802702,-1.3249972618027033,2.774997249881774,1],"projectionMatrix":[1.3598414732974689,0,0,0,0,2.0965435990881747,0,0,0,0,-1.0000000200000003,-1,0,0,-0.0020000000200000004,0],"rect":{"x":0,"y":88,"width":1440,"height":934,"top":88,"right":1440,"bottom":1022,"left":0},"renderSize":[1440,934],"pixelRatio":1,"devicePixelRatio":1},"after":{"time":17418.20000000298,"model":"f85bbf95-1915-4cc4-985d-092ac35219f4","position":[4.119946667275089,-1.1199466672750904,2.5699466553541606],"quaternion":[0.424708200277867,0.1759198966061611,0.3398511429799874,0.8204732385702832],"target":[2,1,0.449999988079071],"up":[-0.4082482904638631,0.4082482904638631,0.8164965809277261],"projection":"perspective","fov":51,"zoom":1,"near":0.001,"far":100000,"frustum":null,"worldMatrix":[0.7071067811865475,0.7071067811865476,2.7755575615628914e-16,0,-0.408248290463863,0.4082482904638627,0.8164965809277261,0,0.5773502691896257,-0.5773502691896258,0.5773502691896255,0,4.119946667275089,-1.1199466672750904,2.5699466553541606,1],"projectionMatrix":[1.3598414732974689,0,0,0,0,2.0965435990881747,0,0,0,0,-1.0000000200000003,-1,0,0,-0.0020000000200000004,0],"rect":{"x":0,"y":0,"width":0,"height":0,"top":0,"right":0,"bottom":0,"left":0},"renderSize":[1440,934],"pixelRatio":1,"devicePixelRatio":1}}
+    at file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:936:36
+    at async step (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:199:19)
+    at async file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:865:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.21.0

@@ -1,3 +1,4 @@
+import type { CameraLink } from "../workspaces/render/cameraLink";
 import type { RenderView } from "../workspaces/monkeyarch/viewer/renderView";
 /**
  * The studio shell: one conversation beside one model, and everything the
@@ -247,7 +248,8 @@ export type WorkspaceDesignContext = {
   record?: () => Promise<void>;
 };
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, onView, onRecorder, onOpenTree }: {
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraLink, onView, onRecorder, onOpenTree }: {
+  cameraLink?: CameraLink;
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
   /**
    * Open one retained run read-only through the project's View path, the one
@@ -768,17 +770,22 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       && modelInteractionEpoch.current === previewInteractionEpoch
       ? currentViewSourceRef.current : null);
   useEffect(() => {
-    onRenderReader?.(() => {
+    const read = (): RenderView | null => {
       const view = viewportRef.current?.renderView();
       if (!view) return null;
+      const displaySource = loadedArtifacts.length === 1 && loadedArtifact?.sha256
+        ? {runId:loadedArtifact.runId,assetSha256:loadedArtifact.sha256} : null;
       const sourceIssue = modelLoading ? "loading" : localEditingRef.current ? "unsaved"
-        : !loadedModelSource || blendState !== null || sourceLabel === LOCAL_SOURCE_LABEL ? "unbound" : null;
+        : !displaySource || blendState !== null || sourceLabel === LOCAL_SOURCE_LABEL ? "unbound" : null;
       const acceptedStage = designHistory?.stages.find(stage => sameModelSource(stage.modelSource, loadedModelSource));
-      return { ...view, modelSource: sourceIssue ? null : loadedModelSource, sourceIssue,
+      return { ...view, displaySource:sourceIssue ? null : displaySource, modelSource: sourceIssue ? null : loadedModelSource, sourceIssue,
         sourceStageRef: acceptedStage?.stageRef ?? loadedArtifact?.sourceStageRef ?? null };
-    });
-    return () => onRenderReader?.(null);
-  }, [onRenderReader, loadedModelSource, modelLoading, localModel, localRevision, blendState, sourceLabel, designHistory, loadedArtifact]);
+    };
+    onRenderReader?.(read);
+    const unlink=cameraLink?.attachModel({read,apply:(camera,aspect)=>viewportRef.current?.applySceneCamera(camera,aspect)});
+    const unwatch=cameraLink ? viewportRef.current?.subscribeCamera(kind=>cameraLink.changed(kind)) : undefined;
+    return () => {unlink?.();unwatch?.();if(cameraLink)viewportRef.current?.clearSceneCamera();onRenderReader?.(null);};
+  }, [onRenderReader, cameraLink, loadedModelSource, modelLoading, localModel, localRevision, blendState, sourceLabel, designHistory, loadedArtifact, loadedArtifacts.length]);
   // Record edits and continue, callable from here on; its body is defined with Sync below.
   const recordEditsRef = useRef<() => Promise<void>>(async () => undefined);
   const recordStable = useCallback(() => recordEditsRef.current(), []);

@@ -11,6 +11,9 @@ export interface RenderView {
   readonly fov: number;
   readonly aspect: number;
   readonly exposure: number;
+  readonly metersPerUnit?: number;
+  /** Exact displayed asset, including read-only external imports without an OCCT state. */
+  readonly displaySource?: { runId: string; assetSha256: string } | null;
   readonly modelSource?: ModelSourceDto | null;
   readonly sourceStageRef?: string | null;
   readonly sourceIssue?: "unsaved" | "loading" | "unbound" | null;

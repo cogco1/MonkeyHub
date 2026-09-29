@@ -1,0 +1,50 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Render starts without model initialization; capability defaults and ordered original uploads
+PASS source comparison, zoom and authenticated-byte download keep exact generation identity
+PASS zoomed result can be dragged and Fit resets the image viewport
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS project and workspace switches preserve inputs, stop hidden polling and do not cancel or resend
+Failed to load resource: the server responded with a status of 503 (Service Unavailable)
+PASS selected-image loading, HTTP failure and corrupt bytes recover by read without generating
+PASS failure preserves old image; unknown and refresh never replay the provider
+PASS a changed source marks its result outdated without silently rebinding the original
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Board receives the same exact page, selects it and can restore only the explicitly deleted old result
+PASS wide, medium, narrow and dark layouts remain usable; all rendering leaves Design HEAD unchanged
+Failed to load resource: net::ERR_FAILED
+PASS a source and direction alone can generate; a lost response recovers by read without replay
+PASS retained native result reopens in its own project without invented source or paid replay
+PASS perspective and orthographic model views become exact frozen inputs without generating until requested
+PASS Physical real geometry, camera gestures, reload and late scene reads preserve edits without AI replay
+7:16:53 PM [vite] http proxy error: /api/working-source?workspace=modeling
+Error: connect ECONNREFUSED 127.0.0.1:62165
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16)
+Failed to load resource: the server responded with a status of 502 (Bad Gateway)
+7:16:55 PM [vite] http proxy error: /api/working-source?workspace=modeling
+Error: connect ECONNREFUSED 127.0.0.1:62165
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16)
+PASS model-driven region CRUD and project isolation survive real Runtime restart
+PASS Modeling and Physical exchange the actual Working Head camera
+PASS Modeling and Physical exchange imported sample and architectural cameras independently
+FAIL Physical follows real OCCT Working Head and marks derived drawings stale; C:\Users\jiayu\AppData\Local\Temp\monkeyhub-render-browser-0IjaNh
+[]
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: GET /api/render/drawings: 404 {"code":"RUN_NOT_FOUND","detail":"demo-project: run 'mesh-view-d3206a5cd4ae81d529bbd8f37e5c7edfad0ef5e6' does not exist in the bound project: cannot read project record: run.json"}
+    at api (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:183:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async until (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:29:16)
+    at async file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:1035:5
+    at async step (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:199:19)
+    at async file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:1024:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.21.0

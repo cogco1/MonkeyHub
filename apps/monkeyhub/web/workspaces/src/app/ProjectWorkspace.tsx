@@ -1,3 +1,4 @@
+import { CameraLink } from "../workspaces/render/cameraLink";
 import type { RenderView } from "../workspaces/monkeyarch/viewer/renderView";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { asStudioApiError, StudioApiError } from "../api/client";
@@ -63,6 +64,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   const readRenderView = useCallback(() => renderReader.current?.() ?? null, []);
   const connection = useConnection();
   const studio = useStudio();
+  const cameraLink = useMemo(()=>new CameraLink(),[connection]);
   const boundProjectId = useRef(expectedProjectId);
   const [server, setServer] = useState<Loadable<ServerIdentity>>(loading);
   const [refreshError, setRefreshError] = useState<ReturnType<typeof asStudioApiError> | null>(null);
@@ -217,7 +219,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
           initialRunFollowsHead={treeView ? false : candidateFollowsHead} documentSource={pageOpen ? visit.source : null}
           initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}
           active={active && modelVisible} refreshKey={refreshKey + attempt + headMoves} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
-          onDesignContextChange={designContextChanged} onRenderReader={registerRenderReader}
+          onDesignContextChange={designContextChanged} onRenderReader={registerRenderReader} cameraLink={cameraLink}
           onView={(view) => viewRun({ ...view, back: false }, true)} onRecorder={registerRecorder}
           onOpenTree={designTree.available ? () => onWorkspaceChange("tree") : undefined} />
       </div>}
@@ -227,10 +229,10 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
           <Publish projectId={boundProjectId.current!} active={active && workspace === "publish"} refreshKey={refreshKey + attempt} boardRequest={publishRequest} />
         </Suspense>
       </div>}
-      {(renderVisited || workspace === "render") && <div data-project-surface="render" hidden={workspace !== "render"} inert={!active || workspace !== "render"}
+      {(renderVisited || archVisited || workspace === "render") && <div data-project-surface="render" hidden={workspace !== "render"} inert={!active || workspace !== "render"}
         style={{ height: "100%", minHeight: 0, display: workspace === "render" ? "block" : "none" }}>
         <Suspense fallback={<LoadingOverlay mode="boot" status="Render" />}>
-          <Render readModelView={readRenderView} onModeling={() => onWorkspaceChange("arch")} projectId={boundProjectId.current!} active={active && workspace === "render"} refreshKey={`${refreshKey + attempt + headMoves}:${designTree.source?.workingSource.source?.assetSha256 ?? ""}`}
+          <Render cameraLink={cameraLink} readModelView={readRenderView} onModeling={() => onWorkspaceChange("arch")} projectId={boundProjectId.current!} active={active && workspace === "render"} refreshKey={`${refreshKey + attempt + headMoves}:${designTree.source?.workingSource.source?.assetSha256 ?? ""}`}
             onBoard={(source) => { setVisit(null); setBoardPage({ source, requestId: crypto.randomUUID() }); setBoardRefresh((value) => value + 1); onWorkspaceChange("board"); }} />
         </Suspense>
       </div>}

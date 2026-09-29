@@ -1,0 +1,31 @@
+
+> build
+> npm run sync && tsc --noEmit && vite build
+
+
+> sync
+> node workspaces/scripts/sync-rhino3dm.mjs
+
+Synced Rhino3dm runtime to C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-319-shared-camera\apps\monkeyhub\web\.generated\public\rhino3dm
+npm notice
+npm notice New major version of npm available! 11.19.0 -> 12.1.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.1.0
+npm notice To update run: npm install -g npm@12.1.0
+npm notice
+workspaces/src/app/App.tsx(782,22): error TS2345: Argument of type '() => { scene: Scene; camera: ViewCamera; target: readonly number[]; fov: number; aspect: number; exposure: number; metersPerUnit?: number; modelSource: ModelSourceDto | null; sourceIssue: string | null; sourceStageRef: string | null; } | null' is not assignable to parameter of type '() => RenderView | null'.
+  Type '{ scene: Scene<Object3DEventMap>; camera: ViewCamera; target: readonly number[]; fov: number; aspect: number; exposure: number; metersPerUnit?: number | undefined; modelSource: ModelSourceDto | null; sourceIssue: string | null; sourceStageRef: string | null; } | null' is not assignable to type 'RenderView | null'.
+    Type '{ scene: Scene; camera: ViewCamera; target: readonly number[]; fov: number; aspect: number; exposure: number; metersPerUnit?: number; modelSource: ModelSourceDto | null; sourceIssue: string | null; sourceStageRef: string | null; }' is not assignable to type 'RenderView'.
+      Types of property 'sourceIssue' are incompatible.
+        Type 'string | null' is not assignable to type '"loading" | "unbound" | "unsaved" | null | undefined'.
+          Type 'string' is not assignable to type '"loading" | "unbound" | "unsaved" | null | undefined'.
+workspaces/src/app/App.tsx(783,43): error TS2322: Type '() => { scene: Scene; camera: ViewCamera; target: readonly number[]; fov: number; aspect: number; exposure: number; metersPerUnit?: number; modelSource: ModelSourceDto | null; sourceIssue: string | null; sourceStageRef: string | null; } | null' is not assignable to type '() => RenderView | null'.
+  Type '{ scene: Scene<Object3DEventMap>; camera: ViewCamera; target: readonly number[]; fov: number; aspect: number; exposure: number; metersPerUnit?: number | undefined; modelSource: ModelSourceDto | null; sourceIssue: string | null; sourceStageRef: string | null; } | null' is not assignable to type 'RenderView | null'.
+    Type '{ scene: Scene; camera: ViewCamera; target: readonly number[]; fov: number; aspect: number; exposure: number; metersPerUnit?: number; modelSource: ModelSourceDto | null; sourceIssue: string | null; sourceStageRef: string | null; }' is not assignable to type 'RenderView'.
+      Types of property 'sourceIssue' are incompatible.
+        Type 'string | null' is not assignable to type '"loading" | "unbound" | "unsaved" | null | undefined'.
+          Type 'string' is not assignable to type '"loading" | "unbound" | "unsaved" | null | undefined'.
+npm notice
+npm notice New major version of npm available! 11.19.0 -> 12.1.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.1.0
+npm notice To update run: npm install -g npm@12.1.0
+npm notice

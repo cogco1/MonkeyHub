@@ -246,7 +246,13 @@
         "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
         "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx",
-        "probes/physical-camera/"
+        "probes/physical-camera/",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/renderView.ts",
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/cameraLink.ts",
+        "apps/monkeyhub/web/workspaces/test/cameraLink.test.ts",
+        "apps/monkeyhub/web/workspaces/test/viewportFit.test.ts",
+        "probes/camera-link/"
       ],
       "card": "docs/mapping/planning/GH-319-penguin-scene.md",
       "acceptance": [
@@ -256,7 +262,8 @@
       ],
       "notes": [
         "GH-321 independent stacked follow-up owns region editor/default/tests paths after immutable PR 330 baseline 8e1388e2. No PR 330 content is rewritten. Working Head/camera/Board work remains GH-319; coordinate future overlapping edits.",
-        "Independent Working Head slice based on PR 372. Region baseline unchanged; only source metadata UI paths handed back for this follow-up."
+        "Independent Working Head slice based on PR 372. Region baseline unchanged; only source metadata UI paths handed back for this follow-up.",
+        "Independent camera-link slice on draft 399: adapt the existing Physical scene draft to the matching Modeling source and file units. No new persistence owner; current-main integration and the proposed successor issue decision remain separate."
       ]
     },
     {

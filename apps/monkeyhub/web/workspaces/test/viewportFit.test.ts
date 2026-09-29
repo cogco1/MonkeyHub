@@ -52,7 +52,7 @@ function viewportFixture() {
   const marker = "    const resize = () => {";
   const start = source.indexOf(marker);
   assert.ok(start >= 0 && start === source.lastIndexOf(marker));
-  const end = source.indexOf("    const observer = new ResizeObserver(resize);", start);
+  const end = source.indexOf("    const linkedResize =", start);
   assert.ok(end > start);
   const model = new Mesh(new BoxGeometry(8, 3, 4), new MeshBasicMaterial());
   model.position.set(12, -3, 7);

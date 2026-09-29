@@ -1,0 +1,165 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Render starts without model initialization; capability defaults and ordered original uploads
+PASS source comparison, zoom and authenticated-byte download keep exact generation identity
+PASS zoomed result can be dragged and Fit resets the image viewport
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS project and workspace switches preserve inputs, stop hidden polling and do not cancel or resend
+Failed to load resource: the server responded with a status of 503 (Service Unavailable)
+PASS selected-image loading, HTTP failure and corrupt bytes recover by read without generating
+PASS failure preserves old image; unknown and refresh never replay the provider
+PASS a changed source marks its result outdated without silently rebinding the original
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Board receives the same exact page, selects it and can restore only the explicitly deleted old result
+PASS wide, medium, narrow and dark layouts remain usable; all rendering leaves Design HEAD unchanged
+Failed to load resource: net::ERR_FAILED
+PASS a source and direction alone can generate; a lost response recovers by read without replay
+PASS retained native result reopens in its own project without invented source or paid replay
+PASS perspective and orthographic model views become exact frozen inputs without generating until requested
+PASS Physical real geometry, camera gestures, reload and late scene reads preserve edits without AI replay
+7:00:57 PM [vite] http proxy error: /api/working-source?workspace=modeling
+Error: connect ECONNREFUSED 127.0.0.1:61953
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16)
+PASS model-driven region CRUD and project isolation survive real Runtime restart
+PASS Modeling and Physical exchange the actual Working Head camera
+arch
+render
+No Stage yet — Current
+Render
+AI
+Physical
+Reading…
+
+Camera linked to Modeling
+
+Import / replace geometry (GLB or 3DM)
+Reload saved scene
+Save scene
+
+Saved scene · geometry_revision: b8fac80bbbca · scene_revision: 6a373697a892
+
+Materials and regions
+Material
+Dark back / head
+White belly
+Beak
+Eye white
+Pupil
+Feet
+Material name
+Base color
+Roughness
+Metallic
+Base color texture (UV required)
+None
+isometric.png
+top.png
+side.png
+front.png
+render.png
+floor-plan.png
+floor-plan.png
+render.png
+floor-plan.png
+render.png
+render.png
+cool.png
+plan-reference.png
+revised-plan-reference.png
+revised-reference.png
+revised-source.png
+source.png
+warm.png
+Normal map (UV required)
+None
+isometric.png
+top.png
+side.png
+front.png
+render.png
+floor-plan.png
+floor-plan.png
+render.png
+floor-plan.png
+render.png
+render.png
+cool.png
+plan-reference.png
+revised-plan-reference.png
+revised-reference.png
+revised-source.png
+source.png
+warm.png
+Add material
+Mesh 0
+Dark back / head
+White belly
+Beak
+Eye white
+Pupil
+Feet
+Source mesh for new region
+geometry_0 · 0
+
+Choose a source mesh, then add and name its region. Adjust the box or ellipsoid to select part of that mesh. Regions use whole triangle centroids; fine boundaries are not supported.
+
+Add region
+belly
+beak
+feet
+eye-right
+eye-left
+pupil-right
+pupil-left
+Lighting
+Environment and exposure
+Camera and quality
+Render saved scene with Cycles
+
+Cycles host is not configured.
+
+Associated drawings
+Feature references (optional)
+Generate / update four views
+isometric · CURRENT / 当前
+
+b8fac80bbbca · overall-width: 567.086 mm; overall-height: 952.649 mm
+
+View drawing
+top · CURRENT / 当前
+
+b8fac80bbbca · overall-width: 624.290 mm; overall-height: 671.712 mm
+
+View drawing
+side · CURRENT / 当前
+
+b8fac80bbbca · overall-width: 671.712 mm; overall-height: 1000.000 mm
+
+View drawing
+front · CURRENT / 当前
+
+b8fac80bbbca · overall-width: 624.290 mm; overall-height: 1000.000 mm
+
+View drawing
+FAIL Modeling and Physical exchange imported sample and architectural cameras independently; C:\Users\jiayu\AppData\Local\Temp\monkeyhub-render-browser-LHvGZr
+[]
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+  assert.ok(Math.abs(saved.scene.camera.position[i]-moved.position[i])<1e-7)
+
+    at file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:961:36
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async step (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:191:19)
+    at async file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:921:3 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.21.0

@@ -1,3 +1,4 @@
+import type { Camera as SceneCamera } from "../../render/sceneTypes";
 import { captureRenderView } from "./renderView";
 import {
   forwardRef,
@@ -210,6 +211,9 @@ export interface ViewportLoadOptions {
 }
 
 export interface ViewportController {
+  applySceneCamera(camera: SceneCamera, aspect: number): void;
+  clearSceneCamera(): void;
+  subscribeCamera(listener: (kind: "gesture" | "resize") => void): () => void;
   /** Borrow the current scene for a read-only Render preview; never dispose its assets. */
   renderView(): import("./renderView").RenderView | null;
   openFile(file: File, sourceLabel?: string, options?: ViewportLoadOptions): Promise<void>;
@@ -334,6 +338,7 @@ interface ViewportRuntime {
   orthographicCamera: OrthographicCamera;
   renderer: WebGLRenderer;
   controls: OrbitControls;
+  resetCameraControls(): void;
   model: Object3D | null;
   modelIndex: ReturnType<typeof indexLoadedObjects> | null;
   snapIndex: SceneSnapIndex;
@@ -881,12 +886,14 @@ function fitRuntime(runtime: ViewportRuntime): void {
   const distance = fitDistance({ radius, fovDegrees: camera.fov, aspect: camera.aspect });
   const direction = new Vector3(1, -1, 0.78).normalize();
 
+  const upChanged = !camera.up.equals(new Vector3(0, 0, 1));
   camera.up.set(0, 0, 1);
   camera.position.copy(center).addScaledVector(direction, distance);
   camera.near = Math.max(distance / 1000, 0.01);
   camera.far = Math.max(distance * 100, 1000);
   camera.updateProjectionMatrix();
   runtime.controls.target.copy(center);
+  if (upChanged) runtime.resetCameraControls?.();
   runtime.controls.update();
   runtime.render();
 }
@@ -912,8 +919,10 @@ function standardRuntime(runtime: ViewportRuntime, view: StandardView): void {
   const box = boundsForRuntime(runtime);
   if (box.isEmpty()) return;
   const frame = standardViewFrame(view);
+  const previousUp = runtime.camera.up.clone();
   const center = fitOrthographicBox(runtime.orthographicCamera, box, runtimeAspect(runtime), frame.direction, frame.up);
   runtime.controls.target.copy(center);
+  if(!runtime.camera.up.equals(previousUp))runtime.resetCameraControls?.();
   runtime.controls.update();
   runtime.render();
 }
@@ -960,6 +969,13 @@ export const ThreeDmViewport = forwardRef<
   const [snapFeedback, setSnapFeedback] = useState<ModelSnap | null>(null);
   const clearSnap = useCallback(() => { interaction.current.modelSnap = null; setSnapFeedback(null); }, [interaction]);
   const runtimeRef = useRef<ViewportRuntime | null>(null);
+  const cameraListeners = useRef(new Set<(kind: "gesture" | "resize") => void>());
+  const applyingCamera = useRef(false);
+  const modelScale = () => {
+    const units=runtimeRef.current?.model?.userData.settings?.modelUnitSystem;
+    const id=typeof units==='number'?units:units?.value;
+    return ({2:.001,3:.01,4:1,5:1000,8:.0254,9:.3048} as Record<number,number>)[id];
+  };
   const loadGenerationRef = useRef(0);
   const secondaryLoadRequest = useRef(0);
   const hoverEnabledRef = useRef(hoverEnabled);
@@ -1871,8 +1887,36 @@ export const ThreeDmViewport = forwardRef<
       renderView: () => {
         const runtime = runtimeRef.current;
         if (!runtime || (!runtime.model && !runtime.draftObjects.size)) return null;
-        return captureRenderView(runtime.scene, runtime.camera, runtime.controls.target,
-          runtime.perspectiveCamera.fov, runtime.renderer.toneMappingExposure);
+        return { ...captureRenderView(runtime.scene, runtime.camera, runtime.controls.target,
+          runtime.perspectiveCamera.fov, runtime.renderer.toneMappingExposure), metersPerUnit: modelScale() };
+      },
+      subscribeCamera: listener => { cameraListeners.current.add(listener);return ()=>cameraListeners.current.delete(listener); },
+      clearSceneCamera: ()=>runtimeRef.current?.renderer.domElement.parentElement?.querySelector('[data-render-gate]')?.remove(),
+      applySceneCamera: (value, aspect) => {
+        const runtime=runtimeRef.current,scale=modelScale();if(!runtime || !scale)return;
+        applyingCamera.current=true;
+        try {
+          activateProjection(runtime,value.projection);
+          const camera=runtime.camera, margin=Math.max(1,aspect/runtimeAspect(runtime));
+          const changedUp=!camera.up.equals(new Vector3().fromArray(value.up));
+          camera.position.fromArray(value.position.map(v=>v/scale));camera.up.fromArray(value.up);
+          if(changedUp)runtime.resetCameraControls();
+          runtime.controls.target.fromArray(value.target.map(v=>v/scale));camera.zoom=1;
+          camera.near=.001/scale;camera.far=100000/scale;
+          if(camera instanceof OrthographicCamera){
+            const height=value.orthoScale/scale*margin;camera.top=height/2;camera.bottom=-height/2;
+            camera.left=-height*runtimeAspect(runtime)/2;camera.right=height*runtimeAspect(runtime)/2;
+          } else {camera.fov=2*Math.atan(Math.tan(value.fov*Math.PI/360)*margin)*180/Math.PI;}
+          camera.updateProjectionMatrix();camera.lookAt(runtime.controls.target);runtime.controls.update();runtime.render();
+          const canvas=runtime.renderer.domElement,host=canvas.parentElement;
+          if(host){
+            let gate=host.querySelector<HTMLDivElement>('[data-render-gate]');
+            if(!gate){gate=document.createElement('div');gate.dataset.renderGate='true';gate.textContent='Render frame';host.appendChild(gate);}
+            const width=canvas.clientWidth,height=canvas.clientHeight,w=Math.min(width,height*aspect),h=w/aspect;
+            Object.assign(gate.style,{position:'absolute',pointerEvents:'none',border:'1px dashed #e6b747',color:'#e6b747',fontSize:'11px',
+              left:canvas.offsetLeft+(width-w)/2+'px',top:canvas.offsetTop+(height-h)/2+'px',width:w+'px',height:h+'px'});
+          }
+        } finally { applyingCamera.current=false; }
       },
       camera: cameraState,
       unprojectOnPlane,
@@ -1893,7 +1937,7 @@ export const ThreeDmViewport = forwardRef<
       },
       standardView: (view) => {
         const runtime = runtimeRef.current;
-        if (runtime) standardRuntime(runtime, view);
+        if (runtime) {standardRuntime(runtime, view);cameraListeners.current.forEach(fn=>fn("gesture"));}
       },
       viewportSize: () => {
         const rect = runtimeRef.current?.renderer.domElement.getBoundingClientRect();
@@ -1980,7 +2024,7 @@ export const ThreeDmViewport = forwardRef<
     renderer.domElement.setAttribute("aria-label", "3DM model viewport");
     host.prepend(renderer.domElement);
 
-    const controls = new OrbitControls(perspectiveCamera, renderer.domElement);
+    let controls: OrbitControls = new OrbitControls(perspectiveCamera, renderer.domElement);
     controls.enableDamping = false;
     controls.screenSpacePanning = true;
     controls.target.set(0, 0, 0);
@@ -2063,6 +2107,18 @@ export const ThreeDmViewport = forwardRef<
       orthographicCamera,
       renderer,
       controls,
+      resetCameraControls: () => {
+        const target=controls.target.clone(),enabled=controls.enabled;
+        controls.removeEventListener("change",changedCamera);
+        controls.removeEventListener("start",startCameraInteraction);
+        controls.dispose();
+        controls=new OrbitControls(runtime.camera,renderer.domElement);
+        controls.enableDamping=false;controls.screenSpacePanning=true;controls.enabled=enabled;
+        controls.target.copy(target);
+        controls.addEventListener("change",changedCamera);
+        controls.addEventListener("start",startCameraInteraction);
+        runtime.controls=controls;
+      },
       model: null,
       modelIndex: null,
       snapIndex: new SceneSnapIndex(),
@@ -2087,7 +2143,7 @@ export const ThreeDmViewport = forwardRef<
       render,
     };
     runtimeRef.current = runtime;
-    const changedCamera = () => { clearHover(false); render(); };
+    const changedCamera = () => { clearHover(false); render(); if(!applyingCamera.current) cameraListeners.current.forEach(fn=>fn("gesture")); };
     controls.addEventListener("change", changedCamera);
     const startCameraInteraction = () => { clearHover(); };
     controls.addEventListener("start", startCameraInteraction);
@@ -2117,7 +2173,8 @@ export const ThreeDmViewport = forwardRef<
       // Initial model loading and explicit view commands already fit above.
       render();
     };
-    const observer = new ResizeObserver(resize);
+    const linkedResize = () => {resize();cameraListeners.current.forEach(fn=>fn("resize"));};
+    const observer = new ResizeObserver(linkedResize);
     observer.observe(host);
     resize();
 

@@ -6720,7 +6720,7 @@
         "Drawing as a project-bound page in the same Hub: retained cut-plan revisions and representation controls, explicit source comparison/rebuild, saved-revision SVG download and editing placement/removal of retained dimensions",
         "Conversational model export/convert tool routing, exact session attachment transfer, clarification for conflicting sources and verified result download links.",
         "project-bound chat read access to exact native source indexes through the existing studio_request tool",
-        "Render as a peer project workspace with lazy first mount and preserved per-project inputs/history; hidden views suspend polling without cancelling image attempts",
+        "Render as a peer project workspace with preserved per-project inputs/history; Modeling also initializes the existing Physical scene draft for the matching active camera, while inactive views suspend render polling and WebGL. CameraLink is a transient projection connection, not persistence: it checks model identity, converts supported 3DM file units to scene metres and fits the shared output gate; the existing scene Save/CAS owner retains camera state.",
         "Explicit Render result handoff to the existing Board using its exact SourceDocument page identity",
         "Nonsecret Render preferences through existing Hub settings; only MONKEYHUB_RENDER_API_KEY is mapped to the configured Gemini Runtime, never exposed over HTTP",
         "Modeling-to-Render preview borrows the mounted project scene and camera; explicit capture freezes an exact retained model view as the AI source. Local edits, loading and blended/unbound views cannot claim a saved model source.",

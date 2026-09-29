@@ -1,0 +1,24 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Modeling and Physical exchange the actual Working Head camera
+
+FAIL Modeling and Physical exchange imported sample and architectural cameras independently; C:\Users\jiayu\AppData\Local\Temp\monkeyhub-render-browser-Ng411X
+[]
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: PUT /api/working-draft: 404 {"code":"STATE_RECORD_NOT_FOUND","detail":"project-a: the bound project holds no authored state record at input/runner/state-record.json"}
+    at api (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:182:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:925:9
+    at async step (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:191:19)
+    at async file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:909:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.21.0

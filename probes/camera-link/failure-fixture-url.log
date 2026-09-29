@@ -1,0 +1,22 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+FAIL undefined; C:\Users\jiayu\AppData\Local\Temp\monkeyhub-render-browser-HQ6Euf
+[
+  "SyntaxError: The requested module '/@fs/C:/Users/jiayu/OneDrive/文档/ChatGPT/Blender skill/projection-development/workspace/worktrees/codex-monkeyhub-current/apps/monkeyhub/web/node_modules/pdfjs-dist/build/pdf.worker.min.mjs?url' does not provide an export named 'default'"
+]
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+locator.click: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator('[data-project-surface="render"]:visible').getByRole('button', { name: 'AI', exact: true })
+
+    at selectAI (C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-319-shared-camera\apps\monkeyhub\web\workspaces\test\renderWorkspace.browser.mjs:290:87)
+    at C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-319-shared-camera\apps\monkeyhub\web\workspaces\test\renderWorkspace.browser.mjs:291:9 {
+  log: [
+    `  - waiting for locator('[data-project-surface="render"]:visible').getByRole('button', { name: 'AI', exact: true })`
+  ],
+  name: 'TimeoutError'
+}
+
+Node.js v24.21.0

@@ -1,3 +1,4 @@
+import type { CameraLink } from "./cameraLink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useConnection, useStudio } from "../../api/ProjectRuntimeContext";
 import type { RenderJobDto, SourceDocumentDto } from "../../api/generated";
@@ -13,9 +14,11 @@ function VectorInput({ label, value, onChange }: { label: string; value: Vec3; o
   return <fieldset className="physical-vector"><legend>{label}</legend>{value.map((v, i) => <Numeric key={i} label={`${label} ${["X", "Y", "Z"][i]}`} value={v} onChange={n => { const next = [...value] as Vec3;next[i] = n;onChange(next); }} />)}</fieldset>;
 }
 
-export default function PhysicalWorkspace({ projectId, active, zh, refreshKey = 0 }: { projectId: string; active: boolean; zh: boolean; refreshKey?: number | string }) {
+export default function PhysicalWorkspace({ projectId, active, zh, refreshKey = 0, cameraLink }: { projectId: string; active: boolean; zh: boolean; refreshKey?: number | string; cameraLink?: CameraLink }) {
   const connection = useConnection(), studio = useStudio();
   const [state, setState] = useState<SceneState | null>(null), [value, setValue] = useState<PhysicalScene | null>(null), [geometry, setGeometry] = useState<Geometry | null>(null);
+  const [linked,setLinked]=useState(false);
+  useEffect(()=>cameraLink?.subscribe(()=>setLinked(cameraLink.linked())),[cameraLink]);
   const [dirty, setDirty] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]), [drawings, setDrawings] = useState<Drawing[]>([]), [jobs, setJobs] = useState<RenderJobDto[]>([]);
   const [selectedMaterial, setSelectedMaterial] = useState(""), [selectedMesh, setSelectedMesh] = useState(0), [features, setFeatures] = useState("");
@@ -42,7 +45,7 @@ export default function PhysicalWorkspace({ projectId, active, zh, refreshKey = 
   }, [request, studio]);
   useEffect(() => () => { readSequence.current++; }, [refresh]);
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
-  useEffect(() => { if (active && !dirtyRef.current) void act(refresh); }, [active, refresh, refreshKey]);
+  useEffect(() => { if ((active || cameraLink) && !dirtyRef.current) void act(refresh); }, [active, refresh, refreshKey, cameraLink]);
   useEffect(() => {
     if (!active || !jobs.some(j => j.status === "queued" || j.status === "running")) return;
     const timer = window.setInterval(() => { void studio.renderJobs().then(result => setJobs(result.jobs.filter(j => j.execution === "host"))).catch(cause => setError(String(cause))); }, 2000);
@@ -55,9 +58,16 @@ export default function PhysicalWorkspace({ projectId, active, zh, refreshKey = 
     return promise;
   }, [studio]);
   const edit = (change: (scene: PhysicalScene) => void) => { editSequence.current++;setValue(old => { if (!old) return old; const next = structuredClone(old);change(next);return next; });setDirty(true); };
+  useEffect(() => {
+    if(!cameraLink || !geometry || !value || state?.status==='stale')return;
+    return cameraLink.attachPhysical({geometry,scene:value,edit:camera=>edit(v=>{v.camera=camera;})});
+  },[cameraLink,geometry,value,state?.status]);
   const save = () => act(async () => {
-    if (!value) return;const next = await request<SceneState>("/api/render/scene", "PUT", { expectedRevision: state?.sceneRevision ?? null, scene: value });
-    setState(old => ({ ...next, cyclesAvailable: old?.cyclesAvailable }));setValue(next.scene);setDirty(false);
+    if (!value) return;const savedEdit = editSequence.current;
+    const next = await request<SceneState>("/api/render/scene", "PUT", { expectedRevision: state?.sceneRevision ?? null, scene: value });
+    setState(old => ({ ...next, cyclesAvailable: old?.cyclesAvailable }));
+    // Keep the acknowledged CAS base, but never replace edits made while saving.
+    if (savedEdit === editSequence.current) {setValue(next.scene);setDirty(false);}
   });
   const importModel = (file: File | undefined) => act(async () => {
     if (!file) return;
@@ -80,6 +90,7 @@ export default function PhysicalWorkspace({ projectId, active, zh, refreshKey = 
   const material = value?.materials.find(m => m.id === selectedMaterial) ?? value?.materials[0];
   const editMaterial = (patch: Partial<Material>) => edit(v => { const found = v.materials.find(m => m.id === material?.id);if (found) Object.assign(found, patch); });
   return <section className="physical-workspace" aria-label="Physical Render Scene">
+    {cameraLink && <p role="status">{linked ? label("Camera linked to Modeling", "相机已与建模联动") : label("Camera link waiting for the same model and supported units", "相机联动等待相同模型与支持的单位")}</p>}
     <div className="physical-actions"><label>{label("Import / replace geometry (GLB or 3DM)", "导入／替换几何（GLB 或 3DM）")}<input aria-label="Import geometry" type="file" accept=".glb,.3dm" disabled={busy} onChange={e => { void importModel(e.target.files?.[0]);e.target.value = ""; }} /></label>
       <button disabled={busy} onClick={() => void act(refresh)}>{label("Reload saved scene", "重读已保存场景")}</button>
       <button disabled={busy || !value || state?.status === "stale"} onClick={() => void save()}>{label("Save scene", "保存场景")}</button></div>
@@ -88,7 +99,7 @@ export default function PhysicalWorkspace({ projectId, active, zh, refreshKey = 
     {geometry?.source.warnings?.map(warning => <p role="alert" key={warning}>{warning}</p>)}
     {error && <p role="alert">{error}</p>}
     {state?.status === "stale" && <div role="alert"><p>{label("Geometry changed. Material regions and camera require review. Old regions are unresolved.", "几何已改变。材质区域和相机需要复核，旧区域未绑定。")}</p><button onClick={() => void act(async () => { const next = await request<PhysicalScene>("/api/render/scene/default");setValue(next);setState(old => old ? { ...old, status: "unsaved" } : old);setDirty(true); })}>{label("Rebind with neutral materials; clear old regions", "重新绑定为中性材质，清除旧区域")}</button></div>}
-    {geometry && value && geometry.source.geometryRevision === value.geometryRevision && <PhysicalPreview geometry={geometry} value={value} imageUrl={imageUrl} onCamera={camera => edit(v => { v.camera = camera; })} />}
+    {active && geometry && value && geometry.source.geometryRevision === value.geometryRevision && <PhysicalPreview geometry={geometry} value={value} imageUrl={imageUrl} onCamera={camera => edit(v => { v.camera = camera; })} />}
     {value && <div className="physical-controls">
       <details open><summary>{label("Materials and regions", "材质与区域")}</summary>
         <label>{label("Material", "材质")}<select value={material?.id ?? ""} onChange={e => setSelectedMaterial(e.target.value)}>{value.materials.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>

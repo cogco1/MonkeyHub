@@ -1,0 +1,134 @@
+{
+  "files": [
+    {
+      "path": "architecture.log",
+      "bytes": 39,
+      "sha256": "94949bdb9dd8485f30c3ffdb3ba9aca11505147efcd10ef814349d2bb470d23f"
+    },
+    {
+      "path": "architecture.png",
+      "bytes": 131048,
+      "sha256": "2ca65b5edd099fdf93b0faf045147dca2f6da095b874f7c18f495b452c9bbac9"
+    },
+    {
+      "path": "browser.log",
+      "bytes": 4219,
+      "sha256": "a257dc1a28027d6c4b0d03a978a27dc1c09083d591d606a8d94214a1d698bed0"
+    },
+    {
+      "path": "build.log",
+      "bytes": 20847,
+      "sha256": "149199d2fb23ecc610b0b83fda5c7fb95fa708d52a824f47a4f078f99e6d8ea4"
+    },
+    {
+      "path": "camera-imports.json",
+      "bytes": 77093,
+      "sha256": "10ffcd201acaaa23381f360ac0fe22233f519d6207f6e201b813319d3d891440"
+    },
+    {
+      "path": "camera-native.json",
+      "bytes": 52243,
+      "sha256": "2254b31a8d7671ca3ed90127a8e68e53844263165a70938880c8d7131bd79206"
+    },
+    {
+      "path": "camera-unit.log",
+      "bytes": 2333,
+      "sha256": "794c360e2ddc8804704bbbae65a5b2df35fa4292abc53b903956dd5d558694a1"
+    },
+    {
+      "path": "cold-diagnostic.log",
+      "bytes": 416,
+      "sha256": "7572a414b6517a494cbe5f89b99bcdc320c4b70897293a308c789ea8e7671f1a"
+    },
+    {
+      "path": "cold-trace.json",
+      "bytes": 7078,
+      "sha256": "7e0cf4b2e3cf444e68f423bc9d5b94873bcc32dd091547d824981c7979c3d532"
+    },
+    {
+      "path": "environment.json",
+      "bytes": 478,
+      "sha256": "dabfaf503e0c14e7d2ce7e4b12a15b63906cbed77b47beda4321db891de39806"
+    },
+    {
+      "path": "failed-read-run-manifest.json",
+      "bytes": 247,
+      "sha256": "6695b416329cc6390fa8ab5d7eb22fcf38cf8e3ba5bbb0969d4c6520c709c7b5"
+    },
+    {
+      "path": "failure-cold-hub.log",
+      "bytes": 6892,
+      "sha256": "98dade6f9d35b6bcfc5f6fc6af9d8a77311b2d7522830c77752c2a2606d98343"
+    },
+    {
+      "path": "failure-concurrent-drawing-read.log",
+      "bytes": 4130,
+      "sha256": "f6b64c6e471ff7ecff62397da1543f1eff577511bc4e78481ab34d3ab7b818d2"
+    },
+    {
+      "path": "failure-controls-type.log",
+      "bytes": 637,
+      "sha256": "c06ff8042e7aa52a5234dfdc6541d1385401f53a5e249ddc9c40f61d028540ec"
+    },
+    {
+      "path": "failure-empty-modeling-base.log",
+      "bytes": 1600,
+      "sha256": "825c5403bcf8a930a6e24ebb3dc0287e76ff143d667f6709eda140623f7a6e01"
+    },
+    {
+      "path": "failure-fixture-url.log",
+      "bytes": 1270,
+      "sha256": "7303c359dc3ca8100a267e4ec3f6937133348e9a85354cde72ba1652557923d6"
+    },
+    {
+      "path": "failure-hmr-interference.log",
+      "bytes": 2138,
+      "sha256": "581a77c3f15d65ed2d7373210cb5d5acd56e30310b22dc7ffbf3f08e74a3da16"
+    },
+    {
+      "path": "failure-initial-types.log",
+      "bytes": 3210,
+      "sha256": "3e39bd6ae71aff03a129ec65175d60176746405f2e055fd400f134572cde62b8"
+    },
+    {
+      "path": "failure-invalid-working-base.log",
+      "bytes": 1712,
+      "sha256": "54514c1d175a115d086b552506704eee060e417cbf322fe28b997fee8e5b10eb"
+    },
+    {
+      "path": "failure-late-save.log",
+      "bytes": 5415,
+      "sha256": "25b2d8574dd6eb1bbb97e7d47cd1b319800417a9d9bc5f9da2358c1d8d0e0fb7"
+    },
+    {
+      "path": "failure-save-wait.log",
+      "bytes": 5177,
+      "sha256": "d814e051bd5b43f0bd4bc78b4dd7711551db7f253d38cc1c4d24141063212c4a"
+    },
+    {
+      "path": "native.png",
+      "bytes": 115729,
+      "sha256": "c372efacfa1bcd7ee962936480e8e540a24618e0f15d5fe3a6fd0bd2a142408f"
+    },
+    {
+      "path": "penguin.png",
+      "bytes": 81780,
+      "sha256": "f88a749429ff72a8c1658ba0f6d38a71eb75a4511e57a42a821257fefc08de4d"
+    },
+    {
+      "path": "preliminary-focused.log",
+      "bytes": 529,
+      "sha256": "c9650634c76c5fa2a7aad9acaf2d2d0c4cc02e1f42a464b7044b791fcbf1289b"
+    },
+    {
+      "path": "README.md",
+      "bytes": 10633,
+      "sha256": "f1f8e73dc059fa7584277301519cb0bf1c10b242a27ff196617547eaa16e16a5"
+    },
+    {
+      "path": "unit.log",
+      "bytes": 42328,
+      "sha256": "ae95bb7e2af90fc071eead9d6e97b3cb07b3bc720dafbd159873583c435eaa0a"
+    }
+  ]
+}

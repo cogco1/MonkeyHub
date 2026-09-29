@@ -1,0 +1,76 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Render starts without model initialization; capability defaults and ordered original uploads
+PASS source comparison, zoom and authenticated-byte download keep exact generation identity
+PASS zoomed result can be dragged and Fit resets the image viewport
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS project and workspace switches preserve inputs, stop hidden polling and do not cancel or resend
+Failed to load resource: the server responded with a status of 503 (Service Unavailable)
+PASS selected-image loading, HTTP failure and corrupt bytes recover by read without generating
+PASS failure preserves old image; unknown and refresh never replay the provider
+PASS a changed source marks its result outdated without silently rebinding the original
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Board receives the same exact page, selects it and can restore only the explicitly deleted old result
+PASS wide, medium, narrow and dark layouts remain usable; all rendering leaves Design HEAD unchanged
+Failed to load resource: net::ERR_FAILED
+PASS a source and direction alone can generate; a lost response recovers by read without replay
+PASS retained native result reopens in its own project without invented source or paid replay
+PASS perspective and orthographic model views become exact frozen inputs without generating until requested
+PASS Physical real geometry, camera gestures, reload and late scene reads preserve edits without AI replay
+7:07:15 PM [vite] http proxy error: /api/working-source?workspace=modeling
+Error: connect ECONNREFUSED 127.0.0.1:57490
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16)
+PASS model-driven region CRUD and project isolation survive real Runtime restart
+PASS Modeling and Physical exchange the actual Working Head camera
+7:08:46 PM [vite] http proxy error: /api/working-source?workspace=modeling
+Error: connect ECONNREFUSED 127.0.0.1:57490
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16)
+Failed to load resource: the server responded with a status of 502 (Bad Gateway)
+PASS Modeling and Physical exchange imported sample and architectural cameras independently
+PASS Physical follows real OCCT Working Head and marks derived drawings stale
+FAIL cold real Hub Render leaves every project content file unchanged; entering Arch seeds only then; C:\Users\jiayu\AppData\Local\Temp\monkeyhub-render-browser-vRlKlK
+[]
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Arch-first still seeds author inputs: {"baseline":{"cold-render":{"HEAD":"ed75d92d3c81fe6de618a7fef3437b01e3786f5f55f0f5ed188f027e94a0fa78","project.json":"54adf1f5155e7f5935f1182792b5d48c7b066776dd4bbd19ed7f70d04443c132","canonical/state-v000000-a2f0f42383d47610aee36756f4e2bcecc16d3fe4543e046c78fbc4d5e32ef112.json":"a2f0f42383d47610aee36756f4e2bcecc16d3fe4543e046c78fbc4d5e32ef112","events/event-v000000-5f0d64e4c710e7e0927393122262f0d036242de2391ae376c46a31de0fe50efb.json":"5f0d64e4c710e7e0927393122262f0d036242de2391ae376c46a31de0fe50efb"},"cold-arch":{"HEAD":"96a8498478db1e2876f10e95502e44d15e66b2541320b7b66d3373871f184479","project.json":"5018b321bed5dac630873547ff792d00db3ad4213faf98fcbb3948c0261fb69b","canonical/state-v000000-395ad1b747f658b60a86ba7e0e68f81bd9bc48093298d03b43a29021ffe8e89b.json":"395ad1b747f658b60a86ba7e0e68f81bd9bc48093298d03b43a29021ffe8e89b","events/event-v000000-a6a6f0d40c2b0e38944152d9634be89b98e2b7b5fb16eded977c1133f99d7927.json":"a6a6f0d40c2b0e38944152d9634be89b98e2b7b5fb16eded977c1133f99d7927"}},"current":{"cold-render":{"HEAD":"ed75d92d3c81fe6de618a7fef3437b01e3786f5f55f0f5ed188f027e94a0fa78","project.json":"54adf1f5155e7f5935f1182792b5d48c7b066776dd4bbd19ed7f70d04443c132","canonical/state-v000000-a2f0f42383d47610aee36756f4e2bcecc16d3fe4543e046c78fbc4d5e32ef112.json":"a2f0f42383d47610aee36756f4e2bcecc16d3fe4543e046c78fbc4d5e32ef112","events/event-v000000-5f0d64e4c710e7e0927393122262f0d036242de2391ae376c46a31de0fe50efb.json":"5f0d64e4c710e7e0927393122262f0d036242de2391ae376c46a31de0fe50efb","input/runner/.seats.json.fabb08c0f2e945cea7186c9b1779e86c.tmp":"c792af1da56a973accb1367599d4287d86d05f5b7aa73b3f6a93b2a313e7ec24","input/runner/seats.json":"c792af1da56a973accb1367599d4287d86d05f5b7aa73b3f6a93b2a313e7ec24"},"cold-arch":{"HEAD":"96a8498478db1e2876f10e95502e44d15e66b2541320b7b66d3373871f184479","project.json":"5018b321bed5dac630873547ff792d00db3ad4213faf98fcbb3948c0261fb69b","canonical/state-v000000-395ad1b747f658b60a86ba7e0e68f81bd9bc48093298d03b43a29021ffe8e89b.json":"395ad1b747f658b60a86ba7e0e68f81bd9bc48093298d03b43a29021ffe8e89b","events/event-v000000-a6a6f0d40c2b0e38944152d9634be89b98e2b7b5fb16eded977c1133f99d7927.json":"a6a6f0d40c2b0e38944152d9634be89b98e2b7b5fb16eded977c1133f99d7927"}}}
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+
+
+    at until (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:29:10)
+    at async file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:1060:15
+    at async step (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:197:19)
+    at async file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:1029:3 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: undefined,
+  expected: undefined,
+  operator: 'fail',
+  diff: 'simple'
+}
+
+Node.js v24.21.0

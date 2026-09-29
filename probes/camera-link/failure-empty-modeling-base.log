@@ -1,0 +1,37 @@
+Failed to load resource: the server responded with a status of 404 (Not Found)
+PASS Modeling and Physical exchange the actual Working Head camera
+arch
+render
+No Stage yet — Current
+
+MONKEYARCH
+
+Could not reopen the selected editing version
+
+The selection has not been replaced. Retry, or explicitly return to the default editing base.
+
+Something this step needs is no longer in the project.
+
+Choose again from the current list, then try again.
+
+Technical details
+Retry
+Return to default editing base
+FAIL Modeling and Physical exchange imported sample and architectural cameras independently; C:\Users\jiayu\AppData\Local\Temp\monkeyhub-render-browser-QtGCTM
+[]
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+locator.waitFor: Timeout 60000ms exceeded.
+Call log:
+  - waiting for locator('[data-render-gate]') to be visible
+
+    at C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-319-shared-camera\apps\monkeyhub\web\workspaces\test\renderWorkspace.browser.mjs:929:54
+    at async step (C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-319-shared-camera\apps\monkeyhub\web\workspaces\test\renderWorkspace.browser.mjs:191:19)
+    at async file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs:909:3 {
+  log: [ "  - waiting for locator('[data-render-gate]') to be visible" ],
+  name: 'TimeoutError'
+}
+
+Node.js v24.21.0

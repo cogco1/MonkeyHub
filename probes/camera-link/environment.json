@@ -1,0 +1,12 @@
+{
+  "platform": "Windows",
+  "chromeChannel": "chrome",
+  "headless": true,
+  "chromeVersion": "154.0.8037.59",
+  "nodeVersion": "v24.21.0",
+  "pythonVersion": "Python 3.12.14",
+  "browserArgs": "Playwright channel chrome defaults; no forced GPU override",
+  "cameraDiagnostics": "camera-native.json and camera-imports.json record actual viewport, DPR, matrices, clip planes and render sizes",
+  "aiProvider": "offline test adapter",
+  "cycles": "not configured / NOT TESTED"
+}

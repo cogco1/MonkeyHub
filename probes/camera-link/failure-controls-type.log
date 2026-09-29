@@ -1,0 +1,12 @@
+
+> typecheck
+> tsc --noEmit
+
+workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx(2113,9): error TS2322: Type 'OrbitControls<ViewCamera>' is not assignable to type 'OrbitControls<PerspectiveCamera>'.
+  Type 'ViewCamera' is not assignable to type 'PerspectiveCamera'.
+    Type 'OrthographicCamera' is missing the following properties from type 'PerspectiveCamera': isPerspectiveCamera, fov, focus, aspect, and 9 more.
+npm notice
+npm notice New major version of npm available! 11.19.0 -> 12.1.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.1.0
+npm notice To update run: npm install -g npm@12.1.0
+npm notice

@@ -70,6 +70,7 @@ export default function PhysicalPreview({ geometry, value, imageUrl, onCamera }:
       applying = true;
       try {
         const orthographic = next.projection === "orthographic";
+        const upChanged = !camera.up.equals(new Vector3(...next.up));
         if (orthographic !== (camera instanceof OrthographicCamera)) {
           camera = orthographic ? new OrthographicCamera() : new PerspectiveCamera();
           controls.object = camera;
@@ -79,7 +80,6 @@ export default function PhysicalPreview({ geometry, value, imageUrl, onCamera }:
           camera.left = -next.orthoScale*aspect/2; camera.right = next.orthoScale*aspect/2;
           camera.top = next.orthoScale/2; camera.bottom = -next.orthoScale/2;
         } else { camera.aspect = aspect; camera.fov = next.fov; }
-        const upChanged = !camera.up.equals(new Vector3(...next.up));
         camera.up.fromArray(next.up);
         if (upChanged) {
           controls.dispose(); controls = new OrbitControls(camera, renderer.domElement);
