@@ -1172,6 +1172,7 @@ export const chatCopy = {
     renderContextDetails: "Exact sources", renderContextUnavailable: "Not in this project's documents",
     renderRoleSource: "Source image", renderRoleReference: "Reference",
     renderContextTarget: "About the attached images, not a model change",
+    renderContextReplaced: "newer version on the Board",
     resultModels: "Model results",
     externalChat: "External conversation", externalNotice: "Continue in the source application.",
     attachmentCount: "Add up to 8 attachments per message.", attachmentSize: "Each attachment must be 20 MiB or smaller.", attachmentTotal: "Attachments must total 40 MiB or less.", attachmentRead: "Could not read the attachment. Select it again.",

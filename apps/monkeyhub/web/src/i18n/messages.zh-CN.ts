@@ -1128,6 +1128,7 @@ export const chatCopy = {
     renderContextDetails: "精确来源", renderContextUnavailable: "项目资料中找不到",
     renderRoleSource: "源图", renderRoleReference: "参考图",
     renderContextTarget: "针对所附图片，不修改模型",
+    renderContextReplaced: "画板上有更新版本",
     resultModels: "模型成果",
     externalChat: "外部对话", externalNotice: "请回原应用继续对话。",
     attachmentCount: "每条消息最多添加 8 个附件。", attachmentSize: "每个附件不能超过 20 MiB。", attachmentTotal: "附件合计不能超过 40 MiB。", attachmentRead: "无法读取附件，请重新选择。",

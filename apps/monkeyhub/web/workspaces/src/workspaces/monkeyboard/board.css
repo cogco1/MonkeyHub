@@ -109,7 +109,7 @@
 .monkeyboard-render .monkeyboard-render-roles > legend { padding: 0; font-size: 14px; font-weight: 600; color: var(--ink); }
 .monkeyboard-render p.monkeyboard-render-hint { margin: 4px 0 8px; font-size: 12px; }
 .monkeyboard-render-pages { display: grid; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
-.monkeyboard-feedback label.monkeyboard-render-page { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; cursor: pointer; }
+.monkeyboard-feedback label.monkeyboard-render-page { display: flex; flex-direction: row; align-items: center; gap: 10px; min-height: 44px; margin: 0; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; cursor: pointer; }
 .monkeyboard-render-page > span { min-width: 0; overflow-wrap: anywhere; }
 .monkeyboard-render-page > input { flex: none; margin: 0; }
 .monkeyboard-render-page:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }

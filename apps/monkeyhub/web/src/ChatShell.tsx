@@ -5,7 +5,7 @@ import { applicationUrl, type AppearancePreferences } from "../../../shared-web/
 import type { WorktreeGraphDto } from "../workspaces/src/api/generated";
 import { projectStatus } from "./worktreeGraph";
 import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus } from "./api/generated";
-import { ProjectRuntimeProvider, useStudio } from "../workspaces/src/api/ProjectRuntimeContext";
+import { ProjectRuntimeProvider, useProjectRevision, useStudio } from "../workspaces/src/api/ProjectRuntimeContext";
 import { projectStores, relayHubStream } from "../workspaces/src/api/projectStore";
 import type { ModelSourceDto, RenderPageRefDto, SourceDocumentDto } from "../workspaces/src/api/generated";
 import type { BoardRenderChatRequest } from "../workspaces/src/workspaces/monkeyboard/boardRender";
@@ -229,7 +229,7 @@ function StudyThumbnails({ candidates }: { candidates: readonly string[] }) {
 /** #253: the images the next message discusses, exactly as a Board handed them over. */
 type RenderDraft = Pick<BoardRenderChatRequest, "projectId" | "source" | "references">;
 type RenderWords = { renderContextTitle: string; renderContextNext: string; renderContextAfterReply: string; renderContextRemove: string;
-  renderContextDetails: string; renderContextUnavailable: string; renderRoleSource: string; renderRoleReference: string };
+  renderContextDetails: string; renderContextUnavailable: string; renderContextReplaced: string; renderRoleSource: string; renderRoleReference: string };
 const renderPage = (page: RenderPageRefDto): PageSource => ({ runId: page.runId, assetSha256: page.assetSha256,
   revisionRef: page.revisionRef ?? null, pageIndex: page.pageIndex });
 
@@ -242,6 +242,9 @@ function RenderContextCard({ context, documents, words, running, onRemove }: {
   context: RenderDraft; documents: readonly SourceDocumentDto[] | null; words: RenderWords; running: boolean; onRemove(): void;
 }) {
   const rows = [{ role: words.renderRoleSource, page: context.source }, ...context.references.map((page) => ({ role: words.renderRoleReference, page }))];
+  // A page replaced since it was handed over is still named, and said to be replaced: sending it would be refused.
+  const replaced = new Set((documents ?? []).flatMap((document) => (document.replacesPages ?? [])
+    .map((page) => `${page.runId}:${page.assetSha256}:${page.revisionRef ?? ""}:${page.pageIndex}`)));
   return <ChatCard className="chat-render-context" title={words.renderContextTitle}
     status={<span className="chat-render-context__status">{running ? words.renderContextAfterReply : words.renderContextNext}</span>}
     actions={<button type="button" className="chat-activity__open" onClick={onRemove}>{words.renderContextRemove}</button>}
@@ -251,18 +254,22 @@ function RenderContextCard({ context, documents, words, running, onRemove }: {
     </div>)}</dl> }}>
     <ul className="chat-render-context__pages">{rows.map(({ role, page }) => {
       const document = documents ? findSource(documents, renderPage(page)) : undefined;
-      return <li key={`${role}:${page.runId}:${page.assetSha256}:${page.revisionRef ?? ""}:${page.pageIndex}`} data-found={documents ? Boolean(document) : undefined}>
+      const stale = replaced.has(`${page.runId}:${page.assetSha256}:${page.revisionRef ?? ""}:${page.pageIndex}`);
+      return <li key={`${role}:${page.runId}:${page.assetSha256}:${page.revisionRef ?? ""}:${page.pageIndex}`} data-found={documents ? Boolean(document) : undefined} data-replaced={stale || undefined}>
         {document ? <ImageThumbnail image={document} active /> : <span className="chat-render-context__thumb" aria-hidden="true" />}
-        <span className="chat-render-context__name" title={document?.fileName}>{document?.fileName ?? (documents ? words.renderContextUnavailable : "…")}</span>
-        <span className="chat-render-context__role">{role}</span>
+        <span className="chat-render-context__text">
+          <span className="chat-render-context__name" title={document?.fileName}>{document?.fileName ?? (documents ? words.renderContextUnavailable : "…")}</span>
+          <span className="chat-render-context__role">{stale ? `${role} · ${words.renderContextReplaced}` : role}</span>
+        </span>
       </li>;
     })}</ul>
   </ChatCard>;
 }
 
-/** The same card with this project's registered names, read from its own runtime. */
+/** The same card with this project's registered names, read from its own runtime and again when the project moves. */
 function RenderContextDocuments(props: Omit<Parameters<typeof RenderContextCard>[0], "documents">) {
   const studio = useStudio();
+  const revision = useProjectRevision();
   const [documents, setDocuments] = useState<readonly SourceDocumentDto[] | null>(null);
   const key = JSON.stringify(props.context);
   useEffect(() => {
@@ -270,7 +277,7 @@ function RenderContextDocuments(props: Omit<Parameters<typeof RenderContextCard>
     void studio.documents().then((list) => { if (live) setDocuments(list.projectId === props.context.projectId ? list.documents : []); },
       () => { if (live) setDocuments(null); });
     return () => { live = false; };
-  }, [studio, key]);
+  }, [studio, key, revision]);
   return <RenderContextCard {...props} documents={documents} />;
 }
 
