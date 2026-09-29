@@ -181,6 +181,15 @@
 .chat-composer-menu__text{display:flex;flex-direction:column;gap:2px;min-width:0}
 .chat-composer-menu__text small{color:var(--muted);font-size:var(--text-caption);line-height:1.5}
 .chat-composer__context{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 2px 8px;min-width:0}
+/* #253: the images the next message discusses, on the shared card shell inside the composer. */
+.chat-composer .chat-render-context{margin:0 0 12px;padding:12px 14px}
+.chat-render-context__status{overflow-wrap:anywhere}
+.chat-render-context__pages{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.chat-render-context__pages li{display:flex;align-items:center;gap:10px;min-width:0}
+.chat-render-context__pages img,.chat-render-context__thumb{flex:none;width:56px;height:40px;object-fit:contain;border-radius:6px;background:var(--ground)}
+.chat-render-context__name{min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-render-context__pages li[data-found=false] .chat-render-context__name{color:var(--violated,var(--muted))}
+.chat-render-context__role{flex:none;color:var(--muted);font-size:var(--text-caption)}
 /* DC-9: what the next message changes, and a note while another model is on screen. */
 .chat-target{display:flex;flex-direction:column;gap:2px;flex:1 1 12em;min-width:0;margin:0;color:var(--muted);font-size:var(--text-caption);line-height:1.5}
 .chat-target__text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

@@ -4661,7 +4661,8 @@
         "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work",
         "reading one exact retained scene revision by name, so an older revision can answer as evidence without changing the board's current revision",
         "An explicit BoardPageRequest source focuses that exact registered page or reinstates only that intentionally removed page through the existing insertion path, preserving the current scene draft",
-        "the one raster of a registered document page (page_raster, cached_page, #368): at most 2048 px with transparency, a bounded PNG served as its own bytes; Board previews, Publish images and the publication exports' raster previews read it from the projection cache (GET /api/projections/pages) instead of each rasterising the page"
+        "the one raster of a registered document page (page_raster, cached_page, #368): at most 2048 px with transparency, a bounded PNG served as its own bytes; Board previews, Publish images and the publication exports' raster previews read it from the projection cache (GET /api/projections/pages) instead of each rasterising the page",
+        "handing one explicitly chosen registered image page, up to three reference pages and the person's words to the host conversation as an image discussion (#253), re-verified against the registered documents on confirmation, without reading the Board scene for it or saving the Board"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (studio.artifacts and runtime.drawing_elevation)",
@@ -4695,7 +4696,10 @@
         "web: BoardPageRequest",
         "page_raster",
         "cached_page",
-        "PAGE_RASTER_EDGE"
+        "PAGE_RASTER_EDGE",
+        "web: BoardRenderChatRequest",
+        "web: prepareBoardRenderChatRequest",
+        "web: onRenderChatRequest"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -4723,7 +4727,8 @@
         "feedback reaches the existing intent, clarification and candidate controls once; no board action accepts a Stage or issues a project version",
         "Page export verifies the exact registered revision, including null versus a generated revision, and source digest before rendering; bounded previews preserve visible PDF crop/rotation and image orientation without persisting derived output",
         "a named scene revision is read from the same validated chain the latest one comes from, and reading one changes nothing; the board's run is asked for by name, and a damaged board run refuses rather than reading as an empty board",
-        "Explicit Render handoff does not resurrect every previously removed image or replace the live scene with a stale saved scene"
+        "Explicit Render handoff does not resurrect every previously removed image or replace the live scene with a stale saved scene",
+        "an image discussion names pages only by registered source identity, never by file name, position or canvas proximity; a plain PNG/JPEG needs no model and never enters the model-required design-feedback path; source and reference roles are the person's explicit choice"
       ],
       "status": "canonical",
       "tests": [
@@ -4739,7 +4744,8 @@
         "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/boardConceptFeedback.test.ts",
         "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/boardRender.test.ts"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },
@@ -7441,7 +7447,8 @@
         "The project Design Tree (状态树) surface and its Stage chip: a planar growth tree of Stages, admitted Candidates and Studies (the #294 design-history contract), the Working Head and running work; View is read-only, Continue uses the working-draft route and Accept as next Stage the existing accept route, on Current only",
         "The shared project canvas host (features/canvas): Excalidraw mount defaults, the local font path, theme mapping, wheel zoom and scene-point click hit testing, used by MonkeyBoard and the Design Tree",
         "Hub-local integration diagnostic snapshot and explicit bounded rescan; qualification and bridge execution stay with the existing adapter owner.",
-        "The configured skill library (#252): reading the library project's current skills through its Runtime and materializing them into a Claude plugin directory under <runtime root>/cache/skill-plugins/<index digest>/, passed with --plugin-dir; nothing is written into any project, and no library means an unchanged command"
+        "The configured skill library (#252): reading the library project's current skills through its Runtime and materializing them into a Claude plugin directory under <runtime root>/cache/skill-plugins/<index digest>/, passed with --plugin-dir; nothing is written into any project, and no library means an unchanged command",
+        "Binding a chat message's selected images (ChatPostRequest.renderContext, #253) to exact registered PNG/JPEG pages of the conversation's own project before anything is kept or a CLI starts, keeping them on the user message with the roles the user chose and handing roles and exact pages to the native turn, whose Agent reads each page through the registered-page export and reaches the existing studio.render routes through the operation admission"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7457,6 +7464,7 @@
         "An existing complete project folder, chosen installed CLI/model and user chat message with optional base64 file attachments (8 files, 20 MiB each, 40 MiB total)",
         "Optional explicit sourceRunId/stateDigest/targetComponentId/elementId/sourceStageRef in ChatPostRequest.designContext",
         "ChatPostRequest.contextMode: continue (legacy default), project (manual fresh source), or stage (fresh only for a newly selected exact committed Stage); project/stage require designContext",
+        "Optional ChatPostRequest.renderContext {source, references}: one exact registered source page and up to three distinct reference pages (runId, assetSha256, revisionRef, pageIndex), needing no design context",
         "ChatPresentationBindRequest and ChatPresentationRequest: explicit project/source session, turn/message UUIDs, revisioned full snapshots, attachment bytes and exact document/page references",
         "Explicitly chosen local developer patch ZIP, or the public cogco1/MonkeyHub GitHub prerelease feed (update index, ReleaseManifest@1, delta patch) over HTTPS, and the installed exact-version desktop bundle; no publisher identity is inferred"
       ],
@@ -7530,7 +7538,7 @@
         "apps/shared-web/src/browserTranslator.js: prepareEnglishToChinese, translateEnglishToChinese and subscribeToEnglishToChineseReadiness",
         "apps/shared-web/src/base.css: appearance tokens and base controls",
         "ProjectRuntimeProvider / useStudio / useConnection: project-bound client and protocol identity",
-        "ProjectWorkspace: Arch/Board/Design tree navigation, exact Board page visit and candidate preview without editing-base change; Drawing mounts explicit recipe export, file inspection and confirmed import via RecipeTransfer; comparisonRequest {candidateRunId, requestId} / onComparisonClose and the Design tree Compare open one read-only before/after against the exact retained base, once per request id: ids only grow, and null withdraws a requested comparison, loading or shown, without onComparisonClose",
+        "ProjectWorkspace: Arch/Board/Design tree navigation, exact Board page visit and candidate preview without editing-base change; Drawing mounts explicit recipe export, file inspection and confirmed import via RecipeTransfer; comparisonRequest {candidateRunId, requestId} / onComparisonClose and the Design tree Compare open one read-only before/after against the exact retained base, once per request id: ids only grow, and null withdraws a requested comparison, loading or shown, without onComparisonClose; onRenderChatRequest passes a Board image discussion naming this workspace's own project to the host conversation composer, which sends nothing until the architect sends",
         "studio_request POST /api/board/export: one registered clean-source page as a native MCP PNG image; studio_schema exposes the existing export request",
         "visual_review: the Agent's bounded look through POST /api/visual-reviews; Hub fills projectId and the per-user-message allowance; native delivery defaults to frames, validates exact source/digest/PNG/dimensions and returns native images to the current model with no findings; explicit observation delivery retains configured-provider findings and marks preserve findings escalate",
         "studio_request POST /api/drawings/plans (dressingOperations place and edit entourage; marked sourceKind agent unless the request names a kind) with the reads GET /api/drawings/plans/vector, GET /api/drawings/plans/dimensions and POST /api/drawings/plans/status",
@@ -7590,7 +7598,9 @@
         "A project watcher derives which work copies exist again only when the runs, their document records or the files in their copy workspaces change, compared on a wake and every 30 s without reading other records; a read forwarded to Studio never wakes it (#314)",
         "The Agent looks through visual_review only, never studio_request or studio_schema: one allowance per answered user message, its class fixed once spent, more than two polish rounds only on the user's words; answered frames-rendering failures spend nothing, successful frame delivery supplies no finding ids for after_repair, and unanswered calls or failed structured-provider calls remain spent",
         "The idle project observer reads the retained history again only when the binding's read token (this process's write serial and the layout watch's fingerprint) moved or is not stable; asking walks nothing, and an observer that stops closes the binding, releasing the watch's handle on the project folder (#363)",
-        "Suggestion cards remain source-turn/revision-bound ChatStore messages. Selecting the latest completed card records its reference before the ordinary provider turn; stale, repeated, cross-project, non-idle, archived and external selections cannot execute. Estimates without a basis stay unknown; a suggestion grants no tool, installation, spending or project-issue authority."
+        "Suggestion cards remain source-turn/revision-bound ChatStore messages. Selecting the latest completed card records its reference before the ordinary provider turn; stale, repeated, cross-project, non-idle, archived and external selections cannot execute. Estimates without a basis stay unknown; a suggestion grants no tool, installation, spending or project-issue authority.",
+        "A render context is refused before any message is kept or any CLI starts when a page is not this project's exact registration, has a newer registered replacement or is not a PNG/JPEG image; nothing chooses a newest, same-named or nearby image instead",
+        "A chat render request names a provider the Runtime reports available, or is refused before admission: with none configured the answer says image generation is not configured and nothing is submitted; one requestId is one Runtime dispatch"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -7737,7 +7747,8 @@
         "apps/monkeyhub/web/test/catalogs.test.ts",
         "apps/monkeyhub/api/tests/test_integrations.py",
         "apps/monkeyhub/api/tests/test_chat_suggestions.py",
-        "apps/monkeyhub/web/workspaces/test/projectStore.test.ts"
+        "apps/monkeyhub/web/workspaces/test/projectStore.test.ts",
+        "apps/monkeyhub/api/tests/test_chat_render.py"
       ],
       "depends_on": [
         "project.repository",

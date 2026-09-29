@@ -1166,6 +1166,12 @@ export const chatCopy = {
     filesTitle: "Files from this message", fileCount: (count: number) => count === 1 ? "1 file" : `${count} files`,
     fileDetails: (count: number) => !count ? "Technical details" : `Technical details and ${count === 1 ? "1 more file" : `${count} more files`}`,
     filePage: (page: number) => `Page ${page}`, fileReference: (index: number) => `Item ${index}`,
+    // #253: a Board's image discussion in the composer, and the role each image plays in a message.
+    renderContextTitle: "Image discussion", renderContextNext: "Goes with your next message, and with each correction until you remove it.",
+    renderContextAfterReply: "Goes with your next message after this reply.", renderContextRemove: "Remove images",
+    renderContextDetails: "Exact sources", renderContextUnavailable: "Not in this project's documents",
+    renderRoleSource: "Source image", renderRoleReference: "Reference",
+    renderContextTarget: "About the attached images, not a model change",
     resultModels: "Model results",
     externalChat: "External conversation", externalNotice: "Continue in the source application.",
     attachmentCount: "Add up to 8 attachments per message.", attachmentSize: "Each attachment must be 20 MiB or smaller.", attachmentTotal: "Attachments must total 40 MiB or less.", attachmentRead: "Could not read the attachment. Select it again.",
@@ -1266,6 +1272,7 @@ export const chatCopy = {
       fabProfiles: "Read print profiles", fabCheck: "Check the print file", present: "Present a result", attachment: "Read an attachment",
       bind: "Connect this conversation", desktopStep: "Use the desktop", readFiles: "Look through files", editFiles: "Edit files",
       command: "Run a command", planSteps: "Plan the steps", webFetch: "Open a web page", generic: "Other step",
+      renderRead: "Check the render", renderStart: "Start an image render",
     },
     jumpLatest: "Jump to the latest message", jumpLatestNew: (count: number) => `Jump to the latest message (${count} new)`,
     // GH-300: the sidebar's cross-project entries.

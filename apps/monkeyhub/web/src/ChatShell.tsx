@@ -7,7 +7,9 @@ import { projectStatus } from "./worktreeGraph";
 import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus } from "./api/generated";
 import { ProjectRuntimeProvider, useStudio } from "../workspaces/src/api/ProjectRuntimeContext";
 import { projectStores, relayHubStream } from "../workspaces/src/api/projectStore";
-import type { ModelSourceDto } from "../workspaces/src/api/generated";
+import type { ModelSourceDto, RenderPageRefDto, SourceDocumentDto } from "../workspaces/src/api/generated";
+import type { BoardRenderChatRequest } from "../workspaces/src/workspaces/monkeyboard/boardRender";
+import { ImageThumbnail } from "../workspaces/src/workspaces/render/RenderResults";
 import { ModelThumbnail } from "../workspaces/src/features/artifacts/ModelThumbnail";
 import { MODEL_PREVIEW_RETAINED, previewSourceKey } from "../workspaces/src/features/artifacts/useRetainedModelPreview";
 import type { WorkspaceDesignContext, WorkspacePosition } from "../workspaces/src/app/ProjectWorkspace";
@@ -15,7 +17,7 @@ import { MonitorPage } from "./MonitorPage";
 import { ChatCard, ChatCardDetails } from "./ChatCard";
 import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessageContent";
 import { ChatSuggestionCard } from "./ChatSuggestionCard";
-import type { PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
+import { findSource, type PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
 import { clock, currentStep, describeCall, describeStep, dismissible, operationStep, rawDetail, rawLine, resultCandidates, stepText, turnsOf, unfinishedOperations, unrecoverable, workedSeconds, type ProcessTurn, type ProcessWords } from "./chatProcess";
@@ -222,6 +224,54 @@ function StudyThumbnails({ candidates }: { candidates: readonly string[] }) {
       <ModelThumbnail source={sources.get(candidate)} key={previewRevisions.get(previewSourceKey(sources.get(candidate))) ?? 0} />
     </span>)}
   </span>;
+}
+
+/** #253: the images the next message discusses, exactly as a Board handed them over. */
+type RenderDraft = Pick<BoardRenderChatRequest, "projectId" | "source" | "references">;
+type RenderWords = { renderContextTitle: string; renderContextNext: string; renderContextAfterReply: string; renderContextRemove: string;
+  renderContextDetails: string; renderContextUnavailable: string; renderRoleSource: string; renderRoleReference: string };
+const renderPage = (page: RenderPageRefDto): PageSource => ({ runId: page.runId, assetSha256: page.assetSha256,
+  revisionRef: page.revisionRef ?? null, pageIndex: page.pageIndex });
+
+/**
+ * The composer's image discussion (#253), on the shared card shell: names and roles in the main
+ * flow, the exact pages on demand. It shows what the next message will carry and sends nothing.
+ * `documents` is this project's registered list when its runtime answered, else null.
+ */
+function RenderContextCard({ context, documents, words, running, onRemove }: {
+  context: RenderDraft; documents: readonly SourceDocumentDto[] | null; words: RenderWords; running: boolean; onRemove(): void;
+}) {
+  const rows = [{ role: words.renderRoleSource, page: context.source }, ...context.references.map((page) => ({ role: words.renderRoleReference, page }))];
+  return <ChatCard className="chat-render-context" title={words.renderContextTitle}
+    status={<span className="chat-render-context__status">{running ? words.renderContextAfterReply : words.renderContextNext}</span>}
+    actions={<button type="button" className="chat-activity__open" onClick={onRemove}>{words.renderContextRemove}</button>}
+    details={{ label: words.renderContextDetails, children: <dl className="chat-file-sources">{rows.map(({ role, page }) => <div key={`${role}:${page.runId}:${page.assetSha256}:${page.revisionRef ?? ""}:${page.pageIndex}`}>
+      <dt>{role} · {documents ? findSource(documents, renderPage(page))?.fileName ?? words.renderContextUnavailable : page.runId}</dt>
+      <dd><code>{page.runId}</code><br /><code>{page.assetSha256}</code><br /><code>{page.revisionRef ?? "null"}</code> · <code>{page.pageIndex}</code></dd>
+    </div>)}</dl> }}>
+    <ul className="chat-render-context__pages">{rows.map(({ role, page }) => {
+      const document = documents ? findSource(documents, renderPage(page)) : undefined;
+      return <li key={`${role}:${page.runId}:${page.assetSha256}:${page.revisionRef ?? ""}:${page.pageIndex}`} data-found={documents ? Boolean(document) : undefined}>
+        {document ? <ImageThumbnail image={document} active /> : <span className="chat-render-context__thumb" aria-hidden="true" />}
+        <span className="chat-render-context__name" title={document?.fileName}>{document?.fileName ?? (documents ? words.renderContextUnavailable : "…")}</span>
+        <span className="chat-render-context__role">{role}</span>
+      </li>;
+    })}</ul>
+  </ChatCard>;
+}
+
+/** The same card with this project's registered names, read from its own runtime. */
+function RenderContextDocuments(props: Omit<Parameters<typeof RenderContextCard>[0], "documents">) {
+  const studio = useStudio();
+  const [documents, setDocuments] = useState<readonly SourceDocumentDto[] | null>(null);
+  const key = JSON.stringify(props.context);
+  useEffect(() => {
+    let live = true;
+    void studio.documents().then((list) => { if (live) setDocuments(list.projectId === props.context.projectId ? list.documents : []); },
+      () => { if (live) setDocuments(null); });
+    return () => { live = false; };
+  }, [studio, key]);
+  return <RenderContextCard {...props} documents={documents} />;
 }
 
 function Icon({ name }: { name: string }) {
@@ -518,6 +568,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     setDraftsKept(!pending.some((key) => pendingDrafts.current.has(key) && Boolean(drafts[key]?.trim())));
   }, [drafts]);
   const [draftAttachments, setDraftAttachments] = useState<Record<string, File[]>>({});
+  // #253: an image discussion a Board handed over, by draft. Each message carries it until it is removed,
+  // so a correction resends the same exact pages; it lives only in this window, like chosen files.
+  const [renderContexts, setRenderContexts] = useState<Record<string, RenderDraft>>({});
   const [contextModes, setContextModes] = useState<Record<string, "continue" | "project">>({});
   const [designContexts, setDesignContexts] = useState<Record<string, WorkspaceDesignContext | null>>({});
   // DC-9: each mounted project's position as its Stage chip states it.
@@ -652,6 +705,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const draftKey = chatId ?? `new:${projectDir ?? ""}`;
   const draft = drafts[draftKey] ?? "";
   const attachments = draftAttachments[draftKey] ?? [];
+  const renderDraft = renderContexts[draftKey]?.projectId === project?.projectId ? renderContexts[draftKey]! : null;
   const contextMode = contextModes[draftKey] ?? "continue";
   const workspaceContext = projectRuntime ? designContexts[projectRuntime.runtimeId] : null;
   const designContext = workspaceContext?.projectId === project?.projectId ? workspaceContext?.designContext : null;
@@ -669,7 +723,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // DC-9: what the next message changes. It always works on Current, the editing base the design
   // context names; the label adds where Current stands, and says so when another model is on screen.
   const position = projectRuntime && workspaceContext?.projectId === project?.projectId ? positions[projectRuntime.runtimeId] ?? null : null;
-  const target = staleBase ? w.targetStale(staleBase.publishedVersion, staleBase.baseVersion) : [w.target, position?.current,
+  // #253: a message carrying an image discussion names its own pages and no editing base (unless a New topic starts one).
+  const imageTurn = Boolean(renderDraft) && contextMode !== "project";
+  const target = imageTurn ? t.renderContextTarget : staleBase ? w.targetStale(staleBase.publishedVersion, staleBase.baseVersion) : [w.target, position?.current,
     workspaceContext?.projectId === project?.projectId && (workspaceContext?.unavailableReason === "unsaved" || workspaceContext?.unavailableReason === "unsynced")
       ? w.targetUnrecorded : null].filter(Boolean).join(" · ");
   const running = chat?.id === chatId && chat.status === "running";
@@ -1015,6 +1071,45 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     setDrafts((value) => ({ ...value, [draftKey]: value[draftKey]?.trim() ? value[draftKey]! : t.startingDraft }));
     input.current?.focus();
   };
+  // #253: a Board's image discussion arrives as a draft in its project's conversation: its words in the
+  // composer, its exact pages on the card above them. Nothing is sent until the architect sends.
+  const renderHandOver = useRef<(target: { projectDir?: string; projectId?: string }, request: BoardRenderChatRequest) => void>(() => undefined);
+  renderHandOver.current = (target, request) => {
+    if (!target.projectDir || request.projectId !== target.projectId || selection.current.projectDir !== target.projectDir) return;
+    const current = selection.current.chatId;
+    const shown = current ? (chat?.id === current ? chat : sessions.find((row) => row.id === current)) : undefined;
+    // An external or archived conversation has no composer: the discussion starts a new one in this project.
+    const fresh = !current || Boolean(shown?.sourceSessionId) || Boolean(shown?.archived);
+    const key = fresh || !current ? `new:${target.projectDir}` : current;
+    if (fresh && current) { setArchivedView(false); setChatId(null); setChat(null); }
+    setDrafts((value) => ({ ...value, [key]: value[key]?.trim() ? `${value[key]}\n\n${request.content}` : request.content }));
+    setRenderContexts((value) => ({ ...value, [key]: { projectId: request.projectId, source: request.source, references: request.references } }));
+    setError(null);
+    // Below 900 px the tool panel covers the conversation; the composer is what comes next.
+    if (window.matchMedia?.("(max-width: 900px)").matches) setPanel(false);
+    requestAnimationFrame(() => input.current?.focus());
+  };
+  const renderCallbacks = useRef(new Map<string, (request: BoardRenderChatRequest) => void>());
+  const workspaceRenderCallback = (tab: ToolTab) => {
+    let callback = renderCallbacks.current.get(tab.runtimeId!);
+    if (!callback) {
+      const target = { projectDir: tab.projectDir, projectId: tab.projectId };
+      callback = (request) => renderHandOver.current(target, request);
+      renderCallbacks.current.set(tab.runtimeId!, callback);
+    }
+    return callback;
+  };
+  const moveRender = (from: string, to: string) => setRenderContexts((value) => {
+    if (from === to || !(from in value)) return value;
+    const next = { ...value, [to]: value[from]! };
+    delete next[from];
+    return next;
+  });
+  const removeRender = () => {
+    const key = draftKey;
+    setRenderContexts((value) => { const next = { ...value }; delete next[key]; return next; });
+    input.current?.focus();
+  };
 
   const selectChat = (item: ChatSummary) => {
     if (item.projectDir !== projectDir) { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
@@ -1175,6 +1270,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     }
     const target = projectDir, content = draft.trim(), key = draftKey, files = attachments;
     const requestedContext = designContext, requestedContextMode = contextMode, contextProjectId = workspaceContext?.projectId;
+    const requestedRender = renderDraft;
     if (requestedContextMode === "project" && !requestedContext) {
       setError({ code: "CHAT_CONTEXT_UNAVAILABLE", detail: contextUnavailable }); return;
     }
@@ -1186,18 +1282,24 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         current = await request<ChatDetail>("/api/chat/sessions", body);
         setDrafts((value) => ({ ...value, [key]: "", [current!.id]: content }));
         setDraftAttachments((value) => ({ ...value, [key]: [], [current!.id]: files }));
+        moveRender(key, current.id);
         if (selection.current.projectDir === target && selection.current.chatId === chatId) { setChatId(current.id); setChat(current); }
       }
       if (current.archived) { setChat(current); return; }
       await ensureProject(target, current.projectId);
       const body: ChatPostRequest = { content, projectId: current.projectId };
-      if (requestedContext && contextProjectId === current.projectId) {
+      // #253: an image discussion names its own exact pages and needs no design state; only a
+      // New topic the architect chose still starts from the editing state.
+      if (requestedContext && contextProjectId === current.projectId && (!requestedRender || requestedContextMode === "project")) {
         body.designContext = requestedContext;
         body.contextMode = "stage";
       }
       if (requestedContextMode === "project") {
         if (!body.designContext) throw new Error(t.contextOpenProject);
         body.contextMode = "project";
+      }
+      if (requestedRender && requestedRender.projectId === current.projectId) {
+        body.renderContext = { source: requestedRender.source, references: requestedRender.references };
       }
       setSending("posting");
       if (files.length) body.attachments = await Promise.all(files.map(async (file) => ({ name: file.name, mimeType: file.type || "application/octet-stream", data: await fileData(file, t.attachmentRead) })));
@@ -1206,6 +1308,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       setDrafts((value) => ({ ...value, [key]: "", [posted.id]: "" }));
       setDraftAttachments((value) => ({ ...value, [key]: [], [posted.id]: [] }));
       setContextModes((value) => ({ ...value, [key]: "continue", [posted.id]: "continue" }));
+      // The images stay with the conversation: a correction resends the same exact pages.
+      moveRender(key, posted.id);
       await refresh();
       // Whoever just sent follows the reply.
       followLatest.current = true; setLatest({ away: false, unseen: 0 });
@@ -1919,7 +2023,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           <div className="chat-composer__context">
             {project && <p className="chat-target" id="chat-target" data-viewing={Boolean(position?.viewing)} data-read-only={Boolean(staleBase)}>
               <span className="chat-target__text">{target}</span>
-              {position?.viewing && <span className="chat-target__viewing">{w.targetViewing(position.viewing)}</span>}
+              {position?.viewing && !imageTurn && <span className="chat-target__viewing">{w.targetViewing(position.viewing)}</span>}
             </p>}
             {contextMode === "project" && <span className="chat-topic" title={designContext ? t.contextProjectHint : contextUnavailable}>
               <span>{w.newTopic}</span>
@@ -1933,6 +2037,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {recordContext && <button type="button" className="chat-activity__open chat-record"
               disabled={recordingContext || busy} onClick={() => void recordForContext()}>{recordingContext ? t.recordBusy : t.recordContinue}</button>}
           </div>}
+          {/* #253: the images the next message discusses, as a Board handed them over. */}
+          {renderDraft && (projectRuntime
+            ? <ProjectRuntimeProvider key={`render:${projectRuntime.runtimeId}`} runtimeId={projectRuntime.runtimeId} baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}>
+              <RenderContextDocuments context={renderDraft} words={t} running={running} onRemove={removeRender} />
+            </ProjectRuntimeProvider>
+            : <RenderContextCard context={renderDraft} documents={null} words={t} running={running} onRemove={removeRender} />)}
           {Boolean(attachments.length) && <ul className="chat-attachments chat-attachments--draft" aria-label={t.attachments}>{attachments.map((file, index) => <li key={`${index}:${file.name}`}>
             <Icon name="file" /><span className="chat-attachment__details"><span className="chat-attachment__name" title={file.name}>{file.name}</span><span className="chat-attachment__size">{fileSize(file.size)}</span></span>
             <button type="button" className="chat-icon" aria-label={`${t.removeAttachment}: ${file.name}`} disabled={busy} onClick={() => {
@@ -1989,7 +2099,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             <ErrorBoundary label={t.tools}><Suspense fallback={<SurfaceSkeleton surface={item.id} name={t[labelOf(item.id)]} step={s.stepPage} />}>
               <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : item.id === "publish" ? "publish" : item.id === "drawing" ? "drawing" : item.id === "monkeyrender" ? "render" : item.id === "tree" ? "tree" : "arch"} active={visible}
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} candidateFollowsHead={item.followHead} treeFocus={item.focus ?? null}
-                refreshKey={item.revision} onChatRequest={focusConversation}
+                refreshKey={item.revision} onChatRequest={focusConversation} onRenderChatRequest={workspaceRenderCallback(item)}
                 documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
                 comparisonRequest={comparison?.runtimeId === item.runtimeId ? comparison.request : null}
                 onComparisonClose={workspaceComparisonClose(item.runtimeId)}

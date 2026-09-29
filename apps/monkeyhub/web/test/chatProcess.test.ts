@@ -40,6 +40,11 @@ test("the calls the Agent makes read as plain actions in both languages", () => 
     ["mystery_tool · completed", "其他操作", "Other step"],
     // A runtime operation names its request the same way.
     ["POST /api/proposals/abc/candidate", "生成方案", "Generate a scheme"],
+    // #253: an image attempt, which may be paid, is named as one; reading one back is a check.
+    ["studio_request · POST /api/render/jobs · completed", "开始生成渲染图", "Start an image render"],
+    ["POST /api/render/jobs", "开始生成渲染图", "Start an image render"],
+    ["studio_request · GET /api/render/capabilities · completed", "查看渲染", "Check the render"],
+    ["studio_request · GET /api/render/jobs/render-0a1b · completed", "查看渲染", "Check the render"],
   ];
   for (const [line, chinese, english] of cases) {
     assert.equal(read(line, zh), chinese, line);
