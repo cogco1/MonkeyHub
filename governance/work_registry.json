@@ -26,7 +26,15 @@
             "apps/monkeyhub/web/workspaces/src/api/generated/",
             "apps/monkeyhub/api/monkeyhub_api/chat.py",
             "apps/monkeyhub/api/tests/test_chat_feedback.py",
-            "apps/monkeyhub/api/tests/test_chat.py"
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/memory.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/memory.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/memory.py",
+            "archflow/project/record_kinds.py",
+            "apps/archflow-studio/api/archflow_studio_api/main.py",
+            "docs/adr/ADR-009-memory-is-scoped-decisions.md",
+            "docs/adr/ADR-009-memory-layer.md",
+            "docs/adr/README.md"
           ],
           "depends_on": []
         }
