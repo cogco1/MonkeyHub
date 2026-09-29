@@ -126,6 +126,29 @@ class ImportedModelDrawingTests(unittest.TestCase):
         self.assertEqual(len(self.documents()), len(before) + 1, "no refusal registered a drawing")
         self.unchanged()
 
+    def test_a_drawing_keeps_its_orientation_when_its_id_is_named_without_its_previous_revision(self):
+        plan = self.post("plans", cutHeight=0.3, bottom=-0.1, scaleDenominator=50, drawingId="plan")
+        section = self.post("plans", section=SECTION, depth=3, scaleDenominator=50, drawingId="section-a")
+        before = self.documents()
+        for body in ({"drawingId": "plan", "section": SECTION, "depth": 3},
+                     {"drawingId": "section-a", "cutHeight": 0.3, "bottom": -0.1}):
+            with self.subTest(drawing=body["drawingId"]):
+                refused = self.post("plans", 409, scaleDenominator=50, **body)
+                self.assertEqual(refused["code"], "DRAWING_ORIENTATION_CHANGED")
+        # A sheet view names its drawing id without a previous revision; it cannot turn that drawing either.
+        turned = self.sheet(409, views=[{"id": "plan", "placeMm": [20, 30],
+                                         "plan": {"section": SECTION, "depth": 3, "scaleDenominator": 50}}])
+        self.assertEqual(turned["code"], "DRAWING_ORIENTATION_CHANGED")
+        self.assertTrue(turned["detail"].startswith("View plan: "), turned["detail"])
+        self.assertEqual(self.documents(), before, "no refusal registered a drawing")
+        lower = self.post("plans", cutHeight=0.2, bottom=-0.1, scaleDenominator=50, drawingId="plan")
+        self.assertEqual((lower["drawingId"], lower["viewRecipe"]["frame"]["look"]), ("plan", [0.0, 0.0, -1.0]),
+                         "the same orientation still registers another revision under the id")
+        orientations = {(row["drawingId"], row["viewRecipe"]["frame"]["up"] == [0, 0, 1])
+                        for row in self.documents() if row["viewRecipe"]["kind"] == "cut-plan"}
+        self.assertEqual(orientations, {(plan["drawingId"], False), (section["drawingId"], True)})
+        self.unchanged()
+
     def test_an_axonometric_is_retained_from_a_stated_direction(self):
         iso = self.post("elevations", view="axon", direction=[1, -1, 1], scaleDenominator=200, drawingId="iso")
         look = iso["viewRecipe"]["look"]
@@ -201,6 +224,10 @@ class ImportedModelDrawingTests(unittest.TestCase):
             self.assertLess(image.convert("L").getextrema()[0], 64, "the sheet has ink")
         view = listed[rows["section-a"]["revisionRef"]]
         self.assertTrue(self.file(view, "svg").content.startswith(b"<?xml"))
+        for role in ("svg", "png"):
+            # Two revisions can share a PNG and differ in SVG: a view's file is read by its exact revision.
+            unnamed = self.client.get(f"/api/drawings/{view['assetSha256']}/files/{role}", params={"runId": view["runId"]})
+            self.assertEqual((unnamed.status_code, unnamed.json()["code"]), (422, "DRAWING_REVISION_REQUIRED"), role)
         self.assertEqual(hashlib.sha256(self.file(view, "png").content).hexdigest(), view["assetSha256"])
         self.assertEqual(self.file(view, "pdf", 404).json()["code"], "DRAWING_FILE_UNAVAILABLE")
 
@@ -238,6 +265,16 @@ class ImportedModelDrawingTests(unittest.TestCase):
                     self.assertIn(response.status_code, (404, 409), response.text)
                 else:
                     self.assertEqual((response.status_code, response.json()["code"]), (status, code), response.text)
+        views = [{"id": "plan-low", "placeMm": [20, 30],
+                  "plan": {"cutHeight": 0.2, "bottom": -0.1, "scaleDenominator": 50, "cropUv": [-1, -1, 10, 3]}},
+                 {"id": "section-b", "placeMm": [20, 135],
+                  "plan": {"section": {"line": [[-1, 5], [10, 5]], "keep": "left"}, "scaleDenominator": 50}}]
+        count = len(self.documents())
+        for attempt in range(2):
+            with self.subTest(attempt=attempt):
+                self.assertEqual(self.sheet(422, views=views)["code"], "SECTION_PLANE_MISSES_MODEL")
+                self.assertEqual(len(self.documents()), count + 1,
+                                 "a view drawn before the refusal stays registered, and a retry reads it back")
         self.assertEqual([row for row in self.documents() if row["mimeType"] == "application/pdf"], sheets,
                          "a refused sheet is never registered")
         self.assertEqual(self.sheet(), first)

@@ -819,10 +819,10 @@ def _sheet_files(canvas, recipe_json: str) -> dict[str, bytes]:
 
     from pypdf import PdfReader, PdfWriter
     from monkeydiagram.drawing_output import render_dxf, render_pdf, render_svg
-    from .boards import _page_raster
+    from .boards import page_export_png
 
     pdf = render_pdf(canvas)
-    files = {"dxf": render_dxf(canvas), "svg": render_svg(canvas), "png": _page_raster(pdf, "application/pdf", 0, "png", None)}
+    files = {"dxf": render_dxf(canvas), "svg": render_svg(canvas), "png": page_export_png(pdf, "application/pdf", 0)}
     writer = PdfWriter(clone_from=PdfReader(BytesIO(pdf)))
     writer.add_metadata({"/ArchFlowViewRecipe": recipe_json, SHEET_FILE_DIGESTS: canonical_json(
         {role: hashlib.sha256(data).hexdigest() for role, data in files.items()})})
@@ -1135,7 +1135,10 @@ def _view_sheet(binding, *, source_stage_ref, model_source, source_asset, style_
     registered revision back, which the sheet then names exactly. Each view's
     retained SVG is placed as its paper marks, never re-projected. A view that
     fails, draws nothing or cannot be placed refuses the sheet by name; no
-    sheet is registered and the model and HEAD are untouched.
+    sheet is registered and the model and HEAD are untouched. The views drawn
+    before the refusal stay registered as their own generators registered them,
+    as does a view refused here for drawing nothing; the same request again
+    reads them back instead of drawing them again.
     """
 
     from monkeydiagram.documentation.styles import drawing_style
@@ -1245,14 +1248,19 @@ def drawing_file(binding: ProjectBinding, *, run_id: str, asset_sha256: str, rev
                  file_format: str) -> tuple[bytes, str, str]:
     """One file of a registered drawing: a view's SVG or PNG, or a sheet's PDF, DXF, SVG or PNG; read, never drawn.
 
-    A view revision's files are its receipt's, verified by their digests. A
-    sheet's PDF is its registered document; its DXF, SVG and PNG are served
+    A view revision's files are its receipt's, verified by their digests, and
+    are read only by that exact revision (DRAWING_REVISION_REQUIRED): two
+    revisions can share a PNG and differ in SVG, and the answer is immutable.
+    A sheet's PDF is its registered document; its DXF, SVG and PNG are served
     only when that PDF names their digests and the retained bytes still match
     them. Returns the bytes, media type and file name.
     """
 
     document, data = document_bytes(binding, run_id, asset_sha256, revision_ref)
     stem = Path(document.file_name).stem or (document.drawing_id or "drawing")
+    if document.revision_ref is not None and revision_ref is None:
+        raise StudioError(422, "DRAWING_REVISION_REQUIRED", "A view drawing's files are read by its revisionRef, as the "
+                                                            "documents list names it.")
     if document.revision_ref is not None:
         try:
             drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(document.revision_ref, binding.project_id))

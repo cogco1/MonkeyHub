@@ -4404,7 +4404,7 @@
         "the explicitly requested editable work model: POST /api/artifacts/{sha256}/rhino-export takes the exact STEP of one named run, imports it through the existing supervised Rhino host, retains the ordinary Rhino execution receipt with the source STEP digest and receipt it was made from, and answers with the work model's own artifact row; the layers, material declarations and colours come from that export's own retained preview inspection, and a copy that cannot reproduce them is refused rather than moved or recoloured",
         "the explicitly requested editable work copy of one registered document (PDF, PNG or JPEG): POST /api/documents/{asset_sha256}/work-copy seeds one P036 run-workspace file under studio-documents/work/<origin sha256>/ from the page that registration currently answers for, returns the copy already there untouched when asked again, and never overwrites it; which copies exist is derived from the registered documents plus that one path, with no second store and no workspace scan; one derivation decides whether a document can have a single editable file and carries the reason it cannot on the row itself, so opening a copy and listing the copies never disagree and a file already on disk is never dropped out of sight",
         "one horizontal cut-plan revision over the existing SourceDocument and DrawingProjectionReceipt: retained scale, pens, hatch, semantic rectangular empty-door dimensions and explicit rebuild against a named exact source or the original Stage branch head; a rebuild registers as its previous revision's whole-document replacement through the upload path's own validation",
-        "a vertical model-axis section through the same cut-plan route and recipe: section (plan line and kept side, or origin and normal), depth, window and scale from the request, a new section framed from the model's bounds in its slab; a rebuild keeps its orientation, plane, side, depth and window unless the request states them, a horizontal plan never becomes a section nor a section a plan (DRAWING_ORIENTATION_CHANGED), sections take no opening dimensions or plan symbols, and its status reads the objects in its own window and slab",
+        "a vertical model-axis section through the same cut-plan route and recipe: section (plan line and kept side, or origin and normal), depth, window and scale from the request, a new section framed from the model's bounds in its slab; a rebuild keeps its orientation, plane, side, depth and window unless the request states them, a horizontal plan never becomes a section nor a section a plan, whether the request names its previous revision or only its drawing id, as a sheet view does (DRAWING_ORIENTATION_CHANGED), sections take no opening dimensions or plan symbols, and its status reads the objects in its own window and slab",
         "Model conversion orchestration using the existing job pool, original source objects and noncanonical P036 export runs; retained progress, failure and validated-download reports.",
         "read-only paged native-object lookup by exact ModelSource and GUID; no architectural-role inference or edit admission",
         "typed representation-only SVG dressing replacement and insert/move/scale/flip/delete operations against an exact previous Drawing revision; retained SVG readback and source anchor choices",
@@ -4415,7 +4415,7 @@
         "the content-keyed projection cache (ADR-008 #367): key = sha256(model asset sha256, kind, recipe hash, renderer, SALT) where renderer is the mesh renderer's source-derived version plus a digest of drawings.model_view_pipeline (view frame, crop margin, chord tolerance, the source of its framing and meshing, mesh_pipeline); every request, idle retry and re-queue first checks its source (check_model_view_source: the run's exact state and registered model, no geometry read) and a retry draws from the latest checked source; thumbnails read the run's own record, so a run on an older canonical base is drawn (require_readable) while actions keep require_actionable; PNG blobs in <project cache dir>/projections/blobs named by their own sha256, written then renamed and self-describing through text chunks; one status row per key in the project index's projection table (StatusTable), whose insert is the claim, with a per-key lock in the process; the queue is enqueued after every index commit (tree_model_sources: the working position's model, then what readers show, then the rest of the tree) and on a read miss; one low-priority render subprocess with timeout, memory cap, leases reclaimed at startup and after the timeout, bounded retries with backoff, a refused source or a cancel giving its attempt back, one model read for every size drawn next (load_model_view, draw_loaded_view), and a collector keeping what an index artifact reaches, replacing an older renderer's picture only once the current one is drawn, with a grace window",
         "drawings as on-demand projections (#368): an elevation's and a section perspective's SVG and PNG, a review sheet's PDF and DXF and a document page's raster are kinds of the same content-keyed cache (drawing-elevation, drawing-section-perspective, drawing-sheet, document-page), keyed by the input asset's sha256, a recipe holding every field that changes the bytes (the complete view and the drawn source content: geometry digest, unit, objects, bounds and semantics) and a renderer digest of the drawing code, fonts and libraries (drawings.drawing_pipeline); ProjectionQueue.on_demand draws one in the request that needs it through the existing generator, at most once per key, and the worker never draws them; issuing reads the cached files back and retains them in P036 byte for byte with a receipt of its own",
         "the retained axonometric: POST /api/drawings/elevations view axon, from a stated direction toward the viewer (default the model view's -X, -Y, +Z), framed on every physical object's bounds like an elevation",
-        "view sheets through POST /api/drawings/sheets: same-source plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own generator from the sheet's one source (modelSource, Stage or unbound imported asset) and named in the sheet recipe by its exact revision, placed at its own scale where the caller put it, with default titles, subtitles and scale labels from each view's own frame and a section's cut line on a plan; front/right/top requests keep the review sheet's layout and defaults; every sheet is one paper scene retained as PDF, DXF, SVG and PNG beside each other in its source run and registered as its PDF, which names the other three files' digests; GET /api/drawings/{asset_sha256}/files/{file_format} reads a view's SVG/PNG or a sheet's four files, verified"
+        "view sheets through POST /api/drawings/sheets: same-source plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own generator from the sheet's one source (modelSource, Stage or unbound imported asset) and named in the sheet recipe by its exact revision, placed at its own scale where the caller put it, with default titles, subtitles and scale labels from each view's own frame and a section's cut line on a plan; front/right/top requests keep the review sheet's layout and defaults; every sheet is one paper scene retained as PDF, DXF, SVG and PNG beside each other in its source run and registered as its PDF, which names the other three files' digests; GET /api/drawings/{asset_sha256}/files/{file_format} reads a view revision's SVG/PNG, only by its revisionRef (DRAWING_REVISION_REQUIRED), or a sheet's four files, verified"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -4570,7 +4570,8 @@
         "archflow.adapters.sketchup_reader",
         "project.memo",
         "project.index",
-        "adapters.mesh_views"
+        "adapters.mesh_views",
+        "studio.board"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -4618,7 +4619,7 @@
         "A projection key names no run and no time; its blob is served immutable and never cited as evidence; deleting the cache directory only makes the next read draw again.",
         "An issued drawing's retained files are the cached files byte for byte, and its P036 receipt cites their sha256 and its exact source, never a cache key; without an index, or with the cache deleted, the drawing is drawn and retained as before. A review sheet's PDF carries its source binding, so it is found in the cache only by the same source and recipe.",
         "A drawing request may state lengthUnit only to have it checked: a unit other than its source's is refused (DRAWING_UNIT_MISMATCH), never converted. A cut plan or section whose window and depth hold no drawn object is refused before it is drawn (DRAWING_VIEW_EMPTY).",
-        "A view sheet names one exact source for every view and never fabricates a modelSource for an imported model; an identical request reads its registered views and sheet back, moving a view on the paper redraws no view, and a refused view or layout registers no sheet and changes no model or HEAD. A sheet retained before its PDF named its other files still reads; only its PDF is then served."
+        "A view sheet names one exact source for every view and never fabricates a modelSource for an imported model; an identical request reads its registered views and sheet back, moving a view on the paper redraws no view, and a refused view or layout registers no sheet and changes no model or HEAD. The views drawn before a refusal stay registered as their own routes register them, including a view refused for drawing nothing, and the same request again reads them back rather than drawing them again. A sheet retained before its PDF named its other files still reads; only its PDF is then served."
       ],
       "status": "canonical",
       "tests": [
@@ -4676,7 +4677,8 @@
         "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work",
         "reading one exact retained scene revision by name, so an older revision can answer as evidence without changing the board's current revision",
         "An explicit BoardPageRequest source focuses that exact registered page or reinstates only that intentionally removed page through the existing insertion path, preserving the current scene draft",
-        "the one raster of a registered document page (page_raster, cached_page, #368): at most 2048 px with transparency, a bounded PNG served as its own bytes; Board previews, Publish images and the publication exports' raster previews read it from the projection cache (GET /api/projections/pages) instead of each rasterising the page"
+        "the one raster of a registered document page (page_raster, cached_page, #368): at most 2048 px with transparency, a bounded PNG served as its own bytes; Board previews, Publish images and the publication exports' raster previews read it from the projection cache (GET /api/projections/pages) instead of each rasterising the page",
+        "the export raster of a registered document page (page_export_png): the PNG a Board PNG export writes at full size, a PDF page at 144 dpi over white; a view sheet's retained PNG is this export of its PDF"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (studio.artifacts and runtime.drawing_elevation)",
@@ -4710,7 +4712,8 @@
         "web: BoardPageRequest",
         "page_raster",
         "cached_page",
-        "PAGE_RASTER_EDGE"
+        "PAGE_RASTER_EDGE",
+        "page_export_png"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -4725,7 +4728,8 @@
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
-        "apps/archflow-studio/api/archflow_studio_api/application/decisions.py"
+        "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py"
       ],
       "invariants": [
         "reading an empty board creates no run; a valid first save uses runs/studio-board/records through P036",

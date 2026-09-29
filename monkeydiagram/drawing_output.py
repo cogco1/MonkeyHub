@@ -412,6 +412,16 @@ def render_pdf(source, font_mapping: Mapping[str, str | Path] | None = None) -> 
     return buffer.getvalue()
 
 
+#: What XML 1.0 cannot carry at all, not even escaped (including lone surrogates), as drawing_svg reads it.
+_NOT_XML_TEXT = re.compile("[^\t\n\r\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
+
+
+def _svg_text(value: str) -> str:
+    """Text as SVG character data: escaped, and a character XML cannot carry drawn as U+FFFD."""
+    from xml.sax.saxutils import escape
+    return escape(_NOT_XML_TEXT.sub("\ufffd", value))
+
+
 def _svg_paint(color) -> str:
     red, green, blue = (max(0, min(255, round(v * 255))) for v in color[:3])
     return f"#{red:02x}{green:02x}{blue:02x}"
@@ -428,9 +438,11 @@ def render_svg(source, font_mapping: Mapping[str, str | Path] | None = None, *, 
     """Render one scene as an editable SVG in paper millimetres, from the same primitives as the PDF.
 
     Paths keep their pens, dashes and fill rules; text stays live text in the
-    mapped font's family. Nothing is read back from a PDF and no file is written.
+    mapped font's family, and a character XML cannot carry is drawn as U+FFFD,
+    so the SVG is always well formed. Nothing is read back from a PDF and no
+    file is written.
     """
-    from xml.sax.saxutils import escape, quoteattr
+    from xml.sax.saxutils import quoteattr
     scenes, fonts = _input(source, font_mapping)
     scene = scenes[sheet]
     width, height = scene.size_mm
@@ -440,7 +452,7 @@ def render_svg(source, font_mapping: Mapping[str, str | Path] | None = None, *, 
     out = ['<?xml version="1.0" encoding="UTF-8"?>',
            f'<svg xmlns="http://www.w3.org/2000/svg" width="{number(width)}mm" height="{number(height)}mm" '
            f'viewBox="0 0 {number(width)} {number(height)}">',
-           f"  <title>{escape(getattr(source, 'title', '') or scene.number)}</title>",
+           f"  <title>{_svg_text(getattr(source, 'title', '') or scene.number)}</title>",
            f'  <rect width="{number(width)}" height="{number(height)}" fill="#fff"/>']
     for primitive in scene.primitives:
         data = primitive.data
@@ -454,7 +466,7 @@ def render_svg(source, font_mapping: Mapping[str, str | Path] | None = None, *, 
             opacity = "" if fill[3] == 1 else f' fill-opacity="{number(fill[3])}"'
             out.append(f'  <text transform="translate({x} {y}){rotation}" font-family={quoteattr(family)} '
                        f'font-weight="{weight}" font-size="{number(data["font_size_pt"]*MM_PER_PT)}" '
-                       f'fill="{_svg_paint(fill)}"{opacity}>{escape(data["text"])}</text>')
+                       f'fill="{_svg_paint(fill)}"{opacity}>{_svg_text(data["text"])}</text>')
             continue
         paint = [f'fill="{_svg_paint(fill) if data["fill"] else "none"}"']
         if data["fill"]:

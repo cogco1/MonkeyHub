@@ -510,8 +510,10 @@ class SheetViewDto(BaseModel):
     """
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     id: SheetViewId = Field(description=(
-        "The view's drawing identity (its drawingId): the same id continues that drawing's revisions, here or on its "
-        "own route."))
+        "The view's drawingId. An identical view reads its registered revision back; a changed one registers another "
+        "revision under this id without replacing the earlier page (a plan's revision chain continues only through "
+        "previousRevisionRef on its own route). A horizontal plan's id never takes a vertical section, nor a "
+        "section's a plan (DRAWING_ORIENTATION_CHANGED)."))
     place_mm: tuple[Finite, Finite] = Field(alias="placeMm", description=(
         "Where the drawing's top-left corner goes: paper mm from the sheet's top-left. Its title and scale sit just "
         "above it; a drawing that leaves the frame or overlaps another or the title strip is refused "
@@ -580,7 +582,7 @@ class SheetRequestDto(DrawingSourceRequestDto):
     title: str | None = Field(default=None, min_length=1, max_length=120, description=(
         "With views: the title strip's title. Omitted is the project id."))
     subtitle: str | None = Field(default=None, max_length=160, description=(
-        "With views: the line under the title. Omitted lists the views' titles; an empty string draws none."))
+        "With views: the line under the title. Omitted or empty draws none."))
     sheet_number: str | None = Field(alias="sheetNumber", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,19}$",
                                      description="With views: the sheet's number in its title strip and file (default 01).")
     drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$",

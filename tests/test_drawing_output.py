@@ -51,6 +51,16 @@ class DrawingOutputTests(unittest.TestCase):
         self.assertEqual(text.get("transform"), "translate(30 257)")
         self.assertEqual(text.get("font-family"), "Bitstream Vera Sans")
 
+    def test_svg_text_xml_cannot_carry_is_drawn_as_the_replacement_character(self):
+        from xml.etree import ElementTree
+        c = self.canvas
+        c.setTitle("TWO\x0bBOXES")
+        c.drawString(30 / MM_PER_PT, 40 / MM_PER_PT, "NOTE\x0b1\x1f & <2>")
+        root = ElementTree.fromstring(render_svg(c))
+        ns = "{http://www.w3.org/2000/svg}"
+        self.assertEqual(root.find(f"{ns}title").text, "TWO\ufffdBOXES")
+        self.assertEqual(root.find(f"{ns}text").text, "NOTE\ufffd1\ufffd & <2>")
+
     def test_the_same_scene_gives_the_same_dxf_bytes_whenever_it_is_written(self):
         import time
 

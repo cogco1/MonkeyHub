@@ -376,6 +376,13 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
         with _document_source_lock:
             documents = list_documents(binding, None if previous is not None or explicit_drawing_id else model_source.run_id)
             named = previous or next((document for document in documents if document.drawing_id == drawing_id), None)
+            if previous is None and any(document.drawing_id == drawing_id and (document.view_recipe or {}).get("kind") == "cut-plan"
+                                        and is_vertical_section(document.view_recipe) != vertical for document in documents):
+                # Naming a drawing without its previous revision (as every sheet view does) adds a
+                # revision under that id; it never turns the drawing a person opens by that id.
+                raise StudioError(409, "DRAWING_ORIENTATION_CHANGED",
+                                  f"Drawing {drawing_id} is a {'horizontal cut plan' if vertical else 'vertical section'}; "
+                                  f"draw the {'section' if vertical else 'plan'} under another drawing id.")
             file_name = _plan_file_name(file_name, named, drawing_id)
             for document in documents:
                 if (document.drawing_id == drawing_id and _document_source(document) == model_source

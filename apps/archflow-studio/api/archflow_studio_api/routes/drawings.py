@@ -199,7 +199,9 @@ def create_sheet(request: Request, payload: SheetRequestDto) -> SourceDocumentDt
     scale at placeMm; its revision is named in the sheet's viewRecipe.views. Read the sheet's files with
     GET /api/drawings/{assetSha256}/files/{format}. Refusals are named: DRAWING_SHEET_LAYOUT_INVALID,
     DRAWING_VIEW_EMPTY, DRAWING_SHEET_VIEW_UNSUPPORTED, DRAWING_SECTION_MARK_INVALID, DRAWING_SECTION_MARK_OUTSIDE,
-    DRAWING_UNIT_MISMATCH, and each view's own, prefixed with its id.
+    DRAWING_UNIT_MISMATCH, and each view's own, prefixed with its id. A refused sheet registers no sheet, but the views
+    drawn before the refusal stay registered as their own routes register them, including a view refused here for
+    drawing nothing; the same request again reads those views back rather than drawing them again.
     """
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:
@@ -227,8 +229,9 @@ def read_drawing_file(request: Request, asset_sha256: str = Path(pattern=r"^[0-9
 
     A view drawing (plan, section, elevation, axonometric, section perspective) has its SVG and PNG; a sheet has its
     PDF and the DXF, SVG and PNG of the same paper scene, which its PDF names by digest. Address it as the documents
-    list does: assetSha256, runId and, for a view, its revisionRef. DRAWING_FILE_UNAVAILABLE names a file a drawing
-    does not have, including a sheet retained before its PDF named its other files.
+    list does: assetSha256, runId and, for a view, its revisionRef, which a view's files need
+    (DRAWING_REVISION_REQUIRED): two revisions can share a PNG yet differ in SVG. DRAWING_FILE_UNAVAILABLE names a
+    file a drawing does not have, including a sheet retained before its PDF named its other files.
     """
     data, media_type, file_name = drawing_file(bound_project(request.app.state), run_id=run_id, asset_sha256=asset_sha256,
                                                revision_ref=revision_ref, file_format=file_format)

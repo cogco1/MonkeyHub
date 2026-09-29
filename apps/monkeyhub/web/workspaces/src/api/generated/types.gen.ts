@@ -10748,7 +10748,7 @@ export type SheetRequestDto = {
     /**
      * Subtitle
      *
-     * With views: the line under the title. Omitted lists the views' titles; an empty string draws none.
+     * With views: the line under the title. Omitted or empty draws none.
      */
     subtitle?: string | null;
     /**
@@ -10784,7 +10784,7 @@ export type SheetViewDto = {
     /**
      * Id
      *
-     * The view's drawing identity (its drawingId): the same id continues that drawing's revisions, here or on its own route.
+     * The view's drawingId. An identical view reads its registered revision back; a changed one registers another revision under this id without replacing the earlier page (a plan's revision chain continues only through previousRevisionRef on its own route). A horizontal plan's id never takes a vertical section, nor a section's a plan (DRAWING_ORIENTATION_CHANGED).
      */
     id: string;
     /**
