@@ -3624,6 +3624,22 @@ try {
   runtimeT.operations = []; emitRuntime();
   await notice.waitFor({ state: "detached" });
 
+  // #404 F10: a call the Studio refused before taking anything on (a 422 or a stale-base 409) is
+  // finished as refused. It is neither the notice nor counted in it, and alone it shows none.
+  const refusedRows = [
+    { operationId: "proposal-refused", projectId: "T", kind: "POST /api/proposals", source: "chat", status: "refused", committed: false,
+      reason: "height must be positive", admissionSequence: 10, createdAt: sheetAskedAt, sessionId: treeChat.id },
+    { operationId: "candidate-refused", projectId: "T", kind: "POST /api/proposals/prop-7/candidate", source: "chat", status: "refused",
+      committed: false, reason: "Re-read /api/state.", admissionSequence: 11, createdAt: sheetAskedAt, sessionId: treeChat.id }];
+  runtimeT.operations = [{ operationId: "sheet-failed-late", projectId: "T", kind: "POST /api/drawings/sheets", source: "chat",
+    status: "failed", committed: false, admissionSequence: 9, createdAt: sheetAskedAt, sessionId: treeChat.id }, ...refusedRows];
+  emitRuntime();
+  await notice.locator("p").filter({ hasText: "有操作未完成" }).waitFor();
+  assert.equal(await notice.locator("small").innerText(), `出图 · ${askedAtZh}`, "refused calls are not counted as unfinished");
+  runtimeT.operations = refusedRows; emitRuntime();
+  await notice.waitFor({ state: "detached" });
+  runtimeT.operations = []; emitRuntime();
+
   // GH-300 batch F, in Chinese for review. GH-58: an operation that needs recovery the Hub cannot
   // give it says so beside 知道了, and can be dismissed.
   runtimeT.operations = [{ operationId: "candidate-lost-zh", projectId: "T", kind: "POST /api/proposals/prop-6/candidate", source: "chat",

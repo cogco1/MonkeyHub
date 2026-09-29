@@ -151,7 +151,7 @@ export type AdmissionResultDto = {
     /**
      * Outcome
      */
-    outcome: 'admitted' | 'rejected';
+    outcome: 'admitted' | 'rejected' | 'withdrawn';
     /**
      * Pinned for an admitted result.
      */
@@ -202,8 +202,10 @@ export type AdmissionResultRequestDto = {
     runId: string;
     /**
      * Outcome
+     *
+     * rejected needs the user's words (rawLanguage). withdrawn is the Hub Agent's own act on a result it made in this chat and no longer proposes: task hub-chat only, no user words, never a rejection.
      */
-    outcome: 'admitted' | 'rejected';
+    outcome: 'admitted' | 'rejected' | 'withdrawn';
     /**
      * Supersedes
      *
@@ -2636,9 +2638,9 @@ export type DesignCandidateDto = {
     /**
      * Outcome
      *
-     * Always admitted unless include=rejected also asked for retained rejections.
+     * Always admitted unless include=rejected also asked for retained rejections and withdrawals: a result the architect turned down, or one the Hub Agent withdrew from its own chat.
      */
-    outcome: 'admitted' | 'rejected';
+    outcome: 'admitted' | 'rejected' | 'withdrawn';
     /**
      * Label
      */
@@ -17235,7 +17237,7 @@ export type ReadCommittedDesignHistoryApiDesignHistoryGetData = {
         /**
          * Include
          *
-         * rejected also lists retained rejections, for advanced views.
+         * rejected also lists retained rejections and the Agent's withdrawals, for advanced views.
          */
         include?: 'rejected' | null;
     };
@@ -17387,7 +17389,7 @@ export type ReadCandidateAdmissionsApiAdmissionsGetData = {
         /**
          * Include
          *
-         * rejected also lists retained rejections, for advanced views.
+         * rejected also lists retained rejections and the Agent's withdrawals, for advanced views.
          */
         include?: 'rejected' | null;
     };

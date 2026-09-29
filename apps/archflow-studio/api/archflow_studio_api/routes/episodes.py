@@ -47,7 +47,7 @@ from ..transport.proposal import (
 )
 from .proposals import _require_bound_project
 
-_INCLUDE = Query(default=None, description="rejected also lists retained rejections, for advanced views.")
+_INCLUDE = Query(default=None, description="rejected also lists retained rejections and the Agent's withdrawals, for advanced views.")
 
 router = APIRouter(tags=["episodes"])
 

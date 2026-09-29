@@ -110,10 +110,10 @@ class OperationRecoveryTests(unittest.TestCase):
             self.assertTrue(runtime.wake.is_set())
             notify.assert_called()
 
-    def admission(self, path, payload=None, *, operation_id=None):
+    def admission(self, path, payload=None, *, operation_id=None, session_id=None):
         body = b"" if payload is None else json.dumps(payload, sort_keys=True).encode()
         admission, fresh = self.manager.admit(operation_id or str(uuid4()), "POST", path, body,
-            retained=self.snapshot(), source="studio", session_id=None)
+            retained=self.snapshot(), source="chat" if session_id else "studio", session_id=session_id)
         self.assertTrue(fresh)
         return admission, body
 
@@ -127,7 +127,7 @@ class OperationRecoveryTests(unittest.TestCase):
             time.sleep(0.02)
         self.fail(f"Job {job_id} did not finish")
 
-    def candidate(self, *, initial=None):
+    def candidate(self, *, initial=None, session_id=None):
         payload = {"projectId": self.fixture.PROJECT_ID, "stateDigest": self.state_digest,
                    "targetComponentId": "portico", "elementId": "portico-base", "utterance": "set height to 2.2"}
         if initial:
@@ -136,7 +136,7 @@ class OperationRecoveryTests(unittest.TestCase):
         proposal = self.client.post("/api/proposals", json=payload)
         self.assertEqual(proposal.status_code, 201, proposal.text)
         path = f"/api/proposals/{proposal.json()['proposalId']}/candidate"
-        admission, _ = self.admission(path)
+        admission, _ = self.admission(path, session_id=session_id)
         # Allocate the exact run before dispatch, then lose the HTTP reply.
         # Only id allocation is controlled; Studio executes and retains the run.
         with patch("archflow_studio_api.routes.candidates._run_id", return_value=admission.record.candidateId):
@@ -224,7 +224,7 @@ class OperationRecoveryTests(unittest.TestCase):
             b'{"detail":"Invalid private input text"}', {"content-type": "application/json"}))
         self.assertIn("private input text", self.record(admission).reason)
         self.assertNotIn("private input text", self.manager.journal_path.read_text(encoding="utf-8"))
-        self.assertEqual(self.durable_manager().records()[0].status, "failed")
+        self.assertEqual(self.durable_manager().records()[0].status, "refused")
 
     def test_new_operation_keeps_its_admission_time_and_older_rows_have_none(self):
         self.manager = self.durable_manager()
@@ -242,7 +242,7 @@ class OperationRecoveryTests(unittest.TestCase):
     def test_dismissed_failure_stays_dismissed_after_restart_and_is_otherwise_unchanged(self):
         self.manager = self.durable_manager()
         admission, _ = self.admission("/api/drawings/sheets", {"private": "private sheet request"})
-        self.manager.replied(admission, HttpResult(422, b'{"code":"SHEET_REFUSED","detail":"private refusal text"}', {}))
+        self.manager.replied(admission, HttpResult(500, b'{"code":"SHEET_FAILED","detail":"private refusal text"}', {}))
         before = self.record(admission)
         self.assertIsNone(before.acknowledgedAt)
         dismissed = self.manager.acknowledge(admission.record.operationId)
@@ -265,10 +265,136 @@ class OperationRecoveryTests(unittest.TestCase):
 
     def test_stale_operation_can_be_dismissed(self):
         admission, _ = self.admission("/api/proposals", {})
-        self.manager.replied(admission, HttpResult(409, b'{"code":"PROPOSAL_BASE_STALE","detail":"The base moved."}', {}))
+        self.manager.replied(admission, HttpResult(409, b'{"code":"PROPOSAL_BASE_STALE","proposalId":"prop-stale","detail":"The base moved."}', {}))
         self.assertEqual(self.record(admission).status, "stale")
         self.assertTrue(self.manager.acknowledge(admission.record.operationId).acknowledgedAt)
         self.assertTrue(self.record(admission).acknowledgedAt)
+
+    def test_agent_withdraws_only_its_own_candidate_and_it_reads_back_as_its_act(self):
+        """#404 F13: a withdrawal is the Hub Agent's recorded act, never the user's rejection."""
+        managed = create_app(self.settings)
+        managed.state.managed_instance_id = "hub-test"
+        studio = TestClient(managed)
+        self.addCleanup(studio.close)
+        self.addCleanup(managed.state.jobs.shutdown)
+        chat_id = str(uuid4())
+        mine, _ = self.candidate(session_id=chat_id)
+        other, _ = self.candidate()
+        older, _ = self.candidate()
+        mine, other, older = (row.record.candidateId for row in (mine, other, older))
+        # A person's rejection, written as every record has been: it reads back exactly as before.
+        rejected = self.client.post("/api/admissions", json={"projectId": self.fixture.PROJECT_ID, "task": {"kind": "ui"},
+                                                             "results": [{"runId": older, "outcome": "rejected"}]})
+        self.assertEqual(rejected.status_code, 201, rejected.text)
+        self.assertEqual(set(rejected.json()), {"admissionRef", "admissionId", "projectId", "previousRevisionRef", "occurredAt", "actor",
+                                                "messageSource", "rawLanguage", "task", "study", "results"})
+
+        runtime = ProjectRuntime("withdraw-runtime", self.fixture.PROJECT_ID, str(self.settings.project_dir),
+                                 self.manager, ProjectBinding.open(self.settings), retained=self.snapshot())
+        chats = SimpleNamespace(get=lambda session_id: SimpleNamespace(
+            projectId=self.fixture.PROJECT_ID, projectDir=str(self.settings.project_dir), status="running"))
+        coordinator = ProjectRuntimeManager(None, chats)
+        message = {"sessionId": chat_id, "messageId": "message-3"}
+
+        def admit(*results, **body):
+            return json.dumps({"projectId": self.fixture.PROJECT_ID, "task": {"kind": "hub-chat"}, "messageSource": message,
+                               "results": list(results), **body}).encode()
+
+        def dispatch(base, target, method, body, headers, *, timeout):
+            response = studio.request(method, target, content=body, headers=headers)
+            return HttpResult(response.status_code, response.content, {"content-type": "application/json"})
+
+        headers = {"content-type": "application/json", "x-monkey-chat": chat_id}
+        before = len(self.manager.records())
+        with patch.object(coordinator, "service", return_value=SimpleNamespace(url="http://managed", instance_id="hub-test")), \
+             patch("monkeyhub_api.runtime.request_http", side_effect=dispatch):
+            with self.assertRaises(HubFailure) as foreign:
+                coordinator.forward(runtime, "/api/admissions", "POST", admit({"runId": other, "outcome": "withdrawn"}),
+                                    {**headers, "idempotency-key": str(uuid4())})
+            self.assertEqual((foreign.exception.status, foreign.exception.error.code), (409, "CANDIDATE_NOT_THIS_CHATS"))
+            self.assertEqual(len(self.manager.records()), before, "a refused withdrawal admits nothing")
+            # A user's rejection still needs their words, as before.
+            unworded = coordinator.forward(runtime, "/api/admissions", "POST", admit({"runId": other, "outcome": "rejected"}),
+                                           {**headers, "idempotency-key": str(uuid4())})
+            self.assertEqual(unworded.status, 422, unworded.body)
+            self.assertIn("rawLanguage", unworded.json()["detail"])
+            withdrawn = coordinator.forward(runtime, "/api/admissions", "POST",
+                                            admit({"runId": mine, "outcome": "withdrawn", "reason": "the taller one reads better"}),
+                                            {**headers, "idempotency-key": str(uuid4())})
+        self.assertEqual(withdrawn.status, 201, withdrawn.body)
+        record = withdrawn.json()
+        self.assertEqual(record["actor"]["origin"], "hub-agent", "recorded as the Agent's act")
+        self.assertEqual((record["messageSource"], record["rawLanguage"]), (message, None), "with the message it acted on, no user words")
+        self.assertEqual([(row["runId"], row["outcome"]) for row in record["results"]], [(mine, "withdrawn")])
+        # A person cannot withdraw; they reject.
+        person = self.client.post("/api/admissions", json={"projectId": self.fixture.PROJECT_ID, "task": {"kind": "ui"},
+                                                           "results": [{"runId": other, "outcome": "withdrawn"}]})
+        self.assertEqual((person.status_code, person.json()["code"]), (422, "ADMISSION_INVALID"))
+
+        # Read back: gone from the pool, retained on request, and never shown as the architect's rejection.
+        history = lambda **params: {row["candidateId"]: row for row in studio.get("/api/design-history", params=params).json()["candidates"]}
+        self.assertNotIn(mine, history())
+        self.assertEqual((history(include="rejected")[mine]["outcome"], history(include="rejected")[older]["outcome"]),
+                         ("withdrawn", "rejected"))
+        listed = studio.get("/api/admissions", params={"include": "rejected"}).json()["admissions"]
+        self.assertEqual({row["admissionId"] for row in listed}, {rejected.json()["admissionId"], record["admissionId"]})
+        self.assertEqual(next(row for row in listed if row["admissionId"] == rejected.json()["admissionId"]), rejected.json())
+        lines = {line["runId"]: line["admission"] for line in studio.get("/api/worktrees").json()["lines"] if line["kind"] == "result"}
+        self.assertEqual((lines[mine], lines[older]), ("superseded", "rejected"))
+
+    @staticmethod
+    def unfinished(records):
+        """What ChatShell's "did not finish" notice stands for (chatProcess.unfinishedOperations)."""
+        return [row for row in records if (row.status in {"failed", "stale"} and not row.acknowledgedAt)
+                or (row.status == "needs_recovery" and not (row.recoverable is False and row.acknowledgedAt))]
+
+    def test_refusal_before_admission_is_finished_and_leaves_no_notice(self):
+        # #404 F10: a validation failure or stale base the caller already read is not unfinished work.
+        self.manager = self.durable_manager()
+        for path, status, body in (
+                ("/api/proposals", 422, b'{"code":"PROPOSAL_INVALID","detail":"height must be positive"}'),
+                ("/api/proposals", 409, b'{"code":"STALE_BASE","detail":"Re-read /api/state."}'),
+                ("/api/proposals/p-1/candidate", 409, b'{"code":"STALE_BASE","detail":"The base moved."}')):
+            with self.subTest(path=path, status=status):
+                admission, _ = self.admission(path, {})
+                self.manager.replied(admission, HttpResult(status, body, {}))
+                record = self.record(admission)
+                self.assertEqual(record.status, "refused")
+                self.assertEqual(record.reason, json.loads(body)["detail"], "the refusal stays in the record")
+                self.assertNotIn(record.candidateId, self.manager.candidate_ids())
+        self.assertEqual(self.unfinished(self.manager.records()), [])
+        self.assertEqual({row.status for row in self.durable_manager().records()}, {"refused"})
+        with self.assertRaises(HubFailure) as refusal:
+            self.manager.acknowledge(admission.record.operationId)
+        self.assertEqual(refusal.exception.error.code, "OPERATION_NOT_ACKNOWLEDGEABLE", "nothing to dismiss")
+
+    def test_refusal_answered_through_forward_emits_refused_and_no_notice(self):
+        runtime = ProjectRuntime("refusal-runtime", self.fixture.PROJECT_ID, str(self.settings.project_dir),
+                                 self.manager, ProjectBinding.open(self.settings), retained=self.snapshot())
+        coordinator = ProjectRuntimeManager(None, None)
+        answer = HttpResult(422, b'{"code":"SKETCH_INVALID","detail":"closed profile repeats its first point"}',
+                            {"content-type": "application/json"})
+        with patch.object(coordinator, "service", return_value=SimpleNamespace(url="http://isolated-worker")), \
+             patch("monkeyhub_api.runtime.request_http", return_value=answer), patch.object(coordinator, "emit") as notify:
+            response = coordinator.forward(runtime, "/api/proposals", "POST", b"{}", {"idempotency-key": str(uuid4())})
+        self.assertEqual(response.status, 422)
+        self.assertIn("operation/refused", [call.args[0] for call in notify.call_args_list])
+        self.assertEqual([row.status for row in self.manager.records()], ["refused"])
+        self.assertEqual(self.unfinished(self.manager.records()), [])
+
+    def test_failure_after_admission_still_leaves_its_notice(self):
+        for status, body, expected in (
+                (500, b'{"code":"SEAT_FAILED","detail":"the seat crashed"}', "failed"),
+                (409, b'{"code":"STALE_BASE","proposalId":"prop-made","detail":"moved"}', "stale"),
+                (409, b'{"code":"CANDIDATE_ALREADY_RETAINED","detail":"exists"}', "failed")):
+            with self.subTest(status=status, expected=expected):
+                admission, _ = self.admission("/api/proposals", {})
+                self.manager.replied(admission, HttpResult(status, body, {}))
+                self.assertEqual(self.record(admission).status, expected)
+                self.assertIn(admission.record.operationId, [row.operationId for row in self.unfinished(self.manager.records())])
+        lost, _ = self.admission("/api/proposals/unexecuted/candidate")
+        self.manager.interrupted(lost, "lost reply")
+        self.assertIn(lost.record.operationId, [row.operationId for row in self.unfinished(self.manager.records())])
 
     def test_lost_candidate_reply_stays_until_a_read_finds_no_run_to_recover(self):
         self.manager = self.durable_manager()
@@ -355,7 +481,7 @@ class OperationRecoveryTests(unittest.TestCase):
     def test_dismissal_that_cannot_be_saved_leaves_the_notice(self):
         self.manager = self.durable_manager()
         admission, _ = self.admission("/api/drawings/sheets", {})
-        self.manager.replied(admission, HttpResult(422, b'{"detail":"refused"}', {}))
+        self.manager.replied(admission, HttpResult(500, b'{"detail":"failed"}', {}))
         with patch("monkeyhub_api.runtime.os.replace", side_effect=OSError("disk write failed")), \
              self.assertRaises(HubFailure) as failure:
             self.manager.acknowledge(admission.record.operationId)
@@ -399,7 +525,7 @@ class OperationRecoveryTests(unittest.TestCase):
         runtime = ProjectRuntime("route-runtime", project_id, project_dir, self.manager, ProjectBinding.open(self.settings))
         hub.state.runtimes._projects[runtime.runtime_id] = runtime
         failed, _ = self.admission("/api/drawings/sheets", {})
-        self.manager.replied(failed, HttpResult(422, b'{"detail":"refused"}', {}))
+        self.manager.replied(failed, HttpResult(500, b'{"detail":"failed"}', {}))
         waiting, _ = self.admission("/api/proposals/unexecuted/candidate")
         self.manager.interrupted(waiting, "lost reply")
         lost, _ = self.admission("/api/proposals", {})
@@ -491,7 +617,7 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertEqual([row.candidateId for row in sorted(successful, key=lambda row: row.admissionSequence)],
                          [older.record.candidateId, newer.record.candidateId])
         self.assertEqual(records[unfinished.record.operationId].status, "needs_recovery")
-        self.assertEqual(records[refused.record.operationId].status, "failed")
+        self.assertEqual(records[refused.record.operationId].status, "refused")
         self.assertEqual([records[row.record.operationId].admissionSequence for row in (older, newer, unfinished, refused)],
                          [1, 2, 3, 4])
         for row in successful:

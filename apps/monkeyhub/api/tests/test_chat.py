@@ -865,6 +865,33 @@ class ChatTests(unittest.TestCase):
         self.finished(session)
         self.assertTrue(self.store.set_archived(session.id, True).archived)
 
+    def test_archiving_clears_the_chats_scratch_and_restoring_starts_empty(self):
+        """#404 item 6: scratch is temporary computation, cleared with the chat's archive."""
+        session, kept = self.create(provider="claude"), self.create(provider="claude")
+        scratch = self.store._scratch_path(session.id)
+        (scratch / "work").mkdir(parents=True)
+        (scratch / "work" / "trial.py").write_text("print('volume')", encoding="utf-8")
+        (self.store._scratch_path(kept.id) / "kept.txt").write_text("still in use", encoding="utf-8")
+        attachments = self.runtime / "chats" / session.id / "attachments"
+        attachments.mkdir(parents=True)
+        (attachments / "sketch.png").write_bytes(b"not scratch")
+        self.assertTrue(self.store.set_archived(session.id, True).archived)
+        self.assertFalse(scratch.exists())
+        self.assertTrue((attachments / "sketch.png").exists(), "attachments are the chat's record, not scratch")
+        self.assertTrue((self.store._scratch_path(kept.id) / "kept.txt").exists(), "another chat's scratch stays")
+        # Something left in an archived chat's scratch is cleared when Hub starts again.
+        scratch.mkdir(parents=True)
+        (scratch / "late.txt").write_text("written after archiving", encoding="utf-8")
+        self.store.shutdown()
+        self.store = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=self.commands)
+        self.assertTrue(self.store.get(session.id).archived)
+        self.assertFalse(scratch.exists())
+        self.assertTrue((self.store._scratch_path(kept.id) / "kept.txt").exists())
+        restored = self.store.set_archived(session.id, False)
+        self.assertFalse(restored.archived)
+        self.assertTrue(scratch.is_dir())
+        self.assertEqual(list(scratch.iterdir()), [], "a restored chat starts with an empty scratch")
+
     def test_old_chat_without_archived_field_remains_active(self):
         session = self.create()
         path = self.runtime / "chats" / f"{session.id}.json"
