@@ -25,11 +25,14 @@ from monkeydiagram.drawing_elevation import (
     DrawingElevationError,
     ElevationSource,
     ElevationView,
+    current_object_id,
     freeze_model_axis_elevation,
     freeze_cut_plan,
+    inspection_witness_ids,
     list_model_axis_elevations,
     project_model_axis_elevation,
     read_model_axis_elevation,
+    resolve_plan_dressing,
 )
 
 NEEDS_OCCT = unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
@@ -666,6 +669,16 @@ class CutPlanTests(unittest.TestCase):
         self.assertEqual(drawing.svg, baseline.svg, "an invisible aperture cannot add cut fill and an invisible screen cannot hide the floor")
         self.assertEqual(drawing.png, baseline.png)
 
+    def test_model_axis_elevations_leave_out_hidden_source_witnesses(self):
+        view = _view(origin=(0.0, -5.0, 0.0))
+        baseline = freeze_model_axis_elevation(self.repository, source=self.source, view=view,
+                                               drawing_run_id="witness-elevation-run")
+        repository, source, _, _ = _room_plan_source(self.root.parent / "witness-elevation", hidden_witnesses=True)
+        drawing = freeze_model_axis_elevation(repository, source=source, view=view, drawing_run_id="witness-elevation-run")
+        for name in ("door-inspection-witness", "inspection-screen"):
+            self.assertNotIn(name, svg_objects(drawing.svg))
+        self.assertEqual(drawing.svg, baseline.svg)
+
     def test_bad_source_frame_or_graphics_refuses_before_a_drawing_run_is_created(self):
         for recipe in (
             {**self.recipe, "frame": {**self.recipe["frame"], "look": [0, 1, 0]}},
@@ -758,6 +771,31 @@ class CutPlanTests(unittest.TestCase):
         cold = read_model_axis_elevation(FilesystemProjectRepository.open(self.root), drawing.receipt_ref)
         self.assertEqual((cold.svg, cold.png, cold.receipt), (drawing.svg, drawing.png, drawing.receipt))
         self.assertEqual(self.repository.read_head(), self.head)
+
+
+class RetainedReferenceTests(unittest.TestCase):
+    """#419: a retained obj-<wall>-cut reads as the wall it became; nothing else is rebound."""
+
+    def test_only_a_missing_cut_suffix_reads_as_the_object_it_became(self) -> None:
+        self.assertEqual(current_object_id("obj-w-cut", {"obj-w"}), "obj-w")
+        self.assertEqual(current_object_id("obj-w-cut", {"obj-w", "obj-w-cut"}), "obj-w-cut")
+        self.assertEqual(current_object_id("obj-w-cut", {"obj-v"}), "obj-w-cut")
+        self.assertEqual(current_object_id("obj-w", {"obj-w-cut"}), "obj-w")
+
+    def test_a_retained_anchor_on_a_cut_wall_follows_the_wall(self) -> None:
+        from monkeydiagram.drawing_svg import dressing_assets
+
+        receipt = {"physical_object_ids": ["obj-w"], "expected_semantics": {"objects": {"obj-w": {"visible": True}}},
+                   "readback": {"obj-w": {"bbox": {"min": [0.0, 0.0, 0.0], "max": [2.0, 4.0, 3.0]}}}}
+        recipe = {"frame": {"crop_uv": [-10.0, -10.0, 10.0, 10.0]}, "dressing": [
+            {"id": "tree", "assetId": dressing_assets()[0]["id"], "positionUv": [0.0, 0.0], "size": 1.0,
+             "anchorObjectId": "obj-w-cut"}]}
+        (item,) = resolve_plan_dressing(recipe, receipt)
+        self.assertEqual((item["status"], item["resolvedUv"]), ("resolved", [1.0, 2.0]))
+
+    def test_hidden_witnesses_come_from_the_source_semantics(self) -> None:
+        receipt = {"expected_semantics": {"objects": {"a": {"visible": False}, "b": {"visible": True}, "c": {}}}}
+        self.assertEqual(inspection_witness_ids(receipt), frozenset({"a"}))
 
 
 if __name__ == "__main__":

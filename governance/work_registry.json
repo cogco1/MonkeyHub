@@ -9,7 +9,7 @@
           "status": "active",
           "branch": "codex/244-drawing-integration",
           "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-244-drawing-integration",
-          "base_ref": "6005d4c80b81a954143768e7c1b35a9bc2b55dea",
+          "base_ref": "f43efc9a31c3647ad2bedf2d116a7ce217b22336",
           "contributor": "Claude",
           "reviewer": "Codex",
           "handoff": "local session; the controller reviews and opens the PR; the Diagram UI follows once this contract lands",

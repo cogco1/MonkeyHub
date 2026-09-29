@@ -14,7 +14,8 @@ from unittest.mock import patch
 
 from archflow.adapters.cad_execution import CadExecutionError, RhinoPatchBase, patch_composed_three_dm, prepare_rhino_three_dm_export
 from archflow.adapters.cad_patch import CadPatchError, PatchSelection, build_patch_prelude, select_patch_operations
-from archflow.adapters.cad_program import _physical_ids, expected_object_semantics, translate_to_rhino_python
+from archflow.adapters.cad_program import expected_object_semantics, translate_to_rhino_python
+from archflow.state.geometry_program import delivered_object_ids
 from monkeyarch.capabilities.element_producers import ProductionContext, produce_rows
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 from monkeyarch.compilers.geometry import compile_geometry_program
@@ -341,7 +342,7 @@ class ComposedThreeDmPatchTests(unittest.TestCase):
             child.ParentLayerId = model.Layers.FindIndex(0).Id
             child.RenderMaterialIndex = material_index
             layer_index = model.Layers.Add(child)
-        for name in _physical_ids(program.proposal):
+        for name in delivered_object_ids(program.proposal):
             attributes = r.ObjectAttributes()
             attributes.Name = name
             attributes.LayerIndex = layer_index
@@ -620,7 +621,7 @@ class ComposedThreeDmPatchTests(unittest.TestCase):
                                      (original.Id, original.Name, original.DiffuseColor, original.Transparency, original.GetUserStrings()))
                     self.assertEqual(saved.PhysicallyBased.BaseColor, original.PhysicallyBased.BaseColor)
                     self.assertEqual(saved.PhysicallyBased.Roughness, original.PhysicallyBased.Roughness)
-                replaced = set(_physical_ids(current.proposal)) - set(select_patch_operations(current, prior).kept_object_ids)
+                replaced = set(delivered_object_ids(current.proposal)) - set(select_patch_operations(current, prior).kept_object_ids)
                 for item in after.Objects:
                     if item.Attributes.Name in replaced:
                         self.assertEqual(item.Attributes.MaterialSource, r.ObjectMaterialSource.MaterialFromObject)

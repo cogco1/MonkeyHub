@@ -77,7 +77,7 @@ class MassingOptionRequestDto(BaseModel):
     state_digest: str = Field(
         alias="stateDigest",
         min_length=1,
-        description="the stateDigest GET /api/state answered; an option made "
+        description="the stateDigest GET /api/construction/model (or /api/state) answered; an option made "
         "against another state is refused",
     )
     transform: TransformName

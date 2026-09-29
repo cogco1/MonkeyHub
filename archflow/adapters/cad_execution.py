@@ -32,7 +32,6 @@ from archflow.adapters.cad_program import (
     LONG_PATH_HELPER_SOURCE,
     CadTranslationError,
     _params,
-    _physical_ids,
     _resolved_layer_colors,
     expected_object_bounds,
     expected_object_semantics,
@@ -45,6 +44,7 @@ from archflow.adapters.occt_backend import (
     _polyline_geometry,
     CLOSED_SOLID,
     CURVE,
+    DIFFERENCE_STRATEGIES,
     OPEN_SURFACE,
     OcctBackendError,
     OcctCapabilityError,
@@ -73,7 +73,7 @@ from archflow.adapters.three_dm_inspector import (
     inspect_three_dm,
 )
 from archflow.project.refs import BranchRef, ProjectRecordRef, require_identifier
-from archflow.state.geometry_program import CompiledGeometryProgram
+from archflow.state.geometry_program import CompiledGeometryProgram, delivered_object_ids
 from archflow.state.geometry_program import AssemblyRole, require_sha256
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.version_refs import (
@@ -1100,7 +1100,7 @@ def prepare_rhino_three_dm_export(
     )
     translation_sha256 = _sha256_text(translation.script)
     # a patch names only the rebuilt objects in its script; the denominator stays the whole document
-    physical_object_ids = tuple(sorted(translation.physical_object_ids if selection is None else _physical_ids(program.proposal)))
+    physical_object_ids = tuple(sorted(translation.physical_object_ids if selection is None else delivered_object_ids(program.proposal)))
     expected_document_user_text = tuple(
         sorted((f"archflow:{key}", value) for key, value in supplied.items())
     )
@@ -3207,6 +3207,7 @@ class OcctExecutionReceipt:
     timings: dict[str, float]
     failures: tuple[dict[str, str], ...]
     reused_object_ids: tuple[str, ...] = ()
+    lowering: tuple[tuple[str, str], ...] = ()
 
     SCHEMA = "OcctExecutionReceipt@1"
 
@@ -3220,6 +3221,16 @@ class OcctExecutionReceipt:
             raise TypeError("backend must be dict")
         if not isinstance(self.reused_object_ids, tuple) or set(self.reused_object_ids) - set(self.physical_object_ids):
             raise CadExecutionError("reused objects must belong to the exported physical denominator")
+        if not isinstance(self.lowering, tuple) or any(
+            not isinstance(item, tuple) or len(item) != 2 or item[1] != "profile_with_holes"
+            for item in self.lowering
+        ):
+            raise CadExecutionError("lowering names only operations realized as a profile with holes")
+        lowering_ids = tuple(item[0] for item in self.lowering)
+        if lowering_ids != tuple(sorted(set(lowering_ids))):
+            raise CadExecutionError("lowering op ids must be sorted and unique")
+        for op_id in lowering_ids:
+            require_identifier(op_id, "lowering")
         if not isinstance(self.evidence_tier, str) or not self.evidence_tier:
             raise CadExecutionError("evidence_tier must be non-empty text")
         for field in ("exact_artifact", "preview_artifact"):
@@ -3296,6 +3307,7 @@ class OcctExecutionReceipt:
                 "failures": list(self.failures),
                 "readback_verified": self.readback_verified,
                 **({"reused_object_ids": list(self.reused_object_ids)} if self.reused_object_ids else {}),
+                **({"lowering": dict(self.lowering)} if self.lowering else {}),
             }
         )
 
@@ -3341,6 +3353,7 @@ def execute_occt_export(
     prior_step_sha256: str | None = None,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     observation_parent_id: str | None = None,
+    difference_strategy: str = "auto",
 ) -> OcctExecutionReceipt:
     """Realize the bound program, write STEP and a mesh/curve preview, cold-read both.
 
@@ -3362,6 +3375,10 @@ def execute_occt_export(
     An explicitly supplied prior program and verified STEP may contribute
     unchanged shapes. Only changed geometry is built; the complete current
     model is written and independently read back under the current binding.
+
+    ``difference_strategy`` is handed to ``build_program_shapes``; a
+    difference realized as a profile with holes is named in the receipt's
+    ``lowering``.
 
     Raises ``CadCapabilityError`` (a ``CadExecutionError``) before writing
     when the program uses an operation this executor does not realize, and
@@ -3388,6 +3405,8 @@ def execute_occt_export(
         # launched by create/save/reopen/preview.
     """
 
+    if difference_strategy not in DIFFERENCE_STRATEGIES:
+        raise CadExecutionError(f"unknown difference strategy {difference_strategy!r}")
     if not isinstance(binding, RhinoCadProgramBinding):
         raise TypeError("binding must be RhinoCadProgramBinding")
     binding.bind_program(program)
@@ -3481,7 +3500,8 @@ def execute_occt_export(
             reused_shapes = _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256,
                                                   diagnostics=reuse_details)
         build = build_program_shapes(program, **({"reusable_shapes": reused_shapes} if reused_shapes else {}),
-                                     operation_observer=operation_observer, observation_parent_id=observation_parent_id)
+                                     operation_observer=operation_observer, observation_parent_id=observation_parent_id,
+                                     difference_strategy=difference_strategy)
     except OcctCapabilityError as exc:
         raise CadCapabilityError(
             f"OCCT executor cannot realize {exc.op_id} ({exc.kind}): {exc.reason}",
@@ -3503,6 +3523,8 @@ def execute_occt_export(
             shape=build.objects[object_id].shape,
             layer=semantics["objects"][object_id]["layer"],
             color=layer_colors.get(semantics["objects"][object_id]["layer"]),
+            # A hidden inspection witness is invisible in the exact STEP as in the preview.
+            visible=not build.objects[object_id].hidden,
         )
         for object_id in physical
     )
@@ -3627,6 +3649,7 @@ def execute_occt_export(
         timings=timings,
         failures=tuple(failures),
         reused_object_ids=tuple(sorted(reused_shapes)),
+        lowering=tuple(sorted(build.lowering.items())),
     )
 
 
@@ -3655,7 +3678,7 @@ def _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256,
     details.update(cache_reason="source_step_readback_failed", cache_checks={"artifact": "same"})
     entries = read_step(source, length_unit=program.proposal.length_unit.value)
     by_name = {entry.name: entry.shape for entry in entries}
-    if len(by_name) != len(entries) or set(by_name) != set(_physical_ids(prior_program.proposal)):
+    if len(by_name) != len(entries) or set(by_name) != set(delivered_object_ids(prior_program.proposal)):
         details.update(cache_reason="source_object_identity_changed", cache_checks={"artifact": "same", "object_names": "changed"})
         raise CadExecutionError("OCCT reuse source has missing or ambiguous physical objects")
     from .cad_patch import select_patch_operations
@@ -3664,9 +3687,9 @@ def _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256,
     # The Rhino patch's kept set excludes the entire connected input closure.
     # OCCT can keep an unchanged final shape even when a changed sibling needs
     # their missing shared intermediate rebuilt from the program.
-    unchanged = (set(by_name) & set(_physical_ids(program.proposal))) - set(selection.changed_object_ids)
+    unchanged = (set(by_name) & set(delivered_object_ids(program.proposal))) - set(selection.changed_object_ids)
     details.update(
-        cache_status="hit" if unchanged and unchanged == set(_physical_ids(program.proposal)) else "partial" if unchanged else "miss",
+        cache_status="hit" if unchanged and unchanged == set(delivered_object_ids(program.proposal)) else "partial" if unchanged else "miss",
         cache_reason="geometry_changed" if selection.changed_object_ids else "objects_added_or_retired"
             if selection.added_object_ids or selection.retired_object_ids else "unchanged_geometry",
         input_equivalent=selection.empty,
@@ -4086,8 +4109,8 @@ def patch_composed_three_dm(
 
     base_objects = physical(base)
     donor_objects = physical(donor)
-    prior_names = set(_physical_ids(prior_program.proposal))
-    new_names = set(_physical_ids(program.proposal))
+    prior_names = set(delivered_object_ids(prior_program.proposal))
+    new_names = set(delivered_object_ids(program.proposal))
     missing = prior_names - base_objects.keys()
     if missing:
         raise CadPatchError(f"composed base is missing native objects: {sorted(missing)}")

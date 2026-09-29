@@ -131,7 +131,7 @@ function opacityOf(material: Material): MaterialOpacity {
 const FRAME = "obj-frame-wall-south-window-south";
 const PANE = "obj-glazing-wall-south-window-south";
 const APERTURE = "obj-wall-south-aperture-window-south";
-const ON_LAYER = ["obj-plinth", "obj-wall-south-cut", APERTURE];
+const ON_LAYER = ["obj-plinth", "obj-wall-south", APERTURE];
 
 interface LoadedPreview {
   decoded: DecodedFile;
@@ -226,7 +226,7 @@ test("the aperture the export saved hidden is not displayed, and nothing brings 
   assert.ok(decoded.layers.length > 0 && decoded.layers.every((layer) => layer.visible), "the preview's layers are all visible");
   const saved = new Map(decoded.objects.map((o) => [o.attributes.name, o.attributes.visible]));
   assert.equal(saved.get(APERTURE), false);
-  for (const name of [FRAME, PANE, "obj-plinth", "obj-wall-south-cut"]) assert.equal(saved.get(name), true, name);
+  for (const name of [FRAME, PANE, "obj-plinth", "obj-wall-south"]) assert.equal(saved.get(name), true, name);
 
   // the installed loader set visibility from the layer alone: the hidden aperture came out visible
   const meshes = meshesByName(model);
@@ -238,7 +238,7 @@ test("the aperture the export saved hidden is not displayed, and nothing brings 
   assert.equal(prepareLoadedModel(model), model);
   assert.equal(aperture.visible, false);
   assert.equal(isDisplayed(aperture), false);
-  for (const name of [FRAME, PANE, "obj-plinth", "obj-wall-south-cut"]) {
+  for (const name of [FRAME, PANE, "obj-plinth", "obj-wall-south"]) {
     assert.equal(meshes.get(name)!.visible, true, name);
     assert.equal(isDisplayed(meshes.get(name)!), true, name);
   }

@@ -1,10 +1,13 @@
-"""Compile a request into a scalar or semantic proposal against its exact base.
+"""Compile a request into a scalar or construction proposal against its exact base.
 
 Pending intents retain clarification context. Scalar requests first resolve
 known controls and scope; an agent may interpret an unfamiliar target against
-the record sheet before the same checks run again. Component edits go to the
-design compiler and are typed against StateRecord and producer contracts.
-Both return a stored, reviewable proposal for the existing candidate path.
+the record sheet before the same checks run again. The agent answers in the
+construction contract (#419): a script, facets or parameters become one
+proposal through the construction owner, which chooses every realisation, and
+a refused script answers with its line; a scalar sentence goes through the
+grammar as before. Both return a stored, reviewable proposal for the existing
+candidate path.
 """
 
 from __future__ import annotations
@@ -18,11 +21,12 @@ from archflow.project.refs import ProjectRecordRef
 from dataclasses import replace
 
 from ..application import clarification
-from ..application.binding import bound_project
+from ..application.binding import ProjectBinding, bound_project
 from ..application.artifacts import ModelSource, require_model_source
 from ..application.catalog import catalog_of
 from ..application.conventions import project_conventions
 from ..application.clarification import PendingIntentStore, Resolution
+from ..application.construction import kept_refs
 from ..application.gestures import (
     DocumentAnnotationRef, GestureReading, list_document_comments, read_document_annotations, read_gestures,
     retain_document_comment, save_document_annotations,
@@ -32,7 +36,6 @@ from ..application.gestures import (
 )
 from ..application.intent import (
     DeterministicIntentProvider,
-    component_edit_proposal,
     merge_keep,
     parse_utterance,
 )
@@ -50,7 +53,7 @@ from ..application.intent_agent import (
     context_refs,
     record_sheet,
 )
-from ..application.intent_context import compile_task_context, confirmed_stage_context, model_context
+from ..application.intent_context import compile_task_context, confirmed_stage_context, pack_context
 from ..application.intent_requests import action_preflight
 from ..application.study import read_study, study_evidence_context
 from ..application.projection import StateProjection, project_state, require_actionable
@@ -86,6 +89,7 @@ from ..transport.intent import (
     pending_body,
     pending_dto,
 )
+from ..transport.construction import ConstructionOutcomeDto
 from ..transport.proposal import ProposalScopeDto, to_dto
 from ..transport.artifacts import model_source_from, model_source_dto
 from .proposals import _require_bound_project, _stale_base
@@ -184,27 +188,38 @@ def _refused(
     )
 
 
-def _semantic_answer(
+def _change_answer(
     request: Request,
     body: IntentRequestDto,
+    binding: ProjectBinding,
     projection: StateProjection,
     reading: GestureReading,
     pending,
     compilation: Compilation,
     compile_ms: int,
     document_comment_ref: ProjectRecordRef | None = None,
+    *,
+    requested: str | None = None,
 ) -> IntentDto:
-    if compilation.status != "compiled" or compilation.utterance is not None or compilation.semantic_edit is None:
-        raise StudioError(502, "INTENT_AGENT_FAILED", "the agent must compile one design edit or ask a question")
+    """A compiled script, facets or parameters, stored as one proposal.
+
+    The construction owner chooses every realisation; a refused script
+    propagates as its own 422 ``CONSTRUCTION_INVALID`` with the line, column
+    and source line, and nothing is stored. What the script reported travels
+    with the answer. The proposal is about the first geometry its script
+    makes, changes or removes, else the geometry the agent named, else
+    ``requested`` (the component the request selected), else the modelling
+    root; what the answer keeps joins the keep marks.
+    """
+
     typed_at = time.perf_counter()
     utterance = body.utterance if pending is None else (
         f"Original request: {pending.original_utterance}\nArchitect's clarification: {body.utterance}"
     )
-    parts = component_edit_proposal(
-        projection, compilation.semantic_edit, utterance=utterance,
-        component_id=compilation.component_id, keep_refs=reading.keep_refs,
-    )
-    proposal = proposal_from(parts)
+    compilation = clarification.targeted(projection, compilation)
+    made = clarification.compiled_proposal(binding, projection, compilation, utterance=utterance,
+                                           keep_refs=reading.keep_refs, component_id=requested)
+    proposal = made.proposal
     resolution = clarification.semantic_resolution(
         projection, utterance=body.utterance,
         selection=Selection(proposal.component_id, proposal.element_id, reading.facts), pending=pending,
@@ -219,10 +234,14 @@ def _semantic_answer(
     request.app.state.proposals.put(proposal)
     request.app.state.pending_intents.close(body.continuation_token)
     return IntentDto(
-        outcome=clarification.COMPILED, agent=agent_dto(compilation), proposal=to_dto(proposal),
+        outcome=clarification.COMPILED,
+        agent=agent_dto(compilation, compiled=str((proposal.semantic_edit or {}).get("summary") or "")),
+        proposal=to_dto(proposal),
         timings=IntentTimingsDto(compile_ms=compile_ms, type_ms=int((time.perf_counter() - typed_at) * 1000)),
         gestures=list(reading.facts), pending_intent=pending_dto(resolution.pending),
         document_comment_ref=None if document_comment_ref is None else document_comment_ref.uri,
+        construction=None if made.result is None else ConstructionOutcomeDto(
+            report=list(made.result.report), log=list(made.result.log)),
     )
 
 
@@ -326,7 +345,7 @@ def read_intent_context(request: Request, body: ContextPackRequestDto) -> Contex
                         domain=None if body.decision_context is None else body.decision_context.domain)
     study_evidence = [study_evidence_context(read_study(binding, item.study_id, item.ledger_ref))
                       for item in body.study_evidence]
-    return context_pack_dto(description, context, preflight, model_context(context),
+    return context_pack_dto(description, context, preflight, pack_context(context),
                             confirmed_stage=confirmed_stage, scoped_decisions=decisions,
                             memory=memory, study_evidence=study_evidence)
 
@@ -463,8 +482,9 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
             message=message, selection=agent_selection, projection=projection,
         )
         compile_ms = int((time.perf_counter() - started) * 1000)
-        if compilation.semantic_edit is not None:
-            return _semantic_answer(request, body, projection, reading, pending, compilation, compile_ms, document_comment_ref)
+        if compilation.proposes_change:
+            return _change_answer(request, body, binding, projection, reading, pending, compilation, compile_ms,
+                                  document_comment_ref, requested=agent_selection.component_id)
         if edit_request:
             question = compilation.question if compilation.status == "question" else None
             raise _refused(store, token=body.continuation_token, source_stage_ref=projection.source_stage_ref, model_source=model_source, document_visuals=document_visuals, document_comment_ref=document_comment_ref, resolution=clarification.semantic_resolution(
@@ -509,8 +529,11 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         started = time.perf_counter()
         compilation = configured_compiler.compile(message=message, selection=selection, projection=projection)
         compile_ms = int((time.perf_counter() - started) * 1000)
-        if compilation.semantic_edit is not None:
-            return _semantic_answer(request, body, projection, reading, pending, compilation, compile_ms, document_comment_ref)
+        if compilation.proposes_change:
+            return _change_answer(request, body, binding, projection, reading, pending, compilation, compile_ms,
+                                  document_comment_ref, requested=selection.component_id)
+        # The geometry id the agent named, read into the component and element it is.
+        compilation = clarification.targeted(projection, compilation)
         checked = clarification.read_compilation(
             projection, compilation=compilation, resolution=resolution, pending=pending,
         )
@@ -559,8 +582,10 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
             projection=projection,
         )
         compile_ms = int((time.perf_counter() - compiled_at) * 1000)
-    if compilation.semantic_edit is not None:
-        return _semantic_answer(request, body, projection, reading, pending, compilation, compile_ms, document_comment_ref)
+    if compilation.proposes_change:
+        return _change_answer(request, body, binding, projection, reading, pending, compilation, compile_ms,
+                              document_comment_ref, requested=resolution.selection.component_id)
+    compilation = clarification.targeted(projection, compilation)
     # What the compiler answered, in the same four outcomes. An agent that asks
     # still names a target, and that target is kept: losing it is what made the
     # next round start from nothing.
@@ -570,11 +595,10 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     if resolution.outcome != clarification.COMPILED:
         raise _refused(store, token=body.continuation_token, source_stage_ref=projection.source_stage_ref, model_source=model_source, document_visuals=document_visuals, resolution=resolution, document_comment_ref=document_comment_ref)
     assert compilation.utterance is not None
-    if reading.keep_refs:
-        compilation = replace(
-            compilation,
-            utterance=merge_keep(compilation.utterance, reading.keep_refs),
-        )
+    # What was drawn to keep and what the agent was told to keep, a geometry id with its parts.
+    keep = kept_refs(projection.record, (*reading.keep_refs, *compilation.keep))
+    if keep:
+        compilation = replace(compilation, utterance=merge_keep(compilation.utterance, keep))
     typed_at = time.perf_counter()
     try:
         parts = DeterministicIntentProvider(projection).propose(

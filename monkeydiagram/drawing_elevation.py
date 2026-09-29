@@ -183,6 +183,30 @@ def object_semantics(receipt: Mapping[str, Any]) -> dict[str, dict[str, str]]:
     return semantics
 
 
+def inspection_witness_ids(receipt: Mapping[str, Any]) -> frozenset[str]:
+    """Objects the source saved hidden as inspection evidence: aperture volumes, retained voids.
+
+    They are source evidence, not material or occluders, in every drawing.
+    """
+
+    objects = (receipt.get("expected_semantics") or {}).get("objects", {})
+    return frozenset(name for name, row in objects.items() if isinstance(row, Mapping) and row.get("visible") is False)
+
+
+def current_object_id(name: str, available) -> str:
+    """A retained object reference read against a newer model (#419).
+
+    A wall delivered ``obj-<wall>-cut`` once it had an opening and now always
+    delivers ``obj-<wall>``. A retained ``obj-<X>-cut`` that the model lacks
+    therefore reads as ``obj-<X>`` when the model has it. Every other name
+    stays as written; nothing is rebound to a nearby object.
+    """
+
+    if name not in available and name.endswith("-cut") and name[: -len("-cut")] in available:
+        return name[: -len("-cut")]
+    return name
+
+
 def _cleaned(lines, regions, *, crop_uv, hidden_lines: bool, unit: str, scale_denominator: int):
     """The lines one drawing draws, cropped to its window and cleaned at the paper tolerance, with the report.
 
@@ -769,6 +793,8 @@ def resolve_plan_dressing(recipe: Mapping, receipt: Mapping) -> list[dict]:
         size = _finite(item["size"], "dressing size")
         _require(0 < size <= 100000 and isinstance(item.get("flipped", False), bool), "invalid dressing size or flip")
         anchor = item.get("anchorObjectId")
+        if anchor is not None:
+            anchor = current_object_id(anchor, anchors)
         if anchor is not None and anchor not in anchors:
             result.append({**item, "status": "missing", "resolvedUv": None,
                            "detail": f"Anchor {anchor} is missing or unavailable; this object has not been moved to another anchor."})
@@ -834,11 +860,11 @@ def freeze_cut_plan(
     hidden = recipe.get("hiddenObjectIds", [])
     if not isinstance(hidden, (list, tuple)) or any(not isinstance(name, str) for name in hidden):
         raise DrawingElevationError("hiddenObjectIds must be a list of physical object ids")
+    hidden = [current_object_id(name, set(verified.physical_object_ids)) for name in hidden]
     # Rebuilding keeps authored visibility intent even when its source object was removed.
     # The application validates newly authored selections; this retained recipe reports missing ones.
     unresolved_objects = sorted(set(hidden) - set(verified.physical_object_ids))
-    semantics = verified.receipt.get("expected_semantics", {}).get("objects", {})
-    source_hidden = {name for name, row in semantics.items() if row.get("visible") is False}
+    source_hidden = inspection_witness_ids(verified.receipt)
     # Native STEP also retains hidden inspection witnesses such as aperture volumes.
     # They are source evidence, not cut material or occluders in the drawing.
     excluded = set(hidden) | source_hidden
@@ -917,7 +943,9 @@ def freeze_model_axis_elevation(
         observation["input_object_ids"] = list(verified.physical_object_ids)
     def draw() -> DrawnView:
         return _drawn(view.to_dict(), project_model_axis_elevation(
-            verified.entries, object_ids=verified.physical_object_ids, view=view, unit=verified.length_unit,
+            verified.entries, object_ids=tuple(name for name in verified.physical_object_ids
+                                               if name not in inspection_witness_ids(verified.receipt)),
+            view=view, unit=verified.length_unit,
             operation_observer=observer, parent_event_id=parent_event_id, semantics=object_semantics(verified.receipt),
         ), backend)
 
@@ -1428,11 +1456,11 @@ def section_perspective_objects(verified: VerifiedElevationSource, hidden_object
     hiding everything is refused by name.
     """
 
+    hidden_object_ids = [current_object_id(name, set(verified.physical_object_ids)) for name in hidden_object_ids]
     unknown = sorted(set(hidden_object_ids) - set(verified.physical_object_ids))
     if unknown:
         _refuse("DRAWING_OBJECT_UNKNOWN", "These physical objects are not in the selected model: " + ", ".join(unknown))
-    semantics = verified.receipt.get("expected_semantics", {}).get("objects", {})
-    excluded = set(hidden_object_ids) | {name for name, row in semantics.items() if row.get("visible") is False}
+    excluded = set(hidden_object_ids) | inspection_witness_ids(verified.receipt)
     selected = tuple(name for name in verified.physical_object_ids if name not in excluded)
     if not selected:
         _refuse("DRAWING_EMPTY", "Keep at least one physical object in the section perspective.")
@@ -1560,9 +1588,11 @@ __all__ = [
     "SectionPerspectiveProjection",
     "SectionPerspectiveView",
     "axonometric_frame",
+    "current_object_id",
     "freeze_model_axis_elevation",
     "freeze_cut_plan",
     "freeze_section_perspective",
+    "inspection_witness_ids",
     "object_semantics",
     "plan_dressing_anchors",
     "resolve_plan_dressing",

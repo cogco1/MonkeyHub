@@ -22,7 +22,7 @@ from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
 from monkeydiagram.drawing_elevation import (
-    DrawingElevationError, ElevationView, NativeModelSource, SectionPerspectiveError, freeze_cut_plan,
+    DrawingElevationError, ElevationView, NativeModelSource, SectionPerspectiveError, current_object_id, freeze_cut_plan,
     model_axis_section, read_elevation_source, read_model_axis_elevation, plan_dressing_anchors, resolve_plan_dressing,
 )
 
@@ -548,12 +548,14 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
         if unit != old_receipt["identity"]["length_unit"]:
             raise ValueError("The target unit changed; explicitly revise the view instead of reinterpreting its coordinates.")
         hidden = document.view_recipe.get("hiddenObjectIds", [])
-        missing = sorted(set(hidden) - set(receipt["physical_object_ids"]))
+        physical = set(receipt["physical_object_ids"])
+        current_hidden = [current_object_id(name, physical) for name in hidden]
+        missing = sorted(set(current_hidden) - physical)
         result["unresolvedObjectIds"] = missing
         if isinstance(source, NativeModelSource) or isinstance(old_source, NativeModelSource):
             verified = read_elevation_source(binding.repository, source)
             dimensions = resolve_plan_dimensions(binding, target, stage_ref, verified, frame,
-                document.view_recipe.get("dimensions", []), hidden_object_ids=hidden)
+                document.view_recipe.get("dimensions", []), hidden_object_ids=current_hidden)
             dressing = resolve_plan_dressing(document.view_recipe, receipt)
             broken = missing or any(row["status"] != "resolved" for row in dimensions) or any(row["status"] != "resolved" for row in dressing)
             changed = target.asset_sha256 != document.model_source.asset_sha256
@@ -562,7 +564,7 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
                           detail="The imported/composed model changed; rebuild the drawing." if changed else "This drawing matches the retained native model.")
             return result
         old_program, old_reads = _read_set(binding, old_receipt, frame, hidden)
-        new_program, new_reads = _read_set(binding, receipt, frame, hidden)
+        new_program, new_reads = _read_set(binding, receipt, frame, current_hidden)
         # Reuse the CAD owner's structural comparison. Compiler object digests
         # also include whole-state semantic evidence and are not geometry keys.
         changes = select_patch_operations(new_program, old_program)
@@ -573,7 +575,7 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
         else:
             verified = read_elevation_source(binding.repository, source)
             dimensions = resolve_plan_dimensions(binding, target, stage_ref, verified, frame, document.view_recipe.get("dimensions", []),
-                                                  hidden_object_ids=hidden)
+                                                  hidden_object_ids=current_hidden)
         result["dimensions"] = list(dimensions)
         dressing = resolve_plan_dressing(document.view_recipe, receipt)
         original_dressing = resolve_plan_dressing(document.view_recipe, old_receipt)

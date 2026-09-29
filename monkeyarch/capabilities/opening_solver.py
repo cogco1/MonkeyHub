@@ -5,8 +5,8 @@ the frame stands proud of the exterior face, glazing or leaf thickness
 and offsets). Where the opening is, how large, and on which storey come
 from the ``HostedVoid`` the wall solver granted — the type never carries
 a project coordinate. Every member binds ``base_level`` to the storey
-datum and rides its own seat height as ``base_offset``; the wall's cut
-result is the assembly's HOST_CUT member, so the compiler sees the void,
+datum and rides its own seat height as ``base_offset``; the aperture, the
+wall body met by the void's tool, is the assembly's HOST_CUT member, so the compiler sees the void,
 the frame and the infill as one hosted assembly at ENVELOPE maturity.
 
 A window frame is delivered whole: its four bars are fused by one
@@ -46,7 +46,6 @@ from archflow.contracts.fields import (
 )
 
 _M = LengthUnit.METER
-INTERFACE_INSIDE_OUTSIDE = "interface:inside-to-outside"
 
 
 class OpeningSolverError(ValueError):
@@ -233,7 +232,7 @@ def _bind(op: GeometryOperation, datum_id: str) -> DatumBinding:
     return DatumBinding(binding_id=f"bind-{op.op_id}", datum_id=datum_id, op_id=op.op_id, parameter_name="base_level")
 
 
-def _assembly(void: HostedVoid, scoped: str, kind: AssemblyKind, members: dict[AssemblyRole, tuple[str, ...]], binding_id: str, interface_ref: str) -> HostedAssembly:
+def _assembly(void: HostedVoid, scoped: str, kind: AssemblyKind, members: dict[AssemblyRole, tuple[str, ...]], binding_id: str, interface_ref: str | None) -> HostedAssembly:
     members[AssemblyRole.HOST_CUT] = tuple(void.aperture_object_ids)
     return HostedAssembly(
         assembly_id=f"{scoped}-assembly",
@@ -241,13 +240,13 @@ def _assembly(void: HostedVoid, scoped: str, kind: AssemblyKind, members: dict[A
         host_object_id=void.host_object_id,
         host_socket_id=f"void-{scoped}",
         members=tuple(AssemblyMember(role, ids) for role, ids in sorted(members.items(), key=lambda item: item[0].value)),
-        interface_refs=(interface_ref,),
+        interface_refs=() if interface_ref is None else (interface_ref,),
         semantic_binding_ids=(binding_id,),
         maturity=DetailMaturity.ENVELOPE,
     )
 
 
-def solve_window(void: HostedVoid, window: WindowType, *, binding_id: str, interface_ref: str = INTERFACE_INSIDE_OUTSIDE) -> OpeningSolution:
+def solve_window(void: HostedVoid, window: WindowType, *, binding_id: str, interface_ref: str | None = None) -> OpeningSolution:
     """One closed frame around the void's edge and one pane inside it.
 
     The frame is four overlapping bars (bottom, left, right, top) fused by
@@ -256,7 +255,8 @@ def solve_window(void: HostedVoid, window: WindowType, *, binding_id: str, inter
     delivered objects; the assembly's FRAME member names the fused frame
     (or its array), its GLAZING member the separate pane. ``interface_ref``
     names the spatial relation the opening serves (a connection's
-    relationship ref in the selected spatial option).
+    relationship ref in the selected spatial option); an opening that names
+    none carries none: the solver never states a relation it was not given.
     """
 
     if not isinstance(void, HostedVoid) or not isinstance(window, WindowType):
@@ -299,8 +299,8 @@ def solve_window(void: HostedVoid, window: WindowType, *, binding_id: str, inter
     )
 
 
-def solve_door(void: HostedVoid, door: DoorType, *, binding_id: str, interface_ref: str = INTERFACE_INSIDE_OUTSIDE) -> OpeningSolution:
-    """Jambs and head on the void's edge; one or two leaves with clearances."""
+def solve_door(void: HostedVoid, door: DoorType, *, binding_id: str, interface_ref: str | None = None) -> OpeningSolution:
+    """Jambs and head on the void's edge; one or two leaves with clearances; ``interface_ref`` as for a window."""
 
     if not isinstance(void, HostedVoid) or not isinstance(door, DoorType):
         raise OpeningSolverError("solve_door needs a HostedVoid and a DoorType")
@@ -352,7 +352,7 @@ def solve_door(void: HostedVoid, door: DoorType, *, binding_id: str, interface_r
 
 def solve_openings(voids: tuple[HostedVoid, ...], types: dict[str, WindowType | DoorType], *, binding_ids: dict[str, str],
                    interface_refs: dict[str, str] | None = None) -> tuple[OpeningSolution, ...]:
-    """Fill every hosted void with the type its opening id maps to."""
+    """Fill every hosted void with the type its opening id maps to, citing the interface it names, if any."""
 
     solutions = []
     for void in voids:
@@ -362,7 +362,7 @@ def solve_openings(voids: tuple[HostedVoid, ...], types: dict[str, WindowType | 
         binding = binding_ids.get(void.opening_id)
         if binding is None:
             raise OpeningSolverError(f"void {void.opening_id} has no semantic binding")
-        ref = (interface_refs or {}).get(void.opening_id, INTERFACE_INSIDE_OUTSIDE)
+        ref = (interface_refs or {}).get(void.opening_id)
         if isinstance(kind, WindowType):
             solutions.append(solve_window(void, kind, binding_id=binding, interface_ref=ref))
         elif isinstance(kind, DoorType):

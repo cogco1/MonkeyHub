@@ -8,7 +8,7 @@ from typing import Mapping
 
 from archflow.project.refs import require_identifier
 from archflow.state.developed_design import DevelopedDesignState
-from archflow.state.geometry_program import AssemblyRole, AssetReference, DatumBinding, GeometryOperation, GeometryOperationKind, GeometryParameter, GeometryProgramError, GeometryProgramProposal, InterfaceDatum, require_sha256, AssetSubstitutionReceipt, CompiledGeometryObject, CompiledGeometryProgram, GeometryCompilationError
+from archflow.state.geometry_program import AssemblyRole, AssetReference, DatumBinding, GeometryOperation, GeometryOperationKind, GeometryParameter, GeometryProgramError, GeometryProgramProposal, InterfaceDatum, require_sha256, AssetSubstitutionReceipt, CompiledGeometryObject, CompiledGeometryProgram, GeometryCompilationError, delivered_object_ids
 from archflow.contracts.canonical import canonical_digest
 from archflow.state.operational_state import require_logical_ref
 
@@ -403,7 +403,10 @@ def _operation_graph(
             if binding_id in binding_by_id
             for object_id in binding_by_id[binding_id].object_ids
         }
-        if not set(operation.output_object_ids) <= covered_outputs:
+        # An output some binding owns must be produced under that binding; an
+        # output nobody owns is construction, checked against delivery below.
+        owned_outputs = {object_id for object_id in operation.output_object_ids if object_id in owner_by_object}
+        if not owned_outputs <= covered_outputs:
             _issue(
                 issues,
                 GeometryIssueCode.UNKNOWN_BINDING,
@@ -452,12 +455,14 @@ def _operation_graph(
                 binding.binding_id,
                 "semantic binding names an object with no producer",
             )
-    for object_id in sorted(set(producer_by_object) - set(owner_by_object)):
+    # Construction needs no design identity; what the program delivers does (#419).
+    delivered = set(delivered_object_ids(proposal))
+    for object_id in sorted((set(producer_by_object) & delivered) - set(owner_by_object)):
         _issue(
             issues,
             GeometryIssueCode.UNOWNED_OBJECT,
             object_id,
-            "produced geometry object has no semantic component owner",
+            "delivered geometry object has no design identity binding",
         )
 
     dependencies: dict[str, set[str]] = {
@@ -595,12 +600,18 @@ def _validate_assemblies(
             )
         for cut_object_id in assembly.objects_for(AssemblyRole.HOST_CUT):
             producer = operations[producer_by_object[cut_object_id]]
-            if assembly.host_object_id not in producer.input_object_ids:
+            # Backend-neutral (#419): the region is derived from its host, or one
+            # operation consumes it together with the host; its kind is not prescribed.
+            related = assembly.host_object_id in producer.input_object_ids or any(
+                {assembly.host_object_id, cut_object_id} <= set(operation.input_object_ids)
+                for operation in operations.values()
+            )
+            if not related:
                 _issue(
                     issues,
                     GeometryIssueCode.INVALID_ASSEMBLY,
                     assembly.assembly_id,
-                    "host-cut geometry does not depend on its named host",
+                    "host-cut region is related to its named host by no operation",
                 )
 
 
