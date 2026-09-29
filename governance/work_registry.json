@@ -1,43 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-449",
-      "lanes": [
-        {
-          "id": "open-path",
-          "status": "active",
-          "branch": "codex/449-open-path",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-449-open-path",
-          "base_ref": "12e59630",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "cloud session; master integrates",
-          "modules": [
-            "hub.shell",
-            "studio.shell",
-            "studio.binding"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/main.py",
-            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-            "apps/monkeyhub/api/monkeyhub_api/chat.py",
-            "apps/monkeyhub/api/tests/test_chat.py",
-            "apps/monkeyhub/api/tests/test_project_runtime.py",
-            "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
-            "apps/monkeyhub/web/src/ChatShell.tsx",
-            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-            "apps/monkeyhub/web/workspaces/src/app/useSession.ts",
-            "apps/monkeyhub/web/workspaces/src/api/client.ts",
-            "apps/monkeyhub/web/workspaces/src/api/connection.ts",
-            "apps/monkeyhub/web/workspaces/test/modelingOpen.browser.mjs",
-            "apps/monkeyhub/web/test/",
-            "apps/archflow-studio/api/archflow_studio_api/main.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/binding.py"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
