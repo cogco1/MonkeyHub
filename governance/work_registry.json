@@ -1,4 +1,30 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-252",
+      "lanes": [
+        {
+          "id": "library-setting",
+          "status": "active",
+          "branch": "codex/252-library-setting",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-252-library-setting",
+          "base_ref": "fd407f11",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/settingsAutosave.browser.mjs"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
