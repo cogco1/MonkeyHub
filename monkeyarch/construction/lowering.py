@@ -523,7 +523,7 @@ class _Lowering:
         except _PRODUCTION_ERRORS:
             return None
         if not alone:
-            return voids, True, False
+            return voids, len(voids) > 1, False
         missing = tuple(void for void, found in alone.items() if found.disjoint)
         return missing or tuple(alone), False, bool(missing)
 
