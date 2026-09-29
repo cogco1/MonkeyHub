@@ -1,27 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-432",
-      "lanes": [
-        {
-          "id": "integration",
-          "status": "active",
-          "branch": "codex/432-integration",
-          "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-432-integrate",
-          "base_ref": "648ac6486daf1bf43fb02d35372dd107bb0118e9",
-          "contributor": "Claude (continuing Codex's interrupted GH-432 integration)",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
