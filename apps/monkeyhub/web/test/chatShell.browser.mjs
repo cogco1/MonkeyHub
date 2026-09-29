@@ -1011,12 +1011,17 @@ async function suggestionCards() {
   await contextReady();
   assert.equal(await action(card).isEnabled(), true, "structured data renders even with empty assistant content");
   assert.equal(await card.locator('[data-suggestion-action="accept"]').count(), 1, "one recommended execution action per card");
-  assert.match(await card.innerText(), /assess|unknown|not.*estimat|to be estimated/i, "unknown effort and cost remain unknown");
-  const details = card.locator("details");
-  assert.ok(await details.count() > 0, "rationale and method are progressively disclosed");
-  assert.equal(await details.first().getAttribute("open"), null);
-  await details.first().locator("summary").click();
+  assert.equal(await card.locator(".chat-suggestion__estimates").count(), 0, "unknown estimates are not shown as figures");
+  const details = card.locator(".chat-card__details");
+  assert.equal(await details.count(), 1, "rationale and method are progressively disclosed");
+  assert.equal(await details.getAttribute("open"), null);
+  assert.equal(await card.getByText("To be assessed").first().isVisible(), false, "unknown effort waits in the folded details");
+  // The keyboard opens the shared disclosure.
+  await details.locator(":scope > summary").focus();
+  await page.keyboard.press("Enter");
   await card.getByText(available.suggestion.rationale, { exact: true }).waitFor();
+  assert.deepEqual(await details.locator("p").filter({ hasText: "To be assessed" }).allInnerTexts(),
+    ["Estimated time · To be assessed", "Estimated cost · To be assessed"], "unknown effort and cost remain unknown");
   for (const text of [...available.suggestion.tools, ...available.suggestion.deliverables]) assert.ok((await card.innerText()).includes(text));
   await details.first().locator("summary").click();
   assert.equal(postWrites().length, before, "reading a recommendation does not execute it");
@@ -1117,7 +1122,7 @@ async function suggestionCards() {
     assert.match(await estimateCard.innerText(), language === "en" ? /estimat/i : /估算/);
     assert.match(await estimateCard.innerText(), language === "en" ? /New capability to assess/i : /需要评估新能力/);
     for (const estimate of [estimated.suggestion.timeEstimate, estimated.suggestion.costEstimate]) {
-      assert.ok((await estimateCard.innerText()).includes(estimate.value));
+      assert.ok(await estimateCard.locator(".chat-suggestion__estimates").getByText(estimate.value).isVisible(), "a known estimate stays visible");
       assert.equal(await estimateCard.getByText(estimate.basis).isVisible(), false, "estimate basis starts folded");
     }
     for (const width of [1440, 375]) {
@@ -1181,9 +1186,507 @@ async function suggestionCards() {
   emitRuntime();
   console.log(JSON.stringify({ suggestions: "passed", selectionPosts: 2, languages: ["en", "zh-CN"], widths: [1440, 375] }));
 }
+/** GH-432: files, model results and progress share one card shell with folded details. */
+async function conversationCards() {
+  const cardSessions = [];
+  const at = (seconds) => new Date(Date.parse("2026-09-28T12:00:00Z") + seconds * 1000).toISOString();
+  const sha = (character) => character.repeat(64);
+  const plan = { runId: "document-run", assetSha256: sha("a"), revisionRef: "revision-1", pageIndex: 0, fileName: "plan.pdf", mimeType: "application/pdf" };
+  const documents = [
+    plan,
+    { ...plan }, // an exact duplicate reference collapses
+    { ...plan, revisionRef: "revision-2" }, // same name, another revision: a different file
+    { ...plan, pageIndex: 1 }, // same file, another page
+    { runId: "document-run", assetSha256: sha("c"), revisionRef: "revision-1", pageIndex: 0, fileName: "section.png", mimeType: "image/png" },
+  ];
+  const attachments = [
+    { id: "cards-facade", name: "facade.png", mimeType: "image/png", size: Buffer.from(externalImage, "base64").length },
+    { id: "cards-notes", name: "notes.txt", mimeType: "text/plain", size: 12 },
+    { id: "cards-notes", name: "notes.txt", mimeType: "text/plain", size: 12 },
+  ];
+  const session = { id: "cards-files", projectId: "A", projectDir: "D:\\fixture\\A", title: "Card review", provider: "codex",
+    status: "idle", archived: false, createdAt: at(0), updatedAt: at(3), messages: [
+      { id: "cards-user", role: "user", status: "complete", createdAt: at(0), content: "Compare the two plan revisions." },
+      { id: "cards-tool", role: "tool", status: "complete", candidateId: "cand-A-1", createdAt: at(1),
+        content: "studio_request · GET /api/jobs/job-1 · completed\ncandidateId: cand-A-1\nstatus: succeeded" },
+      { id: "cards-tool-2", role: "tool", status: "complete", candidateId: "cand-A-unpreviewed", createdAt: at(2),
+        content: "studio_request · GET /api/jobs/job-2 · completed\ncandidateId: cand-A-unpreviewed\nstatus: succeeded" },
+      { id: "cards-answer", role: "assistant", status: "complete", createdAt: at(3),
+        content: "Both revisions are attached. The second one keeps the wider courtyard.", attachments, documents },
+    ] };
+  uploadedAttachments.set("cards-facade", { sessionId: session.id, name: "facade.png", mimeType: "image/png", data: externalImage });
+  uploadedAttachments.set("cards-notes", { sessionId: session.id, name: "notes.txt", mimeType: "text/plain", data: Buffer.from("Review notes").toString("base64") });
+  sessions.unshift(session); cardSessions.push(session);
+  const external = { id: "cards-external", projectId: "A", projectDir: "D:\\fixture\\A", title: "Card external", provider: "codex",
+    sourceSessionId: "cards-source", status: "idle", archived: false, createdAt: at(0), updatedAt: at(1), messages: [
+      { id: "cards-external-answer", role: "assistant", status: "complete", createdAt: at(1), content: "Plain assistant prose stays visible." }] };
+  sessions.unshift(external); cardSessions.push(external);
+  const route = (index) => `/api/chat/sessions/${session.id}/documents/cards-answer/${index}`;
+  const visit = async (target) => {
+    await page.goto(`${origin}/?chatId=${target.id}`);
+    await page.locator(".chat-header h1").filter({ hasText: target.title }).waitFor();
+  };
+  // The narrow project list is an overlay; close it through its real control.
+  const hideProjects = async () => {
+    const toggle = page.locator(".chat-menubar").getByRole("button", { name: /^(Hide projects|收起项目栏)$/ });
+    if ((await page.viewportSize()).width <= 900 && await toggle.count() && await toggle.first().isVisible()) await toggle.first().click();
+  };
+
+  preferences = { ...preferences, language: "en", theme: "light", fontScale: 1 };
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await visit(session);
+  await page.getByText("Both revisions are attached. The second one keeps the wider courtyard.", { exact: true }).waitFor();
+  const files = page.locator(".chat-files");
+  await files.waitFor();
+  assert.equal(await files.locator(".chat-card__title").innerText(), "Files from this message");
+  assert.equal(await files.locator(".chat-card__status").innerText(), "6 files", "exact duplicate references collapse; distinct bindings remain");
+  const visible = files.locator(".chat-card__body .chat-saved-file");
+  assert.equal(await visible.count(), 2, "two files show at first");
+  assert.deepEqual(await visible.locator(".chat-file-row__meta").allInnerTexts(), ["PDF · Page 1 · Item 1", "PDF · Page 1 · Item 2"],
+    "the same filename with another revision stays a separate, numbered row");
+  assert.deepEqual(await visible.locator(".chat-file-row__actions a").evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+    [`${route(0)}?download=true`, `${route(2)}?download=true`], "each row keeps its original document route index");
+  const details = files.locator(".chat-card__details");
+  assert.equal(await details.getAttribute("open"), null, "the rest of the files and their bindings start folded");
+  assert.equal(await files.getByText("revision-2", { exact: true }).isVisible(), false, "raw bindings stay folded");
+  assert.equal(await files.getByText("notes.txt", { exact: true }).isVisible(), false);
+  const detailsSummary = details.locator(":scope > summary");
+  assert.equal(await detailsSummary.innerText(), "Technical details and 4 more files");
+  await detailsSummary.focus();
+  await page.keyboard.press("Enter");
+  await files.getByText("notes.txt", { exact: true }).waitFor();
+  const rows = files.locator(".chat-saved-file");
+  assert.deepEqual(await rows.locator(".chat-file-row__name").allInnerTexts(), ["plan.pdf", "plan.pdf", "plan.pdf", "section.png", "facade.png", "notes.txt"],
+    "retained documents first, then images, then other files");
+  assert.deepEqual(await rows.locator(".chat-file-row__actions a").evaluateAll((links) => links.map((link) => link.getAttribute("href"))), [
+    `${route(0)}?download=true`, `${route(2)}?download=true`, `${route(3)}?download=true`, `${route(4)}?download=true`,
+    `/api/chat/sessions/${session.id}/attachments/cards-facade`, `/api/chat/sessions/${session.id}/attachments/cards-notes`]);
+  for (const binding of ["document-run", sha("a"), "revision-1", "revision-2"]) await files.getByText(binding, { exact: true }).first().waitFor();
+  // A document image previews from its own route; its dialog downloads the same file.
+  await files.getByRole("button", { name: "Enlarge image: section.png", exact: true }).click();
+  const documentDialog = page.getByRole("dialog", { name: "section.png", exact: true });
+  await documentDialog.waitFor();
+  assert.equal(await documentDialog.getByRole("link", { name: "Download", exact: true }).getAttribute("href"), `${route(4)}?download=true`);
+  const documentDownload = page.waitForEvent("download");
+  await documentDialog.getByRole("link", { name: "Download", exact: true }).click();
+  assert.equal((await documentDownload).suggestedFilename(), "section.png");
+  await page.keyboard.press("Escape");
+  await documentDialog.waitFor({ state: "hidden" });
+  const facadePreview = files.getByRole("button", { name: "Enlarge image: facade.png", exact: true });
+  await facadePreview.click();
+  const facadeDialog = page.getByRole("dialog", { name: "facade.png", exact: true });
+  await facadeDialog.waitFor();
+  assert.equal(await facadeDialog.getByRole("img").evaluate((image) => image.complete && image.naturalWidth > 0), true);
+  await page.keyboard.press("Escape");
+  await facadeDialog.waitFor({ state: "hidden" });
+  assert.equal(await facadePreview.evaluate((button) => button === document.activeElement), true, "closing the preview returns focus");
+  const notesDownload = page.waitForEvent("download");
+  await rows.filter({ hasText: "notes.txt" }).getByRole("link", { name: "Download", exact: true }).click();
+  assert.equal((await notesDownload).suggestedFilename(), "notes.txt");
+  await detailsSummary.focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await details.getAttribute("open"), null, "the keyboard folds the details again");
+
+  // The model result card groups every option and moves nothing on its own.
+  const study = page.locator(".chat-study");
+  await study.waitFor();
+  assert.equal(await study.count(), 1, "one result card for the request");
+  assert.equal(await study.getAttribute("data-candidates"), "cand-A-1 cand-A-unpreviewed", "no option is picked as the latest");
+  assert.equal(await study.locator(".chat-card__title").innerText(), "Model results");
+  assert.equal(await study.locator(".chat-study__text").innerText(), "This request · 2 options ready");
+  await study.locator('[data-candidate="cand-A-1"] img').waitFor();
+  const sourceA = workspaceFixture.projects.get("A").assets.get("cand-A-1").dto.modelSource;
+  assert.equal(await study.locator('[data-candidate="cand-A-1"] .model-thumbnail').getAttribute("data-preview-source"),
+    JSON.stringify([sourceA.runId, sourceA.stateDigest, sourceA.assetSha256]), "the thumbnail is the result's exact source");
+  assert.equal(await study.locator('[data-candidate="cand-A-unpreviewed"] img').count(), 0, "an option without its own preview borrows none");
+  assert.equal(await study.getByRole("button", { name: "View", exact: true }).count(), 1, "the existing View action stays");
+  assert.equal(await study.getByText("cand-A-1", { exact: true }).isVisible(), false, "raw result ids stay folded");
+  await study.locator(".chat-card__details:not(.chat-study__compare) > summary").focus();
+  await page.keyboard.press("Enter");
+  await study.getByText("cand-A-unpreviewed", { exact: true }).waitFor();
+  await page.waitForTimeout(600);
+  assert.equal(await page.locator(".chat-shell").getAttribute("data-panel"), "false", "a result never opens a workspace on its own");
+  assert.ok(!workspaceFixture.requests.some((row) => row.name.endsWith("/bytes") && row.runId?.startsWith("cand-A")),
+    "a result never loads its model on its own");
+  // Tool calls stay one folded row; its raw lines use the shared disclosure.
+  const process = page.locator(".chat-process").last();
+  await process.locator(".chat-process__row").click();
+  const technical = process.locator(".chat-process__technical");
+  assert.equal(await technical.getAttribute("open"), null);
+  await technical.locator(":scope > summary").focus();
+  await page.keyboard.press("Enter");
+  await technical.getByText("studio_request · GET /api/jobs/job-2 · completed", { exact: true }).waitFor();
+  await process.locator(".chat-process__row").click();
+  assert.equal(await process.locator(".chat-process__body").count(), 0);
+
+  const layout = (locator) => locator.evaluate((node) => ({ card: node.scrollWidth > node.clientWidth + 1,
+    page: document.documentElement.scrollWidth > window.innerWidth + 1 }));
+  for (const [language, theme] of [["en", "light"], ["en", "dark"], ["zh-CN", "light"], ["zh-CN", "dark"]]) {
+    preferences = { ...preferences, language, theme };
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await visit(session);
+    await files.waitFor();
+    await study.waitFor();
+    if (language === "zh-CN") {
+      assert.equal(await files.locator(".chat-card__title").innerText(), "本轮文件");
+      assert.equal(await study.locator(".chat-card__title").innerText(), "模型成果");
+    }
+    for (const width of [1440, 900, 390]) {
+      await page.setViewportSize({ width, height: 960 });
+      await hideProjects();
+      for (const card of [files, study]) assert.deepEqual(await layout(card), { card: false, page: false }, `${language}/${theme} cards fit at ${width}px`);
+      const summary = await files.locator(".chat-card__details > summary").boundingBox();
+      if (width <= 500) assert.ok(summary.height >= 44, "folded details keep a touch-sized target");
+      await files.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: path.join(temporary, `cards-${language}-${theme}-${width}.png`) });
+    }
+    await visit(external);
+    await page.getByText("Plain assistant prose stays visible.", { exact: true }).waitFor();
+    const notice = page.locator(".chat-external-notice");
+    const bounds = await notice.boundingBox();
+    assert.equal(await notice.evaluate((node) => getComputedStyle(node).borderTopStyle), "none", "the external notice is an inline row");
+    // At 390px the label and its sentence may wrap onto two short caption lines.
+    assert.ok(bounds.height < 60, `the external notice stays a short muted row: ${bounds.height}`);
+    await page.locator(".chat-composer-wrap").screenshot({ path: path.join(temporary, `external-notice-${language}-${theme}.png`) });
+  }
+
+  // Opening a retained document is the architect's explicit switch to Board.
+  preferences = { ...preferences, language: "en", theme: "light" };
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await visit(session);
+  await files.locator(".chat-card__details > summary").click();
+  // Board reads the opened document's submitted comments; answer only that read here.
+  const commentReads = [];
+  const comments = (url) => url.pathname.endsWith("/studio/api/document-comments");
+  const answerComments = (route) => { commentReads.push(Object.fromEntries(new URL(route.request().url()).searchParams)); return route.fulfill({ json: { comments: [] } }); };
+  await page.route(comments, answerComments);
+  await rows.nth(2).getByRole("button", { name: "Open document", exact: true }).click();
+  await urlParamIs("view", "board", "Open document switches to Board only when pressed");
+  await page.waitForFunction(() => document.querySelector(".chat-shell")?.dataset.panel === "true");
+  await page.waitForTimeout(600);
+  assert.deepEqual(commentReads.at(-1), { runId: "document-run" }, "Board opens the pressed row's retained document run");
+  await page.unroute(comments, answerComments);
+  for (const item of cardSessions) sessions.splice(sessions.indexOf(item), 1);
+  console.log(JSON.stringify({ cards: "passed", widths: [1440, 900, 390], screenshots: temporary }));
+}
+/**
+ * GH-432: View changes sets one completed result beside the exact retained run it was made
+ * from. Arrival opens and loads nothing; Back returns to the conversation as it was left.
+ * Navigating the same Design Tree cancels it in the open panel; a Stage under it returns exactly.
+ */
+async function modelComparison() {
+  const baseRun = "cand-A-base", candidateRun = "cand-A-change";
+  const at = (seconds) => new Date(Date.parse("2026-09-28T13:00:00Z") + seconds * 1000).toISOString();
+  const job = (jobId, runId) => `studio_request · GET /api/jobs/${jobId} · completed\ncandidateId: ${runId}\nstatus: succeeded`;
+  // The original is an earlier conversation's retained result, not project A's home run; it is listed like any result.
+  const earlier = { id: "compare-earlier", projectId: "A", projectDir: "D:\\fixture\\A", title: "Earlier courtyard", provider: "codex",
+    status: "idle", archived: false, createdAt: at(0), updatedAt: at(1), messages: [
+      { id: "compare-earlier-tool", role: "tool", status: "complete", candidateId: baseRun, createdAt: at(1), content: job("job-base", baseRun) }] };
+  const session = { id: "compare-result", projectId: "A", projectDir: "D:\\fixture\\A", title: "Courtyard change", provider: "codex",
+    status: "idle", archived: false, createdAt: at(2), updatedAt: at(5), messages: [
+      { id: "compare-user", role: "user", status: "complete", createdAt: at(2), content: "Widen the courtyard from the earlier option." },
+      { id: "compare-tool", role: "tool", status: "complete", candidateId: candidateRun, createdAt: at(4), content: job("job-change", candidateRun) },
+      { id: "compare-answer", role: "assistant", status: "complete", createdAt: at(5), content: "The courtyard is wider in this result." }] };
+  sessions.unshift(earlier, session);
+  // Project A keeps a Design Tree whose one Stage is its home run, so its tree and Stage chip are the fixture's own.
+  workspaceFixture.designTrees.set("A", { stages: ["home-A"], edits: [] });
+  // Project A's runtime records the state the result was made from; the comparison is asked against the run the page resolves.
+  const comparisonReads = [];
+  const comparisonPath = (url) => url.pathname.match(/^\/api\/runtime\/projects\/([^/]+)\/studio\/api\/(?:runtime|candidates\/([^/]+)\/compare)$/);
+  const comparisonRoute = (url) => Boolean(comparisonPath(url));
+  const answerComparison = (route) => {
+    const url = new URL(route.request().url()), [, runtimeId, compared] = comparisonPath(url);
+    if ([...runtimes.values()].find((item) => item.runtimeId === runtimeId)?.projectId !== "A") return route.fallback();
+    if (!compared) {
+      const asked = url.searchParams.getAll("candidateId");
+      comparisonReads.push({ runtime: asked });
+      return route.fulfill({ json: { projectId: "A", jobs: [], pendingPermissions: [], seats: [], serverMode: "local",
+        candidates: asked.includes(candidateRun) ? [{ candidateId: candidateRun, status: "completed",
+          baseStateDigest: workspaceFixture.stateDigestOf("A", baseRun), resultStateDigest: workspaceFixture.stateDigestOf("A", candidateRun) }] : [] } });
+    }
+    const candidateId = decodeURIComponent(compared), against = url.searchParams.get("against");
+    comparisonReads.push({ compare: candidateId, against });
+    // One real object of the original's own model changed, so the candidate pane outlines it.
+    return route.fulfill({ json: { candidateId, against, changed: 1, added: 0, removed: 0, unchanged: 0, tolerance: 0.001,
+      objects: [{ seatId: "fixture", name: `floor-A-${baseRun}`, status: "changed", componentId: null }], why: null } });
+  };
+  await page.route(comparisonRoute, answerComparison);
+  const studioWrites = [];
+  const watchWrites = (request) => {
+    const { pathname } = new URL(request.url());
+    if (/^\/api\/runtime\/projects\/[^/]+\/studio\//.test(pathname) && !["GET", "HEAD"].includes(request.method())) studioWrites.push(`${request.method()} ${pathname}`);
+  };
+  const modelRuns = (from) => [...new Set(workspaceFixture.requests.slice(from).filter((row) => row.name.endsWith("/bytes")).map((row) => row.runId))];
+
+  preferences = { ...preferences, language: "en", theme: "light", fontScale: 1 };
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.goto(`${origin}/?chatId=${session.id}`);
+  await page.locator(".chat-header h1").filter({ hasText: session.title }).waitFor();
+  await page.getByText("The courtyard is wider in this result.", { exact: true }).waitFor();
+  const study = page.locator(`.chat-study[data-candidates="${candidateRun}"]`);
+  await study.waitFor();
+  assert.equal(await page.locator(".chat-study").count(), 1, "one result card for the one request");
+  const viewChanges = study.getByRole("button", { name: "View changes", exact: true });
+  await viewChanges.waitFor();
+  assert.equal(await viewChanges.getAttribute("data-compare"), candidateRun, "View changes names the result it compares");
+  // Arrival leaves the completed result a card: no workspace opens and neither model is read.
+  await page.waitForTimeout(600);
+  const shell = page.locator(".chat-shell");
+  assert.equal(await shell.getAttribute("data-panel"), "false", "a completed result opens no workspace on arrival");
+  assert.equal(await page.locator(".model-compare").count(), 0, "the comparison waits for View changes");
+  assert.deepEqual(modelRuns(0).filter((run) => [baseRun, candidateRun].includes(run)), [], "arrival reads neither compared model");
+  const arrivalView = new URL(page.url()).searchParams.get("view");
+  const composer = page.getByRole("textbox", { name: "What would you like to do in this project?" });
+  const draft = "Keep this width; lower the east roof next.";
+  await composer.fill(draft);
+
+  page.on("request", watchWrites);
+  const readsFrom = workspaceFixture.requests.length;
+  await viewChanges.click();
+  const comparison = page.locator(".model-compare");
+  await comparison.waitFor();
+  // Each pane is an actual viewport that finished loading its own model.
+  for (const pane of ["before", "after"]) await comparison.locator(`[data-pane="${pane}"][data-status="ready"]`).waitFor({ timeout: 30000 });
+  assert.deepEqual(modelRuns(readsFrom).filter((run) => run !== "home-A").sort(), [baseRun, candidateRun].sort(),
+    "View changes reads the exact retained original and the selected result, and no other result");
+  assert.ok(comparisonReads.some((row) => row.runtime?.includes(candidateRun)), "the original is resolved from the runtime's record of this result");
+  const compares = comparisonReads.filter((row) => row.compare);
+  assert.ok(compares.length > 0, "View changes reads the comparison");
+  assert.deepEqual([...new Set(compares.map((row) => `${row.compare} against ${row.against}`))], [`${candidateRun} against ${baseRun}`],
+    "the comparison is asked for the selected result against its exact original");
+  const details = page.locator(".model-compare__details");
+  await details.locator("dt").filter({ hasText: /^Original run$/ }).waitFor({ state: "attached" });
+  const pairs = Object.fromEntries(await details.locator("dt").evaluateAll((terms) =>
+    terms.map((term) => [term.textContent.trim(), term.nextElementSibling?.textContent.trim() ?? null])));
+  const shown = JSON.stringify(pairs);
+  assert.equal(pairs["Candidate run"], candidateRun, `the details name the selected result: ${shown}`);
+  assert.equal(pairs["Original run"], baseRun, `the details name the retained original, not the home run: ${shown}`);
+  for (const run of [candidateRun, baseRun]) {
+    assert.ok(Object.values(pairs).includes(workspaceFixture.stateDigestOf("A", run)), `the details show ${run}'s exact state digest: ${shown}`);
+  }
+  await page.screenshot({ path: path.join(temporary, "comparison-en-light-1440.png") });
+
+  // The comparison's own menu returns to the conversation it came from, as it was left.
+  await page.getByRole("button", { name: /^(←\s*)?Back$/ }).click();
+  await comparison.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => document.querySelector(".chat-shell")?.dataset.panel === "false").catch(() => {});
+  assert.equal(await shell.getAttribute("data-panel"), "false", "Back restores the closed panel");
+  await urlParamIs("view", arrivalView, "Back returns to the surface the conversation showed");
+  assert.equal(await composer.inputValue(), draft, "Back keeps the unsent draft");
+  await study.waitFor();
+  await page.screenshot({ path: path.join(temporary, "comparison-back-en-light-1440.png") });
+  assert.deepEqual(studioWrites, [], "viewing changes and returning write nothing to the project");
+
+  // Navigating the same Design Tree cancels an open comparison inside the open panel; nothing reopens it or collapses the panel.
+  studyPreviews.get("A").set("home-A", "ready"); // the Stage opened below already has its retained preview
+  const viewResult = study.getByRole("button", { name: "View", exact: true });
+  const tree = visibleWorkspace().locator('[data-project-surface="tree"]:not([hidden])');
+  const cancelledOnTree = async (message) => {
+    await comparison.waitFor({ state: "hidden" });
+    await tree.waitFor();
+    await page.waitForTimeout(600);
+    assert.equal(await comparison.isVisible(), false, `${message} closes the comparison for good`);
+    assert.equal(await tree.isVisible(), true, `${message} keeps the tree`);
+    assert.equal(await shell.getAttribute("data-panel"), "true", `${message} keeps the panel open`);
+  };
+  await viewResult.click();
+  await tree.waitFor();
+  await viewChanges.click();
+  await comparison.waitFor();
+  await viewResult.click();
+  await cancelledOnTree("the result's View on the same tree");
+  await viewChanges.click();
+  await comparison.waitFor();
+  await visibleWorkspace().locator(".stage-chip").first().click();
+  await cancelledOnTree("a Stage chip on the same tree");
+
+  // A Stage in its original style comes back exactly as it was left under a comparison.
+  await showEntry("Modeling");
+  await waitWorkspace();
+  await page.waitForFunction(() => !document.querySelector('.chat-project-workspace:not([hidden]) .boot'));
+  const viewMenu = visibleWorkspace().locator('.project-bar button[aria-controls="stage-more-menu"]');
+  const displayStyle = visibleWorkspace().locator("#stage-more-menu select[data-display-style]");
+  await viewMenu.click();
+  await displayStyle.selectOption("original");
+  await viewMenu.click();
+  await visibleWorkspace().locator("#stage-more-menu").waitFor({ state: "detached" });
+  const settle = async () => {
+    await page.mouse.move(10, 10);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  };
+  await settle();
+  const stageCanvas = await visibleWorkspace().locator(".stage canvas").first().elementHandle();
+  const originalStage = await stageCanvas.screenshot();
+  await viewChanges.click();
+  await comparison.waitFor();
+  for (const pane of ["before", "after"]) await comparison.locator(`[data-pane="${pane}"][data-status="ready"]`).waitFor({ timeout: 30000 });
+  // The outline is the original model's own changed object drawn on the candidate, not an empty layer.
+  const outlined = page.getByText("Outline: the 1 original objects this candidate changed or removed.").first();
+  await outlined.waitFor({ state: "attached" });
+  for (const action of ["linked", "outline"]) {
+    await page.locator(`button[data-action="${action}"][aria-pressed="true"]`).waitFor();
+    for (const pressed of ["false", "true"]) {
+      await page.locator(`button[data-action="${action}"]`).click();
+      await page.locator(`button[data-action="${action}"][aria-pressed="${pressed}"]`).waitFor();
+    }
+  }
+  await outlined.waitFor({ state: "attached" });
+  await page.screenshot({ path: path.join(temporary, "comparison-with-outline-en-light-1440.png") });
+  await page.getByRole("button", { name: /^(←\s*)?Back$/ }).click();
+  await comparison.waitFor({ state: "hidden" });
+  await visibleWorkspace().locator('[data-project-surface="arch"]:not([hidden])').waitFor();
+  assert.equal(await shell.getAttribute("data-panel"), "true", "Back returns to the open Modeling panel");
+  assert.equal(await stageCanvas.evaluate((node) => node.isConnected), true, "the Stage canvas stays mounted under the comparison");
+  assert.equal(await visibleWorkspace().locator(".stage canvas").first().evaluate((node, kept) => node === kept, stageCanvas), true,
+    "Back shows the same Stage canvas, not a new one");
+  await settle();
+  await assertSameScreenshotPixels(await stageCanvas.screenshot(), originalStage, "the Stage in its original style comes back exactly");
+  await page.screenshot({ path: path.join(temporary, "restored-original-stage-en-light-1440.png") });
+  await viewMenu.click();
+  assert.equal(await displayStyle.inputValue(), "original", "the Stage keeps its original display style through the comparison");
+  await viewMenu.click();
+  await visibleWorkspace().locator("#stage-more-menu").waitFor({ state: "detached" });
+  assert.equal(await composer.inputValue(), draft, "the unsent draft survives every comparison");
+  await stageCanvas.dispose();
+
+  page.off("request", watchWrites);
+  assert.deepEqual(studioWrites, [], "cancelling, comparing over a Stage and returning write nothing to the project");
+  assert.deepEqual([...new Set(comparisonReads.filter((row) => row.compare).map((row) => `${row.compare} against ${row.against}`))],
+    [`${candidateRun} against ${baseRun}`], "every comparison stays bound to the selected result and its exact original");
+  await page.unroute(comparisonRoute, answerComparison);
+  for (const item of [earlier, session]) sessions.splice(sessions.indexOf(item), 1);
+  console.log(JSON.stringify({ comparison: "passed", original: baseRun, candidate: candidateRun, cancelledBy: ["view", "stage-chip"],
+    stageStyle: "original", screenshots: temporary }));
+}
+/**
+ * A source application owns the external session; Hub shows its retained Markdown and media
+ * without accidentally starting a second provider turn, and never offers a composer (#438).
+ */
+async function externalConversation() {
+  const externalSession = { id: "external-214", projectId: "B", projectDir: "D:\\fixture\\B", title: "Exterior review",
+    provider: "codex", sourceSessionId: "source-task-214", status: "idle", archived: false,
+    createdAt: "2026-09-20", updatedAt: "2026-09-20", messages: [
+      { id: "external-progress", role: "tool", status: "complete", content: "Facade comparison ready\nPublic progress summary" },
+      { id: "external-result", role: "assistant", status: "complete", content: [
+        "## Facade comparison", "", "A **retained** candidate with `same base`.", "", "- First option", "- Second option", "",
+        "| Option | Decision |", "| --- | --- |", "| A | Review |", "", "```js", "const accepted = false;", "```", "",
+        "[Source](https://example.com/reference) [unsafe](javascript:alert(1))",
+        '<img src="https://invalid.example/untrusted.png" onerror="alert(1)">',
+        "![Remote image](https://example.com/remote.png)",
+      ].join("\n"), attachments: [
+        { id: "external-image", name: "facade.png", mimeType: "image/png", size: Buffer.from(externalImage, "base64").length },
+        { id: "external-broken", name: "broken.png", mimeType: "image/png", size: 6 },
+        { id: "external-svg", name: "diagram.svg", mimeType: "image/svg+xml", size: 11 },
+      ], documents: [{ runId: "document-B", assetSha256: "d".repeat(64), revisionRef: "revision-B", pageIndex: 0,
+        fileName: "registered.png", mimeType: "image/png" }] },
+    ] };
+  uploadedAttachments.set("external-image", { sessionId: externalSession.id, name: "facade.png", mimeType: "image/png", data: externalImage });
+  uploadedAttachments.set("external-broken", { sessionId: externalSession.id, name: "broken.png", mimeType: "image/png", data: Buffer.from("broken").toString("base64") });
+  uploadedAttachments.set("external-svg", { sessionId: externalSession.id, name: "diagram.svg", mimeType: "image/svg+xml", data: Buffer.from("<svg></svg>").toString("base64") });
+  sessions.unshift(externalSession);
+  const beforeExternalTurns = writes.filter(([, name]) => /\/(messages|stop|model)$/.test(name)).length;
+  // #438: the saved launch settings can arrive after an external conversation has opened. Taking
+  // them used to clear the open conversation until the next read, and its composer came back.
+  let releaseSettingsRead; settingsReadGate = new Promise((resolve) => { releaseSettingsRead = resolve; });
+  await page.goto(`${origin}/?chatId=${externalSession.id}`);
+  await page.locator(".chat-header h1").filter({ hasText: "Exterior review" }).waitFor();
+  await page.locator(".chat-external-notice").waitFor();
+  await page.evaluate((title) => {
+    // Whenever the external conversation is the one selected, no composer may be on the page.
+    const look = () => {
+      const selected = document.querySelector('.chat-thread[aria-current="page"]');
+      if (selected?.title === title && document.getElementById("chat-input")) window.composerSeen = true;
+    };
+    window.composerSeen = false; look();
+    new MutationObserver(look).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-current"] });
+  }, externalSession.title);
+  const conversationRead = (response) => new URL(response.url()).pathname === `/api/chat/sessions/${externalSession.id}`;
+  let settingsArrived = false;
+  const settingsRead = page.waitForResponse((response) => (settingsArrived ||= new URL(response.url()).pathname === "/api/settings/apps"));
+  const readAfterSettings = page.waitForResponse((response) => settingsArrived && conversationRead(response));
+  settingsReadGate = null; releaseSettingsRead();
+  await settingsRead; await readAfterSettings;
+  // A runtime event reads the conversation again too.
+  const readAfterEvent = page.waitForResponse(conversationRead);
+  emitRuntime(); await readAfterEvent;
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.evaluate(() => window.composerSeen), false, "an external conversation never shows a composer while it is read again");
+  // Opening it from the list shows none either, not even before its own read returns.
+  await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
+  await page.locator("#chat-input").waitFor();
+  await page.locator(".chat-thread").filter({ hasText: externalSession.title }).click();
+  await page.locator(".chat-header h1").filter({ hasText: externalSession.title }).waitFor();
+  await page.locator(".chat-external-notice").waitFor();
+  assert.equal(await page.evaluate(() => window.composerSeen), false, "opening an external conversation from the list never shows a composer");
+  await page.goto(`${origin}/?chatId=${externalSession.id}`);
+  await page.locator(".chat-header h1").filter({ hasText: "Exterior review" }).waitFor();
+  await page.locator(".chat-external-notice").getByText("External conversation", { exact: true }).waitFor();
+  assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B",
+    "a deep link takes its project from the selected chat, not stale local preferences");
+  assert.equal(await page.locator("#chat-input").count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Send", exact: true }).count(), 0);
+  assert.equal(await page.locator(".chat-prose strong").innerText(), "retained");
+  assert.deepEqual(await page.locator(".chat-prose li").allTextContents(), ["First option", "Second option"]);
+  assert.equal(await page.locator(".chat-prose table tbody").innerText(), "A\tReview");
+  assert.equal(await page.locator(".chat-code code").innerText(), "const accepted = false;");
+  assert.equal(await page.locator(".chat-prose img, .chat-prose script").count(), 0, "model markup and remote image syntax cannot introduce image requests or executable HTML");
+  assert.equal(await page.locator('.chat-prose a[href^="javascript:"]').count(), 0);
+  assert.equal(await page.getByRole("link", { name: "Source", exact: true }).getAttribute("rel"), "noopener noreferrer");
+  const externalFiles = page.locator(".chat-files");
+  assert.equal(await externalFiles.locator(".chat-card__body .chat-saved-file").count(), 2, "two files show; the rest fold");
+  await externalFiles.locator(".chat-card__details > summary").click();
+  await page.getByText("This image could not be loaded. You can still download the file.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Enlarge image: diagram.svg", exact: true }).count(), 0);
+  const preview = page.getByRole("button", { name: "Enlarge image: facade.png", exact: true });
+  await preview.click();
+  const imageDialog = page.getByRole("dialog", { name: "facade.png", exact: true });
+  await imageDialog.waitFor();
+  assert.equal(await imageDialog.getByRole("img").evaluate((image) => image.complete && image.naturalWidth > 0), true);
+  const imageDownload = page.waitForEvent("download");
+  await imageDialog.getByRole("link", { name: "Download", exact: true }).click();
+  const savedImage = await imageDownload;
+  assert.equal(savedImage.suggestedFilename(), "facade.png");
+  assert.deepEqual(await readFile(await savedImage.path()), Buffer.from(externalImage, "base64"));
+  await page.keyboard.press("Escape");
+  await imageDialog.waitFor({ state: "hidden" });
+  assert.equal(await preview.evaluate((button) => button === document.activeElement), true);
+  await page.getByRole("button", { name: "Enlarge image: registered.png", exact: true }).click();
+  const documentDialog = page.getByRole("dialog", { name: "registered.png", exact: true });
+  assert.equal(await documentDialog.getByRole("link", { name: "Download", exact: true }).getAttribute("href"),
+    `/api/chat/sessions/${externalSession.id}/documents/external-result/0?download=true`);
+  const documentDownload = page.waitForEvent("download");
+  await documentDialog.getByRole("link", { name: "Download", exact: true }).click();
+  const savedDocument = await documentDownload;
+  assert.equal(savedDocument.suggestedFilename(), "registered.png");
+  assert.deepEqual(await readFile(await savedDocument.path()), Buffer.from(externalImage, "base64"));
+  await documentDialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.screenshot({ path: path.join(temporary, "external-presentation.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator(".chat-menubar").getByRole("button", { name: /^(Hide|Show) projects$/ }).click();
+  await preview.click();
+  const previewBounds = await imageDialog.boundingBox();
+  assert.ok(previewBounds.x >= 0 && previewBounds.x + previewBounds.width <= 390, "the image dialog fits a narrow viewport");
+  await page.screenshot({ path: path.join(temporary, "external-image-mobile.png") });
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.locator(".chat-menubar").getByRole("button", { name: /^(Hide|Show) projects$/ }).click();
+  await page.reload();
+  await page.getByRole("button", { name: "Enlarge image: facade.png", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.locator("#chat-input").waitFor();
+  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await page.locator(".chat-external-notice").waitFor();
+  assert.equal(writes.filter(([, name]) => /\/(messages|stop|model)$/.test(name)).length, beforeExternalTurns);
+}
 try {
   if (process.env.MONKEYHUB_UI_FOCUS === "suggestions") {
     await suggestionCards();
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "cards") {
+    await conversationCards();
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "comparison") {
+    await modelComparison();
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "external") {
+    await externalConversation();
   } else if (process.env.MONKEYHUB_UI_FOCUS === "accessibility") {
     const cdp = await page.context().newCDPSession(page);
     const accessible = async (role, name) => {
@@ -2841,7 +3344,7 @@ try {
     { name: "clipboard.png", mimeType: "image/png", data: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString("base64") },
     { name: "notes.txt", mimeType: "text/plain", data: Buffer.from("Dropped notes B").toString("base64") },
   ]);
-  const savedAttachments = page.locator(".chat-attachments--saved > li > a");
+  const savedAttachments = page.locator(".chat-files .chat-file-row__actions a");
   assert.equal(await savedAttachments.count(), 2);
   const attachedSession = sessions.find((session) => session.title === "clipboard.png");
   assert.equal(await savedAttachments.first().getAttribute("href"), `/api/chat/sessions/${attachedSession.id}/attachments/${attachedSession.messages[0].attachments[0].id}`);
@@ -3109,119 +3612,7 @@ try {
   assert.equal(await page.locator(".chat-message--user").count(), 4, "the stage handoff remains visible after reopening");
   confirmedStageForChat = null;
 
-  // A source application owns the external session; Hub shows its retained
-  // Markdown and media without accidentally starting a second provider turn.
-  const externalSession = { id: "external-214", projectId: "B", projectDir: "D:\\fixture\\B", title: "Exterior review",
-    provider: "codex", sourceSessionId: "source-task-214", status: "idle", archived: false,
-    createdAt: "2026-09-20", updatedAt: "2026-09-20", messages: [
-      { id: "external-progress", role: "tool", status: "complete", content: "Facade comparison ready\nPublic progress summary" },
-      { id: "external-result", role: "assistant", status: "complete", content: [
-        "## Facade comparison", "", "A **retained** candidate with `same base`.", "", "- First option", "- Second option", "",
-        "| Option | Decision |", "| --- | --- |", "| A | Review |", "", "```js", "const accepted = false;", "```", "",
-        "[Source](https://example.com/reference) [unsafe](javascript:alert(1))",
-        '<img src="https://invalid.example/untrusted.png" onerror="alert(1)">',
-        "![Remote image](https://example.com/remote.png)",
-      ].join("\n"), attachments: [
-        { id: "external-image", name: "facade.png", mimeType: "image/png", size: Buffer.from(externalImage, "base64").length },
-        { id: "external-broken", name: "broken.png", mimeType: "image/png", size: 6 },
-        { id: "external-svg", name: "diagram.svg", mimeType: "image/svg+xml", size: 11 },
-      ], documents: [{ runId: "document-B", assetSha256: "d".repeat(64), revisionRef: "revision-B", pageIndex: 0,
-        fileName: "registered.png", mimeType: "image/png" }] },
-    ] };
-  uploadedAttachments.set("external-image", { sessionId: externalSession.id, name: "facade.png", mimeType: "image/png", data: externalImage });
-  uploadedAttachments.set("external-broken", { sessionId: externalSession.id, name: "broken.png", mimeType: "image/png", data: Buffer.from("broken").toString("base64") });
-  uploadedAttachments.set("external-svg", { sessionId: externalSession.id, name: "diagram.svg", mimeType: "image/svg+xml", data: Buffer.from("<svg></svg>").toString("base64") });
-  sessions.unshift(externalSession);
-  const beforeExternalTurns = writes.filter(([, name]) => /\/(messages|stop|model)$/.test(name)).length;
-  // #438: the saved launch settings can arrive after an external conversation has opened. Taking
-  // them used to clear the open conversation until the next read, and its composer came back.
-  let releaseSettingsRead; settingsReadGate = new Promise((resolve) => { releaseSettingsRead = resolve; });
-  await page.goto(`${origin}/?chatId=${externalSession.id}`);
-  await page.locator(".chat-header h1").filter({ hasText: "Exterior review" }).waitFor();
-  await page.locator(".chat-external-notice").waitFor();
-  await page.evaluate((title) => {
-    // Whenever the external conversation is the one selected, no composer may be on the page.
-    const look = () => {
-      const selected = document.querySelector('.chat-thread[aria-current="page"]');
-      if (selected?.title === title && document.getElementById("chat-input")) window.composerSeen = true;
-    };
-    window.composerSeen = false; look();
-    new MutationObserver(look).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-current"] });
-  }, externalSession.title);
-  const conversationRead = (response) => new URL(response.url()).pathname === `/api/chat/sessions/${externalSession.id}`;
-  let settingsArrived = false;
-  const settingsRead = page.waitForResponse((response) => (settingsArrived ||= new URL(response.url()).pathname === "/api/settings/apps"));
-  const readAfterSettings = page.waitForResponse((response) => settingsArrived && conversationRead(response));
-  settingsReadGate = null; releaseSettingsRead();
-  await settingsRead; await readAfterSettings;
-  // A runtime event reads the conversation again too.
-  const readAfterEvent = page.waitForResponse(conversationRead);
-  emitRuntime(); await readAfterEvent;
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.equal(await page.evaluate(() => window.composerSeen), false, "an external conversation never shows a composer while it is read again");
-  // Opening it from the list shows none either, not even before its own read returns.
-  await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
-  await page.locator("#chat-input").waitFor();
-  await page.locator(".chat-thread").filter({ hasText: externalSession.title }).click();
-  await page.locator(".chat-header h1").filter({ hasText: externalSession.title }).waitFor();
-  await page.locator(".chat-external-notice").waitFor();
-  assert.equal(await page.evaluate(() => window.composerSeen), false, "opening an external conversation from the list never shows a composer");
-  await page.goto(`${origin}/?chatId=${externalSession.id}`);
-  await page.locator(".chat-header h1").filter({ hasText: "Exterior review" }).waitFor();
-  await page.locator(".chat-external-notice").getByText("External conversation", { exact: true }).waitFor();
-  assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B",
-    "a deep link takes its project from the selected chat, not stale local preferences");
-  assert.equal(await page.locator("#chat-input").count(), 0);
-  assert.equal(await page.getByRole("button", { name: "Send", exact: true }).count(), 0);
-  assert.equal(await page.locator(".chat-prose strong").innerText(), "retained");
-  assert.deepEqual(await page.locator(".chat-prose li").allTextContents(), ["First option", "Second option"]);
-  assert.equal(await page.locator(".chat-prose table tbody").innerText(), "A\tReview");
-  assert.equal(await page.locator(".chat-code code").innerText(), "const accepted = false;");
-  assert.equal(await page.locator(".chat-prose img, .chat-prose script").count(), 0, "model markup and remote image syntax cannot introduce image requests or executable HTML");
-  assert.equal(await page.locator('.chat-prose a[href^="javascript:"]').count(), 0);
-  assert.equal(await page.getByRole("link", { name: "Source", exact: true }).getAttribute("rel"), "noopener noreferrer");
-  await page.getByText("This image could not be loaded. You can still download the file.", { exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Enlarge image: diagram.svg", exact: true }).count(), 0);
-  const preview = page.getByRole("button", { name: "Enlarge image: facade.png", exact: true });
-  await preview.click();
-  const imageDialog = page.getByRole("dialog", { name: "facade.png", exact: true });
-  await imageDialog.waitFor();
-  assert.equal(await imageDialog.getByRole("img").evaluate((image) => image.complete && image.naturalWidth > 0), true);
-  const imageDownload = page.waitForEvent("download");
-  await imageDialog.getByRole("link", { name: "Download", exact: true }).click();
-  const savedImage = await imageDownload;
-  assert.equal(savedImage.suggestedFilename(), "facade.png");
-  assert.deepEqual(await readFile(await savedImage.path()), Buffer.from(externalImage, "base64"));
-  await page.keyboard.press("Escape");
-  await imageDialog.waitFor({ state: "hidden" });
-  assert.equal(await preview.evaluate((button) => button === document.activeElement), true);
-  await page.getByRole("button", { name: "Enlarge image: registered.png", exact: true }).click();
-  const documentDialog = page.getByRole("dialog", { name: "registered.png", exact: true });
-  assert.equal(await documentDialog.getByRole("link", { name: "Download", exact: true }).getAttribute("href"),
-    `/api/chat/sessions/${externalSession.id}/documents/external-result/0?download=true`);
-  const documentDownload = page.waitForEvent("download");
-  await documentDialog.getByRole("link", { name: "Download", exact: true }).click();
-  const savedDocument = await documentDownload;
-  assert.equal(savedDocument.suggestedFilename(), "registered.png");
-  assert.deepEqual(await readFile(await savedDocument.path()), Buffer.from(externalImage, "base64"));
-  await documentDialog.getByRole("button", { name: "Close", exact: true }).click();
-  await page.screenshot({ path: path.join(temporary, "external-presentation.png"), fullPage: true });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator(".chat-menubar").getByRole("button", { name: /^(Hide|Show) projects$/ }).click();
-  await preview.click();
-  const previewBounds = await imageDialog.boundingBox();
-  assert.ok(previewBounds.x >= 0 && previewBounds.x + previewBounds.width <= 390, "the image dialog fits a narrow viewport");
-  await page.screenshot({ path: path.join(temporary, "external-image-mobile.png") });
-  await page.keyboard.press("Escape");
-  await page.setViewportSize({ width: 1440, height: 960 });
-  await page.locator(".chat-menubar").getByRole("button", { name: /^(Hide|Show) projects$/ }).click();
-  await page.reload();
-  await page.getByRole("button", { name: "Enlarge image: facade.png", exact: true }).waitFor();
-  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
-  await page.locator("#chat-input").waitFor();
-  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
-  await page.locator(".chat-external-notice").waitFor();
-  assert.equal(writes.filter(([, name]) => /\/(messages|stop|model)$/.test(name)).length, beforeExternalTurns);
+  await externalConversation();
   await autosavedModelRestart();
 
   // #285: a long conversation opens at its latest message. Each finished turn
