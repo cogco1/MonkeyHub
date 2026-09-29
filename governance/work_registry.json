@@ -1,4 +1,40 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-253",
+      "lanes": [
+        {
+          "id": "board-render",
+          "status": "active",
+          "branch": "codex/253-board-render",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-253-board-render",
+          "base_ref": "a970bf5c",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Fix round 1 of the Board image -> Hub conversation lane: a composer holding a Board image discussion sends nothing mid-turn and never labels a mid-turn message as about the images; the Board dialog hands over before it closes and shows a host's refusal; the chat refuses external, archived and closing chats before it reads images; tests for the posted body, the Board's no-save hand-over, the unreadable and stale-reference image refusals and the layer rule over the chat guides.",
+          "modules": [
+            "hub.shell",
+            "studio.board"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat_render.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardRender.ts",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+            "apps/monkeyhub/web/workspaces/test/boardRender.test.ts",
+            "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/chatError.ts",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
