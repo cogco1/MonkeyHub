@@ -160,12 +160,15 @@ class SkillLibraryTest(unittest.TestCase):
         self.assertEqual(again[again.index("--plugin-dir") + 1], str(plugin))
         self.assertEqual(self.fetched, ["/api/skills/skill:hatch-review?version=1"], "the second chat fetched no body")
         allowed = loaded[loaded.index("--allowedTools") + 1].split(",")
-        self.assertIn("Skill", allowed)
+        # Only the library plugin's skills may be used, not every skill the CLI lists.
+        self.assertIn("Skill(monkeyhub-library:*)", allowed)
+        self.assertNotIn("Skill", allowed)
 
         # Only those two things differ from the command without a library.
         position = loaded.index("--plugin-dir")
         reduced = loaded[:position] + loaded[position + 2:]
-        reduced[reduced.index("--allowedTools") + 1] = ",".join(name for name in allowed if name != "Skill")
+        reduced[reduced.index("--allowedTools") + 1] = ",".join(
+            name for name in allowed if name != "Skill(monkeyhub-library:*)")
         self.assertEqual(reduced, plain)
         # Starting the chat changed no project: not its own, not the library.
         self.assertEqual((snapshot(self.project), snapshot(self.library)), projects)

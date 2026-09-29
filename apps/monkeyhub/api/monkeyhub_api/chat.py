@@ -228,14 +228,16 @@ def _claude_approved(runtime_root: Path, *, skills: bool = False) -> tuple[str, 
     file that turns them on, but a headless turn may only actually use them
     where the owner of this machine said so. ``skills`` adds Claude's own Skill
     tool when a library's skills are loaded (#252): reading a procedure, which
-    grants nothing the tools above do not.
+    grants nothing the tools above do not. Only the library plugin's skills: the
+    CLI also lists this machine's personal skills and plugins, and those stay
+    refused.
     """
     # Imported inside every caller rather than at the top: computer_tools
     # reaches its routes through this module's own transport, and one of the
     # two has to be late for the other to exist.
     from . import computer_tools
 
-    approved = _CLAUDE_APPROVED + (("Skill",) if skills else ())
+    approved = _CLAUDE_APPROVED + ((f"Skill({skill_plugins.PLUGIN_NAME}:*)",) if skills else ())
     if not computer_tools.read_policy(runtime_root).enabled:
         return approved
     return approved + tuple(
