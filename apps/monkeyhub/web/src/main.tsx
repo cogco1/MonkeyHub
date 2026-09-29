@@ -14,7 +14,7 @@ import { AttentionHost } from "./notifications/AttentionHost";
 
 type AppId = AppStatus["appId"];
 type Issue = { code: string; detail: string };
-type FieldIssue = Issue & { field: "workspace-dir" | "studio-port" | "render-timeout" | "coding-plan-url" };
+type FieldIssue = Issue & { field: "workspace-dir" | "library-dir" | "studio-port" | "render-timeout" | "coding-plan-url" };
 const hubClient = createClient({ baseUrl: window.location.origin });
 const initialLaunch: ApplicationSettingsDto = { projectDir: null, referenceRun: null, cadExport: "occt", studioPort: 8789, monitorPort: 8788 };
 type ChatDefaults = { chatProvider: UserSettingsDto["chatProvider"]; chatModel: string | null; codingPlanBaseUrl: string | null };
@@ -98,7 +98,8 @@ const knownErrors: Record<string, string> = {
   HUB_STOPPING: "Hub 正在等待工作区结束，请稍候。", SETTINGS_UNAVAILABLE: "本地设置暂时无法读取或保存。",
   APP_SETTINGS_INVALID: "保存的启动设置无效，请检查项目目录和端口。", LOCAL_IO_FAILED: "无法访问本地设置或运行记录目录。",
   FAB_UNAVAILABLE: "此运行环境未包含 MonkeyFab，请使用整合安装包。", APP_HOSTED_BY_HUB: "MonkeyFab 使用 Hub 页面，无需单独停止。",
-  WORKSPACE_DIR_INVALID: "新项目所在文件夹需要填写完整路径，例如 D:\\Projects。", STUDIO_PORT_INVALID: "项目服务端口需为 1024–65535 之间的整数。",
+  WORKSPACE_DIR_INVALID: "新项目所在文件夹需要填写完整路径，例如 D:\\Projects。", LIBRARY_DIR_INVALID: "技能库项目需要填写完整路径，例如 D:\\Projects\\Skills。",
+  CHAT_PROJECT_INVALID: "这个文件夹不是完整、可读的 MonkeyHub 项目。", STUDIO_PORT_INVALID: "项目服务端口需为 1024–65535 之间的整数。",
   RENDER_TIMEOUT_INVALID: "渲染请求超时需在 1–300 秒之间。",
   CREDENTIAL_INVALID: "密钥只能是 8–1024 个可见 ASCII 字符，不含空格、引号或换行。", CREDENTIAL_REQUEST_INVALID: "密钥请求无效。",
   CREDENTIAL_STORE_UNAVAILABLE: "这台电脑没有可用的凭据存储，请通过环境变量提供密钥。", CREDENTIAL_STORE_FAILED: "凭据管理器没有保存或移除这个密钥，请重试。",
@@ -172,6 +173,7 @@ const isAbsolutePath = (value: string) => /^(?:[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/][^
 /** What the Hub would refuse in launch settings, found before asking it: such a value stays in its field, unsaved. */
 function launchProblem(draft: ApplicationSettingsDto): FieldIssue | null {
   if (draft.workspaceDir && !isAbsolutePath(draft.workspaceDir)) return { field: "workspace-dir", code: "WORKSPACE_DIR_INVALID", detail: "The folder for new projects must be a full path, such as D:\\Projects." };
+  if (draft.libraryDir && !isAbsolutePath(draft.libraryDir)) return { field: "library-dir", code: "LIBRARY_DIR_INVALID", detail: "The skill library project must be a full path, such as D:\\Projects\\Skills." };
   const port = draft.studioPort ?? initialLaunch.studioPort!;
   if (!Number.isInteger(port) || port < 1024 || port > 65535) return { field: "studio-port", code: "STUDIO_PORT_INVALID", detail: "The project runtime port must be a whole number from 1024 to 65535." };
   if (port === draft.monitorPort || String(port) === window.location.port) return { field: "studio-port", code: "PORT_CONFLICT", detail: "Hub, Studio and Monitor must use different ports." };
@@ -445,6 +447,8 @@ function App() {
   const settingsSaving = appearanceSave.pending || launchSave.pending;
   // A value that cannot be saved is named once its pause is over, not while it is typed.
   const launchInvalid = !launchSave.pending && launchDirty ? launchProblem(launchDraft) : null;
+  // #252: the Hub refuses a library folder that is not a complete project; that refusal is this field's.
+  const libraryIssue = launchInvalid?.field === "library-dir" ? launchInvalid : launchIssue?.code === "CHAT_PROJECT_INVALID" ? launchIssue : null;
   const renderInvalid = !appearanceSave.pending && appearanceDirty ? renderProblem(renderDraft) : null;
   const planInvalid = !appearanceSave.pending && appearanceDirty ? planProblem(chatDraft) : null;
   const keyWords = KEY_WORDS[preferences.language];
@@ -570,6 +574,12 @@ function App() {
         <input id="workspace-dir" value={launchDraft.workspaceDir ?? ""} placeholder={workspace?.workspaceDir ?? ""}
           aria-invalid={launchInvalid?.field === "workspace-dir" ? true : undefined}
           onChange={(event) => changeLaunch({ workspaceDir: event.target.value || null })} /></div>
+      <div className="settings-row settings-row--wide"><div className="settings-row__text"><label htmlFor="library-dir">{t("libraryDir")}</label><p className="settings-row__hint">{t("libraryHelp")}</p></div>
+        <input id="library-dir" value={launchDraft.libraryDir ?? ""} aria-describedby="library-dir-status"
+          aria-invalid={libraryIssue ? true : undefined}
+          onChange={(event) => changeLaunch({ libraryDir: event.target.value || null })} /></div>
+      <ErrorMessage issue={libraryIssue} language={preferences.language} />
+      <p className="help" id="library-dir-status">{t("libraryStatus")}</p>
       <details className="advanced"><summary>{t("advanced")}</summary>
         <WorkspaceDiagnosticsSettings />
         <div className="chat-service-settings">{(apps ?? []).filter((app) => app.appId === "monkeyarch").map((app) => <div key={app.appId}><span>Project Runtime · {t(app.state)}</span><button className="btn" disabled={!connected || busyServices.has(app.serviceId) || app.state === "starting" || app.state === "stopping"} onClick={() => void act(app)}>{t(app.state === "running" ? "stop" : "start")}</button><ErrorMessage issue={actionIssues[app.appId] ?? app.error ?? null} language={preferences.language} /></div>)}</div>
@@ -579,7 +589,7 @@ function App() {
           aria-invalid={launchInvalid?.field === "studio-port" ? true : undefined} onChange={(event) => changeLaunch({ studioPort: Number(event.target.value) })} /></div>
         <p className="help">{t("launchHelp")}</p>
       </details>
-      <ErrorMessage issue={launchIssue ?? launchInvalid} language={preferences.language} />
+      <ErrorMessage issue={libraryIssue ? null : launchIssue ?? launchInvalid} language={preferences.language} />
     </> }],
   };
   return <UserPreferencesProvider appearance={preferences}><ChatShell preferences={preferences} configuredProject={savedLaunch?.projectDir ?? null} settings={settings}
