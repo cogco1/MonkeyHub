@@ -66,3 +66,5 @@ The 2026-09-29 #319 owner comment records that #330 now conflicts with main and 
 Fresh Cycles/live paid AI and furniture are NOT TESTED in this slice. Millimetre/gate math has direct unit coverage; the actual browser fixtures use retained metre-based model exports, so other unit imports are not a browser PASS. The old 'only background' screenshot is not diagnosed by these newly visible fixture models. Full product result remains PARTIAL even when listed checks pass.
 
 Rapid project switching/cancellation while first-time Modeling initialization is still writing is NOT TESTED by the completed-initialization cold-Hub check.
+
+Evidence packaging follow-up: `62a844da` verify stopped at diff whitespace because the copied CI transcript contained timestamped blank lines with trailing spaces. Only transcript trailing whitespace/EOF was normalized; the original raw job remains at https://github.com/cogco1/MonkeyHub/actions/runs/36645347342/job/109666904613 and the packaging failure at https://github.com/cogco1/MonkeyHub/actions/runs/36646748940/job/109671595796. No product/test code changed in this packaging correction.

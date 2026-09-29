@@ -87,8 +87,8 @@
     },
     {
       "path": "failure-ci-candidate.log",
-      "bytes": 162260,
-      "sha256": "7a696b3d9fad40da1ab0cab017fc07893ab5caef814322cafaec826936c1a651"
+      "bytes": 162212,
+      "sha256": "6d4197b33769d09e48151ab898da67dfc796fc453939d6c31825ec84e3177c23"
     },
     {
       "path": "failure-cold-hub.log",
@@ -162,8 +162,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 11799,
-      "sha256": "8e682429dcd6ffcd27139a069bc8e19b787369323cf3c78132cd65bbde137e08"
+      "bytes": 12297,
+      "sha256": "dc927a14e58a694fe2e280bbdfef39db6e6a1a47806b0c35b723b0ccbc9f25ec"
     },
     {
       "path": "typecheck-retest.log",

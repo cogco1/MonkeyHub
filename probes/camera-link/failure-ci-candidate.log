@@ -101,22 +101,22 @@
 2026-09-29T23:28:06.2902524Z ##[group]Checking out the ref
 2026-09-29T23:28:06.2905268Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/477/merge
 2026-09-29T23:28:06.5342509Z Note: switching to 'refs/remotes/pull/477/merge'.
-2026-09-29T23:28:06.5343092Z 
+2026-09-29T23:28:06.5343092Z
 2026-09-29T23:28:06.5343338Z You are in 'detached HEAD' state. You can look around, make experimental
 2026-09-29T23:28:06.5343932Z changes and commit them, and you can discard any commits you make in this
 2026-09-29T23:28:06.5344540Z state without impacting any branches by switching back to a branch.
-2026-09-29T23:28:06.5344842Z 
+2026-09-29T23:28:06.5344842Z
 2026-09-29T23:28:06.5345122Z If you want to create a new branch to retain commits you create, you may
 2026-09-29T23:28:06.5345969Z do so (now or later) by using -c with the switch command. Example:
-2026-09-29T23:28:06.5346269Z 
+2026-09-29T23:28:06.5346269Z
 2026-09-29T23:28:06.5346465Z   git switch -c <new-branch-name>
-2026-09-29T23:28:06.5346693Z 
+2026-09-29T23:28:06.5346693Z
 2026-09-29T23:28:06.5346838Z Or undo this operation with:
-2026-09-29T23:28:06.5347069Z 
+2026-09-29T23:28:06.5347069Z
 2026-09-29T23:28:06.5347174Z   git switch -
-2026-09-29T23:28:06.5347419Z 
+2026-09-29T23:28:06.5347419Z
 2026-09-29T23:28:06.5347684Z Turn off this advice by setting config variable advice.detachedHead to false
-2026-09-29T23:28:06.5348226Z 
+2026-09-29T23:28:06.5348226Z
 2026-09-29T23:28:06.5348611Z HEAD is now at 836f79d Merge ee8c44b8ca7e20f5627ae214ee93e8881cbdeadd into 9c816070d93703193484830c24059ef40f1afd16
 2026-09-29T23:28:06.5357532Z ##[endgroup]
 2026-09-29T23:28:06.5398729Z [command]/usr/bin/git log -1 --format=%H
@@ -312,7 +312,7 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:28:19.3310901Z   Stored in directory: /tmp/pip-ephem-wheel-cache-qsw64fcp/wheels/a9/ea/47/1f33a5cc86092fb8bc9bf5752875249c64d110215ac670b43d
 2026-09-29T23:28:19.3370387Z Successfully built archflow-v4
 2026-09-29T23:28:19.4089291Z Installing collected packages: XlsxWriter, typing_extensions, rpds-py, pypdf, pyparsing, PyMuPDF, Pillow, numpy, lxml, idna, h11, fonttools, click, charset-normalizer, attrs, archflow-v4, annotated-types, annotated-doc, uvicorn, typing-inspection, shapely, reportlab, referencing, python-pptx, pydantic-core, opentelemetry-api, ezdxf, anyio, starlette, pydantic, jsonschema-specifications, jsonschema, fastapi, agent-client-protocol
-2026-09-29T23:28:26.8862249Z 
+2026-09-29T23:28:26.8862249Z
 2026-09-29T23:28:26.8893283Z Successfully installed Pillow-12.3.0 PyMuPDF-1.28.2 XlsxWriter-3.2.9 agent-client-protocol-0.12.1 annotated-doc-0.0.5 annotated-types-0.8.0 anyio-4.15.1 archflow-v4-0.1.0 attrs-26.1.0 charset-normalizer-3.5.1 click-8.5.0 ezdxf-1.4.4 fastapi-0.142.1 fonttools-4.64.0 h11-0.16.0 idna-3.20 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 lxml-6.1.3 numpy-2.5.3 opentelemetry-api-1.45.0 pydantic-2.13.5 pydantic-core-2.46.5 pyparsing-3.3.3 pypdf-6.19.0 python-pptx-1.0.2 referencing-0.37.0 reportlab-5.0.0 rpds-py-2026.6.3 shapely-2.1.2 starlette-1.7.0 typing-inspection-0.4.4 typing_extensions-4.16.0 uvicorn-0.54.0
 2026-09-29T23:28:27.0418364Z ##[group]Run npm ci
 2026-09-29T23:28:27.0418777Z [36;1mnpm ci[0m
@@ -326,12 +326,12 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:28:27.0464162Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
 2026-09-29T23:28:27.0464610Z ##[endgroup]
 2026-09-29T23:28:30.1152975Z npm warn deprecated sliced@1.0.1: Unsupported
-2026-09-29T23:28:32.8341780Z 
+2026-09-29T23:28:32.8341780Z
 2026-09-29T23:28:32.8342910Z added 295 packages, and audited 296 packages in 6s
-2026-09-29T23:28:32.8343431Z 
+2026-09-29T23:28:32.8343431Z
 2026-09-29T23:28:32.8344141Z 20 packages are looking for funding
 2026-09-29T23:28:32.8344738Z   run `npm fund` for details
-2026-09-29T23:28:32.8354216Z 
+2026-09-29T23:28:32.8354216Z
 2026-09-29T23:28:32.8355147Z found 0 vulnerabilities
 2026-09-29T23:28:32.8845187Z ##[group]Run npm ci --prefix workspaces/tools/openapi-ts
 2026-09-29T23:28:32.8845811Z [36;1mnpm ci --prefix workspaces/tools/openapi-ts[0m
@@ -344,12 +344,12 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:28:32.8890090Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
 2026-09-29T23:28:32.8890612Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
 2026-09-29T23:28:32.8891032Z ##[endgroup]
-2026-09-29T23:28:33.5469329Z 
+2026-09-29T23:28:33.5469329Z
 2026-09-29T23:28:33.5470609Z added 51 packages, and audited 52 packages in 597ms
-2026-09-29T23:28:33.5471408Z 
+2026-09-29T23:28:33.5471408Z
 2026-09-29T23:28:33.5472287Z 23 packages are looking for funding
 2026-09-29T23:28:33.5475300Z   run `npm fund` for details
-2026-09-29T23:28:33.5483837Z 
+2026-09-29T23:28:33.5483837Z
 2026-09-29T23:28:33.5484722Z found 0 vulnerabilities
 2026-09-29T23:28:33.5605564Z ##[group]Run npm run api:check
 2026-09-29T23:28:33.5606046Z [36;1mnpm run api:check[0m
@@ -362,20 +362,20 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:28:33.5650242Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
 2026-09-29T23:28:33.5650751Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
 2026-09-29T23:28:33.5651184Z ##[endgroup]
-2026-09-29T23:28:33.6652121Z 
+2026-09-29T23:28:33.6652121Z
 2026-09-29T23:28:33.6652786Z > api:check
 2026-09-29T23:28:33.6653334Z > node workspaces/scripts/check-generated.mjs
-2026-09-29T23:28:33.6653787Z 
+2026-09-29T23:28:33.6653787Z
 2026-09-29T23:28:35.4454452Z warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
 2026-09-29T23:28:39.2805099Z Dumped ArchFlow Studio API OpenAPI to /home/runner/work/MonkeyHub/MonkeyHub/apps/monkeyhub/web/workspaces/.generated/openapi.json
 2026-09-29T23:28:39.2806352Z Dumped MonkeyHub API OpenAPI to /home/runner/work/MonkeyHub/MonkeyHub/apps/monkeyhub/web/.generated/openapi.json
 2026-09-29T23:28:39.9335624Z [90m@hey-api/openapi-ts v0.99.0[39m
-2026-09-29T23:28:39.9336297Z 
+2026-09-29T23:28:39.9336297Z
 2026-09-29T23:28:40.0097118Z [90m[Job 1] [39m[90m~[39m [36mGenerating...[39m
 2026-09-29T23:28:40.0097813Z [90m[Job 1] [39m[36m  [1] [39m.generated/openapi.json
 2026-09-29T23:28:40.7780886Z [90m[Job 1] [39m[32m✓[39m [96m./workspaces/.generated/api-check[39m [90m· 4 files · 766ms[39m
 2026-09-29T23:28:41.2128956Z [90m@hey-api/openapi-ts v0.99.0[39m
-2026-09-29T23:28:41.2129399Z 
+2026-09-29T23:28:41.2129399Z
 2026-09-29T23:28:41.2319353Z [90m[Job 1] [39m[90m~[39m [36mGenerating...[39m
 2026-09-29T23:28:41.2320126Z [90m[Job 1] [39m[36m  [1] [39m.generated/openapi.json
 2026-09-29T23:28:41.5044703Z [90m[Job 1] [39m[32m✓[39m [96m./.generated/api-check[39m [90m· 4 files · 272ms[39m
@@ -391,10 +391,10 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:28:41.5404514Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
 2026-09-29T23:28:41.5405343Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
 2026-09-29T23:28:41.5405754Z ##[endgroup]
-2026-09-29T23:28:41.6671009Z 
+2026-09-29T23:28:41.6671009Z
 2026-09-29T23:28:41.6671561Z > typecheck
 2026-09-29T23:28:41.6671965Z > tsc --noEmit
-2026-09-29T23:28:41.6672299Z 
+2026-09-29T23:28:41.6672299Z
 2026-09-29T23:28:43.0573252Z ##[group]Run npm test && npm run build
 2026-09-29T23:28:43.0573750Z [36;1mnpm test && npm run build[0m
 2026-09-29T23:28:43.0615729Z shell: /usr/bin/bash -e {0}
@@ -406,10 +406,10 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:28:43.0618817Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
 2026-09-29T23:28:43.0619779Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
 2026-09-29T23:28:43.0620216Z ##[endgroup]
-2026-09-29T23:28:43.1626824Z 
+2026-09-29T23:28:43.1626824Z
 2026-09-29T23:28:43.1627783Z > test
 2026-09-29T23:28:43.1628737Z > node --test test/*.test.ts && node --test --test-concurrency=1 workspaces/test/*.test.ts
-2026-09-29T23:28:43.1629325Z 
+2026-09-29T23:28:43.1629325Z
 2026-09-29T23:28:43.3790455Z ✔ the first reading is a baseline and raises nothing (4.20179ms)
 2026-09-29T23:28:43.3820530Z ✔ each transition raises one notice, keyed by chat, kind and updatedAt (0.610808ms)
 2026-09-29T23:28:43.3849408Z ✔ a permission that keeps waiting is announced once (0.307526ms)
@@ -877,14 +877,14 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:30:11.5746398Z ℹ skipped 2
 2026-09-29T23:30:11.5746706Z ℹ todo 0
 2026-09-29T23:30:11.5747077Z ℹ duration_ms 87857.876401
-2026-09-29T23:30:11.6797267Z 
+2026-09-29T23:30:11.6797267Z
 2026-09-29T23:30:11.6799395Z > build
 2026-09-29T23:30:11.6799954Z > npm run sync && tsc --noEmit && vite build
-2026-09-29T23:30:11.6800189Z 
-2026-09-29T23:30:11.7758949Z 
+2026-09-29T23:30:11.6800189Z
+2026-09-29T23:30:11.7758949Z
 2026-09-29T23:30:11.7759703Z > sync
 2026-09-29T23:30:11.7760774Z > node workspaces/scripts/sync-rhino3dm.mjs
-2026-09-29T23:30:11.7761263Z 
+2026-09-29T23:30:11.7761263Z
 2026-09-29T23:30:15.1045833Z Synced Rhino3dm runtime to /home/runner/work/MonkeyHub/MonkeyHub/apps/monkeyhub/web/.generated/public/rhino3dm
 2026-09-29T23:30:16.6152060Z [36mvite v8.2.2 [32mbuilding client environment for production...[36m[39m
 2026-09-29T23:30:16.6257226Z transforming...
@@ -975,7 +975,7 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:30:19.6147391Z dist/assets/si-LK-N5RQ5JYF-DucU49KB.js                    8.63 kB │ gzip:   3.40 kB │ map:    16.40 kB
 2026-09-29T23:30:19.6148350Z dist/assets/az-AZ-76LH7QW2-ByfGqG-6.js                    8.65 kB │ gzip:   3.63 kB │ map:    15.87 kB
 2026-09-29T23:30:19.6149267Z dist/assets/zh-HK-E62DVLB3-OM_Bdrem.js                    9.13 kB │ gzip:   4.14 kB │ map:    17.57 kB
-2026-09-29T23:30:19.6149929Z [33m[plugin builtin:vite-reporter] 
+2026-09-29T23:30:19.6149929Z [33m[plugin builtin:vite-reporter]
 2026-09-29T23:30:19.6150383Z (!) Some chunks are larger than 500 kB after minification. Consider:
 2026-09-29T23:30:19.6150991Z - Using dynamic import() to code-split the application
 2026-09-29T23:30:19.6152032Z - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
@@ -1087,7 +1087,7 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:30:19.6232033Z dist/assets/sceneHit-D3GbAGxq.js                      1,132.87 kB │ gzip: 360.76 kB │ map: 2,893.21 kB
 2026-09-29T23:30:19.6232763Z dist/assets/ProjectWorkspace-DepxTAEV.js              1,138.86 kB │ gzip: 313.91 kB │ map: 4,872.32 kB
 2026-09-29T23:30:19.6233495Z dist/assets/chunk-EIO257PC-DLqyEACh.js                1,821.08 kB │ gzip: 744.27 kB │ map: 1,880.47 kB
-2026-09-29T23:30:19.6233839Z 
+2026-09-29T23:30:19.6233839Z
 2026-09-29T23:30:19.6234038Z [32m✓ built in 3.00s[39m
 2026-09-29T23:30:19.6786313Z ##[group]Run npm install --no-save --package-lock=false playwright
 2026-09-29T23:30:19.6786811Z [36;1mnpm install --no-save --package-lock=false playwright[0m
@@ -1101,12 +1101,12 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:30:19.6833305Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.14/x64
 2026-09-29T23:30:19.6833843Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.14/x64/lib
 2026-09-29T23:30:19.6834154Z ##[endgroup]
-2026-09-29T23:30:35.3501433Z 
+2026-09-29T23:30:35.3501433Z
 2026-09-29T23:30:35.3502360Z added 2 packages, removed 3 packages, changed 12 packages, and audited 295 packages in 16s
-2026-09-29T23:30:35.3502948Z 
+2026-09-29T23:30:35.3502948Z
 2026-09-29T23:30:35.3503185Z 18 packages are looking for funding
 2026-09-29T23:30:35.3503599Z   run `npm fund` for details
-2026-09-29T23:30:35.3514052Z 
+2026-09-29T23:30:35.3514052Z
 2026-09-29T23:30:35.3514237Z found 0 vulnerabilities
 2026-09-29T23:30:36.0470064Z Installing dependencies...
 2026-09-29T23:30:36.0546545Z Switching to root user to install dependencies...
@@ -1179,7 +1179,7 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:30:44.7934743Z Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 xvfb amd64 2:21.1.12-1ubuntu1.8 [877 kB]
 2026-09-29T23:30:45.1057564Z Fetched 22.0 MB in 3s (8678 kB/s)
 2026-09-29T23:30:45.1289628Z Selecting previously unselected package fonts-ipafont-gothic.
-2026-09-29T23:30:45.1485575Z (Reading database ... 
+2026-09-29T23:30:45.1485575Z (Reading database ...
 2026-09-29T23:30:45.1486040Z (Reading database ... 5%
 2026-09-29T23:30:45.1486459Z (Reading database ... 10%
 2026-09-29T23:30:45.1486726Z (Reading database ... 15%
@@ -1246,15 +1246,15 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:30:48.3103849Z Processing triggers for man-db (2.12.0-4build2) ...
 2026-09-29T23:30:48.3125578Z Not building database; man-db/auto-update is not 'true'.
 2026-09-29T23:30:48.3141682Z Processing triggers for fontconfig (2.15.0-1.1ubuntu2) ...
-2026-09-29T23:30:48.9489692Z 
+2026-09-29T23:30:48.9489692Z
 2026-09-29T23:30:48.9490232Z Running kernel seems to be up-to-date.
-2026-09-29T23:30:48.9490492Z 
+2026-09-29T23:30:48.9490492Z
 2026-09-29T23:30:48.9490651Z No services need to be restarted.
-2026-09-29T23:30:48.9490865Z 
+2026-09-29T23:30:48.9490865Z
 2026-09-29T23:30:48.9491012Z No containers need to be restarted.
-2026-09-29T23:30:48.9491195Z 
+2026-09-29T23:30:48.9491195Z
 2026-09-29T23:30:48.9491380Z No user sessions are running outdated binaries.
-2026-09-29T23:30:48.9491609Z 
+2026-09-29T23:30:48.9491609Z
 2026-09-29T23:30:48.9491870Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
 2026-09-29T23:30:49.8526408Z Switching to root user to install dependencies...
 2026-09-29T23:30:49.8606031Z ++ arch
@@ -1279,7 +1279,7 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:30:51.1721041Z + curl -L -O https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 2026-09-29T23:30:51.1793792Z   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
 2026-09-29T23:30:51.1794642Z                                  Dload  Upload   Total   Spent    Left  Speed
-2026-09-29T23:30:51.1795041Z 
+2026-09-29T23:30:51.1795041Z
 2026-09-29T23:30:51.8251329Z   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
 2026-09-29T23:30:52.0624766Z  30  136M   30 41.3M    0     0  63.9M      0  0:00:02 --:--:--  0:00:02 63.9M
 2026-09-29T23:30:52.0625416Z 100  136M  100  136M    0     0   154M      0 --:--:-- --:--:-- --:--:--  154M
@@ -1293,7 +1293,7 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:30:53.1966647Z Need to get 0 B/143 MB of archives.
 2026-09-29T23:30:53.1967237Z After this operation, 8145 kB of additional disk space will be used.
 2026-09-29T23:30:53.1968433Z Get:1 /tmp/google-chrome-stable_current_amd64.deb google-chrome-stable amd64 154.0.8037.92-1 [143 MB]
-2026-09-29T23:30:53.5451692Z (Reading database ... 
+2026-09-29T23:30:53.5451692Z (Reading database ...
 2026-09-29T23:30:53.5452737Z (Reading database ... 5%
 2026-09-29T23:30:53.5453947Z (Reading database ... 10%
 2026-09-29T23:30:53.5454800Z (Reading database ... 15%
@@ -1320,21 +1320,21 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:31:02.6185005Z Setting up google-chrome-stable (154.0.8037.92-1) ...
 2026-09-29T23:31:02.8146712Z Processing triggers for man-db (2.12.0-4build2) ...
 2026-09-29T23:31:02.8163234Z Not building database; man-db/auto-update is not 'true'.
-2026-09-29T23:31:03.2941794Z 
+2026-09-29T23:31:03.2941794Z
 2026-09-29T23:31:03.2942565Z Running kernel seems to be up-to-date.
-2026-09-29T23:31:03.2942952Z 
+2026-09-29T23:31:03.2942952Z
 2026-09-29T23:31:03.2943186Z No services need to be restarted.
-2026-09-29T23:31:03.2943434Z 
+2026-09-29T23:31:03.2943434Z
 2026-09-29T23:31:03.2943627Z No containers need to be restarted.
-2026-09-29T23:31:03.2943926Z 
+2026-09-29T23:31:03.2943926Z
 2026-09-29T23:31:03.2944203Z No user sessions are running outdated binaries.
-2026-09-29T23:31:03.2944515Z 
+2026-09-29T23:31:03.2944515Z
 2026-09-29T23:31:03.2944928Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
 2026-09-29T23:31:04.1943057Z + rm -rf ./google-chrome-stable_current_amd64.deb
 2026-09-29T23:31:04.2115131Z + cd -
 2026-09-29T23:31:04.2115991Z /home/runner/work/MonkeyHub/MonkeyHub/apps/monkeyhub/web/node_modules/playwright-core/bin
 2026-09-29T23:31:04.2116793Z + google-chrome --version
-2026-09-29T23:31:04.2567170Z Google Chrome 154.0.8037.92 
+2026-09-29T23:31:04.2567170Z Google Chrome 154.0.8037.92
 2026-09-29T23:31:04.2616708Z Downloading FFmpeg (playwright ffmpeg v1011) from https://cdn.playwright.dev/dbazure/download/playwright/builds/ffmpeg/1011/ffmpeg-linux.zip
 2026-09-29T23:31:04.6902125Z |                                                                                |   0% of 2.3 MiB
 2026-09-29T23:31:04.7278904Z |■■■■■■■■                                                                        |  10% of 2.3 MiB
@@ -1414,7 +1414,7 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:32:57.5815555Z ##[endgroup]
 2026-09-29T23:33:23.0150041Z FAILED: AssertionError [ERR_ASSERTION]: the tree reads only what it declares
 2026-09-29T23:33:23.0158587Z + actual - expected
-2026-09-29T23:33:23.0173862Z 
+2026-09-29T23:33:23.0173862Z
 2026-09-29T23:33:23.0174194Z + [
 2026-09-29T23:33:23.0174603Z +   'GET /api/render/scene',
 2026-09-29T23:33:23.0175161Z +   'GET /api/render/scene',
@@ -1436,7 +1436,7 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:33:23.0184347Z +   'GET /api/render/scene'
 2026-09-29T23:33:23.0184725Z + ]
 2026-09-29T23:33:23.0185039Z - []
-2026-09-29T23:33:23.0185252Z 
+2026-09-29T23:33:23.0185252Z
 2026-09-29T23:33:23.0185908Z     at file:///home/runner/work/MonkeyHub/MonkeyHub/apps/monkeyhub/web/workspaces/test/designTree.browser.mjs:773:10 {
 2026-09-29T23:33:23.0186709Z   generatedMessage: false,
 2026-09-29T23:33:23.0187125Z   code: 'ERR_ASSERTION',
@@ -1554,4 +1554,3 @@ apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
 2026-09-29T23:33:45.6666447Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
 2026-09-29T23:33:45.7040751Z Cleaning up orphan processes
 2026-09-29T23:33:45.7268805Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/setup-python@v5, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
-
