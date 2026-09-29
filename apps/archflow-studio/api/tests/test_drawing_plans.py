@@ -539,6 +539,44 @@ class CutPlanTests(CandidateTestCase):
         revised = self.generate(drawingId=None, previousRevisionRef=first["revisionRef"], scaleDenominator=100)
         self.assertEqual(revised["drawingId"], "floor-plan")
 
+    def test_a_vertical_section_of_the_exact_model_reads_its_own_slab_and_stays_vertical(self):
+        def section(keep, drawing_id, **extra):
+            response = self.client.post("/api/drawings/plans", json={
+                "projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"], "drawingId": drawing_id,
+                "section": {"line": [[-1, 2], [5, 2]], "keep": keep}, "depth": 3, "scaleDenominator": 50, **extra})
+            return response
+
+        # Walking +X along y = 2, the right is -Y: the front (passage) wall at y = 0 lies in the slab.
+        toward_front = section("right", "section-front")
+        self.assertEqual(toward_front.status_code, 201, toward_front.text)
+        front = toward_front.json()
+        frame = front["viewRecipe"]["frame"]
+        self.assertEqual((frame["look"], frame["right"], frame["origin"], frame["far_depth"]),
+                         ([0.0, -1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 2.0, 0.0], 3.0))
+        self.assertEqual(front["modelSource"], self.model)
+        receipt = self.repository.load_json(record_ref_from_uri(front["revisionRef"], PROJECT_ID))
+        self.assertGreaterEqual(receipt["projection"]["section_regions"], 2, "the side walls are cut")
+        styled = self.generate(drawingId="section-front", previousRevisionRef=front["revisionRef"], cutHeight=None,
+                               bottom=None, dimensions=None, cutLineMm=.5)
+        self.assertEqual(styled["viewRecipe"]["frame"], frame, "a pen change keeps the plane, side and depth")
+        self.assertEqual(self.status(styled)["status"], "current")
+        away = section("left", "section-back")
+        self.assertEqual(away.status_code, 201, away.text)
+        refused = section("left", "section-dimensioned", dimensions=[{
+            "id": "door-width", "entityRef": "entity:passage-wall", "openingId": "passage-arch"}])
+        self.assertEqual((refused.status_code, refused.json()["code"]), (422, "DRAWING_SECTION_ANNOTATION_INVALID"))
+
+        newer, _ = self.commit_edit({"summary": "Move the front wall", "parameters": [{"key": "front_shift", "value": .4}]})
+        moved = self.status(styled, targetStageRef=newer["stageRef"])
+        self.assertEqual((moved["status"], moved["bindingChanged"]), ("outdated", True), moved)
+        unaffected = self.status(away.json(), targetStageRef=newer["stageRef"])
+        self.assertEqual((unaffected["status"], unaffected["bindingChanged"]), ("current", True),
+                         "the moved wall lies on the removed side of a section looking +Y")
+        rebuilt = self.generate(drawingId="section-front", sourceStageRef=newer["stageRef"], cutHeight=None, bottom=None,
+                                dimensions=None, previousRevisionRef=styled["revisionRef"])
+        self.assertEqual(rebuilt["viewRecipe"]["frame"], frame, "a rebuild on the newer model keeps the section")
+        self.assertEqual(self.repository.read_head(), self.head)
+
     def test_a_drawing_kept_on_a_chosen_version_stays_there_until_rebuilt(self):
         kept = self.generate(follow="frozen")
         self.assertEqual(kept["viewRecipe"]["follow"], "frozen")

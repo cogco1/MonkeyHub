@@ -1,4 +1,5 @@
-"""Whole-model elevations, top projection, cut plans and section perspectives through the existing drawing owner."""
+"""Whole-model elevations and axonometrics, top projection, cut plans and vertical sections, section perspectives and
+sheets of caller-placed views, through the existing drawing owner."""
 
 from __future__ import annotations
 
@@ -122,6 +123,33 @@ class PlanBeyondDto(BaseModel):
                                     "(and removes the rule), 1 fades them out.")
 
 
+class SectionLineDto(BaseModel):
+    """A vertical section plane through a plan line."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    line: tuple[tuple[float, float], tuple[float, float]] = Field(
+        description="Plan points [[x1, y1], [x2, y2]] in the source model length unit (CAD X/Y, Z up); "
+                    "the section is the vertical plane through them.")
+    keep: Literal["left", "right"] = Field(
+        description="The side kept when walking from the first point to the second. The eye stands on the other side, "
+                    "and nothing there is drawn.")
+
+
+class SectionPlaneDto(BaseModel):
+    """Any section plane, as a point on it and its normal."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    origin: tuple[float, float, float] = Field(description="A point on the plane, CAD X/Y/Z in the source model length unit.")
+    normal: tuple[float, float, float] = Field(
+        description="Points from the kept side to the removed side, where the eye stands; need not be unit length.")
+
+
+LengthUnit = Literal["meter", "millimeter", "inch", "foot"]
+LENGTH_UNIT = (
+    "The length unit this request's coordinates and distances are written in. It must be the source model's own unit: "
+    "another one is refused (DRAWING_UNIT_MISMATCH), never converted. Omitted reads them in the source unit.")
+
+
 class DrawingAssetSourceDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     run_id: str = Field(alias="runId", min_length=1)
@@ -139,11 +167,10 @@ class DrawingSourceRequestDto(BaseModel):
         return self
 
 
-class PlanRequestDto(DrawingSourceRequestDto):
+class PlanDrawingDto(BaseModel):
+    """What POST /api/drawings/plans draws, without its project and source: a horizontal cut plan, or with
+    ``section`` a vertical section, composed the same way. A sheet view takes these fields as they are."""
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
-    project_id: str = Field(alias="projectId", min_length=1)
-    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
-    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
     drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
     file_name: str | None = Field(alias="fileName", default=None, max_length=240, description=(
         "Optional human-readable name for a new cut plan. A missing extension is completed as .png; only .png is accepted. "
@@ -153,8 +180,23 @@ class PlanRequestDto(DrawingSourceRequestDto):
     cut_height: float | None = Field(alias="cutHeight", default=None, allow_inf_nan=False,
                                     description="Horizontal cut elevation in the source model length unit.")
     bottom: float | None = Field(default=None, allow_inf_nan=False)
+    section: SectionLineDto | SectionPlaneDto | None = Field(default=None, description=(
+        "A vertical section instead of the horizontal cut: the plane through a plan line ({line, keep}) or through a "
+        "point with a horizontal normal ({origin, normal}, pointing from the kept side to the removed side, where the "
+        "viewer stands). It must be perpendicular to CAD X or Y; any other plane is refused "
+        "(SECTION_PLANE_NOT_MODEL_AXIS), and one that cuts no drawn object too (SECTION_PLANE_MISSES_MODEL). The "
+        "drawing looks from the removed side into the kept side with CAD +Z up: u runs along the sheet's right (X when "
+        "looking +Y, -X looking -Y, -Y looking +X, Y looking -X) and v is Z, both in model coordinates. Omitted, a "
+        "rebuild keeps its own plane and a new drawing is a horizontal cut plan. A drawing never changes between the "
+        "two (DRAWING_ORIENTATION_CHANGED)."))
+    depth: float | None = Field(default=None, gt=0, allow_inf_nan=False, description=(
+        "A vertical section only: how far beyond its plane the kept side is drawn, in the source length unit. Omitted, a "
+        "rebuild keeps its own and a new section draws to the far side of the model's bounds."))
+    length_unit: LengthUnit | None = Field(alias="lengthUnit", default=None, description=LENGTH_UNIT)
     scale_denominator: int | None = Field(alias="scaleDenominator", default=None, ge=1, le=10000, strict=True)
-    crop_uv: tuple[float, float, float, float] | None = Field(alias="cropUv", default=None)
+    crop_uv: tuple[float, float, float, float] | None = Field(alias="cropUv", default=None, description=(
+        "The drawn window (u_min, v_min, u_max, v_max) in the source length unit: X/Y for a plan, the section's u/v for "
+        "a vertical section. Omitted, a rebuild keeps its own; a new drawing frames the model."))
     cut_line_mm: float | None = Field(alias="cutLineMm", default=None, gt=0, le=2, allow_inf_nan=False)
     visible_line_mm: float | None = Field(alias="visibleLineMm", default=None, gt=0, le=2, allow_inf_nan=False)
     hatch_spacing_mm: float | None = Field(alias="hatchSpacingMm", default=None, ge=0.5, le=20, allow_inf_nan=False)
@@ -185,7 +227,16 @@ class PlanRequestDto(DrawingSourceRequestDto):
             raise ValueError("Use dressing replacement or dressingOperations, not both")
         if self.dressing_operations is not None and self.previous_revision_ref is None:
             raise ValueError("dressingOperations requires previousRevisionRef")
+        if self.section is not None and (self.cut_height is not None or self.bottom is not None):
+            raise ValueError("Give section for a vertical section, or cutHeight and bottom for a horizontal plan, not both")
         return self
+
+
+class PlanRequestDto(PlanDrawingDto, DrawingSourceRequestDto):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
+    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
 
 
 class PlanStatusRequestDto(BaseModel):
@@ -344,41 +395,37 @@ class ModelViewDto(BaseModel):
     representation: Literal["orthographic-line-projection"] = "orthographic-line-projection"
 
 
-class ElevationRequestDto(DrawingSourceRequestDto):
+class ElevationDrawingDto(BaseModel):
+    """What POST /api/drawings/elevations draws, without its project and source. A sheet view takes these fields."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    view: Literal["front", "back", "left", "right", "top", "axon"] = Field(
+        default="front", description=(
+            "Whole-model orthographic direction. top looks down CAD -Z with X right and Y up on the sheet; "
+            "it is a top projection of visible geometry, not a cut floor plan. axon is a parallel view of the whole "
+            "model from direction, CAD +Z up on the sheet: foreshortened, so its scale is a display size, not a "
+            "measurable one."
+        ),
+    )
+    direction: tuple[Finite, Finite, Finite] | None = Field(default=None, description=(
+        "axon only: the direction from the model toward the viewer in CAD X/Y/Z, any length; [1, -1, 1] is the isometric "
+        "from +X, -Y, +Z. It may not be vertical. Omitted is [-1, -1, 1], the model view's axon."))
+    drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+    hidden_lines: bool = Field(alias="hiddenLines", default=False)
+    scale_denominator: int = Field(alias="scaleDenominator", default=100, ge=1, le=10000)
+    length_unit: LengthUnit | None = Field(alias="lengthUnit", default=None, description=LENGTH_UNIT)
+
+    @model_validator(mode="after")
+    def direction_of_an_axonometric(self):
+        if self.direction is not None and self.view != "axon":
+            raise ValueError("direction belongs to the axon view")
+        return self
+
+
+class ElevationRequestDto(ElevationDrawingDto, DrawingSourceRequestDto):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     project_id: str = Field(alias="projectId", min_length=1)
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
     model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
-    view: Literal["front", "back", "left", "right", "top"] = Field(
-        default="front", description=(
-            "Whole-model orthographic direction. top looks down CAD -Z with X right and Y up on the sheet; "
-            "it is a top projection of visible geometry, not a cut floor plan."
-        ),
-    )
-    drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
-    hidden_lines: bool = Field(alias="hiddenLines", default=False)
-    scale_denominator: int = Field(alias="scaleDenominator", default=100, ge=1, le=10000)
-
-
-class SectionLineDto(BaseModel):
-    """A vertical section plane through a plan line."""
-
-    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
-    line: tuple[tuple[float, float], tuple[float, float]] = Field(
-        description="Plan points [[x1, y1], [x2, y2]] in the source model length unit (CAD X/Y, Z up); "
-                    "the section is the vertical plane through them.")
-    keep: Literal["left", "right"] = Field(
-        description="The side kept when walking from the first point to the second. The eye stands on the other side, "
-                    "and nothing there is drawn.")
-
-
-class SectionPlaneDto(BaseModel):
-    """Any section plane, as a point on it and its normal."""
-
-    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
-    origin: tuple[float, float, float] = Field(description="A point on the plane, CAD X/Y/Z in the source model length unit.")
-    normal: tuple[float, float, float] = Field(
-        description="Points from the kept side to the removed side, where the eye stands; need not be unit length.")
 
 
 class SectionCameraDto(BaseModel):
@@ -399,11 +446,9 @@ class SectionCameraDto(BaseModel):
         description="Default eye only: height above the lowest cut point, in the source model unit (default 1.6 m).")
 
 
-class SectionPerspectiveRequestDto(DrawingSourceRequestDto):
+class SectionPerspectiveDrawingDto(BaseModel):
+    """What POST /api/drawings/section-perspectives draws, without its project and source. A sheet view takes these."""
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
-    project_id: str = Field(alias="projectId", min_length=1)
-    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
-    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
     drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$",
                                    description="Default section-perspective; the same id continues that drawing's revisions.")
     section: SectionLineDto | SectionPlaneDto
@@ -428,6 +473,14 @@ class SectionPerspectiveRequestDto(DrawingSourceRequestDto):
         "an empty byMaterial draws none."))
     beyond: PlanBeyondDto | None = Field(default=None, description=(
         "Fading of what lies beyond the cut, as in a cut plan; fade 0 draws it black."))
+    length_unit: LengthUnit | None = Field(alias="lengthUnit", default=None, description=LENGTH_UNIT)
+
+
+class SectionPerspectiveRequestDto(SectionPerspectiveDrawingDto, DrawingSourceRequestDto):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
+    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
 
 
 class DrawingStyleDto(BaseModel):
@@ -445,16 +498,116 @@ class DrawingStylesDto(BaseModel):
     styles: list[DrawingStyleDto]
 
 
+SheetViewId = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")]
+
+
+class SheetViewDto(BaseModel):
+    """One drawing on a view sheet: exactly one of plan, elevation or sectionPerspective, and where it goes.
+
+    The drawing is the one its own route draws from the same fields and the sheet's one source, retained and
+    registered in the documents list as that route registers it: an identical request reads the registered revision
+    back. It is placed at its own scale and paper size, never rescaled or cropped to fit.
+    """
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    id: SheetViewId = Field(description=(
+        "The view's drawing identity (its drawingId): the same id continues that drawing's revisions, here or on its "
+        "own route."))
+    place_mm: tuple[Finite, Finite] = Field(alias="placeMm", description=(
+        "Where the drawing's top-left corner goes: paper mm from the sheet's top-left. Its title and scale sit just "
+        "above it; a drawing that leaves the frame or overlaps another or the title strip is refused "
+        "(DRAWING_SHEET_LAYOUT_INVALID), never moved."))
+    title: str | None = Field(default=None, min_length=1, max_length=80, description=(
+        "The view's title. Omitted names its kind: PLAN, SECTION A-A, FRONT ELEVATION, ISOMETRIC, ..."))
+    subtitle: str | None = Field(default=None, max_length=160, description=(
+        "The line under the title. Omitted states the cut or direction from the drawing's own frame, such as "
+        "'Vertical cut at Y -3.048 m, looking +Y'; an empty string draws none."))
+    mark_on: SheetViewId | None = Field(alias="markOn", default=None, description=(
+        "A vertical section or a section perspective with a vertical plane: the id of a horizontal plan on this sheet "
+        "on which its cut line is drawn, with arrows toward the kept side, labelled markLabel."))
+    mark_label: str | None = Field(alias="markLabel", default=None, pattern=r"^[A-Z0-9]{1,3}$", description=(
+        "The cut's name, such as A: it labels the cut line on the plan and titles the view SECTION A-A."))
+    plan: PlanDrawingDto | None = Field(default=None, description=(
+        "A horizontal cut plan, or with section a vertical section, as POST /api/drawings/plans draws it. Dimensions, "
+        "dressingOperations, reason and sourceKind belong to that route."))
+    elevation: ElevationDrawingDto | None = Field(default=None, description=(
+        "An elevation, top projection or axonometric (view axon), as POST /api/drawings/elevations draws it."))
+    section_perspective: SectionPerspectiveDrawingDto | None = Field(alias="sectionPerspective", default=None, description=(
+        "A section perspective, as POST /api/drawings/section-perspectives draws it."))
+
+    @model_validator(mode="after")
+    def one_drawing(self):
+        drawings = [name for name in ("plan", "elevation", "section_perspective") if getattr(self, name) is not None]
+        if len(drawings) != 1:
+            raise ValueError("A sheet view draws exactly one of plan, elevation or sectionPerspective")
+        drawing = getattr(self, drawings[0])
+        if "scale_denominator" not in drawing.model_fields_set:
+            raise ValueError("A sheet view states its own scaleDenominator")
+        if drawing.drawing_id not in (None, self.id):
+            raise ValueError("A sheet view's drawing identity is its id")
+        if self.plan is not None and (self.plan.dimensions or self.plan.dressing_operations is not None
+                                      or self.plan.reason is not None or self.plan.source_kind is not None):
+            raise ValueError("Dimensions, dressingOperations, reason and sourceKind belong to POST /api/drawings/plans")
+        if (self.mark_on is None) != (self.mark_label is None):
+            raise ValueError("markOn and markLabel are given together")
+        if self.mark_on is not None and self.elevation is not None:
+            raise ValueError("Only a section is marked on a plan")
+        return self
+
+
 class SheetRequestDto(DrawingSourceRequestDto):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     project_id: str = Field(alias="projectId", min_length=1)
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
     model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
-    style_id: DrawingStyleId = Field(alias="styleId")
-    scale_denominator: int = Field(alias="scaleDenominator", default=20, strict=True, ge=1, le=10000,
-                                   description="Exact drawing scale; oversized layouts are refused, never silently rescaled.")
+    style_id: DrawingStyleId = Field(alias="styleId", description=(
+        "The sheet style. Without views it lays out front, right and top at one scale in the style's own paper; with "
+        "views it gives the frame margin and type sizes."))
+    scale_denominator: int | None = Field(alias="scaleDenominator", default=None, strict=True, ge=1, le=10000,
+                                          description=(
+        "Without views: the one exact scale of front, right and top (default 20); oversized layouts are refused, never "
+        "silently rescaled. With views each view states its own, and this is refused."))
     hidden_object_ids: list[str] = Field(alias="hiddenObjectIds", default_factory=list,
-                                        description="Exact physical object ids excluded before all three visibility solves.")
+                                        description="Without views: exact physical object ids excluded before all three visibility solves.")
     outline_object_ids: list[str] = Field(alias="outlineObjectIds", default_factory=list,
-                                         description="Visible physical object ids to simplify to outlines in this sheet.")
+                                         description="Without views: visible physical object ids to simplify to outlines in this sheet.")
     notes: list[str] = Field(default_factory=list)
+    views: list[SheetViewDto] | None = Field(default=None, min_length=1, max_length=12, description=(
+        "Same-source drawings placed on one sheet, each at its own scale: plans, vertical sections, elevations, "
+        "axonometrics and section perspectives, each drawn or read back through its own route's owner from the sheet's "
+        "one source. Omitted is the front, right and top review sheet."))
+    paper_size_mm: tuple[Finite, Finite] | None = Field(alias="paperSizeMm", default=None, description=(
+        "With views: the paper, width and height in mm (A3 landscape is [420, 297]). Omitted is the style's paper."))
+    title: str | None = Field(default=None, min_length=1, max_length=120, description=(
+        "With views: the title strip's title. Omitted is the project id."))
+    subtitle: str | None = Field(default=None, max_length=160, description=(
+        "With views: the line under the title. Omitted lists the views' titles; an empty string draws none."))
+    sheet_number: str | None = Field(alias="sheetNumber", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,19}$",
+                                     description="With views: the sheet's number in its title strip and file (default 01).")
+    drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$",
+                                   description=(
+        "With views: the sheet's drawing identity (default sheet-<sheetNumber>). Without views it is the style id."))
+    length_unit: LengthUnit | None = Field(alias="lengthUnit", default=None, description=LENGTH_UNIT)
+
+    @model_validator(mode="after")
+    def views_or_review(self):
+        if self.views is None:
+            given = [name for name, value in (("paperSizeMm", self.paper_size_mm), ("title", self.title),
+                                              ("subtitle", self.subtitle), ("sheetNumber", self.sheet_number),
+                                              ("drawingId", self.drawing_id)) if value is not None]
+            if given:
+                raise ValueError(f"{', '.join(given)} place views; a front/right/top review sheet takes none")
+            return self
+        if self.scale_denominator is not None:
+            raise ValueError("Each view states its own scaleDenominator; the sheet takes none")
+        if self.hidden_object_ids or self.outline_object_ids:
+            raise ValueError("Each view states its own hidden objects; the sheet takes none")
+        ids = [view.id for view in self.views]
+        if len(set(ids)) != len(ids):
+            raise ValueError("Each view on a sheet has its own id")
+        for view in self.views:
+            if view.mark_on is not None and (view.mark_on == view.id or view.mark_on not in ids):
+                raise ValueError(f"{view.id} is marked on {view.mark_on}, which is no other view of this sheet")
+        return self
+
+
+DrawingFileFormat = Literal["pdf", "dxf", "svg", "png"]

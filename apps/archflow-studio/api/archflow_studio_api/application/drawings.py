@@ -1,4 +1,12 @@
-"""Retained drawings and observations from exact STEP or registered native models."""
+"""Retained drawings and observations from exact STEP or registered native models.
+
+Elevations and axonometrics, section perspectives and sheets are drawn here;
+cut plans and vertical sections in ``drawing_plans``. A sheet either lays out
+front, right and top at one scale (the review sheet) or places same-source
+views the caller defines, each drawn through its own generator, where the
+caller put them. Every sheet is one paper scene written as PDF, DXF, SVG and
+PNG, retained together and registered as its PDF.
+"""
 
 from __future__ import annotations
 
@@ -11,12 +19,13 @@ from io import BytesIO
 from collections import OrderedDict
 from itertools import product
 import json
+import math
 from math import ceil, sqrt
 import os
 from pathlib import Path
 import threading
 from time import perf_counter
-from typing import Any
+from typing import Any, Mapping
 from uuid import uuid4
 
 from archflow.adapters.cad_execution import project_occt_lines
@@ -26,10 +35,12 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, record_ref_from_uri, require_identifier
 from monkeydiagram.drawing_elevation import (
-    SECTION_PERSPECTIVE_KIND, UNIT_METRES, DrawingElevationError, DrawnView, ElevationSource, NativeModelSource, ElevationView,
-    SectionPerspectiveError, SectionPerspectiveView, freeze_model_axis_elevation, freeze_section_perspective,
-    object_semantics, project_model_axis_elevation, read_elevation_source, VerifiedElevationSource,
+    SECTION_PERSPECTIVE_KIND, UNIT_METRES, DrawingElevationError, DrawnView, ElevationSource,
+    NativeModelSource, ElevationView, SectionPerspectiveError, SectionPerspectiveView, axonometric_frame,
+    freeze_model_axis_elevation, freeze_section_perspective, object_semantics, project_model_axis_elevation,
+    read_elevation_source, read_model_axis_elevation, VerifiedElevationSource,
 )
+from monkeydiagram.drawing_svg import PNG_MEDIA_TYPE, SVG_MEDIA_TYPE, DrawingSvgError, svg_paper_marks
 from monkeydiagram.mesh_views import MeshViewError, mesh_line_view, mesh_pipeline, pixel_size, triangulate
 
 from .artifacts import (
@@ -69,6 +80,14 @@ def _document_source(document):
 
 def _model_binding(source):
     return source if isinstance(source, ModelSource) else None
+
+
+def require_unit(requested: str | None, unit: str) -> None:
+    """A request may state the unit its coordinates are written in, only to have it checked: nothing is converted."""
+
+    if requested is not None and requested != unit:
+        raise StudioError(422, "DRAWING_UNIT_MISMATCH", f"The request is written in {requested}, but the source model is "
+                                                        f"in {unit}; state its coordinates and distances in {unit}.")
 
 
 def _selected_source(
@@ -242,12 +261,14 @@ def drawing_pipeline(kind: str) -> dict[str, Any]:
         from archflow.adapters.occt_backend import backend_identity
 
         return {"kind": kind, "code": {**_source_files(*_OCCT_DRAWING, "monkeydiagram.drawing_output",
-                                                         "monkeydiagram.documentation.styles"),
-                                       "sheet": hashlib.sha256(inspect.getsource(_drawn_sheet).encode("utf-8")).hexdigest()[:16]},
+                                                         "monkeydiagram.documentation.styles",
+                                                         "archflow_studio_api.application.boards"),
+                                       "sheet": hashlib.sha256("".join(inspect.getsource(function) for function in (
+                                           _drawn_sheet, _sheet_files, _view_sheet_scene)).encode("utf-8")).hexdigest()[:16]},
                 "fonts": {role: hashlib.sha256(path.read_bytes()).hexdigest()[:16] for role, path in _sheet_fonts().items()},
                 "backend": backend_identity(),
                 "libraries": {name: _library_version(name)
-                              for name in ("reportlab", "pypdf", "ezdxf", "Pillow", "fonttools", "rhino3dm")}}
+                              for name in ("reportlab", "pypdf", "ezdxf", "Pillow", "fonttools", "rhino3dm", "PyMuPDF")}}
     if kind == DOCUMENT_PAGE:
         from .boards import PAGE_RASTER_EDGE
 
@@ -313,11 +334,12 @@ def _source_of(model_source):
 
 def _elevation_view(
     receipt: dict[str, Any], direction: str, *, hidden_lines: bool, scale_denominator: int,
-    object_ids=None,
+    object_ids=None, frame=None,
 ) -> ElevationView:
     # The crop follows the retained cold-read bounds of every physical object
-    # (of ``object_ids`` alone when given).
-    right, up, look = _VIEW_FRAMES[direction]
+    # (of ``object_ids`` alone when given). ``frame`` (right, up, look) replaces
+    # the named direction's, as an axonometric from a stated direction does.
+    right, up, look = _VIEW_FRAMES[direction] if frame is None else frame
     try:
         physical = receipt["physical_object_ids"]
         measured = receipt["readback"]
@@ -599,15 +621,31 @@ def _registered_drawing(
         return document
 
 
+def _parallel_frame(view: str, direction) -> tuple | None:
+    """The frame of an axonometric seen from ``direction``; None keeps the named view's own frame."""
+
+    if direction is None:
+        return None
+    if view != "axon":
+        raise StudioError(422, "DRAWING_VIEW_INVALID", "A direction belongs to the axon view.")
+    try:
+        return axonometric_frame(direction)
+    except DrawingElevationError as exc:
+        raise StudioError(422, "DRAWING_VIEW_INVALID", str(exc)) from exc
+
+
 @retained_sources
 def generate_elevation(
     binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
     view: str, drawing_id: str | None = None, hidden_lines: bool = False, scale_denominator: int = 100,
     monitor: StudioMonitor | None = None, source_asset=None, projections: ProjectionQueue | None = None,
+    direction=None, length_unit: str | None = None,
 ) -> SourceDocument:
-    """One elevation of a verified source, retained and registered in the documents list.
+    """One elevation or axonometric of a verified source, retained and registered in the documents list.
 
-    An identical request on the same source reads the registered revision
+    ``axon`` is a parallel view of the whole model from ``direction`` (toward
+    the viewer), by default the model view's axon from -X, -Y, +Z. An
+    identical request on the same source reads the registered revision
     back. Otherwise the drawing's files come from ``projections`` when the
     same content was drawn at the same recipe before (by any run), and are
     drawn once and kept there when not; either way they are retained in P036
@@ -625,7 +663,9 @@ def generate_elevation(
             model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
             operation["run_id"] = model_source.run_id
             source, cad_receipt = _complete_source(binding, model_source, stage_ref)
-            recipe = _elevation_view(cad_receipt, view, hidden_lines=hidden_lines, scale_denominator=scale_denominator)
+            require_unit(length_unit, cad_receipt["identity"]["length_unit"])
+            recipe = _elevation_view(cad_receipt, view, hidden_lines=hidden_lines, scale_denominator=scale_denominator,
+                                     frame=_parallel_frame(view, direction))
         except StudioError:
             details.update(cache_status="refused", cache_reason="source_unavailable")
             raise
@@ -666,6 +706,7 @@ def generate_section_perspective(
     hidden_object_ids: tuple[str, ...] = (), drawing_id: str | None = None, scale_denominator: int = 100,
     graphics: dict[str, float] | None = None, hatch: dict[str, Any] | None = None, beyond: dict[str, Any] | None = None,
     monitor: StudioMonitor | None = None, source_asset=None, projections: ProjectionQueue | None = None,
+    length_unit: str | None = None,
 ) -> SourceDocument:
     """One section perspective of a verified source, retained and registered like an elevation.
 
@@ -688,6 +729,7 @@ def generate_section_perspective(
             model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
             operation["run_id"] = model_source.run_id
             source, cad_receipt = _complete_source(binding, model_source, stage_ref)
+            require_unit(length_unit, cad_receipt["identity"]["length_unit"])
         except StudioError:
             details.update(cache_status="refused", cache_reason="source_unavailable")
             raise
@@ -734,12 +776,10 @@ def generate_section_perspective(
                                    drawing_id=drawing_id, same_recipe=same_recipe, freeze=freeze)
 
 
-def _drawn_sheet(binding, monitor, run_id, verified, frames, selected, layout, recipe_json) -> tuple[bytes, bytes]:
-    """A review sheet's PDF, carrying its recipe, and DXF: three exact visibility solves, composed; writes nothing."""
+def _drawn_sheet(binding, monitor, run_id, verified, frames, selected, layout, recipe_json) -> dict[str, bytes]:
+    """A review sheet's four files (``_sheet_files``): three exact visibility solves, composed; writes nothing."""
 
-    from pypdf import PdfReader, PdfWriter
     from monkeydiagram.documentation.styles import compose_review_sheet
-    from monkeydiagram.drawing_output import render_dxf, render_pdf
 
     try:
         # The same composer checks fit before any expensive visibility solve.
@@ -755,17 +795,61 @@ def _drawn_sheet(binding, monitor, run_id, verified, frames, selected, layout, r
                 )
                 projection["details"]["emitted_object_ids"] = sorted({line.object_id for line in views[name]})
         canvas = compose_review_sheet(views=views, **layout)
-        pdf = render_pdf(canvas)
-        # Source/configuration identity remains recoverable from the exported
-        # PDF, including two recipes that happen to draw identical lines.
-        reader = PdfReader(BytesIO(pdf))
-        writer = PdfWriter(clone_from=reader)
-        writer.add_metadata({"/ArchFlowViewRecipe": recipe_json})
-        output = BytesIO()
-        writer.write(output)
-        return output.getvalue(), render_dxf(canvas)
+        return _sheet_files(canvas, recipe_json)
     except (ValueError, OcctBackendError) as exc:
         raise StudioError(422, "DRAWING_GENERATION_FAILED", str(exc)) from exc
+
+
+#: A sheet's files, in the order its projection keeps them (the first is the row's blob), with their media types.
+SHEET_FILES = (("pdf", "application/pdf"), ("dxf", "application/dxf"), ("svg", SVG_MEDIA_TYPE), ("png", PNG_MEDIA_TYPE))
+#: The PDF metadata naming the digests of the sheet's DXF, SVG and PNG.
+SHEET_FILE_DIGESTS = "/ArchFlowSheetFiles"
+SHEET_KINDS = ("review-sheet", "view-sheet")
+
+
+def _sheet_files(canvas, recipe_json: str) -> dict[str, bytes]:
+    """One paper scene as the sheet's four files; the PDF carries its recipe and the digests of the other three.
+
+    PDF, DXF and SVG are serialised from the same scene; the PNG is that PDF
+    page rasterised as a Board export draws it (144 dpi on white). Source and
+    configuration identity stay recoverable from the PDF, including two
+    recipes that happen to draw identical lines, and the PDF names the exact
+    bytes of its DXF, SVG and PNG. Writes nothing.
+    """
+
+    from pypdf import PdfReader, PdfWriter
+    from monkeydiagram.drawing_output import render_dxf, render_pdf, render_svg
+    from .boards import _page_raster
+
+    pdf = render_pdf(canvas)
+    files = {"dxf": render_dxf(canvas), "svg": render_svg(canvas), "png": _page_raster(pdf, "application/pdf", 0, "png", None)}
+    writer = PdfWriter(clone_from=PdfReader(BytesIO(pdf)))
+    writer.add_metadata({"/ArchFlowViewRecipe": recipe_json, SHEET_FILE_DIGESTS: canonical_json(
+        {role: hashlib.sha256(data).hexdigest() for role, data in files.items()})})
+    output = BytesIO()
+    writer.write(output)
+    return {"pdf": output.getvalue(), **files}
+
+
+def _retain_sheet(binding, model_source, stage_ref, files, *, file_name: str, drawing_id: str,
+                  recipe: dict[str, Any]) -> SourceDocument:
+    """Retain a sheet's four files beside each other in its source run and register its PDF in the documents list."""
+
+    _document_pages(files["pdf"], "application/pdf")
+    digest = hashlib.sha256(files["pdf"]).hexdigest()
+    run = binding.load_run(model_source.run_id)
+    destination = PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=run.run_id)
+    for role, media_type in SHEET_FILES:
+        binding.repository.put_workspace_file(
+            run=run, destination=destination, artifact_id=f"drawing-{'sheet' if role == 'pdf' else role}-{digest}",
+            workspace_relative_path=f"documentation/{digest}/sheet.{role}", media_type=media_type,
+            source=BytesIO(files[role]),
+        )
+    return save_document(
+        binding, model_source.run_id, file_name, "application/pdf", base64.b64encode(files["pdf"]).decode("ascii"),
+        _model_binding(model_source), drawing_id=drawing_id, source_stage_ref=None if stage_ref is None else stage_ref.uri,
+        view_recipe=recipe, generated_at=datetime.now(timezone.utc).isoformat(),
+    )
 
 
 def _sheet_fonts() -> dict[str, Path]:
@@ -790,23 +874,39 @@ def _sheet_fonts() -> dict[str, Path]:
 @retained_sources
 def generate_sheet(
     binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
-    style_id: str, scale_denominator: int = 20, hidden_object_ids: tuple[str, ...] = (),
+    style_id: str, scale_denominator: int | None = None, hidden_object_ids: tuple[str, ...] = (),
     outline_object_ids: tuple[str, ...] = (), notes: tuple[str, ...] = (),
     monitor: StudioMonitor | None = None, source_asset=None, projections: ProjectionQueue | None = None,
+    views: tuple[Mapping[str, Any], ...] | None = None, paper_size_mm=None, title: str | None = None,
+    subtitle: str | None = None, sheet_number: str | None = None, drawing_id: str | None = None,
+    length_unit: str | None = None, attribution=None,
 ) -> SourceDocument:
-    """Three exact visibility projections, composed and retained as one source PDF.
+    """One sheet of one exact source, retained as PDF, DXF, SVG and PNG and registered as its PDF.
 
+    Without ``views``: front, right and top at one scale (default 1:20), three
+    exact visibility projections laid out by the style. With ``views``: each
+    view drawn or read back through its own generator from this one source,
+    then placed at its own scale where the caller put it (``_view_sheet``).
     An identical request on the same source reads the registered sheet back;
-    otherwise its PDF and DXF come from ``projections`` when drawn before, or
-    are drawn once and kept there, and are retained byte for byte. The PDF
+    otherwise its files come from ``projections`` when drawn before, or are
+    drawn once and kept there, and are retained byte for byte. The PDF
     carries its recipe, source binding included, so only a request of the same
     source and recipe finds it there.
     """
 
     from monkeydiagram.documentation.styles import drawing_style
 
+    if views is not None:
+        return _view_sheet(
+            binding, source_stage_ref=source_stage_ref, model_source=model_source, source_asset=source_asset,
+            style_id=style_id, views=tuple(views), paper_size_mm=paper_size_mm, title=title, subtitle=subtitle,
+            sheet_number=sheet_number, drawing_id=drawing_id, notes=tuple(notes), length_unit=length_unit,
+            attribution=attribution, monitor=monitor if monitor is not None else StudioMonitor(None),
+            projections=projections)
+    scale_denominator = 20 if scale_denominator is None else scale_denominator
     model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
     source, receipt = _complete_source(binding, model_source, stage_ref)
+    require_unit(length_unit, receipt["identity"]["length_unit"])
     try:
         verified = read_elevation_source(binding.repository, source)
         style = drawing_style(style_id)
@@ -865,32 +965,316 @@ def generate_sheet(
                       notes=notes, outline_object_ids=tuple(sorted(outline)), font_mapping=fonts)
 
         def draw():
-            pdf, dxf = _drawn_sheet(binding, monitor, model_source.run_id, verified, frames, selected, layout, recipe_json)
-            return {"pdf": pdf, "dxf": dxf}, {}
+            return _drawn_sheet(binding, monitor, model_source.run_id, verified, frames, selected, layout, recipe_json), {}
 
         if projections is None:
             files = draw()[0]
         else:
             files, _, _ = projections.on_demand(on_demand_spec(SHEET, _source_of(model_source), {
                 "recipe": recipe, "content": _drawn_content(source, verified)}), draw)
-        pdf, dxf = files["pdf"], files["dxf"]
-        _document_pages(pdf, "application/pdf")
-        digest = hashlib.sha256(pdf).hexdigest()
-        binding.repository.put_workspace_file(
-            run=verified.run, destination=PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=verified.run.run_id),
-            artifact_id=f"drawing-sheet-{digest}", workspace_relative_path=f"documentation/{digest}/sheet.pdf",
-            media_type="application/pdf", source=BytesIO(pdf),
-        )
-        binding.repository.put_workspace_file(
-            run=verified.run, destination=PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=verified.run.run_id),
-            artifact_id=f"drawing-dxf-{digest}", workspace_relative_path=f"documentation/{digest}/sheet.dxf",
-            media_type="application/dxf", source=BytesIO(dxf),
-        )
-        document = save_document(
-            binding, model_source.run_id, f"{style_id}-1-{scale_denominator}.pdf", "application/pdf",
-            base64.b64encode(pdf).decode("ascii"), _model_binding(model_source),
-            drawing_id=style_id, source_stage_ref=None if stage_ref is None else stage_ref.uri,
-            view_recipe=recipe, generated_at=datetime.now(timezone.utc).isoformat(),
-        )
+        document = _retain_sheet(binding, model_source, stage_ref, files, file_name=f"{style_id}-1-{scale_denominator}.pdf",
+                                 drawing_id=style_id, recipe=recipe)
         operation["details"]["output_refs"] = [document.model_source_binding_ref]
         return document
+
+
+_UNIT_SYMBOLS = {"meter": "m", "millimeter": "mm", "inch": "in", "foot": "ft"}
+_UNIT_DECIMALS = {"meter": 3, "millimeter": 0, "inch": 2, "foot": 3}
+_UNIT_NAMES = {"meter": "metres", "millimeter": "millimetres", "inch": "inches", "foot": "feet"}
+
+
+def _signed(value: float, unit: str) -> str:
+    return f"{value:+.{_UNIT_DECIMALS[unit]}f} {_UNIT_SYMBOLS[unit]}"
+
+
+def _axis(vector) -> str | None:
+    """+X, -Y, ... for a model axis direction; None for any other direction."""
+
+    for index, name in enumerate("XYZ"):
+        if abs(abs(vector[index]) - 1.0) <= 1e-9:
+            return ("+" if vector[index] > 0 else "-") + name
+    return None
+
+
+def _sheet_view_kind(view: Mapping[str, Any], recipe: Mapping[str, Any]) -> str:
+    if view["kind"] == "plan":
+        return "section" if list(recipe["frame"]["up"]) == [0, 0, 1] else "plan"
+    if view["kind"] == "elevation":
+        return "axon" if view["arguments"].get("view") == "axon" else "elevation"
+    return view["kind"]
+
+
+def _sheet_view_labels(view: Mapping[str, Any], kind: str, recipe: Mapping[str, Any], unit: str) -> tuple[str, str, str]:
+    """A placed view's title, subtitle and scale label: the caller's words, else what its own frame states."""
+
+    label = view.get("mark_label")
+    cut = f" {label}-{label}" if label else ""
+    if kind == "plan":
+        frame = recipe["frame"]
+        title, subtitle, scale = "PLAN", f"Horizontal cut at Z {_signed(frame['origin'][2], unit)}, looking down", frame["scale"]
+    elif kind == "section":
+        frame = recipe["frame"]
+        look = _axis(frame["look"])
+        position = frame["origin"]["XYZ".index(look[1])]
+        title, subtitle, scale = "SECTION" + cut, f"Vertical cut at {look[1]} {_signed(position, unit)}, looking {look}", frame["scale"]
+    elif kind == "axon":
+        toward = [-value for value in recipe["look"]]
+        iso = max(abs(value) for value in toward) - min(abs(value) for value in toward) <= 1e-9
+        sides = " / ".join(("+" if value > 0 else "-") + name for name, value in zip("XYZ", toward) if abs(value) > 1e-9)
+        title = "ISOMETRIC" if iso else "AXONOMETRIC"
+        subtitle, scale = f"Parallel view from {sides}, whole model, not to scale", f"display {recipe['scale']}"
+    elif kind == "elevation":
+        name = view["arguments"].get("view", "front")
+        look = _axis(recipe["look"])
+        if name == "top":
+            title, subtitle = "TOP VIEW", "Orthographic, looking down; not a cut plan"
+        else:
+            title, subtitle = f"{name.upper()} ELEVATION", f"Orthographic, looking {look}"
+        scale = recipe["scale"]
+    else:
+        scale = recipe["scale"]
+        title, subtitle = "SECTION PERSPECTIVE" + cut, f"Cut plane at {scale}; depth in perspective, not to scale"
+        scale = f"{scale} at the cut"
+    return (view.get("title") or title, subtitle if view.get("subtitle") is None else view["subtitle"], scale)
+
+
+def _section_line(kind: str, recipe: Mapping[str, Any]):
+    """A section view's plane in plan: a point on it and the horizontal direction toward its kept side."""
+
+    if kind == "section":
+        return recipe["frame"]["origin"], recipe["frame"]["look"]
+    if kind == "section-perspective":
+        normal = recipe["section"]["normal"]
+        if abs(normal[2]) > 1e-9:
+            return None
+        return recipe["section"]["origin"], [-value for value in normal]
+    return None
+
+
+def _section_mark(view_id: str, label: str, section, plan_id: str, plan: Mapping[str, Any], unit: str):
+    """Where a vertical section plane crosses a placed horizontal plan, in that plan's own paper mm."""
+
+    from monkeydiagram.documentation.styles import SheetSectionMark
+
+    origin, look = section
+    length = math.hypot(look[0], look[1])
+    lx, ly = look[0] / length, look[1] / length
+    frame = plan["frame"]
+    u0, v0, u1, v1 = frame["crop_uv"]
+    mm_per_unit = UNIT_METRES[unit] * 1000 / int(frame["scale"].split(":")[1])
+    along = (-ly, lx)
+    low, high = -math.inf, math.inf
+    for point, direction, (bottom, top) in zip(origin[:2], along, ((u0, u1), (v0, v1))):
+        if abs(direction) <= 1e-12:
+            if not bottom <= point <= top:
+                low, high = 1.0, 0.0
+            continue
+        first, second = (bottom - point) / direction, (top - point) / direction
+        low, high = max(low, min(first, second)), min(high, max(first, second))
+    if not low < high:
+        raise StudioError(422, "DRAWING_SECTION_MARK_OUTSIDE",
+                          f"Section {label} ({view_id}) does not cross the plan's window; mark it on a plan it cuts.")
+    ends = [(origin[0] + along[0] * t, origin[1] + along[1] * t) for t in (low, high)]
+    paper = [((x - u0) * mm_per_unit, (v1 - y) * mm_per_unit) for x, y in ends]
+    return SheetSectionMark(view_id=plan_id, start_mm=paper[0], end_mm=paper[1], look_mm=(lx, -ly), label=label)
+
+
+def _source_text(binding, model_source, source, unit: str) -> str:
+    """The sheet's statement of its one source, from the registration or receipt that names it."""
+
+    if isinstance(source, NativeModelSource):
+        registration = binding.repository.load_json(source.registration)
+        name = registration.get("sourceFileName") or registration.get("fileName") or "imported model"
+        provider = (registration.get("conversion") or {}).get("provider")
+        via = f", read through {provider}" if provider else ""
+        return f"Source: {name}{via}; model sha256 {source.artifact.sha256[:12]}; lengths in {_UNIT_NAMES[unit]}"
+    return (f"Source: model {model_source.run_id}, state {model_source.state_digest[:12]}; exact STEP sha256 "
+            f"{source.step_sha256[:12]}; lengths in {_UNIT_NAMES[unit]}")
+
+
+def _sheet_view_document(binding, view: Mapping[str, Any], sources: Mapping[str, Any], *, attribution, monitor,
+                         projections) -> SourceDocument:
+    """One placed view drawn, or read back, through its own generator from the sheet's one source."""
+
+    arguments = {**view["arguments"], "drawing_id": view["id"], **sources}
+    if view["kind"] == "plan":
+        from .drawing_plans import generate_plan
+
+        if attribution is None:
+            raise ValueError("A plan on a sheet is drawn for the request's actor")
+        return generate_plan(binding, attribution=attribution, **arguments)
+    if view["kind"] == "elevation":
+        return generate_elevation(binding, monitor=monitor, projections=projections, **arguments)
+    if view["kind"] == "section-perspective":
+        return generate_section_perspective(binding, monitor=monitor, projections=projections, **arguments)
+    raise ValueError(f"unknown sheet view kind {view['kind']!r}")
+
+
+def _view_sheet_scene(style_id, recipe, placed, marks, fonts):
+    """The view sheet's paper scene from its recipe and the retained views' marks; writes nothing."""
+
+    from monkeydiagram.documentation.styles import SheetView, compose_view_sheet
+
+    views = tuple(SheetView(view_id=row["id"], size_mm=tuple(row["sizeMm"]), marks=placed[row["id"]],
+                            place_mm=tuple(row["placeMm"]), title=row["title"], subtitle=row["subtitle"],
+                            scale_label=row["scaleLabel"]) for row in recipe["views"])
+    return compose_view_sheet(style_id=style_id, paper_size_mm=tuple(recipe["paperSizeMm"]), views=views,
+                              title=recipe["title"], sheet_number=recipe["sheetNumber"], subtitle=recipe["subtitle"],
+                              notes=tuple(recipe["notes"]), source_text=recipe["sourceText"], section_marks=marks,
+                              font_mapping=fonts)
+
+
+def _view_sheet(binding, *, source_stage_ref, model_source, source_asset, style_id, views, paper_size_mm, title, subtitle,
+                sheet_number, drawing_id, notes, length_unit, attribution, monitor, projections) -> SourceDocument:
+    """Same-source views, each through its own generator, placed at its own scale where the caller put it.
+
+    Every view is drawn from the sheet's one source (its modelSource, Stage or
+    imported asset, never a borrowed one): an identical view reads its
+    registered revision back, which the sheet then names exactly. Each view's
+    retained SVG is placed as its paper marks, never re-projected. A view that
+    fails, draws nothing or cannot be placed refuses the sheet by name; no
+    sheet is registered and the model and HEAD are untouched.
+    """
+
+    from monkeydiagram.documentation.styles import drawing_style
+
+    selected, stage_ref = _selected_source(binding, source_stage_ref, model_source, source_asset)
+    source, receipt = _complete_source(binding, selected, stage_ref)
+    unit = receipt["identity"]["length_unit"]
+    require_unit(length_unit, unit)
+    try:
+        style = drawing_style(style_id)
+    except ValueError as exc:
+        raise StudioError(422, "DRAWING_STYLE_UNKNOWN", str(exc)) from exc
+    number = sheet_number or "01"
+    drawing_id = drawing_id or f"sheet-{number}"
+    require_identifier(drawing_id, "drawing_id")
+    fonts = _sheet_fonts()
+    sources = {"source_stage_ref": source_stage_ref, "model_source": model_source, "source_asset": source_asset}
+    rows, placed, kinds, recipes = [], {}, {}, {}
+    for view in views:
+        try:
+            document = _sheet_view_document(binding, view, sources, attribution=attribution, monitor=monitor,
+                                            projections=projections)
+        except StudioError as exc:
+            raise StudioError(exc.status, exc.code, f"View {view['id']}: {exc.detail}") from exc
+        if _document_source(document) != selected or document.revision_ref is None:
+            raise StudioError(409, "DRAWING_SOURCE_MISMATCH", f"View {view['id']} was not drawn from the sheet's source.")
+        drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(document.revision_ref, binding.project_id))
+        try:
+            size, marks = svg_paper_marks(drawing.svg)
+        except DrawingSvgError as exc:
+            raise StudioError(422, "DRAWING_SHEET_VIEW_UNSUPPORTED", f"View {view['id']}: {exc}") from exc
+        if not marks:
+            raise StudioError(422, "DRAWING_VIEW_EMPTY", f"View {view['id']} draws nothing in its window; move its window "
+                                                         "or its cut onto the model.")
+        recipe = drawing.receipt["view"]
+        kind = _sheet_view_kind(view, recipe)
+        view_title, view_subtitle, scale = _sheet_view_labels(view, kind, recipe, unit)
+        row = {"id": view["id"], "kind": kind, "placeMm": list(view["place_mm"]), "sizeMm": list(size),
+               "title": view_title, "subtitle": view_subtitle, "scaleLabel": scale, "runId": document.run_id,
+               "assetSha256": document.asset_sha256, "revisionRef": document.revision_ref}
+        if view.get("mark_on") is not None:
+            row["mark"] = {"on": view["mark_on"], "label": view["mark_label"]}
+        rows.append(row)
+        placed[view["id"]], kinds[view["id"]], recipes[view["id"]] = marks, kind, recipe
+    section_marks = []
+    for row in rows:
+        if "mark" not in row:
+            continue
+        target = row["mark"]["on"]
+        section = _section_line(kinds[row["id"]], recipes[row["id"]])
+        if section is None:
+            raise StudioError(422, "DRAWING_SECTION_MARK_INVALID", f"View {row['id']} has no vertical plane to mark on a plan.")
+        if kinds[target] != "plan":
+            raise StudioError(422, "DRAWING_SECTION_MARK_INVALID", f"View {row['id']} is marked on {target}, which is not a "
+                                                                   "horizontal cut plan.")
+        mark = _section_mark(row["id"], row["mark"]["label"], section, target, recipes[target], unit)
+        if mark not in section_marks:  # a section and its perspective through one plane mark it once
+            section_marks.append(mark)
+    recipe = {
+        "kind": "view-sheet", "style": style, "paperSizeMm": list(paper_size_mm or style["paperSizeMm"]),
+        "title": title or binding.project_id, "subtitle": subtitle or "", "sheetNumber": number, "notes": list(notes),
+        "views": rows, "sourceText": _source_text(binding, selected, source, unit),
+        "source": {"modelSource": None if isinstance(selected, DrawingAssetSource) else selected.to_dict(),
+                   "sourceStageRef": None if stage_ref is None else stage_ref.uri,
+                   "modelSha256" if isinstance(source, NativeModelSource) else "stepSha256": _source_digest(source),
+                   "cadReceiptRef": _source_ref(binding, source).uri},
+        "fonts": {name: path.name for name, path in fonts.items()},
+    }
+    if isinstance(selected, DrawingAssetSource):
+        recipe.update(sourceAsset=selected.to_dict(), follow="frozen")
+    recipe_json = canonical_json(recipe, ascii=False)
+    recipe = json.loads(recipe_json)
+    with monitor.measure("drawing_generate", project_id=binding.project_id, run_id=selected.run_id,
+                         source_ref=recipe["source"]["sourceStageRef"] or recipe["source"]["cadReceiptRef"],
+                         details={"scope": "view_sheet", "input_identity": {"view_recipe": {
+                                      "style_id": style_id, "views": [row["id"] for row in rows]}},
+                                  "cache_status": "unknown"}) as operation:
+        with _document_source_lock:
+            for document in list_documents(binding, selected.run_id):
+                if _document_source(document) == selected and document.view_recipe == recipe:
+                    document_bytes(binding, document.run_id, document.asset_sha256)
+                    operation["details"].update(cache_status="hit", execution_path="retained_drawing")
+                    return document
+        operation["details"].update(cache_status="miss", execution_path="view_sheet")
+
+        def draw():
+            try:
+                canvas = _view_sheet_scene(style_id, recipe, placed, tuple(section_marks), fonts)
+                return _sheet_files(canvas, recipe_json), {}
+            except ValueError as exc:
+                raise StudioError(422, "DRAWING_SHEET_LAYOUT_INVALID", str(exc)) from exc
+
+        if projections is None:
+            files = draw()[0]
+        else:
+            files, _, _ = projections.on_demand(on_demand_spec(SHEET, _source_of(selected), {"recipe": recipe}), draw)
+        document = _retain_sheet(binding, selected, stage_ref, files, file_name=f"{drawing_id}.pdf",
+                                 drawing_id=drawing_id, recipe=recipe)
+        operation["details"]["output_refs"] = [document.revision_ref or document.asset_sha256]
+        return document
+
+
+def drawing_file(binding: ProjectBinding, *, run_id: str, asset_sha256: str, revision_ref: str | None,
+                 file_format: str) -> tuple[bytes, str, str]:
+    """One file of a registered drawing: a view's SVG or PNG, or a sheet's PDF, DXF, SVG or PNG; read, never drawn.
+
+    A view revision's files are its receipt's, verified by their digests. A
+    sheet's PDF is its registered document; its DXF, SVG and PNG are served
+    only when that PDF names their digests and the retained bytes still match
+    them. Returns the bytes, media type and file name.
+    """
+
+    document, data = document_bytes(binding, run_id, asset_sha256, revision_ref)
+    stem = Path(document.file_name).stem or (document.drawing_id or "drawing")
+    if document.revision_ref is not None:
+        try:
+            drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(document.revision_ref, binding.project_id))
+        except (DrawingElevationError, TypeError, ValueError) as exc:
+            raise StudioError(409, "DOCUMENT_UNAVAILABLE", "The retained drawing revision cannot be read.") from exc
+        if file_format in ("svg", "png"):
+            return (drawing.svg, SVG_MEDIA_TYPE, f"{stem}.svg") if file_format == "svg" else (drawing.png, PNG_MEDIA_TYPE, f"{stem}.png")
+        raise StudioError(404, "DRAWING_FILE_UNAVAILABLE", "A view drawing keeps SVG and PNG; PDF and DXF belong to a sheet.")
+    if (document.view_recipe or {}).get("kind") not in SHEET_KINDS or document.mime_type != "application/pdf":
+        raise StudioError(404, "DRAWING_FILE_UNAVAILABLE", "This document is not a retained drawing or sheet.")
+    if file_format == "pdf":
+        return data, "application/pdf", document.file_name
+    from pypdf import PdfReader
+
+    try:
+        named = json.loads(PdfReader(BytesIO(data)).metadata.get(SHEET_FILE_DIGESTS) or "null")
+    except (AttributeError, TypeError, ValueError):
+        named = None
+    if not isinstance(named, dict) or not isinstance(named.get(file_format), str):
+        raise StudioError(404, "DRAWING_FILE_UNAVAILABLE", "This sheet was retained before its PDF named its DXF, SVG and "
+                                                           "PNG; its PDF is its registered file.")
+    path = binding.repository.layout.run(document.run_id).workspaces / "documentation" / asset_sha256 / f"sheet.{file_format}"
+    try:
+        content = path.read_bytes()
+    except OSError as exc:
+        raise StudioError(409, "DOCUMENT_UNAVAILABLE", f"The sheet's retained {file_format.upper()} cannot be read.") from exc
+    if hashlib.sha256(content).hexdigest() != named[file_format]:
+        raise StudioError(409, "DOCUMENT_DIGEST_MISMATCH", f"The sheet's {file_format.upper()} no longer matches the digest "
+                                                           "its PDF names.")
+    return content, dict(SHEET_FILES)[file_format], f"{stem}.{file_format}"
