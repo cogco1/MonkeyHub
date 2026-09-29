@@ -1,34 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-449",
-      "lanes": [
-        {
-          "id": "first-reads",
-          "status": "active",
-          "branch": "codex/449-first-reads",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-449-first-reads",
-          "base_ref": "2dbcab57",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "cloud session; master integrates",
-          "modules": [
-            "studio.shell",
-            "studio.binding"
-          ],
-          "write_scope": [
-            "apps/archflow-studio/api/archflow_studio_api/main.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/index.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/boards.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/publication_output.py",
-            "apps/monkeyhub/api/tests/test_runtime_sse.py"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
