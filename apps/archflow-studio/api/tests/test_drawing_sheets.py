@@ -90,12 +90,15 @@ class ImportedModelDrawingTests(unittest.TestCase):
         self.assertEqual(pens["viewRecipe"]["frame"], frame, "a pen change keeps the plane, side, depth and window")
         self.assertEqual(pens["viewRecipe"]["graphics"]["cutLineMm"], 0.5)
         self.assertEqual(pens["replacesPages"], [replacing(section)])
+        # The Diagram form sends its empty annotation lists with every edit: a section takes them as none.
+        form = self.post("plans", previousRevisionRef=pens["revisionRef"], dimensions=[], dressing=[], hatchSpacingMm=0.8)
+        self.assertEqual(form["viewRecipe"]["frame"], frame)
         ref = {key: pens[key] for key in ("runId", "assetSha256", "revisionRef")}
         status = self.client.post("/api/drawings/plans/status", json=ref).json()
         self.assertEqual((status["status"], status["lengthUnit"], status["dimensions"]), ("current", "meter", []))
         vector = self.client.get("/api/drawings/plans/vector", params=ref).json()
         self.assertEqual(vector["anchors"], [], "plan symbols are placed on plans, not sections")
-        moved = self.post("plans", previousRevisionRef=pens["revisionRef"], section={"origin": [0, 1.5, 0], "normal": [0, -1, 0]})
+        moved = self.post("plans", previousRevisionRef=form["revisionRef"], section={"origin": [0, 1.5, 0], "normal": [0, -1, 0]})
         self.assertEqual(moved["viewRecipe"]["frame"]["origin"], [0.0, 1.5, 0.0])
         self.assertEqual(moved["viewRecipe"]["frame"]["far_depth"], 3.0, "moving the plane keeps its depth")
         self.assertEqual(moved["viewRecipe"]["frame"]["crop_uv"], frame["crop_uv"], "and its window")

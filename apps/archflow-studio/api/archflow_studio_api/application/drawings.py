@@ -1064,7 +1064,8 @@ def _section_mark(view_id: str, label: str, section, plan_id: str, plan: Mapping
     mm_per_unit = UNIT_METRES[unit] * 1000 / int(frame["scale"].split(":")[1])
     along = (-ly, lx)
     low, high = -math.inf, math.inf
-    for point, direction, (bottom, top) in zip(origin[:2], along, ((u0, u1), (v0, v1))):
+    plane = (origin[0] - frame["origin"][0], origin[1] - frame["origin"][1])
+    for point, direction, (bottom, top) in zip(plane, along, ((u0, u1), (v0, v1))):
         if abs(direction) <= 1e-12:
             if not bottom <= point <= top:
                 low, high = 1.0, 0.0
@@ -1074,8 +1075,9 @@ def _section_mark(view_id: str, label: str, section, plan_id: str, plan: Mapping
     if not low < high:
         raise StudioError(422, "DRAWING_SECTION_MARK_OUTSIDE",
                           f"Section {label} ({view_id}) does not cross the plan's window; mark it on a plan it cuts.")
-    ends = [(origin[0] + along[0] * t, origin[1] + along[1] * t) for t in (low, high)]
-    paper = [((x - u0) * mm_per_unit, (v1 - y) * mm_per_unit) for x, y in ends]
+    # The plan's u and v are X and Y measured from its frame origin.
+    ends = [(plane[0] + along[0] * t, plane[1] + along[1] * t) for t in (low, high)]
+    paper = [((u - u0) * mm_per_unit, (v1 - v) * mm_per_unit) for u, v in ends]
     return SheetSectionMark(view_id=plan_id, start_mm=paper[0], end_mm=paper[1], look_mm=(lx, -ly), label=label)
 
 

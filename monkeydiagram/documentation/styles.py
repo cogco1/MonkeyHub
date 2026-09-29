@@ -548,7 +548,7 @@ def compose_view_sheet(*, style_id: str, paper_size_mm: Sequence[float], views: 
     rows = []
     column = text_right - number_width - 8.0 - middle
     for paragraph in ((source_text,) if source_text else ()) + tuple(notes):
-        rows.extend(_wrapped(canvas, paragraph, column / 1.0, small_pt) if column > 0 else [paragraph])
+        rows.extend(_wrapped(canvas, paragraph, column, small_pt) if column > 0 else [paragraph])
     line = strip_top + 3.0 + small_pt * _PT
     for row in rows:
         if line > height - margin - 1.5 or sheet.width(row, small_pt) > column:

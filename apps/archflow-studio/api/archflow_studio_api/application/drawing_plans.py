@@ -23,7 +23,8 @@ from archflow.project.repository import ProjectRepositoryError
 from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
 from monkeydiagram.drawing_elevation import (
     DrawingElevationError, ElevationView, NativeModelSource, SectionPerspectiveError, current_object_id, freeze_cut_plan,
-    model_axis_section, read_elevation_source, read_model_axis_elevation, plan_dressing_anchors, resolve_plan_dressing,
+    inspection_witness_ids, model_axis_section, read_elevation_source, read_model_axis_elevation, plan_dressing_anchors,
+    resolve_plan_dressing,
 )
 
 from .artifacts import (
@@ -82,10 +83,14 @@ def _frame_corners(receipt, object_ids, origin, axes):
 
 
 def _drawn_objects(receipt, hidden):
-    """The physical objects a cut plan draws: neither hidden by the recipe nor invisible source evidence."""
-    semantics = receipt.get("expected_semantics", {}).get("objects", {})
-    return [object_id for object_id in receipt["physical_object_ids"]
-            if object_id not in hidden and semantics.get(object_id, {}).get("visible", True) is not False]
+    """The physical objects a cut plan draws, as ``freeze_cut_plan`` selects them.
+
+    Neither hidden by the recipe (a retained name read as the model now names
+    it, ``current_object_id``) nor inspection evidence the source keeps hidden.
+    """
+    physical = receipt["physical_object_ids"]
+    left_out = {current_object_id(name, set(physical)) for name in hidden} | inspection_witness_ids(receipt)
+    return [object_id for object_id in physical if object_id not in left_out]
 
 
 def _frames_something(receipt, frame: ElevationView, hidden) -> bool:
@@ -292,7 +297,7 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
                           "This drawing is a horizontal cut plan and stays one; draw a vertical section as a new drawing.")
     if not vertical and depth is not None:
         raise StudioError(422, "DRAWING_SECTION_REQUIRED", "depth belongs to a vertical section; give its section plane.")
-    if vertical and (dimensions or dressing is not None or dressing_operations is not None or old.get("dressing")):
+    if vertical and (dimensions or dressing or dressing_operations or old.get("dressing")):
         raise StudioError(422, "DRAWING_SECTION_ANNOTATION_INVALID",
                           "Opening dimensions and plan symbols belong to a horizontal cut plan, not a vertical section.")
     model_source, stage_ref = _plan_source(binding, source_stage_ref, model_source, source_asset)
@@ -482,11 +487,10 @@ def _read_set(binding, receipt, frame, hidden):
     if canonical_digest(program) != identity["program_digest"]:
         raise ValueError("The exact compiled program does not match its CAD receipt.")
     x0, y0, x1, y1 = frame.crop_uv
-    drawn = [object_id for object_id in receipt["physical_object_ids"] if object_id not in hidden
-             and receipt["expected_semantics"]["objects"][object_id].get("visible", True) is not False]
     if frame.up == (0, 0, 1):
         # A vertical section reads what lies in its window and in the slab beyond its plane.
-        corners = _frame_corners(receipt, drawn, frame.origin, (frame.right, frame.up, frame.look))
+        corners = _frame_corners(receipt, _drawn_objects(receipt, hidden), frame.origin,
+                                 (frame.right, frame.up, frame.look))
         return load_compiled_geometry_program(program), {
             object_id for object_id, points in corners
             if not (max(u for u, _, _ in points) < x0 or min(u for u, _, _ in points) > x1
@@ -495,7 +499,9 @@ def _read_set(binding, receipt, frame, hidden):
     cut = frame.origin[2]
     low = cut - frame.far_depth
     selected = set()
-    for object_id in drawn:
+    for object_id in receipt["physical_object_ids"]:
+        if object_id in hidden or receipt["expected_semantics"]["objects"][object_id].get("visible", True) is False:
+            continue
         bounds = receipt["readback"][object_id]["bbox"]
         a, b = bounds["min"], bounds["max"]
         if b[0] < x0 or a[0] > x1 or b[1] < y0 or a[1] > y1 or b[2] < low or a[2] > cut:
