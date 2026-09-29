@@ -265,7 +265,8 @@ class LimitTests(ConstructionTestCase):
         error = self.refused("x = 1\ny = " + "[" * 120 + "]" * 120)
         self.assertEqual(error.line, 2)
         self.assertIn("100 levels", error.message)
-        self.assertIn("too deeply", self.refused("x = " + "+".join(["1"] * 5000)).message)
+        # The same refusal whether the platform's parser or the nesting limit meets it first.
+        self.assertIn("more than 100 levels deep", self.refused("x = " + "+".join(["1"] * 5000)).message)
         self.assertEqual(self.log("x = " + "+".join(["1"] * 80) + "\nprint(x)"), ["80"])
 
 

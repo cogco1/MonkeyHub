@@ -287,8 +287,12 @@ def parse(script: object) -> tuple[ast.Module, list[str]]:
     except SyntaxError as exc:
         raise ConstructionError(short(exc.msg or "invalid syntax", 120), line=exc.lineno, column=exc.offset,
                                 source_line=_source_line(lines, exc.lineno)) from None
-    except (ValueError, RecursionError, MemoryError):
-        raise ConstructionError("the script cannot be read: it nests too deeply or is not valid text") from None
+    except (RecursionError, MemoryError):
+        # Where the platform's parser gives up first: past any depth the nesting limit allows,
+        # so it is said the same way as the limit below, whichever of the two meets it.
+        raise ConstructionError(f"the script nests more than {MAX_NESTING} levels deep") from None
+    except ValueError:
+        raise ConstructionError("the script cannot be read: it is not valid text") from None
     pending: list[tuple[ast.AST, int, object]] = [(tree, 0, None)]
     while pending:  # iteratively, so that a deep tree is refused before anything recurses over it
         node, depth, position = pending.pop()
