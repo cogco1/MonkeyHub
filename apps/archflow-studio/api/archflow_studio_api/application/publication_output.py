@@ -6,7 +6,8 @@ from pathlib import Path
 import re
 
 from PIL import Image
-# pypdf, PyMuPDF (fitz) and python-pptx load where a document is read or exported: about 0.2 s of a worker's start otherwise (#449).
+# pypdf, PyMuPDF and python-pptx load where a document is read or exported: about 0.2 s of a worker's start otherwise (#449).
+# PyMuPDF as ``pymupdf``: importing it as ``fitz`` prints a deprecation line on stdout, which an agent's output stream carries.
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
@@ -158,7 +159,7 @@ def _ppt_pdf(slide, data, item):
     rotated text and partly cropped primitives retain the exact raster preview.
     PDF export is independent of this bounded PPTX representation.
     """
-    import fitz
+    import pymupdf as fitz
     from pptx.dml.color import RGBColor
     from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE, MSO_CONNECTOR
     from pptx.util import Pt
