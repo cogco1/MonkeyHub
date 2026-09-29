@@ -139,8 +139,8 @@ class WallProjectPointAuthoringTests(unittest.TestCase):
             # Check the cut wall and that positive void separately, never sum
             # the inspection solid back into the wall's material volume.
             entries={entry.name:entry for entry in read_step(steps[0],length_unit="meter")}
-            self.assertEqual(set(entries),{"obj-wall-free-cut","obj-wall-free-aperture-window"})
-            cut=entries["obj-wall-free-cut"].shape
+            self.assertEqual(set(entries),{"obj-wall-free","obj-wall-free-aperture-window"})
+            cut=entries["obj-wall-free"].shape
             aperture=entries["obj-wall-free-aperture-window"].shape
             for shape in (cut,aperture):
                 measured=measure_shape(shape)
@@ -163,8 +163,8 @@ class WallProjectPointAuthoringTests(unittest.TestCase):
             continued_steps=list((self.project/"runs"/next_run).rglob("*.step"))
             self.assertTrue(continued_steps)
             continued={entry.name:entry for entry in read_step(continued_steps[0],length_unit="meter")}
-            self.assertAlmostEqual(measure_shape(continued["obj-wall-free-cut"].shape).volume,(7*3-1)*.3,places=6)
-            self.assertEqual(classify_program_point(continued["obj-wall-free-cut"].shape,(3,1.5,1.85)),"outside")
+            self.assertAlmostEqual(measure_shape(continued["obj-wall-free"].shape).volume,(7*3-1)*.3,places=6)
+            self.assertEqual(classify_program_point(continued["obj-wall-free"].shape,(3,1.5,1.85)),"outside")
             self.assertEqual(len([e for e in self.retained(next_run).entities if e.entity_id=="wall-free"]),1)
             self.assertEqual((self.project/"HEAD").read_bytes(),head_before)
             self.assertEqual((self.project/"input/runner/state-record.json").read_bytes(),authored_before)

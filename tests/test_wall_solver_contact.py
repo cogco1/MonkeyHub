@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import unittest
 from dataclasses import replace
+from types import SimpleNamespace
 
+from archflow.state.geometry_program import GeometryOperationKind, delivered_object_ids
 from monkeyarch.capabilities.wall_solver import (
     CONTACT_TOLERANCE_M, OpeningKind, OpeningRequest, WallElement, WallSolverError, _overlaps, solve_wall,
 )
@@ -47,7 +49,7 @@ class WallEndOpeningTests(unittest.TestCase):
 
     def test_an_opening_ending_at_the_wall_end_keeps_its_full_width(self) -> None:
         result = solve_wall(self.wall, (self.window,))
-        self.assertEqual(max(self._profile(result, "wall")), 9.68)
+        self.assertEqual(max(self._profile(result, "wall-body")), 9.68)
         self.assertEqual(self._profile(result, "wall-void-window"), {7.01, 9.68})
         self.assertAlmostEqual(result.voids[0].width, 2.67)
 
@@ -96,6 +98,30 @@ class ArchOpeningTests(unittest.TestCase):
         primitives = {op.op_id for op in result.operations if not op.input_object_ids}
         self.assertEqual({binding.op_id for binding in result.datum_bindings}, primitives)
         self.assertEqual(sum(op.kind.value == "revolve" for op in result.operations), 2)
+
+
+class WallIdentityTests(unittest.TestCase):
+    """#419: a wall delivers obj-<wall> with or without openings; other elements may void it."""
+
+    def _wall(self) -> WallElement:
+        return WallElement("w", (0.0, 0.0), (1.0, 0.0), 6.0, 0.3, 3.0, "L1", "world", "binding-w")
+
+    def test_the_delivered_wall_keeps_its_id_as_openings_come_and_go(self) -> None:
+        window = OpeningRequest("win", OpeningKind.WINDOW, 1.0, 1.2, 0.9, 2.1, "binding-win")
+        door = OpeningRequest("door", OpeningKind.DOOR, 3.0, 1.0, 0.0, 2.1, "binding-door")
+        for openings in ((), (window,), (window, door)):
+            with self.subTest(openings=[item.opening_id for item in openings]):
+                solution = solve_wall(self._wall(), openings)
+                delivered = delivered_object_ids(SimpleNamespace(operations=solution.operations))
+                self.assertIn("obj-w", delivered)
+                self.assertEqual([name for name in delivered if name.endswith("-cut")], [])
+                self.assertEqual(solution.realized_object_id, "obj-w")
+
+    def test_another_element_voids_the_wall_through_the_same_cut(self) -> None:
+        solution = solve_wall(self._wall(), (), void_object_ids=("obj-niche",))
+        cut = next(op for op in solution.operations if op.op_id == "w")
+        self.assertEqual(cut.kind, GeometryOperationKind.BOOLEAN_DIFFERENCE)
+        self.assertEqual((cut.input_object_ids, cut.output_object_ids), (("obj-niche", "obj-w-body"), ("obj-w",)))
 
 
 if __name__ == "__main__":

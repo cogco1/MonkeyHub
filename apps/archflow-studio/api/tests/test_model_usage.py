@@ -18,9 +18,9 @@ from archflow_studio_api.application.intent_agent import (
 
 
 ANSWER = {
-    "status": "compiled", "targetComponentId": "portico",
-    "elementId": "portico-base", "utterance": "set height to 0.8",
-    "semanticEdit": None, "why": "Requested height.", "question": None,
+    "status": "compiled", "script": None, "facets": None, "parameters": None,
+    "utterance": "set height to 0.8", "targetId": "portico-base",
+    "why": "Requested height.", "question": None,
 }
 CODEX_USAGE = {
     "input_tokens": 150, "cached_input_tokens": 100,

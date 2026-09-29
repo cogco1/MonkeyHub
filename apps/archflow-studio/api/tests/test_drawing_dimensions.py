@@ -137,7 +137,7 @@ class DrawingDimensionTests(CandidateTestCase):
         model, source = self.source()
         with patch("archflow_studio_api.application.drawing_dimensions.section_occt_lines",
                    side_effect=AssertionError("hidden anchors do not need a section solve")):
-            result, = self.resolve(model, source, hidden_object_ids=("obj-door-wall-cut",))
+            result, = self.resolve(model, source, hidden_object_ids=("obj-door-wall",))
         self.assertEqual(result["status"], "outside-view")
         self.assertNotIn("value", result)
         self.assertFalse(result["canDrive"])
@@ -206,7 +206,7 @@ class DrawingDimensionTests(CandidateTestCase):
 
     def test_missing_and_duplicate_jambs_never_rebind_to_nearest_segments(self):
         model, source = self.source()
-        lines = occt_backend.section_occt_lines(source.entries, object_ids=("obj-door-wall-cut",),
+        lines = occt_backend.section_occt_lines(source.entries, object_ids=("obj-door-wall",),
             origin=self.frame.origin, right=self.frame.right, up=self.frame.up, linear_deflection=self.frame.linear_deflection)
         for replacement, expected in (((), "missing"), (lines + lines, "ambiguous"),
             (tuple(replace(line, points=tuple((x + 0.01, y) for x, y in line.points)) for line in lines), "missing")):
@@ -223,7 +223,7 @@ class DrawingDimensionTests(CandidateTestCase):
         # outside bounds and the source width parameter still match.
         _, filled_source = self.source(openings=[])
         filled = next(entry.shape for entry in filled_source.entries if entry.name == "obj-door-wall")
-        entries = tuple(replace(entry, shape=filled) if entry.name == "obj-door-wall-cut" else entry for entry in source.entries)
+        entries = tuple(replace(entry, shape=filled) if entry.name == "obj-door-wall" else entry for entry in source.entries)
         result, = self.resolve(model, replace(source, entries=entries))
         self.assertEqual(result["status"], "missing")
         self.assertNotIn("value", result)

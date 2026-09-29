@@ -125,10 +125,11 @@ CAD 导出共用 `cad_workspace_path`，默认进入 `runs/<run-id>/workspaces/c
 
 **当前聊天入口：** CLI 收到绑定项目和少量工具说明。修改已有构件的数值时，先用
 已知的候选来源和目标直接读取能力详情；首次不清楚能力或对象时，再查询
-`GET /api/capabilities?goal=...` 或项目状态。沿详情返回的请求执行时，`studio_request` 的
+`GET /api/capabilities?goal=...` 或构造模型 `GET /api/construction/model`。沿详情返回的请求执行时，`studio_request` 的
 `awaitSeconds` 可让 proposal 候选或一次数值修改在同一次工具调用内提交、等待任务完成，并行读取候选和比较结果。
-多个已确定的形体通过 sketch 的 `sketches` 一次提交；确定性的连续修改通过 `sourceProposalId` 在内存中累积，保持该链原始 `baseStateDigest`。
-下一步设计决策依赖实际结果时，可先生成并观察候选；后续从 `GET /api/state?run=<candidateId>` 读取准确状态，写入时使用该状态的 `stateDigest` 和 `sourceRunId`。
+创建和修改几何都写成一段构造脚本，经 `POST /api/proposals/construction` 一次提交（`stateDigest`、`script`，可选 `parameters`、`summary`、`sourceRunId`、`sourceProposalId`、`keep`）：多个形体、变量、循环和函数都在同一段脚本里，脚本被拒绝时返回出错的行、列和源代码行。
+词汇、约定和限制见 `GET /api/construction`，聊天提示已含同一词汇，不需先查询。确定性的连续修改通过 `sourceProposalId` 在内存中累积，保持该链原始 `baseStateDigest`。
+下一步设计决策依赖实际结果时，可先生成并观察候选；后续从 `GET /api/construction/model?run=<candidateId>` 读取准确状态（按几何 id 列出形态、包围盒、切割关系、facets 及其解锁的能力），写入时使用该状态的 `stateDigest` 和 `sourceRunId`。
 同一 Stage 内允许多轮候选观察与修改，不自动接受或发布。修改方法、schema 查询和状态刷新按实际需要选择。
 明确锁定或解锁参数使用 `POST /api/proposals/parameter-locks`，提交准确来源、`stateDigest`、
 `parameterKeys` 和 `action: lock|unlock`，再通过既有 proposal candidate 入口留存，并从返回的候选继续。
@@ -136,17 +137,18 @@ CAD 导出共用 `cad_workspace_path`，默认进入 `runs/<run-id>/workspaces/c
 新会话 ContextPack 会读到；普通编辑不能清锁、删除既有绑定或将其换成常量／其他参数，新增引用与未锁字段仍可修改。
 这是参数范围的约束，不是整个体块冻结，也不代表 Stage 接受。配置 actor 认证时，锁与解锁使用现有 `accept` 权限；
 默认本地无认证模式只能归属于本地调用边界，不能据此证明自然人操作。该动作不提供给聊天 MCP。
-需要共享尺寸或联动的设计，通过同一个 `POST /api/proposals` 提交 `semanticEdit`：当前 Agent 直接写入已有的构件、参数、表达式和关系契约，不再调用第二个模型。
+需要共享尺寸或联动的设计，参数随脚本的 `parameters` 一起提交，脚本用 `param(key)` 把它绑定为高度或 `at` 偏移；
+关系、读数和构件意图通过同一个 `POST /api/proposals` 的 `semanticEdit` 提交，不再调用第二个模型。Agent 的 `semanticEdit` 不写几何行（`Element@1`／`Type@1`），Hub 会拒绝并指明构造路径。
 `utterance` 与 `semanticEdit` 二选一；后续可只提交 `{key, value}` 参数更新，保留原有表达式和几何中的 `@key` 绑定。
-prism/planar-surface 的轮廓坐标支持参数引用；渐变截面形体可使用已公开的单个 `loft`，当前支持顶点对应的闭合折线截面及 normal/straight 两种方式。
-`studio_schema` 的 `producer` 选项可只查询所需 producer 的请求契约，避免读取无关几何与重复响应字段。
+渐变截面形体用脚本的 `loft(sections)`，各截面点数相同；`cut(host, cutter)` 从形体中挖去另一形体，挖切体保留自己的 id 并隐藏在模型中。
+脚本做出的形体不带含义：含义之后用 `POST /api/proposals/facets` 以 facets 加到同一几何 id 上，只改该构件，几何与依赖不变。
+facets 解锁的能力才可使用，例如 `architectural.role = wall` 之后的门窗入口 `POST /api/proposals/hosted-opening`；
+某个领域需要的含义用 `GET /api/domains/{domain}/readiness` 询问（`GET /api/domains` 列出各领域），它只列出缺少的 facets，不根据形状猜测。
+完整的 Agent 契约见[构造 API 规格 §3.2](2026-09-28-construction-api.md#32-the-agent-contract-after-this-change)。
 候选读回直接返回保留 inspection 的对象包围盒、单位和坐标系；首次候选没有上一 run 时不请求比较，inspection 缺失会明确说明。包围盒和技术检查不代替视觉检查或空间意图验收。
-已有标高编辑 `POST /api/proposals/elevation` 可通过聊天 MCP 调用并查询 schema，沿用项目绑定、准确来源和 keep 条件。
-需要保留下部、压低上部的 planar-surface 批量修改，可用已有 `POST /api/proposals/transform`
-的 `kind: compress-above`，传 `componentId` 或 `elementIds` 二选一、`threshold` 和 `factor`。
-阈值使用项目世界坐标 +Y 高程；`Y ≤ threshold` 保持，以上相对阈值乘 `0 < factor ≤ 1`。
-组件选择只匹配该组件，不隐式递归。适配器在一个提案内完成跨界交点和轮廓变换，Agent 不需逐面计算、修正字段或分块提交；
-随后走原 candidate 执行与读回。非平面结果、参数绑定和现有依赖限制会整批拒绝，不能据此声称任意模型均支持降高。
+标高、移动、推拉和删除都在脚本中完成（`level(id)`、`top(obj)`、`set_base`、`set_height`、`move`、`pushpull`、`delete`）。
+`POST /api/proposals/sketch`、`/transform`、`/push-pull`、`/elevation`、`/delete` 和 `GET /api/state` 仍服务 Studio 网页端的直接绘制与编辑，
+包括保留下部、压低上部的 `kind: compress-above` 批量降高（见 [PROTOCOL](PROTOCOL.md)）；它们不向聊天 Agent 开放，Agent 调用时 Hub 拒绝并指明构造路径。
 
 实际看图使用 `visual_review`。原生聊天默认 `delivery: frames`，由 Runtime 按准确来源渲染，
 把原生图像交给当前聊天模型检查，不要求另配视觉 provider；只有明确选择 `delivery: observation`
@@ -230,8 +232,10 @@ Hub 启动时自动准备 Monitor；新建、连接或切换项目后调用 `POS
 该入口为真正空的项目准备建模根、零标高和建模分工，保留已有设计、画板和上传资料。
 准备失败保留已创建的项目，重试继续准备同一项目；工具页面首次打开才加载，后续切换保留页面。
 项目列表同时读取已配置工作目录中的真实项目，模型连接失败不会让已创建项目在刷新或重启后消失。
-源码版本更新后需重启整个 Hub，使 Hub 和新启动的工具使用同一版本。独立 API 客户端可调用同一入口，
-随后读取 `/api/state` 和 `/api/state/frame` 创建首个 sketch 候选；首次请求省略 `sourceRunId`。
+源码版本更新后需重启整个 Hub，使 Hub 和新启动的工具使用同一版本。独立 API 客户端（包括聊天 Agent）可调用同一入口；
+带 `base=true` 时回答已含 `stateDigest`（聊天自动加上），否则读取 `GET /api/construction/model`，
+随后用 `POST /api/proposals/construction` 提交第一段构造脚本并生成首个候选；首次请求省略 `sourceRunId`。
+Studio 网页端仍读取 `/api/state` 和 `/api/state/frame`，用自己的绘制路由创建首个 sketch 候选。
 各项产物沿 P036 的目录规则保存，子区域随相应操作出现；历史项目是否可用以仓库读取结果为准，
 不以所有空目录是否齐全判断。
 
