@@ -1,43 +1,100 @@
 """Observe exact models and generate their retained drawing revisions."""
 
 import base64
+import hashlib
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Path, Query
+from fastapi.responses import Response
 from starlette.requests import Request
 
 from ..application.authentication import request_attribution
 from ..application.binding import bound_project
-from ..application.drawings import generate_elevation, generate_section_perspective, generate_sheet, model_view
+from ..application.drawings import drawing_file, generate_elevation, generate_section_perspective, generate_sheet, model_view
 from ..application.drawing_corrections import drawing_corrections
 from ..application.drawing_plans import generate_plan, plan_status, plan_dimension_choices, dimension_proposal, plan_vector
 from ..transport.artifacts import ModelSourceDto, SourceDocumentDto, document_dto, model_source_from
 from ..transport.drawings import (
-    DrawingCorrectionsDto, DrawingStylesDto, ElevationRequestDto, ModelViewDto, ModelViewName, SheetRequestDto,
-    PlanRequestDto, PlanStatusRequestDto, PlanStatusDto,
-    PlanDimensionChoicesDto, PlanDimensionProposalRequestDto, PlanVectorDto, SectionPerspectiveRequestDto,
+    DrawingCorrectionsDto, DrawingFileFormat, DrawingStylesDto, ElevationDrawingDto, ElevationRequestDto, ModelViewDto,
+    ModelViewName, SheetRequestDto, SheetViewDto,
+    PlanDrawingDto, PlanRequestDto, PlanStatusRequestDto, PlanStatusDto,
+    PlanDimensionChoicesDto, PlanDimensionProposalRequestDto, PlanVectorDto, SectionPerspectiveDrawingDto,
+    SectionPerspectiveRequestDto,
 )
 from ..transport.errors import StudioError
 from ..transport.proposal import ProposalDto, to_dto as proposal_dto
+from .artifacts import IMMUTABLE, _content_disposition
 from .projections import ready_projections
 
 router = APIRouter(tags=["drawings"])
 
 
+def _source(payload) -> dict:
+    """The one exact source a drawing request names, as the generators take it."""
+    return {"source_stage_ref": payload.source_stage_ref,
+            "source_asset": None if payload.source_asset is None else payload.source_asset.model_dump(by_alias=True),
+            "model_source": None if payload.model_source is None else model_source_from(payload.model_source)}
+
+
+def plan_arguments(payload: PlanDrawingDto) -> dict:
+    """A cut plan's or vertical section's own fields as ``generate_plan`` takes them."""
+    values = payload.model_dump(include=set(PlanDrawingDto.model_fields) - {
+        "dimensions", "dressing", "dressing_operations", "hatch", "beyond"})
+    return {**values,
+            "hatch": None if payload.hatch is None else payload.hatch.model_dump(by_alias=True),
+            "beyond": None if payload.beyond is None else payload.beyond.model_dump(by_alias=True),
+            "dimensions": None if payload.dimensions is None else [row.model_dump(by_alias=True) for row in payload.dimensions],
+            "dressing": None if payload.dressing is None else [row.model_dump(by_alias=True) for row in payload.dressing],
+            "dressing_operations": None if payload.dressing_operations is None else [
+                row.model_dump(by_alias=True) for row in payload.dressing_operations]}
+
+
+def elevation_arguments(payload: ElevationDrawingDto) -> dict:
+    """An elevation's or axonometric's own fields as ``generate_elevation`` takes them."""
+    return {"view": payload.view, "direction": payload.direction, "drawing_id": payload.drawing_id,
+            "hidden_lines": payload.hidden_lines, "scale_denominator": payload.scale_denominator,
+            "length_unit": payload.length_unit}
+
+
+def section_perspective_arguments(payload: SectionPerspectiveDrawingDto) -> dict:
+    """A section perspective's own fields as ``generate_section_perspective`` takes them."""
+    graphics = {key: value for key, value in (("cutLineMm", payload.cut_line_mm), ("visibleLineMm", payload.visible_line_mm),
+                                              ("hatchSpacingMm", payload.hatch_spacing_mm)) if value is not None}
+    return {"section": payload.section.model_dump(by_alias=True),
+            "camera": None if payload.camera is None else payload.camera.model_dump(by_alias=True, exclude_none=True),
+            "depth": payload.depth, "hidden_object_ids": tuple(payload.hidden_object_ids), "drawing_id": payload.drawing_id,
+            "scale_denominator": payload.scale_denominator, "graphics": graphics or None,
+            "hatch": None if payload.hatch is None else payload.hatch.model_dump(by_alias=True, exclude_none=True),
+            "beyond": None if payload.beyond is None else payload.beyond.model_dump(), "length_unit": payload.length_unit}
+
+
+def _sheet_view(view: SheetViewDto) -> dict:
+    """One placed view: where it goes and its own route's arguments, the drawing identity being the view's id."""
+    if view.plan is not None:
+        kind, arguments = "plan", plan_arguments(view.plan)
+    elif view.elevation is not None:
+        kind, arguments = "elevation", elevation_arguments(view.elevation)
+    else:
+        kind, arguments = "section-perspective", section_perspective_arguments(view.section_perspective)
+    arguments.pop("drawing_id", None)
+    return {"id": view.id, "kind": kind, "arguments": arguments, "place_mm": list(view.place_mm), "title": view.title,
+            "subtitle": view.subtitle, "mark_on": view.mark_on, "mark_label": view.mark_label}
+
+
 @router.post("/drawings/plans", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)
 def create_plan(request: Request, payload: PlanRequestDto) -> SourceDocumentDto:
+    """Retain a horizontal cut plan, or with section a vertical model-axis section, and register it in the documents list.
+
+    Both are one composition over the exact source (the cut filled, what lies beyond it drawn); a rebuild keeps its
+    orientation, plane, kept side and depth. Refusals are named: SECTION_PLANE_NOT_MODEL_AXIS,
+    SECTION_PLANE_MISSES_MODEL, SECTION_LINE_DEGENERATE, SECTION_NORMAL_DEGENERATE, DRAWING_ORIENTATION_CHANGED,
+    DRAWING_KIND_CHANGED (the id names another kind of drawing), DRAWING_SECTION_ANNOTATION_INVALID,
+    DRAWING_UNIT_MISMATCH and the cut plan's own.
+    """
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
-    values = payload.model_dump(exclude={"project_id", "model_source", "source_asset", "dimensions", "dressing", "dressing_operations",
-                                         "hatch", "beyond"})
-    return document_dto(generate_plan(binding, **values, attribution=request_attribution(request),
-        hatch=None if payload.hatch is None else payload.hatch.model_dump(by_alias=True),
-        beyond=None if payload.beyond is None else payload.beyond.model_dump(by_alias=True),
-        source_asset=None if payload.source_asset is None else payload.source_asset.model_dump(by_alias=True),
-        model_source=None if payload.model_source is None else model_source_from(payload.model_source),
-        dimensions=None if payload.dimensions is None else [row.model_dump(by_alias=True) for row in payload.dimensions],
-        dressing=None if payload.dressing is None else [row.model_dump(by_alias=True) for row in payload.dressing],
-        dressing_operations=None if payload.dressing_operations is None else [row.model_dump(by_alias=True) for row in payload.dressing_operations]))
+    return document_dto(generate_plan(binding, **plan_arguments(payload), **_source(payload),
+                                      attribution=request_attribution(request)))
 
 
 @router.get("/drawings/plans/vector", response_model=PlanVectorDto, response_model_by_alias=True)
@@ -136,17 +193,54 @@ def read_drawing_styles() -> DrawingStylesDto:
 
 @router.post("/drawings/sheets", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)
 def create_sheet(request: Request, payload: SheetRequestDto) -> SourceDocumentDto:
+    """Compose one sheet of one exact source, retained as PDF, DXF, SVG and PNG and registered as its PDF.
+
+    Without views: front, right and top at one scale in the style's layout. With views: each view is drawn, or its
+    registered revision read back, through its own route's owner from this request's source, then placed at its own
+    scale at placeMm; its revision is named in the sheet's viewRecipe.views. Read the sheet's files with
+    GET /api/drawings/{assetSha256}/files/{format}. Refusals are named: DRAWING_SHEET_LAYOUT_INVALID,
+    DRAWING_VIEW_EMPTY, DRAWING_SHEET_VIEW_UNSUPPORTED, DRAWING_SECTION_MARK_INVALID, DRAWING_SECTION_MARK_OUTSIDE,
+    DRAWING_UNIT_MISMATCH, and each view's own, prefixed with its id. A refused sheet registers no sheet, but the views
+    drawn before the refusal stay registered as their own routes register them, including a view refused here for
+    drawing nothing; the same request again reads those views back rather than drawing them again.
+    """
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
     return document_dto(generate_sheet(
-        binding, source_stage_ref=payload.source_stage_ref,
-        source_asset=None if payload.source_asset is None else payload.source_asset.model_dump(by_alias=True),
-        model_source=None if payload.model_source is None else model_source_from(payload.model_source),
+        binding, **_source(payload),
         style_id=payload.style_id, scale_denominator=payload.scale_denominator,
         hidden_object_ids=tuple(payload.hidden_object_ids), outline_object_ids=tuple(payload.outline_object_ids),
         notes=tuple(payload.notes), monitor=request.app.state.monitor, projections=ready_projections(request.app.state),
+        views=None if payload.views is None else tuple(_sheet_view(view) for view in payload.views),
+        paper_size_mm=payload.paper_size_mm, title=payload.title, subtitle=payload.subtitle,
+        sheet_number=payload.sheet_number, drawing_id=payload.drawing_id, length_unit=payload.length_unit,
+        attribution=request_attribution(request),
     ))
+
+
+@router.get("/drawings/{asset_sha256}/files/{file_format}", response_class=Response,
+            responses={200: {"content": {"application/pdf": {}, "application/dxf": {}, "image/svg+xml": {}, "image/png": {}}}})
+def read_drawing_file(request: Request, asset_sha256: str = Path(pattern=r"^[0-9a-f]{64}$"),
+                      file_format: DrawingFileFormat = Path(description=(
+                          "svg or png of a view drawing; pdf, dxf, svg or png of a sheet: the same paper scene.")),
+                      run_id: str = Query(alias="runId", min_length=1),
+                      revision_ref: str | None = Query(default=None, alias="revisionRef")) -> Response:
+    """One retained file of a registered drawing, read and verified, never drawn again.
+
+    A view drawing (plan, section, elevation, axonometric, section perspective) has its SVG and PNG; a sheet has its
+    PDF and the DXF, SVG and PNG of the same paper scene, which its PDF names by digest. Address it as the documents
+    list does: assetSha256, runId and, for a view, its revisionRef, which a view's files need
+    (DRAWING_REVISION_REQUIRED): two revisions can share a PNG yet differ in SVG. DRAWING_FILE_UNAVAILABLE names a
+    file a drawing does not have, including a sheet retained before its PDF named its other files.
+    """
+    data, media_type, file_name = drawing_file(bound_project(request.app.state), run_id=run_id, asset_sha256=asset_sha256,
+                                               revision_ref=revision_ref, file_format=file_format)
+    headers = {"ETag": f'"{hashlib.sha256(data).hexdigest()}"', "Cache-Control": IMMUTABLE,
+               "Content-Disposition": _content_disposition(file_name, asset_sha256), "X-Content-Type-Options": "nosniff"}
+    if file_format == "svg":
+        headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; font-src data:"
+    return Response(content=data, media_type=media_type, headers=headers)
 
 
 @router.post("/drawings/section-perspectives", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)
@@ -169,18 +263,8 @@ def create_section_perspective(request: Request, payload: SectionPerspectiveRequ
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
-    graphics = {key: value for key, value in (("cutLineMm", payload.cut_line_mm), ("visibleLineMm", payload.visible_line_mm),
-                                              ("hatchSpacingMm", payload.hatch_spacing_mm)) if value is not None}
     return document_dto(generate_section_perspective(
-        binding, source_stage_ref=payload.source_stage_ref,
-        source_asset=None if payload.source_asset is None else payload.source_asset.model_dump(by_alias=True),
-        model_source=None if payload.model_source is None else model_source_from(payload.model_source),
-        section=payload.section.model_dump(by_alias=True),
-        camera=None if payload.camera is None else payload.camera.model_dump(by_alias=True, exclude_none=True),
-        depth=payload.depth, hidden_object_ids=tuple(payload.hidden_object_ids), drawing_id=payload.drawing_id,
-        scale_denominator=payload.scale_denominator, graphics=graphics or None,
-        hatch=None if payload.hatch is None else payload.hatch.model_dump(by_alias=True, exclude_none=True),
-        beyond=None if payload.beyond is None else payload.beyond.model_dump(), monitor=request.app.state.monitor,
+        binding, **_source(payload), **section_perspective_arguments(payload), monitor=request.app.state.monitor,
         projections=ready_projections(request.app.state),
     ))
 
@@ -191,10 +275,6 @@ def create_elevation(request: Request, payload: ElevationRequestDto) -> SourceDo
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
     return document_dto(generate_elevation(
-        binding, source_stage_ref=payload.source_stage_ref,
-        source_asset=None if payload.source_asset is None else payload.source_asset.model_dump(by_alias=True),
-        model_source=None if payload.model_source is None else model_source_from(payload.model_source),
-        view=payload.view, drawing_id=payload.drawing_id, hidden_lines=payload.hidden_lines,
-        scale_denominator=payload.scale_denominator,
+        binding, **_source(payload), **elevation_arguments(payload),
         monitor=request.app.state.monitor, projections=ready_projections(request.app.state),
     ))

@@ -107,5 +107,113 @@ class DrawingStyleTests(unittest.TestCase):
                                 "the interior diagonal must not survive as a long elevation edge")
 
 
+MM = 25.4 / 72
+
+
+def _mark(points, *, polygon=False, stroke_mm=0.25, dash_mm=(), grey=0, group="visible"):
+    from monkeydiagram.drawing_svg import DrawingMark
+    return DrawingMark(polygon, group, "object", tuple(points), 0.0 if polygon else stroke_mm, tuple(dash_mm), grey)
+
+
+class ViewSheetTests(unittest.TestCase):
+    """Caller-placed drawings on one sheet: each at its own paper size, marks moved and never redrawn."""
+
+    def views(self, **changes):
+        from monkeydiagram.documentation.styles import SheetView
+        plan = SheetView(view_id="plan", size_mm=(120.0, 80.0), place_mm=(20.0, 30.0), title="PLAN",
+                         subtitle="Horizontal cut at Z +1.200 m, looking down", scale_label="1:75",
+                         marks=(_mark(((0.0, 0.0), (120.0, 80.0)), stroke_mm=0.5, dash_mm=(2.0, 1.0)),
+                                _mark(((10.0, 10.0), (20.0, 10.0), (20.0, 20.0)), polygon=True, grey=128,
+                                      group="section-hatch")))
+        section = SheetView(view_id="section-a", size_mm=(120.0, 50.0), place_mm=(20.0, 140.0), title="SECTION A-A",
+                            subtitle="Vertical cut at Y -3.048 m, looking +Y", scale_label="1:75",
+                            marks=(_mark(((0.0, 50.0), (120.0, 50.0)), stroke_mm=0.35, group="section"),))
+        values = {"plan": plan, "section-a": section}
+        for name, view in changes.items():
+            values[name] = view
+        return tuple(view for view in values.values() if view is not None)
+
+    def compose(self, **kwargs):
+        from monkeydiagram.documentation.styles import compose_view_sheet
+        values = dict(style_id="arch364-technical", paper_size_mm=(420.0, 297.0), views=self.views(),
+                      title="SYNTHETIC PAVILION", sheet_number="A3-01", font_mapping=fonts(),
+                      source_text="Source: pavilion.skp, sha256 0eedb1d8; lengths in metres")
+        return compose_view_sheet(**{**values, **kwargs})
+
+    def test_each_drawing_keeps_its_own_paper_size_pens_and_marks_where_it_is_placed(self):
+        from pypdf import PdfReader
+        canvas = self.compose()
+        (scene,) = canvas.scenes
+        self.assertEqual(scene.number, "A3-01")
+        self.assertEqual(tuple(round(v, 6) for v in scene.size_mm), (420.0, 297.0))
+        paths = [p for p in scene.primitives if p.kind == "path"]
+        diagonal = next(p for p in paths if abs(p.data["line_width_pt"] * MM - 0.5) < 1e-9)
+        (_, start), (_, end) = diagonal.data["commands"]
+        # Paper mm from the top-left become PDF points from the bottom-left: (20, 30) is (20, 267).
+        self.assertAlmostEqual(start[0] * MM, 20.0, places=9)
+        self.assertAlmostEqual(start[1] * MM, 297.0 - 30.0, places=9)
+        self.assertAlmostEqual(end[0] * MM, 140.0, places=9)
+        self.assertAlmostEqual(end[1] * MM, 297.0 - 110.0, places=9)
+        self.assertEqual(tuple(round(v * MM, 9) for v in diagonal.data["dash_pt"]), (2.0, 1.0))
+        poche = next(p for p in paths if p.data["fill"])
+        self.assertEqual((poche.data["stroke"], poche.data["fill_mode"]), (False, 0))
+        self.assertAlmostEqual(poche.data["fill_color"][0], 128 / 255)
+        text = PdfReader(BytesIO(render_pdf(canvas))).pages[0].extract_text()
+        for expected in ("PLAN", "SECTION A-A", "1:75", "SYNTHETIC PAVILION", "A3-01", "Vertical cut at Y -3.048 m",
+                         "pavilion.skp"):
+            self.assertIn(expected, text)
+        self.assertEqual(render_pdf(self.compose()), render_pdf(canvas), "the same placement gives the same sheet")
+
+    def test_a_section_line_is_drawn_on_the_plan_it_names(self):
+        from monkeydiagram.documentation.styles import SheetSectionMark
+        plain = self.compose().scenes[0].primitives
+        mark = SheetSectionMark(view_id="plan", start_mm=(0.0, 60.0), end_mm=(120.0, 60.0), look_mm=(0.0, -1.0), label="A")
+        marked = self.compose(section_marks=(mark,)).scenes[0].primitives
+        added = [p for p in marked if p not in plain]
+        labels = [p.data["text"] for p in added if p.kind == "text"]
+        self.assertEqual(labels, ["A", "A"])
+        trace = [p for p in added if p.kind == "path" and p.data["dash_pt"]]
+        self.assertEqual(len(trace), 1)
+        ys = {round(point[1] * MM, 6) for command in trace[0].data["commands"] for point in command[1:]}
+        self.assertEqual(ys, {297.0 - 90.0}, "the trace runs across the plan at its own paper position")
+        with self.assertRaisesRegex(ValueError, "no view"):
+            self.compose(section_marks=(SheetSectionMark("elsewhere", (0, 0), (1, 0), (0, 1), "B"),))
+
+    def test_placement_off_the_paper_over_another_view_or_the_title_strip_is_refused_by_name(self):
+        from monkeydiagram.documentation.styles import SheetView
+        plan = self.views()[0]
+        for changes, words in (
+            ({"plan": SheetView(**{**_fields(plan), "place_mm": (350.0, 30.0)})}, "plan"),
+            ({"section-a": SheetView(**{**_fields(self.views()[1]), "place_mm": (60.0, 90.0)})}, "overlaps"),
+            ({"section-a": SheetView(**{**_fields(self.views()[1]), "place_mm": (20.0, 230.0)})}, "title strip"),
+        ):
+            with self.subTest(words=words), self.assertRaisesRegex(ValueError, words):
+                self.compose(views=self.views(**changes))
+        for values, words in (({"paper_size_mm": (0.0, 297.0)}, "paper"), ({"views": ()}, "at least one"),
+                              ({"notes": ("A long note that keeps going " * 40,)}, "title strip")):
+            with self.subTest(values=values), self.assertRaisesRegex(ValueError, words):
+                self.compose(**values)
+
+    def test_the_same_scene_is_one_pdf_svg_and_dxf(self):
+        import ezdxf
+        from io import StringIO
+        from xml.etree import ElementTree
+        from monkeydiagram.drawing_output import render_svg
+        canvas = self.compose()
+        svg = ElementTree.fromstring(render_svg(canvas))
+        self.assertEqual((svg.get("width"), svg.get("height")), ("420mm", "297mm"))
+        texts = [element.text for element in svg.iter("{http://www.w3.org/2000/svg}text")]
+        self.assertIn("SECTION A-A", texts)
+        dxf = ezdxf.read(StringIO(render_dxf(canvas).decode()))
+        layout = dxf.layouts.get("A3-01")
+        self.assertTrue(layout.query("LINE LWPOLYLINE"))
+        self.assertIn("SECTION A-A", [entity.dxf.text for entity in layout.query("TEXT")])
+
+
+def _fields(view):
+    return {name: getattr(view, name) for name in ("view_id", "size_mm", "marks", "place_mm", "title", "subtitle",
+                                                  "scale_label")}
+
+
 if __name__ == "__main__":
     unittest.main()

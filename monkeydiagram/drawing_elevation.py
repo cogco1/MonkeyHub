@@ -813,7 +813,7 @@ def freeze_cut_plan(
     drawing_run_id: str, dimensions: tuple[Mapping, ...] = (), previous_revision_ref: str | None = None,
     attribution: Mapping[str, Any] | None = None, reason: str | None = None, source_kind: str | None = None,
 ) -> ElevationDrawing:
-    """Retain a horizontal section and the exact below-cut visibility in the existing drawing envelope.
+    """Retain a horizontal (or vertical model-axis) section and the exact beyond-cut visibility in the existing drawing envelope.
 
     ``recipe`` retains representation intent; ``dimensions`` contains the application's resolved
     source measurements or explicit unresolved statuses. Neither can change the source model.
@@ -838,8 +838,12 @@ def freeze_cut_plan(
             hidden_lines=frame["hidden_lines"], linear_deflection=frame["linear_deflection"],
             scale_denominator=int(scale[2:]),
         )
-        _require(view.right == (1, 0, 0) and view.up == (0, 1, 0) and view.look == (0, 0, -1)
-                 and view.near_depth == 0, "a cut-plan must look down CAD -Z from its horizontal cut plane")
+        horizontal = view.right == (1, 0, 0) and view.up == (0, 1, 0) and view.look == (0, 0, -1)
+        # A vertical section is the same composition on a plane containing CAD +Z, seen along a plan axis.
+        vertical = view.up == (0, 0, 1) and view.look in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0))
+        _require((horizontal or vertical) and view.near_depth == 0,
+                 "a cut-plan must look down CAD -Z from its horizontal cut plane, "
+                 "or along a plan axis from a vertical cut plane with CAD +Z up")
         graphics = recipe["graphics"]
         _require(isinstance(graphics, Mapping), "cut-plan graphics must be a mapping")
         resolved = deepcopy(list(dimensions))
@@ -870,6 +874,9 @@ def freeze_cut_plan(
         common = dict(object_ids=selected, origin=view.origin, right=view.right, up=view.up,
                       linear_deflection=view.linear_deflection)
         sections = section_occt_lines(verified.entries, **common)
+        if not horizontal and not sections:
+            _refuse("SECTION_PLANE_MISSES_MODEL", "the vertical section plane meets none of the drawn objects; "
+                                                  "move it through the model, or draw an elevation")
         regions = section_occt_regions(verified.entries, **common)
         background = project_occt_lines(verified.entries, **common, depth_range=(0, view.far_depth))
         lines = background + sections
@@ -884,7 +891,9 @@ def freeze_cut_plan(
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"cut-plan {view.name}: {exc}") from exc
     drawn = _drawn(recipe, projection, backend_identity(), {
-        "algorithm": "BRepAlgoAPI_Section on the cut plane; exact below-cut slab and global HLRBRep_Algo visibility",
+        "algorithm": ("BRepAlgoAPI_Section on the cut plane; exact below-cut slab and global HLRBRep_Algo visibility"
+                      if horizontal else
+                      "BRepAlgoAPI_Section on the vertical cut plane; exact beyond-cut slab and global HLRBRep_Algo visibility"),
         "selected_object_ids": list(selected), "section_polylines": len(sections),
         "section_regions": len(regions), "dimensions": resolved, "unresolvedObjectIds": unresolved_objects,
         **({"dressing": dressing} if "dressing" in recipe else {}),
@@ -961,7 +970,8 @@ _SECTION_MARGIN = 0.05
 
 
 class SectionPerspectiveError(DrawingElevationError):
-    """A section perspective refused by name: ``code`` says which rule failed; nothing was written."""
+    """A section refused by name - a section perspective, or a vertical cut plan's plane: ``code`` says
+    which rule failed; nothing was written."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -1010,6 +1020,89 @@ def _section_plane(section: Mapping[str, Any]) -> tuple[tuple[float, float, floa
         # Keeping the left of walking the line removes its right: the normal points right.
         return (x1, y1, 0.0), ((dy, -dx + 0.0, 0.0) if section["keep"] == "left" else (-dy + 0.0, dx, 0.0))
     return tuple(section["origin"]), tuple(v + 0.0 for v in _normalized(section["normal"]))
+
+
+def _checked_section(section, deflection: float) -> dict[str, Any]:
+    """A section request, checked and canonical: ``{line, keep}`` or ``{origin, normal}``, refused by name."""
+
+    if not isinstance(section, Mapping) or set(section) not in ({"line", "keep"}, {"origin", "normal"}):
+        _refuse("SECTION_REQUEST_INVALID", "the section is either {line, keep} or {origin, normal}")
+    if "line" in section:
+        line = section["line"]
+        if not isinstance(line, Sequence) or isinstance(line, (str, bytes)) or len(line) != 2:
+            _refuse("SECTION_REQUEST_INVALID", "the section line must be two plan points [[x1, y1], [x2, y2]]")
+        start, end = (_numbers(point, 2, "a section line point") for point in line)
+        if section["keep"] not in ("left", "right"):
+            _refuse("SECTION_REQUEST_INVALID", "keep must be left or right of walking along the section line")
+        if math.dist(start, end) <= deflection:
+            _refuse("SECTION_LINE_DEGENERATE", "the section line has no length; give two distinct plan points")
+        return {"line": [list(start), list(end)], "keep": section["keep"]}
+    origin = _numbers(section["origin"], 3, "the section origin")
+    raw = _numbers(section["normal"], 3, "the section normal")
+    if math.hypot(*raw) <= _TOLERANCE:
+        _refuse("SECTION_NORMAL_DEGENERATE", "the section normal has no length")
+    return {"origin": list(origin), "normal": list(raw)}
+
+
+def model_axis_section(
+    section: Mapping[str, Any], *, linear_deflection: float = 0.0001,
+) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
+    """A vertical model-axis section plane as a cut-plan frame: its origin, look and the sheet's right.
+
+    ``section`` is stated as a section perspective states it: ``{"line": [[x1, y1],
+    [x2, y2]], "keep": "left" | "right"}``, the vertical plane through a plan line
+    keeping one side of walking along it, or ``{"origin": [x, y, z], "normal":
+    [nx, ny, nz]}`` with the normal pointing from the kept side to the removed
+    side, where the viewer stands.  The plane must contain CAD +Z and be
+    perpendicular to X or Y: ``look`` is then +X, -X, +Y or -Y into the kept
+    side, up is +Z and ``right = look x up``, which ``freeze_cut_plan`` composes
+    as it composes a horizontal cut.  The origin is where the plane crosses its
+    model axis, its other coordinates zero, so u reads as the model coordinate
+    along the sheet's right and v as Z.  Any other plane is refused by name
+    (``SECTION_PLANE_NOT_MODEL_AXIS``), as are the section perspective's own
+    malformed requests; nothing is read or written here.
+    """
+
+    deflection = _number(linear_deflection, "linear_deflection")
+    origin, normal = _section_plane(_checked_section(section, deflection))
+    look = tuple(-value + 0.0 for value in normal)
+    axis = next((index for index in (0, 1) if abs(abs(look[index]) - 1.0) <= _TOLERANCE), None)
+    if axis is None or any(abs(look[index]) > _TOLERANCE for index in range(3) if index != axis):
+        _refuse("SECTION_PLANE_NOT_MODEL_AXIS", "a vertical section's plane contains CAD +Z and is perpendicular to X or "
+                                                "Y; draw any other plane as a section perspective")
+    direction = [0.0, 0.0, 0.0]
+    direction[axis] = math.copysign(1.0, look[axis])
+    point = [0.0, 0.0, 0.0]
+    point[axis] = float(origin[axis]) + 0.0
+    right = _cross(direction, (0.0, 0.0, 1.0))
+    return tuple(point), tuple(direction), tuple(value + 0.0 for value in right)
+
+
+def axonometric_frame(
+    toward_viewer: Sequence[float],
+) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
+    """The right, up and look of a parallel view seen from ``toward_viewer``, with CAD +Z up on the sheet.
+
+    ``toward_viewer`` points from the model to the viewer and need not be unit
+    length: ``(1, -1, 1)`` is the isometric from +X, -Y, +Z.  ``look`` is its
+    opposite, ``up`` is +Z made perpendicular to it and ``right = look x up``,
+    the frame ``ElevationView`` checks.  A vertical or empty direction has no
+    sheet up and is refused.  Such a view is foreshortened: its scale holds
+    along no model axis.
+    """
+
+    direction = _vector(toward_viewer, "the axonometric direction")
+    length = math.hypot(*direction)
+    if length <= _TOLERANCE:
+        raise DrawingElevationError("the axonometric direction has no length")
+    toward = tuple(value / length for value in direction)
+    lift = tuple(z - toward[2] * t for z, t in zip((0.0, 0.0, 1.0), toward))
+    if math.hypot(*lift) <= 1e-6:
+        raise DrawingElevationError("the axonometric direction is vertical; a parallel view needs CAD +Z across the sheet")
+    up = _normalized(lift)
+    look = tuple(-value + 0.0 for value in toward)
+    right = _normalized(_cross(look, up))
+    return (tuple(value + 0.0 for value in right), tuple(value + 0.0 for value in up), look)
 
 
 def _section_paper_rules(hatch, beyond, spacing_mm: float) -> dict[str, Any]:
@@ -1105,25 +1198,7 @@ class SectionPerspectiveView:
         if deflection <= 0.0:
             _refuse("SECTION_REQUEST_INVALID", "linear_deflection must be positive")
         object.__setattr__(self, "linear_deflection", deflection)
-        section = self.section
-        if not isinstance(section, Mapping) or set(section) not in ({"line", "keep"}, {"origin", "normal"}):
-            _refuse("SECTION_REQUEST_INVALID", "the section is either {line, keep} or {origin, normal}")
-        if "line" in section:
-            line = section["line"]
-            if not isinstance(line, Sequence) or isinstance(line, (str, bytes)) or len(line) != 2:
-                _refuse("SECTION_REQUEST_INVALID", "the section line must be two plan points [[x1, y1], [x2, y2]]")
-            start, end = (_numbers(point, 2, "a section line point") for point in line)
-            if section["keep"] not in ("left", "right"):
-                _refuse("SECTION_REQUEST_INVALID", "keep must be left or right of walking along the section line")
-            if math.dist(start, end) <= deflection:
-                _refuse("SECTION_LINE_DEGENERATE", "the section line has no length; give two distinct plan points")
-            canonical = {"line": [list(start), list(end)], "keep": section["keep"]}
-        else:
-            origin = _numbers(section["origin"], 3, "the section origin")
-            raw = _numbers(section["normal"], 3, "the section normal")
-            if math.hypot(*raw) <= _TOLERANCE:
-                _refuse("SECTION_NORMAL_DEGENERATE", "the section normal has no length")
-            canonical = {"origin": list(origin), "normal": list(raw)}
+        canonical = _checked_section(self.section, deflection)
         object.__setattr__(self, "section", canonical)
         origin, normal = _section_plane(canonical)
         camera = {} if self.camera is None else self.camera
@@ -1512,6 +1587,7 @@ __all__ = [
     "SectionPerspectiveError",
     "SectionPerspectiveProjection",
     "SectionPerspectiveView",
+    "axonometric_frame",
     "current_object_id",
     "freeze_model_axis_elevation",
     "freeze_cut_plan",
@@ -1521,6 +1597,7 @@ __all__ = [
     "plan_dressing_anchors",
     "resolve_plan_dressing",
     "list_model_axis_elevations",
+    "model_axis_section",
     "project_model_axis_elevation",
     "project_section_perspective",
     "read_model_axis_elevation",

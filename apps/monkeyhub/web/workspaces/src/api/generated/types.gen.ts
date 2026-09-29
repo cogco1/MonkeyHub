@@ -4505,6 +4505,50 @@ export type ElementElevationDto = {
 };
 
 /**
+ * ElevationDrawingDto
+ *
+ * What POST /api/drawings/elevations draws, without its project and source. A sheet view takes these fields.
+ */
+export type ElevationDrawingDto = {
+    /**
+     * View
+     *
+     * Whole-model orthographic direction. top looks down CAD -Z with X right and Y up on the sheet; it is a top projection of visible geometry, not a cut floor plan. axon is a parallel view of the whole model from direction, CAD +Z up on the sheet: foreshortened, so its scale is a display size, not a measurable one.
+     */
+    view?: 'front' | 'back' | 'left' | 'right' | 'top' | 'axon';
+    /**
+     * Direction
+     *
+     * axon only: the direction from the model toward the viewer in CAD X/Y/Z, any length; [1, -1, 1] is the isometric from +X, -Y, +Z. It may not be vertical. Omitted is [-1, -1, 1], the model view's axon.
+     */
+    direction?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Drawingid
+     *
+     * Default elevation-<view>. A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
+     */
+    drawingId?: string | null;
+    /**
+     * Hiddenlines
+     */
+    hiddenLines?: boolean;
+    /**
+     * Scaledenominator
+     */
+    scaleDenominator?: number;
+    /**
+     * Lengthunit
+     *
+     * The length unit this request's coordinates and distances are written in. It must be the source model's own unit: another one is refused (DRAWING_UNIT_MISMATCH), never converted. Omitted reads them in the source unit.
+     */
+    lengthUnit?: 'meter' | 'millimeter' | 'inch' | 'foot' | null;
+};
+
+/**
  * ElevationEditRequestDto
  *
  * A numeric elevation or explicit datum binding at the existing proposal boundary.
@@ -4581,22 +4625,25 @@ export type ElevationReferenceDto = {
 export type ElevationRequestDto = {
     sourceAsset?: DrawingAssetSourceDto | null;
     /**
-     * Projectid
-     */
-    projectId: string;
-    /**
-     * Sourcestageref
-     */
-    sourceStageRef?: string | null;
-    modelSource?: ModelSourceDto | null;
-    /**
      * View
      *
-     * Whole-model orthographic direction. top looks down CAD -Z with X right and Y up on the sheet; it is a top projection of visible geometry, not a cut floor plan.
+     * Whole-model orthographic direction. top looks down CAD -Z with X right and Y up on the sheet; it is a top projection of visible geometry, not a cut floor plan. axon is a parallel view of the whole model from direction, CAD +Z up on the sheet: foreshortened, so its scale is a display size, not a measurable one.
      */
-    view?: 'front' | 'back' | 'left' | 'right' | 'top';
+    view?: 'front' | 'back' | 'left' | 'right' | 'top' | 'axon';
+    /**
+     * Direction
+     *
+     * axon only: the direction from the model toward the viewer in CAD X/Y/Z, any length; [1, -1, 1] is the isometric from +X, -Y, +Z. It may not be vertical. Omitted is [-1, -1, 1], the model view's axon.
+     */
+    direction?: [
+        number,
+        number,
+        number
+    ] | null;
     /**
      * Drawingid
+     *
+     * Default elevation-<view>. A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
      */
     drawingId?: string | null;
     /**
@@ -4607,6 +4654,21 @@ export type ElevationRequestDto = {
      * Scaledenominator
      */
     scaleDenominator?: number;
+    /**
+     * Lengthunit
+     *
+     * The length unit this request's coordinates and distances are written in. It must be the source model's own unit: another one is refused (DRAWING_UNIT_MISMATCH), never converted. Omitted reads them in the source unit.
+     */
+    lengthUnit?: 'meter' | 'millimeter' | 'inch' | 'foot' | null;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    modelSource?: ModelSourceDto | null;
 };
 
 /**
@@ -7674,6 +7736,128 @@ export type PlanDimensionReadDto = {
 };
 
 /**
+ * PlanDrawingDto
+ *
+ * What POST /api/drawings/plans draws, without its project and source: a horizontal cut plan, or with
+ * ``section`` a vertical section, composed the same way. A sheet view takes these fields as they are.
+ */
+export type PlanDrawingDto = {
+    /**
+     * Drawingid
+     *
+     * A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
+     */
+    drawingId?: string | null;
+    /**
+     * Filename
+     *
+     * Optional human-readable name for a new cut plan. A missing extension is completed as .png; only .png is accepted. Existing drawings keep their name: omitted or blank inherits it, and a different name is refused. The name is display metadata and never supplies drawingId or a storage path.
+     */
+    fileName?: string | null;
+    /**
+     * Previousrevisionref
+     */
+    previousRevisionRef?: string | null;
+    /**
+     * Cutheight
+     *
+     * Horizontal cut elevation in the source model length unit.
+     */
+    cutHeight?: number | null;
+    /**
+     * Bottom
+     */
+    bottom?: number | null;
+    /**
+     * Section
+     *
+     * A vertical section instead of the horizontal cut: the plane through a plan line ({line, keep}) or through a point with a horizontal normal ({origin, normal}, pointing from the kept side to the removed side, where the viewer stands). It must be perpendicular to CAD X or Y; any other plane is refused (SECTION_PLANE_NOT_MODEL_AXIS), and one that cuts no drawn object too (SECTION_PLANE_MISSES_MODEL). The drawing looks from the removed side into the kept side with CAD +Z up: u runs along the sheet's right (X when looking +Y, -X looking -Y, -Y looking +X, Y looking -X) and v is Z, both in model coordinates. Omitted, a rebuild keeps its own plane and a new drawing is a horizontal cut plan. A drawing never changes between the two (DRAWING_ORIENTATION_CHANGED).
+     */
+    section?: SectionLineDto | SectionPlaneDto | null;
+    /**
+     * Depth
+     *
+     * A vertical section only: how far beyond its plane the kept side is drawn, in the source length unit. Omitted, a rebuild keeps its own and a new section draws to the far side of the model's bounds.
+     */
+    depth?: number | null;
+    /**
+     * Lengthunit
+     *
+     * The length unit this request's coordinates and distances are written in. It must be the source model's own unit: another one is refused (DRAWING_UNIT_MISMATCH), never converted. Omitted reads them in the source unit.
+     */
+    lengthUnit?: 'meter' | 'millimeter' | 'inch' | 'foot' | null;
+    /**
+     * Scaledenominator
+     */
+    scaleDenominator?: number | null;
+    /**
+     * Cropuv
+     *
+     * The drawn window (u_min, v_min, u_max, v_max) in the source length unit: X/Y for a plan, the section's u/v for a vertical section. Omitted, a rebuild keeps its own; a new drawing frames the model.
+     */
+    cropUv?: [
+        number,
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Cutlinemm
+     */
+    cutLineMm?: number | null;
+    /**
+     * Visiblelinemm
+     */
+    visibleLineMm?: number | null;
+    /**
+     * Hatchspacingmm
+     */
+    hatchSpacingMm?: number | null;
+    /**
+     * Material hatch and poché rules on paper, beside the pens and hatchSpacingMm. Omitted keeps the previous revision's rules; an empty byMaterial removes them.
+     */
+    hatch?: PlanHatchDto | null;
+    /**
+     * Fading of the lines below the cut. Omitted keeps the previous revision's; fade 0 removes it.
+     */
+    beyond?: PlanBeyondDto | null;
+    /**
+     * Hiddenobjectids
+     */
+    hiddenObjectIds?: Array<string> | null;
+    /**
+     * Dimensions
+     */
+    dimensions?: Array<PlanDimensionDto> | null;
+    /**
+     * Dressing
+     */
+    dressing?: Array<PlanDressingDto> | null;
+    /**
+     * Dressingoperations
+     */
+    dressingOperations?: Array<PlanDressingOperationDto> | null;
+    /**
+     * Follow
+     *
+     * live follows the project's Working Head; frozen keeps this drawing on its chosen source until it is rebuilt. Omitted keeps the previous revision's choice; a new drawing is live.
+     */
+    follow?: 'live' | 'frozen' | null;
+    /**
+     * Reason
+     *
+     * Why this revision is asked for, in the asker's own words, such as the correction an agent was given; omit it for a direct edit. Retained with the revision beside who asked, never in its recipe.
+     */
+    reason?: string | null;
+    /**
+     * Sourcekind
+     *
+     * Who this request comes from: human for a person's own edit in the drawing, agent for an agent's reading of what a person asked. Omitted is unknown; the Hub marks its Agent's requests agent. Retained with the revision beside who asked, never in its recipe, and an agent's revision is never counted toward a project recipe suggestion.
+     */
+    sourceKind?: 'human' | 'agent' | null;
+};
+
+/**
  * PlanDressingAnchorDto
  */
 export type PlanDressingAnchorDto = {
@@ -7878,16 +8062,9 @@ export type PlanHatchRuleDto = {
 export type PlanRequestDto = {
     sourceAsset?: DrawingAssetSourceDto | null;
     /**
-     * Projectid
-     */
-    projectId: string;
-    /**
-     * Sourcestageref
-     */
-    sourceStageRef?: string | null;
-    modelSource?: ModelSourceDto | null;
-    /**
      * Drawingid
+     *
+     * A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
      */
     drawingId?: string | null;
     /**
@@ -7911,11 +8088,31 @@ export type PlanRequestDto = {
      */
     bottom?: number | null;
     /**
+     * Section
+     *
+     * A vertical section instead of the horizontal cut: the plane through a plan line ({line, keep}) or through a point with a horizontal normal ({origin, normal}, pointing from the kept side to the removed side, where the viewer stands). It must be perpendicular to CAD X or Y; any other plane is refused (SECTION_PLANE_NOT_MODEL_AXIS), and one that cuts no drawn object too (SECTION_PLANE_MISSES_MODEL). The drawing looks from the removed side into the kept side with CAD +Z up: u runs along the sheet's right (X when looking +Y, -X looking -Y, -Y looking +X, Y looking -X) and v is Z, both in model coordinates. Omitted, a rebuild keeps its own plane and a new drawing is a horizontal cut plan. A drawing never changes between the two (DRAWING_ORIENTATION_CHANGED).
+     */
+    section?: SectionLineDto | SectionPlaneDto | null;
+    /**
+     * Depth
+     *
+     * A vertical section only: how far beyond its plane the kept side is drawn, in the source length unit. Omitted, a rebuild keeps its own and a new section draws to the far side of the model's bounds.
+     */
+    depth?: number | null;
+    /**
+     * Lengthunit
+     *
+     * The length unit this request's coordinates and distances are written in. It must be the source model's own unit: another one is refused (DRAWING_UNIT_MISMATCH), never converted. Omitted reads them in the source unit.
+     */
+    lengthUnit?: 'meter' | 'millimeter' | 'inch' | 'foot' | null;
+    /**
      * Scaledenominator
      */
     scaleDenominator?: number | null;
     /**
      * Cropuv
+     *
+     * The drawn window (u_min, v_min, u_max, v_max) in the source length unit: X/Y for a plan, the section's u/v for a vertical section. Omitted, a rebuild keeps its own; a new drawing frames the model.
      */
     cropUv?: [
         number,
@@ -7977,6 +8174,15 @@ export type PlanRequestDto = {
      * Who this request comes from: human for a person's own edit in the drawing, agent for an agent's reading of what a person asked. Omitted is unknown; the Hub marks its Agent's requests agent. Retained with the revision beside who asked, never in its recipe, and an agent's revision is never counted toward a project recipe suggestion.
      */
     sourceKind?: 'human' | 'agent' | null;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    modelSource?: ModelSourceDto | null;
 };
 
 /**
@@ -10197,23 +10403,15 @@ export type SectionLineDto = {
 };
 
 /**
- * SectionPerspectiveRequestDto
+ * SectionPerspectiveDrawingDto
+ *
+ * What POST /api/drawings/section-perspectives draws, without its project and source. A sheet view takes these.
  */
-export type SectionPerspectiveRequestDto = {
-    sourceAsset?: DrawingAssetSourceDto | null;
-    /**
-     * Projectid
-     */
-    projectId: string;
-    /**
-     * Sourcestageref
-     */
-    sourceStageRef?: string | null;
-    modelSource?: ModelSourceDto | null;
+export type SectionPerspectiveDrawingDto = {
     /**
      * Drawingid
      *
-     * Default section-perspective; the same id continues that drawing's revisions.
+     * Default section-perspective; the same id continues that drawing's revisions. A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
      */
     drawingId?: string | null;
     /**
@@ -10264,6 +10462,88 @@ export type SectionPerspectiveRequestDto = {
      * Fading of what lies beyond the cut, as in a cut plan; fade 0 draws it black.
      */
     beyond?: PlanBeyondDto | null;
+    /**
+     * Lengthunit
+     *
+     * The length unit this request's coordinates and distances are written in. It must be the source model's own unit: another one is refused (DRAWING_UNIT_MISMATCH), never converted. Omitted reads them in the source unit.
+     */
+    lengthUnit?: 'meter' | 'millimeter' | 'inch' | 'foot' | null;
+};
+
+/**
+ * SectionPerspectiveRequestDto
+ */
+export type SectionPerspectiveRequestDto = {
+    sourceAsset?: DrawingAssetSourceDto | null;
+    /**
+     * Drawingid
+     *
+     * Default section-perspective; the same id continues that drawing's revisions. A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
+     */
+    drawingId?: string | null;
+    /**
+     * Section
+     */
+    section: SectionLineDto | SectionPlaneDto;
+    /**
+     * Omit for the default one-point perspective: the eye on the removed side 1.6 m above the lowest cut point, centred on the cut, at the distance that fits the cut's width in a 55 degree field of view, the cut's centre as target; the frame is the cut with a 5% margin. The picture plane is always the section plane, so the cut is true to scale and lines along the view axis converge at the eye's foot on it. The target centres the frame; to move only the vanishing point, move the eye and keep the target at the cut's centre.
+     */
+    camera?: SectionCameraDto | null;
+    /**
+     * Depth
+     *
+     * Keep only this far behind the section plane, in the source model unit.
+     */
+    depth?: number | null;
+    /**
+     * Hiddenobjectids
+     *
+     * Exact physical object ids left out of the cut and the view.
+     */
+    hiddenObjectIds?: Array<string>;
+    /**
+     * Scaledenominator
+     *
+     * 1:N at the section plane; farther geometry is drawn smaller.
+     */
+    scaleDenominator?: number;
+    /**
+     * Cutlinemm
+     */
+    cutLineMm?: number | null;
+    /**
+     * Visiblelinemm
+     */
+    visibleLineMm?: number | null;
+    /**
+     * Hatchspacingmm
+     *
+     * Poché hatch spacing on paper; default 0.5 mm.
+     */
+    hatchSpacingMm?: number | null;
+    /**
+     * Material hatch and poché rules for the cut on paper, as a cut plan takes them; each is stored complete and an empty byMaterial draws none.
+     */
+    hatch?: PlanHatchDto | null;
+    /**
+     * Fading of what lies beyond the cut, as in a cut plan; fade 0 draws it black.
+     */
+    beyond?: PlanBeyondDto | null;
+    /**
+     * Lengthunit
+     *
+     * The length unit this request's coordinates and distances are written in. It must be the source model's own unit: another one is refused (DRAWING_UNIT_MISMATCH), never converted. Omitted reads them in the source unit.
+     */
+    lengthUnit?: 'meter' | 'millimeter' | 'inch' | 'foot' | null;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    modelSource?: ModelSourceDto | null;
 };
 
 /**
@@ -10426,30 +10706,140 @@ export type SheetRequestDto = {
     modelSource?: ModelSourceDto | null;
     /**
      * Styleid
+     *
+     * The sheet style. Without views it lays out front, right and top at one scale in the style's own paper; with views it gives the frame margin and type sizes.
      */
     styleId: 'arch400-white' | 'arch364-technical';
     /**
      * Scaledenominator
      *
-     * Exact drawing scale; oversized layouts are refused, never silently rescaled.
+     * Without views: the one exact scale of front, right and top (default 20); oversized layouts are refused, never silently rescaled. With views each view states its own, and this is refused.
      */
-    scaleDenominator?: number;
+    scaleDenominator?: number | null;
     /**
      * Hiddenobjectids
      *
-     * Exact physical object ids excluded before all three visibility solves.
+     * Without views: exact physical object ids excluded before all three visibility solves.
      */
     hiddenObjectIds?: Array<string>;
     /**
      * Outlineobjectids
      *
-     * Visible physical object ids to simplify to outlines in this sheet.
+     * Without views: visible physical object ids to simplify to outlines in this sheet.
      */
     outlineObjectIds?: Array<string>;
     /**
      * Notes
      */
     notes?: Array<string>;
+    /**
+     * Views
+     *
+     * Same-source drawings placed on one sheet, each at its own scale: plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own route's owner from the sheet's one source. Omitted is the front, right and top review sheet.
+     */
+    views?: Array<SheetViewDto> | null;
+    /**
+     * Papersizemm
+     *
+     * With views: the paper, width and height in mm (A3 landscape is [420, 297]). Omitted is the style's paper.
+     */
+    paperSizeMm?: [
+        number,
+        number
+    ] | null;
+    /**
+     * Title
+     *
+     * With views: the title strip's title. Omitted is the project id.
+     */
+    title?: string | null;
+    /**
+     * Subtitle
+     *
+     * With views: the line under the title. Omitted or empty draws none.
+     */
+    subtitle?: string | null;
+    /**
+     * Sheetnumber
+     *
+     * With views: the sheet's number in its title strip and file (default 01).
+     */
+    sheetNumber?: string | null;
+    /**
+     * Drawingid
+     *
+     * With views: the sheet's drawing identity (default sheet-<sheetNumber>), never one of its views' ids. Without views it is the style id. A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
+     */
+    drawingId?: string | null;
+    /**
+     * Lengthunit
+     *
+     * The length unit this request's coordinates and distances are written in. It must be the source model's own unit: another one is refused (DRAWING_UNIT_MISMATCH), never converted. Omitted reads them in the source unit.
+     */
+    lengthUnit?: 'meter' | 'millimeter' | 'inch' | 'foot' | null;
+};
+
+/**
+ * SheetViewDto
+ *
+ * One drawing on a view sheet: exactly one of plan, elevation or sectionPerspective, and where it goes.
+ *
+ * The drawing is the one its own route draws from the same fields and the sheet's one source, retained and
+ * registered in the documents list as that route registers it: an identical request reads the registered revision
+ * back. It is placed at its own scale and paper size, never rescaled or cropped to fit.
+ */
+export type SheetViewDto = {
+    /**
+     * Id
+     *
+     * The view's drawingId. An identical view reads its registered revision back; a changed one registers another revision under this id without replacing the earlier page (a plan's revision chain continues only through previousRevisionRef on its own route). A horizontal plan's id never takes a vertical section, nor a section's a plan (DRAWING_ORIENTATION_CHANGED), and no id takes another kind of drawing (DRAWING_KIND_CHANGED).
+     */
+    id: string;
+    /**
+     * Placemm
+     *
+     * Where the drawing's top-left corner goes: paper mm from the sheet's top-left. Its title and scale sit just above it; a drawing that leaves the frame or overlaps another or the title strip is refused (DRAWING_SHEET_LAYOUT_INVALID), never moved.
+     */
+    placeMm: [
+        number,
+        number
+    ];
+    /**
+     * Title
+     *
+     * The view's title. Omitted names its kind: PLAN, SECTION A-A, FRONT ELEVATION, ISOMETRIC, ...
+     */
+    title?: string | null;
+    /**
+     * Subtitle
+     *
+     * The line under the title. Omitted states the cut or direction from the drawing's own frame, such as 'Vertical cut at Y -3.048 m, looking +Y'; an empty string draws none.
+     */
+    subtitle?: string | null;
+    /**
+     * Markon
+     *
+     * A vertical section or a section perspective with a vertical plane: the id of a horizontal plan on this sheet on which its cut line is drawn, with arrows toward the kept side, labelled markLabel.
+     */
+    markOn?: string | null;
+    /**
+     * Marklabel
+     *
+     * The cut's name, such as A: it labels the cut line on the plan and titles the view SECTION A-A.
+     */
+    markLabel?: string | null;
+    /**
+     * A horizontal cut plan, or with section a vertical section, as POST /api/drawings/plans draws it. Dimensions, dressingOperations, reason and sourceKind belong to that route.
+     */
+    plan?: PlanDrawingDto | null;
+    /**
+     * An elevation, top projection or axonometric (view axon), as POST /api/drawings/elevations draws it.
+     */
+    elevation?: ElevationDrawingDto | null;
+    /**
+     * A section perspective, as POST /api/drawings/section-perspectives draws it.
+     */
+    sectionPerspective?: SectionPerspectiveDrawingDto | null;
 };
 
 /**
@@ -15641,6 +16031,61 @@ export type CreateSheetApiDrawingsSheetsPostResponses = {
 };
 
 export type CreateSheetApiDrawingsSheetsPostResponse = CreateSheetApiDrawingsSheetsPostResponses[keyof CreateSheetApiDrawingsSheetsPostResponses];
+
+export type ReadDrawingFileApiDrawingsAssetSha256FilesFileFormatGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Asset Sha256
+         */
+        asset_sha256: string;
+        /**
+         * File Format
+         *
+         * svg or png of a view drawing; pdf, dxf, svg or png of a sheet: the same paper scene.
+         */
+        file_format: 'pdf' | 'dxf' | 'svg' | 'png';
+    };
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Revisionref
+         */
+        revisionRef?: string | null;
+    };
+    url: '/api/drawings/{asset_sha256}/files/{file_format}';
+};
+
+export type ReadDrawingFileApiDrawingsAssetSha256FilesFileFormatGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadDrawingFileApiDrawingsAssetSha256FilesFileFormatGetError = ReadDrawingFileApiDrawingsAssetSha256FilesFileFormatGetErrors[keyof ReadDrawingFileApiDrawingsAssetSha256FilesFileFormatGetErrors];
+
+export type ReadDrawingFileApiDrawingsAssetSha256FilesFileFormatGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Blob | File;
+};
+
+export type ReadDrawingFileApiDrawingsAssetSha256FilesFileFormatGetResponse = ReadDrawingFileApiDrawingsAssetSha256FilesFileFormatGetResponses[keyof ReadDrawingFileApiDrawingsAssetSha256FilesFileFormatGetResponses];
 
 export type CreateSectionPerspectiveApiDrawingsSectionPerspectivesPostData = {
     body: SectionPerspectiveRequestDto;
