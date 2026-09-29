@@ -809,7 +809,7 @@ for _ in range(5):
             self.assertEqual(stale.status_code, 409, stale.text)
             self.assertIn("STALE", stale.json()["code"])
             snapshot = self.wait_runtime(client, runtime_id, lambda row: any(
-                operation["operationId"] == stale_id and operation["status"] == "stale" for operation in row["operations"]))
+                operation["operationId"] == stale_id and operation["status"] == "refused" for operation in row["operations"]))
             self.assertFalse(any(row["committed"] for row in snapshot["operations"]))
             self.assertEqual(self.project_bytes(self.project), before)
 

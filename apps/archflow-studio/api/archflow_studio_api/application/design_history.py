@@ -1195,6 +1195,11 @@ ADMISSIONS_RUN_ID = "studio-admissions"
 ADMISSION_SCHEMA = "CandidateAdmission@1"
 ADMITTED = "admitted"
 REJECTED = "rejected"
+# The Hub Agent's own act on a result it made in the chat it closes (#404 F13):
+# it no longer proposes it. Not a person's rejection and needs no user words;
+# records written before it read exactly as they did.
+WITHDRAWN = "withdrawn"
+OUTCOMES = (ADMITTED, REJECTED, WITHDRAWN)
 SUPERSEDED = "superseded"
 TASK_UI = "ui"
 TASK_HUB_CHAT = "hub-chat"
@@ -1342,7 +1347,7 @@ def _record_problem(binding: ProjectBinding, payload: Mapping[str, Any]) -> str 
     for row in results:
         if (not _texts(row, "runId", "receiptRef", "recordDigest", "baseStageRef", "label", "summary", "reason",
                        required=("runId", "receiptRef", "recordDigest"))
-                or row.get("outcome") not in (ADMITTED, REJECTED) or not _strings(row.get("supersedes"))
+                or row.get("outcome") not in OUTCOMES or not _strings(row.get("supersedes"))
                 or not (row.get("blockedBy") is None or _strings(row["blockedBy"]))
                 or not (row.get("modelSource") is None or (
                     _texts(row["modelSource"], "runId", "stateDigest", "assetSha256",
@@ -1530,8 +1535,10 @@ def _requested(spec: Mapping[str, Any]) -> dict[str, Any]:
     message, words = spec.get("messageSource"), spec.get("rawLanguage")
     if task["kind"] not in TASK_KINDS:
         raise _admission_invalid(f"A closed loop is one of {', '.join(TASK_KINDS)}.")
-    if any(row["outcome"] not in (ADMITTED, REJECTED) for row in results):
-        raise _admission_invalid("Each result is admitted or rejected.")
+    if any(row["outcome"] not in OUTCOMES for row in results):
+        raise _admission_invalid("Each result is admitted, rejected or withdrawn.")
+    if task["kind"] != TASK_HUB_CHAT and any(row["outcome"] == WITHDRAWN for row in results):
+        raise _admission_invalid("Only the Hub Agent withdraws a result it made in its chat; a person rejects one.")
     if study is not None and study["baseRunId"] in named | attempts_seen:
         raise _admission_invalid("A Study's base is where its results start, not one of them.")
     if task["kind"] == TASK_HUB_CHAT:
@@ -1597,8 +1604,8 @@ def _require_unclaimed(store: AdmissionStore, request: Mapping[str, Any], stage_
         for run_id in (row["runId"], *row["supersedes"]):
             conflicts.extend(f"{run_id} is already {_claim_words(claim)} in {claim.record.admission_id}"
                              for claim in store.claims.get(run_id, ()))
-        if row["outcome"] == REJECTED and row["runId"] in stage_runs:
-            conflicts.append(f"{row['runId']} is accepted as Stage {stage_runs[row['runId']]} and is not rejected")
+        if row["outcome"] in (REJECTED, WITHDRAWN) and row["runId"] in stage_runs:
+            conflicts.append(f"{row['runId']} is accepted as Stage {stage_runs[row['runId']]} and is not {row['outcome']}")
         conflicts.extend(f"{attempt} is accepted as Stage {stage_runs[attempt]} and is not superseded"
                          for attempt in row["supersedes"] if attempt in stage_runs)
     study = request["study"]
@@ -1678,7 +1685,7 @@ def _close(
     """Read the completion contract off every result, or refuse the whole record.
 
     An admitted result passes C1-C5 and C7 (a person's may fail C3, which then
-    travels as its marker); a rejection needs only C2, a completed result. C6
+    travels as its marker); a rejection or withdrawal needs only C2, a completed result. C6
     and C8 are the actor's retained claim, not something the server checks.
     """
 
@@ -2160,7 +2167,10 @@ def admission_index(binding: ProjectBinding) -> tuple[dict[str, tuple[str, str |
     store = admission_store(binding)
     stages, warnings = _committed_stages(binding)
     entries, _studies, found = _pool_entries(binding, store, stages, include_rejected=True, detailed=False)
-    index = {run_id: (entry.outcome, entry.study_id) for run_id, entry in entries.items()}
+    # The runtime's run view names no withdrawal of its own: a result the Agent withdrew
+    # reads there as an attempt its loop replaced, never as one the architect turned down.
+    index = {run_id: (SUPERSEDED if entry.outcome == WITHDRAWN else entry.outcome, entry.study_id)
+             for run_id, entry in entries.items()}
     for run_id, claims in store.claims.items():
         if len(claims) == 1 and claims[0].superseded:
             index[run_id] = (SUPERSEDED, claims[0].record.study_id)

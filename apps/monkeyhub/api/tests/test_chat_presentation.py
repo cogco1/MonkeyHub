@@ -364,6 +364,68 @@ class ChatPresentationTests(unittest.TestCase):
         self.assertEqual(changed.status_code, 409, changed.text)
         self.assertEqual(changed.json()["code"], "DOCUMENT_DIGEST_MISMATCH")
 
+    def test_presented_drawing_page_reaches_the_transcript_as_its_exact_page_image(self):
+        """#404 item 9: a drawing turn shows its pages, not only their ids and numbers."""
+        import fitz
+
+        binding = ProjectBinding(FilesystemProjectRepository.open(self.project), project_id=self.bound["projectId"],
+            project_dir=self.project, settings=StudioSettings(project_dir=self.project, cad_export="off"))
+        pdf = fitz.open()
+        pdf.new_page(width=400, height=200)
+        pdf.new_page(width=200, height=500)  # A portrait second page tells the pages apart.
+        document = save_document(binding, None, "North elevation.pdf", "application/pdf",
+                                 base64.b64encode(pdf.tobytes()).decode("ascii"))
+        reference = {"runId": document.run_id, "assetSha256": document.asset_sha256, "revisionRef": None, "pageIndex": 1}
+        self.present("user")
+        self.assertEqual(self.present(documents=[{**reference, "pageIndex": 2}], expected=409)["code"], "CHAT_DOCUMENT_MISMATCH")
+        result = self.present(content="", documents=[reference])
+        shown = result["messages"][-1]
+        self.assertEqual(shown["role"], "assistant")
+        self.assertEqual(shown["documents"], [{**reference, "fileName": "North elevation-p2.png", "mimeType": "image/png"}],
+                         "the transcript keeps the exact document run, asset, revision and page")
+        self.assertEqual(self.saved()["messages"][-1]["documents"][0]["pageIndex"], 1)
+        page = self.new_client(self.new_store()).get(f"/api/chat/sessions/{self.bound['chatId']}/documents/{self.assistant_id}/0")
+        self.assertEqual(page.status_code, 200, page.text)
+        self.assertEqual(page.headers["content-type"], "image/png")
+        self.assertTrue(page.headers["content-disposition"].startswith("inline;"))
+        with Image.open(BytesIO(page.content)) as image:
+            self.assertEqual(image.format, "PNG")
+            self.assertLess(image.width, image.height, "the second, portrait page is the one shown")
+        self.assertIn("chat_present kind=assistant", chat._GUIDES["/api/drawings"])
+        self.assertIn("documents:[{runId, assetSha256, revisionRef, pageIndex}]", chat._GUIDES["/api/drawings"])
+
+    def test_external_turn_that_made_a_candidate_gets_the_study_card(self):
+        """#404 F15: an external turn's requests through the Hub give it the same result card."""
+        from monkeyhub_api.runtime import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager
+
+        runtimes = ProjectRuntimeManager(None, self.store)
+        self.assertEqual(self.store.turn_results, runtimes.turn_results)
+        operations = OperationManager(self.bound["projectId"])
+        runtime = ProjectRuntime("external-runtime", self.bound["projectId"], str(self.project), operations, None)
+        runtimes._projects[runtime.runtime_id] = runtime
+        chat_id = self.bound["chatId"]
+
+        def run(session_id, path="/api/proposals/prop-1/candidate", status="succeeded"):
+            admission, _ = operations.admit(str(uuid4()), "POST", path, b"{}", retained=None, source="chat", session_id=session_id)
+            operations.replied(admission, HttpResult(202, json.dumps({"candidateId": admission.record.candidateId}).encode(), {}))
+            return admission.record.candidateId, {"candidateId": admission.record.candidateId, "status": status}
+
+        earlier, earlier_row = run(chat_id)  # Before this turn: another turn's result.
+        self.present("user")
+        made, made_row = run(chat_id)
+        failed, failed_row = run(chat_id, status="failed")
+        _, other_row = run(str(uuid4()))  # Another chat's run in the same project.
+        operations.reconcile({"candidates": [earlier_row, made_row, failed_row, other_row]}, worker_alive=True)
+        self.present(content="Entrance candidate ready", status="streaming")
+        self.assertFalse(any(row["candidateId"] for row in self.saved()["messages"]), "a streaming answer is not the turn's end")
+        result = self.present(content="Entrance candidate ready", revision=1)
+        rows = [row for row in result["messages"] if row["candidateId"]]
+        self.assertEqual([(row["role"], row["candidateId"], row["sourceTurnId"]) for row in rows], [("tool", made, self.turn)])
+        self.assertIn("POST /api/proposals/prop-1/candidate", rows[0]["content"])
+        ids = [row["id"] for row in result["messages"]]
+        self.assertLess(ids.index(self.user_id), ids.index(rows[0]["id"]), "the card's row belongs to this turn, when it was asked")
+        self.assertEqual([row.candidateId for row in self.new_store().get(chat_id).messages if row.candidateId], [made])
+
     def test_null_revision_selects_original_metadata_despite_legacy_byte_wildcard(self):
         binding = ProjectBinding(FilesystemProjectRepository.open(self.project), project_id=self.bound["projectId"],
             project_dir=self.project, settings=StudioSettings(project_dir=self.project, cad_export="off"))

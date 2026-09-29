@@ -864,6 +864,9 @@ class ChatStore:
         self._loaded = False
         self._closing = False
         self.on_change = None
+        # The project runtime answers which candidates a chat's requests made
+        # since a time, from its admission and operation records (#404 F15).
+        self.turn_results = None
         # One in-memory answer per Hub run: what the installed CLIs said when
         # they were last asked. Nothing is written to disk and no check runs on
         # the transcript's polling path.
@@ -894,6 +897,9 @@ class ChatStore:
                         message.interjection = "undelivered"
                     message.permission = None
                 self._save(session)
+            if session.archived:
+                # Archived before this Hub started: its scratch was temporary computation (#404 item 6).
+                self._clear_scratch(session.id)
         self._loaded = True
 
     def _attachment_path(self, session_id: str, attachment: ChatAttachment) -> Path:
@@ -904,6 +910,10 @@ class ChatStore:
 
     def _scratch_path(self, session_id: str) -> Path:
         return self.root / _identifier(session_id) / "scratch"
+
+    def _clear_scratch(self, session_id: str) -> None:
+        """Remove a chat's scratch: temporary computation, never a project record or an attachment."""
+        shutil.rmtree(self._scratch_path(session_id), ignore_errors=True)
 
     def attachment(self, session_id: str, attachment_id: str) -> tuple[ChatAttachment, Path]:
         with self._lock:
@@ -1275,6 +1285,20 @@ class ChatStore:
                          if (row.run_id, row.asset_sha256, row.revision_ref) == (ref.runId, ref.assetSha256, ref.revisionRef)), None)
         if document is None or ref.pageIndex not in {page.page_index for page in document.pages}:
             raise HubFailure(409, "CHAT_DOCUMENT_MISMATCH", "This exact document revision or page is unavailable.")
+        if document.mime_type not in _IMAGE_MIMES:
+            # A drawing page is shown, not only named (#404 item 9): the exact page as the PNG
+            # the Board export gives, which also verifies the source bytes against P036.
+            from dataclasses import replace
+            from archflow_studio_api.application.boards import BoardExportPage, export_board_pages
+            from archflow_studio_api.transport.errors import StudioError
+            try:
+                page = export_board_pages(binding, [BoardExportPage(ref.runId, ref.assetSha256, ref.revisionRef, ref.pageIndex)],
+                                          "png", False, 2048)
+            except StudioError as exc:
+                raise HubFailure(409, "CHAT_DOCUMENT_MISMATCH", "This exact document revision or page is unavailable.") from exc
+            stem = Path(document.file_name).stem or "drawing"
+            return replace(document, file_name=f"{stem}-p{ref.pageIndex + 1}.png", mime_type=page.media_type,
+                           size_bytes=len(page.content), asset_sha256=sha256(page.content).hexdigest()), page.content
         # The legacy byte reader treats null revision as a wildcard. Select exact metadata first;
         # bytes remain content-addressed and independently verified by their existing owner.
         _, data = document_bytes(binding, ref.runId, ref.assetSha256, ref.revisionRef)
@@ -1288,8 +1312,25 @@ class ChatStore:
                 raise HubFailure(404, "CHAT_DOCUMENT_NOT_FOUND", "This document is not in this conversation.")
             return self._document(session, message.documents[index])
 
+    def _external_results(self, session_id: str, request: ChatPresentationRequest) -> tuple[tuple[str, str, str], ...]:
+        """The candidates an external turn made, read before the chat lock: the runtime may refresh."""
+        if request.kind != "assistant" or request.status == "streaming" or self.turn_results is None:
+            return ()
+        with self._lock:
+            session = self._sessions.get(session_id)
+            asked = next((row for row in session.messages if row.role == "user" and row.sourceTurnId == request.turnId),
+                         None) if session and session.sourceSessionId else None
+            if asked is None:
+                return ()
+            project_dir = session.projectDir
+        try:
+            return tuple(self.turn_results(session_id, project_dir, asked.createdAt))
+        except HubFailure:
+            return ()  # A closed or unreadable runtime leaves the answer without a card, as before.
+
     def present(self, session_id: str, request: ChatPresentationRequest, token: str) -> ChatDetail:
         """Upsert a public result without starting a provider or writing project state."""
+        results = self._external_results(session_id, request)
         with self._lock:
             session = self._session(session_id).model_copy(deep=True)
             expected = self._presentation_tokens.get(session_id)
@@ -1395,6 +1436,16 @@ class ChatStore:
                 session.messages[session.messages.index(previous)] = message
             else:
                 session.messages.append(message)
+            # #404 F15: the requests this external turn made through the Hub are its steps. Each
+            # candidate one finished is a row the Study card reads, as a native turn's call is.
+            shown = {row.candidateId for row in session.messages if row.sourceTurnId == request.turnId and row.candidateId}
+            for candidate_id, kind, asked_at in results:
+                if candidate_id not in shown:
+                    shown.add(candidate_id)
+                    session.messages.insert(session.messages.index(message), ChatMessage(
+                        id=f"{request.turnId}:result:{candidate_id}", role="tool", createdAt=asked_at,
+                        content=f"studio_request · {kind} · completed\ncandidateId: {candidate_id}",
+                        sourceTurnId=request.turnId, candidateId=candidate_id))
             if request.kind == "user":
                 session.status, session.error = "running", None
             elif session.sourceSessionId and request.status != "streaming":
@@ -1418,8 +1469,12 @@ class ChatStore:
             if session.archived == archived:
                 return self.get(session_id)
             updated = session.model_copy(update={"archived": archived, "updatedAt": _now()}, deep=True)
+            if not archived:
+                self._clear_scratch(session_id)  # A restored chat starts with an empty scratch.
             self._save(updated)
             self._sessions[session_id] = updated
+            if archived:
+                self._clear_scratch(session_id)
             return self.get(session_id)
 
     def create(self, request: ChatCreateRequest) -> ChatDetail:
@@ -3932,6 +3987,7 @@ _MODELLING = chr(10).join([
     "{results: [{runId: <candidateId>, outcome: 'admitted', supersedes: [attempt runIds it replaced], label}]}; supersedes may be [].",
     "Add study: {id, label, baseRunId} (id an ASCII slug) for several alternatives built from one run.",
     "outcome 'rejected' only where the user's words reject that result; add feedbackQuote with their exact passage.",
+    "outcome 'withdrawn': your own result from this chat that you no longer propose; no user words.",
     "The chat fills projectId, task {kind: 'hub-chat'}, messageSource and rawLanguage; never supply them. A refusal names each failing",
     "clause per run; an identical retry returns the same record. GET /api/admissions?include=rejected lists what is already admitted or tried.",
     "CONTINUE: only when the user's words ask to continue from a result, PUT /api/working-draft {runId, baseRevisionSha256}",
@@ -3985,6 +4041,9 @@ _GUIDES = {
         'DRAWING PAGE: POST /api/board/export is a read-only native MCP image: body {projectId, pages:[{runId, assetSha256, revisionRef, pageIndex}], format:"png", zip:false, maxEdge:2048}.',
         "Copy exact source fields from GET /api/documents or the generated drawing result; revisionRef must be explicit (null for sources without a revision),",
         "pageIndex is zero-based. One clean source page, no annotations, at most 2048 pixels per edge and 4 MiB; use smaller maxEdge if too large. No operationId or awaitSeconds.",
+        "SHOW THE PAGES: when a turn made or revised drawing pages, present them before you finish: chat_present kind=assistant with",
+        "documents:[{runId, assetSha256, revisionRef, pageIndex}] per page, the exact fields of the result. The chat shows each page as the PNG",
+        "this export gives; ids and page numbers alone do not show the user the drawing.",
     ]),
     "/api/decisions": chr(10).join([
         "CONTEXT READ: POST /api/intents/context compiles current task facts from projectId, stateDigest, utterance and exact sourceRunId/sourceStageRef; focus is optional.",

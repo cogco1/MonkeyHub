@@ -183,6 +183,13 @@ verified agent connection; `AppStatus.url` opens the corresponding workspace in 
 runtime that is not `ready` or `busy` and healthy answers `WORKER_UNAVAILABLE`. Direct access
 to the runtime's own port is for development and tests (§8).
 
+Each admitted mutation keeps an operation record. An answer of 422 or 409 that names no
+proposal, job or candidate the Studio took on is `refused` (#404): the caller already read it,
+the record and its reason stay in the diagnostics, and the Hub shows no "did not finish" notice
+for it. A failure after admission, a stale result and one that needs recovery keep that notice.
+A chat that asks to withdraw a result (`POST /api/admissions`, outcome `withdrawn`) is refused
+with `CANDIDATE_NOT_THIS_CHATS` unless this Hub admitted that run for the same chat.
+
 ## 7. Isolation
 
 - One process, one project, one port. A crash affects one project; `recover` restarts it on

@@ -1487,8 +1487,10 @@ export type OperationRecord = {
     source: string;
     /**
      * Status
+     *
+     * refused: the Studio or Hub answered 422 or 409 before taking anything on. The caller read that answer; the record keeps it in reason, and it is finished, not unfinished.
      */
-    status: 'queued' | 'planning' | 'validated' | 'executing' | 'committing' | 'completed' | 'failed' | 'cancelled' | 'stale' | 'needs_recovery';
+    status: 'queued' | 'planning' | 'validated' | 'executing' | 'committing' | 'completed' | 'failed' | 'cancelled' | 'stale' | 'needs_recovery' | 'refused';
     /**
      * Baserevision
      */
