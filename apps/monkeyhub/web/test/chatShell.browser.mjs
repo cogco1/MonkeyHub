@@ -856,6 +856,13 @@ async function idleMinute() {
     };
   });
   await idle.clock.install();
+  // #449: loading the page opens one event stream and reads the chat list once for the shell, after the
+  // stream attached; the attention layer (useAttention) reads it once of its own. Before, the shell alone
+  // read it up to eight times and reconnected the stream when the saved settings arrived.
+  const loading = [];
+  const onLoad = (request) => { const url = new URL(request.url()); if (["/api/chat/sessions", "/api/runtime/events"].includes(url.pathname)) loading.push(url.pathname); };
+  idle.on("request", onLoad);
+  const sequenceAtLoad = runtimeSequence;
   try {
     await idle.goto(origin);
     await idle.getByRole("button", { name: "Tree project", exact: true }).first().click();
@@ -868,6 +875,13 @@ async function idleMinute() {
     await idle.locator(".chat-project-workspace:not([hidden]) .project-bar").getByRole("button", { name: "List", exact: true }).click();
     const stage = (run) => surface.locator(`[role="treeitem"][data-node="stage:project://T/runs/${run}/review/design-stage.json"]`);
     await stage("tree-s2").waitFor();
+    idle.off("request", onLoad);
+    const loaded = loading.reduce((counts, name) => ({ ...counts, [name]: (counts[name] ?? 0) + 1 }), {});
+    console.log(JSON.stringify({ pageLoad: loaded }));
+    assert.equal(loaded["/api/runtime/events"], 1, `one event stream while the page loads: ${JSON.stringify(loaded)}`);
+    // Every runtime event another scenario's page emits meanwhile may say the list moved: each may read it once more.
+    const events = runtimeSequence - sequenceAtLoad;
+    assert.ok(loaded["/api/chat/sessions"] <= 2 + events, `the chat list is read once by the shell while the page loads: ${JSON.stringify({ ...loaded, events })}`);
     await idle.clock.pauseAt(await idle.evaluate(() => Date.now()) + 1000);
     // Each second's answers land before the next second starts.
     const seconds = async (count) => { for (let second = 0; second < count; second++) { await idle.clock.runFor(1000); await idle.waitForTimeout(100); } };

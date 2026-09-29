@@ -1226,6 +1226,31 @@ class RuntimeCostTests(unittest.TestCase):
             self.assertEqual(refused.exception.status, 422)
             self.assertEqual(checks.call_count, 3)
 
+    def test_opening_an_observed_project_again_neither_verifies_nor_rereads_an_unchanged_project(self):
+        # #449: a page reload opens the project's runtime again while its workspace loads.
+        repository = self.project()
+        manager = self.manager()
+        self.addCleanup(manager.shutdown)
+        root = str(repository.layout.root)
+        with patch("monkeyhub_api.runtime._project", wraps=runtime_module._project) as checks:
+            opened = manager.open(self.fixture.PROJECT_ID, root)
+            self.assertEqual(checks.call_count, 1)
+            with patch.object(opened.wake, "set", wraps=opened.wake.set) as full_reads, \
+                    patch.object(opened.wake, "check", wraps=opened.wake.check) as moved_checks:
+                for _ in range(3):
+                    self.assertIs(manager.open(self.fixture.PROJECT_ID, root), opened)
+                self.assertEqual(checks.call_count, 1, "an unchanged project was verified again on each open")
+                full_reads.assert_not_called()
+                self.assertEqual(moved_checks.call_count, 3, "each open still asks whether the project moved")
+            with self.assertRaises(HubFailure) as refused:
+                manager.open("another-project", root)
+            self.assertEqual(refused.exception.error.code, "PROJECT_MISMATCH")
+            manifest = repository.layout.manifest
+            stamp = manifest.stat()
+            os.utime(manifest, ns=(stamp.st_atime_ns, stamp.st_mtime_ns + 1_000_000_000))
+            self.assertIs(manager.open(self.fixture.PROJECT_ID, root), opened)
+            self.assertEqual(checks.call_count, 3, "a moved manifest is verified again")
+
     def test_get_refuses_a_changed_binding_with_the_same_conflict(self):
         repository = self.project()
         manager = self.manager()
