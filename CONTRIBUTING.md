@@ -12,7 +12,8 @@ MonkeyHub 的任务以 **GitHub Issue** 为唯一 canonical task/spec identity�
 
 职责分工：
 
-- GitHub Issue：需求、讨论、验收、优先级、task identity；
+- GitHub Issue：需求、讨论、验收、task identity；
+- GitHub Project（MonkeyHub Development）：优先级、状态、Initiative 与有证据的日期，规则见 [`docs/PROJECT_TRACKING.md`](docs/PROJECT_TRACKING.md)；
 - Pull Request：一个可 review 的实现切片；
 - `work_registry.json`：源码工作真正开始时才登记的当前 claim（branch/worktree/write_scope/依赖/交接），不是第二份 backlog，完成即删除；
 - `module_registry.json`：长期软件 owner 与公开契约；
