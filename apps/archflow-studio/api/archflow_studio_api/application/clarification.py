@@ -706,8 +706,23 @@ def editable_descendants(
     )
 
 
-def _option(element: ProjectedElement, semantic_property: str | None) -> CandidateOption:
-    """One editable element as a choice, with the number it holds now."""
+def _declared_unit(element: ProjectedElement, key: str | None, record) -> str | None:
+    """The unit this element's field declares (its bound parameter's, or its producer's), or None.
+
+    Read by ``control_unit``, the one reading the grammar's own conversion uses
+    (#404 F17, item 11): an option's number is stated in the unit its edit would be.
+    """
+
+    if key is None or record is None:
+        return None
+    from .intent_context import control_unit
+
+    context, row = _control_context(element, key, record)
+    return control_unit(context, row, key)
+
+
+def _option(element: ProjectedElement, semantic_property: str | None, record=None) -> CandidateOption:
+    """One editable element as a choice, with the number it holds now and the unit it declares."""
 
     key = (
         semantic_property
@@ -723,7 +738,7 @@ def _option(element: ProjectedElement, semantic_property: str | None) -> Candida
         element_id=element.element_id,
         key=key,
         current_value=value,
-        unit=None,
+        unit=_declared_unit(element, key, record),
         orientation=orientation,
         label=f"{element.element_id}{now}{where}",
     )
@@ -739,7 +754,7 @@ def _component_option(
         element_id=None,
         key=None,
         current_value=None,
-        unit=None,
+        unit=None,  # no number, so no unit to declare
         orientation=compass_in(component_id),
         label=component_id,
     )
@@ -1111,9 +1126,9 @@ def _draft(
             if read_from
             else None
         ),
-        # Element params are bare numbers in the record: this seam converts
-        # nothing and states no unit the record does not.
-        unit=None,
+        # The unit the elements read declare for this property, when they all
+        # declare the same one; this seam converts nothing and guesses none.
+        unit=_agreed_unit(with_property, semantic_property, projection.record),
         provenance=provenance,
         confidence=confidence,
         dependency_requirements=tuple(requirements),
@@ -1126,6 +1141,13 @@ def _draft(
         catalog_status=catalog_status,
         object_names=object_names,
     )
+
+
+def _agreed_unit(elements, key: str | None, record) -> str | None:
+    """The one unit every element's field declares, or None when any declares none or they differ."""
+
+    units = {_declared_unit(element, key, record) for element in elements}
+    return units.pop() if len(units) == 1 else None
 
 
 _INCREASE_WORDS = ("提高", "升高", "加高", "抬高", "增高", "加大", "增加", "raise", "increase", "taller", "higher", "up by", "longer", "wider", "thicker")
@@ -1854,7 +1876,7 @@ def _scope_candidates(
             element_id=None,
             key=None,
             current_value=None,
-            unit=None,
+            unit=None,  # a reach, not a number
             orientation=None,
             label=option.label,
             ref_override=option.ref,
@@ -2145,7 +2167,7 @@ def resolve(
                 ),
             ),
         )
-    candidates = tuple(_option(element, semantic_property) for element in allowed)
+    candidates = tuple(_option(element, semantic_property, projection.record) for element in allowed)
     pending_now = _pending(
         state_digest=projection.state_digest,
         original_utterance=(

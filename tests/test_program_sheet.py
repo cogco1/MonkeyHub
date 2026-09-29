@@ -373,6 +373,22 @@ class ApplySheetTests(unittest.TestCase):
                 if close is not None:
                     self.assertIn(close, message)
 
+    def test_the_refusal_says_everything_a_function_may_name(self) -> None:
+        """#404 item 4: condition ids and the axis are accepted, so the refusal does not say role only."""
+
+        for accepted in ("condition.axis", "role.access", "storage"):
+            with self.subTest(accepted=accepted):
+                sheet = sheet_with()
+                sheet["departments"][0]["spaces"][0]["function"] = accepted
+                apply_sheet(bound_record(), sheet)
+        for refused in ("brooding-nook", 7):
+            with self.subTest(refused=refused):
+                sheet = sheet_with()
+                sheet["departments"][0]["spaces"][0]["function"] = refused
+                with self.assertRaises(ProgramSheetError) as raised:
+                    apply_sheet(bound_record(), sheet)
+                self.assertIn("role or condition id, an alias of one, a registered phrase", str(raised.exception))
+
     def test_a_requirement_with_no_kernel_kind_is_refused_by_name(self) -> None:
         for requirement in ("near", "visual"):
             with self.subTest(requirement=requirement):

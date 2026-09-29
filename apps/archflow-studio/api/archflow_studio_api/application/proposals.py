@@ -172,7 +172,9 @@ def continue_proposal(
         list((previous.semantic_edit or {}).get("kept", ()))
         + list((proposal.semantic_edit or {}).get("kept", ()))
     ))
-    edit.update(summary=proposal.utterance, protected=sorted(root_protected), kept=kept)
+    # The step's own summary, which may say more than its utterance (#404 item 8).
+    summary = (proposal.semantic_edit or {}).get("summary") or proposal.utterance
+    edit.update(summary=summary, protected=sorted(root_protected), kept=kept)
     combined = proposal_from(component_edit_proposal(
         base, edit, utterance=proposal.utterance, component_id=proposal.component_id,
     ))

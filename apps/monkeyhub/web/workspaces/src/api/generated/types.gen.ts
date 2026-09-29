@@ -9012,7 +9012,7 @@ export type SemanticEditRequestDto = {
             };
             params?: {
                 /**
-                 * The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters.
+                 * The plan profile as a closed boundary in order; repeating its first point at the end is optional. Coordinates may bind @parameters.
                  */
                 profile?: Array<[
                     number | string,
@@ -9103,7 +9103,7 @@ export type SemanticEditRequestDto = {
             };
             params?: {
                 /**
-                 * One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end.
+                 * One simple closed boundary in work_plane coordinates (XZ when omitted), in order; repeating its first point at the end is optional.
                  */
                 profile?: Array<[
                     number | string,
@@ -9230,7 +9230,7 @@ export type SemanticEditRequestDto = {
                     number | string
                 ]>>;
                 /**
-                 * The same number of vertices in every section; do not repeat the first vertex.
+                 * The number of distinct vertices in every section, not counting a repeated first point.
                  */
                 profile_size?: number;
                 /**
@@ -9369,6 +9369,9 @@ export type SemanticEditRequestDto = {
                      * The existing wall face label, when the record names one.
                      */
                     face?: string;
+                    /**
+                     * Optional plan [X, Z] direction towards the side the thickness goes; pointing to the right of from→to puts the thickness on the right. The line stays the same face either way.
+                     */
                     inward?: [
                         number,
                         number
@@ -9381,7 +9384,7 @@ export type SemanticEditRequestDto = {
                  */
                 height?: number | string;
                 /**
-                 * Positive wall thickness towards the line's inward normal.
+                 * Positive wall thickness. The line is one face of the wall; seen from above, the thickness lies to the left of the line walked from its from point to its to point, unless references.line.inward says otherwise.
                  */
                 thickness?: number | string;
                 openings?: Array<{
@@ -9569,7 +9572,7 @@ export type SemanticEditRequestDto = {
             };
             params?: {
                 /**
-                 * The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters.
+                 * The plan profile as a closed boundary in order; repeating its first point at the end is optional. Coordinates may bind @parameters.
                  */
                 profile?: Array<[
                     number | string,
@@ -9658,7 +9661,7 @@ export type SemanticEditRequestDto = {
             };
             params?: {
                 /**
-                 * One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end.
+                 * One simple closed boundary in work_plane coordinates (XZ when omitted), in order; repeating its first point at the end is optional.
                  */
                 profile?: Array<[
                     number | string,
@@ -9781,7 +9784,7 @@ export type SemanticEditRequestDto = {
                     number | string
                 ]>>;
                 /**
-                 * The same number of vertices in every section; do not repeat the first vertex.
+                 * The number of distinct vertices in every section, not counting a repeated first point.
                  */
                 profile_size?: number;
                 /**
@@ -9918,6 +9921,9 @@ export type SemanticEditRequestDto = {
                      * The existing wall face label, when the record names one.
                      */
                     face?: string;
+                    /**
+                     * Optional plan [X, Z] direction towards the side the thickness goes; pointing to the right of from→to puts the thickness on the right. The line stays the same face either way.
+                     */
                     inward?: [
                         number,
                         number
@@ -9930,7 +9936,7 @@ export type SemanticEditRequestDto = {
                  */
                 height?: number | string;
                 /**
-                 * Positive wall thickness towards the line's inward normal.
+                 * Positive wall thickness. The line is one face of the wall; seen from above, the thickness lies to the left of the line walked from its from point to its to point, unless references.line.inward says otherwise.
                  */
                 thickness?: number | string;
                 openings?: Array<{
