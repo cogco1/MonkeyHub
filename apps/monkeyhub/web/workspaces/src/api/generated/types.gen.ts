@@ -10504,6 +10504,153 @@ export type SketchPrismRequestDto = {
 };
 
 /**
+ * SkillAttributionDto
+ */
+export type SkillAttributionDto = {
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Authenticated
+     */
+    authenticated: boolean;
+    /**
+     * Origin
+     */
+    origin: string;
+};
+
+/**
+ * SkillDto
+ *
+ * One exact version, with its body, and the version that is current now.
+ */
+export type SkillDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Latestversion
+     */
+    latestVersion: number;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Body
+     */
+    body: string;
+    manifest: SkillManifestDto | null;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    attribution: SkillAttributionDto;
+};
+
+/**
+ * SkillIndexDto
+ */
+export type SkillIndexDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Skills
+     */
+    skills: Array<SkillIndexRowDto>;
+};
+
+/**
+ * SkillIndexRowDto
+ *
+ * What an agent sees before it uses a skill: no body.
+ */
+export type SkillIndexRowDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+};
+
+/**
+ * SkillManifestDto
+ *
+ * What a procedure reads, produces and says it needs; declared, never enforced.
+ */
+export type SkillManifestDto = {
+    /**
+     * Inputs
+     */
+    inputs?: Array<string>;
+    /**
+     * Outputs
+     */
+    outputs?: Array<string>;
+    /**
+     * Permissions
+     */
+    permissions?: Array<string>;
+};
+
+/**
+ * SkillRequestDto
+ *
+ * One new version. A new skill names no version; a successor names the one it supersedes.
+ */
+export type SkillRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Body
+     */
+    body: string;
+    manifest?: SkillManifestDto | null;
+    /**
+     * Supersedesversion
+     */
+    supersedesVersion?: number | null;
+};
+
+/**
  * SourceDocumentDto
  *
  * An imported reference document, separate from certified model artifacts.
@@ -17873,3 +18020,118 @@ export type ReadProjectionApiProjectionsKeyGetResponses = {
 };
 
 export type ReadProjectionApiProjectionsKeyGetResponse = ReadProjectionApiProjectionsKeyGetResponses[keyof ReadProjectionApiProjectionsKeyGetResponses];
+
+export type ReadSkillIndexApiSkillsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/skills';
+};
+
+export type ReadSkillIndexApiSkillsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillIndexApiSkillsGetError = ReadSkillIndexApiSkillsGetErrors[keyof ReadSkillIndexApiSkillsGetErrors];
+
+export type ReadSkillIndexApiSkillsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: SkillIndexDto;
+};
+
+export type ReadSkillIndexApiSkillsGetResponse = ReadSkillIndexApiSkillsGetResponses[keyof ReadSkillIndexApiSkillsGetResponses];
+
+export type AddSkillApiSkillsPostData = {
+    body: SkillRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/skills';
+};
+
+export type AddSkillApiSkillsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AddSkillApiSkillsPostError = AddSkillApiSkillsPostErrors[keyof AddSkillApiSkillsPostErrors];
+
+export type AddSkillApiSkillsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SkillDto;
+};
+
+export type AddSkillApiSkillsPostResponse = AddSkillApiSkillsPostResponses[keyof AddSkillApiSkillsPostResponses];
+
+export type ReadSkillApiSkillsSkillIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Version
+         */
+        version?: number | null;
+    };
+    url: '/api/skills/{skill_id}';
+};
+
+export type ReadSkillApiSkillsSkillIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSkillApiSkillsSkillIdGetError = ReadSkillApiSkillsSkillIdGetErrors[keyof ReadSkillApiSkillsSkillIdGetErrors];
+
+export type ReadSkillApiSkillsSkillIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: SkillDto;
+};
+
+export type ReadSkillApiSkillsSkillIdGetResponse = ReadSkillApiSkillsSkillIdGetResponses[keyof ReadSkillApiSkillsSkillIdGetResponses];

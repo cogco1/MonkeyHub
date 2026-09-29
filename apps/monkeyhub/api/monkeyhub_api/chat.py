@@ -58,6 +58,7 @@ from archflow_studio_api.settings import read_application_settings, read_user_se
 from pydantic import Field
 
 from . import credentials
+from . import skill_plugins
 
 from .models import (
     ChatAttachment, ChatAttention, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
@@ -219,22 +220,25 @@ _CLAUDE_APPROVED = (
 )
 
 
-def _claude_approved(runtime_root: Path) -> tuple[str, ...]:
+def _claude_approved(runtime_root: Path, *, skills: bool = False) -> tuple[str, ...]:
     """The names above, plus computer use on a machine whose policy allows it.
 
     Driving the desktop is not approved by being installed. The tools are
     always advertised, because their route answers a disabled machine with the
     file that turns them on, but a headless turn may only actually use them
-    where the owner of this machine said so.
+    where the owner of this machine said so. ``skills`` adds Claude's own Skill
+    tool when a library's skills are loaded (#252): reading a procedure, which
+    grants nothing the tools above do not.
     """
     # Imported inside every caller rather than at the top: computer_tools
     # reaches its routes through this module's own transport, and one of the
     # two has to be late for the other to exist.
     from . import computer_tools
 
+    approved = _CLAUDE_APPROVED + (("Skill",) if skills else ())
     if not computer_tools.read_policy(runtime_root).enabled:
-        return _CLAUDE_APPROVED
-    return _CLAUDE_APPROVED + tuple(
+        return approved
+    return approved + tuple(
         f"mcp__monkeyhub__{name}" for name in computer_tools.TOOL_NAMES
     )
 
@@ -1785,6 +1789,9 @@ class ChatStore:
             command.append("-")
         else:
             scratch = self._scratch_path(session.id)
+            # The library project's skills, as a plugin Claude loads natively
+            # (#252). None when no library is set: the command is then as before.
+            skills = skill_plugins.library_plugin_dir(self.runtime_root, self.hub_url)
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
                        "--include-partial-messages", "--permission-mode", "dontAsk", "--permission-prompts", "none",
                        # Two different questions, and both have to be answered.
@@ -1793,8 +1800,10 @@ class ChatStore:
                        # it with no prompt attached. Named rather than bypassed:
                        # reading, editing and running in the workspace above,
                        # plus this adapter's own tools and nothing else.
-                       "--tools", "default", "--allowedTools", ",".join(_claude_approved(self.runtime_root)),
+                       "--tools", "default", "--allowedTools",
+                       ",".join(_claude_approved(self.runtime_root, skills=skills is not None)),
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
+                       *(("--plugin-dir", str(skills)) if skills is not None else ()),
                        "--add-dir", str(scratch),
                        # alwaysLoad: the CLI otherwise defers every MCP tool behind
                        # a ToolSearch round trip, one model call before any design work.

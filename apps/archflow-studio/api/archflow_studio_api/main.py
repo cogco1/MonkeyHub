@@ -33,6 +33,7 @@ from archflow.project.index import IndexCommit, add_commit_listener
 
 from . import routes
 from .routes import projections as projection_routes
+from .routes import skills as skill_routes
 from .application.authentication import ActorAuthorizationMiddleware, read_actor_credentials, request_action
 from .application.clarification import PendingIntentStore
 from .application.episodes import EpisodeStore
@@ -420,6 +421,8 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
     app.include_router(routes.router)
     if not shared_project:
         app.include_router(projection_routes.router, prefix=_API_PREFIX)
+        # The library project's skills (#252), read by the Hub for its agents.
+        app.include_router(skill_routes.router, prefix=_API_PREFIX)
     # Added first, so it sits inside the token and CORS middlewares below: a
     # request is authenticated before a remembered answer can be handed out.
     app.add_middleware(ConditionalReads, state=app.state)

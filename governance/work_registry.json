@@ -30,6 +30,7 @@
             "apps/monkeyhub/api/monkeyhub_api/main.py",
             "apps/monkeyhub/api/tests/test_chat.py",
             "apps/monkeyhub/api/tests/test_skill_library.py",
+            "apps/monkeyhub/web/src/api/generated/",
             "apps/monkeyhub/web/workspaces/src/api/generated/",
             "docs/PROJECT_RUNTIME.md"
           ],

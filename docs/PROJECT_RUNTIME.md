@@ -81,6 +81,7 @@ Every project-scoped responsibility the product needs, behind `/api` (`routes/__
 | Annotations and intents | `/api/model-annotations`, `/api/document-annotations`, `/api/document-comments`, `/api/intents*` | `studio.intent` |
 | Capabilities | `/api/capabilities*` | `studio.intent` |
 | Events | `GET /api/events`, `POST /api/events/*` | `studio.candidate`, `studio.shell` |
+| Skills | `POST /api/skills`, `GET /api/skills` (index, no bodies), `GET /api/skills/{skill_id}` (`?version=`) | `studio.skills` |
 | Shared-project role | `/api/sync/*` | `studio.binding` |
 
 The three remaining route files answer about the process, not about the project:
@@ -92,6 +93,27 @@ Also: the CAD/OCCT/Rhino execution and inspection adapters (`archflow/adapters`)
 through `archflow.project.repository`. In production the runtime is the only writer of a
 project. The Hub's runtime records and admission journal are observations, not a second
 project repository (PROTOCOL.md, "MonkeyHub project runtime").
+
+### The skill library (#252)
+
+Any Runtime serves its own project's skills: immutable versions of a named procedure (`skill:<kebab-name>`,
+a one-line description, a SKILL.md body of at most 64 KiB without frontmatter, and an optional manifest of
+inputs, outputs and permissions), retained in the fixed `studio-skills` run. A new version names the version
+it supersedes; the old one stays readable with `?version=`.
+
+The *library* is an ordinary complete project named by the Hub application setting `libraryDir`. When it is
+set, the Hub prepares the library's Runtime as it prepares a chat's own project, reads `GET /api/skills`,
+and writes the current versions into a Claude plugin in its own cache,
+`<runtime root>/cache/skill-plugins/<index digest>/` (`.claude-plugin/plugin.json`,
+`skills/<name>/SKILL.md`), rebuilt only when the index changes (`monkeyhub_api/skill_plugins.py`). A Claude
+chat is started with `--plugin-dir <that directory>` and the `Skill` tool allowed; Claude lists each name and
+description and reads a body only when it uses the skill. Nothing is written into any project. With no
+library set, the command is unchanged.
+
+A skill is only a procedure. Retaining or following one grants no permission, and the `permissions` its
+manifest lists are declared for a reader and enforced by nothing. Codex chats get no library skills yet:
+Codex has native skills, and the pinned ACP adapter loads `<additional directory>/.agents/skills`, but the
+Hub's ACP session passes no additional directory, and one would also become a writable sandbox root.
 
 Owner module names above are those in `governance/module_registry.json` (`docs/SYSTEM_MAP.md`
 renders them); where a concern has several owners the registry is authoritative.

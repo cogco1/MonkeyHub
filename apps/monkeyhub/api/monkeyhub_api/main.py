@@ -393,6 +393,10 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
 
     @app.put("/api/settings/apps", response_model=ApplicationSettingsDto, response_model_by_alias=True)
     def update_application_settings(body: ApplicationSettingsDto) -> ApplicationSettingsDto:
+        if body.library_dir is not None:
+            # The skill library (#252) is a complete project, checked as one.
+            _, library = chat_tools._project(body.library_dir)
+            body = body.model_copy(update={"library_dir": library})
         with chats.project_configuration(body.project_dir):
             return applications.configure(body)
 
