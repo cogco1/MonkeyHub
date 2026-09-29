@@ -13,6 +13,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from test_monkeyhub_lifecycle import project_fixture
+from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 from monkeyhub_api import chat
@@ -52,6 +53,15 @@ class ChatFeedbackTests(unittest.TestCase):
     def request(self, base, path, method="GET", body=None, **kwargs):
         if base == self.hub and path.startswith("/api/chat/sessions/"):
             return deepcopy(self.sessions[path.rsplit("/", 1)[-1]])
+        if base == self.hub and path == "/api/settings/apps":
+            return {"libraryDir": getattr(self, "library_dir", None)}
+        if base == getattr(self, "library_base", None):
+            # The library project's own Runtime: the only place its skills are read.
+            self.library_reads.append(path)
+            response = self.library.get(path)
+            if response.is_error:
+                raise HubFailure(response.status_code, response.json()["code"], response.json()["detail"])
+            return response.json()
         if base == self.hub:
             self.writes.append((path, deepcopy(body), kwargs))
             path = path.split("/studio", 1)[1]
@@ -150,7 +160,7 @@ class ChatFeedbackTests(unittest.TestCase):
         policy = {"projectId": self.session["projectId"], "kind": "source_policy",
                   "value": {"topic": "材料", "keys": ["materials"], "prefer": ["A 建材库", "B 手册"], "avoid": ["C 网站"]}}
         for change in ({"rawLanguage": "made up"}, {"sourceKind": "human"},
-                       {"messageSource": {"sessionId": "other", "messageId": "fake"}}, {"kind": "recipe"}):
+                       {"messageSource": {"sessionId": "other", "messageId": "fake"}}, {"kind": "preference"}):
             with self.subTest(change=change), self.assertRaises(HubFailure) as refused:
                 self.tool("/api/memory", {**policy, **change})
             self.assertEqual(refused.exception.error.code, "CHAT_FEEDBACK_INVALID")
@@ -203,6 +213,74 @@ class ChatFeedbackTests(unittest.TestCase):
                       {"projectId": self.session["projectId"], "expectedRevisionRef": person["revisionRef"],
                        "action": "revoke"})
         self.assertEqual(theirs.exception.error.code, "CHAT_FEEDBACK_UNAVAILABLE")
+
+    def test_chat_saves_a_recipe_pinned_to_the_librarys_current_skill_version(self):
+        """#252 3c: a recipe names a library skill; the Hub fills the exact version from the library's index."""
+
+        words = self.user("以后出平面图前都按事务所的填充标准检查一下。")
+        recipe = {"projectId": self.session["projectId"], "kind": "recipe",
+                  "value": {"task": "出平面图前检查填充", "skill": "monkeyhub-library:hatch-review"},
+                  "appliesWhen": {"domains": ["drawing"]}}
+
+        # No library set: refused with the reason, and nothing reaches the Runtime.
+        with self.assertRaises(HubFailure) as unset:
+            self.tool("/api/memory", deepcopy(recipe))
+        self.assertEqual(unset.exception.error.code, "CHAT_RECIPE_NO_LIBRARY")
+        self.assertIn("No skill library is set", unset.exception.error.detail)
+
+        library_dir = Path(self.project).parent / "skill-library"
+        FilesystemProjectRepository.initialize(library_dir, project_id="skill-library",
+                                               initial_state={"project_id": "skill-library", "version": 0})
+        self.library = TestClient(create_app(StudioSettings(project_dir=library_dir, cad_export="off")))
+        self.addCleanup(self.library.close)
+        self.library_dir, self.library_base, self.library_reads = str(library_dir), "http://127.0.0.1:8702", []
+        bound = []
+
+        def bound_studio(hub, chat_id, *args, project_id=None, project_dir=None, **kwargs):
+            bound.append(project_id)
+            if project_id == "skill-library":
+                return self.library_base, {}
+            return self.base, deepcopy(self.session)
+        patch.object(chat, "_bound_studio", side_effect=bound_studio).start()
+        prepared = []
+        patch.object(chat, "_prepare_studio", side_effect=lambda hub, session, budget: prepared.append(session)).start()
+
+        # A library without that skill: refused, naming what it holds.
+        self.library.post("/api/skills", json={"projectId": "skill-library", "name": "section-sheet",
+                                               "description": "Lay out a section sheet.", "body": "A1.\n"})
+        with self.assertRaises(HubFailure) as unknown:
+            self.tool("/api/memory", deepcopy(recipe))
+        self.assertEqual(unknown.exception.error.code, "CHAT_RECIPE_SKILL_UNKNOWN")
+        self.assertIn("'hatch-review'", unknown.exception.error.detail)
+        self.assertIn("section-sheet", unknown.exception.error.detail)
+        self.assertEqual(self.writes, [])
+
+        # The library holds hatch-review v1: the stored value is skill:hatch-review@1.
+        self.library.post("/api/skills", json={"projectId": "skill-library", "name": "hatch-review",
+                                               "description": "Review a plan's hatching.", "body": "ZX7.\n"})
+        saved = self.tool("/api/memory", deepcopy(recipe))
+        self.assertEqual(saved["value"], {"task": "出平面图前检查填充", "skill": "skill:hatch-review@1", "note": None})
+        self.assertEqual((saved["kind"], saved["appliesWhen"]["domains"]), ("recipe", ["drawing"]))
+        self.assertEqual(saved["provenance"]["rawLanguage"], words["content"])
+        self.assertEqual(saved["provenance"]["messageSource"],
+                         {"sessionId": self.session["id"], "messageId": words["id"]})
+        # Read through the library's own Runtime, index only; the chat project's Studio never read it.
+        self.assertEqual(prepared[-1]["projectId"], "skill-library")
+        self.assertEqual(set(self.library_reads), {"/api/skills"})
+        self.assertNotIn("/api/skills", [path for path, *_ in self.writes])
+        # A named version that is not the current one is refused; a bare or ref name is pinned alike.
+        self.library.post("/api/skills", json={"projectId": "skill-library", "name": "hatch-review",
+                                               "description": "Review a plan's hatching.", "body": "ZX8.\n",
+                                               "supersedesVersion": 1})
+        with self.assertRaises(HubFailure) as old:
+            self.tool("/api/memory", {**deepcopy(recipe), "value": {"task": "出立面图", "skill": "hatch-review@1"}})
+        self.assertEqual(old.exception.error.code, "CHAT_RECIPE_SKILL_VERSION")
+        other = self.tool("/api/memory", {**deepcopy(recipe), "value": {"task": "出立面图",
+                                                                         "skill": "skill:hatch-review"}})
+        self.assertEqual(other["value"]["skill"], "skill:hatch-review@2")
+        with self.assertRaises(HubFailure) as spelled:
+            self.tool("/api/memory", {**deepcopy(recipe), "value": {"task": "出立面图", "skill": "../escape"}})
+        self.assertEqual(spelled.exception.error.code, "CHAT_RECIPE_SKILL_INVALID")
 
     def test_memory_schema_is_the_runtime_contract_with_narrow_chat_inputs(self):
         self.user("项目图框在第一页。")

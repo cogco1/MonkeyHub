@@ -10,7 +10,7 @@ decisions".
    - **Files / artifacts** hold the bytes.
    - **State** (StateRecord, decisions, dependencies, lineage) remembers what the project *is* and what it settled.
    - **The tree** (State / Stage / Candidate / Working Head) is a projection of State and owns no fact.
-   - **Memory** remembers how we *work*: locators, source policies; later recipes, preferences, habits, standards.
+   - **Memory** remembers how we *work*: locators, source policies, recipes; later preferences, habits, standards.
    - **Skills** know how to act: versioned procedures loaded on demand.
    - **The context compiler** (`POST /api/intents/context`) compiles State + applicable memory + skills into one
      bounded ContextPack: `scopedDecisions` beside `memory`.
@@ -18,8 +18,8 @@ decisions".
    Stage), a kind-specific `value`, `authority`, `provenance` (the user's raw words, `messageSource`, `sourceKind`,
    evidence refs), `version` and `status` (active, superseded, revoked).
    - Kinds now: `locator` (`{label, target}`; the target is retained project content, never a machine path or a
-     URL) and `source_policy` (`{topic, keys, prefer, avoid, note}`). Reserved: `recipe`, `preference`, `habit`,
-     `standard`.
+     URL), `source_policy` (`{topic, keys, prefer, avoid, note}`) and `recipe` (`{task, skill, note}`). Reserved:
+     `preference`, `habit`, `standard`.
    - Scope now: `project`. Reserved for the library project: `organization`, `team`, `user`.
 3. **Cross-project memory** lives in a **library project**: an ordinary P036 project that other projects consume
    by explicit, pinned import, as #331 does for recipes. No new persistence authority.
@@ -32,8 +32,18 @@ decisions".
 6. **Retrieval order.** Scope, then `appliesWhen`, then lexical matching (NFKC, casefold, CJK bigrams), then an
    optional rerank later (never the first filter), then the exact source read: a locator's target is read again
    through P036 on every lookup, and one that no longer resolves is returned stale with its reason.
-7. **The drawing recipe stays a decision** (`require` + `recipe` typed binding in `studio-decisions`) until a later
-   migration moves it to memory as `skill:`-referencing recipes.
+7. **A recipe is a memory item that names a skill version** (#252 round 3c). Its value is the task in the user's
+   words and one exact library skill, `skill:<name>@<version>`; the steps stay in the skill (Kaiwen, #252
+   comment 5877462835, point 3). `appliesWhen.domains` are the ones the user's words indicate, its topics the task
+   words, and it matches a turn's words as a source policy does. `studio.memory` checks only the ref's spelling and
+   never reads the library: when a chat saves one, the Hub resolves the named skill against the configured library's
+   current index, read through the library's own Runtime, and fills the exact version, refusing with the reason when
+   no library is set or it holds no such skill. Every recipe the Hub puts into a turn says which skill to load and
+   whether the pinned version is still the library's current one ("pinned 1, library now 2", or "not in the
+   library"); nothing is guessed or swapped, the agent tells the user.
+8. **The drawing recipe decision is a separate thing.** The accepted drawing recipe (`require` + `recipe` typed
+   binding in `studio-decisions`) stays a decision until its own migration; a `recipe` memory item does not
+   replace, read or shape it.
 
 **Why:** a memory item is not a judgement about this design. Keeping it in its own run and kind means a build that
 knows only decisions never meets one (a locator in `studio-decisions` made older builds answer 500), and the two

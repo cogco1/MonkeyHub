@@ -1,7 +1,7 @@
 """The project-memory wire contract (#252, ADR-009).
 
 A memory item is how the project works - where its content is, where to look
-first - not a decision it settled. The caller states the item's kind, its
+first, which library skill a task follows - not a decision it settled. The caller states the item's kind, its
 value and the user's words; the server adds what it can vouch for itself: the
 item's identity and key, when it applies, the revision chain, who asked
 through which surface, and whether a locator's target still resolves.
@@ -18,7 +18,7 @@ from .decisions import DecisionAttributionDto, MessageSourceDto
 
 SHA256 = r"^[0-9a-f]{64}$"
 
-MemoryKind = Literal["locator", "source_policy"]
+MemoryKind = Literal["locator", "source_policy", "recipe"]
 MemoryScope = Literal["project"]
 MemoryAuthority = Literal["explicit"]
 MemorySourceKind = Literal["human", "agent"]
@@ -94,7 +94,24 @@ class SourcePolicyValueDto(_Frozen):
     note: str | None = Field(default=None, max_length=500)
 
 
+class RecipeValueDto(_Frozen):
+    """Which library skill a task follows, by one exact version; the steps stay in the skill.
+
+    A chat names the skill as the agent sees it and the Hub fills the exact
+    version from the configured library.
+    """
+
+    task: str = Field(min_length=1, max_length=200,
+                      description="the task in the user's words, e.g. 出平面图前检查填充")
+    skill: str = Field(min_length=1, max_length=90, pattern=r"^skill:[a-z0-9]+(-[a-z0-9]+)*@[1-9][0-9]{0,8}$",
+                       description="skill:<name>@<version>, one exact version of a library skill")
+    note: str | None = Field(default=None, max_length=500)
+
+
 class AppliesWhenRequestDto(_Frozen):
+    domains: list[TaskDomain] | None = Field(
+        default=None, min_length=1, max_length=4,
+        description="a recipe only: the task domains the user's words indicate; the other kinds' follow from their kind")
     stage_ref: str | None = Field(
         alias="stageRef", default=None, min_length=1,
         description="an exact Stage of this project the item applies under; omitted, it applies project-wide")
@@ -108,10 +125,10 @@ class MemoryRequestDto(_Frozen):
     """
 
     project_id: str = Field(alias="projectId", min_length=1)
-    kind: MemoryKind = Field(description="'locator' (value {label, target}) or 'source_policy' "
-                             "(value {topic, keys, prefer, avoid, note}); recipe, preference, habit and "
-                             "standard are reserved")
-    value: Union[LocatorValueRequestDto, SourcePolicyValueDto]
+    kind: MemoryKind = Field(description="'locator' (value {label, target}), 'source_policy' "
+                             "(value {topic, keys, prefer, avoid, note}) or 'recipe' (value {task, skill, note}, "
+                             "with appliesWhen.domains); preference, habit and standard are reserved")
+    value: Union[LocatorValueRequestDto, SourcePolicyValueDto, RecipeValueDto]
     scope: MemoryScope = Field(default="project", description="organization, team and user are reserved for the "
                                "library project")
     applies_when: AppliesWhenRequestDto | None = Field(alias="appliesWhen", default=None)
@@ -126,9 +143,11 @@ class MemoryRequestDto(_Frozen):
 
     @model_validator(mode="after")
     def value_of_its_kind(self) -> MemoryRequestDto:
-        if isinstance(self.value, LocatorValueRequestDto) != (self.kind == "locator"):
+        expected = {"locator": LocatorValueRequestDto, "source_policy": SourcePolicyValueDto,
+                    "recipe": RecipeValueDto}[self.kind]
+        if not isinstance(self.value, expected):
             raise ValueError("a locator's value is {label, target}; a source_policy's is "
-                             "{topic, keys, prefer, avoid, note}")
+                             "{topic, keys, prefer, avoid, note}; a recipe's is {task, skill, note}")
         return self
 
 
@@ -160,7 +179,7 @@ class MemoryDto(_Frozen):
     kind: MemoryKind
     scope: MemoryScope
     applies_when: AppliesWhenDto = Field(alias="appliesWhen")
-    value: Union[LocatorValueDto, SourcePolicyValueDto]
+    value: Union[LocatorValueDto, SourcePolicyValueDto, RecipeValueDto]
     authority: MemoryAuthority
     provenance: MemoryProvenanceDto
     attribution: DecisionAttributionDto
@@ -203,8 +222,9 @@ class MemoryMatchDto(_Frozen):
     """One item a turn's words are about.
 
     A locator's 'stale' is never dropped: the content moved or went, and
-    staleReason says how. Nothing is guessed in its place. A source policy is
-    always 'current'.
+    staleReason says how. Nothing is guessed in its place. A source policy or a
+    recipe is always 'current' here; whether a recipe's skill version is still
+    the library's is added by the Hub, which reads the library.
     """
 
     memory: MemoryDto
@@ -233,7 +253,8 @@ class MemoryAboutRequestDto(_Frozen):
 class MemoryAboutDto(_Frozen):
     project_id: str = Field(alias="projectId")
     memory: list[MemoryMatchDto] = Field(
-        description="what ContextPack.memory would hand for the same words: locators first, each re-read now")
+        description="what ContextPack.memory would hand for the same words: locators first, each re-read now, "
+                    "then source policies, then recipes")
 
 
 def memory_dto(revision: MemoryRevision, *, status: str | None = None) -> MemoryDto:

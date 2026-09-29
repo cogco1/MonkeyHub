@@ -151,7 +151,7 @@ export type AdmissionResultDto = {
     /**
      * Outcome
      */
-    outcome: 'admitted' | 'rejected';
+    outcome: 'admitted' | 'rejected' | 'withdrawn';
     /**
      * Pinned for an admitted result.
      */
@@ -202,8 +202,10 @@ export type AdmissionResultRequestDto = {
     runId: string;
     /**
      * Outcome
+     *
+     * rejected needs the user's words (rawLanguage). withdrawn is the Hub Agent's own act on a result it made in this chat and no longer proposes: task hub-chat only, no user words, never a rejection.
      */
-    outcome: 'admitted' | 'rejected';
+    outcome: 'admitted' | 'rejected' | 'withdrawn';
     /**
      * Supersedes
      *
@@ -370,6 +372,12 @@ export type AppliesWhenDto = {
  * AppliesWhenRequestDto
  */
 export type AppliesWhenRequestDto = {
+    /**
+     * Domains
+     *
+     * a recipe only: the task domains the user's words indicate; the other kinds' follow from their kind
+     */
+    domains?: Array<'design' | 'drawing' | 'copy' | 'research'> | null;
     /**
      * Stageref
      *
@@ -3281,9 +3289,9 @@ export type DesignCandidateDto = {
     /**
      * Outcome
      *
-     * Always admitted unless include=rejected also asked for retained rejections.
+     * Always admitted unless include=rejected also asked for retained rejections and withdrawals: a result the architect turned down, or one the Hub Agent withdrew from its own chat.
      */
-    outcome: 'admitted' | 'rejected';
+    outcome: 'admitted' | 'rejected' | 'withdrawn';
     /**
      * Label
      */
@@ -6240,7 +6248,7 @@ export type MemoryAboutDto = {
     /**
      * Memory
      *
-     * what ContextPack.memory would hand for the same words: locators first, each re-read now
+     * what ContextPack.memory would hand for the same words: locators first, each re-read now, then source policies, then recipes
      */
     memory: Array<MemoryMatchDto>;
 };
@@ -6314,7 +6322,7 @@ export type MemoryDto = {
     /**
      * Kind
      */
-    kind: 'locator' | 'source_policy';
+    kind: 'locator' | 'source_policy' | 'recipe';
     /**
      * Scope
      */
@@ -6323,7 +6331,7 @@ export type MemoryDto = {
     /**
      * Value
      */
-    value: LocatorValueDto | SourcePolicyValueDto;
+    value: LocatorValueDto | SourcePolicyValueDto | RecipeValueDto;
     /**
      * Authority
      */
@@ -6397,8 +6405,9 @@ export type MemoryLocateDto = {
  * One item a turn's words are about.
  *
  * A locator's 'stale' is never dropped: the content moved or went, and
- * staleReason says how. Nothing is guessed in its place. A source policy is
- * always 'current'.
+ * staleReason says how. Nothing is guessed in its place. A source policy or a
+ * recipe is always 'current' here; whether a recipe's skill version is still
+ * the library's is added by the Hub, which reads the library.
  */
 export type MemoryMatchDto = {
     memory: MemoryDto;
@@ -6453,13 +6462,13 @@ export type MemoryRequestDto = {
     /**
      * Kind
      *
-     * 'locator' (value {label, target}) or 'source_policy' (value {topic, keys, prefer, avoid, note}); recipe, preference, habit and standard are reserved
+     * 'locator' (value {label, target}), 'source_policy' (value {topic, keys, prefer, avoid, note}) or 'recipe' (value {task, skill, note}, with appliesWhen.domains); preference, habit and standard are reserved
      */
-    kind: 'locator' | 'source_policy';
+    kind: 'locator' | 'source_policy' | 'recipe';
     /**
      * Value
      */
-    value: LocatorValueRequestDto | SourcePolicyValueDto;
+    value: LocatorValueRequestDto | SourcePolicyValueDto | RecipeValueDto;
     /**
      * Scope
      *
@@ -9417,6 +9426,33 @@ export type RecipeSuggestionDto = {
      * The most recent after revision's page: the exact document source a recipe decision saving this cites.
      */
     page: DrawingCorrectionPageDto;
+};
+
+/**
+ * RecipeValueDto
+ *
+ * Which library skill a task follows, by one exact version; the steps stay in the skill.
+ *
+ * A chat names the skill as the agent sees it and the Hub fills the exact
+ * version from the configured library.
+ */
+export type RecipeValueDto = {
+    /**
+     * Task
+     *
+     * the task in the user's words, e.g. 出平面图前检查填充
+     */
+    task: string;
+    /**
+     * Skill
+     *
+     * skill:<name>@<version>, one exact version of a library skill
+     */
+    skill: string;
+    /**
+     * Note
+     */
+    note?: string | null;
 };
 
 /**
@@ -17243,7 +17279,7 @@ export type ReadCommittedDesignHistoryApiDesignHistoryGetData = {
         /**
          * Include
          *
-         * rejected also lists retained rejections, for advanced views.
+         * rejected also lists retained rejections and the Agent's withdrawals, for advanced views.
          */
         include?: 'rejected' | null;
     };
@@ -17395,7 +17431,7 @@ export type ReadCandidateAdmissionsApiAdmissionsGetData = {
         /**
          * Include
          *
-         * rejected also lists retained rejections, for advanced views.
+         * rejected also lists retained rejections and the Agent's withdrawals, for advanced views.
          */
         include?: 'rejected' | null;
     };
@@ -18335,7 +18371,7 @@ export type ReadMemoryApiMemoryGetData = {
         /**
          * Kind
          */
-        kind?: 'locator' | 'source_policy' | null;
+        kind?: 'locator' | 'source_policy' | 'recipe' | null;
     };
     url: '/api/memory';
 };
