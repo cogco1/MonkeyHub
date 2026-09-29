@@ -70,16 +70,19 @@ class ApplicationSettingsDto(BaseModel):
     # Where new projects are created. A location, not a project: the chosen
     # project stays `project_dir`, and this never becomes a second project store.
     workspace_dir: str | None = Field(default=None, alias="workspaceDir", min_length=1)
+    # The library project (#252): an ordinary complete project whose skills the
+    # Hub hands to its agents. Unset, no agent is given any library skill.
+    library_dir: str | None = Field(default=None, alias="libraryDir", min_length=1)
     reference_run: str | None = Field(default=None, alias="referenceRun", min_length=1)
     cad_export: Literal["occt", "rhino", "off"] = Field(default="occt", alias="cadExport")
     studio_port: int = Field(default=8789, alias="studioPort", ge=1024, le=65535)
     monitor_port: int = Field(default=8788, alias="monitorPort", ge=1024, le=65535)
 
-    @field_validator("project_dir", "workspace_dir")
+    @field_validator("project_dir", "workspace_dir", "library_dir")
     @classmethod
     def absolute_project(cls, value: str | None) -> str | None:
         if value is not None:
             from pathlib import Path
             if not Path(value).is_absolute():
-                raise ValueError("projectDir and workspaceDir must be absolute paths")
+                raise ValueError("projectDir, workspaceDir and libraryDir must be absolute paths")
         return value

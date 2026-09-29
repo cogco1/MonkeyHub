@@ -58,6 +58,7 @@ from archflow_studio_api.settings import read_application_settings, read_user_se
 from pydantic import Field
 
 from . import credentials
+from . import skill_plugins
 
 from .models import (
     ChatAttachment, ChatAttention, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
@@ -147,6 +148,44 @@ def _position(root: str) -> tuple[int | None, str | None]:
         return version, None
     label = stage.get("label")
     return version, label if isinstance(label, str) and label else None
+
+
+# A listed project's identity and position, kept under the stats of the three
+# files they are read from (#449). Opening a project verifies all of it, and
+# the project list is read on every Hub refresh; a replaced or rewritten
+# manifest, HEAD or design line has another stat and is read again.
+_LISTED: dict[tuple[str, bool], tuple[tuple, tuple]] = {}
+_LISTED_FILES = ("project.json", "HEAD", "design/branches.json")
+
+
+def _listed_stamp(root: str) -> tuple | None:
+    stamp = []
+    for name in _LISTED_FILES:
+        try:
+            stat = os.stat(Path(root, name))
+        except FileNotFoundError:
+            stamp.append(None)
+        except OSError:
+            return None
+        else:
+            stamp.append((stat.st_size, stat.st_mtime_ns, stat.st_ino))
+    return tuple(stamp)
+
+
+def _listed_project(root: str, *, identify: bool = False) -> tuple[tuple[str, str] | None, tuple[int | None, str | None]]:
+    """``_project`` (when ``identify``) and ``_position`` of one listed project, read again only once its files moved."""
+
+    key = (root, identify)
+    stamp = _listed_stamp(root)
+    kept = _LISTED.get(key)
+    if stamp is not None and kept is not None and kept[0] == stamp:
+        return kept[1]
+    identity = _project(root) if identify else None
+    answer = (identity, _position(identity[1] if identity else root))
+    # A position that could not be read is not kept: it is asked again next time.
+    if stamp is not None and answer[1][0] is not None and stamp == _listed_stamp(root):
+        _LISTED[key] = (stamp, answer)
+    return answer
 
 
 def _workspace(runtime_root: Path, settings) -> Path:
@@ -1057,40 +1096,43 @@ class ChatStore:
             return self.get(session_id)
 
     def projects(self) -> list[ChatProject]:
+        # Only the conversations are read under the store's lock; the projects'
+        # own files are read outside it, so the chat list polled beside this
+        # never waits for them (#449).
         with self._lock:
             self._load()
-            projects: dict[tuple[str, str], ChatProject] = {}
+            counts: dict[tuple[str, str], int] = {}
             for session in self._sessions.values():
                 key = (session.projectId, session.projectDir)
-                if key not in projects:
-                    version, stage = _position(key[1])
-                    projects[key] = ChatProject(projectId=key[0], projectDir=key[1], name=key[0],
-                                                chatCount=0, version=version, stage=stage)
-                projects[key].chatCount += 1
-            workspace = self.workspace()
-            workspace_root = Path(workspace.workspaceDir).resolve()
-            discovered = []
-            for name in workspace.projects:
-                try:
-                    candidate = (workspace_root / name).resolve()
-                    if candidate.is_relative_to(workspace_root):
-                        discovered.append(str(candidate))
-                except OSError:
-                    continue
-            current = read_application_settings(self.runtime_root).project_dir
-            for path in dict.fromkeys([*discovered, *([current] if current else [])]):
-                try:
-                    project_id, project_dir = _project(path)
-                except HubFailure:
-                    pass
-                else:
-                    if (project_id, project_dir) not in projects:
-                        version, stage = _position(project_dir)
-                        projects[(project_id, project_dir)] = ChatProject(
-                            projectId=project_id, projectDir=project_dir, name=project_id,
-                            chatCount=0, version=version, stage=stage,
-                        )
-            return sorted(projects.values(), key=lambda row: (row.name, row.projectDir))
+                counts[key] = counts.get(key, 0) + 1
+        projects: dict[tuple[str, str], ChatProject] = {}
+        for key, count in counts.items():
+            version, stage = _listed_project(key[1])[1]
+            projects[key] = ChatProject(projectId=key[0], projectDir=key[1], name=key[0],
+                                        chatCount=count, version=version, stage=stage)
+        workspace = self.workspace()
+        workspace_root = Path(workspace.workspaceDir).resolve()
+        discovered = []
+        for name in workspace.projects:
+            try:
+                candidate = (workspace_root / name).resolve()
+                if candidate.is_relative_to(workspace_root):
+                    discovered.append(str(candidate))
+            except OSError:
+                continue
+        current = read_application_settings(self.runtime_root).project_dir
+        for path in dict.fromkeys([*discovered, *([current] if current else [])]):
+            try:
+                (project_id, project_dir), (version, stage) = _listed_project(path, identify=True)
+            except HubFailure:
+                pass
+            else:
+                if (project_id, project_dir) not in projects:
+                    projects[(project_id, project_dir)] = ChatProject(
+                        projectId=project_id, projectDir=project_dir, name=project_id,
+                        chatCount=0, version=version, stage=stage,
+                    )
+        return sorted(projects.values(), key=lambda row: (row.name, row.projectDir))
 
     def workspace(self) -> ChatWorkspace:
         """The folder new projects are created in, and the projects already there."""
@@ -1782,6 +1824,13 @@ class ChatStore:
             command.append("-")
         else:
             scratch = self._scratch_path(session.id)
+            # The library project's skills, as a plugin Claude loads natively
+            # (#252). None when no library is set: the command is then as before.
+            # Nothing is added to --allowedTools for them: under dontAsk the CLI
+            # (2.1.283) does not gate its Skill tool, so an allow rule restricts
+            # nothing. It also lists this machine's personal skills and plugins,
+            # which a chat can load too; only a deny rule refuses one.
+            skills = skill_plugins.library_plugin_dir(self.runtime_root, self.hub_url)
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
                        "--include-partial-messages", "--permission-mode", "dontAsk", "--permission-prompts", "none",
                        # Two different questions, and both have to be answered.
@@ -1792,6 +1841,7 @@ class ChatStore:
                        # plus this adapter's own tools and nothing else.
                        "--tools", "default", "--allowedTools", ",".join(_claude_approved(self.runtime_root)),
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
+                       *(("--plugin-dir", str(skills)) if skills is not None else ()),
                        "--add-dir", str(scratch),
                        # alwaysLoad: the CLI otherwise defers every MCP tool behind
                        # a ToolSearch round trip, one model call before any design work.

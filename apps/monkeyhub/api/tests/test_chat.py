@@ -3055,6 +3055,41 @@ class ChatTests(unittest.TestCase):
         # An unreadable project is reported as unknown rather than as a version.
         self.assertEqual(chat._position(str(self.root / "missing")), (None, None))
 
+    def test_the_chat_list_never_waits_for_the_project_list_and_an_unchanged_project_is_not_read_again(self):
+        # #449: the Hub asks for both together on every refresh.
+        session = self.create()
+        self.store.projects()
+        with patch.object(chat, "_position", wraps=chat._position) as positions:
+            self.store.projects()
+            positions.assert_not_called()
+            head = self.project / "HEAD"
+            stamp = head.stat()
+            os.utime(head, ns=(stamp.st_atime_ns, stamp.st_mtime_ns + 1_000_000_000))
+            self.assertEqual(next(row for row in self.store.projects() if row.projectId == session.projectId).version, 0)
+            self.assertEqual(positions.call_count, 1, "a moved HEAD is read again")
+        reading, release = threading.Event(), threading.Event()
+
+        def slow_position(root):
+            reading.set()
+            release.wait(10)
+            return 0, None
+
+        head_stamp = head.stat()
+        os.utime(head, ns=(head_stamp.st_atime_ns, head_stamp.st_mtime_ns + 1_000_000_000))
+        with patch.object(chat, "_position", side_effect=slow_position):
+            listing = threading.Thread(target=self.store.projects)
+            listing.start()
+            self.assertTrue(reading.wait(10))
+            try:
+                listed = []
+                answer = threading.Thread(target=lambda: listed.append(self.store.list()))
+                answer.start()
+                answer.join(5)
+                self.assertEqual([row.id for row in listed[0]], [session.id], "the chat list answered while a project was read")
+            finally:
+                release.set()
+                listing.join(10)
+
     def test_a_chat_keeps_its_own_model_and_the_next_call_uses_it(self):
         session = self.create()
         self.post(session, "first question")
