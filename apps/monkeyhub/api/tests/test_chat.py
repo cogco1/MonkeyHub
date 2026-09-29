@@ -104,7 +104,12 @@ if "fail-test" in prompt:
 if "--output-format" in args:
     flag = "--resume" if "--resume" in args else "--session-id"
     native = args[args.index(flag) + 1]
-    emit({"type": "system", "session_id": native})
+    if "--setting-sources" in args and "--disable-slash-commands" not in args:
+        # A library chat's init lists the skills it can load (#463).
+        emit({"type": "system", "subtype": "init", "session_id": native, "claude_code_version": "9.9.9",
+              "skills": ["monkeyhub-library:hatch-review", "design", "newthing"]})
+    else:
+        emit({"type": "system", "session_id": native})
     emit({"type": "stream_event", "event": {"type": "content_block_delta",
         "delta": {"type": "text_delta", "text": "hello "}}})
     emit({"type": "stream_event", "event": {"type": "content_block_delta",
@@ -4067,6 +4072,36 @@ class ChatTests(unittest.TestCase):
         call, _ = self.recipe_turn(session, "出平面图", [self.RECIPE], None)
         [unset] = self.carried(call["prompt"])
         self.assertTrue(unset["skill"]["note"].startswith("not in the library (no skill library is set)"))
+
+    def test_a_library_chat_learns_its_leftover_skills_and_turns_them_off_next_turn(self):
+        for provider in ("claude", "coding-plan"):
+            with self.subTest(provider=provider), \
+                    patch.object(chat, "_coding_plan_env", return_value={
+                        "ANTHROPIC_BASE_URL": "https://fixture.example.invalid",
+                        "ANTHROPIC_AUTH_TOKEN": "fixture-plan-token"}):
+                leftovers = skill_plugins.leftovers_path(self.runtime)
+                leftovers.unlink(missing_ok=True)
+                session = self.create(provider=provider)
+
+                def overrides(call):
+                    return json.loads(call["args"][call["args"].index("--settings") + 1])["skillOverrides"]
+
+                with self.assertLogs(skill_plugins.__name__, "WARNING") as logged:
+                    call, _ = self.recipe_turn(session, "把檐口压低一点", [], self.library(1))
+                self.assertEqual(overrides(call), {"design": "off", "doctor": "off"})
+                # The library's own skill and a skill already off are not leftovers.
+                self.assertEqual(json.loads(leftovers.read_text(encoding="utf-8")), {"9.9.9": ["newthing"]})
+                self.assertEqual(len(logged.records), 1)
+                self.assertIn("'newthing'", logged.output[0])
+
+                call, _ = self.recipe_turn(session, "把檐口压低一点", [], self.library(1))
+                self.assertEqual(overrides(call), {"design": "off", "doctor": "off", "newthing": "off"})
+                self.assertEqual(json.loads(leftovers.read_text(encoding="utf-8")), {"9.9.9": ["newthing"]})
+
+                # A chat with no library has no Skill tool and learns nothing.
+                call, _ = self.recipe_turn(session, "把檐口压低一点", [], None)
+                self.assertIn("--disable-slash-commands", call["args"])
+                self.assertNotIn("--settings", call["args"])
 
     def test_an_unreadable_library_is_said_on_the_recipe_and_a_codex_turn_still_runs(self):
         session = self.create()

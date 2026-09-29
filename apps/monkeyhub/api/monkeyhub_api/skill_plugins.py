@@ -23,15 +23,30 @@ The Hub resolves that name against the same current index when a chat saves
 one (``pin``), and says of every recipe a turn carries whether its version is
 still the library's current one (``pinned_status``): nothing is guessed or
 swapped, the agent tells the user.
+
+A chat sees the library's skills and nothing else (#463). Either way ``chat``
+starts Claude with ``--setting-sources project,local``: no user settings, so no
+personal skills, installed plugins or their hooks. With no library it adds
+``--disable-slash-commands``, which removes the Skill tool. With one it adds
+``--settings`` from ``claude_settings``: ``disableBundledSkills`` plus a ``skillOverrides`` entry
+``"off"`` for every skill still left over. The CLI ignores the whole
+``--settings`` value when an override is anything but the string ``"off"``.
+The leftovers are learned, not guessed: a turn's init event lists the skills
+that session can load, and any that is not the library's is recorded in
+``leftover-skills.json`` beside the plugins (non-canonical cache, keyed by the
+CLI's version) and turned off from the next turn on.
 """
 
 from __future__ import annotations
 
 import json
+import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 import re
 import shutil
+import threading
 import time
 from typing import Any, Callable, Mapping
 import uuid
@@ -42,6 +57,13 @@ from archflow_studio_api.settings import read_application_settings
 from .models import HubFailure
 
 PLUGIN_NAME = "monkeyhub-library"
+# Skills --setting-sources and disableBundledSkills leave in place, on Claude
+# Code 2.1.283. Later versions' leftovers are learned from their init events.
+LEFTOVER_SEED = ("design", "doctor")
+# The user settings a library chat still carries: its sign-in and network.
+CARRIED_SETTINGS = ("env", "apiKeyHelper")
+_log = logging.getLogger(__name__)
+_leftover_lock = threading.Lock()
 # How long preparing the library's Runtime may take before the turn says so.
 LIBRARY_BUDGET_S = 60.0
 # The spelling studio.skills accepts when a skill is saved. A name read back is
@@ -69,6 +91,91 @@ class Library:
 
 def plugin_root(runtime_root: Path) -> Path:
     return runtime_root / "cache" / "skill-plugins"
+
+
+def leftovers_path(runtime_root: Path) -> Path:
+    return plugin_root(runtime_root) / "leftover-skills.json"
+
+
+def _recorded(runtime_root: Path) -> dict[str, list[str]]:
+    try:
+        saved = json.loads(leftovers_path(runtime_root).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(saved, dict):
+        return {}
+    return {str(version): [name for name in names if isinstance(name, str)]
+            for version, names in saved.items() if isinstance(names, list)}
+
+
+def leftovers(runtime_root: Path) -> list[str]:
+    """Every skill a library chat turns off: the seed and each one learned, under any CLI version.
+
+    A name the running CLI does not have is tolerated in ``skillOverrides``.
+    """
+
+    names = set(LEFTOVER_SEED)
+    for recorded in _recorded(runtime_root).values():
+        names.update(recorded)
+    return sorted(names)
+
+
+def carried_settings(user_settings: Mapping[str, Any]) -> dict[str, Any]:
+    """What of the user's own Claude ``settings.json`` a Hub chat keeps: sign-in and network only."""
+
+    return {key: user_settings[key] for key in CARRIED_SETTINGS if key in user_settings}
+
+
+def claude_settings(runtime_root: Path, user_settings: Mapping[str, Any]) -> str:
+    """The ``--settings`` JSON a library chat starts with.
+
+    ``user_settings`` is the user's own Claude ``settings.json``; only its
+    ``env`` and ``apiKeyHelper`` are carried, since ``--setting-sources
+    project,local`` drops the rest along with the personal skills and plugins.
+    """
+
+    settings = carried_settings(user_settings)
+    settings["disableBundledSkills"] = True
+    settings["skillOverrides"] = {name: "off" for name in leftovers(runtime_root)}
+    return json.dumps(settings, ensure_ascii=False)
+
+
+def learn(runtime_root: Path, event: Mapping[str, Any]) -> list[str]:
+    """Record the skills a library chat's init event lists besides the library's; return the new ones.
+
+    Each new one is logged once, and ``claude_settings`` turns it off from the
+    next turn on.
+    """
+
+    listed = event.get("skills")
+    if not isinstance(listed, list):
+        return []
+    version = str(event.get("claude_code_version") or "unknown")
+    with _leftover_lock:
+        known = set(leftovers(runtime_root))
+        found = sorted({name for name in listed if isinstance(name, str) and name not in known
+                        and not name.startswith(f"{PLUGIN_NAME}:")})
+        if not found:
+            return []
+        recorded = _recorded(runtime_root)
+        recorded[version] = sorted({*recorded.get(version, ()), *found})
+        target = leftovers_path(runtime_root)
+        staging = target.with_name(f".{target.name}-{uuid.uuid4().hex}")
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            staging.write_text(json.dumps(recorded, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                               encoding="utf-8")
+            os.replace(staging, target)
+        except OSError as failure:
+            # The turn goes on; the skill stays listed until a record succeeds.
+            _log.warning("Could not record leftover skills %s: %s", found, failure)
+            return []
+        finally:
+            staging.unlink(missing_ok=True)
+    for name in found:
+        _log.warning("Claude Code %s lists the skill %r in a library chat; it is turned off from the next turn.",
+                     version, name)
+    return found
 
 
 def index_digest(index: Mapping[str, Any]) -> str:
