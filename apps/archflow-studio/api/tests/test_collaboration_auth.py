@@ -205,6 +205,22 @@ class CollaborationAuthTests(unittest.TestCase):
                          {"actorId": "reviewer", "authenticated": True, "origin": "studio"})
         self.assertEqual(saved.json()["sourceKind"], "agent")
 
+    def test_project_memory_reads_widely_and_is_written_only_with_accept(self) -> None:
+        """#252: a memory item is the user's explicit words, retained like a decision."""
+
+        for shared in (True, False):
+            client = self.client(shared=shared)
+            with self.subTest(shared=shared):
+                for path in ("/api/memory", "/api/memory/locate?q=title"):
+                    self.assertEqual(client.get(path, headers=self.headers("reader")).status_code, 200, path)
+                    self.assertEqual(client.get(path, headers=self.headers("outsider")).status_code, 403, path)
+                for path in ("/api/memory", "/api/memory/some-id/revisions"):
+                    for actor in ("reader", "designer", "issuer", "outsider"):
+                        response = client.post(path, headers=self.headers(actor), json={})
+                        self.assertEqual(response.status_code, 403, response.text)
+                    # A permitted caller reaches DTO validation, not the gate.
+                    self.assertEqual(client.post(path, headers=self.headers("reviewer"), json={}).status_code, 422)
+
     def test_body_cannot_replace_actor_or_project_scope(self) -> None:
         client = self.client(shared=False)
 

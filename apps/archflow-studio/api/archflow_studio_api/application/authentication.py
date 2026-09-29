@@ -26,6 +26,9 @@ _ACCEPT_PATHS = (
     # existing decision grant and still accepts no Stage and moves no HEAD.
     r"/api/decisions",
     r"/api/decisions/[^/]+/revisions",
+    # A memory item is saved from the user's explicit words, like a decision (#252).
+    r"/api/memory",
+    r"/api/memory/[^/]+/revisions",
 )
 _SHARED_READ_PATHS = (
     r"/api/(?:health|protocol|project|design-history|artifacts|documents|events)",
@@ -38,6 +41,7 @@ _SHARED_READ_PATHS = (
     r"/api/episodes(?:/[^/]+)?",
     r"/api/sync/(?:manifest|files)",
     r"/api/decisions(?:/[^/]+)?",
+    r"/api/memory(?:/[^/]+)?",
 )
 
 
