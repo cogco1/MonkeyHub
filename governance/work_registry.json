@@ -1,4 +1,24 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-176",
+      "status": "active",
+      "branch": "chore/roadmap-tracking",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\chore-roadmap-tracking",
+      "base_ref": "f43efc9a",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "tools.devctl"
+      ],
+      "write_scope": [
+        "docs/research/ROADMAP_2026_2027.md",
+        "docs/PROJECT_TRACKING.md",
+        "CONTRIBUTING.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
