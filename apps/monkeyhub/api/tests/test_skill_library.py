@@ -213,6 +213,20 @@ class SkillLibraryTest(unittest.TestCase):
                 self.assertEqual(json.loads(plain[plain.index("--settings") + 1]), {
                     "env": {"HTTPS_PROXY": "http://proxy.example.invalid:8080"}, "apiKeyHelper": "fixture-helper"})
 
+    def test_a_hub_chat_keeps_no_claude_auto_memory(self):
+        """#252: studio.memory is the one project memory; Claude Code's own auto-memory is off, Codex untouched."""
+        commands = {name: (sys.executable, "-c", "pass") for name in ("codex", "claude")}
+        store = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=commands)
+        self.addCleanup(store.shutdown)
+        plan = {"ANTHROPIC_BASE_URL": "https://fixture.example.invalid", "ANTHROPIC_AUTH_TOKEN": "fixture-plan-token"}
+        for provider, expected in (("claude", "1"), ("coding-plan", "1"), ("codex", None)):
+            with self.subTest(provider=provider), patch.object(chat, "_coding_plan_env", return_value=plan),                     patch.dict(os.environ, {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": ""}):
+                os.environ.pop("CLAUDE_CODE_DISABLE_AUTO_MEMORY")
+                session = store.create(ChatCreateRequest(projectDir=str(self.project), provider=provider))
+                with store._lock, patch.object(store, "_codex_mcp", return_value={}):
+                    _, environment = store._command(store._sessions[session.id], library=lambda: None)
+                self.assertEqual(environment.get("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), expected)
+
     def test_the_library_setting_names_a_complete_project(self):
         app = create_app(HubSettings(runtime_root=self.runtime))
         with TestClient(app, base_url="http://127.0.0.1:8790") as client:

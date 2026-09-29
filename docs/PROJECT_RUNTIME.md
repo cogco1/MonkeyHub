@@ -114,6 +114,9 @@ gate its `Skill` tool under `dontAsk`, so an allow rule restricts nothing, and d
 "everything but the library"; left alone, a chat lists and can load this machine's personal skills, installed
 plugins and the CLI's bundled skills. So the Hub removes them where they come from:
 
+- Claude Code's own auto-memory is off in every Claude and Coding Plan chat (`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`):
+  project memory has one owner, `studio.memory` (#252), and the CLI would otherwise keep agent-written notes
+  under `~/.claude/projects/<folder>/memory/` and, in a source checkout, hand the chat the developer's `MEMORY.md`.
 - With no library set, the chat starts with `--disable-slash-commands`: no skills are listed and there is no
   `Skill` tool. It also gets `--setting-sources project,local` (with only `env` and `apiKeyHelper` carried in
   `--settings`), so installed plugins stay unloaded: a plugin's startup hook would otherwise still inject its
