@@ -117,8 +117,9 @@ justify eager startup loading or dropping source inspection.
 - The browser allows local parsing up to 512 MB while registration rejects more
   than 128 MiB. Large-file product behavior needs explicit validation before
   calling the whole import path usable.
-- #254 Board/AI Render/Publish and downstream staleness are separate remaining
-  product acceptance; successful registration alone does not satisfy them.
+- Board/AI Render/Publish and downstream staleness are separate remaining
+  product acceptance ([MVP roadmap](product/MVP_ROADMAP.md#acceptance-end-to-end-mvp-proof),
+  formerly #254); successful registration alone does not satisfy them.
 
 ## Repeatable synthetic-fixture profile, 2026-09-26
 
