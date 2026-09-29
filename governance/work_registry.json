@@ -1,34 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-244",
-      "lanes": [
-        {
-          "id": "drawing-integration",
-          "status": "active",
-          "branch": "codex/244-drawing-integration",
-          "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-244-drawing-integration",
-          "base_ref": "bb417894",
-          "contributor": "Claude (continuing Codex's interrupted GH-244 drawing integration)",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "studio.drawings",
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
-            "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
-            "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
-            "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
-            "apps/monkeyhub/api/monkeyhub_api/chat.py"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
