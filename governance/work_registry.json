@@ -9,7 +9,7 @@
           "status": "active",
           "branch": "codex/244-drawing-integration",
           "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-244-drawing-integration",
-          "base_ref": "a55a4d2f8d5dfb5236a05fdb14a5aef48c5beefb",
+          "base_ref": "8c157e37b83dfe5f98f864bf457fd3e74c974b43",
           "contributor": "Claude",
           "reviewer": "Codex",
           "handoff": "local session, review fix round 1: orientation guard, sheet notes, file revisions, Diagram section editing and the agent guide; the controller reviews and opens the PR",

@@ -11,3 +11,4 @@ One file per decision a later session would be tempted to reverse. Ten lines eac
 - [ADR-007-container-states-and-stage-rules](ADR-007-container-states-and-stage-rules.md)
 - [ADR-008-one-tree-many-projections](ADR-008-one-tree-many-projections.md)
 - [ADR-009-memory-layer](ADR-009-memory-layer.md)
+- [ADR-010-admission-is-the-agents-registration](ADR-010-admission-is-the-agents-registration.md)
