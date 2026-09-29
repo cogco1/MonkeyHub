@@ -37,7 +37,7 @@ from archflow_studio_api.main import create_app as studio_app
 from archflow_studio_api.settings import StudioSettings
 from monkeyhub_api import chat
 from monkeyhub_api.main import HubSettings, create_app
-from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, HubFailure
+from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, ChatPresentationBindRequest, HubFailure
 
 from test_chat import FAKE_CLI, _tools_of, wait_for
 
@@ -198,6 +198,57 @@ class RenderContextTests(unittest.TestCase):
                                                         renderContext={"source": _page(self.elsewhere), "references": []}))
         self.assertEqual(swapped.exception.error.code, "CHAT_PROJECT_MISMATCH")
         self.assertEqual(self.store.get(session.id).messages, [], "no refused message was kept")
+        self.assertEqual(self.calls(), [], "no CLI started")
+
+    def test_a_replaced_reference_is_stale_and_unreadable_documents_send_nothing(self):
+        session = self.create()
+        context = self.context(references=[self.second, self.reference])
+        replacement = self.register(self.project, "chat-project", "AI-Result v2.jpg", "image/jpeg", _image("JPEG", "orange"),
+                                    replacesPages=[{**_page(self.reference), "newPageIndex": 0}])
+        with self.assertRaises(HubFailure) as stale:
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="warmer concrete",
+                                                        renderContext=context))
+        self.assertEqual((stale.exception.error.code, stale.exception.status), ("CHAT_RENDER_IMAGE_STALE", 409))
+        self.assertIn("Reference 2, «AI-Result.jpg» page 1", stale.exception.error.detail)
+        self.assertNotIn(replacement["assetSha256"], stale.exception.error.detail, "the refusal does not pick the newer page")
+        # Every page is registered, but the project's documents cannot be read to check for a replacement.
+        from archflow_studio_api.application import artifacts
+
+        listed = artifacts.list_documents
+
+        def unreadable(binding, run_id=None, **options):
+            if run_id is None:
+                raise OSError("The documents folder could not be read.")
+            return listed(binding, run_id, **options)
+
+        with patch.object(artifacts, "list_documents", side_effect=unreadable):
+            with self.assertRaises(HubFailure) as failed:
+                self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="warmer concrete",
+                                                            renderContext=self.context(references=[self.second])))
+        self.assertEqual((failed.exception.error.code, failed.exception.status), ("CHAT_RENDER_IMAGE_UNREADABLE", 503))
+        self.assertIn("nothing was sent", failed.exception.error.detail)
+        self.assertEqual(self.store.get(session.id).messages, [], "no refused message was kept")
+        self.assertEqual(self.calls(), [], "no CLI started")
+
+    def test_a_chat_that_takes_no_message_says_so_before_any_image_is_read(self):
+        """An external, archived or closing chat answers as such; its images are never read."""
+
+        external = self.store.bind_presentation(ChatPresentationBindRequest(projectDir=str(self.project),
+                                                                            sourceSessionId="external-session"))
+        archived = self.create()
+        self.store.set_archived(archived.id, True)
+        closing = self.create()
+        cases = (("an external conversation", external.chatId, "CHAT_EXTERNAL_SOURCE", False),
+                 ("an archived conversation", archived.id, "CHAT_ARCHIVED", False),
+                 ("a closing Hub", closing.id, "CHAT_CLOSING", True))
+        for label, chat_id, code, shutting in cases:
+            with self.subTest(label), patch.object(chat, "_render_images", side_effect=AssertionError("no image is read")), \
+                    patch.object(self.store, "_closing", shutting):
+                with self.assertRaises(HubFailure) as refused:
+                    self.store.post(chat_id, ChatPostRequest(projectId="chat-project", content="warmer concrete",
+                                                             renderContext=self.context(references=[self.reference])))
+                self.assertEqual((refused.exception.error.code, refused.exception.status), (code, 409))
+                self.assertEqual(self.store.get(chat_id).messages, [])
         self.assertEqual(self.calls(), [], "no CLI started")
 
     def test_the_request_shape_names_one_source_and_at_most_three_distinct_references(self):

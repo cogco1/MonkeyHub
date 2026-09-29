@@ -1590,11 +1590,22 @@ class ChatStore:
                     raise HubFailure(409, "CHAT_RUNNING", "Stop the running chat before closing its design tools.")
             yield
 
+    def _takes_messages(self, session) -> None:
+        """Refuse a message this chat takes from no one; the lock is held."""
+        if session.sourceSessionId:
+            raise HubFailure(409, "CHAT_EXTERNAL_SOURCE", "Continue this conversation in its external source; Hub only displays its results.")
+        if self._closing:
+            raise HubFailure(409, "CHAT_CLOSING", "Hub is closing.")
+        if session.archived:
+            raise HubFailure(409, "CHAT_ARCHIVED", "Restore this archived chat before sending another message.")
+
     def post(self, session_id: str, request: ChatPostRequest) -> ChatDetail:
         images: list[ChatDocument] = []
         if request.renderContext is not None:
             with self._lock:
                 bound = self._session(session_id)
+                # A chat that takes no message says so before any image is read.
+                self._takes_messages(bound)
                 if request.projectId != bound.projectId:
                     raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This message belongs to a different project.")
                 project = bound.projectId, bound.projectDir
@@ -1603,12 +1614,7 @@ class ChatStore:
             images = _render_images(*project, request.renderContext)
         with self._lock:
             session = self._session(session_id).model_copy(deep=True)
-            if session.sourceSessionId:
-                raise HubFailure(409, "CHAT_EXTERNAL_SOURCE", "Continue this conversation in its external source; Hub only displays its results.")
-            if self._closing:
-                raise HubFailure(409, "CHAT_CLOSING", "Hub is closing.")
-            if session.archived:
-                raise HubFailure(409, "CHAT_ARCHIVED", "Restore this archived chat before sending another message.")
+            self._takes_messages(session)
             if request.projectId != session.projectId or _project(session.projectDir) != (session.projectId, session.projectDir):
                 raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This message belongs to a different project.")
             if request.suggestionSelection is not None:
