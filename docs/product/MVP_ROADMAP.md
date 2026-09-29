@@ -131,7 +131,9 @@ Owners (snapshot 2026-09-29):
   planned on 2026-09-15);
 - #66 — Publish;
 - #244 — 2D representation / Drawing where needed;
-- #252 — Office Library / visual references / capability reuse.
+- #253 and #478 — Office Library / visual references / capability reuse (formerly #252,
+  retired 2026-09-29): visual references are part of #253; promoting approved recipes into
+  the shared library is #478.
 
 ## MVP B — change propagation
 
@@ -223,8 +225,8 @@ It can run in parallel with the main line (comment 2026-09-23T23:22): reuse the 
 report templates and selected project results, do not wait for the full Publish editor, and
 do not treat the native object index as a new global State.
 
-Owners (snapshot 2026-09-29): #252 (office-demo audit; Huaguoshan Research Atlas / Research
-Production reuse); #66 (Publish); #55 (durable project mutation evidence where applicable,
+Owners (snapshot 2026-09-29): #480 (Meeting → Work → Report; took over from #252's office-demo
+work, retired 2026-09-29); #66 (Publish); #55 (durable project mutation evidence where applicable,
 closed 2026-09-15).
 
 ## Dependency order
@@ -250,13 +252,14 @@ Execution order (comment 2026-09-23T13:55, amended 2026-09-23T23:22):
    ↓
 #66 Publish (fixed template first)
 
-#252 Meeting → Work → Report — in parallel
+#480 Meeting → Work → Report — in parallel
 ```
 
 The 13:55 comment gave `#255 → #253 → #90 / #223 → #66 → #252`. The 23:22 comment added #260's
 first slice to the shared intake layer, put #216 beside #253, described the main line as
 source model/view → AI Render → Board → fixed-template #66 Publish, routed model changes
-through #223 while reusing #90's Board update entry, and made #252 parallel.
+through #223 while reusing #90's Board update entry, and made #252 parallel. #252's
+Meeting → Work → Report now lives in #480.
 
 ## Acceptance (end-to-end MVP proof)
 
