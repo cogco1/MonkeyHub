@@ -7,7 +7,7 @@ import { MenuSeparator, StatusLine, SurfaceMenus } from "../../features/chrome/S
 import { usePreferences } from "../../features/settings/preferences";
 import { useT } from "../../i18n/useT";
 import { DocumentSurface } from "./DocumentCanvas";
-import { defaultPlanForm, drawingDocumentKey, keptOnChosenVersion, latestRevisions, liveAction, PAPER_PENS, planFormFromDocument, planRequestFields,
+import { defaultPlanForm, drawingDocumentKey, isVerticalSection, keptOnChosenVersion, latestRevisions, liveAction, PAPER_PENS, planFormFromDocument, planRequestFields,
   RECIPE_TARGETS, recipeDecision, recipeWrites, type PaperPen, type PlanForm } from "./drawingPlan";
 import { DressingControls, DressingOverlay } from "./DrawingDressing";
 import { DrawingMenu } from "./DrawingMenu";
@@ -20,7 +20,7 @@ const copy = {
     rebuild: "Rebuild on this version", another: "Draw another version", anotherHint: "A version chosen here is drawn once and is not updated automatically.",
     earlier: "Earlier revisions", earlierView: "Earlier revision · not updated automatically", openLatest: "Open the current revision",
     live: "Follows the current project model", liveCurrent: "Current with the project model", updating: "Updating to the current model…",
-    stale: "Not updated", chosenView: "Drawn from a chosen version · not updated automatically", followAgain: "Follow the current model again", workingVersion: "Working version (not accepted)", representation: "Drawing appearance", cutHeight: "Cut height", bottom: "View bottom", scale: "Scale denominator (1 : n)",
+    stale: "Not updated", chosenView: "Drawn from a chosen version · not updated automatically", followAgain: "Follow the current model again", workingVersion: "Working version (not accepted)", representation: "Drawing appearance", cutHeight: "Cut height", bottom: "View bottom", depth: "Depth beyond the section plane", scale: "Scale denominator (1 : n)",
     graphics: "Linework and hatch", cutLine: "Cut line (paper mm)", visibleLine: "Visible line (paper mm)", hatch: "Hatch spacing (paper mm)",
     dimensions: "Saved dimensions",
     placement: "Label offset (paper mm)", remove: "Remove dimension", saving: "Saving appearance…", held: "Appearance changes are not saved yet; fix the marked field or retry.", retry: "Retry saving",
@@ -54,7 +54,7 @@ const copy = {
     rebuild: "基于此版本重建", another: "绘制其他版本", anotherHint: "在这里选择的版本只按一次绘制，不会自动更新。",
     earlier: "较早版本", earlierView: "较早版本 · 不自动更新", openLatest: "打开当前版本",
     live: "跟随项目当前模型", liveCurrent: "与项目当前模型一致", updating: "正在更新到当前模型…",
-    stale: "尚未更新", chosenView: "按所选版本绘制 · 不自动更新", followAgain: "改为跟随当前模型", workingVersion: "工作版本（未接受）", representation: "图纸表达", cutHeight: "剖切高度", bottom: "视图底部", scale: "比例分母（1 : n）",
+    stale: "尚未更新", chosenView: "按所选版本绘制 · 不自动更新", followAgain: "改为跟随当前模型", workingVersion: "工作版本（未接受）", representation: "图纸表达", cutHeight: "剖切高度", bottom: "视图底部", depth: "剖切面后的绘制深度", scale: "比例分母（1 : n）",
     graphics: "线型与填充", cutLine: "剖切线宽（纸面 mm）", visibleLine: "可见线宽（纸面 mm）", hatch: "填充间距（纸面 mm）",
     dimensions: "已有尺寸标注",
     placement: "标注偏移（纸面 mm）", remove: "移除尺寸", saving: "正在保存表达…", held: "表达修改尚未保存：请修正标出的字段或重试。", retry: "重试保存",
@@ -182,9 +182,11 @@ function planPicture(svg: string): PlanPicture | null {
 const objectLabel = (text: Copy, object: PlanObject, roles: readonly LineRole[] = object.roles) =>
   [object.component ?? object.id, object.material ?? text.noMaterial, roles.map(role => text.roles[role]).join(", ")].join(" · ");
 
-function PlanPreview({ source, file, vector, picture, hidden, picked, onPick, objects, selected, onSelect, onChange, disabled }: {
+function PlanPreview({ source, file, vector, picture, hidden, picked, onPick, symbols, objects, selected, onSelect, onChange, disabled }: {
   source: SourceDocumentDto; file: File; vector: PlanVectorDto | null; picture: PlanPicture | null;
   hidden: readonly string[]; picked: string | null; onPick(object: string | null): void; objects: PlanDressingDto[];
+  /** Whether plan symbols are drawn and edited here: on a horizontal plan, not a vertical section. */
+  symbols: boolean;
   selected: string; onSelect(id: string): void; onChange(objects: PlanDressingDto[]): void; disabled: boolean;
 }) {
   const { language } = usePreferences(), text = copy[language];
@@ -258,7 +260,7 @@ function PlanPreview({ source, file, vector, picture, hidden, picked, onPick, ob
         </svg>
           : image ? <img className="drawing-vector-base" src={image} alt={source.fileName} onLoad={() => setReady(true)} />
           : <DocumentSurface file={file} page={page} scale={scale} onReady={onReady} />}
-        {(inline || image) && vector && crop && <DressingOverlay objects={objects} vector={vector} crop={crop} selected={selected}
+        {symbols && (inline || image) && vector && crop && <DressingOverlay objects={objects} vector={vector} crop={crop} selected={selected}
           onSelect={onSelect} onChange={onChange} language={language} disabled={disabled} />}
         {hover && hovered && <div className="drawing-object-tip" role="tooltip" style={{ left: hover.x, top: hover.y,
           transform: `translate(${hover.x > page.width * scale / 2 ? "calc(-100% - 12px)" : "12px"}, ${hover.y > page.height * scale / 2 ? "calc(-100% - 12px)" : "16px"})` }}>
@@ -326,6 +328,8 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const [section, setSection] = useState<SectionForm>({ axis: "y", position: null, toward: "+", eyeHeight: null, fovDeg: 55 });
   const source = documents.find(document => drawingDocumentKey(document) === selected) ?? null;
   const perspectiveOpen = source?.viewRecipe?.kind === "section-perspective";
+  // A vertical section keeps its plane: no cut height or bottom, and no plan symbols or dimensions.
+  const verticalOpen = isVerticalSection(source);
   const latest = useMemo(() => latestRevisions(documents), [documents]);
   const latestKeys = useMemo(() => new Set(latest.map(drawingDocumentKey)), [latest]);
   const earlier = documents.filter(document => !latestKeys.has(drawingDocumentKey(document)));
@@ -351,7 +355,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   const sectionTarget = stage ?? liveTarget;
   // While the same drawing is read again, its fields keep the unit its last status gave them.
   const lengthUnit = choices?.lengthUnit ?? status?.lengthUnit ?? (lastStatus?.question === statusQuestion ? lastStatus?.status.lengthUnit : null) ?? "";
-  const planCrop = isCutPlan(source) ? (source?.viewRecipe?.frame as { crop_uv?: number[] } | undefined)?.crop_uv : undefined;
+  const planCrop = isCutPlan(source) && !verticalOpen ? (source?.viewRecipe?.frame as { crop_uv?: number[] } | undefined)?.crop_uv : undefined;
   const sectionPosition = section.position ?? (planCrop ? (section.axis === "x" ? planCrop[0] + planCrop[2] : planCrop[1] + planCrop[3]) / 2 : 0);
   const sectionEyeHeight = section.eyeHeight ?? (lengthUnit ? 1.6 / (UNIT_METRES[lengthUnit] ?? 1) : NaN);
   // Visibility is not part of the drawing identity. A save that finishes while another
@@ -505,10 +509,11 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
   };
   /**
    * The revision request itself: on a target, or on the drawing's own source. A new drawing names only the
-   * pens a person set. It is a person's own edit (human), which a project recipe offer may count.
+   * pens a person set; an open vertical section names only what changed, and keeps its plane. It is a
+   * person's own edit (human), which a project recipe offer may count.
    */
   const requestRevision = (drawn: PlanTarget, follow?: "live" | "frozen") =>
-    studio.drawingPlan({ projectId, ...targetSource(drawn), ...planRequestFields(form), sourceKind: "human",
+    studio.drawingPlan({ projectId, ...targetSource(drawn), ...planRequestFields(form, source), sourceKind: "human",
       ...(!source && drawingName.trim() ? { fileName: drawingName.trim() } : {}),
       ...(source?.drawingId ? { drawingId: source.drawingId } : {}), ...(source?.revisionRef ? { previousRevisionRef: source.revisionRef } : {}),
       ...(follow ? { follow } : {}) });
@@ -678,7 +683,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     link.href = url; link.download = source.fileName.replace(/\.[^.]+$/, "") + ".svg"; link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const numeric = (key: "cutHeight" | "bottom" | "scaleDenominator" | "cutLineMm" | "visibleLineMm" | "hatchSpacingMm", label: string, min?: number, step = "any") => {
+  const numeric = (key: "cutHeight" | "bottom" | "depth" | "scaleDenominator" | "cutLineMm" | "visibleLineMm" | "hatchSpacingMm", label: string, min?: number, step = "any") => {
     // A new drawing's empty pen is left to the project recipe; a drawn revision always names its own.
     const open = !source && (PAPER_PENS as readonly string[]).includes(key);
     return <label className="drawing-field">{label}<input type="number" min={min} step={step} required={!open} placeholder={open ? text.recipePen : undefined}
@@ -806,7 +811,7 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
     <div className="drawing-body">
       <div className="drawing-main">
         <div className="drawing-canvas">{source && file ? <PlanPreview key={source.drawingId ?? selected} source={source} file={file} vector={vector}
-          picture={picture} hidden={hiddenIds} picked={pickedObject?.id ?? null} onPick={pick} objects={form.dressing} selected={selectedDressing}
+          picture={picture} hidden={hiddenIds} picked={pickedObject?.id ?? null} onPick={pick} symbols={!verticalOpen} objects={form.dressing} selected={selectedDressing}
           onSelect={setSelectedDressing} onChange={dressing => update({ dressing })} disabled={busy || !active} />
           : <div className="drawing-empty" role="status">{loading || source ? text.loading : stage ? text.empty : live?.reason ?? text.noModel}</div>}</div>
       </div>
@@ -817,8 +822,9 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
           {!source && <label className="drawing-field">{text.drawingName}<input type="text" maxLength={236} value={drawingName}
             placeholder={text.fresh} onChange={event => setDrawingName(event.currentTarget.value)} />
             <span className="drawing-field__hint">{text.drawingNameHint}</span></label>}
-          {numeric("cutHeight", `${text.cutHeight} (${lengthUnit || "…"})`)}
-          {numeric("bottom", `${text.bottom} (${lengthUnit || "…"})`)}
+          {!verticalOpen && numeric("cutHeight", `${text.cutHeight} (${lengthUnit || "…"})`)}
+          {!verticalOpen && numeric("bottom", `${text.bottom} (${lengthUnit || "…"})`)}
+          {verticalOpen && numeric("depth", `${text.depth} (${lengthUnit || "…"})`)}
           {numeric("scaleDenominator", text.scale, 1, "1")}
           <details><summary>{text.graphics}</summary>{numeric("cutLineMm", text.cutLine, 0.01)}{numeric("visibleLineMm", text.visibleLine, 0.01)}{numeric("hatchSpacingMm", text.hatch, 0.1)}
             {!source && <p className="drawing-field__hint">{text.penHint}</p>}
@@ -841,10 +847,10 @@ export default function DrawingCanvas({ projectId, active = true, refreshKey = 0
               <button type="button" aria-label={`${text.showObject}: ${name}`} onClick={() => showObject(id)}>{text.showObject}</button></li>;
           })}</ul></div>}
         </fieldset>}
-        {source && vector && form.cropUv && <DressingControls objects={form.dressing} vector={vector} crop={form.cropUv}
+        {source && vector && form.cropUv && !verticalOpen && <DressingControls objects={form.dressing} vector={vector} crop={form.cropUv}
           selected={selectedDressing} onSelect={setSelectedDressing} onChange={dressing => update({ dressing })}
           disabled={busy || !active} language={language} unit={lengthUnit} status={status} />}
-        {dimensions.length > 0 && <fieldset disabled={busy || !active}><legend>{text.dimensions}</legend>
+        {dimensions.length > 0 && !verticalOpen && <fieldset disabled={busy || !active}><legend>{text.dimensions}</legend>
           {dimensions.map(dimension => {
             const resolved = status?.dimensions?.find(item => item.id === dimension.id);
             const label = choices?.dimensions.find(item => item.entityRef === dimension.entityRef && item.openingId === dimension.openingId)?.label ?? dimension.openingId;
