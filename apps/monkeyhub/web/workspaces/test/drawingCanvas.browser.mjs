@@ -161,6 +161,19 @@ try {
     const recipe = await page.evaluate(() => window.drawingFixture.recipe);
     const graphics = Object.fromEntries(Object.entries(pens).map(([key, fallback]) =>
       [key, body[key] ?? previous?.viewRecipe?.graphics?.[key] ?? recipe[key] ?? fallback]));
+    // Like the runtime, a vertical section keeps its plane, and a cut height or bottom would turn it into a plan (#244).
+    if (previous?.viewRecipe?.frame?.up?.[2] === 1) {
+      if ("cutHeight" in body || "bottom" in body || body.dimensions?.length || body.dressing?.length)
+        return route.fulfill({ status: 409, json: { code: "DRAWING_ORIENTATION_CHANGED", detail: "Fixture: a section keeps its plane." } });
+      const frame = previous.viewRecipe.frame;
+      const section = { ...previous, assetSha256: String(serial).padStart(64, "0"), revisionRef: `revision-${serial}`,
+        generatedAt: `2026-09-25T00:00:${String(serial).padStart(2, "0")}Z`, modelSource: body.modelSource ?? null, sourceStageRef: body.sourceStageRef ?? null,
+        viewRecipe: { ...previous.viewRecipe, graphics, hiddenObjectIds: body.hiddenObjectIds ?? previous.viewRecipe.hiddenObjectIds,
+          frame: { ...frame, far_depth: body.depth ?? frame.far_depth, crop_uv: body.cropUv ?? frame.crop_uv,
+            scale: body.scaleDenominator ? `1:${body.scaleDenominator}` : frame.scale } } };
+      await page.evaluate(result => window.drawingFixture.documents.push(result), section);
+      return route.fulfill({ status: 201, json: section });
+    }
     const result = { projectId: body.projectId, runId: body.modelSource?.runId ?? body.sourceAsset.runId, assetSha256: String(serial).padStart(64, "0"),
       fileName: previous?.fileName ?? (body.fileName ? `${body.fileName.replace(/\.png$/i, "")}.png` : `floor-plan-${serial}.png`), mimeType: "image/png", sizeBytes: 200, pageCount: 1,
       pages: [{ pageIndex: 0, width: 600, height: 400, rotation: 0 }], modelSource: body.modelSource ?? null, sourceStageRef: body.sourceStageRef ?? null,
@@ -893,6 +906,52 @@ try {
     await page.getByText("These values already are the project recipe.", { exact: true }).waitFor();
     assert.deepEqual(decisionCalls.slice(5), ["GET"], "values the recipe already holds write nothing");
     assert.equal(drives.length, 0);
+  });
+  await step("an open vertical section asks only for what changed, and offers no cut height, bottom or plan symbols", async () => {
+    // A section an agent or a sheet drew on the accepted version before the Working Head moved on (#244).
+    const sectionDocument = { ...legacyDocument, assetSha256: "7".repeat(64), fileName: "section-a.png", drawingId: "section-a",
+      revisionRef: "section-a-revision", generatedAt: "2026-09-21T00:00:00Z",
+      viewRecipe: { kind: "cut-plan", frame: { origin: [0, 2, 0], look: [0, -1, 0], right: [-1, 0, 0], up: [0, 0, 1], near_depth: 0,
+        far_depth: 3, scale: "1:100", crop_uv: [0, 0, 10, 6] }, graphics: { ...pens }, hiddenObjectIds: [], dimensions: [] } };
+    const sectionKey = JSON.stringify([sectionDocument.runId, sectionDocument.assetSha256, sectionDocument.revisionRef]);
+    // What a request asks for beyond its source, identity and who asked.
+    const asked = body => Object.keys(body).filter(key => !["projectId", "modelSource", "sourceStageRef", "sourceKind", "drawingId",
+      "previousRevisionRef", "follow"].includes(key)).sort();
+    await page.evaluate(document => window.drawingFixture.documents.push(document), sectionDocument);
+    await refreshSources();
+    await until(() => revision().locator("option").evaluateAll(options => options.map(option => option.value)),
+      values => values.includes(sectionKey), "the section is listed");
+    const before = requests.length;
+    await revision().selectOption(sectionKey);
+    // The Working Head moved to B: the LIVE section rebuilds on it once, keeping its plane, depth, window and pens.
+    const rebuilt = await until(() => Promise.resolve(requests[before]), Boolean, "the LIVE section rebuilt on the Working Head");
+    assert.deepEqual([rebuilt.modelSource, rebuilt.sourceStageRef, rebuilt.previousRevisionRef, rebuilt.follow, rebuilt.drawingId],
+      [modelB, "stage-B", sectionDocument.revisionRef, "live", "section-a"]);
+    assert.deepEqual(asked(rebuilt), [], "a rebuild asks for no cut height, bottom, pen, depth or annotation");
+    await until(() => revision().inputValue(), value => value !== sectionKey, "the rebuilt section opened");
+    await sourceWord('[data-follow="live"][data-status="current"]' + settled).waitFor();
+    const appearance = page.getByRole("group", { name: "Drawing appearance", exact: true });
+    const depth = appearance.getByLabel("Depth beyond the section plane (meter)", { exact: true });
+    assert.equal(await depth.inputValue(), "3");
+    for (const label of ["Cut height (meter)", "View bottom (meter)"])
+      assert.equal(await appearance.getByLabel(label, { exact: true }).count(), 0, `${label} is a plan's`);
+    assert.equal(await page.getByRole("button", { name: "Add person", exact: true }).count(), 0, "plan symbols are a plan's");
+    assert.equal(await page.locator(".drawing-dressing-overlay").count(), 0);
+    assert.equal(await page.getByRole("group", { name: "Saved dimensions", exact: true }).count(), 0);
+    await depth.fill("4.5");
+    const deeper = await until(() => Promise.resolve(requests[before + 1]), Boolean, "the depth saved itself");
+    assert.deepEqual([asked(deeper), deeper.depth, deeper.previousRevisionRef], [["depth"], 4.5, `revision-${before + 1}`]);
+    await until(() => revision().inputValue(), value => JSON.parse(value)[2] === `revision-${before + 2}`, "the deeper section opened");
+    const graphics = page.locator("details", { has: page.getByText("Linework and hatch", { exact: true }) });
+    if (!await graphics.evaluate(node => node.open)) await page.getByText("Linework and hatch", { exact: true }).click();
+    await pen("Cut line (paper mm)").fill("0.5");
+    const inked = await until(() => Promise.resolve(requests[before + 2]), Boolean, "the pen saved itself");
+    assert.deepEqual([asked(inked), inked.cutLineMm], [["cutLineMm"], .5], "only the changed pen is asked for");
+    await until(() => revision().inputValue(), value => JSON.parse(value)[2] === `revision-${before + 3}`, "the inked section opened");
+    const saved = await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref), `revision-${before + 3}`);
+    assert.deepEqual([saved.viewRecipe.frame.up, saved.viewRecipe.frame.far_depth, saved.viewRecipe.graphics.cutLineMm], [[0, 0, 1], 4.5, .5]);
+    assert.equal(requests.length, before + 3);
+    await page.screenshot({ path: join(screenshots, "drawing-vertical-section.png"), fullPage: true });
   });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed, screenshots, generationRequests: requests.length, dimensionProposals: drives.length }));
