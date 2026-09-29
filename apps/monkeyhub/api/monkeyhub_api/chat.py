@@ -293,14 +293,21 @@ def _source_checkout() -> Path | None:
     return root if os.access(root, os.W_OK) else None
 
 
-def _claude_env() -> dict[str, str]:
-    values = dict(os.environ)
-    root = Path(values.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+def _claude_user_settings() -> dict:
+    """The user's own Claude Code ``settings.json`` (under ``CLAUDE_CONFIG_DIR`` when set), or {}."""
+    root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
     try:
         saved = json.loads((root / "settings.json").read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
-        saved = {}
-    for key, value in saved.get("env", {}).items():
+        return {}
+    return saved if isinstance(saved, dict) else {}
+
+
+def _claude_env() -> dict[str, str]:
+    values = dict(os.environ)
+    saved = _claude_user_settings()
+    env = saved.get("env")
+    for key, value in (env if isinstance(env, dict) else {}).items():
         if isinstance(key, str) and isinstance(value, str) and key not in values:
             values[key] = value
     return values
@@ -659,6 +666,9 @@ class _Running:
     written: list[str] = field(default_factory=list)
     # This turn was cancelled to continue with an interjection, not stopped.
     redirected: bool = False
+    # This Claude turn was started with the library's skills only (#463): its
+    # init event says which other skills are still left to turn off.
+    library_skills: bool = False
     # The ACP prompt is with the adapter; steering is offered only then.
     prompting: bool = False
     steering: threading.Lock = field(default_factory=threading.Lock)
@@ -1881,13 +1891,23 @@ class ChatStore:
         else:
             scratch = self._scratch_path(session.id)
             # The library project's skills, as a plugin Claude loads natively
-            # (#252). None when no library is set: the command is then as before.
-            # Nothing is added to --allowedTools for them: under dontAsk the CLI
-            # (2.1.283) does not gate its Skill tool, so an allow rule restricts
-            # nothing. It also lists this machine's personal skills and plugins,
-            # which a chat can load too; only a deny rule refuses one. The
-            # turn hands the index it already read for its recipes, if any.
-            skills = skill_plugins.plugin_dir(self.runtime_root, (library or self._library)())
+            # (#252), and no other skill (#463). Under dontAsk the CLI (2.1.283)
+            # does not gate its Skill tool, so an allow rule restricts nothing.
+            # User settings are never read (no personal skills, installed
+            # plugins or their hooks); only their sign-in and network keys are
+            # carried. With no library the chat has no Skill tool at all; with
+            # one, --settings also turns off the bundled skills and every
+            # leftover one. The turn hands the index it already read for its recipes.
+            current = (library or self._library)()
+            skills = skill_plugins.plugin_dir(self.runtime_root, current)
+            if current is None:
+                carried = skill_plugins.carried_settings(_claude_user_settings())
+                only_library = ("--disable-slash-commands", "--setting-sources", "project,local",
+                                *(("--settings", json.dumps(carried, ensure_ascii=False)) if carried else ()))
+            else:
+                only_library = (*(("--plugin-dir", str(skills)) if skills is not None else ()),
+                                "--setting-sources", "project,local", "--settings",
+                                skill_plugins.claude_settings(self.runtime_root, _claude_user_settings()))
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
                        "--include-partial-messages", "--permission-mode", "dontAsk", "--permission-prompts", "none",
                        # Two different questions, and both have to be answered.
@@ -1898,7 +1918,7 @@ class ChatStore:
                        # plus this adapter's own tools and nothing else.
                        "--tools", "default", "--allowedTools", ",".join(_claude_approved(self.runtime_root)),
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
-                       *(("--plugin-dir", str(skills)) if skills is not None else ()),
+                       *only_library,
                        "--add-dir", str(scratch),
                        # alwaysLoad: the CLI otherwise defers every MCP tool behind
                        # a ToolSearch round trip, one model call before any design work.
@@ -2353,6 +2373,7 @@ class ChatStore:
                                  "the CLI could be started.")
                 return
             command, environment = self._command(session, running.attachments, library)
+            running.library_skills = "--setting-sources" in command and "--disable-slash-commands" not in command
             if running.trace:
                 running.trace.bind(session.nativeSessionId, session.model)
                 running.trace.ready()
@@ -2561,6 +2582,8 @@ class ChatStore:
             trace.claude_usage(event.get("message"))
         if trace and kind == "stream_event":
             trace.claude_stream(event.get("event"))
+        if kind == "system" and event.get("subtype") == "init" and active and active.library_skills:
+            skill_plugins.learn(self.runtime_root, event)
         if kind in {"error", "turn.failed"} or (kind == "result" and event.get("is_error")):
             detail = event.get("message") or event.get("error") or event.get("result") or "The provider reported a failed turn."
             if isinstance(detail, Mapping):

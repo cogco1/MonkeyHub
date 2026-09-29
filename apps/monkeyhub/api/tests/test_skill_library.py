@@ -2,7 +2,7 @@
 
 The Hub reads the library through its Runtime API, writes a plugin directory
 into its own cache - never into a project - and passes it with --plugin-dir.
-With no library set, the Claude command is what it was.
+With no library set, the Claude command has no Skill tool (#463).
 """
 
 from __future__ import annotations
@@ -139,10 +139,15 @@ class SkillLibraryTest(unittest.TestCase):
         self.session = store.create(ChatCreateRequest(projectDir=str(self.project), provider="claude"))
         self.add(HATCH)
 
-        # No library: nothing is read, and the command carries no plugin.
+        # No library: nothing is read, and the chat has no Skill tool at all (#463).
         with patch.object(chat, "_request_json", side_effect=AssertionError("no library, no call")):
             plain = self.claude_command(store)
-        self.assertNotIn("--plugin-dir", plain)
+        self.assertIn("--disable-slash-commands", plain)
+        # No user settings either: installed plugins' hooks would still inject their text (#463).
+        self.assertEqual(plain[plain.index("--disable-slash-commands"):plain.index("--disable-slash-commands") + 3],
+                         ["--disable-slash-commands", "--setting-sources", "project,local"])
+        for flag in ("--plugin-dir", "--settings"):
+            self.assertNotIn(flag, plain)
 
         save_application_settings(self.runtime, ApplicationSettingsDto(libraryDir=str(self.library)))
         projects = snapshot(self.project), snapshot(self.library)
@@ -158,9 +163,18 @@ class SkillLibraryTest(unittest.TestCase):
         self.assertTrue((plugin / "skills/hatch-review/SKILL.md").is_file())
         self.assertEqual(again[again.index("--plugin-dir") + 1], str(plugin))
         self.assertEqual(self.fetched, ["/api/skills/skill:hatch-review?version=1"], "the second chat fetched no body")
-        # The plugin is the only difference from the command without a library.
+        # Only the library's skills: no user settings, no bundled skills, and
+        # the known leftovers turned off with the one value the CLI accepts.
+        # A wrong shape makes the CLI ignore the whole --settings value.
         position = loaded.index("--plugin-dir")
-        self.assertEqual(loaded[:position] + loaded[position + 2:], plain)
+        self.assertEqual(loaded[position:position + 6], [
+            "--plugin-dir", str(plugin), "--setting-sources", "project,local", "--settings",
+            json.dumps({"disableBundledSkills": True, "skillOverrides": {"design": "off", "doctor": "off"}})])
+        self.assertEqual(json.loads(loaded[position + 5]),
+                         {"disableBundledSkills": True, "skillOverrides": {"design": "off", "doctor": "off"}})
+        self.assertNotIn("--disable-slash-commands", loaded)
+        without = plain.index("--disable-slash-commands")
+        self.assertEqual(loaded[:position] + loaded[position + 6:], plain[:without] + plain[without + 3:])
         # Starting the chat changed no project: not its own, not the library.
         self.assertEqual((snapshot(self.project), snapshot(self.library)), projects)
 
@@ -169,6 +183,35 @@ class SkillLibraryTest(unittest.TestCase):
             with self.assertRaises(chat.HubFailure) as refused:
                 self.claude_command(store)
         self.assertEqual(refused.exception.error.code, "CHAT_SKILL_LIBRARY_UNAVAILABLE")
+
+    def test_a_library_chat_carries_only_sign_in_and_network_from_user_settings(self):
+        commands = {name: (sys.executable, "-c", "pass") for name in ("codex", "claude")}
+        store = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=commands)
+        self.addCleanup(store.shutdown)
+        user = self.root / "claude" / "settings.json"
+        user.parent.mkdir(parents=True)
+        user.write_text(json.dumps({
+            "env": {"HTTPS_PROXY": "http://proxy.example.invalid:8080"}, "apiKeyHelper": "fixture-helper",
+            "enabledPlugins": {"superpowers@market": True}, "hooks": {"Stop": []}, "theme": "dark",
+        }), encoding="utf-8")
+        self.add(HATCH)
+        library = skill_plugins.Library(self.index(), self.fetch)
+        plan = {"ANTHROPIC_BASE_URL": "https://fixture.example.invalid", "ANTHROPIC_AUTH_TOKEN": "fixture-plan-token"}
+        for provider in ("claude", "coding-plan"):
+            with self.subTest(provider=provider), patch.object(chat, "_coding_plan_env", return_value=plan):
+                self.session = store.create(ChatCreateRequest(projectDir=str(self.project), provider=provider))
+                with store._lock:
+                    command, _ = store._command(store._sessions[self.session.id], library=lambda: library)
+                self.assertEqual(json.loads(command[command.index("--settings") + 1]), {
+                    "env": {"HTTPS_PROXY": "http://proxy.example.invalid:8080"}, "apiKeyHelper": "fixture-helper",
+                    "disableBundledSkills": True, "skillOverrides": {"design": "off", "doctor": "off"}})
+                self.assertEqual(command[command.index("--setting-sources") + 1], "project,local")
+                with store._lock:
+                    plain, _ = store._command(store._sessions[self.session.id], library=lambda: None)
+                self.assertIn("--disable-slash-commands", plain)
+                self.assertEqual(plain[plain.index("--setting-sources") + 1], "project,local")
+                self.assertEqual(json.loads(plain[plain.index("--settings") + 1]), {
+                    "env": {"HTTPS_PROXY": "http://proxy.example.invalid:8080"}, "apiKeyHelper": "fixture-helper"})
 
     def test_the_library_setting_names_a_complete_project(self):
         app = create_app(HubSettings(runtime_root=self.runtime))
