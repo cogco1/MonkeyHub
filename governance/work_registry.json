@@ -39,6 +39,7 @@
             "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/drawingPlan.ts",
             "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
             "apps/monkeyhub/web/workspaces/test/drawingPlan.test.ts",
+            "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
             "apps/monkeyhub/api/monkeyhub_api/chat.py",
             "apps/monkeyhub/api/tests/test_chat.py"
           ],
