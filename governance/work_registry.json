@@ -1,4 +1,28 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-244",
+      "lanes": [
+        {
+          "id": "drawing-integration",
+          "status": "active",
+          "branch": "codex/244-drawing-integration",
+          "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-244-drawing-integration",
+          "base_ref": "826154ac",
+          "contributor": "Claude (continuing Codex's interrupted GH-244 drawing integration)",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "studio.drawings"
+          ],
+          "write_scope": [
+            "docs/SYSTEM_MAP.md",
+            "governance/module_registry.json"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
