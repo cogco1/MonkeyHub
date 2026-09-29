@@ -104,7 +104,7 @@ if "fail-test" in prompt:
 if "--output-format" in args:
     flag = "--resume" if "--resume" in args else "--session-id"
     native = args[args.index(flag) + 1]
-    if "--setting-sources" in args:
+    if "--setting-sources" in args and "--disable-slash-commands" not in args:
         # A library chat's init lists the skills it can load (#463).
         emit({"type": "system", "subtype": "init", "session_id": native, "claude_code_version": "9.9.9",
               "skills": ["monkeyhub-library:hatch-review", "design", "newthing"]})

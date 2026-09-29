@@ -1896,14 +1896,17 @@ class ChatStore:
             # The library project's skills, as a plugin Claude loads natively
             # (#252), and no other skill (#463). Under dontAsk the CLI (2.1.283)
             # does not gate its Skill tool, so an allow rule restricts nothing.
-            # With no library the chat has no Skill tool at all. With one, user
-            # settings are not read (no personal skills or installed plugins)
-            # and --settings turns off the bundled skills and every leftover
-            # one. The turn hands the index it already read for its recipes.
+            # User settings are never read (no personal skills, installed
+            # plugins or their hooks); only their sign-in and network keys are
+            # carried. With no library the chat has no Skill tool at all; with
+            # one, --settings also turns off the bundled skills and every
+            # leftover one. The turn hands the index it already read for its recipes.
             current = (library or self._library)()
             skills = skill_plugins.plugin_dir(self.runtime_root, current)
             if current is None:
-                only_library = ("--disable-slash-commands",)
+                carried = skill_plugins.carried_settings(_claude_user_settings())
+                only_library = ("--disable-slash-commands", "--setting-sources", "project,local",
+                                *(("--settings", json.dumps(carried, ensure_ascii=False)) if carried else ()))
             else:
                 only_library = (*(("--plugin-dir", str(skills)) if skills is not None else ()),
                                 "--setting-sources", "project,local", "--settings",
@@ -2373,7 +2376,7 @@ class ChatStore:
                                  "the CLI could be started.")
                 return
             command, environment = self._command(session, running.attachments, library)
-            running.library_skills = "--setting-sources" in command
+            running.library_skills = "--setting-sources" in command and "--disable-slash-commands" not in command
             if running.trace:
                 running.trace.bind(session.nativeSessionId, session.model)
                 running.trace.ready()

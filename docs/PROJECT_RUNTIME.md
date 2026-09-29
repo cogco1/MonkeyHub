@@ -115,7 +115,9 @@ gate its `Skill` tool under `dontAsk`, so an allow rule restricts nothing, and d
 plugins and the CLI's bundled skills. So the Hub removes them where they come from:
 
 - With no library set, the chat starts with `--disable-slash-commands`: no skills are listed and there is no
-  `Skill` tool.
+  `Skill` tool. It also gets `--setting-sources project,local` (with only `env` and `apiKeyHelper` carried in
+  `--settings`), so installed plugins stay unloaded: a plugin's startup hook would otherwise still inject its
+  own instructions into the chat.
 - With a library set, it adds `--setting-sources project,local`, which drops the user settings that enable
   personal skills and plugins, and `--settings` with `{"disableBundledSkills": true, "skillOverrides":
   {"<name>": "off", …}}`. Each override must be the string `"off"`: with any other value the CLI silently

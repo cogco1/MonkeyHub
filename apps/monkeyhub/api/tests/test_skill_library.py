@@ -143,7 +143,10 @@ class SkillLibraryTest(unittest.TestCase):
         with patch.object(chat, "_request_json", side_effect=AssertionError("no library, no call")):
             plain = self.claude_command(store)
         self.assertIn("--disable-slash-commands", plain)
-        for flag in ("--plugin-dir", "--setting-sources", "--settings"):
+        # No user settings either: installed plugins' hooks would still inject their text (#463).
+        self.assertEqual(plain[plain.index("--disable-slash-commands"):plain.index("--disable-slash-commands") + 3],
+                         ["--disable-slash-commands", "--setting-sources", "project,local"])
+        for flag in ("--plugin-dir", "--settings"):
             self.assertNotIn(flag, plain)
 
         save_application_settings(self.runtime, ApplicationSettingsDto(libraryDir=str(self.library)))
@@ -171,7 +174,7 @@ class SkillLibraryTest(unittest.TestCase):
                          {"disableBundledSkills": True, "skillOverrides": {"design": "off", "doctor": "off"}})
         self.assertNotIn("--disable-slash-commands", loaded)
         without = plain.index("--disable-slash-commands")
-        self.assertEqual(loaded[:position] + loaded[position + 6:], plain[:without] + plain[without + 1:])
+        self.assertEqual(loaded[:position] + loaded[position + 6:], plain[:without] + plain[without + 3:])
         # Starting the chat changed no project: not its own, not the library.
         self.assertEqual((snapshot(self.project), snapshot(self.library)), projects)
 
@@ -206,7 +209,9 @@ class SkillLibraryTest(unittest.TestCase):
                 with store._lock:
                     plain, _ = store._command(store._sessions[self.session.id], library=lambda: None)
                 self.assertIn("--disable-slash-commands", plain)
-                self.assertNotIn("--settings", plain)
+                self.assertEqual(plain[plain.index("--setting-sources") + 1], "project,local")
+                self.assertEqual(json.loads(plain[plain.index("--settings") + 1]), {
+                    "env": {"HTTPS_PROXY": "http://proxy.example.invalid:8080"}, "apiKeyHelper": "fixture-helper"})
 
     def test_the_library_setting_names_a_complete_project(self):
         app = create_app(HubSettings(runtime_root=self.runtime))

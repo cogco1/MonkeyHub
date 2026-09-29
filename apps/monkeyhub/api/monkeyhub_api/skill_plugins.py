@@ -24,11 +24,11 @@ one (``pin``), and says of every recipe a turn carries whether its version is
 still the library's current one (``pinned_status``): nothing is guessed or
 swapped, the agent tells the user.
 
-A chat sees the library's skills and nothing else (#463). With no library,
-``chat`` starts Claude with ``--disable-slash-commands``, which removes the
-Skill tool. With one, it adds ``--setting-sources project,local`` (no user
-settings: no personal skills or installed plugins) and ``--settings`` from
-``claude_settings``: ``disableBundledSkills`` plus a ``skillOverrides`` entry
+A chat sees the library's skills and nothing else (#463). Either way ``chat``
+starts Claude with ``--setting-sources project,local``: no user settings, so no
+personal skills, installed plugins or their hooks. With no library it adds
+``--disable-slash-commands``, which removes the Skill tool. With one it adds
+``--settings`` from ``claude_settings``: ``disableBundledSkills`` plus a ``skillOverrides`` entry
 ``"off"`` for every skill still left over. The CLI ignores the whole
 ``--settings`` value when an override is anything but the string ``"off"``.
 The leftovers are learned, not guessed: a turn's init event lists the skills
@@ -120,6 +120,12 @@ def leftovers(runtime_root: Path) -> list[str]:
     return sorted(names)
 
 
+def carried_settings(user_settings: Mapping[str, Any]) -> dict[str, Any]:
+    """What of the user's own Claude ``settings.json`` a Hub chat keeps: sign-in and network only."""
+
+    return {key: user_settings[key] for key in CARRIED_SETTINGS if key in user_settings}
+
+
 def claude_settings(runtime_root: Path, user_settings: Mapping[str, Any]) -> str:
     """The ``--settings`` JSON a library chat starts with.
 
@@ -128,7 +134,7 @@ def claude_settings(runtime_root: Path, user_settings: Mapping[str, Any]) -> str
     project,local`` drops the rest along with the personal skills and plugins.
     """
 
-    settings: dict[str, Any] = {key: user_settings[key] for key in CARRIED_SETTINGS if key in user_settings}
+    settings = carried_settings(user_settings)
     settings["disableBundledSkills"] = True
     settings["skillOverrides"] = {name: "off" for name in leftovers(runtime_root)}
     return json.dumps(settings, ensure_ascii=False)
