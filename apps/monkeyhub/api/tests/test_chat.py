@@ -1116,7 +1116,7 @@ class ChatTests(unittest.TestCase):
             return path.removeprefix(prefix)
         self.assertIsNone(headers, "Readback and service identity checks do not admit a mutation")
         if path.startswith(("/api/proposals/", "/api/jobs/", "/api/candidates/", "/api/state", "/api/construction",
-                            "/api/domains/")) or path == "/api/project":
+                            "/api/domains")) or path == "/api/project":
             self.assertEqual(base, "http://127.0.0.1:8791")
         return path
 
@@ -1957,6 +1957,39 @@ class ChatTests(unittest.TestCase):
                 schema = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
                                         {"method": method, "path": template})
                 self.assertEqual((schema["method"], schema["path"]), (method, template))
+
+    def test_the_domain_index_is_a_chat_read_beside_each_domains_readiness(self):
+        """#419: an agent learns which domains there are (GET /api/domains) as well as what one reads."""
+
+        for path in ("/api/domains", "/api/domains/structure/readiness", "/api/domains/envelope/readiness"):
+            self.assertIsNotNone(chat._READ.fullmatch(path), path)
+        for path in ("/api/domains/", "/api/domains/structure", "/api/domains/structure/readiness/more"):
+            self.assertIsNone(chat._READ.fullmatch(path), path)
+
+        session = self.create()
+        session.status = "running"
+        sent = []
+        document = {"paths": {
+            "/api/domains": {"get": {"summary": "Every known domain"}},
+            "/api/domains/{domain}/readiness": {"get": {"summary": "What a domain reads"}},
+        }, "components": {"schemas": {}}}
+
+        def forward(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
+            if path == "/openapi.json":
+                return json.loads(json.dumps(document))
+            sent.append((method, path))
+            return {"domains": [{"id": "structure"}, {"id": "envelope"}]}
+
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=forward):
+            answer = chat.call_tool(self.store.hub_url, session.id, "studio_request",
+                                    {"method": "GET", "path": "/api/domains"})
+            listing = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {"pathPrefix": "/api/domains"})
+        self.assertEqual(answer, {"domains": [{"id": "structure"}, {"id": "envelope"}]})
+        self.assertEqual(sent, [("GET", "/api/domains")])
+        self.assertEqual({(row["method"], row["path"]) for row in listing["actions"]},
+                         {("GET", "/api/domains"), ("GET", "/api/domains/{domain}/readiness")})
 
     def test_studio_schema_finds_literal_routes_before_templated_ones(self):
         """A templated route listed earlier in the OpenAPI document must not shadow a literal
