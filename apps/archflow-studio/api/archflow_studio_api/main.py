@@ -7,6 +7,7 @@ binds no project; the request needing it discovers a wrong project root.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 import os
@@ -48,7 +49,7 @@ from .application.proposals import ProposalStore
 from .application.validation import ValidationStore
 from .protocol import SERVER_VERSION
 from .settings import BIND_ENV, PROJECT_DIR_ENV, REMOTE_MODE, SHARED_PROJECT_ROLE, StudioSettings
-from .transport.conditional import ConditionalReads
+from .transport.conditional import CONDITIONAL_READS, ConditionalReads
 from .transport.errors import StudioError
 
 DEFAULT_PORT = 8000
@@ -195,6 +196,39 @@ class IndexRevisionHeader:
         return None if state is None else f"{state.token.epoch}:{state.token.revision}"
 
 
+# The views a workspace reads first, as it asks for them (``GET /api/design-history``
+# defaults to ``main``); ``_prepare_first_reads`` derives them once at start (#449).
+_FIRST_READS = (("/api/design-history", b"branchId=main"), ("/api/worktrees", b""))
+_PREPARING = "monkey.first_reads"
+
+
+class FirstReads:
+    """While ``_prepare_first_reads`` runs, a view derived from the runs waits for its part (#449).
+
+    Those are the conditional reads (``CONDITIONAL_READS``): each would walk
+    the runs beside the preparation. A prepared view (``_FIRST_READS``) waits
+    until it is derived and then answers from the conditional memo under the
+    project's read token, or is derived again when the project moved
+    meanwhile; the others wait only for the runs. Every other request passes,
+    and so does everything once preparation ended or was never asked for.
+    """
+
+    def __init__(self, app: ASGIApp, *, state) -> None:
+        self.app = app
+        self.state = state
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        prepared = (getattr(self.state, "first_reads", {}).get(scope.get("path"))
+                    if scope["type"] == "http" and scope.get("method") == "GET" and not scope.get(_PREPARING) else None)
+        if prepared is not None and not prepared.is_set():
+            await run_in_threadpool(prepared.wait, _FIRST_READS_WAIT_S)
+        await self.app(scope, receive, send)
+
+
+# Past this, a first read derives its own view rather than wait on a stuck preparation.
+_FIRST_READS_WAIT_S = 30.0
+
+
 def _publish_commits(settings: StudioSettings, events: StudioEvents):
     """Put each commit of this project's index on the event stream as ``index.committed``: a hint, no rows."""
 
@@ -288,7 +322,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         initialize_drawing_runtime()
         app.state.stop_projection_commits = _project_commits(app.state.settings, app.state)
-    if getattr(app.state, "prepare_first_reads", False):
+    if getattr(app.state, "prepare_first_reads", False) and app.state.settings.service_role != SHARED_PROJECT_ROLE:
+        app.state.first_reads = {path: threading.Event() for path in CONDITIONAL_READS}
         threading.Thread(target=_prepare_first_reads, args=(app,), name="studio-first-reads", daemon=True).start()
 
     yield
@@ -432,6 +467,7 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
     # request is authenticated before a remembered answer can be handed out.
     app.add_middleware(ConditionalReads, state=app.state)
     app.add_middleware(IndexRevisionHeader, state=app.state)
+    app.add_middleware(FirstReads, state=app.state)
     if shared_project:
         original_openapi = app.openapi
 
@@ -530,30 +566,63 @@ def _prepare_first_reads(app: FastAPI) -> None:
 
     FastAPI builds each included router's route state on the first request
     routed through it, and the workspace's first reads each list every run's
-    records (``prepare_bound_project``). Both are done here, on a thread of
-    their own, once the process serves: a first request arriving meanwhile
-    waits for the one build instead of repeating it beside it. A path no route
-    has walks every router; nothing is answered or recorded. ``main`` asks for
-    it; an application a test builds binds on its first request as before.
-
-    Not with a project index: its first load is announced to whoever follows
-    this worker's events, and ``test_runtime_sse`` expects that load to come
-    after the Hub's stream is open, which a faster first request can overtake.
+    records (``prepare_bound_project``), with or without a project index: the
+    design history and the worktrees read the runs themselves. Both are done
+    here, on a thread of their own, once the process serves; a path no route
+    has walks every router. Then the first views (``_FIRST_READS``) are derived
+    through the application, so the conditional memo keeps each one under the
+    project's read token: only a stable token keeps an answer, and a token the
+    project moved past never answers it again. With an index, the worktrees
+    are derived again after its first load, whose commit is one of the events
+    their tag names; nobody waits for that load. A first request arriving
+    meanwhile waits for the one build instead of walking the runs beside it
+    (``FirstReads``). Nothing is recorded. ``main`` asks for it; an
+    application a test builds binds on its first request as before.
     """
 
     settings = app.state.settings
-    if settings.service_role == SHARED_PROJECT_ROLE or settings.project_index_dir is not None:
-        return
     unmatched = {"type": "http", "method": "GET", "path": "/api/\0", "raw_path": b"/api/%00",
                  "root_path": "", "query_string": b"", "headers": [], "app": app}
     try:
         from .application.binding import prepare_bound_project
 
-        prepare_bound_project(app.state)
+        binding = prepare_bound_project(app.state)
         for route in app.router.routes:
             route.matches(dict(unmatched))
+        prepared = dict(_FIRST_READS) if settings.mode != REMOTE_MODE else {}
+        # A remote process answers only a caller with its token; it derives its views when asked.
+        for path, done in app.state.first_reads.items():
+            if path not in prepared:
+                done.set()
+        # The worktrees' tag names the event sequence, which the index's first
+        # commit moves: derived again then, with nobody waiting for it.
+        sequence = app.state.events.sequence
+        for path, query in prepared.items():
+            asyncio.run(_read_through(app, path, query))
+            app.state.first_reads[path].set()
+        if prepared and binding.await_index(_FIRST_READS_WAIT_S) is not None and app.state.events.sequence != sequence:
+            asyncio.run(_read_through(app, "/api/worktrees", prepared["/api/worktrees"]))
     except Exception:  # noqa: BLE001 - the first request opens and refuses for itself
         logging.getLogger(__name__).debug("first-read preparation did not finish", exc_info=True)
+    finally:
+        for done in app.state.first_reads.values():
+            done.set()
+
+
+async def _read_through(app: FastAPI, path: str, query: bytes) -> None:
+    """One GET through the whole application, the answer discarded: the memo keeps it."""
+
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "GET",
+             "scheme": "http", "path": path, "raw_path": path.encode("latin-1"), "root_path": "",
+             "query_string": query, "headers": [], "client": None, "server": None, _PREPARING: True}
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message) -> None:
+        pass
+
+    await app(scope, receive, send)
 
 
 def main(argv: list[str] | None = None) -> None:
