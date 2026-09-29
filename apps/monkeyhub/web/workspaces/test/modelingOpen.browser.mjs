@@ -8,6 +8,11 @@
  * MODELING_OPEN_LATENCY_MS sets the latency (default 200). Timings are synthetic.
  * #366 leaves the opening as it was (5 rounds, the model at about 1.5 s at 200 ms a request): the
  * opening never waits for the project store, and without the Hub's stream open the store reads nothing.
+ * #449 (6 to 7 rounds and about 1.7 to 2 s before it on this walk) takes it to 4 rounds, about 1.3 s:
+ * the handshake; the binding with the saved position and the model list; the design history; then the
+ * state beside the model's bytes. The head is read again once the model is on screen. A third round
+ * would read the design history beside the binding, which the session refuses to do before the
+ * binding's identity is checked (connection.test.ts).
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -101,6 +106,9 @@ try {
   }
   const bytesOf = () => fixture.requests.filter((row) => row.name.endsWith("/bytes")).map((row) => row.runId);
   assert.deepEqual(bytesOf(), ["m-s1"], "the opening downloads the model it shows");
+  assert.ok(rounds <= 4, `the opening makes at most 4 rounds of requests: ${JSON.stringify(opening.map((row) => row.name))}`);
+  const stateRead = opening.find((row) => row.name === "/api/state"), bytesRead = opening.find((row) => row.name.endsWith("/bytes"));
+  assert.ok(bytesRead.at < stateRead.done, "the model's bytes are asked for beside the state, not after it");
 
   // Another run's model, then the first one again.
   await page.evaluate(() => window.__workspaceFixture.setCandidateRunId("m-s0"));

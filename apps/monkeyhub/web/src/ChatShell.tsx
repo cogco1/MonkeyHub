@@ -610,7 +610,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const actionLock = useRef(false);
   const permissionLock = useRef(false);
   const readLock = useRef(false);
-  const readAgain = useRef(false);
+  // The read after the one on the way, and whether it must include the chat list.
+  const readAgain = useRef<{ sessions: boolean } | null>(null);
+  // Callers in one tick share one read (#449): mounting asks from three effects at once.
+  const readBatch = useRef<{ sessions: boolean; done: Promise<void> } | null>(null);
   const runtimeRef = useRef<HubRuntimeDto | null>(null);
   const runtimeAttachments = useRef(new Map<string, ProjectRuntimeDto>());
   const restoredTools = useRef(false);
@@ -737,8 +740,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     for (const item of snapshot.projects) runtimeAttachments.current.set(item.projectDir, item);
     runtimeRef.current = snapshot; setRuntime(snapshot);
   }, []);
-  const refresh = useCallback(async () => {
-    if (readLock.current) { readAgain.current = true; return; }
+  const configuredRef = useRef(configuredProject);
+  configuredRef.current = configuredProject;
+  const refreshRef = useRef<(options?: { sessions?: boolean }) => Promise<void>>(async () => {});
+  /** `sessions: false` leaves the chat list as it is: nothing the reader was told can have changed it. */
+  const read = useCallback(async (readSessions: boolean) => {
+    if (readLock.current) { readAgain.current = { sessions: readSessions || Boolean(readAgain.current?.sessions) }; return; }
     readLock.current = true;
     const selectedId = selection.current.chatId;
     const selectedProject = selection.current.projectDir;
@@ -747,7 +754,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const selectedArchived = selection.current.archivedView;
     try {
       const [nextProjects, nextSessions, nextProviders, detail, nextApps, nextRuntime] = await Promise.all([
-        request<ChatProject[]>("/api/chat/projects"), request<ChatSummary[]>(`/api/chat/sessions${selectedArchived ? "?archived=true" : ""}`), request<ChatProvider[]>("/api/chat/providers"),
+        request<ChatProject[]>("/api/chat/projects"), readSessions ? request<ChatSummary[]>(`/api/chat/sessions${selectedArchived ? "?archived=true" : ""}`) : Promise.resolve(null), request<ChatProvider[]>("/api/chat/providers"),
         selectedId ? request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(selectedId)}`).catch((cause: unknown) => {
           if (cause && typeof cause === "object" && "status" in cause && cause.status === 404) { if (selection.current.chatId === selectedId) setChatId(null); return null; }
           throw cause;
@@ -756,7 +763,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         request<HubRuntimeDto>("/api/runtime"),
       ]);
       receiveRuntime(nextRuntime);
-      for (const session of nextSessions) {
+      for (const session of nextSessions ?? []) {
         if (observedSessions.current.get(session.id) === "running" && session.status !== "running") setUsageRead((value) => value + 1);
         observedSessions.current.set(session.id, session.status);
       }
@@ -767,7 +774,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       const knownProjects = selectedSinceRead && !nextProjects.some((item) => item.projectDir === selectedSinceRead.projectDir)
         ? [...nextProjects, selectedSinceRead] : nextProjects;
       setProjects(knownProjects); setProviders(nextProviders);
-      if (selection.current.archivedView === selectedArchived) setSessions(nextSessions);
+      if (nextSessions && selection.current.archivedView === selectedArchived) setSessions(nextSessions);
       if (selection.current.projectDir === selectedProject) {
         setProjectApps({ projectDir: selectedProject, apps: nextApps });
         const studio = nextApps.find((item) => item.appId === "monkeyarch");
@@ -781,14 +788,33 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         setChat(detail);
         if (detailProject && selection.current.projectDir !== detailProject.projectDir) setProjectDir(detailProject.projectDir);
       }
-      if (!detailProject && !knownProjects.some((item) => item.projectDir === selection.current.projectDir)) setProjectDir(knownProjects.find((item) => item.projectDir === configuredProject)?.projectDir ?? knownProjects[0]?.projectDir ?? null);
+      if (!detailProject && !knownProjects.some((item) => item.projectDir === selection.current.projectDir)) setProjectDir(knownProjects.find((item) => item.projectDir === configuredRef.current)?.projectDir ?? knownProjects[0]?.projectDir ?? null);
       setLoading(false);
     } catch (cause) { setError(asFailure(cause)); setLoading(false); }
-    finally { readLock.current = false; if (readAgain.current) { readAgain.current = false; void refresh(); } }
-  }, [configuredProject, receiveRuntime]);
+    finally {
+      readLock.current = false;
+      const again = readAgain.current;
+      readAgain.current = null;
+      if (again) void refreshRef.current(again);
+    }
+  }, [receiveRuntime]);
+  const refresh = useCallback((options?: { sessions?: boolean }): Promise<void> => {
+    const sessions = options?.sessions ?? true;
+    const batch = readBatch.current;
+    if (batch) { batch.sessions ||= sessions; return batch.done; }
+    const next = { sessions, done: Promise.resolve() };
+    next.done = Promise.resolve().then(() => { readBatch.current = null; return read(next.sessions); });
+    readBatch.current = next;
+    return next.done;
+  }, [read]);
+  refreshRef.current = refresh;
+
   useEffect(() => {
-    void refresh();
-    let connected = false;
+    // The projects and the runtime at once, for the project the page opens; the chat
+    // list once the stream is attached, so a change made meanwhile is never missed
+    // (#449). Every attachment, reconnects included, begins with the Hub's snapshot.
+    void refresh({ sessions: false });
+    let connected = false, attached = false;
     let stream: EventSource, reconnectTimer: number | undefined, relay = () => {};
     const connect = () => {
       reconnectTimer = undefined;
@@ -796,14 +822,17 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       // The project stores follow this one stream (#366): every open, reconnects included, has each of
       // them read what the stream may have carried meanwhile, and a project's own events reach its store.
       relay = relayHubStream(stream);
-      stream.onopen = () => { connected = true; setEventsConnected(true); void refresh(); };
+      stream.onopen = () => { connected = true; setEventsConnected(true); };
       stream.onerror = () => {
+        // Not attached yet: the chat list cannot wait for the stream.
+        if (!attached) { attached = true; void refresh(); }
         connected = false; setEventsConnected(false);
         // A 503 can close EventSource permanently; transport errors use its
         // built-in retry. Both reconnect paths only read current state.
         if (stream.readyState === EventSource.CLOSED && reconnectTimer === undefined) { relay(); reconnectTimer = window.setTimeout(connect, 1500); }
       };
       stream.addEventListener("runtime", (message) => {
+        attached = true;
         try {
           const event: RuntimeEvent = JSON.parse((message as MessageEvent).data);
           if (event.snapshot) receiveRuntime(event.snapshot);
@@ -833,8 +862,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     setExpandedTurns(new Set()); openingChat.current = chatId; followLatest.current = true; jumping.current = false;
     setLatest({ away: false, unseen: 0 });
   }, [chatId]);
-  useEffect(() => { void refresh(); }, [chatId, refresh]);
-  useEffect(() => { void refresh(); }, [archivedView, refresh]);
+  // Mounting is the stream effect's read; these follow a change of what is shown.
+  const shown = useRef({ chatId, archivedView, configuredProject });
+  useEffect(() => {
+    const before = shown.current;
+    shown.current = { chatId, archivedView, configuredProject };
+    if (before.chatId !== chatId || before.archivedView !== archivedView) void refresh();
+    else if (before.configuredProject !== configuredProject) void refresh({ sessions: false });
+  }, [chatId, archivedView, configuredProject, refresh]);
   useEffect(() => { if (!chatId) { setDraftModel(defaults.model); setCustomModel(null); } }, [chatId, defaults.model]);
   useEffect(() => {
     const url = new URL(window.location.href);
