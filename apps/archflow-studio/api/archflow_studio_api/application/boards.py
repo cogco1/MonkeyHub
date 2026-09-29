@@ -15,9 +15,9 @@ from typing import Any, Literal, Mapping, Sequence
 import threading
 from zipfile import ZIP_DEFLATED, ZipFile
 
-import fitz
 from PIL import Image, ImageOps
-from pypdf import PdfReader, PdfWriter
+# pypdf, PyMuPDF and python-pptx load where a document is read or exported: about 0.2 s of a worker's start otherwise (#449).
+# PyMuPDF as ``pymupdf``: importing it as ``fitz`` prints a deprecation line on stdout, which an agent's output stream carries.
 
 from archflow.contracts.canonical import CanonicalValueError, canonical_json_bytes
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -127,6 +127,7 @@ def _export_name(index: int, file_name: str, suffix: str) -> str:
 
 
 def _page_pdf(data: bytes, mime_type: str, page_index: int) -> bytes:
+    from pypdf import PdfReader, PdfWriter
     writer = PdfWriter()
     if mime_type == "application/pdf":
         reader = PdfReader(BytesIO(data))
@@ -146,6 +147,7 @@ def _page_pdf(data: bytes, mime_type: str, page_index: int) -> bytes:
 def _page_raster(
     data: bytes, mime_type: str, page_index: int, format: Literal["png", "jpeg"], max_edge: int | None,
 ) -> bytes:
+    import pymupdf as fitz
     if mime_type == "application/pdf":
         document = fitz.open(stream=data, filetype="pdf")
         try:
@@ -197,6 +199,7 @@ def page_raster(data: bytes, mime_type: str, page_index: int) -> PageRaster:
     byte for byte; any other image is oriented and reduced the same way, never enlarged.
     Deterministic: the same bytes give the same PNG.
     """
+    import pymupdf as fitz
 
     if mime_type == "application/pdf":
         document = fitz.open(stream=data, filetype="pdf")
@@ -259,6 +262,7 @@ def export_board_pages(
     max_edge: int | None = None,
 ) -> BoardExport:
     """Build transient clean-source output in caller order without retaining a new project artifact."""
+    from pypdf import PdfReader, PdfWriter
 
     if not pages:
         raise _invalid("Choose at least one drawing page to export.")

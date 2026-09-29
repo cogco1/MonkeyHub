@@ -50,8 +50,7 @@ import zlib
 from typing import Any, Callable, Iterable, Mapping, NamedTuple
 
 from PIL import Image, ImageOps
-from pypdf import PdfReader
-from pypdf.errors import PdfReadError
+# pypdf, PyMuPDF (fitz) and python-pptx load where a document is read or exported: about 0.2 s of a worker's start otherwise (#449).
 
 from archflow.project.record_kinds import (
     RUNNER_RUN_RECEIPT, SEAT_OCCT_EXECUTION, SEAT_RHINO_EXECUTION, STUDIO_SOURCE_DOCUMENT, STUDIO_MODEL_ASSET,
@@ -326,6 +325,8 @@ def _revision_provenance(binding: ProjectBinding, revision_ref: str) -> dict[str
 
 
 def _document_pages(data: bytes, mime_type: str) -> tuple[DocumentPage, ...]:
+    from pypdf import PdfReader
+    from pypdf.errors import PdfReadError
     try:
         if mime_type == "application/pdf":
             if not data.startswith(b"%PDF-") or b"%%EOF" not in data[-1024:]:
