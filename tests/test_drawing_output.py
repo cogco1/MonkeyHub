@@ -55,6 +55,7 @@ class DrawingOutputTests(unittest.TestCase):
         import time
 
         self.canvas.drawString(30, 40, "SHEET A01")
+        self.canvas.drawString(30, 80, "Issued 1.0 @ 2026-09-29T10:00:00+00:00")
         self.canvas.line(10, 10, 200, 120)
         first = render_dxf(self.canvas)
         # ezdxf stamps the time, a random GUID pair and its own write time into every file it writes.
@@ -62,6 +63,8 @@ class DrawingOutputTests(unittest.TestCase):
         self.assertEqual(render_dxf(self.canvas), first)
         lines = first.decode("utf-8").splitlines()
         written = [line for line in lines if re.search(r" @ \d{4}-\d\d-\d\dT", line)]
+        self.assertIn("Issued 1.0 @ 2026-09-29T10:00:00+00:00", written, "the scene's own text is never rewritten")
+        written.remove("Issued 1.0 @ 2026-09-29T10:00:00+00:00")
         self.assertTrue(written and all(line.endswith(" @ 2000-01-01T00:00:00.000000+00:00") for line in written),
                         "the write time is one fixed time")
         values = {lines[i]: lines[i + 2] for i in range(len(lines) - 2) if lines[i].startswith("$")}

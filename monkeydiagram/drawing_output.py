@@ -616,7 +616,8 @@ def _reproducible_dxf(text: str) -> str:
     """The same drawing without when or in which process it was written: one fixed time, content-derived GUIDs.
 
     A DXF is a sequence of (group code, value) line pairs. The header dates
-    and ezdxf's own "written at" markers become one fixed time; the CLASSES
+    and ezdxf's own "written at" markers (its DICTIONARYVAR objects; no text
+    the scene carries is touched) become one fixed time; the CLASSES
     section, which ezdxf fills from a set in whatever order a process hashes
     it, is written in class-name order (no proxy object here refers to a
     class by its position); and the two GUIDs are derived from the rest of
@@ -627,9 +628,11 @@ def _reproducible_dxf(text: str) -> str:
     lines = text.split("\n")
     tail = lines[len(lines) // 2 * 2:]
     pairs = [[lines[index], lines[index + 1]] for index in range(0, len(lines) - 1, 2)]
-    guids, pending = [], None
+    guids, pending, entity = [], None, None
     for pair in pairs:
         code, value = pair[0].strip(), pair[1]
+        if code == "0":
+            entity = value
         if pending is not None:
             if pending in _DXF_DATES:
                 pair[1] = _DXF_FIXED_DATE
@@ -638,7 +641,7 @@ def _reproducible_dxf(text: str) -> str:
             pending = None
         elif code == "9" and value in _DXF_DATES + _DXF_GUIDS:
             pending = value
-        elif code == "1":
+        elif code == "1" and entity == "DICTIONARYVAR":
             written = _DXF_WRITTEN_AT.match(value)
             if written:
                 pair[1] = f"{written.group(1)} @ {_DXF_FIXED_TIME}"

@@ -1224,9 +1224,12 @@ def _view_sheet(binding, *, source_stage_ref, model_source, source_asset, style_
         def draw():
             try:
                 canvas = _view_sheet_scene(style_id, recipe, placed, tuple(section_marks), fonts)
-                return _sheet_files(canvas, recipe_json), {}
             except ValueError as exc:
                 raise StudioError(422, "DRAWING_SHEET_LAYOUT_INVALID", str(exc)) from exc
+            try:
+                return _sheet_files(canvas, recipe_json), {}
+            except ValueError as exc:
+                raise StudioError(422, "DRAWING_GENERATION_FAILED", str(exc)) from exc
 
         if projections is None:
             files = draw()[0]
