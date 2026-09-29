@@ -1087,6 +1087,8 @@ export const hubCopy = {
     catalogSignIn: "Sign in to this CLI to read its model list.", catalogChecking: "Reading the available models from this CLI…",
     workspace: "Workspace", workspaceDir: "Folder for new projects", saveSettings: "Save display and connection", saveWorkspace: "Save workspace and launch",
     workspaceHelp: "New projects are created in this folder. Left empty, the folder of the current project is used.",
+    libraryDir: "Skill library project", libraryHelp: "An existing MonkeyHub project whose skills every Claude chat can use. Leave it empty for none.",
+    libraryStatus: "Claude chats started after a change use the library's current skills. Codex chats do not load library skills yet.",
     updateAutoOn: "Automatic updates: On · Unsigned prerelease channel", updateAutoOff: "Automatic updates: Off · Unsigned prerelease channel",
     updateAutoHelp: "About every 6 hours MonkeyHub checks its GitHub prereleases and downloads the patch for this version. It is checked against its SHA-256 and release manifest, prepared beside this version, and takes effect the next time MonkeyHub starts; running work is never restarted. Unsigned: these checks catch a damaged or mismatched download, not who published it.",
     updateCheckNow: "Check now", updateLastCheck: "Last check: {result}", updateNeverChecked: "not yet", updateChecking: "checking…",

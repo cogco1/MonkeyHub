@@ -71,6 +71,8 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   if (url.pathname === "/api/settings/apps") {
     if (method === "GET") return json(launch);
     const body = request.postDataJSON(); launchWrites.push(body);
+    // #252: as the Hub does, a library folder that is not a complete project is refused.
+    if (body.libraryDir && body.libraryDir !== "D:\\fixture\\skills") return json({ code: "CHAT_PROJECT_INVALID", detail: "The selected folder is not a readable ArchFlow project." }, 422);
     // As the Hub does: a running runtime keeps its launch configuration.
     if (studioProcess && body.studioPort !== launch.studioPort) return json({ code: "APPS_RUNNING", detail: "Stop the applications before changing their launch configuration." }, 409);
     launch = body; return json(launch);
@@ -221,6 +223,60 @@ try {
     await until(() => launch.cadExport === "off", "a launch choice saves at once");
   });
 
+  // #252: the skill library project, beside the folder for new projects.
+  const otherLaunch = ({ libraryDir, ...rest }) => rest;
+  const libraryField = page.locator("#library-dir");
+  // The refusal is shown with this field: the alert directly follows its row.
+  const alertOnLibrary = () => libraryField.evaluate((input) => input.closest(".settings-row").nextElementSibling?.getAttribute("role") === "alert");
+  await step("a full library path saves with the other launch settings untouched", async () => {
+    const others = otherLaunch(launch), before = launchWrites.length;
+    assert.equal(await libraryField.inputValue(), "");
+    assert.equal(await libraryField.getAttribute("placeholder"), null, "no placeholder while no library is set");
+    await dialog.getByText("Claude chats started after a change use the library's current skills. Codex chats do not load library skills yet.", { exact: true }).waitFor();
+    await libraryField.fill("D:\\fixture\\skills");
+    await status.filter({ hasText: /^Saved$/ }).waitFor();
+    assert.equal(launchWrites.length, before + 1);
+    assert.equal(launch.libraryDir, "D:\\fixture\\skills");
+    assert.deepEqual(otherLaunch(launch), others);
+  });
+
+  await step("a relative library path is refused in its field and never sent", async () => {
+    const others = otherLaunch(launch), before = launchWrites.length;
+    await libraryField.fill("skills\\library");
+    await dialog.getByRole("alert").filter({ hasText: "The skill library project must be a full path" }).waitFor();
+    assert.equal(await libraryField.getAttribute("aria-invalid"), "true");
+    assert.ok(await alertOnLibrary(), "the refusal is shown on the library field");
+    await status.filter({ hasText: /^Unsaved changes$/ }).waitFor();
+    assert.equal(launchWrites.length, before, "a relative library path is not sent");
+    assert.equal(launch.libraryDir, "D:\\fixture\\skills");
+    assert.deepEqual(otherLaunch(launch), others);
+  });
+
+  await step("a folder the Hub refuses shows its reason on the field and stays unsaved", async () => {
+    const others = otherLaunch(launch), before = launchWrites.length;
+    await libraryField.fill("D:\\fixture\\not-a-project");
+    await dialog.getByRole("alert").filter({ hasText: "The selected folder is not a readable ArchFlow project." }).waitFor();
+    assert.equal(launchWrites.length, before + 1);
+    assert.deepEqual(otherLaunch(launchWrites.at(-1)), others, "the refused request carries the other launch settings as they were");
+    assert.equal(await libraryField.getAttribute("aria-invalid"), "true");
+    assert.ok(await alertOnLibrary(), "the Hub's refusal is shown on the library field");
+    assert.equal(await libraryField.inputValue(), "D:\\fixture\\not-a-project", "the refused value is kept");
+    await status.filter({ hasText: /^Unsaved changes$/ }).waitFor();
+    assert.equal(launch.libraryDir, "D:\\fixture\\skills");
+    assert.deepEqual(otherLaunch(launch), others);
+    await dialog.screenshot({ path: path.join(screenshots, "settings-library-refused-en.png") });
+  });
+
+  await step("clearing the library saves null", async () => {
+    const others = otherLaunch(launch);
+    await libraryField.fill("");
+    await status.filter({ hasText: /^Saved$/ }).waitFor();
+    assert.equal(launchWrites.at(-1).libraryDir, null);
+    assert.equal(launch.libraryDir, null);
+    assert.equal(await libraryField.getAttribute("aria-invalid"), null);
+    assert.deepEqual(otherLaunch(launch), others);
+  });
+
   await step("a change refused while the runtime runs stays in its field and saves once it stops", async () => {
     studioProcess = 4321;
     await dialog.getByText("Project Runtime · Running").waitFor();
@@ -274,6 +330,15 @@ try {
     await status.filter({ hasText: /^有未保存修改$/ }).waitFor();
     await dialog.screenshot({ path: path.join(screenshots, "settings-invalid-zh.png") });
     await page.locator("#render-timeout").fill("");
+    await status.filter({ hasText: /^已保存$/ }).waitFor();
+    // #252: the Hub's refusal of a library folder, in this window's language.
+    await openPage("工作区");
+    await dialog.getByText("修改之后新开始的 Claude 对话使用技能库当前的技能。Codex 对话暂不加载技能库。", { exact: true }).waitFor();
+    await libraryField.fill("D:\\fixture\\not-a-project");
+    await dialog.getByRole("alert").filter({ hasText: "这个文件夹不是完整、可读的 MonkeyHub 项目。" }).waitFor();
+    assert.ok(await alertOnLibrary());
+    await dialog.screenshot({ path: path.join(screenshots, "settings-library-refused-zh.png") });
+    await libraryField.fill("");
     await status.filter({ hasText: /^已保存$/ }).waitFor();
   });
 
