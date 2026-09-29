@@ -5,6 +5,7 @@ reconciled against retained results; absence of proof remains visible.
 """
 
 from collections import deque
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http.client import HTTPConnection, HTTPException
@@ -49,6 +50,11 @@ _ACTIVE = {"queued", "planning", "validated", "executing", "committing"}
 # Finished outcomes a person can read and dismiss. One that needs recovery joins
 # them only when the Hub has no way to recover it; otherwise it stays until it is.
 _ACKNOWLEDGEABLE = {"failed", "stale"}
+# A validation (422) or conflict (409) answer that names nothing the Studio took
+# on is a refusal: the caller reads it in the reply and nothing is left to
+# recover (#404 F10). Answers that say a run already exists are not refusals.
+_REFUSAL_STATUSES = {409, 422}
+_RETAINED_CODES = {"OPERATION_RETAINED", "CANDIDATE_ALREADY_RETAINED"}
 _IDLE_RETAINED_REFRESH_S = 30
 # How long the project observer waits between passes (#435). A pass while
 # anything is in motion - an operation or job, a worker between states, a
@@ -347,7 +353,12 @@ class OperationManager:
                 if isinstance(payload.get(name), str):
                     setattr(record, name, payload[name])
             if response.status >= 400:
-                record.status = "stale" if "STALE" in str(payload.get("code", "")) else "failed"
+                code = str(payload.get("code", ""))
+                admitted = any(isinstance(payload.get(name), str) for name in ("proposalId", "jobId", "candidateId"))
+                if response.status in _REFUSAL_STATUSES and not admitted and code not in _RETAINED_CODES:
+                    record.status = "refused"
+                else:
+                    record.status = "stale" if "STALE" in code else "failed"
                 record.reason = str(payload.get("detail", f"HTTP {response.status}"))[:1200]
             elif record.candidateId:
                 # Even a 200 accept or successful job needs retained evidence.
@@ -393,7 +404,7 @@ class OperationManager:
         with self._lock:
             for admission in self._operations.values():
                 record = admission.record
-                if record.status in {"failed", "stale", "cancelled"}:
+                if record.status in {"failed", "stale", "cancelled", "refused"}:
                     continue
                 candidate = candidates.get(record.candidateId)
                 # All that recovery can find again: the named run with its receipt.
@@ -549,6 +560,19 @@ class OperationManager:
                     raise HubFailure(503, "OPERATION_LOG_UNAVAILABLE",
                                      "The dismissal could not be saved, so the notice stays. Nothing else changed.") from exc
             return self._shown(record, admission, admissionSequence=sequence)
+
+    def runs_of(self, session_id: str, since: datetime) -> list[OperationRecord]:
+        """Copies of the new runs one chat asked this Hub for since ``since``, in admission order."""
+        with self._lock:
+            return [row.record.model_copy() for row in self._operations.values()
+                    if row.record.sessionId == session_id and row.record.candidateId and not row.accepting_candidate
+                    and row.record.createdAt and datetime.fromisoformat(row.record.createdAt) >= since]
+
+    def made_by(self, session_id: str, run_id: object) -> bool:
+        """Whether this chat asked this Hub for the new run ``run_id``."""
+        with self._lock:
+            return any(row.record.sessionId == session_id and row.record.candidateId == run_id and not row.accepting_candidate
+                       for row in self._operations.values())
 
     def candidate_ids(self) -> tuple[str, ...]:
         with self._lock:
@@ -786,6 +810,29 @@ class ProjectRuntimeManager:
         supervisor = getattr(applications, "supervisor", None)
         if supervisor is not None:
             supervisor.add_listener(self._nudge)
+        if chats is not None:
+            # An external chat's result card is built from these records (#404 F15).
+            chats.turn_results = self.turn_results
+
+    def turn_results(self, session_id: str, project_dir: str, since: str) -> list[tuple[str, str, str]]:
+        """The candidates a chat's own requests made since ``since``: (candidateId, request kind, admitted at).
+
+        Only runs this Hub admitted for that chat and saw complete; an acceptance
+        names no new run. A run still under way is read once more first. Called
+        outside the chat lock.
+        """
+        key = project_key(project_dir)
+        with self._lock:
+            runtime = next((row for row in self._projects.values() if project_key(row.project_dir) == key), None)
+        if runtime is None:
+            return []
+        start = datetime.fromisoformat(since)
+
+        if any(record.status in _ACTIVE for record in runtime.operations.runs_of(session_id, start)) and runtime.state == "open":
+            with suppress(HubFailure, StudioError, OSError, TimeoutError, HTTPException):
+                self.refresh(runtime)
+        return [(record.candidateId, record.kind, record.createdAt) for record in runtime.operations.runs_of(session_id, start)
+                if record.status == "completed"]
 
     @property
     def _clients(self) -> int:
@@ -1493,6 +1540,13 @@ class ProjectRuntimeManager:
                     raise HubFailure(409, "PROJECT_MISMATCH", "This chat is bound to another project.")
                 if session.status != "running":
                     raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is no longer running.")
+                if method == "POST" and parsed.path == "/api/admissions" and isinstance(payload, dict):
+                    # #404 F13: the Agent withdraws only a result this chat asked this Hub for.
+                    withdrawn = [row.get("runId") for row in payload.get("results") or () if isinstance(row, dict) and row.get("outcome") == "withdrawn"]
+                    foreign = [run_id for run_id in withdrawn if not runtime.operations.made_by(session_id, run_id)]
+                    if foreign:
+                        raise HubFailure(409, "CANDIDATE_NOT_THIS_CHATS", "The Agent withdraws only a result it made in this chat: "
+                                         + ", ".join(map(str, foreign)) + " was not. Only the architect's words can reject another result.")
             admission, fresh = runtime.operations.admit(operation_id, method, path, body,
                 retained=runtime.retained, source="chat" if session_id else "studio", session_id=session_id)
             if not fresh:
@@ -1548,7 +1602,7 @@ class ProjectRuntimeManager:
                 else:
                     runtime.operations.interrupted(admission, "The request did not return a verified result. Read retained state before any new operation; this request will not be replayed.")
                 runtime.wake.set()
-                self.emit("operation/failed", runtime.runtime_id)
+                self.emit(f"operation/{admission.record.status}" if admission.record.status == "refused" else "operation/failed", runtime.runtime_id)
             if isinstance(exc, HubFailure):
                 raise
             raise HubFailure(503, "OPERATION_INTERRUPTED", "The worker connection ended. Runtime status will reconcile retained results; the request was not retried.") from exc

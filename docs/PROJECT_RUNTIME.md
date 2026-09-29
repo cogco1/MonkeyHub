@@ -111,6 +111,15 @@ body only when it uses the skill. Nothing is written into any project. With no l
 unchanged. The CLI (2.1.283) does not gate its `Skill` tool under `dontAsk`: an allow rule restricts nothing,
 and a chat can also load this machine's personal skills and plugins, which only a deny rule refuses.
 
+A project's `recipe` memory item (ADR-009) names one library skill as `skill:<name>@<version>`. When a chat
+saves one, the Hub resolves the name the agent gave (`monkeyhub-library:<name>`, optionally with a version)
+against this same index and fills the current version; it refuses when no library is set or the library has no
+such skill, and the chat project's Runtime never reads the library. Each recipe a turn carries (in the prepared
+context's `memory` or the memory block) gains a `skill` entry: the name to load, the pinned ref, the library's
+current version and a note ("pinned 1, library now 2", "not in the library"). The turn reads the library once
+and builds the plugin from that same index; a library that cannot be read is said on the recipe, and a Claude
+turn still fails as before when its plugin cannot be built. A Codex turn is told it loads no library skills.
+
 A skill is only a procedure. Retaining or following one grants no permission, and the `permissions` its
 manifest lists are declared for a reader and enforced by nothing. Codex chats get no library skills yet:
 Codex has native skills, and the pinned ACP adapter loads `<additional directory>/.agents/skills`, but the
@@ -205,6 +214,13 @@ the same forwarding path. `AppStatus.apiUrl` identifies the runtime API for its
 verified agent connection; `AppStatus.url` opens the corresponding workspace in MonkeyHub. A
 runtime that is not `ready` or `busy` and healthy answers `WORKER_UNAVAILABLE`. Direct access
 to the runtime's own port is for development and tests (§8).
+
+Each admitted mutation keeps an operation record. An answer of 422 or 409 that names no
+proposal, job or candidate the Studio took on is `refused` (#404): the caller already read it,
+the record and its reason stay in the diagnostics, and the Hub shows no "did not finish" notice
+for it. A failure after admission, a stale result and one that needs recovery keep that notice.
+A chat that asks to withdraw a result (`POST /api/admissions`, outcome `withdrawn`) is refused
+with `CANDIDATE_NOT_THIS_CHATS` unless this Hub admitted that run for the same chat.
 
 ## 7. Isolation
 

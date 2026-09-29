@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
-from monkeyhub_api import chat
+from monkeyhub_api import chat, skill_plugins
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import (
     AppStatus, ChatCreateRequest, ChatDesignContext, ChatMessage, ChatPostRequest, HubFailure,
@@ -864,6 +864,33 @@ class ChatTests(unittest.TestCase):
         self.store.stop(session.id)
         self.finished(session)
         self.assertTrue(self.store.set_archived(session.id, True).archived)
+
+    def test_archiving_clears_the_chats_scratch_and_restoring_starts_empty(self):
+        """#404 item 6: scratch is temporary computation, cleared with the chat's archive."""
+        session, kept = self.create(provider="claude"), self.create(provider="claude")
+        scratch = self.store._scratch_path(session.id)
+        (scratch / "work").mkdir(parents=True)
+        (scratch / "work" / "trial.py").write_text("print('volume')", encoding="utf-8")
+        (self.store._scratch_path(kept.id) / "kept.txt").write_text("still in use", encoding="utf-8")
+        attachments = self.runtime / "chats" / session.id / "attachments"
+        attachments.mkdir(parents=True)
+        (attachments / "sketch.png").write_bytes(b"not scratch")
+        self.assertTrue(self.store.set_archived(session.id, True).archived)
+        self.assertFalse(scratch.exists())
+        self.assertTrue((attachments / "sketch.png").exists(), "attachments are the chat's record, not scratch")
+        self.assertTrue((self.store._scratch_path(kept.id) / "kept.txt").exists(), "another chat's scratch stays")
+        # Something left in an archived chat's scratch is cleared when Hub starts again.
+        scratch.mkdir(parents=True)
+        (scratch / "late.txt").write_text("written after archiving", encoding="utf-8")
+        self.store.shutdown()
+        self.store = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=self.commands)
+        self.assertTrue(self.store.get(session.id).archived)
+        self.assertFalse(scratch.exists())
+        self.assertTrue((self.store._scratch_path(kept.id) / "kept.txt").exists())
+        restored = self.store.set_archived(session.id, False)
+        self.assertFalse(restored.archived)
+        self.assertTrue(scratch.is_dir())
+        self.assertEqual(list(scratch.iterdir()), [], "a restored chat starts with an empty scratch")
 
     def test_old_chat_without_archived_field_remains_active(self):
         session = self.create()
@@ -3716,6 +3743,92 @@ class ChatTests(unittest.TestCase):
         self.assertFalse(chat._binds_words("POST", "/api/memory/about"))
         self.assertTrue(chat._binds_words("POST", "/api/memory"))
         self.assertIn("POST /api/memory/about", chat._GUIDES["/api/memory"])
+
+    # ---- a recipe says which library skill to load, and whether its version is current (#252 3c)
+
+    RECIPE = {"memory": {"memoryId": "mem-hatch", "kind": "recipe",
+                         "value": {"task": "出平面图前检查填充", "skill": "skill:hatch-review@1", "note": None}},
+              "status": "current", "staleReason": None, "matchedTerms": ["平面", "填充"]}
+
+    def library(self, *versions):
+        """The configured library's current index, as the Hub reads it through the library Runtime."""
+        rows = [{"id": "skill:hatch-review", "version": version, "name": "hatch-review",
+                 "description": "Review a plan's hatching."} for version in versions]
+        return skill_plugins.Library({"projectId": "skill-library", "skills": rows},
+                                     lambda skill_id, version: {**rows[-1], "body": "ZX7.\n"})
+
+    def recipe_turn(self, session, words, memory, library):
+        reads, packs = [], []
+
+        def configured(runtime_root, hub_url):
+            reads.append(hub_url)
+            return library
+
+        with patch.object(chat, "_request_json", side_effect=self.studio(session, packs, memory=memory)), \
+                patch.object(skill_plugins, "configured_library", side_effect=configured):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content=words))
+            finished = self.finished(session)
+        self.assertEqual(finished.status, "idle", finished.error)
+        return self.calls()[-1], reads
+
+    def carried(self, prompt):
+        block = prompt.rsplit("\n", 1)[-1]
+        return [row for row in json.loads(block) if row["memory"]["kind"] == "recipe"]
+
+    def test_a_turn_about_its_task_carries_the_recipe_with_the_skill_to_load(self):
+        session = self.create(provider="claude")
+        call, reads = self.recipe_turn(session, "帮我出平面图，检查一下填充", [self.RECIPE], self.library(1))
+        [recipe] = self.carried(call["prompt"])
+        self.assertEqual(recipe["skill"], {
+            "load": "monkeyhub-library:hatch-review", "pinned": "skill:hatch-review@1", "libraryVersion": 1,
+            "note": "pinned 1 is the library's current version."})
+        # One read of the library serves the recipe and the plugin the CLI loads.
+        self.assertEqual(len(reads), 1)
+        plugin = Path(call["args"][call["args"].index("--plugin-dir") + 1])
+        self.assertTrue((plugin / "skills/hatch-review/SKILL.md").is_file())
+        self.assertIn("load its skill", chat._MEMORY_NOTE)
+
+        # Words about something else carry no recipe.
+        call, _ = self.recipe_turn(session, "把檐口压低一点", [], self.library(1))
+        self.assertNotIn("hatch-review", call["prompt"])
+        self.assertNotIn(chat._MEMORY_NOTE, call["prompt"])
+
+    def test_a_recipe_says_when_the_library_moved_or_lost_its_skill(self):
+        session = self.create(provider="claude")
+        call, _ = self.recipe_turn(session, "出平面图", [self.RECIPE], self.library(2))
+        [moved] = self.carried(call["prompt"])
+        self.assertEqual((moved["skill"]["pinned"], moved["skill"]["libraryVersion"]), ("skill:hatch-review@1", 2))
+        self.assertTrue(moved["skill"]["note"].startswith("pinned 1, library now 2"))
+        # Nothing is swapped: the stored recipe still pins 1.
+        self.assertEqual(moved["memory"]["value"]["skill"], "skill:hatch-review@1")
+
+        call, _ = self.recipe_turn(session, "出平面图", [self.RECIPE], self.library())
+        [gone] = self.carried(call["prompt"])
+        self.assertEqual((gone["skill"]["load"], gone["skill"]["libraryVersion"]),
+                         ("monkeyhub-library:hatch-review", None))
+        self.assertTrue(gone["skill"]["note"].startswith("not in the library"))
+        self.assertNotIn("--plugin-dir", self.calls()[-1]["args"], "an empty library has nothing to load")
+
+        call, _ = self.recipe_turn(session, "出平面图", [self.RECIPE], None)
+        [unset] = self.carried(call["prompt"])
+        self.assertTrue(unset["skill"]["note"].startswith("not in the library (no skill library is set)"))
+
+    def test_an_unreadable_library_is_said_on_the_recipe_and_a_codex_turn_still_runs(self):
+        session = self.create()
+        refused = HubFailure(503, "CHAT_SKILL_LIBRARY_UNAVAILABLE", "The skill library could not be read: Not ready.")
+        packs = []
+        with patch.object(chat, "_request_json", side_effect=self.studio(session, packs, memory=[self.RECIPE])), \
+                patch.object(skill_plugins, "configured_library", side_effect=refused):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="出平面图"))
+            finished = self.finished(session)
+        self.assertEqual(finished.status, "idle", finished.error)
+        [recipe] = self.carried(self.calls()[-1]["prompt"])
+        self.assertEqual(recipe["skill"]["note"], "The skill library could not be read: Not ready. Tell the user.")
+        # A provider the plugin is not handed to is told it cannot load the skill.
+        call, _ = self.recipe_turn(session, "出平面图", [self.RECIPE], self.library(1))
+        [recipe] = self.carried(call["prompt"])
+        self.assertIsNone(recipe["skill"]["load"])
+        self.assertIn("loads no library skills", recipe["skill"]["note"])
 
     def test_a_refused_preparation_ends_the_turn_in_its_own_words_and_starts_no_cli(self):
         session = self.create()

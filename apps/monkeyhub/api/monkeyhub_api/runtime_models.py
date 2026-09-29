@@ -27,7 +27,10 @@ class OperationRecord(BaseModel):
     projectId: str
     kind: str
     source: str
-    status: Literal["queued", "planning", "validated", "executing", "committing", "completed", "failed", "cancelled", "stale", "needs_recovery"]
+    status: Literal["queued", "planning", "validated", "executing", "committing", "completed", "failed", "cancelled", "stale", "needs_recovery", "refused"] = Field(description=(
+        "refused: the Studio or Hub answered 422 or 409 before taking anything on. The caller read "
+        "that answer; the record keeps it in reason, and it is finished, not unfinished."
+    ))
     baseRevision: int | None = None
     baseDigest: str | None = None
     baseRecordDigest: str | None = None

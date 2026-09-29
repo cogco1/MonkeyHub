@@ -98,8 +98,9 @@ class DesignCandidateDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
     candidate_id: str = Field(alias="candidateId", description="The result run.")
-    outcome: Literal["admitted", "rejected"] = Field(
-        description="Always admitted unless include=rejected also asked for retained rejections.")
+    outcome: Literal["admitted", "rejected", "withdrawn"] = Field(
+        description="Always admitted unless include=rejected also asked for retained rejections and "
+        "withdrawals: a result the architect turned down, or one the Hub Agent withdrew from its own chat.")
     label: str | None
     summary: str | None
     base_stage_ref: str | None = Field(
@@ -185,7 +186,9 @@ class AdmissionStudyRequestDto(BaseModel):
 class AdmissionResultRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     run_id: str = Field(alias="runId", pattern=IDENTIFIER_PATTERN)
-    outcome: Literal["admitted", "rejected"]
+    outcome: Literal["admitted", "rejected", "withdrawn"] = Field(description=(
+        "rejected needs the user's words (rawLanguage). withdrawn is the Hub Agent's own act on a result it "
+        "made in this chat and no longer proposes: task hub-chat only, no user words, never a rejection."))
     supersedes: list[RunId] = Field(
         default_factory=list, max_length=64,
         description="Attempt runs this result replaced within the loop; they leave the tree and stay readable.")
@@ -221,7 +224,7 @@ class AdmissionStudyDto(BaseModel):
 class AdmissionResultDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
     run_id: str = Field(alias="runId")
-    outcome: Literal["admitted", "rejected"]
+    outcome: Literal["admitted", "rejected", "withdrawn"]
     model_source: ModelSourceDto | None = Field(alias="modelSource", description="Pinned for an admitted result.")
     receipt_ref: str = Field(alias="receiptRef")
     record_digest: str = Field(alias="recordDigest")
