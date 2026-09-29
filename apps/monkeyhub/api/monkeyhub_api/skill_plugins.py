@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import shutil
 import time
 from typing import Any, Callable, Mapping
@@ -36,6 +37,10 @@ from .models import HubFailure
 PLUGIN_NAME = "monkeyhub-library"
 # How long preparing the library's Runtime may take before the turn says so.
 LIBRARY_BUDGET_S = 60.0
+# The spelling studio.skills accepts when a skill is saved. A name read back is
+# a folder name here, so one that is not this spelling (a hand-edited record)
+# is refused rather than written as a path.
+SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 
 
 def plugin_root(runtime_root: Path) -> Path:
@@ -92,6 +97,10 @@ def materialize(cache_root: Path, index: Mapping[str, Any],
             if (skill.get("id"), skill.get("version"), skill.get("name")) != (row["id"], row["version"], row["name"]):
                 raise HubFailure(409, "CHAT_SKILL_LIBRARY_CHANGED",
                                  "The skill library changed while its skills were being read. Retry the message.")
+            if not isinstance(skill["name"], str) or len(skill["name"]) > 64 or not SKILL_NAME.fullmatch(skill["name"]):
+                raise HubFailure(409, "CHAT_SKILL_LIBRARY_INVALID",
+                                 f"The library holds a skill named {str(skill['name'])[:80]!r}, which is not a skill "
+                                 "name (lowercase words joined by hyphens).")
             folder = staging / "skills" / str(skill["name"])
             folder.mkdir(parents=True)
             (folder / "SKILL.md").write_text(skill_markdown(skill), encoding="utf-8")

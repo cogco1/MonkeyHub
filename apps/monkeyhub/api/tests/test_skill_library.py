@@ -116,6 +116,16 @@ class SkillLibraryTest(unittest.TestCase):
         # A library with no skills has nothing to load.
         self.assertIsNone(skill_plugins.materialize(cache, {"projectId": LIBRARY_ID, "skills": []}, self.fetch))
 
+        # A name read back is a folder name: one studio.skills would not accept is refused, not written.
+        before = snapshot(cache)
+        forged = {"id": "skill:../escape", "version": 1, "name": "../escape", "description": "x"}
+        with self.assertRaises(chat.HubFailure) as refused:
+            skill_plugins.materialize(cache, {"projectId": LIBRARY_ID, "skills": [forged]},
+                                      lambda skill_id, version: {**forged, "body": "x"})
+        self.assertEqual(refused.exception.error.code, "CHAT_SKILL_LIBRARY_INVALID")
+        self.assertEqual(snapshot(cache), before)
+        self.assertFalse((self.runtime / "cache" / "escape").exists())
+
     def claude_command(self, store: chat.ChatStore) -> list[str]:
         """The command one conversation's next turn starts Claude with."""
         with store._lock:
