@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defaultPlanForm, drawingDocumentKey, keptOnChosenVersion, latestRevisions, liveAction, planFormFromDocument } from "../src/workspaces/monkeydiagram/drawingPlan.ts";
+import { defaultPlanForm, drawingDocumentKey, isVerticalSection, keptOnChosenVersion, latestRevisions, liveAction, planFormFromDocument,
+  planRequestFields } from "../src/workspaces/monkeydiagram/drawingPlan.ts";
 import type { SourceDocumentDto } from "../src/api/generated";
 
 test("a retained cut-plan restores its actual frame and keeps dimension identity, placement and hidden intent", () => {
@@ -16,6 +17,30 @@ test("a retained cut-plan restores its actual frame and keeps dimension identity
   assert.equal(dimension.placement.offsetMm, -12, "editing the form never mutates its saved source recipe");
   assert.notEqual(drawingDocumentKey(document), drawingDocumentKey({ ...document, revisionRef: "new-revision" }),
     "identical document bytes do not collapse revision identities");
+});
+
+test("an open vertical section asks only for what changed, never a cut height, bottom, dimension or plan symbol", () => {
+  const section = { runId: "model-A", assetSha256: "b".repeat(64), revisionRef: "section-revision", viewRecipe: {
+    kind: "cut-plan", frame: { origin: [0, 2, 0], look: [0, -1, 0], right: [-1, 0, 0], up: [0, 0, 1], far_depth: 3, scale: "1:50",
+      crop_uv: [-5, -1, 1, 4] },
+    graphics: { cutLineMm: .35, visibleLineMm: .18, hatchSpacingMm: 2 }, dimensions: [], hiddenObjectIds: ["beam"],
+  } } as SourceDocumentDto;
+  assert.equal(isVerticalSection(section), true);
+  const form = planFormFromDocument(section, "meter");
+  assert.equal(form.depth, 3);
+  assert.deepEqual(planRequestFields(form, section), {}, "a rebuild on another source keeps its plane, depth and window");
+  assert.deepEqual(planRequestFields({ ...form, cutLineMm: .5, depth: 4.5, hiddenObjectIds: [], cutHeight: 2, bottom: -1,
+    dimensions: [{ id: "d", entityRef: "entity:a", openingId: "o" }], dressing: [] }, section),
+  { cutLineMm: .5, depth: 4.5, hiddenObjectIds: [] });
+  assert.deepEqual(planRequestFields({ ...form, visibleLineMm: Number.NaN }, section), {}, "an emptied pen is not asked for");
+
+  const plan = { ...section, viewRecipe: { ...section.viewRecipe, frame: { origin: [0, 0, 1.2], look: [0, 0, -1], right: [1, 0, 0], up: [0, 1, 0],
+    far_depth: 1.2, scale: "1:50", crop_uv: [0, 0, 1, 1] } } } as SourceDocumentDto;
+  assert.equal(isVerticalSection(plan), false);
+  assert.equal(isVerticalSection({ viewRecipe: { kind: "section-perspective", frame: { up: [0, 0, 1] } } }), false);
+  const planForm = planFormFromDocument(plan, "meter");
+  assert.equal("depth" in planForm, false);
+  assert.deepEqual(planRequestFields(planForm, plan), planForm, "a horizontal plan still asks for its whole form");
 });
 
 test("the initial cut is expressed in the exact source length unit", () => {

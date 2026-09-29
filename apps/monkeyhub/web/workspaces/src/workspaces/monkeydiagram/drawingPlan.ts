@@ -59,7 +59,20 @@ export function recipeWrites(decisions: readonly DecisionDto[], values: Record<P
  * project recipe (else the code default) draws it.
  */
 export type PlanForm = { [K in "cutHeight" | "bottom" | "scaleDenominator" | "dimensions" | "dressing"]: NonNullable<PlanRequestDto[K]> }
-  & { [K in PaperPen]?: number } & Pick<PlanRequestDto, "cropUv" | "hiddenObjectIds">;
+  & { [K in PaperPen]?: number } & Pick<PlanRequestDto, "cropUv" | "hiddenObjectIds">
+  // A vertical section's depth beyond its plane; a horizontal plan has cutHeight and bottom instead.
+  & { depth?: number };
+
+/**
+ * Whether a drawing is a vertical section: a cut plan whose frame has CAD +Z up, as the runtime reads it;
+ * a horizontal plan's frame looks down -Z. Its plane stays its own, and plan-only tools do not apply to it.
+ */
+export function isVerticalSection(document: Pick<SourceDocumentDto, "viewRecipe"> | null): boolean {
+  const recipe = document?.viewRecipe;
+  const frame = recipe?.frame && typeof recipe.frame === "object" ? recipe.frame as Record<string, unknown> : {};
+  return recipe?.kind === "cut-plan" && Array.isArray(frame.up) && frame.up.length === 3
+    && frame.up[0] === 0 && frame.up[1] === 0 && frame.up[2] === 1;
+}
 
 export const drawingDocumentKey = (source: Pick<SourceDocumentDto, "runId" | "assetSha256" | "revisionRef">) =>
   JSON.stringify([source.runId, source.assetSha256, source.revisionRef ?? null]);
@@ -69,8 +82,26 @@ export function defaultPlanForm(lengthUnit: string): PlanForm {
   return { cutHeight: heights[lengthUnit] ?? 1.2, bottom: 0, scaleDenominator: 100, dimensions: [], dressing: [] };
 }
 
-/** The request fields a form asks for: all it holds, except a pen without a value, which the runtime fills. */
-export function planRequestFields(form: PlanForm): PlanForm {
+/** What an open vertical section may change; its plane is its own, and the runtime refuses plan-only fields on it. */
+const SECTION_FIELDS = [...PAPER_PENS, "scaleDenominator", "cropUv", "depth", "hiddenObjectIds"] as const;
+
+/**
+ * The request fields a form asks for: all it holds, except a pen without a value, which the runtime fills.
+ * An open vertical section continues its previous revision, which keeps everything not asked for: it asks only
+ * for the pens, scale, window, depth and hidden objects that differ from that revision, never a cut height,
+ * bottom, dimension or plan symbol.
+ */
+export function planRequestFields(form: PlanForm, opened: SourceDocumentDto | null = null): Partial<PlanForm> {
+  if (opened && isVerticalSection(opened)) {
+    const saved = planFormFromDocument(opened, "");
+    const fields: Partial<PlanForm> = {};
+    for (const key of SECTION_FIELDS) {
+      const value = form[key];
+      if (value === undefined || (typeof value === "number" && !Number.isFinite(value))) continue;
+      if (JSON.stringify(value) !== JSON.stringify(saved[key])) Object.assign(fields, { [key]: value });
+    }
+    return fields;
+  }
   const fields = { ...form };
   for (const key of PAPER_PENS) if (!Number.isFinite(fields[key])) delete fields[key];
   return fields;
@@ -82,19 +113,26 @@ export function planFormFromDocument(document: SourceDocumentDto, lengthUnit: st
   const graphics = recipe.graphics && typeof recipe.graphics === "object" ? recipe.graphics as Record<string, unknown> : {};
   const defaults = defaultPlanForm(lengthUnit);
   const number = (value: unknown, fallback: number) => typeof value === "number" && Number.isFinite(value) ? value : fallback;
-  const cutHeight = number(Array.isArray(frame.origin) ? frame.origin[2] : undefined, defaults.cutHeight);
   const scale = typeof frame.scale === "string" ? Number(frame.scale.split(":")[1]) : NaN;
   // The pens the revision was drawn with, whichever layer they came from.
-  return { ...defaults, cutHeight,
-    bottom: cutHeight - number(frame.far_depth, cutHeight),
+  const drawn = {
     scaleDenominator: Number.isFinite(scale) && scale > 0 ? scale : defaults.scaleDenominator,
     cutLineMm: number(graphics.cutLineMm, PAPER_DEFAULTS.cutLineMm),
     visibleLineMm: number(graphics.visibleLineMm, PAPER_DEFAULTS.visibleLineMm),
     hatchSpacingMm: number(graphics.hatchSpacingMm, PAPER_DEFAULTS.hatchSpacingMm),
-    dressing: Array.isArray(recipe.dressing) ? structuredClone(recipe.dressing) as PlanForm["dressing"] : [],
-    dimensions: Array.isArray(recipe.dimensions) ? structuredClone(recipe.dimensions) as PlanForm["dimensions"] : [],
     ...(Array.isArray(frame.crop_uv) ? { cropUv: structuredClone(frame.crop_uv) as PlanForm["cropUv"] } : {}),
     ...(Array.isArray(recipe.hiddenObjectIds) ? { hiddenObjectIds: recipe.hiddenObjectIds.filter((id): id is string => typeof id === "string") } : {}),
+  };
+  if (isVerticalSection(document)) {
+    // A section has no cut height or bottom; how far beyond its plane it draws is its own.
+    const depth = number(frame.far_depth, NaN);
+    return { ...defaults, ...drawn, ...(Number.isFinite(depth) ? { depth } : {}) };
+  }
+  const cutHeight = number(Array.isArray(frame.origin) ? frame.origin[2] : undefined, defaults.cutHeight);
+  return { ...defaults, ...drawn, cutHeight,
+    bottom: cutHeight - number(frame.far_depth, cutHeight),
+    dressing: Array.isArray(recipe.dressing) ? structuredClone(recipe.dressing) as PlanForm["dressing"] : [],
+    dimensions: Array.isArray(recipe.dimensions) ? structuredClone(recipe.dimensions) as PlanForm["dimensions"] : [],
   };
 }
 
