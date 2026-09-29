@@ -827,7 +827,9 @@ class DirectSemanticProposalTests(ProposalTestCase):
         self.assertEqual(status, 409, refused)
         self.assertEqual(refused["code"], "PROPOSAL_CHAIN_CONFLICT")
 
-    def test_openapi_accepts_minimal_upserts_and_exposes_bound_profile_coordinates(self):
+    def test_openapi_accepts_minimal_upserts_and_carries_no_producer_or_semantic_kind(self):
+        """#419 C6: the semanticEdit schema is loose (no producer union) and self-contained."""
+
         from jsonschema import Draft202012Validator
 
         openapi = self.client.app.openapi()
@@ -839,16 +841,27 @@ class DirectSemanticProposalTests(ProposalTestCase):
         validator.validate(payload)
         self.submit(payload["semanticEdit"])
         self.assertFalse(validator.is_valid({**payload, "utterance": "set module to 1.5", "targetComponentId": "portico"}))
+
         edit = openapi["components"]["schemas"]["SemanticEditRequestDto"]
-        entities = edit["properties"]["entities"]["items"]["anyOf"]
-        element = next(item for item in entities if item["properties"]["schema"]["enum"] == ["Element@1"])
-        self.assertIn("omitted outer fields retain existing values", element["description"])
-        self.assertIn("A supplied params or references object replaces that entire object", element["description"])
-        self.assertIn("profile when changing height", element["description"])
-        prism = next(item for item in element["properties"]["fields"]["anyOf"]
-                     if item["properties"]["producer"]["enum"] == ["prism"])
-        profile = prism["properties"]["params"]["properties"]["profile"]
-        Draft202012Validator(profile).validate([[0, 0], ["@canopy_width", 0], ["@canopy_width", 2], [0, 2]])
+        entities = edit["properties"]["entities"]["items"]
+        self.assertNotIn("anyOf", entities, "entities are no longer a producer-keyed union")
+        self.assertEqual(entities["type"], "object")
+        self.assertTrue(entities["additionalProperties"])
+        dumped = json.dumps(edit)
+        self.assertNotIn("producer", dumped)
+        self.assertNotIn("semanticKind", dumped)
+        self.assertNotIn("semantic_kind", dumped)
+        # The loose schema still admits what the web client's own editors send:
+        # an Element@1 row whose profile point is bound to a project parameter.
+        element_row = {
+            "entity_id": "canopy-face", "schema": "Element@1", "parent_id": "portico",
+            "fields": {
+                "component_id": "portico", "producer": "prism",
+                "references": {"base": {"level": "level-ground"}},
+                "params": {"profile": [[0, 0], ["@canopy_width", 0], ["@canopy_width", 2], [0, 2]], "height": 3},
+            },
+        }
+        Draft202012Validator(entities).validate(element_row)
 
 
 class RequestShapeTests(ProposalTestCase):

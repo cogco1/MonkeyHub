@@ -1,5 +1,6 @@
 """The wire form of ``POST /api/intents``: an architect's sentence in, the
-agent's compiled sentence and the typed proposal it became out.
+agent's compiled answer (a scalar sentence, or a construction script, facets
+and parameters) and the typed proposal it became out.
 
 The proposal half is the same ``ProposalDto`` that ``POST /api/proposals``
 answers with — it *is* a proposal made by the deterministic seam. The agent
@@ -31,6 +32,7 @@ from ..application.visual_observation import (
 )
 from ..application.visual_reviews import planned_frames
 from .capability import CapabilitySourceDto, CapabilityTargetDto, KeepScopeDto, detail_dto
+from .construction import ConstructionOutcomeDto
 from .decisions import DecisionContextDto, DecisionDto, decision_dto
 from .memory import MemoryMatchDto, memory_match_dto
 from .proposal import STATE_DIGEST_PATTERN, ProposalDto
@@ -572,7 +574,8 @@ class AgentReadingDto(BaseModel):
     model: str | None = Field(description="the model the provider ran, when it names one")
     compiled_utterance: str = Field(
         alias="compiledUtterance",
-        description="the sentence in the grammar the agent produced; for the "
+        description="the sentence in the grammar the agent produced, or the "
+        "summary of the change its construction answer proposes; for the "
         "deterministic provider it is the request itself",
     )
     why: str = Field(
@@ -801,6 +804,11 @@ class IntentDto(BaseModel):
         "made against, what was rejected on the way, and a null "
         "continuationToken, because a compiled request has nothing left to ask",
     )
+    construction: ConstructionOutcomeDto | None = Field(
+        default=None,
+        description="what the agent's construction script reported: one row per shape it left or removed, "
+        "and what it printed; null when the answer carried no script",
+    )
 
 
 def candidate_dto(option: CandidateOption) -> CandidateOptionDto:
@@ -919,18 +927,16 @@ def context_pack_dto(
     )
 
 
-def agent_dto(compilation: Compilation) -> AgentReadingDto:
+def agent_dto(compilation: Compilation, *, compiled: str | None = None) -> AgentReadingDto:
     # Where there is a receipt it is the authority on how long the call took;
     # ``promptSha256`` stays the digest of the exact bytes that receipt
-    # counted as its input.
+    # counted as its input. ``compiled`` is the summary of the change a
+    # construction answer became; a scalar answer is its own sentence.
     receipt = compilation.receipt
     return AgentReadingDto(
         provider=compilation.provider,
         model=compilation.model,
-        compiled_utterance=(
-            str(compilation.semantic_edit.get("summary", ""))
-            if compilation.semantic_edit is not None else compilation.utterance or ""
-        ),
+        compiled_utterance=compiled if compiled is not None else compilation.utterance or "",
         why=compilation.why,
         latency_ms=(
             compilation.latency_ms if receipt is None else receipt.duration_ms

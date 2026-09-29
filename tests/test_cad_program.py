@@ -1,6 +1,7 @@
 """P071: deterministic CAD translation and analytic equivalence bounds."""
 
 import json
+import math
 import sys
 import unittest
 from types import SimpleNamespace
@@ -8,6 +9,7 @@ from unittest.mock import patch
 
 from archflow.adapters.cad_program import (
     CadTranslationError,
+    DifferenceBoundsError,
     expected_object_bounds,
     expected_object_semantics,
     translate_to_rhino_python,
@@ -473,8 +475,7 @@ class ExpectedBoundsTest(unittest.TestCase):
         self.assertEqual([10.0, 10.0, 10.0], result["bbox_max"])
 
     def test_boolean_difference_that_can_change_extrema_fails_closed(self):
-        # a triangular prism holds its +Z extremum along one edge: a cutter
-        # reaching that edge can alter the extremum, so bounds fail closed
+        # the cutter covers the whole apex edge, removing the +Z extremum: bounds fail closed
         build = program(
             op(
                 "base",
@@ -487,8 +488,8 @@ class ExpectedBoundsTest(unittest.TestCase):
                 "cut",
                 "solid",
                 ["cut-object"],
-                origin=[4.0, 4.0, 9.0],
-                size=[2.0, 2.0, 2.0],
+                origin=[4.0, -1.0, 9.0],
+                size=[2.0, 12.0, 2.0],
             ),
             op(
                 "difference",
@@ -501,8 +502,57 @@ class ExpectedBoundsTest(unittest.TestCase):
         with self.assertRaisesRegex(
             CadTranslationError,
             "can alter a base extremum",
-        ):
+        ) as caught:
             expected_object_bounds(build)
+        self.assertIsInstance(caught.exception, DifferenceBoundsError)
+        self.assertFalse(caught.exception.disjoint)
+
+    def test_a_notch_that_leaves_every_vertex_keeps_the_bounds(self):
+        # The apex edge is notched in its middle; both apex vertices survive, so +Z does.
+        build = program(
+            op("base", "extrusion", ["base-object"],
+               profile=[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [5.0, 0.0, 10.0]], vector=[0.0, 10.0, 0.0]),
+            op("cut", "solid", ["cut-object"], origin=[4.0, 4.0, 9.0], size=[2.0, 2.0, 2.0]),
+            op("difference", "boolean_difference", ["result-object"], ["base-object", "cut-object"], base_index=0),
+        )
+        result = expected_object_bounds(build)["result-object"]
+        self.assertEqual((result["bbox_min"], result["bbox_max"]), ([0.0, 0.0, 0.0], [10.0, 10.0, 10.0]))
+
+    def test_a_door_in_a_rotated_wall_keeps_the_wall_bounds(self):
+        angle = math.radians(30.0)
+        along, across = (math.cos(angle), math.sin(angle)), (math.sin(angle), -math.cos(angle))
+
+        def plan(a, c):
+            return [a * along[0] + c * across[0], 0.0, a * along[1] + c * across[1]]
+
+        wall = op("wall", "extrusion", ["wall-object"],
+                  profile=[plan(0, 0), plan(6, 0), plan(6, 0.3), plan(0, 0.3)], vector=[0.0, 3.0, 0.0], base_level=0.0)
+        door = op("door", "extrusion", ["door-object"],
+                  profile=[plan(2, -0.05), plan(3, -0.05), plan(3, 0.35), plan(2, 0.35)],
+                  vector=[0.0, 2.15, 0.0], base_level=0.0, base_offset=-0.05)
+        cut = op("cut", "boolean_difference", ["cut-object"], ["door-object", "wall-object"], base_index=1)
+        self.assertEqual(expected_object_bounds(program(wall, door, cut))["cut-object"],
+                         expected_object_bounds(program(wall))["wall-object"])
+
+    def test_a_through_hole_in_an_l_shaped_slab_keeps_the_slab_bounds(self):
+        slab = op("slab-body", "extrusion", ["slab-body-object"],
+                  profile=[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 0.0, 4.0], [4.0, 0.0, 4.0], [4.0, 0.0, 8.0], [0.0, 0.0, 8.0]],
+                  vector=[0.0, 0.3, 0.0])
+        hole = op("hole", "extrusion", ["hole-object"],
+                  profile=[[1.0, -0.1, 1.0], [3.0, -0.1, 1.0], [3.0, -0.1, 3.0], [1.0, -0.1, 3.0]], vector=[0.0, 0.5, 0.0])
+        cut = op("slab", "boolean_difference", ["slab-object"], ["hole-object", "slab-body-object"], base_index=1)
+        result = expected_object_bounds(program(slab, hole, cut))["slab-object"]
+        self.assertEqual((result["bbox_min"], result["bbox_max"]), ([0.0, 0.0, 0.0], [10.0, 0.3, 8.0]))
+
+    def test_a_void_that_misses_its_host_is_named(self):
+        base = op("base", "solid", ["base-object"], origin=[0.0, 0.0, 0.0], size=[10.0, 10.0, 10.0])
+        away = op("away", "solid", ["away-object"], origin=[20.0, 0.0, 0.0], size=[2.0, 2.0, 2.0])
+        cut = op("cut", "boolean_difference", ["cut-object"], ["away-object", "base-object"], base_index=1)
+        with self.assertRaisesRegex(CadTranslationError, "void away-object removes nothing from base-object") as caught:
+            expected_object_bounds(program(base, away, cut))
+        # Typed, so a caller can say why in its own words without reading the sentence.
+        self.assertIsInstance(caught.exception, DifferenceBoundsError)
+        self.assertTrue(caught.exception.disjoint)
 
     def test_wall_end_door_keeps_bounds_with_a_header_after_rotation(self):
         # A door reaches the floor and wall end, while the header keeps
@@ -572,8 +622,10 @@ class ExpectedBoundsTest(unittest.TestCase):
                        count=1, center=[0.0, 0.0, 0.0], angle_step_degrees=0.0,
                        start_angle_degrees=45.0),
                 )
-                with self.assertRaisesRegex(CadTranslationError, "can alter a base extremum"):
+                with self.assertRaisesRegex(CadTranslationError, "can alter a base extremum") as caught:
                     expected_object_bounds(build)
+                self.assertIsInstance(caught.exception, DifferenceBoundsError)
+                self.assertFalse(caught.exception.disjoint)
 
     def test_bounds_cover_exactly_the_physical_set(self):
         build = program(
@@ -604,6 +656,17 @@ class ExpectedBoundsTest(unittest.TestCase):
         self.assertEqual(
             sorted(translation.physical_object_ids), sorted(bounds)
         )
+
+    def test_a_consumed_solid_retained_for_inspection_keeps_its_bounds(self):
+        build = program(
+            op("seed", "solid", ["seed-object"], origin=[0.0, 0.0, 0.0], size=[1.0, 1.0, 1.0],
+               retain_for_inspection=True, hidden_for_inspection=True),
+            op("row", "array", ["row-object"], ["seed-object"], count=2, step=[0.0, 0.0, 3.0]),
+        )
+        bounds = expected_object_bounds(build)
+        self.assertEqual(sorted(bounds), ["row-object", "seed-object"])
+        self.assertEqual(bounds["seed-object"]["bbox_max"], [1.0, 1.0, 1.0])
+        self.assertEqual(sorted(translate_to_rhino_python(build).physical_object_ids), ["row-object", "seed-object"])
 
 
 def semantic_build():

@@ -521,7 +521,7 @@ class SketchNewComponentTestCase(unittest.TestCase):
         self.assertNotIn("semantic_kind", component["fields"])
 
     def test_a_new_component_under_a_built_one_is_created_and_exported(self) -> None:
-        status, proposal = self.draw(componentId="small-house", parentComponentId="portico", semanticKind="building",
+        status, proposal = self.draw(componentId="small-house", parentComponentId="portico",
                                      elementId="small-house-main", height=3.3)
         self.assertEqual(status, 201, proposal)
         kinds = {entity["entity_id"]: entity["schema"] for entity in proposal["change"]["edits"]["entities"]}
@@ -589,7 +589,7 @@ class SketchNewComponentTestCase(unittest.TestCase):
         self.assertIn("building", cold.json()["detail"])
 
     def test_continuing_on_that_run_changes_the_new_element_and_keeps_the_rest(self) -> None:
-        first = self.draw(componentId="small-house", parentComponentId="portico", semanticKind="building",
+        first = self.draw(componentId="small-house", parentComponentId="portico",
                           elementId="small-house-main", height=3.3)[1]
         run_one = self.run_candidate(first["proposalId"])["candidateId"]
         taller = self.client.post("/api/proposals/sketch", json={

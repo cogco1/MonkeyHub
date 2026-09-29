@@ -19,7 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
-from archflow.adapters.cad_program import _physical_ids, expected_object_bounds, expected_object_semantics
+from archflow.adapters.cad_program import expected_object_bounds, expected_object_semantics
+from archflow.state.geometry_program import delivered_object_ids
 
 _WITNESS_PREFIX = "__archflow_visible_bounds__"
 
@@ -165,12 +166,12 @@ def select_patch_operations(program, prior_program) -> PatchSelection:
                 frontier.append(op_id)
     rebuilt = tuple(op_id for op_id in program.operation_order if op_id in closed)
 
-    prior_physical = set(_physical_ids(prior_program.proposal))
+    prior_physical = set(delivered_object_ids(prior_program.proposal))
     rebuilt_outputs = {out for op_id in rebuilt for out in ops[op_id].output_object_ids}
     delete_names = tuple(sorted((rebuilt_outputs | set(retired)) & prior_physical))
     kept = tuple(sorted(prior_physical - set(delete_names)))
 
-    new_physical = set(_physical_ids(program.proposal))
+    new_physical = set(delivered_object_ids(program.proposal))
     realized = set(kept) | (rebuilt_outputs & new_physical)
     if realized != new_physical:
         missing = sorted(new_physical - realized)

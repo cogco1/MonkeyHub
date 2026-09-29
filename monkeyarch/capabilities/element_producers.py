@@ -23,6 +23,7 @@ this module on 2026-09-02; the runner reads Element@1 rows and calls
 """
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Mapping
@@ -99,6 +100,11 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
     # Hosted opening elevations use the level resolver; published datums are
     # supported by the wall's base/top resolver only.
     opening_elevation = {"anyOf": [elevation["anyOf"][0], elevation["anyOf"][2]]}
+    voids = {"type": "array", "items": identifier, "minItems": 1, "description": (
+        "Elements whose solids are removed from this one. Each keeps its own identity and stays in the model "
+        "hidden; remove it from this list and it shows again. Neither element needs to be classified. "
+        "A void is a prism without rectangular_cutouts or a capped loft, has no voids of its own, and nothing "
+        "stands on its top.")}
     opening = obj({
         "opening_id": identifier,
         "component_id": identifier,
@@ -157,6 +163,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
         "references": obj({
             "base": {"anyOf": [*elevation["anyOf"], obj({"elevation": scalar}, ("elevation",))]},
             "top": elevation,
+            "voids": voids,
         }),
         "requiredParameters": ["profile"],
         "requiredReferences": ["base"],
@@ -171,6 +178,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "An absolute references.base.elevation stays fixed when project levels or other elements change.",
             "work_plane axes are orthonormal; origin is relative to the base datum, and height follows normal.",
             "Only a horizontal upward extrusion publishes a horizontal top datum; tilted planes cannot claim one.",
+            "An opening, recess or cut is another prism or capped loft named in references.voids; rectangular_cutouts stay for panels that already use them.",
         ],
     }
     signatures = {"wall": {
@@ -200,6 +208,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
                                     "description": "Optional plan [X, Z] direction towards the side the thickness goes; "
                                                    "pointing to the right of from→to puts the thickness on the right. "
                                                    "The line stays the same face either way."}}, ("from", "to")),
+            "voids": voids,
         }),
         "requiredParameters": ["thickness"],
         "requiredReferences": ["base", "line"],
@@ -211,6 +220,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "A semicircular aperture requires spring_height >= sill and head - spring_height = width / 2.",
             "Use @parameter bindings for dimensions that subsequent changes must share.",
             "Use existing relation kinds for support, host, adjacency or clearance; proximity does not prove support.",
+            "references.voids removes other elements' solids through the same cut as the openings; the wall stays obj-<wall>.",
         ],
     }, "prism": prism, "loft": {
         "producer": "loft",
@@ -235,7 +245,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "closed_profile": {"type": "boolean", "enum": [True]},
         }),
         "references": obj({"base": {"anyOf": [obj({"level": level_id}, ("level",)),
-                                               obj({"datum": identifier}, ("datum",))]}}),
+                                               obj({"datum": identifier}, ("datum",))]}, "voids": voids}),
         "requiredParameters": ["profiles", "profile_size"],
         "requiredReferences": ["base"],
         "constraints": [
@@ -246,6 +256,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "One loft creates one object; an uncapped loft is a surface with no invented wall thickness.",
             "Use @parameter coordinates and parameter expressions for dimensions that subsequent edits must share.",
             "A loft publishes no horizontal top datum; do not reference <element-id>-top from another element.",
+            "Only a capped loft (cap_ends true) can host voids or act as one.",
         ],
     }, "planar-surface": {
         "producer": "planar-surface",
@@ -511,6 +522,7 @@ class ElementRow:
     references: Mapping[str, Any]
     params: Mapping[str, Any]
     basis_refs: tuple[str, ...] = ()
+    voided_by: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         require_identifier(self.element_id, "element_id")
@@ -518,6 +530,8 @@ class ElementRow:
         require_identifier(self.producer, "producer")
         object.__setattr__(self, "references", dict(self.references))
         object.__setattr__(self, "params", dict(self.params))
+        if not isinstance(self.voided_by, tuple) or self.voided_by != tuple(sorted(set(self.voided_by))):
+            raise ElementProducerError(f"{self.element_id}: voided_by must list host ids once each, sorted")
 
     @property
     def binding_id(self) -> str:
@@ -604,6 +618,46 @@ def _stating(operation: GeometryOperation, **statements: str) -> GeometryOperati
     """
 
     return replace(operation, statements={**operation.statements, **statements})
+
+
+_VOID_HOSTS = ("prism", "loft", "wall")
+_VOID_SOLIDS = ("prism", "loft")
+
+
+def _void_ids(row: ElementRow) -> tuple[str, ...]:
+    """The elements this row names in ``references.voids``: checked, sorted (#419)."""
+
+    value = row.references.get("voids", ())
+    if not isinstance(value, (list, tuple)) or any(not isinstance(item, str) or not item for item in value):
+        raise ElementProducerError(f"{row.element_id}: references.voids must list element ids")
+    repeated = sorted({item for item in value if list(value).count(item) > 1})
+    if repeated:
+        raise ElementProducerError(f"{row.element_id}: references.voids names {', '.join(repeated)} twice")
+    if row.element_id in value:
+        raise ElementProducerError(f"{row.element_id}: an element cannot void itself")
+    return tuple(sorted(value))
+
+
+def _as_void(operation: GeometryOperation) -> GeometryOperation:
+    """The same solid, kept in the model hidden under its own id while a host consumes it (#419)."""
+
+    flags = tuple(GeometryParameter.create(name=name, kind=GeometryParameterKind.BOOLEAN, value=True)
+                  for name in ("hidden_for_inspection", "retain_for_inspection"))
+    return replace(operation, parameters=tuple(sorted((*operation.parameters, *flags), key=lambda item: item.name)))
+
+
+def _void_difference(row: ElementRow, body: GeometryOperation) -> GeometryOperation:
+    """The host as delivered under its own id: its body minus every element it names as a void."""
+
+    body_object = body.output_object_ids[0]
+    inputs = tuple(sorted((body_object, *(f"obj-{void}" for void in _void_ids(row)))))
+    return GeometryOperation(
+        op_id=row.element_id, kind=GeometryOperationKind.BOOLEAN_DIFFERENCE,
+        output_object_ids=(f"obj-{row.element_id}",), input_object_ids=inputs, frame_id=body.frame_id,
+        parameters=(GeometryParameter.create(name="base_index", kind=GeometryParameterKind.INTEGER,
+                                             value=inputs.index(body_object)),),
+        semantic_binding_ids=(row.binding_id,),
+    )
 
 
 def _metres(value: float) -> str:
@@ -831,14 +885,11 @@ def produce_wall(row: ElementRow, context: ProductionContext) -> ProducedElement
         raise ElementProducerError(f"{row.element_id}: wall endpoints must define a finite, non-zero length")
     direction = (dx / length, dz / length)
     origin = start
-    # The solver lays the thickness along up × direction: seen from above, to the
-    # left of from→to. An inward pointing the other way walks the line from its
-    # other end, so the same face carries the thickness on that side (#404 F9).
-    inward = line.get("inward")
-    if inward is not None:
-        nx, nz = direction[1], -direction[0]
-        if nx * float(inward[0]) + nz * float(inward[1]) < 0:
-            origin, direction = end, (-direction[0], -direction[1])
+    # An inward pointing away from the side the solver lays the thickness on walks
+    # the line from its other end, so the same face carries the thickness on that
+    # side (#404 F9); ``along`` is measured from there too (wall_along_line).
+    if _turned(direction, line.get("inward")):
+        origin, direction = end, (-direction[0], -direction[1])
     wall = WallElement(row.element_id, origin, direction, length, _positive(p["thickness"], f"{row.element_id} thickness"), height, base_datum, context.frame_id, row.binding_id)
     context.references.hosts[row.element_id] = HostLine(origin, direction)
     openings = []
@@ -857,7 +908,9 @@ def produce_wall(row: ElementRow, context: ProductionContext) -> ProducedElement
                                         spring_height=(None if o.get("spring_height") is None else
                                                        round(_finite(o["spring_height"], f"{o['opening_id']} spring_height"), 9))))
     exclusions = context.exclusions if p.get("respect_exclusions", True) else ()
-    solution = solve_wall(wall, tuple(openings), exclusions=exclusions, base_elevation=context.datum_value(base_datum) if exclusions else None)
+    solution = solve_wall(wall, tuple(openings), exclusions=exclusions,
+                          base_elevation=context.datum_value(base_datum) if exclusions else None,
+                          void_object_ids=tuple(f"obj-{void}" for void in _void_ids(row)))
     ops, bindings, assemblies = list(solution.operations), list(solution.datum_bindings), []
     types: dict[str, Any] = {}
     for t in p.get("types", ()):
@@ -872,12 +925,150 @@ def produce_wall(row: ElementRow, context: ProductionContext) -> ProducedElement
         for fill in fills:
             ops.extend(fill.operations); bindings.extend(fill.datum_bindings); assemblies.append(fill.assembly)
     relations = tuple(ProducedRelation(f"{row.element_id}-hosts-{v.opening_id}", "hosts_void", row.element_id, v.opening_id, None) for v in solution.voids)
-    return ProducedElement(tuple(ops), tuple(bindings), (), relations, HostLine(origin, direction), tuple(assemblies), solution.voids)
+    # A wall's top is as horizontal as a block's: it publishes <id>-top the way
+    # a horizontal prism does, so a block realised as a wall (#419 Stage C)
+    # keeps carrying whatever stands on it.
+    top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + height, row.basis_refs)
+    context.published[top.datum_id] = top
+    return ProducedElement(tuple(ops), tuple(bindings), (top,), relations, HostLine(origin, direction), tuple(assemblies), solution.voids)
+
+
+def _turned(direction: tuple[float, float], inward: Any) -> bool:
+    """True when ``inward`` lies left of the line: the wall solver grows thickness to its right (normal ``(dz, -dx)``),
+    so the wall runs from the line's other end and ``along`` is measured from there."""
+
+    if inward is None:
+        return False
+    nx, nz = direction[1], -direction[0]
+    return nx * float(inward[0]) + nz * float(inward[1]) < 0
 
 
 def _rel(reference: Mapping[str, Any], base_datum: str, context: ProductionContext) -> float:
     level_id, offset = resolve_elevation(parse_reference(reference), context.references)
     return context.datum_value(level_id) - context.datum_value(base_datum) + offset
+
+
+def wall_along_line(line: Mapping[str, Any]) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Where a wall's ``along`` starts and where it ends, for a line of two stated points: ``(start, end)``.
+
+    The same turn ``produce_wall`` makes, read off the authored line: the start is
+    ``from`` unless ``inward`` lies left of the line, then it is ``to``. A line on
+    a grid, a host or parameters states no point here and is refused.
+    """
+
+    points = []
+    for key in ("from", "to"):
+        reference = line.get(key) if isinstance(line, Mapping) else None
+        point = reference.get("point") if isinstance(reference, Mapping) and set(reference) == {"point"} else None
+        if (not isinstance(point, (list, tuple)) or len(point) != 2
+                or not all(_is_number(value) and math.isfinite(value) for value in point)):
+            raise ElementProducerError(f"the line's {key} is not a stated point")
+        points.append((float(point[0]), float(point[1])))
+    inward = line.get("inward")
+    if inward is not None and (not isinstance(inward, (list, tuple)) or len(inward) != 2
+                               or not all(_is_number(value) for value in inward)):
+        raise ElementProducerError("the line's inward is not a plan vector")
+    (x0, z0), (x1, z1) = points
+    length = math.hypot(x1 - x0, z1 - z0)
+    if not math.isfinite(length) or length <= 0:
+        raise ElementProducerError("the line's points are the same point")
+    return (points[1], points[0]) if _turned(((x1 - x0) / length, (z1 - z0) / length), inward) else (points[0], points[1])
+
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+# Why a block cannot be realised as a wall in place (#419 Stage C, spec §3.5): said to the agent as they are.
+_NOT_A_BLOCK = "the shape is not a block extruded up from a plan outline"
+_TILTED = "the block is drawn on a tilted plane"
+_CUTOUTS = "the block has panel cutouts"
+_BOUND_OUTLINE = "the block's outline is bound to project parameters"
+_NOT_A_RECTANGLE = "the block's footprint is not a rectangle"
+_LIFTED = "the block is lifted off its base; place it on a level or another solid's top first"
+
+
+def wall_fields_from_block(fields: Mapping[str, Any], element_id: str) -> dict[str, Any]:
+    """A block's ``Element@1`` fields, realised by the ``wall`` producer instead of ``prism`` (#419 Stage C, spec §3.5).
+
+    The element keeps its id, so it keeps ``obj-<element>`` and ``<element>-top``:
+    the wall is the same solid on the same base, and whatever stood on the block
+    keeps standing. The line runs the way the block's longest side runs (the
+    first of equal ones, in the outline's order), the thickness is the side next
+    to it and ``openings`` starts empty. The wall keeps its thickness right of
+    its line (normal ``(dz, -dx)``) and measures ``along`` from the line's start,
+    so the line lies on whichever long face has the block on that side: the
+    longest side itself when the outline winds clockwise, else the opposite long
+    face running the same way. Either way ``along`` starts beside the longest
+    side's first corner and runs as that side does, whichever way the outline
+    winds, and ``inward`` points across the block from the line's face. That face
+    is the one doors and windows are set out from: frames stand proud of it by
+    ``frame_projection``, and leaf and glazing offsets are measured from it into
+    the block. For ``rect(x, z, w, d)`` with ``w >= d`` it is the face at
+    ``z + d``, and ``along`` runs from ``(x, z + d)`` toward +x. The base (a zero
+    datum offset is no offset), the height or top, the voids and every other
+    field stay as they are; the fields given are not changed.
+
+    Refused with the reason (``ElementProducerError``, ``"<element>: <reason>"``):
+    anything but a block extruded up from a plan outline, a drawing plane,
+    panel cutouts, an outline bound to parameters or not a rectangle (four
+    corners, no side of no length, adjacent sides perpendicular: their dot
+    product within ``2e-9 * (l1 + l2)``, which nanometre-rounded corners of a
+    turned block meet), and a block lifted off its base by an elevation, an
+    offset or an absolute base.
+    """
+
+    def refused(reason: str) -> ElementProducerError:
+        return ElementProducerError(f"{element_id}: {reason}")
+
+    fields = copy.deepcopy(dict(fields))
+    params, references = fields.get("params"), fields.get("references")
+    if fields.get("producer") != "prism" or not isinstance(params, Mapping) or not isinstance(references, Mapping):
+        raise refused(_NOT_A_BLOCK)
+    params, references = dict(params), dict(references)
+    if "work_plane" in params:
+        raise refused(_TILTED)
+    if "rectangular_cutouts" in params:
+        raise refused(_CUTOUTS)
+    profile = params.pop("profile", None)
+    if (not isinstance(profile, (list, tuple)) or len(profile) != 4
+            or any(not isinstance(point, (list, tuple)) or len(point) != 2 for point in profile)):
+        raise refused(_NOT_A_RECTANGLE)
+    if any(isinstance(value, str) and value.startswith("@") for point in profile for value in point):
+        raise refused(_BOUND_OUTLINE)
+    if not all(_is_number(value) and math.isfinite(value) for point in profile for value in point):
+        raise refused(_NOT_A_RECTANGLE)
+    sides = [(float(profile[(k + 1) % 4][0]) - float(profile[k][0]), float(profile[(k + 1) % 4][1]) - float(profile[k][1]))
+             for k in range(4)]
+    lengths = [math.hypot(*side) for side in sides]
+    if any(length <= 0.0 for length in lengths) or any(
+            abs(sides[k][0] * sides[(k + 1) % 4][0] + sides[k][1] * sides[(k + 1) % 4][1])
+            > 2e-9 * (lengths[k] + lengths[(k + 1) % 4]) for k in range(4)):
+        raise refused(_NOT_A_RECTANGLE)
+    elevation = params.pop("elevation", 0)
+    base = references.get("base")
+    if not _is_number(elevation) or elevation != 0:
+        raise refused(_LIFTED)
+    if isinstance(base, Mapping) and set(base) == {"level"} and isinstance(base["level"], str):
+        pass
+    elif (isinstance(base, Mapping) and "datum" in base and set(base) <= {"datum", "offset"}
+          and isinstance(base["datum"], str) and _is_number(base.get("offset", 0)) and base.get("offset", 0) == 0):
+        references["base"] = {"datum": base["datum"]}
+    else:
+        raise refused(_LIFTED)
+    # The first longest side; nanometre noise does not make an equal later side longer.
+    longest = max(lengths)
+    k = next(index for index, length in enumerate(lengths) if longest - length <= max(4e-9, 1e-9 * longest))
+    across, thickness = sides[(k + 1) % 4], lengths[(k + 1) % 4]
+    start, end, inward = profile[k], profile[(k + 1) % 4], (across[0] / thickness, across[1] / thickness)
+    if _turned((sides[k][0] / lengths[k], sides[k][1] / lengths[k]), inward):
+        # The block lies left of that side: the opposite long face, running the same way.
+        start, end, inward = profile[(k - 1) % 4], profile[(k + 2) % 4], (-inward[0], -inward[1])
+    references["line"] = {"from": {"point": list(start)}, "to": {"point": list(end)},
+                          "inward": [round(inward[0], 9) + 0.0, round(inward[1], 9) + 0.0]}
+    params["thickness"] = thickness
+    params["openings"] = []
+    return {**fields, "producer": "wall", "references": references, "params": params}
 
 
 def element_rows_of(record) -> tuple[ElementRow, ...]:
@@ -904,7 +1095,7 @@ def element_rows_of(record) -> tuple[ElementRow, ...]:
         if not component_id:
             raise ElementProducerError(f"element {e.entity_id}: no component (field component_id or parent)")
         rows.append(ElementRow(e.entity_id, str(component_id), str(fields["producer"]), dict(fields.get("references", {})), dict(fields.get("params", {})), tuple(e.basis_refs)))
-    return production_order(tuple(rows))
+    return production_order(with_void_hosts(tuple(rows)))
 
 
 def _seat_parameters(base_offset: float) -> dict[str, float]:
@@ -1376,16 +1567,26 @@ def produce_prism(row: ElementRow, context: ProductionContext) -> ProducedElemen
             # A partition or empty panel supplies no whole-prism top datum or
             # whole-prism support claim. A downstream top reference is refused.
             return ProducedElement(tuple(operations), tuple(bindings), fixed)
-    op = _extrusion(row.element_id, profile, height, row.binding_id, context.frame_id, base_offset, normal=normal)
+    if row.voided_by:
+        # A void is the region it removes: retained hidden under its own id, carrying nothing.
+        op = _as_void(_extrusion(row.element_id, profile, height, row.binding_id, context.frame_id, base_offset, normal=normal))
+        return ProducedElement((op,), (_bind(row.element_id, base_datum),), fixed)
+    if _void_ids(row):
+        body = _extrusion(f"{row.element_id}-body", profile, height, row.binding_id, context.frame_id, base_offset, normal=normal)
+        operations = (body, _void_difference(row, body))
+        bindings = (_bind(body.op_id, base_datum),)
+    else:
+        operations = (_extrusion(row.element_id, profile, height, row.binding_id, context.frame_id, base_offset, normal=normal),)
+        bindings = (_bind(row.element_id, base_datum),)
     if not horizontal_up:
         # An oriented drawing has an explicit level anchor, not a fabricated
         # horizontal bearing surface. Only a real horizontal upper face can
         # publish the retained <id>-top datum used by supported elements.
-        return ProducedElement((op,), (_bind(row.element_id, base_datum),), fixed)
+        return ProducedElement(operations, bindings, fixed)
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + height, row.basis_refs)
     context.published[top.datum_id] = top  # a prism is what other elements sit on: it publishes its top like a beam does
     relations = () if fixed else (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),)
-    return ProducedElement((op,), (_bind(row.element_id, base_datum),), fixed + (top,), relations, None)
+    return ProducedElement(operations, bindings, fixed + (top,), relations, None)
 
 
 def produce_ring(row: ElementRow, context: ProductionContext) -> ProducedElement:
@@ -1412,17 +1613,20 @@ def produce_ring(row: ElementRow, context: ProductionContext) -> ProducedElement
 
 
 def _loft(row: ElementRow, context: ProductionContext, profiles, size: int, base_datum: str, base_offset: float = 0.0,
-          *, cap_ends: bool = True, profile_basis: str = "polyline", closed_profile: bool | None = None) -> ProducedElement:
+          *, cap_ends: bool = True, profile_basis: str = "polyline", closed_profile: bool | None = None,
+          op_id: str | None = None) -> ProducedElement:
     """One loft operation through closed polyline sections of ``size`` points each.
 
     Every producer that builds its own sections (stair, wedge, shell, dome
     cap) keeps the defaults: a capped polyline loft, one closed solid. Only
     ``produce_loft`` forwards what its row states, so a row cannot reach
-    into another producer's closure.
+    into another producer's closure. ``op_id`` names the operation when the
+    loft is a host's body (#419).
     """
 
+    name = op_id or row.element_id
     stated = ((GeometryParameter.create(name="closed_profile", kind=GeometryParameterKind.BOOLEAN, value=closed_profile),) if closed_profile is not None else ())
-    op = GeometryOperation(op_id=row.element_id, kind=GeometryOperationKind.LOFT, output_object_ids=(f"obj-{row.element_id}",), input_object_ids=(), frame_id=context.frame_id, parameters=((GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=round(base_offset, 9), unit=_M),) if base_offset else ()) + (
+    op = GeometryOperation(op_id=name, kind=GeometryOperationKind.LOFT, output_object_ids=(f"obj-{name}",), input_object_ids=(), frame_id=context.frame_id, parameters=((GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=round(base_offset, 9), unit=_M),) if base_offset else ()) + (
         GeometryParameter.create(name="cap_ends", kind=GeometryParameterKind.BOOLEAN, value=cap_ends),
     ) + stated + (
         GeometryParameter.create(name="loft_type", kind=GeometryParameterKind.TEXT, value=str(row.params.get("loft_type", "straight"))),
@@ -1431,7 +1635,7 @@ def _loft(row: ElementRow, context: ProductionContext, profiles, size: int, base
         _points("profiles", profiles),
     ),
         semantic_binding_ids=(row.binding_id,))
-    return ProducedElement((op,), (_bind(row.element_id, base_datum),), (), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
+    return ProducedElement((op,), (_bind(name, base_datum),), (), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
 
 
 def _stated_bool(row: ElementRow, key: str, default: bool) -> bool:
@@ -1474,8 +1678,17 @@ def produce_loft(row: ElementRow, context: ProductionContext) -> ProducedElement
         raise ElementProducerError(f"{row.element_id}: an open section profile is not produced; every loft section is a closed polygon")
     profiles = [[_finite(c, f"{row.element_id} profile coordinate") for c in pt] for section in _loft_sections(row) for pt in section]
     section_base = min((pt[1] for pt in profiles), default=0.0)
-    return _loft(row, context, profiles, int(p["profile_size"]), base_datum, section_base,
-                 cap_ends=cap_ends, profile_basis=profile_basis, closed_profile=closed_profile)
+    voids = _void_ids(row)
+    produced = _loft(row, context, profiles, int(p["profile_size"]), base_datum, section_base,
+                     cap_ends=cap_ends, profile_basis=profile_basis, closed_profile=closed_profile,
+                     op_id=f"{row.element_id}-body" if voids else None)
+    if row.voided_by:
+        # A void carries nothing: retained hidden under its own id, with no support relation (#419).
+        return ProducedElement((_as_void(produced.operations[0]),), produced.bindings)
+    if voids:
+        body = produced.operations[0]
+        return replace(produced, operations=(body, _void_difference(row, body)))
+    return produced
 
 
 def produce_dome_cap(row: ElementRow, context: ProductionContext) -> ProducedElement:
@@ -1751,11 +1964,17 @@ def _mentions(value: Any, names: Mapping[str, str]) -> set[str]:
 
 
 def production_order(rows: tuple[ElementRow, ...]) -> tuple[ElementRow, ...]:
-    """Supports before supported: an element that names another (or its published top) comes after it; ties keep the given order."""
+    """Supports before supported: an element that names another (or its published top) comes after it; ties keep the given order.
+
+    ``references.voids`` is no ordering dependency (#419): a host names its voids only as objects its difference
+    consumes, so a void may stand on the top of the host it is cut into (a recess read from that top) and is
+    produced after it; the operation graph orders the consumption. A true support cycle is still refused.
+    """
 
     names = {r.element_id: r.element_id for r in rows}
     names.update({f"{r.element_id}-top": r.element_id for r in rows})
-    deps = {r.element_id: _mentions(r.references, names) - {r.element_id} for r in rows}
+    deps = {r.element_id: _mentions({key: value for key, value in r.references.items() if key != "voids"}, names)
+            - {r.element_id} for r in rows}
     for r in rows:
         for opening in r.params.get("openings", ()) if isinstance(r.params.get("openings"), (list, tuple)) else ():
             deps[r.element_id] |= _mentions(opening.get("at"), names) - {r.element_id} if isinstance(opening, Mapping) else set()
@@ -1771,6 +1990,45 @@ def production_order(rows: tuple[ElementRow, ...]) -> tuple[ElementRow, ...]:
             ordered.append(r); placed.add(r.element_id)
         remaining = [r for r in remaining if r.element_id not in placed]
     return tuple(ordered)
+
+
+def with_void_hosts(rows: tuple[ElementRow, ...]) -> tuple[ElementRow, ...]:
+    """Rows annotated with the hosts that name each one in ``references.voids`` (#419).
+
+    Being named is what makes an element a void: its solid is removed from
+    each host and kept in the model hidden under its own id. Nothing on the
+    element itself says so, and removing the name shows it again. Refused
+    by name: a missing void, one that is not a prism or a capped loft making
+    one solid, one with voids of its own, a host that cannot be cut, and
+    anything standing on a void's top.
+    """
+
+    by_id = {row.element_id: row for row in rows}
+    hosts: dict[str, list[str]] = {}
+    for row in rows:
+        voids = _void_ids(row)
+        if voids and (row.producer not in _VOID_HOSTS or row.params.get("cap_ends", True) is False
+                      or "rectangular_cutouts" in row.params):
+            raise ElementProducerError(f"{row.element_id}: only a prism, a capped loft or a wall can host voids")
+        for void in voids:
+            target = by_id.get(void)
+            if target is None:
+                raise ElementProducerError(f"{row.element_id}: references.voids names {void!r}, which is not an element")
+            if (target.producer not in _VOID_SOLIDS or "rectangular_cutouts" in target.params
+                    or target.params.get("cap_ends", True) is False):
+                raise ElementProducerError(
+                    f"{row.element_id}: {void} cannot act as a void; only a prism without rectangular_cutouts "
+                    "or a capped loft removes one solid")
+            if _void_ids(target):
+                raise ElementProducerError(f"{row.element_id}: {void} has voids of its own and cannot act as a void")
+            hosts.setdefault(void, []).append(row.element_id)
+    tops = {f"{void}-top": void for void in hosts}
+    for row in rows:
+        for void in sorted(_mentions(row.references, tops)):
+            raise ElementProducerError(
+                f"{row.element_id}: stands on the top of {void}, which is a void of "
+                f"{', '.join(sorted(hosts[void]))}; a void carries nothing")
+    return tuple(replace(row, voided_by=tuple(sorted(hosts.get(row.element_id, ())))) for row in rows)
 
 
 def produce_rows(rows: tuple[ElementRow, ...], context: ProductionContext) -> tuple[ProducedElement, ...]:

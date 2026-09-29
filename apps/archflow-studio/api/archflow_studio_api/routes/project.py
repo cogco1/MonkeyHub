@@ -38,10 +38,10 @@ def prepare_modeling(
 
     Existing projects keep their model inputs. With ``base=true`` the answer
     also names the default state it leaves, enough to send a first proposal
-    without reading GET /api/state again; without it, read GET /api/state and
-    /api/state/frame next. Without a real source run omit sourceRunId;
-    studio-projection is a transient projection identifier, not a retained
-    candidate.
+    without reading the state again; without it, read GET
+    /api/construction/model (or /api/state) and /api/state/frame next. Without
+    a real source run omit sourceRunId; studio-projection is a transient
+    projection identifier, not a retained candidate.
     """
 
     binding = resolve_project(request.app.state, body.project_id)

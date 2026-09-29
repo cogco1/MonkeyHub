@@ -15,6 +15,10 @@
     {
       "id": "assembly-edit",
       "prompt": "This is an isolated design benchmark, not source development. Only use connected monkeyhub tools. Continue the existing portico assembly from exact sourceRunId run-001 and stateDigest {state_digest}. Raise portico-base height from 0.6 m to 0.8 m and increase portico-cornice height from 0.3 m to 0.5 m in one candidate. Preserve both footprints, the cornice base reference to portico-base-top, the support relationship, all parameters and all other authored fields. The resulting base spans Z=0 to 0.8 m and cornice Z=0.8 to 1.3 m. Use the existing semanticEdit proposal path, submit once, execute with awaitSeconds:60 and read back the candidate. Do not accept or issue a Stage. Give one short result sentence. Do not read or edit repo files, use shell tools, or call another model."
+    },
+    {
+      "id": "stage-a-massing",
+      "prompt": "This is an isolated design benchmark, not source development. Only use the connected monkeyhub tools. Continue from exact sourceRunId run-001 and stateDigest {state_digest}, keeping every existing object unchanged. Add a generic massing study; do not classify anything as a wall, slab or other building part. (1) A ground block with its plan corner at (20, 0), 12 m along the first plan axis and 8 m along the second, 3.2 m tall, standing on the ground level. (2) An upper block 10 m by 8 m and 3 m tall standing on top of the ground block, flush with the ground block's faces at first-axis 20 and at both second-axis faces, so it spans 20 to 30 along the first axis. (3) A roof slab 0.3 m thick on top of the upper block, overhanging it by 0.5 m on every side. (4) Four window recesses cut 0.3 m deep into the ground block from its face at second-axis 0, each 1.2 m wide along the first axis and 1.5 m tall with the sill 0.9 m above the ground, their near edges at first-axis 21.5, 24.5, 27.5 and 30.5. Execute a single candidate with awaitSeconds:60 and read it back. Do not accept or issue a Stage. Give one short result sentence. Do not read or edit repo files, use shell tools, or call another model."
     }
   ]
 }

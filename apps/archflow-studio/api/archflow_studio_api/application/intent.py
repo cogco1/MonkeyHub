@@ -34,6 +34,7 @@ from archflow.state.state_record import (
     compile_component_edit,
     compile_parameter_locks,
 )
+from monkeyarch.construction import made_by_construction
 
 from ..transport.errors import BlockedNeedsHuman, StudioError
 from .impact import impact
@@ -215,6 +216,96 @@ def _selection(context_refs: Sequence[str], prefix: str) -> str | None:
     return None
 
 
+def kept_refs(record: StateRecord, refs: Sequence[str]) -> tuple[str, ...]:
+    """What keeping ``refs`` protects: each ref, and for a geometry id its parts and its child components'.
+
+    The record protects what a change reaches, and a geometry id's form
+    changes in its parts, never in its own row: a keep naming only the
+    geometry id would let every part of it change. A shape a script made is
+    its own geometry wherever it is parented (``made_by_construction``;
+    lowering places them all under the modelling root), so a keep on the
+    component above it never reaches it. A part id and a parameter ref are
+    kept as they are; a ref the record does not declare is left for the
+    record to refuse.
+    """
+
+    parts: dict[str, list[Any]] = {}
+    for element in record.entities_of("Element@1"):
+        parts.setdefault(str(element.fields.get("component_id") or element.parent_id), []).append(element)
+    children: dict[str, list[str]] = {}
+    for component in record.entities_of("Component@1"):
+        own = [element.entity_id for element in parts.get(component.entity_id, ())]
+        if component.parent_id and not made_by_construction(component.entity_id, own):
+            children.setdefault(component.parent_id, []).append(component.entity_id)
+    kept = list(refs)
+    seen: set[str] = set()
+    pending = [ref.removeprefix("entity:") for ref in refs if ref.startswith("entity:")]
+    while pending:
+        identifier = pending.pop(0)
+        if identifier in seen:
+            continue
+        seen.add(identifier)
+        kept.extend(f"entity:{element.entity_id}" for element in parts.get(identifier, ()))
+        kept.extend(f"entity:{child}" for child in children.get(identifier, ()))
+        pending.extend(children.get(identifier, ()))
+    return tuple(dict.fromkeys(kept))
+
+
+def resolve_keep_refs(projection: StateProjection, refs: Sequence[str]) -> tuple[str, ...]:
+    """``refs`` as the record's own prefixed refs, sorted and deduplicated, or ``BlockedNeedsHuman`` asking which.
+
+    An ``entity:`` or ``parameter:`` ref must name what the record declares. A
+    bare token is accepted only when exactly one thing answers to it: a record
+    that declared both an entity and a parameter called ``bay`` would be asked
+    which, rather than have one of them silently protected. The grammar's keep
+    clause and an agent's stated keep are read by this one resolver.
+    """
+
+    entities = {entity.entity_id for entity in projection.record.entities}
+    parameters = {item.key for item in projection.parameters}
+    return tuple(sorted({_resolved_keep_ref(ref, entities, parameters) for ref in refs}))
+
+
+def _resolved_keep_ref(ref: str, entities: set[str], parameters: set[str]) -> str:
+    if ref.startswith("entity:"):
+        if ref[len("entity:") :] in entities:
+            return ref
+        raise _unknown_keep_ref(ref)
+    if ref.startswith("parameter:"):
+        if ref[len("parameter:") :] in parameters:
+            return ref
+        raise _unknown_keep_ref(ref)
+    candidates = [
+        prefixed
+        for prefixed, declared in (
+            (f"entity:{ref}", ref in entities),
+            (f"parameter:{ref}", ref in parameters),
+        )
+        if declared
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise _unknown_keep_ref(ref)
+    raise BlockedNeedsHuman(
+        "the keep ref names two different things",
+        question=(
+            f"keep {ref} could mean {_listed(candidates)}; which did you "
+            "mean?"
+        ),
+    )
+
+
+def _unknown_keep_ref(ref: str) -> BlockedNeedsHuman:
+    return BlockedNeedsHuman(
+        "the keep ref names nothing in this record",
+        question=(
+            f"keep names {ref}, which this record declares neither as an "
+            "entity nor as a parameter. Which did you mean?"
+        ),
+    )
+
+
 def buildable_components(projection: StateProjection, seats: Sequence[Any]) -> tuple[str, ...]:
     """The components some seat will actually build, roots and descendants.
 
@@ -253,7 +344,6 @@ def sketch_prism_proposal(
     closed: bool = True,
     plane: Mapping[str, Any] | None = None,
     parent_component_id: str | None = None,
-    semantic_kind: str | None = None,
     summary: str | None = None,
     keep_refs: Sequence[str] = (),
     source_document_trace: Mapping[str, Any] | None = None,
@@ -291,13 +381,13 @@ def sketch_prism_proposal(
                 f"{sorted(components)} so a seat builds it.",
             )
         # Geometry first: the new part exists with its identity, placement and
-        # provenance before anyone says what it is. A stated semanticKind is
-        # kept; an unstated one stays absent, never guessed (#400).
+        # provenance before anyone says what it is; meaning is added afterward
+        # with POST /api/proposals/facets, never guessed here (#400, #419).
         rows.append({
             "entity_id": component_id,
             "schema": "Component@1",
             "parent_id": parent_component_id,
-            "fields": {"intent": component_id, **({"semantic_kind": semantic_kind} if semantic_kind is not None else {})},
+            "fields": {"intent": component_id},
         })
     row = {
         "entity_id": element_id,
@@ -563,7 +653,8 @@ def delete_element_proposal(
     relations name it; removing it under them would either dangle those
     references or silently take objects the architect never picked. Both are
     refused here, with the dependents named, so the answer is a fact about the
-    building rather than a failure inside the record.
+    building rather than a failure inside the record. An element that names
+    this one in ``references.voids`` is cut by it, and is said to be.
     """
 
     record = projection.record
@@ -576,23 +667,27 @@ def delete_element_proposal(
             "names the element a pick resolved to, and this record declares "
             f"{_listed(sorted(item.entity_id for item in record.entities_of('Element@1')))}.",
         )
-    standing = sorted({
-        edge.downstream_ref[len("entity:"):]
+    dependents = [
+        (edge.downstream_ref[len("entity:"):], edge.relation)
         for edge in record.dependency_edges()
         if edge.upstream_ref == f"entity:{element_id}"
         and edge.downstream_ref.startswith("entity:")
         and edge.downstream_ref != f"entity:{element_id}"
-    })
+    ]
+    # A host names its cutters in references.voids (#419): it is cut by this element, not standing on it.
+    cut = sorted({dependent for dependent, relation in dependents if relation == "voids"})
+    standing = sorted({dependent for dependent, relation in dependents if relation != "voids"})
     named_by = sorted({
         relation.relation_id for relation in record.relations
         if element_id in (relation.subject, relation.object)
     })
-    if standing or named_by:
+    if cut or standing or named_by:
         raise StudioError(
             409,
             "ELEMENT_HAS_DEPENDENTS",
             f"{element_id} cannot be removed on its own: "
             + "; ".join(filter(None, [
+                f"{_listed(cut)} {'is' if len(cut) == 1 else 'are'} cut by it" if cut else "",
                 f"{_listed(standing)} stand{'s' if len(standing) == 1 else ''} on it" if standing else "",
                 f"the record declares {_listed(named_by)} about it" if named_by else "",
             ]))
@@ -829,7 +924,16 @@ def component_edit_proposal(
     changed_components = {
         entity.fields.get("component_id") or entity.parent_id for entity in changed_elements
     }
-    if component_id not in components or (changed_components and component_id not in changed_components):
+    # A proposal may also be about what it takes away: a component it removes,
+    # or one it removes a part of.
+    removed_components = {entity.entity_id for entity in record.entities_of("Component@1")} - components
+    reached = changed_components | removed_components | {
+        existing[identifier].fields.get("component_id") or existing[identifier].parent_id
+        for identifier in removed["remove_entity_ids"]
+        if identifier in existing and existing[identifier].schema == "Element@1"
+    }
+    if (component_id not in components | removed_components
+            or (changed_components and component_id not in reached)):
         component_id = next((
             str(entity.fields.get("component_id") or entity.parent_id)
             for entity in changed_elements
@@ -1034,9 +1138,9 @@ class DeterministicIntentProvider:
             "STALE_BASE",
             f"the proposal names state {state_digest}, but "
             f"{self.projection.project_id} is at "
-            f"{self.projection.state_digest}. Read GET /api/state?run=<runId> for the run "
-            "you are changing and send its stateDigest with sourceRunId; without "
-            "sourceRunId the project's default source answers.",
+            f"{self.projection.state_digest}. Read GET /api/construction/model?run=<runId> "
+            "(or /api/state?run=<runId>) for the run you are changing and send its stateDigest "
+            "with sourceRunId; without sourceRunId the project's default source answers.",
         )
 
     def _component(self, component_id: str | None) -> str:
@@ -1372,56 +1476,9 @@ class DeterministicIntentProvider:
         return round(target.old * (1 + sign * parsed.number / 100), ROUNDING)
 
     def _protected(self, keep: tuple[str, ...]) -> tuple[str, ...]:
-        """The ``keep`` refs, prefixed and deduplicated, or a question."""
+        """What the ``keep`` refs protect: each resolved ref, and a kept geometry id's parts (``kept_refs``)."""
 
-        return tuple(sorted({self._resolve_ref(ref) for ref in keep}))
-
-    def _resolve_ref(self, ref: str) -> str:
-        """One ``keep`` ref as the record's own prefixed ref.
-
-        A bare token is accepted only when exactly one thing answers to it: a
-        record that declared both an entity and a parameter called ``bay``
-        would be asked which, rather than have one of them silently protected.
-        """
-
-        entities = {entity.entity_id for entity in self.projection.record.entities}
-        parameters = {item.key for item in self.projection.parameters}
-        if ref.startswith("entity:"):
-            if ref[len("entity:") :] in entities:
-                return ref
-            raise self._unknown_ref(ref)
-        if ref.startswith("parameter:"):
-            if ref[len("parameter:") :] in parameters:
-                return ref
-            raise self._unknown_ref(ref)
-        candidates = [
-            prefixed
-            for prefixed, declared in (
-                (f"entity:{ref}", ref in entities),
-                (f"parameter:{ref}", ref in parameters),
-            )
-            if declared
-        ]
-        if len(candidates) == 1:
-            return candidates[0]
-        if not candidates:
-            raise self._unknown_ref(ref)
-        raise BlockedNeedsHuman(
-            "the keep ref names two different things",
-            question=(
-                f"keep {ref} could mean {_listed(candidates)}; which did you "
-                "mean?"
-            ),
-        )
-
-    def _unknown_ref(self, ref: str) -> BlockedNeedsHuman:
-        return BlockedNeedsHuman(
-            "the keep ref names nothing in this record",
-            question=(
-                f"keep names {ref}, which this record declares neither as an "
-                "entity nor as a parameter. Which did you mean?"
-            ),
-        )
+        return tuple(sorted(set(kept_refs(self.projection.record, resolve_keep_refs(self.projection, keep)))))
 
     # ---- the operator
 

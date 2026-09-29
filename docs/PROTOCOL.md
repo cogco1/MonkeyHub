@@ -371,7 +371,10 @@ stream as a record of anything: what a run did is in the run.
 One chain, and each arrow is a route.
 
 1. **Read the state.** `GET /api/state` answers `stateDigest`. Every request that would change
-   something carries it back.
+   something carries it back. An agent reads the same `stateDigest` for the same source from
+   `GET /api/construction/model[?run=]`, the model in construction terms, and sends it back with its
+   construction script (`POST /api/proposals/construction`;
+   [the construction contract](2026-09-28-construction-api.md#32-the-agent-contract-after-this-change)).
 2. **Propose.** `POST /api/proposals` (a sentence already in the grammar) or `POST /api/intents`
    (any words; the server resolves what they are about, its agent compiles them into the grammar
    and the grammar types them). Either way the answer is the *record's* proposal: a typed
@@ -1489,8 +1492,10 @@ Optional `pathPrefix` (for example `/api/drawings`) and `method` narrow the list
 `method` includes both reads and writes. `offset` defaults to 0, `limit` to 30 (1–50).
 The reply contains only `actions` (`method`, `path`, `summary`), `total`, paging fields,
 an explanatory `note`, and a `next` tool call when more actions remain. Supply an exact
-`method`/`path` to read its existing request/response schema; `producer` still narrows
-semantic authoring inputs. Discovery neither grants authority nor proves input validity.
+`method`/`path` to read what that action takes: its query and path parameters and its request
+body, with the schemas they name (responses are not described; the call answers with one).
+Any other argument, such as the retired `producer`, is refused by name; geometry is authored with
+a construction script, never chosen by producer. Discovery neither grants authority nor proves input validity.
 The chat projection of `GET /api/capabilities` preserves its registered-workflow fields
 and adds `actionDiscovery` pointing to this tool; a matched workflow is not an exhaustive
 list of API actions. Unknown paths return `CHAT_ACTION_UNKNOWN` with bounded same-domain

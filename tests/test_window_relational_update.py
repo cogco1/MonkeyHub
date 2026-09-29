@@ -192,7 +192,7 @@ class WindowRelationalCadTests(unittest.TestCase):
         self.assertCountEqual([row.element_id for call in produce.call_args_list for row in call.args[0]], [HOST, LINTEL])
         executed_ops = {call.args[2].op_id for call in build.call_args_list}
         self.assertNotIn(FIXED, executed_ops)
-        self.assertTrue({LINTEL, "wall-south-cut", "wall-south-aperture-window", "frame-wall-south-window",
+        self.assertTrue({LINTEL, "wall-south", "wall-south-aperture-window", "frame-wall-south-window",
                          "glazing-wall-south-window"} <= executed_ops)
         seat = second["seat_results"][0]
         round_receipt = project.repository.load_json(record_ref_from_uri(seat["receipt_ref"], "demo"))
@@ -213,7 +213,7 @@ class WindowRelationalCadTests(unittest.TestCase):
         self.assertEqual({binding.binding_id: binding.object_ids for binding in old_program.proposal.semantic_bindings},
                          {binding.binding_id: binding.object_ids for binding in new_program.proposal.semantic_bindings})
         selection = select_patch_operations(new_program, old_program)
-        self.assertTrue({APERTURE, FRAME, GLASS, LINTEL_OBJECT, "obj-wall-south-cut"} <= set(selection.changed_object_ids))
+        self.assertTrue({APERTURE, FRAME, GLASS, LINTEL_OBJECT, "obj-wall-south"} <= set(selection.changed_object_ids))
         self.assertIn(FIXED_OBJECT, selection.kept_object_ids)
         bounds = expected_object_bounds(new_program)
         self.assertAlmostEqual(bounds[APERTURE]["bbox_min"][0], 2.0)
@@ -230,7 +230,7 @@ class WindowRelationalCadTests(unittest.TestCase):
                 self.assertGreater(after[name].volume, before[name].volume)
         self.assertAlmostEqual(after[APERTURE].bbox_min[0] - after[LINTEL_OBJECT].bbox_min[0], 0.15, places=6)
         self.assertAlmostEqual(after[LINTEL_OBJECT].bbox_max[0] - after[APERTURE].bbox_max[0], 0.15, places=6)
-        self.assertAlmostEqual(before["obj-wall-south-cut"].volume - after["obj-wall-south-cut"].volume,
+        self.assertAlmostEqual(before["obj-wall-south"].volume - after["obj-wall-south"].volume,
                                0.4 * 1.5 * 0.3, places=6)
         self.assertAlmostEqual(after[FIXED_OBJECT].volume, before[FIXED_OBJECT].volume, places=6)
         self.assertEqual(after[FIXED_OBJECT].bbox_min, before[FIXED_OBJECT].bbox_min)
