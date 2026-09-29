@@ -1044,30 +1044,45 @@ def bound_project(state: State) -> ProjectBinding:
     binding = getattr(state, "binding", None)
     if binding is not None:
         return binding
-    return _open_bound_project(state, read_runs=False)
+    return _open_bound_project(state)
 
 
-def prepare_bound_project(state: State) -> None:
-    """Open the process's binding ahead of its first request, reading every run once (#449).
+def prepare_bound_project(state: State) -> ProjectBinding:
+    """Open the process's binding ahead of its first request and read every run once (#449).
 
     A cold process's first reads - the working source, worktrees, artifacts
     and design history a workspace asks for together - each list the same
     runs' records and survey the same receipts while the in-memory memos are
     still empty, and on one interpreter they queue behind each other doing
-    it. Here that is done once, while ``_BINDING_LOCK`` is held, so a request
-    arriving meanwhile waits for it instead of walking the runs beside it.
-    With a project index attached the index answers instead. The memos
-    stay keyed by the files' stamps, so nothing read here answers after the
-    project moved. A project that does not open is not remembered, as in
-    ``bound_project``, and neither is a run that does not read: each request
-    still reads and refuses for itself.
+    it. Here that is done once, with or without a project index: the design
+    history and the worktrees read the runs, not the index. The binding is
+    kept first, so a request that only needs it (the health check) does not
+    wait for the runs; the caller holds back the views that would walk them
+    beside this (``main.FirstReads``). The memos stay keyed by the files'
+    stamps, so nothing read here answers after the project moved. A project
+    that does not open is not remembered, as in ``bound_project``, and
+    neither is a run that does not read: each request still reads and
+    refuses for itself.
     """
 
-    if getattr(state, "binding", None) is None:
-        _open_bound_project(state, read_runs=True)
+    binding = bound_project(state)
+    # The layout watch's first walk, which the first read token waits for,
+    # the runs' records, then their receipts' survey; an index loads on its
+    # keeper meanwhile.
+    binding.read_token()
+    for run_id in binding.run_ids():
+        try:
+            binding.record_refs(run_id)
+        except _SURVEY_UNREADABLE:
+            continue
+    try:
+        binding._survey()
+    except _SURVEY_UNREADABLE:
+        pass
+    return binding
 
 
-def _open_bound_project(state: State, *, read_runs: bool) -> ProjectBinding:
+def _open_bound_project(state: State) -> ProjectBinding:
     # Two first requests must not open two bindings, each with an index of its
     # own: the one that lost ``index.lock`` could be the one kept.
     with _BINDING_LOCK:
@@ -1084,19 +1099,6 @@ def _open_bound_project(state: State, *, read_runs: bool) -> ProjectBinding:
                     attach_project_index(binding, index_dir)
                 except Exception:  # noqa: BLE001 - the index is derived; P036 still answers
                     _LOG.exception("project index of %s could not be attached", binding.project_id)
-            elif read_runs:
-                # The layout watch's first walk, which the first read token
-                # waits for, the runs' records, then their receipts' survey.
-                binding.read_token()
-                for run_id in binding.run_ids():
-                    try:
-                        binding.record_refs(run_id)
-                    except _SURVEY_UNREADABLE:
-                        continue
-                try:
-                    binding._survey()
-                except _SURVEY_UNREADABLE:
-                    pass
             state.binding = binding
     return binding
 

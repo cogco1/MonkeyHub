@@ -140,13 +140,9 @@ class RuntimeSseTests(LocalHubCase):
             opener = build_opener(ProxyHandler({}))
             with opener.open(self.base_url + "/api/runtime/events", timeout=30) as stream:
                 self.assertEqual(self.frame(stream)[0], "runtime")
-                # The worker's first index load, or the Hub attaching to it, is announced.
-                index = None
-                while index is None or index.get("index") is None:
-                    name, body = self.frame(stream)
-                    if name == "index" and body["runtimeId"] == runtime_id:
-                        index = body
-                snapshot = http_json(studio + "/api/index")
+                # The worker may load its index before this stream opens (#449): a client reads
+                # it, whenever it loaded, and relies on the stream only for what moves it later.
+                snapshot = wait_for(lambda: self.index(studio), "the worker's index did not load")
                 self.assertTrue(snapshot["reset"])
                 picture = io.BytesIO()
                 Image.new("RGB", (8, 8), "red").save(picture, format="PNG")

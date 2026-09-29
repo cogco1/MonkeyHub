@@ -5,19 +5,12 @@ import os
 from pathlib import Path
 import re
 
-import fitz
 from PIL import Image
-from pypdf import PdfReader, PdfWriter, Transformation
+# pypdf, PyMuPDF (fitz) and python-pptx load where a document is read or exported: about 0.2 s of a worker's start otherwise (#449).
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.utils import ImageReader
-from pptx import Presentation
-from pptx.dml.color import RGBColor
-from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE, MSO_CONNECTOR
-from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE
-from pptx.oxml.xmlchemy import OxmlElement
-from pptx.util import Pt
 
 from ..transport.errors import StudioError
 from .artifacts import document_bytes
@@ -88,6 +81,7 @@ def _image(raster, item):
 
 
 def _pdf_source(target, data, item, page_height):
+    from pypdf import PdfReader, PdfWriter, Transformation
     reader = PdfReader(BytesIO(data))
     source = reader.pages[item["source"]["pageIndex"]]
     # Page annotations are outside the content-stream crop, and document layer
@@ -111,6 +105,10 @@ def _pdf_source(target, data, item, page_height):
 
 
 def _ppt_text(shapes, name, lines, x, y, w, h, size, family, color=(.08, .08, .09), leading=None):
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE
+    from pptx.oxml.xmlchemy import OxmlElement
+    from pptx.util import Pt
     shape = shapes.add_textbox(Pt(x), Pt(y), Pt(w), Pt(h))
     shape.name = name
     frame = shape.text_frame
@@ -160,6 +158,10 @@ def _ppt_pdf(slide, data, item):
     rotated text and partly cropped primitives retain the exact raster preview.
     PDF export is independent of this bounded PPTX representation.
     """
+    import fitz
+    from pptx.dml.color import RGBColor
+    from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE, MSO_CONNECTOR
+    from pptx.util import Pt
     with fitz.open(stream=data, filetype="pdf") as document:
         page = document[item["source"]["pageIndex"]]
         if page.rotation or document.get_ocgs():
@@ -281,6 +283,9 @@ def _ppt_pdf(slide, data, item):
 
 def export_publication(binding, revision, format, projections=None):
     """The publication's PDF or PPTX; its raster previews come from ``projections`` when a cache answers."""
+    from pptx import Presentation
+    from pptx.util import Pt
+    from pypdf import PdfReader, PdfWriter
     publication = read_publication(binding, revision)
     if not publication["pages"]:
         raise StudioError(422, "PUBLICATION_EMPTY", "Add a page before exporting.")

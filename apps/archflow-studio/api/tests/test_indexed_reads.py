@@ -375,6 +375,56 @@ class IndexedReadTests(DesignHistoryFixture):
         self.assertEqual({name for name in callers if not name.startswith(("layout-watch:", "project-index:"))},
                          set(), "a request thread read the project")
 
+    def test_a_started_worker_derives_its_first_views_once_before_any_request_asks(self) -> None:
+        """#449: a worker with an index prepares its first reads; one asked meanwhile waits for them."""
+
+        from archflow_studio_api.routes import episodes, runtime
+
+        stage = self.initialize()
+        candidate_id = self.candidate_from(stage)
+        settle(self.project_dir)
+        derived, release = {"history": 0, "worktrees": 0}, threading.Event()
+
+        def counted(name, derive, *, hold=False):
+            def wrapper(*args, **kwargs):
+                derived[name] += 1
+                if hold:
+                    release.wait(30)
+                return derive(*args, **kwargs)
+            return wrapper
+
+        app = self.app_with_index()
+        app.state.prepare_first_reads = True
+        with mock.patch.object(episodes, "read_design_history", counted("history", episodes.read_design_history, hold=True)), \
+                mock.patch.object(runtime, "worktree_graph", counted("worktrees", runtime.worktree_graph)), \
+                TestClient(app) as client, ThreadPoolExecutor(1) as pool:
+            self.assertTrue(wait_until(lambda: derived["history"] == 1, 30), "the preparation derives the history")
+            asked = pool.submit(client.get, "/api/design-history?branchId=main")
+            time.sleep(0.3)
+            self.assertFalse(asked.done(), "a first read waits for the preparation")
+            release.set()
+            first = asked.result(30)
+            for thread in threading.enumerate():
+                if thread.name == "studio-first-reads":
+                    thread.join(30)
+            self.assertIsNotNone(app.state.binding.index_state(), "the index loaded")
+            self.assertEqual(derived["history"], 1, "the history was derived once, before it was asked for")
+            # Once more after the index's first commit, which the worktrees' tag names.
+            self.assertIn(derived["worktrees"], (1, 2))
+            before = dict(derived)
+            worktrees = client.get("/api/worktrees")
+            self.assertEqual(derived, before, "the first reads answer what was prepared")
+            self.assertEqual((first.status_code, worktrees.status_code), (200, 200))
+            self.assertEqual(first.content, self.client.get("/api/design-history?branchId=main").content)
+            self.assertEqual(worktrees.content, self.client.get("/api/worktrees").content)
+
+            # The project moves: the prepared answer is not given again.
+            self.assertEqual(self.accept(candidate_id, stage).status_code, 200)
+            self.assertTrue(wait_until(lambda: client.get("/api/design-history?branchId=main").content
+                                       == self.client.get("/api/design-history?branchId=main").content
+                                       != first.content, 10))
+            self.assertGreater(derived["history"], 1)
+
     def timed(self, route: str, **headers: str) -> tuple[int, float]:
         started = time.perf_counter()
         response = self.indexed.get(route, headers=headers)
