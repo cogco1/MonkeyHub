@@ -1521,6 +1521,28 @@ change it; explicit continuation does. An unsynchronized local draft has no save
 must be synchronized before project-context continuation. A selected object is included only
 when its resolved source agrees with that editing digest.
 
+A chat message may carry an optional `renderContext` (#253): `{source, references}`, each an
+exact registered page `{runId, assetSha256, revisionRef, pageIndex}`, with one source and up to
+three distinct references and no page repeated. It needs no `designContext`. Before the message
+is kept or any CLI starts, Hub binds every page to the conversation's own project: that exact
+registration and page must exist, be a PNG or JPEG image and have no newer registered
+replacement. Otherwise the post is refused (`409 CHAT_RENDER_IMAGE_UNAVAILABLE`,
+`422 CHAT_RENDER_IMAGE_UNSUPPORTED`, `409 CHAT_RENDER_IMAGE_STALE`) and nothing is sent; no newer,
+same-named or nearby image is substituted. An interjection cannot carry one
+(`409 CHAT_INTERJECTION_IMAGES`). The bound pages stay on the user message as `documents` with
+`role` `source` or `reference`, and the native turn receives the roles and exact pages as data,
+with the instruction to look at each through `POST /api/board/export` before describing it. The
+Hub UI receives the pages from a Board hand-over and sends them with each message until the
+architect removes them, so a correction continues the same native session with the same pages;
+such a message carries no automatic editing base.
+
+The bound tool also reads `GET /api/render/capabilities`, `GET /api/render/jobs` and
+`GET /api/render/jobs/{job_id}`, and posts `POST /api/render/jobs` through the operation admission
+with Hub filling `projectId`. A request whose `providerId` is not one the Runtime reports available
+is refused before admission: `503 RENDER_UNAVAILABLE` when no provider is configured, otherwise
+`422 RENDER_PROVIDER_INVALID`. The Runtime's `requestId` keeps one attempt per request ([Render image
+attempts](#render-image-attempts)). `studio_schema` with `pathPrefix /api/render` answers the render guide.
+
 The bound chat tool exposes `GET /api/decisions`, `GET /api/decisions/{id}` and a
 narrow subset of the Runtime's decision writes. `POST /api/decisions` accepts only
 `avoid`/`keep`; Hub fills `rawLanguage` and `messageSource` from the current real
