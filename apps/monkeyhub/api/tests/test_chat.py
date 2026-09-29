@@ -2042,6 +2042,40 @@ class ChatTests(unittest.TestCase):
                                     {"method": "GET", "path": "/api/proposals/abc123"})
             self.assertEqual((schema["path"], schema["summary"]), ("/api/proposals/{proposal_id}", "Read a proposal"))
 
+    def test_studio_schema_reads_back_every_action_its_discovery_lists(self):
+        """Against the Studio's real OpenAPI, each action discovery lists reads back as that action (#419).
+
+        The Studio lists GET /api/proposals/{proposal_id} before the POST-only construction,
+        facets and hosted-opening routes that template also matches; a route registered later
+        in the same position is covered here without being named.
+        """
+
+        from archflow_studio_api.main import create_app as studio_app
+        from archflow_studio_api.settings import StudioSettings
+
+        project = self.root / "discovery-round-trip"
+        FilesystemProjectRepository.initialize(project, project_id="discovery-round-trip",
+                                               initial_state={"project_id": "discovery-round-trip", "version": 0})
+        with TestClient(studio_app(StudioSettings(project_dir=project, cad_export="off"))) as client:
+            document = client.get("/openapi.json").json()
+        session = self.create()
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(document))):
+            listed, arguments = [], {"limit": 50}
+            while arguments:
+                page = chat.call_tool(self.store.hub_url, session.id, "studio_schema", arguments)
+                listed += [(row["method"], row["path"]) for row in page["actions"]]
+                arguments = page.get("next", {}).get("arguments")
+            self.assertEqual(len(listed), page["total"])
+            self.assertLessEqual({("POST", "/api/proposals/construction"), ("POST", "/api/proposals/facets"),
+                                  ("POST", "/api/proposals/hosted-opening")}, set(listed))
+            for method, path in listed:
+                with self.subTest(method=method, path=path):
+                    answer = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
+                                            {"method": method, "path": path})
+                    self.assertEqual((answer["path"], answer["summary"]),
+                                     (path, document["paths"][path][method.lower()]["summary"]))
+
     def test_construction_proposals_answer_without_the_rows_they_generated(self):
         """Like a semantic edit, a script's proposal comes back without its edits and operator; its report stays."""
 
