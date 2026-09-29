@@ -26,6 +26,9 @@ _ACCEPT_PATHS = (
     # existing decision grant and still accepts no Stage and moves no HEAD.
     r"/api/decisions",
     r"/api/decisions/[^/]+/revisions",
+    # A memory item is saved from the user's explicit words, like a decision (#252).
+    r"/api/memory",
+    r"/api/memory/[^/]+/revisions",
 )
 _SHARED_READ_PATHS = (
     r"/api/(?:health|protocol|project|design-history|artifacts|documents|events)",
@@ -38,6 +41,7 @@ _SHARED_READ_PATHS = (
     r"/api/episodes(?:/[^/]+)?",
     r"/api/sync/(?:manifest|files)",
     r"/api/decisions(?:/[^/]+)?",
+    r"/api/memory(?:/[^/]+)?",
 )
 
 
@@ -169,6 +173,10 @@ def require_actor(request: Request, action: str, project_id: str | None = None) 
 def request_action(method: str, path: str, *, shared_project: bool) -> str | None:
     """One action mapping for both route assembly and request authorization."""
 
+    if method == "POST" and path == "/api/memory/about":
+        # The words travel in a body; picking what memory they are about is
+        # still a read, for the Runtime and the shared project alike (#252).
+        return "read"
     if not shared_project and method == "POST" and path in {"/api/drawings/plans/status", "/api/drawing-recipes/inspect"}:
         # Source references or a portable file travel in a body; inspection is
         # still a read. These consumers belong to the project Runtime.
