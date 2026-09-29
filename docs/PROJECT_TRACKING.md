@@ -31,7 +31,7 @@ Rules:
   an owner-stated target in the issue. Otherwise leave them empty.
 - Use milestones only for real endpoints with a finite scope, such as a release or an external
   deadline. Area and Initiative names are never milestones.
-- Do not add label families for Initiative, Type or Priority. The existing `area:*` labels
+- Do not add label families for Initiative, Kind or Priority. The existing `area:*` labels
   remain for repository search; the Project Area field is the planning dimension. Whether to
   retire the `area:*` labels is the owner's decision.
 - Anything that would exist in three places keeps one source of truth and links from the
@@ -42,7 +42,7 @@ Rules:
 The Project **MonkeyHub Development** — a user project of cogco1, linked to this
 repository — is the live planning surface.
 
-It is listed under the repository's **Projects** tab: <https://github.com/cogco1/MonkeyHub/projects>.
+Link: <https://github.com/users/cogco1/projects/1> (also listed under the repository's **Projects** tab).
 
 ### Fields
 
@@ -52,7 +52,7 @@ It is listed under the repository's **Projects** tab: <https://github.com/cogco1
 | Priority | P0 / P1 / P2 / Later |
 | Area | Product / Core / Architecture / UI / Research / Render / Drawing / Model IO / Agent / Performance / Release / Office |
 | Initiative | MVP / Agent / Rendering / Drawing / Projection / Research / Office AI / Infrastructure (multi-select: an item can serve several initiatives) |
-| Type | Bug / Feature / Experiment / Epic |
+| Kind | Bug / Feature / Experiment / Epic (GitHub reserves the name Type for its built-in issue types) |
 | Effort | S / M / L / XL |
 | Start date | date, only with evidence |
 | Target date | date, only with evidence |
@@ -74,7 +74,7 @@ Status meanings:
 - **Research** — Initiative Research, on the roadmap layout.
 - **MVP** — Initiative MVP; tracks the [MVP acceptance](product/MVP_ROADMAP.md#acceptance-end-to-end-mvp-proof).
 - **UI** — Area UI.
-- **Bugs** — Type Bug.
+- **Bugs** — Kind Bug.
 - **Recently Done** — Status Done, newest first.
 
 The filters above define the views. Sorting, grouping and the roadmap's date fields are view
