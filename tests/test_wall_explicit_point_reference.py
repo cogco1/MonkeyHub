@@ -43,7 +43,7 @@ class WallExplicitPointReferenceTests(unittest.TestCase):
         produced, = produce_rows((self.wall(),), self.context())
         self.assertEqual([(r.kind,r.subject,r.object) for r in produced.relations], [("hosts_void","free-wall","window")])
         self.assertIn("boolean_difference", [op.kind.value for op in produced.operations])
-        body = next(op for op in produced.operations if op.op_id == "free-wall")
+        body = next(op for op in produced.operations if op.op_id == "free-wall-body")
         params = {p.name:json.loads(p.value_json) for p in body.parameters}
         self.assertEqual(sorted(set(p[0] for p in params["profile"])), [1,5])
         self.assertEqual(params["vector"], [0,3,0])

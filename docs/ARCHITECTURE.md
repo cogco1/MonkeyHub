@@ -119,6 +119,46 @@ Shared foundations: `archflow/project/refs.py` (the four references), `archflow/
 (`validate_submission`, `Finding`, `ValidationReceipt`), `archflow/ports/model.py` (the one
 model invocation request and receipt; whoever crosses the boundary signs one).
 
+## Construction first: geometry now, meaning later (#419)
+
+Every modelling interface belongs to the layer that owns its information. The layers and the
+maturity stages that use them:
+
+| Layer | What it owns | Stage |
+| --- | --- | --- |
+| L0 Intent | what the person wants now | A Explore (with L1) |
+| L1 Construction | making form with generic verbs; helper shapes allowed | A Explore |
+| L2 Persistent design state | identity, parameters, dependencies, history; facets may be empty | B Promote: admission, Continue, Stage acceptance |
+| L3 Semantic facets | meaning added to the same identity, and the capabilities it unlocks | C Architectural enrichment |
+| L4 Domain compilation | what each technical domain reads | D Technical enrichment |
+| L5 Backend lowering and certification | producers, OCCT, exact B-rep, readback | E Deliver and certify |
+
+- **The construction script is the agent's geometry contract.** An agent makes and changes
+  geometry with one bounded script (`monkeyarch/construction`; `POST /api/proposals/construction`,
+  vocabulary at `GET /api/construction`) and reads the model back in the same words at
+  `GET /api/construction/model`. Producers are internal lowering targets the runtime chooses (a
+  script's shapes in `monkeyarch/construction/lowering.py` as `prism`, `planar-surface`, `curve` or
+  `loft`; `wall` once a block hosts a door or window), never agent vocabulary; the Hub refuses an
+  agent `semanticEdit` that writes geometry rows or meaning fields and names the route that does.
+  The Studio web client keeps its own drawing routes.
+- **One geometry id per shape.** A shape a script leaves is one `Component@1 <id>` with one
+  `Element@1 <id>-body`; running the same names again updates the same rows.
+- **A cut is a relation.** `cut(host, cutter)` names the cutter's element in the host element's
+  `references.voids`. The element producers lower it to the host's body minus its voids, and the
+  backend chooses how to realise that difference (in OCCT a profile with holes or a boolean cut).
+  The cutter keeps its id and stays in the model, hidden; a cut whose result the predicted bounds
+  cannot follow is refused at its script line.
+- **Meaning accumulates as facets.** `POST /api/proposals/facets` sets `Component@1.fields.facets`
+  (`archflow/semantics/facets.py`) and changes nothing else. Facets unlock capabilities: today
+  `hosted-opening` for `architectural.role = wall`, which realises a block as a wall in place under
+  the same ids.
+- **Domains ask for missing facets and never guess.** `GET /api/domains/{domain}/readiness`
+  (`monkeyarch/capabilities/domain_readiness.py`) answers what a domain will read or which facets
+  it still needs and why; no domain infers meaning from shape or producer.
+
+The contract is [the construction API](2026-09-28-construction-api.md); the L5 half (voids and their
+lowering) is [the voids lowering](2026-09-28-construction-voids-lowering.md).
+
 ## Architectural revision: responsibilities and actual gaps
 
 Component membership, architectural relationships and change propagation answer

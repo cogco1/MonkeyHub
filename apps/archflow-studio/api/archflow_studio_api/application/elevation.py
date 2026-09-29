@@ -11,7 +11,7 @@ from monkeyarch.capabilities.reference_resolver import ReferenceContext
 
 from ..transport.errors import StudioError
 from .intent import component_edit_proposal
-from .projection import drawing_context, elevation_reference, reference_value
+from .projection import DRAWING_INPUT_ERRORS, drawing_context, elevation_reference, reference_value
 
 
 def elevation_proposal(projection, *, action: str, element_id: str | None = None,
@@ -137,7 +137,7 @@ def elevation_proposal(projection, *, action: str, element_id: str | None = None
             entity = {"entity_id": entity_row.entity_id, "schema": entity_row.schema,
                       "parent_id": entity_row.parent_id, "basis_refs": list(entity_row.basis_refs), "fields": fields}
             component_id = row.component_id
-    except (KeyError, TypeError, ValueError, StopIteration) as exc:
+    except (*DRAWING_INPUT_ERRORS, StopIteration) as exc:
         raise StudioError(422, "ELEVATION_EDIT_INVALID", str(exc)) from exc
     summary = f"{action} {level_id or element_id}"
     return component_edit_proposal(projection, {

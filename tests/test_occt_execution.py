@@ -998,7 +998,7 @@ class WallOpeningBooleanTests(unittest.TestCase):
             receipt, _ = _execute(program, _persisted_binding(program, "stage-occt-half-round"), workspace, "half-round@occt")
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
-            cut = entries["obj-wall-south-cut"].shape
+            cut = entries["obj-wall-south"].shape
             self.assertAlmostEqual(occt_backend.measure_shape(cut).volume,
                                    6.0 * 0.3 * 2.97 - math.pi * 1.2 ** 2 * 0.3, places=6)
             for index, centre in enumerate((1.7, 4.3)):
@@ -1023,9 +1023,9 @@ class WallOpeningBooleanTests(unittest.TestCase):
             receipt, _ = _execute(program, binding, workspace, "arch@occt")
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
             self.assertEqual(receipt.physical_object_ids,
-                             ("obj-plinth", "obj-wall-south-aperture-arch", "obj-wall-south-cut"))
+                             ("obj-plinth", "obj-wall-south", "obj-wall-south-aperture-arch"))
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
-            shape = entries["obj-wall-south-cut"].shape
+            shape = entries["obj-wall-south"].shape
             aperture_shape = entries["obj-wall-south-aperture-arch"].shape
             cut = occt_backend.measure_shape(shape)
             aperture = occt_backend.measure_shape(aperture_shape)
@@ -1065,7 +1065,7 @@ class WallOpeningBooleanTests(unittest.TestCase):
     def test_the_cut_wall_is_the_saved_solid_with_its_opening(self) -> None:
         program = _compile(authored_record())
         binding = _persisted_binding(program, "stage-occt-wall")
-        expected_ids = ("obj-plinth", "obj-wall-south-aperture-window-south", "obj-wall-south-cut")
+        expected_ids = ("obj-plinth", "obj-wall-south", "obj-wall-south-aperture-window-south")
 
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp).resolve()
@@ -1082,7 +1082,7 @@ class WallOpeningBooleanTests(unittest.TestCase):
             self.assertEqual((plinth.valid, plinth.solid_count, plinth.closed, plinth.face_count), (True, 1, True, 6))
             self.assertAlmostEqual(plinth.volume, 6.0 * 1.2 * 0.6, places=6)
 
-            cut = occt_backend.measure_shape(entries["obj-wall-south-cut"].shape)
+            cut = occt_backend.measure_shape(entries["obj-wall-south"].shape)
             self.assertEqual((cut.valid, cut.solid_count, cut.closed), (True, 1, True))
             self.assertEqual(cut.face_count, 10)                                       # the box's six faces and the opening's four reveals
             self.assertAlmostEqual(cut.volume, 6.0 * 0.3 * 2.97 - 1.2 * 0.3 * 1.5, places=6)
@@ -1097,14 +1097,14 @@ class WallOpeningBooleanTests(unittest.TestCase):
                 (2.3, 2.2, plan_z): "inside", (2.5, 2.2, plan_z): "outside",
             }
             for point, expected in probes.items():
-                self.assertEqual(occt_backend.classify_program_point(entries["obj-wall-south-cut"].shape, point), expected, point)
+                self.assertEqual(occt_backend.classify_program_point(entries["obj-wall-south"].shape, point), expected, point)
 
             aperture = occt_backend.measure_shape(entries["obj-wall-south-aperture-window-south"].shape)
             self.assertEqual((aperture.valid, aperture.solid_count, aperture.closed), (True, 1, True))
             self.assertAlmostEqual(aperture.volume, 1.2 * 0.3 * 1.5, places=6)         # the void clipped to the wall's thickness
 
             # the receipt measured the same file the same way
-            self.assertAlmostEqual(receipt.readback["obj-wall-south-cut"]["volume"], cut.volume, places=9)
+            self.assertAlmostEqual(receipt.readback["obj-wall-south"]["volume"], cut.volume, places=9)
             self.assertEqual(receipt.readback["obj-wall-south-aperture-window-south"]["layers"], ["archflow::building"])
 
             # the preview carries all three, the aperture hidden as its semantics say
@@ -1116,11 +1116,13 @@ class WallOpeningBooleanTests(unittest.TestCase):
 
             model = rhino3dm.File3dm.Read(str(preview))
             visibility = {obj.Attributes.Name: obj.Attributes.Visible for obj in model.Objects}
-            self.assertEqual(visibility, {"obj-plinth": True, "obj-wall-south-aperture-window-south": False, "obj-wall-south-cut": True})
+            self.assertEqual(visibility, {"obj-plinth": True, "obj-wall-south-aperture-window-south": False, "obj-wall-south": True})
             self.assertEqual(
                 receipt.expected_semantics["objects"]["obj-wall-south-aperture-window-south"]["user_text"]["archflow:inspection_witness"],
                 "hidden",
             )
+            # and so does the exact STEP: read alone, it shows the opening open
+            self.assertEqual({name: entry.visible for name, entry in entries.items()}, visibility)
 
 
 FRAME_ID = "obj-frame-wall-south-window-south"
@@ -1168,7 +1170,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
             self.assertEqual(
                 receipt.physical_object_ids,
-                (FRAME_ID, PANE_ID, "obj-plinth", "obj-wall-south-aperture-window-south", "obj-wall-south-cut"),
+                (FRAME_ID, PANE_ID, "obj-plinth", "obj-wall-south", "obj-wall-south-aperture-window-south"),
             )
             # the bars were consumed by the union: none of them is a delivered object
             self.assertFalse(any(name.endswith(("-bottom", "-left", "-right", "-top")) for name in receipt.physical_object_ids))
@@ -1196,9 +1198,9 @@ class WindowFrameExecutionTests(unittest.TestCase):
             self.assertEqual(occt_backend.classify_program_point(entries[PANE_ID].shape, (3.0, 2.25, -0.0225)), "inside")
             self.assertEqual(occt_backend.classify_program_point(entries[FRAME_ID].shape, (3.0, 2.25, -0.0225)), "outside")
 
-            cut = occt_backend.measure_shape(entries["obj-wall-south-cut"].shape)
+            cut = occt_backend.measure_shape(entries["obj-wall-south"].shape)
             self.assertAlmostEqual(cut.volume, 6.0 * 0.3 * 2.97 - 1.2 * 0.3 * 1.5, places=6)
-            self.assertEqual(occt_backend.classify_program_point(entries["obj-wall-south-cut"].shape, (3.0, 2.25, -0.15)), "outside")
+            self.assertEqual(occt_backend.classify_program_point(entries["obj-wall-south"].shape, (3.0, 2.25, -0.15)), "outside")
 
             # the receipt's cold read agrees, and the analytic predictor already knew the union's bounds
             self.assertAlmostEqual(receipt.readback[FRAME_ID]["volume"], FRAME_VOLUME, places=6)
@@ -1215,7 +1217,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
             self.assertEqual({name: row["material_id"] for name, row in materials.items()}, {"frame": "frame", "glazing": "glazing"})
             self.assertEqual(bindings[FRAME_ID], ("MaterialFromObject", materials["frame"]["index"]))
             self.assertEqual(bindings[PANE_ID], ("MaterialFromObject", materials["glazing"]["index"]))
-            for other in ("obj-plinth", "obj-wall-south-cut", "obj-wall-south-aperture-window-south"):
+            for other in ("obj-plinth", "obj-wall-south", "obj-wall-south-aperture-window-south"):
                 self.assertEqual(bindings[other], ("MaterialFromLayer", -1))
             self.assertEqual(
                 receipt.preview_artifact["materials"],
@@ -1249,7 +1251,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
             receipt, elapsed = _execute(program, binding, workspace, "windows@occt")
             print(f"\n[occt] three windows: {elapsed:.3f} s wall clock; timings={ {k: round(v, 3) for k, v in receipt.timings.items()} }")
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
-            self.assertEqual(receipt.physical_object_ids, (frame_array, pane_array, "obj-plinth", *apertures, "obj-wall-south-cut"))
+            self.assertEqual(receipt.physical_object_ids, (frame_array, pane_array, "obj-plinth", "obj-wall-south", *apertures))
             self.assertEqual(receipt.expected_bounds[frame_array], {"min": [0.6, -0.08, 1.5], "max": [5.4, 0.1, 3.0]})
 
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
@@ -1265,7 +1267,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
             self.assertEqual(entries[pane_array].layers, ("archflow::building",))
 
             # each copy stands where its aperture is: a rail inside, the aperture centre outside, the pane inside
-            frame_shape, pane_shape, wall_shape = entries[frame_array].shape, entries[pane_array].shape, entries["obj-wall-south-cut"].shape
+            frame_shape, pane_shape, wall_shape = entries[frame_array].shape, entries[pane_array].shape, entries["obj-wall-south"].shape
             for centre in centres:
                 self.assertEqual(occt_backend.classify_program_point(frame_shape, (centre, 1.545, 0.01)), "inside", centre)
                 self.assertEqual(occt_backend.classify_program_point(frame_shape, (centre - 0.555, 2.25, 0.01)), "inside", centre)
@@ -1582,6 +1584,265 @@ def _program_of(*operations: GeometryOperation) -> CompiledGeometryProgram:
         )
     )
     return replace(program, proposal=proposal, operation_order=tuple(op.op_id for op in operations), objects=objects)
+
+
+L_SLAB = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 0.0, 4.0], [4.0, 0.0, 4.0], [4.0, 0.0, 8.0], [0.0, 0.0, 8.0]]
+SLAB_AREA = 10.0 * 4.0 + 4.0 * 4.0
+
+
+def _prism(op_id: str, profile: list[list[float]], vector: list[float]) -> GeometryOperation:
+    return GeometryOperation(
+        op_id=op_id,
+        kind=GeometryOperationKind.EXTRUSION,
+        output_object_ids=(f"{op_id}-object",),
+        input_object_ids=(),
+        frame_id="world",
+        parameters=(
+            GeometryParameter.create(name="profile", kind=GeometryParameterKind.POINTS3, value=profile, unit=LengthUnit.METER),
+            GeometryParameter.create(name="vector", kind=GeometryParameterKind.VECTOR3, value=vector, unit=LengthUnit.METER),
+        ),
+        semantic_binding_ids=("body-binding",),
+    )
+
+
+def _difference(op_id: str, base: GeometryOperation, *voids: GeometryOperation) -> GeometryOperation:
+    inputs = tuple(sorted((base.output_object_ids[0], *(void.output_object_ids[0] for void in voids))))
+    return GeometryOperation(
+        op_id=op_id,
+        kind=GeometryOperationKind.BOOLEAN_DIFFERENCE,
+        output_object_ids=(f"{op_id}-object",),
+        input_object_ids=inputs,
+        frame_id="world",
+        parameters=(GeometryParameter.create(
+            name="base_index", kind=GeometryParameterKind.INTEGER, value=inputs.index(base.output_object_ids[0])),),
+        semantic_binding_ids=("body-binding",),
+    )
+
+
+@NEEDS_OCCT
+class DifferenceLoweringTests(unittest.TestCase):
+    """#419: one difference, two exact realizations, the same certified object."""
+
+    def _slab(self, void_profile, void_vector) -> CompiledGeometryProgram:
+        slab = _prism("slab-body", L_SLAB, [0.0, 0.3, 0.0])
+        void = _prism("void", void_profile, void_vector)
+        return _program_of(slab, void, _difference("slab", slab, void))
+
+    def _through(self) -> CompiledGeometryProgram:
+        return self._slab([[1.0, -0.1, 1.0], [3.0, -0.1, 1.0], [3.0, -0.1, 3.0], [1.0, -0.1, 3.0]], [0.0, 0.5, 0.0])
+
+    def _niche(self) -> CompiledGeometryProgram:
+        return self._slab([[1.0, 0.1, 1.0], [3.0, 0.1, 1.0], [3.0, 0.1, 3.0], [1.0, 0.1, 3.0]], [0.0, 0.5, 0.0])
+
+    def _symmetric_volume(self, first, second) -> float:
+        occ = occt_backend._occt()
+        common = occ.BRepAlgoAPI.BRepAlgoAPI_Common(first, second)
+        common.Build()
+        shared = occt_backend.measure_shape(common.Shape()).volume or 0.0
+        return occt_backend.measure_shape(first).volume + occt_backend.measure_shape(second).volume - 2.0 * shared
+
+    def _both(self, program, name):
+        built = {strategy: occt_backend.build_program_shapes(program, difference_strategy=strategy)
+                 for strategy in ("boolean", "profile_with_holes")}
+        return built, {strategy: build.objects[name].shape for strategy, build in built.items()}
+
+    def test_a_through_void_gives_the_same_solid_either_way(self) -> None:
+        built, shapes = self._both(self._through(), "slab-object")
+        self.assertEqual(dict(built["boolean"].lowering), {})
+        self.assertEqual(dict(built["profile_with_holes"].lowering), {"slab": "profile_with_holes"})
+        boolean, profile = (occt_backend.measure_shape(shapes[s]) for s in ("boolean", "profile_with_holes"))
+        self.assertTrue(profile.valid and profile.closed)
+        self.assertEqual(profile.solid_count, 1)
+        self.assertAlmostEqual(boolean.volume, (SLAB_AREA - 4.0) * 0.3, places=9)
+        self.assertAlmostEqual(profile.volume, boolean.volume, places=9)
+        self.assertEqual(profile.face_count, boolean.face_count)
+        _assert_bbox(self, profile, boolean.bbox_min, boolean.bbox_max, places=9)
+        self.assertAlmostEqual(self._symmetric_volume(shapes["boolean"], shapes["profile_with_holes"]), 0.0, places=9)
+
+    def test_auto_picks_the_profile_for_a_through_void_and_a_boolean_for_a_niche(self) -> None:
+        self.assertEqual(dict(occt_backend.build_program_shapes(self._through()).lowering), {"slab": "profile_with_holes"})
+        niche = occt_backend.build_program_shapes(self._niche())
+        self.assertEqual(dict(niche.lowering), {})
+        self.assertAlmostEqual(occt_backend.measure_shape(niche.objects["slab-object"].shape).volume,
+                               SLAB_AREA * 0.3 - 4.0 * 0.2, places=9)
+
+    def test_forcing_the_profile_where_it_does_not_apply_is_refused_by_operation(self) -> None:
+        with self.assertRaisesRegex(occt_backend.OcctCapabilityError, "slab .*does not pass through"):
+            occt_backend.build_program_shapes(self._niche(), difference_strategy="profile_with_holes")
+
+    def test_a_tilted_host_pierced_along_its_extrusion_is_the_same_either_way(self) -> None:
+        panel = _prism("panel-body", [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [4.0, 3.0, 0.0], [0.0, 3.0, 0.0]], [0.0, 0.0, 0.3])
+        hole = _prism("hole", [[1.0, 1.0, -0.1], [2.0, 1.0, -0.1], [2.0, 2.0, -0.1], [1.0, 2.0, -0.1]], [0.0, 0.0, 0.5])
+        program = _program_of(panel, hole, _difference("panel", panel, hole))
+        built, shapes = self._both(program, "panel-object")
+        self.assertEqual(dict(built["profile_with_holes"].lowering), {"panel": "profile_with_holes"})
+        self.assertAlmostEqual(occt_backend.measure_shape(shapes["profile_with_holes"]).volume, 4.0 * 3.0 * 0.3 - 0.3, places=9)
+        self.assertAlmostEqual(self._symmetric_volume(shapes["boolean"], shapes["profile_with_holes"]), 0.0, places=9)
+
+    def test_the_export_certifies_both_and_records_only_the_profile(self) -> None:
+        program = self._through()
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            auto, _ = _execute(program, _synthetic_binding(program), workspace, "auto@occt")
+            forced, _ = _execute(program, _synthetic_binding(program), workspace, "boolean@occt", difference_strategy="boolean")
+        for receipt in (auto, forced):
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+        self.assertEqual(auto.to_dict()["lowering"], {"slab": "profile_with_holes"})
+        self.assertNotIn("lowering", forced.to_dict())
+        self.assertEqual(auto.expected_bounds, forced.expected_bounds)
+        self.assertEqual(auto.physical_object_ids, ("slab-object",))
+        # The predicted expected_bounds agree by construction (same program,
+        # same analytic predictor); the measured cold readback is what each
+        # strategy's kernel build actually produced, and must agree too.
+        auto_readback = auto.readback["slab-object"]
+        forced_readback = forced.readback["slab-object"]
+        self.assertAlmostEqual(auto_readback["volume"], forced_readback["volume"], places=6)
+        for axis in range(3):
+            self.assertAlmostEqual(auto_readback["bbox"]["min"][axis], forced_readback["bbox"]["min"][axis], places=6)
+            self.assertAlmostEqual(auto_readback["bbox"]["max"][axis], forced_readback["bbox"]["max"][axis], places=6)
+
+    def test_a_leaning_void_far_from_the_base_matches_the_cut_and_excessive_lean_is_refused(self) -> None:
+        # #419 CRITICAL 1 regression: a void profile 50 m below the base, its
+        # own vector leaning off the base's vector by a tiny angle. The old,
+        # angle-only test accepted this and then shifted every hole vertex
+        # along the BASE's vector, so the hole's true position error grew
+        # with the void's distance from the base plane (here, off by about
+        # 4.5e-6 m) while volume, bounds and face count still agreed with
+        # the cut - a silent, unbounded, undetected corruption.
+        big = [[0.0, 0.0, 0.0], [40.0, 0.0, 0.0], [40.0, 0.0, 40.0], [0.0, 0.0, 40.0]]
+        base = _prism("big-body", big, [0.0, 0.3, 0.0])
+
+        def leaning(angle: float) -> CompiledGeometryProgram:
+            vector = [-100.0 * math.sin(angle), 100.0 * math.cos(angle), 0.0]
+            void = _prism(
+                "void", [[10.0, -50.0, 10.0], [30.0, -50.0, 10.0], [30.0, -50.0, 30.0], [10.0, -50.0, 30.0]], vector
+            )
+            return _program_of(base, void, _difference("big", base, void))
+
+        # The exact angle (9e-8 rad) the review measured as wrongly accepted
+        # with a real ~4.5e-6 m hole displacement under the old,
+        # distance-scaled formula. Fixed and bounded by absolute displacement
+        # alone - never by how far the void's profile sits from the base -
+        # its true error at this shallow a lean is negligible: correctly
+        # accepted, matching the cut almost exactly.
+        program = leaning(9e-8)
+        boolean = occt_backend.build_program_shapes(program, difference_strategy="boolean")
+        auto = occt_backend.build_program_shapes(program)
+        self.assertEqual(dict(auto.lowering), {"big": "profile_with_holes"})
+        self.assertAlmostEqual(
+            self._symmetric_volume(boolean.objects["big-object"].shape, auto.objects["big-object"].shape),
+            0.0, places=6,
+        )
+        # A lean that genuinely displaces the far side of the base's own
+        # thickness beyond tolerance is still refused, falling back to a cut.
+        self.assertEqual(dict(occt_backend.build_program_shapes(leaning(1e-5)).lowering), {})
+
+    def test_a_tilted_void_profile_builds_and_matches_the_cut(self) -> None:
+        # #419 IMPORTANT 1 regression: a void profile tilted a hair off
+        # parallel to the base. The old test rejected only by the void's own
+        # normal angle, then shifted every vertex by loop[0]'s offset alone,
+        # so a tilted profile's other vertices left the base plane and OCCT
+        # refused the result outright ("produced an invalid shape") where the
+        # cut succeeded. Projecting each vertex by its own offset fixes this;
+        # auto is free to pick either realization, as long as it builds and
+        # matches the cut.
+        big = [[0.0, 0.0, 0.0], [40.0, 0.0, 0.0], [40.0, 0.0, 40.0], [0.0, 0.0, 40.0]]
+        base = _prism("big-body", big, [0.0, 0.3, 0.0])
+        tilt = 9e-8
+        void_profile = [
+            [10.0, -0.1, 10.0], [30.0, -0.1 + tilt * 20.0, 10.0],
+            [30.0, -0.1 + tilt * 20.0, 30.0], [10.0, -0.1, 30.0],
+        ]
+        void = _prism("void", void_profile, [0.0, 0.5, 0.0])
+        program = _program_of(base, void, _difference("big", base, void))
+        boolean = occt_backend.build_program_shapes(program, difference_strategy="boolean")
+        auto = occt_backend.build_program_shapes(program)
+        boolean_shape = boolean.objects["big-object"].shape
+        auto_shape = auto.objects["big-object"].shape
+        self.assertTrue(occt_backend.measure_shape(boolean_shape).valid)
+        self.assertTrue(occt_backend.measure_shape(auto_shape).valid)
+        self.assertAlmostEqual(self._symmetric_volume(boolean_shape, auto_shape), 0.0, places=6)
+
+    def test_two_voids_a_hair_apart_do_not_lower(self) -> None:
+        # #419 IMPORTANT 2 regression: at tolerance-scale clearance a cut can
+        # merge or shift faces where the profile keeps two voids apart,
+        # contradicting "both strategies realize the same exact solid". A
+        # gap under the plan clearance now falls back to a cut under auto.
+        gap = 1.5e-7
+        slab = _prism("slab-body", L_SLAB, [0.0, 0.3, 0.0])
+        left = _prism("left", [[1.0, -0.1, 1.0], [2.0, -0.1, 1.0], [2.0, -0.1, 3.0], [1.0, -0.1, 3.0]], [0.0, 0.5, 0.0])
+        right = _prism(
+            "right", [[2.0 + gap, -0.1, 1.0], [3.0, -0.1, 1.0], [3.0, -0.1, 3.0], [2.0 + gap, -0.1, 3.0]],
+            [0.0, 0.5, 0.0],
+        )
+        program = _program_of(slab, left, right, _difference("slab", slab, left, right))
+        self.assertEqual(dict(occt_backend.build_program_shapes(program).lowering), {})
+
+    def test_a_void_in_the_l_slabs_concavity_does_not_lower(self) -> None:
+        # Inside the L slab's bounding box but outside its actual outline
+        # (the notch): the void cannot lie strictly inside the base profile,
+        # so auto falls back to a cut rather than refusing the export.
+        slab = _prism("slab-body", L_SLAB, [0.0, 0.3, 0.0])
+        void = _prism("void", [[5.0, -0.1, 5.0], [9.0, -0.1, 5.0], [9.0, -0.1, 7.0], [5.0, -0.1, 7.0]], [0.0, 0.5, 0.0])
+        program = _program_of(slab, void, _difference("slab", slab, void))
+        self.assertEqual(dict(occt_backend.build_program_shapes(program).lowering), {})
+
+    def test_two_separate_through_voids_both_lower(self) -> None:
+        slab = _prism("slab-body", L_SLAB, [0.0, 0.3, 0.0])
+        left = _prism("left", [[1.0, -0.1, 1.0], [3.0, -0.1, 1.0], [3.0, -0.1, 3.0], [1.0, -0.1, 3.0]], [0.0, 0.5, 0.0])
+        right = _prism("right", [[6.0, -0.1, 1.0], [8.0, -0.1, 1.0], [8.0, -0.1, 3.0], [6.0, -0.1, 3.0]], [0.0, 0.5, 0.0])
+        program = _program_of(slab, left, right, _difference("slab", slab, left, right))
+        built, shapes = self._both(program, "slab-object")
+        self.assertEqual(dict(built["profile_with_holes"].lowering), {"slab": "profile_with_holes"})
+        self.assertAlmostEqual(self._symmetric_volume(shapes["boolean"], shapes["profile_with_holes"]), 0.0, places=9)
+
+    def test_a_reversed_extrusion_still_lowers_the_same_way(self) -> None:
+        slab = _prism("slab-body", L_SLAB, [0.0, -0.3, 0.0])
+        void = _prism("void", [[1.0, 0.1, 1.0], [3.0, 0.1, 1.0], [3.0, 0.1, 3.0], [1.0, 0.1, 3.0]], [0.0, -0.5, 0.0])
+        program = _program_of(slab, void, _difference("slab", slab, void))
+        built, shapes = self._both(program, "slab-object")
+        self.assertEqual(dict(built["profile_with_holes"].lowering), {"slab": "profile_with_holes"})
+        self.assertAlmostEqual(self._symmetric_volume(shapes["boolean"], shapes["profile_with_holes"]), 0.0, places=9)
+
+    def test_a_triangular_sliver_void_does_not_lower(self) -> None:
+        # #419 IMPORTANT (predates round 1, same class as IMPORTANT 2): a
+        # triangle has no non-adjacent edge pair, so the edge-to-edge gap
+        # check alone never holds it to the plan clearance; a 20 m base with
+        # its apex a hair above the base line passed unchecked. The old
+        # boolean cut, on the same razor-thin sliver, can even split into
+        # two solids where the profile always gives one - a real disagreement
+        # the plan must refuse rather than paper over. Only the plan's own
+        # refusal is asserted: the forced cut of a sliver this thin is a
+        # separate, pre-existing OCCT kernel behaviour, not something this
+        # fix changes or need certify.
+        big = [[0.0, 0.0, 0.0], [40.0, 0.0, 0.0], [40.0, 0.0, 40.0], [0.0, 0.0, 40.0]]
+        base = _prism("big-body", big, [0.0, 0.3, 0.0])
+        h = 2e-7
+        sliver = _prism("void", [[10.0, -0.1, 10.0], [30.0, -0.1, 10.0], [20.0, -0.1, 10.0 + h]], [0.0, 0.5, 0.0])
+        program = _program_of(base, sliver, _difference("big", base, sliver))
+        self.assertEqual(dict(occt_backend.build_program_shapes(program).lowering), {})
+
+    def test_a_real_tiny_hole_still_lowers(self) -> None:
+        # #419 regression for the fix's own no-area check: a genuine 0.2 mm
+        # x 0.2 mm through hole has area 4e-8 (m^2) - the old area-vs-length
+        # comparison (abs(_signed_area(flat)) <= _PLAN_TOLERANCE, with
+        # _PLAN_TOLERANCE 1e-7) wrongly refused it as having "no area".
+        # Removed in favour of the clearance-based sliver check (a square
+        # this size is not thin: each vertex sits 0.2 mm from the edges it
+        # does not touch, comfortably over _PLAN_CLEARANCE), so a real tiny
+        # hole still lowers and matches the cut.
+        side = 0.0002  # 0.2 mm
+        cx, cz = 2.0, 2.0
+        tiny_hole = [
+            [cx - side / 2, -0.1, cz - side / 2], [cx + side / 2, -0.1, cz - side / 2],
+            [cx + side / 2, -0.1, cz + side / 2], [cx - side / 2, -0.1, cz + side / 2],
+        ]
+        slab = _prism("slab-body", L_SLAB, [0.0, 0.3, 0.0])
+        void = _prism("void", tiny_hole, [0.0, 0.5, 0.0])
+        program = _program_of(slab, void, _difference("slab", slab, void))
+        built, shapes = self._both(program, "slab-object")
+        self.assertEqual(dict(built["profile_with_holes"].lowering), {"slab": "profile_with_holes"})
+        self.assertAlmostEqual(self._symmetric_volume(shapes["boolean"], shapes["profile_with_holes"]), 0.0, places=9)
 
 
 @NEEDS_OCCT
@@ -2100,6 +2361,59 @@ class StepUnitInterleavingTests(unittest.TestCase):
 
 
 @NEEDS_OCCT
+class StepVisibilityTests(unittest.TestCase):
+    """#419: what the model keeps hidden (a cutter, an aperture witness) is invisible in the STEP as well.
+
+    Someone who opens only the STEP sees a niche or a door hole open, not
+    filled by the solid that made it; the shape itself is written and read
+    back whole.
+    """
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name).resolve() / "visibility.step"
+
+    @staticmethod
+    def _box(x: float):
+        occ = occt_backend._occt()
+        return occ.BRepPrimAPI.BRepPrimAPI_MakeBox(occ.gp.gp_Pnt(x, 0.0, 0.0), occ.gp.gp_Pnt(x + 1.0, 2.0, 3.0)).Shape()
+
+    def _invisibilities(self) -> int:
+        return len(re.findall(r"= INVISIBILITY\(", self.path.read_text(encoding="latin-1")))
+
+    def test_a_hidden_object_is_written_invisible_and_reads_back_so_with_its_shape(self) -> None:
+        occt_backend.write_step(self.path, (
+            occt_backend.StepObject("mass", self._box(0.0), "archflow::mass", (10, 20, 30)),
+            occt_backend.StepObject("cutter", self._box(2.0), "archflow::cutter", (40, 50, 60), visible=False),
+        ), length_unit="meter")
+        self.assertEqual(self._invisibilities(), 1)
+        entries = _entries_by_name(self.path)
+        self.assertEqual({name: entry.visible for name, entry in entries.items()}, {"mass": True, "cutter": False})
+        cutter = entries["cutter"]
+        self.assertEqual((cutter.layers, cutter.color), (("archflow::cutter",), (40, 50, 60)))
+        measure = occt_backend.measure_shape(cutter.shape)
+        self.assertEqual((measure.valid, measure.solid_count, measure.closed), (True, 1, True))
+        self.assertAlmostEqual(measure.volume, 6.0, places=9)
+        _assert_bbox(self, measure, (2.0, 0.0, 0.0), (3.0, 2.0, 3.0), places=9)
+
+    def test_a_hidden_compound_reads_back_invisible_from_its_members(self) -> None:
+        occ = occt_backend._occt()
+        builder, compound = occ.BRep.BRep_Builder(), occ.TopoDS.TopoDS_Compound()
+        builder.MakeCompound(compound)
+        for x in (0.0, 2.0):
+            builder.Add(compound, self._box(x))
+        occt_backend.write_step(self.path, (occt_backend.StepObject("copies", compound, "archflow::copies",
+                                                                    visible=False),), length_unit="meter")
+        self.assertEqual(self._invisibilities(), 1)
+        (entry,) = occt_backend.read_step(self.path, length_unit="meter")
+        self.assertEqual((entry.name, entry.visible, entry.layers), ("copies", False, ("archflow::copies",)))
+        measure = occt_backend.measure_shape(entry.shape)
+        self.assertEqual((measure.valid, measure.solid_count), (True, 2))
+        self.assertAlmostEqual(measure.volume, 12.0, places=9)
+
+
+@NEEDS_OCCT
 class CapabilityBoundaryTests(unittest.TestCase):
     """An operation outside the realized vocabulary fails by name, before anything is written."""
 
@@ -2426,7 +2740,7 @@ class StepWorkModelImportTests(unittest.TestCase):
                     hashlib.sha256(written.read_bytes()).hexdigest(), item.sha256
                 )
 
-            cut = next(item for item in objects if item.object_id == "obj-wall-south-cut")
+            cut = next(item for item in objects if item.object_id == "obj-wall-south")
             solid = 6.0 * 0.3 * 2.97
             self.assertTrue(cut.closed and cut.solid_count == 1)
             # The opening is still missing from the solid: a healed or dropped
