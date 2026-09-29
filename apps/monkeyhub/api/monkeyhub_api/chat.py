@@ -1962,6 +1962,12 @@ class ChatStore:
             environment.pop("ANTHROPIC_API_KEY", None)
             environment.update(plan)
         environment["MONKEYHUB_PRESENTATION_TOKEN"] = self.presentation_token(session.id)
+        if kind == "claude":
+            # Project memory has one owner, studio.memory (#252). Claude Code's
+            # own auto-memory would keep agent-written notes of its own under
+            # ~/.claude/projects/<folder>/memory/ and, in a source checkout,
+            # hand the chat the developer's MEMORY.md; a Hub chat has neither.
+            environment["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
         mcp = self._tool_connection(session)
         model = session.model
         # The assistant works where the work is: this Hub's own source tree when
