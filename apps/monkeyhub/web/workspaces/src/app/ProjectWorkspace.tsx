@@ -18,8 +18,11 @@ import { currentView, DesignTreeBar, type DesignTreeView } from "../features/des
 import { useDesignTree, useSeenCandidates } from "../features/designTree/useDesignTree";
 import { treeWords } from "../features/designTree/words";
 import { useT } from "../i18n/useT";
+import type { MessageKey } from "../../../src/i18n/messages.en";
+import { createComparisonHost, type HostedComparison } from "../workspaces/monkeyarch/viewer/comparisonPair";
 
 const Drawing = lazy(() => import("../workspaces/monkeydiagram/DrawingCanvas"));
+const ModelComparison = lazy(() => import("../workspaces/monkeyarch/viewer/ModelComparison"));
 const Publish = lazy(() => import("../workspaces/publish/PublishWorkspace"));
 const Render = lazy(() => import("../workspaces/render/RenderWorkspace"));
 // The shared canvas host (features/canvas) sets Excalidraw's local font path.
@@ -37,6 +40,17 @@ export interface ProjectWorkspaceProps {
   active?: boolean;
   refreshKey?: number;
   documentRequest?: { source: PageSource; requestId: number } | null;
+  /**
+   * A result the Hub asked to see beside the exact model it was made from (#284): read-only,
+   * over the surface on screen, once per request id. Ids only grow: one no newer than the last
+   * taken opens nothing, and a new id opens even the same run again. The run is a result to look
+   * at, never a base to accept or continue. A request arriving while this project is not active
+   * is dropped. Null withdraws it: the comparison it opened closes, still loading or on screen,
+   * without onComparisonClose.
+   */
+  comparisonRequest?: { candidateRunId: string; requestId: number } | null;
+  /** The person pressed Back in a comparison the Hub requested, so the Hub may clear it and restore its own surface. */
+  onComparisonClose?: () => void;
   onWorkspaceChange(workspace: "arch" | "board" | "drawing" | "render" | "publish" | "tree"): void;
   onChatRequest?: () => void;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
@@ -56,7 +70,7 @@ export interface WorkspacePosition {
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
 export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, candidateFollowsHead = false, treeFocus = null, active = true, refreshKey = 0, documentRequest = null,
-  onWorkspaceChange, onChatRequest, onDesignContextChange, onPositionChange }: ProjectWorkspaceProps) {
+  comparisonRequest = null, onComparisonClose, onWorkspaceChange, onChatRequest, onDesignContextChange, onPositionChange }: ProjectWorkspaceProps) {
   const renderReader = useRef<(() => RenderView | null) | null>(null);
   const registerRenderReader = useCallback((reader: (() => RenderView | null) | null) => { renderReader.current = reader; }, []);
   const readRenderView = useCallback(() => renderReader.current?.() ?? null, []);
@@ -100,15 +114,51 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   // A newer host pin, such as a delivered result, replaces what the tree opened.
   useEffect(() => { setTreeView(null); }, [candidateRunId]);
   /**
+   * #284: one candidate beside the exact model it was made from, over the surface on screen. It
+   * reads and never writes; every surface stays mounted behind it, so Back finds Modeling, its
+   * model, camera and unsaved edits, and the tree, as they were. Moving to another surface closes it.
+   */
+  const [comparisons] = useState(createComparisonHost);
+  const [comparison, setComparison] = useState<HostedComparison | null>(null);
+  const comparisonOpener = useRef<HTMLElement | null>(null);
+  const openComparison = useCallback((runId: string) => {
+    // Only a click here hands focus back on return; a Hub request never moves it.
+    const focused = document.activeElement;
+    comparisonOpener.current = focused instanceof HTMLElement ? focused : null;
+    setComparison(comparisons.open(runId));
+  }, [comparisons]);
+  const closeComparison = useCallback(() => { comparisons.close(); setComparison(null); }, [comparisons]);
+  const returnFromComparison = useCallback(() => { comparisons.back(onComparisonClose); setComparison(null); }, [comparisons, onComparisonClose]);
+  useEffect(() => {
+    if (comparison) return;
+    const opener = comparisonOpener.current;
+    comparisonOpener.current = null;
+    const now = document.activeElement;
+    if (opener?.isConnected && (now === null || now === document.body)) opener.focus({ preventScroll: true });
+  }, [comparison]);
+  const comparedOver = useRef(workspace);
+  useEffect(() => {
+    if (comparedOver.current === workspace) return;
+    comparedOver.current = workspace;
+    closeComparison();
+  }, [workspace, closeComparison]);
+  // A comparison not yet on screen - its pair or its models still loading - when the project leaves is abandoned, never shown later.
+  useEffect(() => { if (!active) { comparisons.leave(); setComparison(comparisons.shown()); } }, [active, comparisons]);
+  useEffect(() => {
+    if (comparisons.request(comparisonRequest, { active, ready: server.status === "ready" }) === "open") comparisonOpener.current = null;
+    setComparison(comparisons.shown());
+  }, [comparisonRequest, active, server.status, comparisons]);
+  /**
    * The one View path (#284, #302): the run opens read-only in Modeling and the
    * chip names it. Modeling asks for it from where it already is on screen, such
    * as a Board page, so only the other surfaces switch to it.
    */
   const [viewRequest, setViewRequest] = useState(0);
   const viewRun = useCallback((view: DesignTreeView | null, fromModeling = false) => {
+    closeComparison();
     setTreeView(view); setViewRequest((value) => value + 1);
     if (!fromModeling) onWorkspaceChange("arch");
-  }, [onWorkspaceChange]);
+  }, [onWorkspaceChange, closeComparison]);
   // The run Modeling edits from, as it reports it: a view that became the base is no longer only viewed.
   const [editingRunId, setEditingRunId] = useState<string | null>(null);
   // Modeling's Record edits and continue, for the tree's Continue refused by unrecorded edits (#302).
@@ -142,9 +192,18 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   const [treeNodeFocus, setTreeNodeFocus] = useState<{ node: string; request: number } | null>(null);
   const focusRequests = useRef(0);
   const showReady = useCallback((node: string) => {
+    closeComparison();
     setTreeNodeFocus({ node, request: ++focusRequests.current });
     onWorkspaceChange("tree");
-  }, [onWorkspaceChange]);
+  }, [onWorkspaceChange, closeComparison]);
+  // Names on the tree, for the comparison's captions only; the pair itself comes from retained records.
+  const nameOfRun = useCallback((runId: string) => {
+    const tree = designTree.tree;
+    if (!tree) return null;
+    const nodes = [...tree.nodes.values()];
+    const node = nodes.find((item) => item.kind === "stage" && item.runId === runId) ?? nodes.find((item) => item.kind === "candidate" && item.runId === runId);
+    return node ? treeWords(t, tree).title(node) : null;
+  }, [designTree.tree, t]);
   const studyFocused = useRef(0);
   useEffect(() => {
     const tree = designTree.tree;
@@ -200,60 +259,72 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     <button type="button" onClick={() => setAttempt((value) => value + 1)}>Retry</button>
   </div></div>;
   if (server.status !== "ready") return <div className="project-workspace"><LoadingOverlay mode="boot" status="Project Runtime" /></div>;
+  // What is on screen: the comparison covers the surface it was opened over, which stays mounted.
+  const shown = comparison ? null : workspace;
+  const modelShown = modelVisible && !comparison;
   return <div className="project-workspace" style={{ height: "100%", minHeight: 0 }}>
     {/* #337: one bar over every surface. The surface on screen puts its menus on the left; the project's
         position stays at the right end, where the Stage chip opens the Design Tree. #300: Board and its
         Layout mode share one rail entry, and this switch moves between the two mounted surfaces. */}
     <ProjectBar label={t("workspace.surfaceBar")}
-      lead={((workspace === "board" && !pageOpen) || workspace === "publish") && <BoardModeSwitch mode={workspace === "publish" ? "layout" : "board"}
+      lead={((shown === "board" && !pageOpen) || shown === "publish") && <BoardModeSwitch mode={workspace === "publish" ? "layout" : "board"}
         onChange={(mode) => onWorkspaceChange(mode === "layout" ? "publish" : "board")} />}
-      position={designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={workspace === "tree"} viewing={viewing}
-        onToggle={() => onWorkspaceChange(workspace === "tree" ? treeReturn.current : "tree")}
+      position={designTree.available && <DesignTreeBar data={designTree} seen={seenCandidates.seen} open={shown === "tree"} viewing={viewing}
+        onToggle={() => { if (comparison) { closeComparison(); onWorkspaceChange("tree"); }
+          else onWorkspaceChange(workspace === "tree" ? treeReturn.current : "tree"); }}
         onBackToCurrent={() => viewRun(currentView(designTree))} onShowReady={showReady}
         onRecordEdits={recordEdits} />}>
       {refreshError && <ErrorPanel error={refreshError} what="GET /api/protocol" />}
-      {(archVisited || modelVisible) && <div data-project-surface="arch" hidden={!modelVisible} inert={!active || !modelVisible}
-        style={{ height: "100%", minHeight: 0, display: modelVisible ? "block" : "none" }}>
+      {(archVisited || modelVisible) && <div data-project-surface="arch" hidden={!modelShown} inert={!active || !modelShown}
+        style={{ height: "100%", minHeight: 0, display: modelShown ? "block" : "none" }}>
         <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={treeView?.runId ?? candidateRunId}
           initialRunAsset={treeView?.assetSha256 ?? null} initialRunRequest={viewRequest}
           initialRunFollowsHead={treeView ? false : candidateFollowsHead} documentSource={pageOpen ? visit.source : null}
           initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}
-          active={active && modelVisible} refreshKey={refreshKey + attempt + headMoves} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
+          active={active && modelShown} refreshKey={refreshKey + attempt + headMoves} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
           onDesignContextChange={designContextChanged} onRenderReader={registerRenderReader}
           onView={(view) => viewRun({ ...view, back: false }, true)} onRecorder={registerRecorder}
           onOpenTree={designTree.available ? () => onWorkspaceChange("tree") : undefined} />
       </div>}
-      {(publishVisited || workspace === "publish") && <div data-project-surface="publish" hidden={workspace !== "publish"} inert={!active || workspace !== "publish"}
-        style={{ height: "100%", minHeight: 0, display: workspace === "publish" ? "block" : "none" }}>
+      {(publishVisited || workspace === "publish") && <div data-project-surface="publish" hidden={shown !== "publish"} inert={!active || shown !== "publish"}
+        style={{ height: "100%", minHeight: 0, display: shown === "publish" ? "block" : "none" }}>
         <Suspense fallback={<LoadingOverlay mode="boot" status="Publish" />}>
-          <Publish projectId={boundProjectId.current!} active={active && workspace === "publish"} refreshKey={refreshKey + attempt} boardRequest={publishRequest} />
+          <Publish projectId={boundProjectId.current!} active={active && shown === "publish"} refreshKey={refreshKey + attempt} boardRequest={publishRequest} />
         </Suspense>
       </div>}
-      {(renderVisited || workspace === "render") && <div data-project-surface="render" hidden={workspace !== "render"} inert={!active || workspace !== "render"}
-        style={{ height: "100%", minHeight: 0, display: workspace === "render" ? "block" : "none" }}>
+      {(renderVisited || workspace === "render") && <div data-project-surface="render" hidden={shown !== "render"} inert={!active || shown !== "render"}
+        style={{ height: "100%", minHeight: 0, display: shown === "render" ? "block" : "none" }}>
         <Suspense fallback={<LoadingOverlay mode="boot" status="Render" />}>
-          <Render readModelView={readRenderView} onModeling={() => onWorkspaceChange("arch")} projectId={boundProjectId.current!} active={active && workspace === "render"} refreshKey={refreshKey + attempt}
+          <Render readModelView={readRenderView} onModeling={() => onWorkspaceChange("arch")} projectId={boundProjectId.current!} active={active && shown === "render"} refreshKey={refreshKey + attempt}
             onBoard={(source) => { setVisit(null); setBoardPage({ source, requestId: crypto.randomUUID() }); setBoardRefresh((value) => value + 1); onWorkspaceChange("board"); }} />
         </Suspense>
       </div>}
-      {(drawingVisited || workspace === "drawing") && <div data-project-surface="drawing" hidden={workspace !== "drawing"} inert={!active || workspace !== "drawing"}
-        style={{ height: "100%", minHeight: 0, display: workspace === "drawing" ? "block" : "none" }}>
+      {(drawingVisited || workspace === "drawing") && <div data-project-surface="drawing" hidden={shown !== "drawing"} inert={!active || shown !== "drawing"}
+        style={{ height: "100%", minHeight: 0, display: shown === "drawing" ? "block" : "none" }}>
         {/* #337: the Drawing puts its recipe transfer in its own menus, and a file to confirm in its row. */}
         <Suspense fallback={<LoadingOverlay mode="boot" status="Drawing" />}>
-          <Drawing projectId={boundProjectId.current!} active={active && workspace === "drawing"} refreshKey={refreshKey + attempt} />
+          <Drawing projectId={boundProjectId.current!} active={active && shown === "drawing"} refreshKey={refreshKey + attempt} />
         </Suspense>
       </div>}
-      {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={workspace !== "board" || pageOpen} inert={!active || workspace !== "board" || pageOpen}
-        style={{ height: "100%", minHeight: 0, display: workspace === "board" && !pageOpen ? "block" : "none" }}>
+      {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={shown !== "board" || pageOpen} inert={!active || shown !== "board" || pageOpen}
+        style={{ height: "100%", minHeight: 0, display: shown === "board" && !pageOpen ? "block" : "none" }}>
         <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}>
-          <Board onPublish={(revision, ids) => { setPublishRequest({ revision, ids, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); }} expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt + boardRefresh} active={active && workspace === "board" && !pageOpen} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} pageRequest={boardPage} />
+          <Board onPublish={(revision, ids) => { setPublishRequest({ revision, ids, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); }} expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt + boardRefresh} active={active && shown === "board" && !pageOpen} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} pageRequest={boardPage} />
         </Suspense>
       </div>}
-      {(treeVisited || workspace === "tree") && <div data-project-surface="tree" hidden={workspace !== "tree"} inert={!active || workspace !== "tree"}
-        style={{ height: "100%", minHeight: 0, display: workspace === "tree" ? "block" : "none" }}>
+      {(treeVisited || workspace === "tree") && <div data-project-surface="tree" hidden={shown !== "tree"} inert={!active || shown !== "tree"}
+        style={{ height: "100%", minHeight: 0, display: shown === "tree" ? "block" : "none" }}>
         <Suspense fallback={<LoadingOverlay mode="boot" status="Design tree" />}>
-          <DesignTreeSurface data={designTree} markSeen={seenCandidates.markSeen} active={active && workspace === "tree"} returnTo={treeReturn.current}
-            onLeave={() => onWorkspaceChange(treeReturn.current)} onView={viewRun} onRecordEdits={recordEdits} focus={treeNodeFocus} />
+          <DesignTreeSurface data={designTree} markSeen={seenCandidates.markSeen} active={active && shown === "tree"} returnTo={treeReturn.current}
+            onLeave={() => onWorkspaceChange(treeReturn.current)} onView={viewRun} onCompare={openComparison} onRecordEdits={recordEdits} focus={treeNodeFocus} />
+        </Suspense>
+      </div>}
+      {comparison && <div data-project-surface="compare" inert={!active} style={{ height: "100%", minHeight: 0 }}>
+        <Suspense fallback={<LoadingOverlay mode="boot" status="Compare" />}>
+          <ModelComparison key={comparison.key} projectId={boundProjectId.current!} candidateRunId={comparison.runId} active={active} nameOf={nameOfRun}
+            backLabel={comparison.origin === "tree" ? t("modelCompare.back", { surface: workspace === "tree" ? t("designTree.title")
+              : t(`designTree.surface.${workspace}` as MessageKey) }) : t("modelCompare.backPlain")}
+            focusOnOpen={comparison.origin === "tree"} onReturn={returnFromComparison} onPhase={(phase) => comparisons.report(comparison.key, phase)} />
         </Suspense>
       </div>}
     </ProjectBar>

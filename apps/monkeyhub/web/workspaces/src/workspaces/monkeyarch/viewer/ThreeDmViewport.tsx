@@ -22,6 +22,7 @@ import {
   Float32BufferAttribute,
   GridHelper,
   Group,
+  HemisphereLight,
   Line,
   LineSegments,
   LineBasicMaterial,
@@ -55,16 +56,25 @@ import {
   type UserStrings,
 } from "./sceneInspection";
 import {
+  DEFAULT_MODEL_DISPLAY_STYLE,
+  applyDisplayStyle,
+  buildFeatureEdgeOverlay,
   captureModelAppearance,
+  disposeDisplayMaterials,
+  disposeFeatureEdgeOverlay,
   fadeOpacity,
   isDisplayed,
   matchesSemanticCarrier,
+  modelingPalette,
   prepareLoadedModel,
   restoreModelAppearance,
   restoreOpacity,
   savedObjectVisible,
+  syncFeatureEdgeOverlay,
+  type FeatureEdgeOverlay,
   type MaterialOpacity,
   type ModelAppearance,
+  type ModelDisplayStyle,
   type SemanticHighlightTarget,
 } from "./modelDisplay";
 import { fitDistance } from "./fitCamera";
@@ -89,7 +99,7 @@ import { SceneSnapIndex, type SnapOptions } from "./sceneSnapping";
 import { encodeViewportPng } from "./viewportScreenshot";
 import type { SketchPlane } from "../../../features/stage/sketch";
 import { cancelInteractionFrame, scheduleInteractionFrame, type InteractionSession } from "../interactionSession";
-import { Preselection, raycastCurve, type LocalHit } from "./preselection";
+import { outlineEdges, Preselection, raycastCurve, type LocalHit } from "./preselection";
 
 export type ViewportStatus = "idle" | "loading" | "ready" | "error";
 
@@ -198,6 +208,12 @@ export interface CameraState {
   zoom: number;
 }
 
+/** An axis-aligned box in world coordinates. */
+export interface ViewBounds {
+  min: Vec3;
+  max: Vec3;
+}
+
 export interface ViewportLoadOptions {
   /** Parse a possible replacement while the current model remains interactive. */
   readonly background?: boolean;
@@ -300,8 +316,37 @@ export interface ViewportController {
   capturePng(): Promise<Blob | null>;
   /** Remove temporary display projections and restore the loaded file exactly. */
   showOriginal(): void;
+  /**
+   * Paint the model in its file's own look or the pale Modeling look. A view
+   * preference only: it survives model loads, keeps the camera and the current
+   * selection, and never writes geometry, design state or the file's materials.
+   */
+  setDisplayStyle(style: ModelDisplayStyle): void;
   setLayerVisibility(index: number, visible: boolean): void;
   clear(): void;
+  /**
+   * Stand where another view stands: same target, projection, lens and zoom.
+   * An applied camera is not reported to `onCameraChange`, so two linked
+   * views never echo each other.
+   */
+  applyCamera(state: CameraState): void;
+  /**
+   * Draw the visible edges of another file's objects over this model - the
+   * original a candidate was made from - or remove them with null. Only the
+   * named objects when names are given. Edges are the model's own feature
+   * edges, never triangulation diagonals. Resolves with how many objects were
+   * outlined; the outline goes with the model it was drawn over.
+   */
+  originalOutline(spec: { files: readonly File[]; objectNames: readonly string[] | null; colour: string } | null): Promise<number>;
+  setOutlineVisible(visible: boolean): void;
+  /** What Fit frames, as a world-space box; null with nothing on screen. */
+  bounds(): ViewBounds | null;
+  /**
+   * Where this view would stand to frame the given bounds: turned as it is,
+   * with its own projection, lens and frame, as Fit selection frames a
+   * selection. Nothing moves; applyCamera stands this view, or another, there.
+   */
+  framing(bounds: ViewBounds): CameraState | null;
 }
 
 /** A pointer that moved further than this was an orbit, not a click. */
@@ -324,6 +369,16 @@ interface ThreeDmViewportProps {
    * its own plain sentence and its file button.
    */
   idle?: ReactNode;
+  /**
+   * The shell's chosen display style. A remounted canvas and every later model
+   * open in it; without one the viewer starts in the default and follows
+   * ``setDisplayStyle`` alone.
+   */
+  displayStyle?: ModelDisplayStyle;
+  /** A view for looking only: nothing dropped on it or chosen from it opens. */
+  readOnly?: boolean;
+  /** A person moved this view (orbit, zoom, pan, fit); never called for applyCamera. */
+  onCameraChange?(camera: CameraState): void;
 }
 
 interface ViewportRuntime {
@@ -362,6 +417,18 @@ interface ViewportRuntime {
   draftBounds: Sphere | null;
   translation: TranslationGizmo | null;
   elevationGuide: Group | null;
+  /** Another file's edges drawn over the model, for a before/after reading. */
+  outline: LineSegments | null;
+  /** The display preference; the file's own materials stay in ``appearance``. */
+  style: ModelDisplayStyle;
+  /** One stand-in per original material while the Modeling look is on. */
+  styled: Map<Material, Material>;
+  styleEdges: FeatureEdgeOverlay | null;
+  background: Color;
+  /** The ground grid, rebuilt with the theme; the neutral Modeling canvas leaves it out. */
+  grid: GridHelper;
+  nativeLights: Group;
+  modelingLights: Group;
   render: () => void;
 }
 
@@ -493,6 +560,33 @@ function clearDraftPreview(runtime: ViewportRuntime): void {
   runtime.draftRoot.removeFromParent();
   runtime.draftBounds = null;
   rebuildSnapIndex(runtime);
+}
+
+function removeOutline(runtime: ViewportRuntime): void {
+  if (!runtime.outline) return;
+  runtime.outline.removeFromParent();
+  runtime.outline.geometry.dispose();
+  (runtime.outline.material as Material).dispose();
+  runtime.outline = null;
+}
+
+/** World-space feature edges of the displayed objects under each root, as one segment list. */
+function outlineOf(roots: readonly Object3D[], colour: string): LineSegments {
+  const points: number[] = [];
+  const edge = new Vector3();
+  for (const root of roots) root.traverse((object) => {
+    if (!(object instanceof Mesh || object instanceof Line) || !isDisplayed(object)) return;
+    object.updateWorldMatrix(true, false);
+    for (const { a, b } of outlineEdges(object)) {
+      points.push(...edge.set(...a).applyMatrix4(object.matrixWorld).toArray(), ...edge.set(...b).applyMatrix4(object.matrixWorld).toArray());
+    }
+  });
+  const lines = new LineSegments(new BufferGeometry().setAttribute("position", new Float32BufferAttribute(points, 3)),
+    new LineBasicMaterial({ color: colour, depthTest: false, transparent: true, opacity: 0.9 }));
+  lines.name = "archflow-original-outline";
+  lines.renderOrder = 5;
+  lines.frustumCulled = false;
+  return lines;
 }
 
 interface NurbsFallbackPatch {
@@ -803,6 +897,64 @@ function applyHighlight(runtime: ViewportRuntime, objects: readonly Object3D[]):
   }
 }
 
+/** The working palette for the shell's current canvas colour. */
+function currentPalette() {
+  return modelingPalette(new Color(themeColours().viewport).getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace).l < 0.5);
+}
+
+/**
+ * Put the file's own materials back and drop what a display style derived
+ * from them. Called before a model is disposed, so what is disposed is the
+ * file's and the stand-ins go with the style. The caller has taken any
+ * selection mark off first.
+ */
+function resetDisplayStyle(runtime: ViewportRuntime): void {
+  if (runtime.model && runtime.appearance) {
+    applyDisplayStyle(runtime.model, runtime.appearance, "original", runtime.styled, currentPalette());
+  }
+  disposeDisplayMaterials(runtime.styled);
+  if (runtime.styleEdges) disposeFeatureEdgeOverlay(runtime.styleEdges);
+  runtime.styleEdges = null;
+}
+
+/** The canvas and light rig that go with the chosen style and the shell's theme. */
+function paintStage(runtime: ViewportRuntime): void {
+  const modeling = runtime.style === "modeling";
+  runtime.background.set(modeling ? currentPalette().background : themeColours().viewport);
+  // The grid lies 2 mm under Z=0 and shows through a pale face resting on the
+  // ground; the working look is a neutral canvas, so it goes. Original keeps it.
+  runtime.grid.visible = !modeling;
+  runtime.nativeLights.visible = !modeling;
+  runtime.modelingLights.visible = modeling;
+}
+
+/**
+ * Paint the loaded model in ``runtime.style`` again: after a switch, a new
+ * model, a theme change or a restore to the file's appearance. The selection
+ * mark comes off, the style changes underneath it, and the same primitives are
+ * marked again, so a selected object stays selected and its mark is built over
+ * whatever it now wears. A running cross-fade is re-applied over the new materials.
+ */
+function restyleRuntime(runtime: ViewportRuntime): void {
+  const lit = [...runtime.highlighted];
+  restoreHighlight(runtime);
+  const blending = runtime.model !== null && runtime.secondary !== null && runtime.blendT !== null;
+  if (blending) restoreOpacity(runtime.restore);
+  resetDisplayStyle(runtime);
+  if (runtime.style === "modeling" && runtime.model && runtime.appearance) {
+    const palette = currentPalette();
+    applyDisplayStyle(runtime.model, runtime.appearance, "modeling", runtime.styled, palette);
+    runtime.styleEdges = buildFeatureEdgeOverlay(runtime.model, runtime.appearance, outlineEdges, palette, accentColour());
+    runtime.scene.add(runtime.styleEdges.group);
+  }
+  paintStage(runtime);
+  applyHighlight(runtime, lit);
+  if (blending) {
+    fadeOpacity(materialsUnder(runtime.model!), runtime.restore, 1 - runtime.blendT!);
+    fadeOpacity(materialsUnder(runtime.secondary!), runtime.restore, runtime.blendT!);
+  }
+}
+
 /** A translucent copy of every surface and curve, in world space. */
 function ghostCopy(carriers: readonly Object3D[], material: MeshStandardMaterial): Group {
   const group = new Group();
@@ -996,6 +1148,26 @@ function fitSelectedRuntime(runtime: ViewportRuntime): boolean {
   return true;
 }
 
+/**
+ * Caller-supplied bounds framed the way fitSelectedRuntime frames a selection,
+ * worked out on a copy of the camera: the live view neither moves nor reports.
+ * Keep this self-contained too: modelComparison.test.ts runs it in isolation.
+ */
+function framingRuntime(runtime: ViewportRuntime, bounds: ViewBounds): CameraState | null {
+  const box = new Box3(new Vector3(...bounds.min), new Vector3(...bounds.max));
+  if (box.isEmpty()) return null;
+  const camera = runtime.camera.clone();
+  const target = frameBoxKeepingView(camera, runtime.controls.target, box, runtimeAspect(runtime));
+  return {
+    position: [camera.position.x, camera.position.y, camera.position.z],
+    target: [target.x, target.y, target.z],
+    up: [camera.up.x, camera.up.y, camera.up.z],
+    fov: runtime.perspectiveCamera.fov,
+    projection: projectionMode(camera),
+    zoom: camera.zoom,
+  };
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (
@@ -1013,7 +1185,7 @@ export const ThreeDmViewport = forwardRef<
   ViewportController,
   ThreeDmViewportProps
 >(function ThreeDmViewport(
-  { onInspection, onStatus, onRequestFile, onOpenFile, onSource, onPick, idle, interaction, hoverEnabled },
+  { onInspection, onStatus, onRequestFile, onOpenFile, onSource, onPick, idle, interaction, hoverEnabled, displayStyle, readOnly = false, onCameraChange },
   forwardedRef,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -1026,13 +1198,17 @@ export const ThreeDmViewport = forwardRef<
   const hoverEnabledRef = useRef(hoverEnabled);
   hoverEnabledRef.current = hoverEnabled;
   const pickedPlaneRef = useRef<{ object: Object3D; plane: SketchPlane } | null>(null);
-  const callbacksRef = useRef({ onInspection, onStatus, onSource, onPick });
+  const callbacksRef = useRef({ onInspection, onStatus, onSource, onPick, onCameraChange });
+  // Set only while applyCamera moves the view, so that move is not reported as a person's.
+  const applyingCameraRef = useRef(false);
+  const outlineRequest = useRef(0);
+  const outlineVisibleRef = useRef(true);
   const [dragActive, setDragActive] = useState(false);
   const [visualStatus, setVisualStatus] = useState<ViewportStatus>("idle");
   const [hasDraft, setHasDraft] = useState(false);
   const [visualMessage, setVisualMessage] = useState("No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm or .skp from this machine here");
 
-  callbacksRef.current = { onInspection, onStatus, onSource, onPick };
+  callbacksRef.current = { onInspection, onStatus, onSource, onPick, onCameraChange };
 
   const clearHover = useCallback((render = true) => {
     cancelInteractionFrame(interaction.current, "hover");
@@ -1047,6 +1223,19 @@ export const ThreeDmViewport = forwardRef<
   }, [interaction, clearSnap]);
 
   useEffect(() => { if (!hoverEnabled) clearHover(); }, [clearHover, hoverEnabled]);
+
+  // The last style asked for, by prop or by the controller; a new runtime starts in it.
+  const styleRef = useRef<ModelDisplayStyle>(displayStyle ?? DEFAULT_MODEL_DISPLAY_STYLE);
+  const chooseDisplayStyle = useCallback((style: ModelDisplayStyle) => {
+    styleRef.current = style;
+    const runtime = runtimeRef.current;
+    if (!runtime || runtime.style === style) return;
+    clearHover(false);
+    runtime.style = style;
+    restyleRuntime(runtime);
+    runtime.render();
+  }, [clearHover]);
+  useEffect(() => { if (displayStyle) chooseDisplayStyle(displayStyle); }, [chooseDisplayStyle, displayStyle]);
 
   const reportStatus = useCallback((status: ViewportStatus, message: string) => {
     setVisualStatus(status);
@@ -1066,7 +1255,10 @@ export const ThreeDmViewport = forwardRef<
       // The mark on a picked object belongs to the picture; it comes off
       // first so the meshes are disposed wearing their own materials.
       restoreHighlight(runtime);
+      resetDisplayStyle(runtime);
       clearDraftPreview(runtime);
+      removeOutline(runtime);
+      outlineRequest.current += 1;
       runtime.blendT = null;
     }
     if (runtime?.ghost) {
@@ -1286,6 +1478,9 @@ export const ThreeDmViewport = forwardRef<
     clearSecondary();
     if (runtime.appearance) restoreModelAppearance(runtime.model, runtime.appearance);
     for (const object of runtime.draftHidden.keys()) { runtime.draftHidden.set(object, object.visible); object.visible = false; }
+    // The display style is the viewer's preference, not a projection: the
+    // file's appearance is restored under it and the style painted again.
+    restyleRuntime(runtime);
     runtime.render();
   }, [clearHover, clearSecondary, removeGhost]);
 
@@ -1533,6 +1728,7 @@ export const ThreeDmViewport = forwardRef<
       const preserveCamera = options?.preserveCamera === true && runtime.model !== null;
       // The mark on a picked object belongs to the picture going away.
       restoreHighlight(runtime);
+      resetDisplayStyle(runtime);
       clearHover(false);
       clearDraftPreview(runtime);
       setHasDraft(false);
@@ -1557,11 +1753,16 @@ export const ThreeDmViewport = forwardRef<
         runtime.restore.clear();
         runtime.blendT = null;
       }
+      // And an original's outline, drawn over the model going away.
+      removeOutline(runtime);
+      outlineRequest.current += 1;
       runtime.model = model;
       runtime.modelBounds = new Box3().setFromObject(model).getBoundingSphere(new Sphere());
       runtime.modelIndex = indexLoadedObjects(model);
       runtime.appearance = captureModelAppearance(model);
       runtime.scene.add(model);
+      // The file's own look is captured above; a chosen style is painted over it.
+      if (runtime.style !== "original") restyleRuntime(runtime);
       rebuildSnapIndex(runtime);
       runtime.preselection = new Preselection(model, getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#aeafb8");
       runtime.scene.add(runtime.preselection.group);
@@ -1862,6 +2063,79 @@ export const ThreeDmViewport = forwardRef<
     return result;
   }, []);
 
+  const applyCamera = useCallback((state: CameraState) => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    clearHover(false);
+    applyingCameraRef.current = true;
+    try {
+      activateProjection(runtime, state.projection);
+      const camera = runtime.camera;
+      camera.up.set(...state.up);
+      camera.position.set(...state.position);
+      camera.zoom = state.zoom;
+      runtime.perspectiveCamera.fov = state.fov;
+      runtime.controls.target.set(...state.target);
+      if (camera instanceof PerspectiveCamera) {
+        // The same clipping rule a fit uses, for the distance this view now stands at.
+        const distance = camera.position.distanceTo(runtime.controls.target);
+        camera.near = Math.max(distance / 1000, 0.01);
+        camera.far = Math.max(distance * 100, 1000);
+      }
+      camera.updateProjectionMatrix();
+      runtime.controls.update();
+      runtime.render();
+    } finally {
+      applyingCameraRef.current = false;
+    }
+  }, [clearHover]);
+
+  const originalOutline = useCallback(async (spec: { files: readonly File[]; objectNames: readonly string[] | null; colour: string } | null): Promise<number> => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return 0;
+    const request = ++outlineRequest.current;
+    const generation = loadGenerationRef.current;
+    const isCurrent = () => request === outlineRequest.current && generation === loadGenerationRef.current && runtimeRef.current === runtime;
+    removeOutline(runtime);
+    runtime.render();
+    if (spec === null || !runtime.model) return 0;
+    const buffers = await Promise.all(spec.files.map((file) => file.arrayBuffer()));
+    if (!isCurrent()) return 0;
+    const fallbackBuffers = buffers.map((buffer) => buffer.slice(0));
+    const parsed = await parse3dm(buffers);
+    const models = parsed.filter((result): result is PromiseFulfilledResult<Object3D> => result.status === "fulfilled").map((result) => result.value);
+    const failure = parsed.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    const shown = await Promise.all(models.map(async (model, index) => {
+      if (failure || meshCount(model) > 0) return model;
+      try { return await nurbsFallback(fallbackBuffers[index]!, model) ?? model; } catch { return model; }
+    }));
+    try {
+      if (failure) throw failure.reason instanceof Error ? failure.reason : new Error(String(failure.reason));
+      if (!isCurrent()) return 0;
+      const roots = shown.map((model) => prepareLoadedModel(model));
+      const names = spec.objectNames;
+      const outlined = names === null ? roots : roots.flatMap((root) => carriersOf(root, { objectNames: names }));
+      if (outlined.length === 0) return 0;
+      const lines = outlineOf(outlined, spec.colour);
+      lines.visible = outlineVisibleRef.current;
+      runtime.outline = lines;
+      runtime.scene.add(lines);
+      runtime.render();
+      return names === null ? roots.length : outlined.length;
+    } finally {
+      // Only the edges stay; the original's own meshes are never part of this picture.
+      for (const model of shown) disposeScene(model);
+    }
+  }, []);
+
+  const setOutlineVisible = useCallback((visible: boolean) => {
+    outlineVisibleRef.current = visible;
+    const runtime = runtimeRef.current;
+    if (!runtime?.outline) return;
+    runtime.outline.visible = visible;
+    runtime.render();
+  }, []);
+
   useImperativeHandle(
     forwardedRef,
     () => ({
@@ -1933,6 +2207,7 @@ export const ThreeDmViewport = forwardRef<
         return encodeViewportPng(runtime.renderer.domElement, runtime.render);
       },
       showOriginal,
+      setDisplayStyle: chooseDisplayStyle,
       setLayerVisibility: (index, visible) => {
         const runtime = runtimeRef.current;
         if (!runtime?.model) return;
@@ -1950,8 +2225,23 @@ export const ThreeDmViewport = forwardRef<
         runtime.render();
       },
       clear,
+      applyCamera,
+      originalOutline,
+      setOutlineVisible,
+      bounds: () => {
+        const runtime = runtimeRef.current;
+        const box = runtime ? boundsForRuntime(runtime) : null;
+        return box && !box.isEmpty() ? { min: box.min.toArray(), max: box.max.toArray() } : null;
+      },
+      framing: (bounds) => {
+        const runtime = runtimeRef.current;
+        return runtime ? framingRuntime(runtime, bounds) : null;
+      },
     }),
     [
+      applyCamera,
+      originalOutline,
+      setOutlineVisible,
       blend,
       cameraState,
       clear,
@@ -1972,6 +2262,8 @@ export const ThreeDmViewport = forwardRef<
       sketchPreview,
       showOriginal,
       unprojectOnPlane,
+      clearHover,
+      chooseDisplayStyle,
     ],
   );
 
@@ -2018,24 +2310,44 @@ export const ThreeDmViewport = forwardRef<
     key.position.set(10, -8, 16);
     const fill = new DirectionalLight(0xd9e4e2, 1.1);
     fill.position.set(-10, 6, 8);
-    scene.add(ambient, key, fill);
+    const nativeLights = new Group();
+    nativeLights.name = "archflow-native-lights";
+    nativeLights.add(ambient, key, fill);
+    // Modeling: a sky over a warm grey ground and one sun from the front right,
+    // so top, front and side faces take three distinct tones of their colour.
+    // Z is up. The stand-ins skip tone mapping, so these are the diffuse tones.
+    const sky = new HemisphereLight(0xffffff, 0x8a8a80, 1.5);
+    sky.position.set(0, 0, 1);
+    const sun = new DirectionalLight(0xffffff, 1.6);
+    sun.position.set(8, -12, 16);
+    const modelingLights = new Group();
+    modelingLights.name = "archflow-modeling-lights";
+    modelingLights.visible = false;
+    modelingLights.add(sky, sun);
+    scene.add(nativeLights, modelingLights);
 
     let grid = buildGrid(themeColours());
     scene.add(grid);
 
     let runtime: ViewportRuntime;
-    const render = () => renderer.render(scene, runtime.camera);
+    const render = () => {
+      if (runtime.styleEdges) {
+        syncFeatureEdgeOverlay(runtime.styleEdges, new Set(runtime.highlighted),
+          runtime.secondary && runtime.blendT !== null ? 1 - runtime.blendT : 1);
+      }
+      renderer.render(scene, runtime.camera);
+    };
 
     // The tokens can change under a running canvas — a theme toggle, or the OS
     // switching at dusk — and the grid's colours are baked into its vertices,
     // so it is rebuilt rather than recoloured.
     const applyTheme = () => {
       const colours = themeColours();
-      background.set(colours.viewport);
       scene.remove(grid);
       disposeGrid(grid);
       grid = buildGrid(colours);
       scene.add(grid);
+      if (runtimeRef.current) runtimeRef.current.grid = grid;
       const sketch = runtimeRef.current?.sketch;
       if (sketch) {
         const accent = accentColour();
@@ -2054,6 +2366,9 @@ export const ThreeDmViewport = forwardRef<
         }
       }
       runtimeRef.current?.preselection?.colour(getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#aeafb8");
+      // The Modeling palette follows the shell's light or dark canvas.
+      if (runtime?.style === "modeling") restyleRuntime(runtime);
+      else if (runtime) paintStage(runtime);
       render();
     };
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -2091,10 +2406,23 @@ export const ThreeDmViewport = forwardRef<
       draftBounds: null,
       translation: null,
       elevationGuide: null,
+      outline: null,
+      style: styleRef.current,
+      styled: new Map(),
+      styleEdges: null,
+      background,
+      grid,
+      nativeLights,
+      modelingLights,
       render,
     };
     runtimeRef.current = runtime;
-    const changedCamera = () => { clearHover(false); render(); };
+    // An empty viewport already shows the canvas and light of the style a model will open in.
+    paintStage(runtime);
+    const changedCamera = () => {
+      clearHover(false); render();
+      if (!applyingCameraRef.current) callbacksRef.current.onCameraChange?.(cameraState()!);
+    };
     controls.addEventListener("change", changedCamera);
     const startCameraInteraction = () => { clearHover(); };
     controls.addEventListener("start", startCameraInteraction);
@@ -2141,16 +2469,23 @@ export const ThreeDmViewport = forwardRef<
       // Give the highlighted meshes their own materials back, so what is
       // disposed below is the file's and the clones go with the mark.
       restoreHighlight(runtime);
+      resetDisplayStyle(runtime);
       clearDraftPreview(runtime);
       if (runtime.model) disposeScene(runtime.model);
       if (runtime.ghost) disposeGhost(runtime.ghost);
       if (runtime.sketch) disposeScene(runtime.sketch);
       if (runtime.elevationGuide) disposeScene(runtime.elevationGuide);
       if (runtime.secondary) disposeSecondary(runtime.secondary);
+      outlineRequest.current += 1;
+      removeOutline(runtime);
       media.removeEventListener("change", applyTheme);
       themeObserver.disconnect();
       disposeGrid(grid);
+      // Give the WebGL context back now, not at garbage collection: past the browser's
+      // limit the oldest live context is lost, and that is a view still mounted, such as
+      // Modeling hidden behind a comparison. A hidden view never reaches this cleanup.
       renderer.dispose();
+      renderer.forceContextLoss();
       renderer.domElement.remove();
       runtimeRef.current = null;
     };
@@ -2162,11 +2497,12 @@ export const ThreeDmViewport = forwardRef<
       className={`viewport-host${dragActive ? " is-dragging" : ""}`}
       onDragEnter={(event) => {
         event.preventDefault();
-        setDragActive(true);
+        if (!readOnly) setDragActive(true);
       }}
       onDragOver={(event) => {
+        // A read-only view still takes the drop, so the browser does not open the file in place of the app.
         event.preventDefault();
-        event.dataTransfer.dropEffect = "copy";
+        event.dataTransfer.dropEffect = readOnly ? "none" : "copy";
       }}
       onDragLeave={(event) => {
         if (event.currentTarget === event.target) setDragActive(false);
@@ -2174,6 +2510,7 @@ export const ThreeDmViewport = forwardRef<
       onDrop={(event) => {
         event.preventDefault();
         setDragActive(false);
+        if (readOnly) return;
         const file = event.dataTransfer.files.item(0);
         // Dropped from this machine: bound to nothing, and labelled so.
         if (file) { if (onOpenFile) onOpenFile(file); else void openFile(file, LOCAL_SOURCE_LABEL); }
@@ -2211,7 +2548,7 @@ export const ThreeDmViewport = forwardRef<
               handed one in; otherwise it states what it holds. */}
           {visualStatus === "idle" && idle ? idle : <>
             <p aria-live="polite">{visualMessage}</p>
-            {(visualStatus === "idle" || visualStatus === "error") && (
+            {!readOnly && (visualStatus === "idle" || visualStatus === "error") && (
               <button className="button" type="button" onClick={onRequestFile}>
                 Open a local .3dm or .skp
               </button>

@@ -27,7 +27,7 @@ const countWords = {
   en: (options: number) => `${options} ${options === 1 ? "option" : "options"}`,
 } as const;
 
-export default function DesignTreeSurface({ data, markSeen, active, returnTo, onLeave, onView, onRecordEdits = null, focus = null }: {
+export default function DesignTreeSurface({ data, markSeen, active, returnTo, onLeave, onView, onCompare, onRecordEdits = null, focus = null }: {
   data: DesignTreeData;
   markSeen(candidateId: string): void;
   active: boolean;
@@ -35,6 +35,8 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
   returnTo: SurfaceName;
   onLeave(): void;
   onView(view: DesignTreeView): void;
+  /** An option's run, to open beside the model it was made from; the tree stays as it is behind it. */
+  onCompare?(runId: string): void;
   /** Modeling's Record edits and continue, when Modeling is open to record them (#302). */
   onRecordEdits?: (() => Promise<void>) | null;
   /** A node to open with its inspector and bring into view, such as the ready options' Study (#302). */
@@ -112,7 +114,8 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
         <p className="visually-hidden">{t("designTree.canvasNote")}</p>
       </> : <DesignTreeList tree={tree} words={words} selected={selected} onSelect={select} />}
       {tree && node && <DesignTreeDetails tree={tree} node={node} words={words} data={data} confirmAccept={confirmAccept}
-        onConfirmAccept={setConfirmAccept} onClose={() => select(null)} onView={view} onRecordEdits={onRecordEdits} />}
+        onConfirmAccept={setConfirmAccept} onClose={() => select(null)} onView={view} onRecordEdits={onRecordEdits}
+        onCompare={onCompare && ((target) => { if (target.runId) { markSeen(target.runId); onCompare(target.runId); } })} />}
     </div>
     {/* #337 L5: what is selected, else how to work the canvas; at the right end, what the canvas's colours and
         dashes mean. It is for the eye only: the inspector's Checks row and the list's status say it in words. */}

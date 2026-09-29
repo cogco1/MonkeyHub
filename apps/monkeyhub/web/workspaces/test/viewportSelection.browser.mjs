@@ -42,8 +42,12 @@ window.picks = []; window.resolved = 0; window.status = "idle";
 function Harness() {
   const viewport = useRef(null), interaction = useRef(createInteractionSession());
   const [narrow, setNarrow] = useState(false);
+  // A shell's chosen display style, and a remount of the canvas under it.
+  const [displayStyle, setDisplayStyle] = useState(undefined), [mount, setMount] = useState(0);
   window.viewport = viewport;
   window.setNarrow = setNarrow;
+  window.setDisplayStyle = setDisplayStyle;
+  window.remount = () => setMount((value) => value + 1);
   const pick = (value) => {
     window.picks.push(value?.objectName ?? null);
     setNarrow(Boolean(value));
@@ -51,7 +55,7 @@ function Harness() {
     setTimeout(() => { viewport.current.highlight(value ? { objectNames: [value.objectName] } : null); window.resolved++; }, 30);
   };
   return React.createElement("div", { id: "pane", style: { width: narrow ? "460px" : "1000px" } },
-    React.createElement(ThreeDmViewport, { ref: viewport, interaction, hoverEnabled: true,
+    React.createElement(ThreeDmViewport, { key: mount, ref: viewport, interaction, hoverEnabled: true, displayStyle,
       onInspection: () => {}, onSource: () => {}, onRequestFile: () => {},
       onStatus: (value) => { window.status = value; }, onPick: pick }));
 }
@@ -153,16 +157,93 @@ try {
   assert.equal((await snapshot()).projection, "orthographic", "Fit keeps the isometric projection");
   await page.evaluate(() => window.viewport.current.standardView("perspective"));
   assert.equal((await snapshot()).projection, "perspective", "the explicit perspective preset still works");
+
+  // Display style is a view preference: it keeps the camera, the selection and the file's own materials.
+  const surfaces = () => page.evaluate(() => {
+    const rows = {};
+    window.viewport.current.renderView().scene.traverse((object) => {
+      if (object.isMesh && object.name.startsWith("mass-")) rows[object.name] = { uuid: object.material.uuid,
+        style: object.material.userData.displayStyle ?? null, emissive: object.material.emissive.getHexString() };
+      if (object.isLineSegments && object.name.endsWith(":edges")) rows[object.name] = { visible: object.visible,
+        colour: object.material.color.getHexString(), count: object.geometry.getAttribute("position").count };
+    });
+    return rows;
+  });
+  const grid = () => page.evaluate(() => {
+    let visible = null;
+    window.viewport.current.renderView().scene.traverse((object) => { if (object.type === "GridHelper") visible = object.visible; });
+    return visible;
+  });
+  let rows = await surfaces();
+  assert.equal(rows["mass-0"].style, "modeling", "a model opens in the default Modeling look");
+  assert.equal(rows["mass-0:edges"].count, 24);
+  assert.equal(await grid(), false, "the neutral Modeling canvas has no ground grid");
+  before = await snapshot();
+  await page.evaluate(() => window.viewport.current.setDisplayStyle("original"));
+  assert.deepEqual(await snapshot(), before, "switching to Original keeps the view");
+  assert.equal(await grid(), true, "Original keeps the ground grid");
+  const own = await surfaces();
+  assert.equal(own["mass-0"].style, null, "Original wears the file's own material");
+  await page.evaluate(() => window.viewport.current.highlight({ objectNames: ["mass-1"] }));
+  before = await snapshot();
+  await page.evaluate(() => window.viewport.current.setDisplayStyle("modeling"));
+  rows = await surfaces();
+  assert.deepEqual(await snapshot(), before, "switching display style keeps the view");
+  assert.equal(rows["mass-0"].style, "modeling");
+  assert.equal(rows["mass-1"].style, "modeling", "the selection mark is rebuilt over the Modeling material");
+  assert.notEqual(rows["mass-1"].emissive, "000000", "and the object stays selected");
+  assert.equal(rows["mass-0:edges"].count, 24, "a box shows its 12 edges, never its triangle diagonals");
+  assert.notEqual(rows["mass-1:edges"].colour, rows["mass-0:edges"].colour, "the selected object's edges are marked");
+  await page.evaluate(() => window.viewport.current.setDisplayStyle("original"));
+  rows = await surfaces();
+  assert.equal(rows["mass-0"].uuid, own["mass-0"].uuid, "Original returns the file's exact material");
+  assert.equal(rows["mass-1"].style, null);
+  assert.notEqual(rows["mass-1"].emissive, "000000", "switching back keeps the selection");
+  assert.equal(rows["mass-0:edges"], undefined, "Original draws no edge overlay");
+  await page.evaluate(() => {
+    window.viewport.current.setDisplayStyle("modeling");
+    window.viewport.current.highlight(null);
+    window.viewport.current.setDisplayStyle("original");
+  });
+  rows = await surfaces();
+  for (const name of ["mass-0", "mass-1", "mass-2"]) assert.equal(rows[name].uuid, own[name].uuid, `${name} deselected wears its own material`);
+  assert.deepEqual(await snapshot(), before, "no style switch or deselection moved the camera");
+
+  // The shell's choice, as Stage passes it: followed live, and kept by a remounted canvas and its next model.
+  const wearing = (style) => page.waitForFunction((wanted) => {
+    let worn = null;
+    window.viewport.current.renderView()?.scene.traverse((object) => {
+      if (object.isMesh && object.name === "mass-0") worn = object.material.userData.displayStyle ?? "original";
+    });
+    return worn === wanted;
+  }, style);
+  await page.evaluate(() => window.setDisplayStyle("modeling"));
+  await wearing("modeling");
+  assert.deepEqual(await snapshot(), before, "a style chosen by the shell keeps the view");
+  await page.evaluate(() => window.setDisplayStyle("original"));
+  await wearing("original");
+  await page.evaluate(() => { window.previous = window.viewport.current; window.status = "idle"; window.remount(); });
+  await page.waitForFunction(() => window.viewport.current && window.viewport.current !== window.previous);
+  // renderView() has no scene to show until a model is on screen, so the canvas is read with its first model.
+  await page.evaluate(() => window.load());
+  await page.waitForFunction(() => window.status === "ready");
+  assert.equal(await grid(), true, "a remounted canvas opens in the chosen Original, grid and all");
+  rows = await surfaces();
+  assert.equal(rows["mass-0"].style, null, "and its next model wears the file's own material");
+  assert.equal(rows["mass-0:edges"], undefined);
+  await page.evaluate(() => window.setDisplayStyle("modeling"));
+  await wearing("modeling");
+  assert.equal(await grid(), false);
   assert.deepEqual(errors, []);
   if (process.env.BROWSER_OUTPUT) {
     await mkdir(process.env.BROWSER_OUTPUT, { recursive: true });
     await page.screenshot({ path: path.join(process.env.BROWSER_OUTPUT, "viewport-selection.png") });
     await writeFile(path.join(process.env.BROWSER_OUTPUT, "viewport-report.json"), JSON.stringify({
       source: process.env.SOURCE_SHA, picked: await page.evaluate(() => window.picks), errors,
-      assertions: ["initial Fit", "layout after Fit", "explicit Fit", "six picks with async highlight", "clear and close panel", "orbit/resize/readback", "window resize", "standard views", "orthographic Iso", "Iso refresh and Fit", "explicit perspective"],
+      assertions: ["initial Fit", "layout after Fit", "explicit Fit", "six picks with async highlight", "clear and close panel", "orbit/resize/readback", "window resize", "standard views", "orthographic Iso", "Iso refresh and Fit", "explicit perspective", "display style keeps view, selection and materials", "shell display style survives remount"],
     }, null, 2));
   }
-  console.log("viewport selection, asynchronous highlight, resize, Fit, standard views and orthographic Iso: PASS");
+  console.log("viewport selection, asynchronous highlight, resize, Fit, standard views, orthographic Iso and display style: PASS");
 } finally {
   await browser?.close(); await vite?.close();
   await new Promise(resolve => http.close(resolve));
