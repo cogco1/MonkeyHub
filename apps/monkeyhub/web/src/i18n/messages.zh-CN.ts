@@ -1101,6 +1101,8 @@ export const hubCopy = {
     catalogSignIn: "登录这个 CLI 后才能读取它的模型目录。", catalogChecking: "正在向这个 CLI 读取可用模型…",
     workspace: "工作区", workspaceDir: "新项目所在文件夹", saveSettings: "保存显示与连接", saveWorkspace: "保存工作区与启动",
     workspaceHelp: "「新建项目」会在这个文件夹里创建项目。留空则使用当前项目所在的文件夹。",
+    libraryDir: "技能库项目", libraryHelp: "一个已有的 MonkeyHub 项目，它的技能可供每个 Claude 对话使用。留空表示不使用技能库。",
+    libraryStatus: "修改之后新开始的 Claude 对话使用技能库当前的技能。Codex 对话暂不加载技能库。",
     updateAutoOn: "自动更新：开 · 未签名预发布通道", updateAutoOff: "自动更新：关 · 未签名预发布通道",
     updateAutoHelp: "MonkeyHub 约每 6 小时检查一次 GitHub 预发布版本，并下载从当前版本出发的补丁。补丁经 SHA-256 与发行清单核对后准备在当前版本旁边，下次启动 MonkeyHub 时生效；不会中途重启正在进行的工作。未签名：这些核对能发现下载损坏或不一致，不能证明发布者身份。",
     updateCheckNow: "立即检查", updateLastCheck: "上次检查：{result}", updateNeverChecked: "尚未检查", updateChecking: "正在检查…",
