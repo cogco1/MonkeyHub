@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import unittest
 
-from monkeydiagram.drawing_output import MM_PER_PT, PaperCanvas, render_dxf, render_pdf
+from monkeydiagram.drawing_output import MM_PER_PT, PaperCanvas, render_dxf, render_pdf, render_svg
 
 
 DRAWING_DEPS = all(find_spec(name) is not None for name in ("reportlab", "fontTools", "ezdxf"))
@@ -28,6 +28,28 @@ class DrawingOutputTests(unittest.TestCase):
         self.assertFalse(audit.has_errors)
         self.assertFalse(audit.has_fixes)
         return doc
+
+    def test_svg_draws_the_same_scene_in_paper_millimetres_with_pens_fills_and_live_text(self):
+        from xml.etree import ElementTree
+        c = self.canvas
+        c.setLineWidth(0.5 / MM_PER_PT)
+        c.setDash([4 / MM_PER_PT, 1 / MM_PER_PT])
+        c.line(10 / MM_PER_PT, 20 / MM_PER_PT, 172.56 / MM_PER_PT, 20 / MM_PER_PT)
+        c.setDash([])
+        c.setFillColor((0.5, 0.5, 0.5))
+        c.rect(0, 0, 10 / MM_PER_PT, 5 / MM_PER_PT, stroke=0, fill=1)
+        c.drawString(30 / MM_PER_PT, 40 / MM_PER_PT, "SECTION A-A")
+        root = ElementTree.fromstring(render_svg(c))
+        ns = "{http://www.w3.org/2000/svg}"
+        self.assertEqual((root.get("width"), root.get("height"), root.get("viewBox")), ("420mm", "297mm", "0 0 420 297"))
+        line, fill = root.findall(f"{ns}path")
+        self.assertEqual(line.get("d"), "M10,277 L172.56,277")
+        self.assertEqual((line.get("stroke-width"), line.get("stroke-dasharray"), line.get("fill")), ("0.5", "4 1", "none"))
+        self.assertEqual((fill.get("fill"), fill.get("fill-rule"), fill.get("stroke")), ("#808080", "evenodd", "none"))
+        text = root.find(f"{ns}text")
+        self.assertEqual(text.text, "SECTION A-A")
+        self.assertEqual(text.get("transform"), "translate(30 257)")
+        self.assertEqual(text.get("font-family"), "Bitstream Vera Sans")
 
     def test_explicit_sheets_keep_paper_size_and_do_not_invent_a_final_page(self):
         c = self.canvas

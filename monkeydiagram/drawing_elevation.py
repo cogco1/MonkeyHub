@@ -787,7 +787,7 @@ def freeze_cut_plan(
     drawing_run_id: str, dimensions: tuple[Mapping, ...] = (), previous_revision_ref: str | None = None,
     attribution: Mapping[str, Any] | None = None, reason: str | None = None, source_kind: str | None = None,
 ) -> ElevationDrawing:
-    """Retain a horizontal section and the exact below-cut visibility in the existing drawing envelope.
+    """Retain a horizontal (or vertical model-axis) section and the exact beyond-cut visibility in the existing drawing envelope.
 
     ``recipe`` retains representation intent; ``dimensions`` contains the application's resolved
     source measurements or explicit unresolved statuses. Neither can change the source model.
@@ -812,8 +812,12 @@ def freeze_cut_plan(
             hidden_lines=frame["hidden_lines"], linear_deflection=frame["linear_deflection"],
             scale_denominator=int(scale[2:]),
         )
-        _require(view.right == (1, 0, 0) and view.up == (0, 1, 0) and view.look == (0, 0, -1)
-                 and view.near_depth == 0, "a cut-plan must look down CAD -Z from its horizontal cut plane")
+        horizontal = view.right == (1, 0, 0) and view.up == (0, 1, 0) and view.look == (0, 0, -1)
+        # A vertical section is the same composition on a plane containing CAD +Z, seen along a plan axis.
+        vertical = view.up == (0, 0, 1) and view.look in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0))
+        _require((horizontal or vertical) and view.near_depth == 0,
+                 "a cut-plan must look down CAD -Z from its horizontal cut plane, "
+                 "or along a plan axis from a vertical cut plane with CAD +Z up")
         graphics = recipe["graphics"]
         _require(isinstance(graphics, Mapping), "cut-plan graphics must be a mapping")
         resolved = deepcopy(list(dimensions))
@@ -858,7 +862,9 @@ def freeze_cut_plan(
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"cut-plan {view.name}: {exc}") from exc
     drawn = _drawn(recipe, projection, backend_identity(), {
-        "algorithm": "BRepAlgoAPI_Section on the cut plane; exact below-cut slab and global HLRBRep_Algo visibility",
+        "algorithm": ("BRepAlgoAPI_Section on the cut plane; exact below-cut slab and global HLRBRep_Algo visibility"
+                      if horizontal else
+                      "BRepAlgoAPI_Section on the vertical cut plane; exact beyond-cut slab and global HLRBRep_Algo visibility"),
         "selected_object_ids": list(selected), "section_polylines": len(sections),
         "section_regions": len(regions), "dimensions": resolved, "unresolvedObjectIds": unresolved_objects,
         **({"dressing": dressing} if "dressing" in recipe else {}),

@@ -564,7 +564,7 @@
         "cropping projected polylines to the view window after visibility was solved (crop_polylines)",
         "the deterministic cleanup between projection and SVG, rules micro, collinear, cut_precedence, shared_cut, duplicate and hidden_under_cut at a tolerance in drawing units, and its CleanupReport of counts and object ids per rule (clean_drawing)",
         "the SVG document of a drawing: viewBox in frame units, physical mm size at the sheet scale, hidden group under visible group, data-object per polyline, fixed-decimal coordinates, no timestamp (drawing_svg)",
-        "rasterising that SVG's own polylines to a PNG at its physical size (render_svg_png), and reading the object ids an SVG names (svg_objects)",
+        "rasterising that SVG's own polylines to a PNG at its physical size (render_svg_png), reading the object ids an SVG names (svg_objects), and reading its marks in paper mm with their role group, pen and grey for placement on a sheet (svg_paper_marks, DrawingMark; dimension text is refused, not dropped)",
         "even-odd section hatching and measured dimension strokes/native text with one embedded font; shared paper-placement bounds reject clipped dimensions",
         "data-component and data-material after data-object on every polyline and poché of an object the caller's semantics name; material-keyed hatch spacing and angle or solid even-odd poché polygons, and the beyond fade, all in paper mm from graphics.hatch.byMaterial and graphics.beyond",
         "built-in person/tree plan SVG polylines and independent data-dressing groups, rendered through the same SVG-to-PNG path without architectural data-object identity"
@@ -588,7 +588,8 @@
         "OcctDrawingPolyline tuple (cleaned) and CleanupReport",
         "SVG bytes",
         "PNG bytes",
-        "object id tuple"
+        "object id tuple",
+        "paper size and DrawingMark tuple"
       ],
       "public_api": [
         "crop_polylines",
@@ -597,6 +598,8 @@
         "drawing_svg",
         "render_svg_png",
         "svg_objects",
+        "svg_paper_marks",
+        "DrawingMark",
         "DrawingSvgError",
         "SVG_MEDIA_TYPE",
         "PNG_MEDIA_TYPE",
@@ -3140,7 +3143,7 @@
         "the semantics a drawing writes (object_semantics): each physical object's archflow:component and archflow:material user text from the CAD receipt's expected_semantics, passed by all three freeze paths; a native model has none",
         "who asked for a drawing revision and why: the application's attribution (a flat mapping, or a dataclass written in camelCase), reason and, for a cut plan, the kind of asker its request named (sourceKind, text such as human or agent), checked before anything is drawn and kept in the receipt only when given; ElevationDrawing.cleanup, .attribution, .reason and .source_kind read None from receipts without them",
         "cold readback of a retained drawing (read_model_axis_elevation, list_model_axis_elevations) with every sha verified",
-        "horizontal cut-plan composition: section boundaries, one material hatch and below-cut visible lines, with caller-resolved semantic dimensions and retained representation recipe",
+        "horizontal cut-plan composition: section boundaries, one material hatch and below-cut visible lines, with caller-resolved semantic dimensions and retained representation recipe; the same composition on a vertical cut plane with CAD +Z up seen along a plan axis (a model-axis section), refusing any other frame",
         "representation-only SVG entourage in the existing cut-plan recipe; exact physical-object-centre anchors, explicit missing/outside-view status and immutable dressing readback across source rebuilds",
         "section perspective: SectionPerspectiveView (a plan line and kept side, or an origin and normal; an explicit or default one-point camera) checked with named refusals before the model is read, the default eye placed from the exact cut, and the request, exact plane, resolved camera and crop recorded in the one drawing receipt (freeze_section_perspective)",
         "NativeModelSource: verify original 3DM bytes against their explicit registration and derive drawing shapes without fabricating semantic state or CAD execution provenance",
@@ -7732,7 +7735,7 @@
         "Drawing Standard v0.1: configurable sheet, view, graphic, annotation, information, status, coordination and revision conventions",
         "DrawingState structural and cross-record validation: preferred scales, view references, dimension values and chains, source certainty, note placement, tags, interfaces, revisions and paper bounds",
         "DrawingPlan as a detached plain domain value without receipt, digest or persistence authority",
-        "PaperCanvas recording of resolved paper primitives with glyph and stroke bounds, and PDF/DXF serialization of those same scenes",
+        "PaperCanvas recording of resolved paper primitives with glyph and stroke bounds, and PDF/DXF/SVG serialization of those same scenes (SVG in paper mm with live text)",
         "reusable ARCH400 white presentation and ARCH364 technical sheet styles extracted from existing drawings; compose_review_sheet places caller-supplied orthographic linework and measured dimensions at one explicit scale without changing model geometry"
       ],
       "does_not_own": [
@@ -7764,6 +7767,7 @@
         "PaperCanvas",
         "render_pdf",
         "render_dxf",
+        "render_svg",
         "list_drawing_styles",
         "drawing_style",
         "compose_review_sheet",
@@ -7784,7 +7788,7 @@
         "Scale is an explicit drawing convention, never a packing result; exceptions carry an explicit reason.",
         "Derived dimensions retain their source certainty and unresolved dimensions cannot become construction control.",
         "Tags, section references and revisions resolve against stable ids; actual paper primitives must fit the stated printable area.",
-        "PDF and DXF are serialized from the same paper scenes; neither is reconstructed from the other.",
+        "PDF, DXF and SVG are serialized from the same paper scenes; none is reconstructed from another.",
         "The grammar uses ordinary values and no filesystem IO. Output adapters return bytes and never choose or write a project path."
       ],
       "status": "canonical",

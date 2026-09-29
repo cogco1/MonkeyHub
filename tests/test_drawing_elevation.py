@@ -656,6 +656,31 @@ class CutPlanTests(unittest.TestCase):
         self.assertFalse(self.repository.layout.run("bad-plan").manifest.exists())
         self.assertEqual(self.repository.read_head(), self.head)
 
+    def test_a_vertical_model_axis_cut_through_the_door_draws_only_its_lintel_and_nothing_in_front(self):
+        # Looking +X from X = 1.5; the sheet's right is -Y, so u = -Y and v = Z.
+        view = ElevationView(name="section-a", origin=(1.5, 0, 0), look=(1, 0, 0), right=(0, -1, 0), up=(0, 0, 1),
+                             crop_uv=(-4, -1, 1, 4), near_depth=0, far_depth=3, scale_denominator=50)
+        recipe = {**self.recipe, "name": "section-a", "frame": view.to_dict(), "dimensions": []}
+        drawing = freeze_cut_plan(self.repository, source=self.source, recipe=recipe, drawing_run_id="section-run")
+        self.assertEqual(drawing.receipt["projection"]["section_regions"], 4)
+        self.assertIn("vertical cut plane", drawing.receipt["projection"]["algorithm"])
+        cut = {object_id for object_id, _ in _group_lines(drawing.svg, "section")}
+        self.assertEqual(cut, {"south-wall", "north-wall", "roof", "floor"})
+        self.assertNotIn("west-wall", svg_objects(drawing.svg), "what lies in front of the cut is not drawn")
+        # SVG y runs down from v = 4: the south wall is cut only above the 2.1 m door, up to 3 m.
+        lintel = [point for object_id, points in _group_lines(drawing.svg, "section") if object_id == "south-wall"
+                  for point in points]
+        self.assertAlmostEqual(min(y for _, y in lintel), 1.0, places=4)
+        self.assertAlmostEqual(max(y for _, y in lintel), 1.9, places=4)
+        self.assertAlmostEqual(min(x for x, _ in lintel), 3.8, places=4)
+        self.assertAlmostEqual(max(x for x, _ in lintel), 4.0, places=4)
+        self.assertEqual(read_model_axis_elevation(self.repository, drawing.receipt_ref).svg, drawing.svg)
+        self.assertEqual(self.repository.read_head(), self.head)
+        tilted = {**recipe, "frame": {**recipe["frame"], "look": [.6, .8, 0], "right": [.8, -.6, 0]}}
+        with self.assertRaises(DrawingElevationError):
+            freeze_cut_plan(self.repository, source=self.source, recipe=tilted, drawing_run_id="tilted-section")
+        self.assertFalse(self.repository.layout.run("tilted-section").manifest.exists())
+
 
     def test_rebuild_preserves_deleted_hidden_object_intent_and_renders_remaining_source(self):
         recipe = {**self.recipe, "hiddenObjectIds": ["deleted-partition", "east-wall"]}

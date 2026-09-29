@@ -410,6 +410,78 @@ def render_pdf(source, font_mapping: Mapping[str, str | Path] | None = None) -> 
     return buffer.getvalue()
 
 
+def _svg_paint(color) -> str:
+    red, green, blue = (max(0, min(255, round(v * 255))) for v in color[:3])
+    return f"#{red:02x}{green:02x}{blue:02x}"
+
+
+def _svg_font(path) -> tuple[str, str]:
+    from fontTools.ttLib import TTFont
+    names = TTFont(path, fontNumber=0)["name"]
+    family = names.getDebugName(1) or Path(path).stem
+    return family, "bold" if "bold" in (names.getDebugName(2) or "").lower() else "normal"
+
+
+def render_svg(source, font_mapping: Mapping[str, str | Path] | None = None, *, sheet: int = 0) -> bytes:
+    """Render one scene as an editable SVG in paper millimetres, from the same primitives as the PDF.
+
+    Paths keep their pens, dashes and fill rules; text stays live text in the
+    mapped font's family. Nothing is read back from a PDF and no file is written.
+    """
+    from xml.sax.saxutils import escape, quoteattr
+    scenes, fonts = _input(source, font_mapping)
+    scene = scenes[sheet]
+    width, height = scene.size_mm
+    families = {name: _svg_font(path) for name, path in fonts.items()}
+    number = lambda value: f"{value:.4f}".rstrip("0").rstrip(".")  # noqa: E731
+    point = lambda p: f"{number(p[0]*MM_PER_PT)},{number(height - p[1]*MM_PER_PT)}"  # noqa: E731
+    out = ['<?xml version="1.0" encoding="UTF-8"?>',
+           f'<svg xmlns="http://www.w3.org/2000/svg" width="{number(width)}mm" height="{number(height)}mm" '
+           f'viewBox="0 0 {number(width)} {number(height)}">',
+           f"  <title>{escape(getattr(source, 'title', '') or scene.number)}</title>",
+           f'  <rect width="{number(width)}" height="{number(height)}" fill="#fff"/>']
+    for primitive in scene.primitives:
+        data = primitive.data
+        fill = data["fill_color"]
+        if primitive.kind == "text":
+            if data["font"] not in families:
+                raise ValueError(f"No caller-supplied font mapping for {data['font']!r}")
+            family, weight = families[data["font"]]
+            x, y = point(data["origin_pt"]).split(",")
+            rotation = f' rotate({number(-data["rotation"])})' if data["rotation"] else ""
+            opacity = "" if fill[3] == 1 else f' fill-opacity="{number(fill[3])}"'
+            out.append(f'  <text transform="translate({x} {y}){rotation}" font-family={quoteattr(family)} '
+                       f'font-weight="{weight}" font-size="{number(data["font_size_pt"]*MM_PER_PT)}" '
+                       f'fill="{_svg_paint(fill)}"{opacity}>{escape(data["text"])}</text>')
+            continue
+        paint = [f'fill="{_svg_paint(fill) if data["fill"] else "none"}"']
+        if data["fill"]:
+            paint.append(f'fill-rule="{"evenodd" if data["fill_mode"] == 0 else "nonzero"}"')
+            if fill[3] != 1:
+                paint.append(f'fill-opacity="{number(fill[3])}"')
+        if data["stroke"]:
+            paint.append(f'stroke="{_svg_paint(data["stroke_color"])}" '
+                         f'stroke-width="{number(data["line_width_pt"]*MM_PER_PT)}"')
+            if data["stroke_color"][3] != 1:
+                paint.append(f'stroke-opacity="{number(data["stroke_color"][3])}"')
+            if data["dash_pt"]:
+                paint.append(f'stroke-dasharray="{" ".join(number(v*MM_PER_PT) for v in data["dash_pt"])}"')
+        else:
+            paint.append('stroke="none"')
+        if primitive.kind == "circle":
+            cx, cy = point(data["center_pt"]).split(",")
+            out.append(f'  <circle cx="{cx}" cy="{cy}" r="{number(data["radius_pt"]*MM_PER_PT)}" {" ".join(paint)}/>')
+            continue
+        if primitive.kind != "path":
+            raise ValueError(f"Unknown paper primitive {primitive.kind!r}")
+        steps = []
+        for command in data["commands"]:
+            steps.append("Z" if command[0] == "Z" else command[0] + " ".join(point(p) for p in command[1:]))
+        out.append(f'  <path d="{" ".join(steps)}" {" ".join(paint)}/>')
+    out.extend(["</svg>", ""])
+    return "\n".join(out).encode("utf-8")
+
+
 def _dxf_paths(commands):
     from ezdxf import path as cad_path
     paths, current = [], None
