@@ -173,6 +173,10 @@ def require_actor(request: Request, action: str, project_id: str | None = None) 
 def request_action(method: str, path: str, *, shared_project: bool) -> str | None:
     """One action mapping for both route assembly and request authorization."""
 
+    if method == "POST" and path == "/api/memory/about":
+        # The words travel in a body; picking what memory they are about is
+        # still a read, for the Runtime and the shared project alike (#252).
+        return "read"
     if not shared_project and method == "POST" and path in {"/api/drawings/plans/status", "/api/drawing-recipes/inspect"}:
         # Source references or a portable file travel in a body; inspection is
         # still a read. These consumers belong to the project Runtime.

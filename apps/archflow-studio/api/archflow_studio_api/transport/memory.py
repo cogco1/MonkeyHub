@@ -220,6 +220,22 @@ class MemoryLocateDto(_Frozen):
     locators: list[MemoryMatchDto]
 
 
+class MemoryAboutRequestDto(_Frozen):
+    """A turn's words, to read the memory they are about without any design source."""
+
+    project_id: str = Field(alias="projectId", min_length=1)
+    utterance: str = Field(min_length=1, description="the user's whole message, unedited")
+    stage_ref: str | None = Field(alias="stageRef", default=None, min_length=1,
+                                  description="the exact Stage the turn is under, if any")
+    domain: TaskDomain | None = Field(default=None, description="the one task domain the turn named, if any")
+
+
+class MemoryAboutDto(_Frozen):
+    project_id: str = Field(alias="projectId")
+    memory: list[MemoryMatchDto] = Field(
+        description="what ContextPack.memory would hand for the same words: locators first, each re-read now")
+
+
 def memory_dto(revision: MemoryRevision, *, status: str | None = None) -> MemoryDto:
     payload = revision.payload
     return MemoryDto(

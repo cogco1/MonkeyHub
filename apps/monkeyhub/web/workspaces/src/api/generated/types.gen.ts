@@ -5357,6 +5357,52 @@ export type MassingOptionRequestDto = {
 };
 
 /**
+ * MemoryAboutDto
+ */
+export type MemoryAboutDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Memory
+     *
+     * what ContextPack.memory would hand for the same words: locators first, each re-read now
+     */
+    memory: Array<MemoryMatchDto>;
+};
+
+/**
+ * MemoryAboutRequestDto
+ *
+ * A turn's words, to read the memory they are about without any design source.
+ */
+export type MemoryAboutRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Utterance
+     *
+     * the user's whole message, unedited
+     */
+    utterance: string;
+    /**
+     * Stageref
+     *
+     * the exact Stage the turn is under, if any
+     */
+    stageRef?: string | null;
+    /**
+     * Domain
+     *
+     * the one task domain the turn named, if any
+     */
+    domain?: 'design' | 'drawing' | 'copy' | 'research' | null;
+};
+
+/**
  * MemoryDto
  *
  * One memory item at one revision, as this project retains it.
@@ -18237,6 +18283,41 @@ export type LocateApiMemoryLocateGetResponses = {
 };
 
 export type LocateApiMemoryLocateGetResponse = LocateApiMemoryLocateGetResponses[keyof LocateApiMemoryLocateGetResponses];
+
+export type AboutApiMemoryAboutPostData = {
+    body: MemoryAboutRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/memory/about';
+};
+
+export type AboutApiMemoryAboutPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AboutApiMemoryAboutPostError = AboutApiMemoryAboutPostErrors[keyof AboutApiMemoryAboutPostErrors];
+
+export type AboutApiMemoryAboutPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: MemoryAboutDto;
+};
+
+export type AboutApiMemoryAboutPostResponse = AboutApiMemoryAboutPostResponses[keyof AboutApiMemoryAboutPostResponses];
 
 export type ReadMemoryItemApiMemoryMemoryIdGetData = {
     body?: never;

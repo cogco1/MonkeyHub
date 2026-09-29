@@ -94,6 +94,13 @@ class MemoryFixture(DecisionFixture):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["memory"]
 
+    def about(self, utterance: str, client=None, **body) -> list[dict]:
+        response = (client or self.client).post("/api/memory/about",
+                                                json={"projectId": PROJECT_ID, "utterance": utterance, **body})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["projectId"], PROJECT_ID)
+        return response.json()["memory"]
+
     def handed(self, utterance: str, client=None, **body) -> list[str]:
         return [row["memory"]["memoryId"] for row in self.context(client, utterance=utterance, **body)["memory"]]
 
@@ -300,6 +307,27 @@ class SourcePolicyTests(MemoryFixture):
         self.assertEqual(self.policy(409, messageSource=message(3))["code"], "MEMORY_KEY_CONFLICT")
         self.assertEqual(self.memory(), first)
 
+    def test_memory_about_hands_what_the_context_pack_hands_and_writes_nothing(self) -> None:
+        locator = self.locator()
+        policy = self.policy()
+        cold = self.new_client()
+        runs = sorted(path.name for path in (self.root / PROJECT_ID / "runs").iterdir())
+        for utterance, body in (("上次说的那个图框放在哪个文件了?", {}),
+                                ("查一下这种砖的材料性能", {}),
+                                ("查一下这种砖的材料性能", {"domain": "drawing"}),
+                                ("接着往下调", {})):
+            with self.subTest(utterance=utterance, body=body):
+                context = ({} if not body else {"decisionContext": {"domain": body["domain"]}})
+                self.assertEqual(self.about(utterance, cold, **body),
+                                 self.context(cold, utterance=utterance, **context)["memory"])
+        self.assertEqual([row["memory"]["memoryId"] for row in self.about("项目图框在哪？", cold)],
+                         [locator["memoryId"]])
+        self.assertEqual([row["memory"]["memoryId"] for row in self.about("查一下这种砖的材料性能", cold)],
+                         [policy["memoryId"]])
+        self.assertEqual(sorted(path.name for path in (self.root / PROJECT_ID / "runs").iterdir()), runs)
+        refused = cold.post("/api/memory/about", json={"projectId": "other-project", "utterance": "图框"})
+        self.assertEqual((refused.status_code, refused.json()["code"]), (403, "PROJECT_MISMATCH"))
+
     def test_a_new_project_with_no_design_saves_a_policy_from_the_users_words(self) -> None:
         with TemporaryDirectory() as directory:
             make_empty_project(Path(directory))
@@ -316,6 +344,12 @@ class SourcePolicyTests(MemoryFixture):
                 # No modeling base appeared to hold it: only the memory run exists.
                 runs = Path(directory) / PROJECT_ID / "runs"
                 self.assertEqual(sorted(path.name for path in runs.iterdir()), [MEMORY_RUN_ID])
+                # And a turn with no design state still reads it by its words.
+                about = client.post("/api/memory/about", json={"projectId": PROJECT_ID,
+                                                               "utterance": "查一下这种砖的材料性能"})
+                self.assertEqual(about.status_code, 200, about.text)
+                self.assertEqual([row["memory"]["memoryId"] for row in about.json()["memory"]],
+                                 [saved["memoryId"]])
 
 
 class CrossVersionTests(MemoryFixture):

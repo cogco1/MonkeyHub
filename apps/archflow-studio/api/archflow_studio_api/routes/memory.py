@@ -10,6 +10,8 @@ from ..application.authentication import request_attribution
 from ..application.binding import bound_project
 from ..transport.errors import StudioError
 from ..transport.memory import (
+    MemoryAboutDto,
+    MemoryAboutRequestDto,
     MemoryDto,
     MemoryHistoryDto,
     MemoryKind,
@@ -55,6 +57,20 @@ def locate(
     binding = bound_project(request.app.state)
     return MemoryLocateDto(projectId=binding.project_id, query=q,
                            locators=[memory_match_dto(row) for row in memory.locate(binding, q, stage_ref=stage_ref)])
+
+
+@router.post("/memory/about", response_model=MemoryAboutDto, response_model_by_alias=True)
+def about(request: Request, payload: MemoryAboutRequestDto) -> MemoryAboutDto:
+    """The memory a turn's words are about, as ContextPack.memory selects it; it only reads.
+
+    A turn with no design state has no context pack, yet memory is the
+    project's: this hands the same selection from the words alone.
+    """
+
+    binding = _binding(request, payload.project_id)
+    return MemoryAboutDto(projectId=binding.project_id, memory=[
+        memory_match_dto(row)
+        for row in memory.memory_for(binding, payload.utterance, stage_ref=payload.stage_ref, domain=payload.domain)])
 
 
 @router.get("/memory/{memory_id}", response_model=MemoryHistoryDto, response_model_by_alias=True)
