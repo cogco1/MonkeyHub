@@ -1,4 +1,51 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-432",
+      "lanes": [
+        {
+          "id": "integration",
+          "status": "active",
+          "branch": "codex/432-integration",
+          "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-432-integrate",
+          "base_ref": "1440b8155b3397a943591eaf292adedf7d0f18ae",
+          "contributor": "Claude (continuing Codex's interrupted GH-432 integration)",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatCard.css",
+            "apps/monkeyhub/web/src/ChatCard.tsx",
+            "apps/monkeyhub/web/src/ChatMessageContent.css",
+            "apps/monkeyhub/web/src/ChatMessageContent.tsx",
+            "apps/monkeyhub/web/src/ChatShell.css",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/ChatSuggestionCard.css",
+            "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeDetails.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeSurface.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/workspaces/src/styles.css",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ModelComparison.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/comparisonPair.ts",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/modelComparison.css",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/modelDisplay.ts",
+            "apps/monkeyhub/web/workspaces/test/modelComparison.test.ts",
+            "apps/monkeyhub/web/workspaces/test/modelDisplayStyle.test.ts",
+            "apps/monkeyhub/web/workspaces/test/viewportSelection.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/workspace-fixture.tsx"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
