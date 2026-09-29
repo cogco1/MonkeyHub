@@ -3,7 +3,8 @@
 A decision remembers the project: what the architect kept, avoided or
 required (``decisions``, Project State under #185). Memory remembers how we
 work: where a piece of retained content is ("项目图框在这份文件里") and where to
-look first for a topic ("查材料先去 A、B,别用 C"). It is its own owner with its
+look first for a topic ("查材料先去 A、B,别用 C") and which library skill a task
+follows ("以后出平面图前都按事务所的填充标准检查一下"). It is its own owner with its
 own records - one immutable revision per change in the fixed ``studio-memory``
 run, record kind ``studio-memory-record``, through the same P036 ports - so a
 build that only knows decisions never reads one.
@@ -11,9 +12,12 @@ build that only knows decisions never reads one.
 Every item has the shape the owner wrote (#252, 2026-09-28): a ``key``, a
 ``kind``, a ``scope``, ``appliesWhen``, a kind-specific ``value``, its
 ``authority``, its ``provenance`` (the user's own words and message), a
-``version`` and a ``status``. Two kinds exist now: a ``locator`` points at
+``version`` and a ``status``. Three kinds exist now: a ``locator`` points at
 retained project content and copies none of it; a ``source_policy`` says where
-to look first, and what to avoid, for a research topic. Scope is ``project``;
+to look first, and what to avoid, for a research topic; a ``recipe`` names the
+library skill a task follows as ``skill:<name>@<version>`` and holds none of its
+steps. The Hub resolves that version against the configured library when a chat
+saves one; this owner never reads the library. Scope is ``project``;
 the wider scopes live in the library project and reach a project by pinned
 import. Authority is ``explicit``: an item is saved from the user's words or a
 person's own action, never inferred from behaviour. ``confidence``,
@@ -49,17 +53,18 @@ from .authentication import ActorAttribution
 from .binding import ProjectBinding, retained_sources
 from .boards import read_board
 from .decisions import _message_source, fixed_run, revision_chains
+from .skills import MAX_NAME_LENGTH, SKILL_NAME
 
 MEMORY_RUN_ID = "studio-memory"
 MEMORY_SCHEMA = "StudioMemoryRecord@1"
 
 LOCATOR = "locator"
 SOURCE_POLICY = "source_policy"
-KINDS = (LOCATOR, SOURCE_POLICY)
+RECIPE = "recipe"
+KINDS = (LOCATOR, SOURCE_POLICY, RECIPE)
 # Named by the owner and not written yet: each needs its own evidence first
-# (a recipe is still a drawing decision until it migrates; a preference or
-# habit waits for #253's accept/reject evidence).
-RESERVED_KINDS = ("recipe", "preference", "habit", "standard")
+# (a preference or habit waits for #253's accept/reject evidence).
+RESERVED_KINDS = ("preference", "habit", "standard")
 PROJECT = "project"
 # Wider scopes belong to the library project and arrive by pinned import.
 RESERVED_SCOPES = ("organization", "team", "user")
@@ -73,8 +78,9 @@ SUPERSEDED = "superseded"
 REVOKED = "revoked"
 
 # The task domains a turn can name. An item applies in the domains its kind
-# lists, or in every domain when it lists none; a turn that names no domain
-# reads every item its words are about.
+# lists (a recipe's are the ones the user's words indicate), or in every domain
+# when it lists none; a turn that names no domain reads every item its words
+# are about.
 TASK_DOMAINS = ("design", "drawing", "copy", "research")
 _KIND_DOMAINS = {LOCATOR: (), SOURCE_POLICY: ("research",)}
 # The normalized research topics, each with the words that put a turn on it.
@@ -270,10 +276,28 @@ def _source_policy_value(value: Mapping[str, Any]) -> dict[str, Any]:
     named = [item.casefold() for item in (*prefer, *avoid)]
     if any(not item for item in named) or len(set(named)) != len(named):
         raise _invalid("each source appears once: a source is either preferred, in its order, or avoided.")
-    note = value.get("note")
-    note = None if note is None else note.strip() or None
     return {"topic": topic, "keys": [key for key in RESEARCH_KEYS if key in keys],
-            "prefer": prefer, "avoid": avoid, "note": note}
+            "prefer": prefer, "avoid": avoid, "note": _note(value)}
+
+
+def _note(value: Mapping[str, Any]) -> str | None:
+    note = value.get("note")
+    return None if note is None else note.strip() or None
+
+
+# One exact library skill version: studio.skills' name spelling, then its version.
+_SKILL_REF = re.compile(r"skill:(?P<name>[^@]+)@(?P<version>[1-9][0-9]{0,8})")
+
+
+def _recipe_value(value: Mapping[str, Any]) -> dict[str, Any]:
+    task = unicodedata.normalize("NFKC", value["task"]).strip()
+    if not task:
+        raise _invalid("a recipe names its task in the user's words.")
+    found = _SKILL_REF.fullmatch(value["skill"].strip())
+    if (found is None or len(found["name"]) > MAX_NAME_LENGTH or not SKILL_NAME.fullmatch(found["name"])):
+        raise _invalid("a recipe names one exact library skill version, skill:<name>@<version> "
+                       "(e.g. skill:hatch-review@1); its steps stay in the skill.")
+    return {"task": task, "skill": f"skill:{found['name']}@{int(found['version'])}", "note": _note(value)}
 
 
 def _fold(text: str) -> str:
@@ -282,9 +306,20 @@ def _fold(text: str) -> str:
 
 def _applies_when(binding: ProjectBinding, kind: str, value: Mapping[str, Any],
                   requested: Mapping[str, Any] | None) -> dict[str, Any]:
-    """When an item applies: its kind's domains, its topic and keys, and an optional Stage."""
+    """When an item applies: its kind's domains, its topic and keys, and an optional Stage.
+
+    A recipe's domains are the ones the user's words indicate; the other kinds'
+    are fixed by their kind.
+    """
 
     stage_ref = (requested or {}).get("stageRef")
+    domains = (requested or {}).get("domains")
+    if kind != RECIPE and domains is not None:
+        raise _invalid(f"a {kind}'s domains follow from its kind; only a recipe names appliesWhen.domains.")
+    if kind == RECIPE and (not domains or len(set(domains)) != len(domains)
+                           or any(domain not in TASK_DOMAINS for domain in domains)):
+        raise _invalid("a recipe names the task domains its words indicate in appliesWhen.domains: one or more "
+                       f"distinct of {', '.join(TASK_DOMAINS)}.")
     if stage_ref is not None:
         try:
             reference = record_ref_from_uri(stage_ref, binding.project_id)
@@ -295,12 +330,18 @@ def _applies_when(binding: ProjectBinding, kind: str, value: Mapping[str, Any],
         binding.design_stage(reference)
     if kind == LOCATOR:
         return {"domains": list(_KIND_DOMAINS[kind]), "topics": [value["label"]], "keys": [], "stageRef": stage_ref}
+    if kind == RECIPE:
+        return {"domains": [domain for domain in TASK_DOMAINS if domain in domains], "topics": [value["task"]],
+                "keys": [], "stageRef": stage_ref}
     return {"domains": list(_KIND_DOMAINS[kind]), "topics": [value["topic"]], "keys": list(value["keys"]),
             "stageRef": stage_ref}
 
 
+_KEY_FIELDS = {LOCATOR: "label", SOURCE_POLICY: "topic", RECIPE: "task"}
+
+
 def _key(kind: str, value: Mapping[str, Any]) -> str:
-    return f"{kind}:{_fold(value['label'] if kind == LOCATOR else value['topic'])}"
+    return f"{kind}:{_fold(value[_KEY_FIELDS[kind]])}"
 
 
 def _content(binding: ProjectBinding, spec: Mapping[str, Any], chains: Mapping[str, Sequence[MemoryRevision]],
@@ -316,7 +357,8 @@ def _content(binding: ProjectBinding, spec: Mapping[str, Any], chains: Mapping[s
     if spec["sourceKind"] == "agent" and spec.get("messageSource") is None:
         raise _invalid(f"an agent saves a {kind} only from the user's own words: name the message they came "
                        "from in messageSource.")
-    value = _locator_value(binding, spec["value"]) if kind == LOCATOR else _source_policy_value(spec["value"])
+    value = (_locator_value(binding, spec["value"]) if kind == LOCATOR
+             else _recipe_value(spec["value"]) if kind == RECIPE else _source_policy_value(spec["value"]))
     applies_when = _applies_when(binding, kind, value, spec.get("appliesWhen"))
     key = _key(kind, value)
     for chain in chains.values():
@@ -411,7 +453,8 @@ def revise_memory(
     """Revoke or supersede one item, against the revision the caller read.
 
     A revocation keeps the words and value it revokes and adds the reason. A
-    supersession keeps its kind: a locator moves, a policy changes its sources.
+    supersession keeps its kind: a locator moves, a policy changes its sources,
+    a recipe names another skill version.
     """
 
     chains = _chains(binding)
@@ -479,7 +522,7 @@ def _about_locator(query_terms: frozenset[str], payload: Mapping[str, Any]) -> t
 
 
 def _about_policy(query_terms: frozenset[str], utterance: str, payload: Mapping[str, Any]) -> tuple[Any, ...] | None:
-    """A source policy matches words about its topic or one of its keys."""
+    """A source policy matches words about its topic or one of its keys; a recipe, about its task."""
 
     applies = payload["appliesWhen"]
     matched = {term for topic in applies["topics"] for term in query_terms & lexical_terms(topic)}
@@ -498,11 +541,14 @@ def memory_for(
     """The active items these words are about: scope, then appliesWhen, then the words.
 
     Scope is the project. An item bound to a Stage applies only under that
-    Stage; one whose kind lists task domains applies only to a turn that
-    named one of them or named none. Then the words: a locator by its label
-    or the words it was saved from, a source policy by its topic or keys.
-    Every locator found is read again (``stale_reason``); a stale one is kept
-    with its reason. Locators rank before policies, closer matches first.
+    Stage; one that lists task domains applies only to a turn that named one
+    of them or named none. Then the words: a locator by its label or the
+    words it was saved from, a source policy by its topic or keys, a recipe
+    by its task. Every locator found is read again (``stale_reason``); a stale
+    one is kept with its reason. Locators rank before policies and policies
+    before recipes, closer matches first. Whether a recipe's skill version is
+    still the library's current one is the Hub's to say: this owner never
+    reads the library.
     """
 
     query_terms = lexical_terms(utterance)

@@ -111,6 +111,15 @@ body only when it uses the skill. Nothing is written into any project. With no l
 unchanged. The CLI (2.1.283) does not gate its `Skill` tool under `dontAsk`: an allow rule restricts nothing,
 and a chat can also load this machine's personal skills and plugins, which only a deny rule refuses.
 
+A project's `recipe` memory item (ADR-009) names one library skill as `skill:<name>@<version>`. When a chat
+saves one, the Hub resolves the name the agent gave (`monkeyhub-library:<name>`, optionally with a version)
+against this same index and fills the current version; it refuses when no library is set or the library has no
+such skill, and the chat project's Runtime never reads the library. Each recipe a turn carries (in the prepared
+context's `memory` or the memory block) gains a `skill` entry: the name to load, the pinned ref, the library's
+current version and a note ("pinned 1, library now 2", "not in the library"). The turn reads the library once
+and builds the plugin from that same index; a library that cannot be read is said on the recipe, and a Claude
+turn still fails as before when its plugin cannot be built. A Codex turn is told it loads no library skills.
+
 A skill is only a procedure. Retaining or following one grants no permission, and the `permissions` its
 manifest lists are declared for a reader and enforced by nothing. Codex chats get no library skills yet:
 Codex has native skills, and the pinned ACP adapter loads `<additional directory>/.agents/skills`, but the

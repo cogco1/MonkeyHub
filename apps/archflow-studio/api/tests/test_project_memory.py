@@ -127,7 +127,7 @@ class ShapeTests(MemoryFixture):
                                            "avoid": ["c.example"], "note": None})
         # Reserved kinds, scopes and authorities are named and refused; nothing
         # computes confidence or support yet, so neither is accepted.
-        for overrides in ({"kind": "recipe"}, {"kind": "preference"}, {"scope": "user"},
+        for overrides in ({"kind": "habit"}, {"kind": "preference"}, {"scope": "user"},
                           {"authority": "inferred"}, {"confidence": 0.9}, {"supportCount": 3}):
             with self.subTest(overrides=overrides):
                 self.policy(422, **overrides)
@@ -256,6 +256,70 @@ class LocatorTests(MemoryFixture):
         self.assertEqual(lexical_terms("项目图框"), {"项目", "目图", "图框"})
         self.assertEqual(lexical_terms("ＴＩＴＬＥ Block 在哪"), {"title", "block"})
         self.assertEqual(lexical_terms("门"), {"门"})
+
+
+RECIPE_WORDS = "以后出平面图前都按事务所的填充标准检查一下"
+
+
+class RecipeTests(MemoryFixture):
+    """A recipe names the library skill a task follows by one exact version; its steps stay in the skill."""
+
+    def recipe(self, expect: int = 201, *, value: dict | None = None, domains=("drawing",), **overrides) -> dict:
+        body = {"kind": "recipe", "rawLanguage": RECIPE_WORDS, "messageSource": message(4), "sourceKind": "agent",
+                "value": value or {"task": "出平面图前检查填充", "skill": "skill:hatch-review@1"},
+                "appliesWhen": {"domains": list(domains)}}
+        body.update(overrides)
+        return self.remember(body, expect)
+
+    def test_a_recipe_has_the_owners_shape_and_reaches_a_turn_about_its_task(self) -> None:
+        saved = self.recipe()
+        self.assertEqual((saved["key"], saved["kind"], saved["scope"], saved["authority"], saved["status"]),
+                         ("recipe:出平面图前检查填充", "recipe", "project", "explicit", "active"))
+        self.assertEqual(saved["value"], {"task": "出平面图前检查填充", "skill": "skill:hatch-review@1", "note": None})
+        self.assertEqual(saved["appliesWhen"], {"domains": ["drawing"], "topics": ["出平面图前检查填充"], "keys": [],
+                                                "stageRef": None})
+        self.assertEqual(saved["provenance"]["rawLanguage"], RECIPE_WORDS)
+        policy = self.policy()
+        locator = self.locator()
+        cold = self.new_client()
+        # A default turn about plans or hatching carries it; one about the eaves does not.
+        self.assertEqual(self.handed("帮我出平面图", cold), [saved["memoryId"]])
+        self.assertEqual([row["memory"]["memoryId"] for row in self.about("检查一下填充", cold)], [saved["memoryId"]])
+        self.assertEqual(self.about("检查一下填充", cold)[0]["status"], "current")
+        self.assertEqual(self.handed("把檐口压低一点", cold), [])
+        # Its domains are the ones the words indicated; a turn that named another is not handed it.
+        self.assertEqual(self.handed("帮我出平面图", cold, decisionContext={"domain": "drawing"}), [saved["memoryId"]])
+        self.assertEqual(self.handed("帮我出平面图", cold, decisionContext={"domain": "copy"}), [])
+        # Locators first, then policies, then recipes.
+        self.assertEqual([row["memory"]["memoryId"] for row in self.about("项目图框和材料，出平面图", cold)],
+                         [locator["memoryId"], policy["memoryId"], saved["memoryId"]])
+        self.assertEqual([row["memoryId"] for row in self.memory(kind="recipe")], [saved["memoryId"]])
+
+    def test_a_recipe_names_one_exact_skill_version_and_one_task_once(self) -> None:
+        for overrides in ({"value": {"task": "出平面图", "skill": "hatch-review"}},
+                          {"value": {"task": "出平面图", "skill": "skill:hatch-review"}},
+                          {"value": {"task": "出平面图", "skill": "monkeyhub-library:hatch-review@1"}},
+                          {"value": {"task": "出平面图", "skill": "skill:Hatch_Review@1"}},
+                          {"value": {"task": "出平面图", "skill": "skill:hatch-review@0"}},
+                          {"value": {"task": " ", "skill": "skill:hatch-review@1"}},
+                          {"value": {"task": "出平面图", "skill": "skill:hatch-review@1", "steps": ["check"]}},
+                          {"value": policy_value()},
+                          {"domains": ()}, {"domains": ("drawing", "drawing")}, {"domains": ("render",)},
+                          {"appliesWhen": None}, {"sourceKind": "agent", "messageSource": None}):
+            with self.subTest(overrides=overrides):
+                self.recipe(422, **overrides)
+        # Only a recipe names its domains; the other kinds' follow from their kind.
+        self.policy(422, appliesWhen={"domains": ["drawing"]})
+        saved = self.recipe()
+        self.assertEqual(self.recipe(409, messageSource=message(5))["code"], "MEMORY_KEY_CONFLICT")
+        # A new version is pinned by superseding it; revoking removes it from every turn.
+        replacement = {"projectId": PROJECT_ID, "kind": "recipe", "rawLanguage": "以后按新版填充标准检查",
+                       "messageSource": message(6), "sourceKind": "agent", "appliesWhen": {"domains": ["drawing"]},
+                       "value": {"task": "出平面图前检查填充", "skill": "skill:hatch-review@2"}}
+        moved = self.revise(saved, action="supersede", replacement=replacement)
+        self.assertEqual((moved["version"], moved["value"]["skill"]), (2, "skill:hatch-review@2"))
+        self.revise(moved, action="revoke", reason="不用了")
+        self.assertEqual(self.handed("帮我出平面图", self.new_client()), [])
 
 
 class SourcePolicyTests(MemoryFixture):
