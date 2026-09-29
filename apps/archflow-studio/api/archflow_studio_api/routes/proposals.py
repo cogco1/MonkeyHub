@@ -28,7 +28,6 @@ accepted by this route, and the latest run is never assumed.
 from __future__ import annotations
 
 from dataclasses import replace
-import json
 
 from fastapi import APIRouter
 from pydantic import ValidationError
@@ -36,10 +35,11 @@ from starlette.datastructures import State
 from starlette.requests import Request
 
 from archflow.project.repository import ProjectRepositoryError
-from archflow.state.state_record import apply_state_record_operator
+from archflow.state.state_record import StateRecordError, apply_state_record_operator
 
-from ..application import episodes
+from ..application import clarification, episodes
 from ..application.authentication import request_attribution
+from ..application.construction import kept_refs
 from ..application.elevation import elevation_proposal
 from ..application.binding import ProjectBinding, bound_project
 from ..adapters.seats import SeatsError, load_seat_pack, seats_of
@@ -54,7 +54,7 @@ from ..application.intent import (
     delete_element_proposal,
     sketch_prism_proposal,
 )
-from ..application.intent_agent import DeterministicCompiler, Selection
+from ..application.intent_agent import DeterministicCompiler, Selection, context_refs as compiled_context_refs
 from ..application.jobs import SUCCEEDED, Job
 from ..application.projection import (
     StateProjection,
@@ -134,11 +134,11 @@ def _stale_base(binding: ProjectBinding, projection: StateProjection, sent: str,
     detail = f"{action} names state {sent}, but {checked} is at {projection.state_digest}."
     owner, read, total = _run_with_state(binding, sent)
     if owner is not None:
-        return StudioError(409, "STALE_BASE", detail + f" That state is run {owner}'s: read GET /api/state?run={owner} "
-                           f'and send sourceRunId "{owner}" with its stateDigest.')
+        return StudioError(409, "STALE_BASE", detail + f" That state is run {owner}'s: read GET /api/construction/model?run={owner} "
+                           f'(or /api/state?run={owner}) and send sourceRunId "{owner}" with its stateDigest.')
     searched = "No retained run" if read == total else f"None of the newest {read} of {total} runs"
-    return StudioError(409, "STALE_BASE", detail + f" {searched} has that state: read GET /api/state?run=<runId> "
-                       "for the run you are changing and send its stateDigest with sourceRunId.")
+    return StudioError(409, "STALE_BASE", detail + f" {searched} has that state: read GET /api/construction/model?run=<runId> "
+                       "(or /api/state?run=<runId>) for the run you are changing and send its stateDigest with sourceRunId.")
 
 
 def _proposal_source(request: Request, body):
@@ -272,7 +272,7 @@ def create_sketch_proposal(
         try:
             actions = [(SketchActionDto(
                 component_id=body.component_id, parent_component_id=body.parent_component_id,
-                semantic_kind=body.semantic_kind, element_id=row["elementId"], profile=row["profile"],
+                element_id=row["elementId"], profile=row["profile"],
                 closed=row["closed"], height=body.height if row["closed"] else 0,
                 base_level=body.base_level, base_datum=body.base_datum, summary=body.summary,
             ), row["sourceDocumentTrace"]) for row in rows]
@@ -342,7 +342,6 @@ def _sketch_proposal(binding: ProjectBinding, projection: StateProjection,
             base=body.base_reference(),
             plane=body.plane.model_dump(by_alias=True) if body.plane is not None else None,
             parent_component_id=body.parent_component_id,
-            semantic_kind=body.semantic_kind,
             summary=body.summary,
             keep_refs=keep,
             source_document_trace=source_document_trace,
@@ -623,25 +622,64 @@ def _reproposed(
             raise StudioError(409, "STALE_BASE", "the proposal's design base has changed; read the selected run again")
         if isinstance(state.intent_compiler, DeterministicCompiler):
             raise StudioError(422, "SEMANTIC_EDIT_UNAVAILABLE", "this process has no design agent for component changes")
+        # The agent reads the design with the proposal applied, in construction
+        # terms, and answers the change to make on top of it; the replacement is
+        # that change folded onto the same exact base. It is shown no record
+        # row: the proposal travels as its summary and the model it would make.
+        # That is the design the change would make, whatever it was asked to
+        # keep: a keep conflict stays one, reviewable, on the replacement.
+        try:
+            proposed = project_proposed_record(projection, apply_state_record_operator(
+                projection.record, replace(operator_of(proposal, projection.record), protected=())))
+        except StateRecordError as exc:
+            raise StudioError(409, "PROPOSAL_CHAIN_CONFLICT", str(exc)) from exc
+        # A proposal that removes what it keeps has no design to change on top
+        # of: that is its own keep conflict, never a question to the architect.
+        declared = ({entity.ref for entity in proposed.record.entities}
+                    | {parameter.ref for parameter in proposed.record.parameters})
+        removed = [ref for ref in proposal.protected if ref not in declared]
+        if removed:
+            raise StudioError(
+                409, "PROPOSAL_CHAIN_CONFLICT",
+                f"proposal {proposal.proposal_id} removes {', '.join(removed)}, which it keeps: take "
+                f"{'it' if len(removed) == 1 else 'them'} out of keep, or propose a change that does not remove "
+                f"{'it' if len(removed) == 1 else 'them'}",
+            )
+        summary = str(proposal.semantic_edit.get("summary") or proposal.utterance)
         compilation = state.intent_compiler.compile(
             message=(
-                "Revise this unexecuted proposal against the supplied record. Return the complete revised edit.\n"
-                + json.dumps(proposal.semantic_edit, ensure_ascii=False)
-                + "\nArchitect's change: " + utterance
+                "The sheet shows the design with an unexecuted proposal already applied. It proposes: "
+                + summary + "\nAnswer the change the architect now asks for, made on top of it.\n"
+                + "Architect's change: " + utterance
             ),
             selection=Selection(proposal.component_id, proposal.element_id),
-            projection=projection,
+            projection=proposed,
         )
-        if compilation.semantic_edit is None:
-            if compilation.question:
-                raise BlockedNeedsHuman(compilation.why, question=compilation.question)
-            raise StudioError(422, "SEMANTIC_EDIT_INVALID", "the agent did not return the revised component edit")
-        replacement = proposal_from(component_edit_proposal(
-            projection, compilation.semantic_edit, utterance=utterance,
-            component_id=compilation.component_id, keep_refs=proposal.protected,
-        ))
+        compilation = clarification.targeted(proposed, compilation)
+        if compilation.status == "question":
+            raise BlockedNeedsHuman(compilation.why, question=compilation.question or "")
+        if compilation.status != "compiled":
+            raise StudioError(422, "SEMANTIC_EDIT_INVALID",
+                              compilation.why or "the agent did not return a change to the proposal")
+        if compilation.proposes_change:
+            revision = clarification.compiled_proposal(
+                binding, proposed, compilation, utterance=utterance, keep_refs=proposal.protected,
+                component_id=proposal.component_id,
+            ).proposal
+        else:
+            revision = proposal_from(DeterministicIntentProvider(proposed).propose(
+                session_ref=f"project:{binding.project_id}",
+                message=merge_keep(compilation.utterance or "",
+                                   kept_refs(proposed.record, (*proposal.protected, *compilation.keep))),
+                context_refs=compiled_context_refs(
+                    proposed.state_digest or "", compilation,
+                    Selection(proposal.component_id, proposal.element_id),
+                ),
+            ))
+        replacement = continue_proposal(projection, proposal, revision)
         return state.proposals.put(replace(
-            replacement, source_run_id=proposal.source_run_id, source_stage_ref=proposal.source_stage_ref,
+            replacement, utterance=utterance, pending=None,
+            source_run_id=proposal.source_run_id, source_stage_ref=proposal.source_stage_ref,
             compilation_receipt=None if compilation.receipt is None else compilation.receipt.to_dict(),
             document_comment_ref=proposal.document_comment_ref,
             model_source=proposal.model_source,

@@ -400,11 +400,11 @@ class FirstModelRecipeTests(unittest.TestCase):
 
     def test_a_first_model_and_its_follow_up_need_only_the_calls_the_guide_states(self):
         guide = next(tool for tool in _tools_of(chat) if tool["name"] == "studio_request")["description"]
-        for stated in ("POST /api/project/modeling with body {}", "parentComponentId", "baseDatum: '<elementId>-top'",
-                       "awaitSeconds: 60", "candidate.stateDigest", "supersedes may be []", "WALL"):
+        for stated in ("POST /api/project/modeling with body {}", "POST /api/proposals/construction", "at=top(",
+                       "awaitSeconds: 60", "candidate.stateDigest", "supersedes may be []", "POST /api/proposals/facets"):
             self.assertIn(stated, guide)
 
-        # The evidence turn (#404 F7): two stacked masses on an empty project.
+        # The evidence turn (#404 F7): two stacked masses on an empty project, as one script (#419).
         self.user("做一个 12×8 米、3.5 米高的体块，上面再叠一个 8×6×3 米的体块。")
         base = self.call("POST", "/api/project/modeling")
         self.assertTrue(base["initialized"])
@@ -413,11 +413,9 @@ class FirstModelRecipeTests(unittest.TestCase):
                           0, None))
         self.assertEqual(base["stateDigest"], self.client.get("/api/state").json()["stateDigest"],
                          "the answer is the base a state read would have given")
-        proposal = self.call("POST", "/api/proposals/sketch", {"stateDigest": base["stateDigest"], "sketches": [
-            {"componentId": "mass", "elementId": "mass-body", "parentComponentId": "model",
-             "profile": [[0, 0], [12, 0], [12, 8], [0, 8]], "height": 3.5, "baseLevel": "ground"},
-            {"componentId": "upper", "elementId": "upper-body", "parentComponentId": "model",
-             "profile": [[2, 1], [10, 1], [10, 7], [2, 7]], "height": 3, "baseDatum": "mass-body-top"}]})
+        proposal = self.call("POST", "/api/proposals/construction", {"stateDigest": base["stateDigest"], "script": (
+            "mass = extrude(rect(0, 0, 12, 8), 3.5)\n"
+            "upper = extrude(rect(2, 1, 8, 6), 3, at=top(mass))")})
         self.assertEqual(proposal["status"], "proposed")
         made = self.call("POST", f"/api/proposals/{proposal['proposalId']}/candidate", awaitSeconds=60)
         self.assertEqual(made["status"], "succeeded", made)
@@ -435,10 +433,9 @@ class FirstModelRecipeTests(unittest.TestCase):
 
         # A follow-up edit writes against the candidate it just made.
         self.user("把上面的体块改成 4 米高。")
-        revised = self.call("POST", "/api/proposals/sketch", {
-            "stateDigest": made["candidate"]["stateDigest"], "sourceRunId": first, "sketches": [
-                {"componentId": "upper", "elementId": "upper-body", "profile": [[2, 1], [10, 1], [10, 7], [2, 7]],
-                 "height": 4, "baseDatum": "mass-body-top"}]})
+        revised = self.call("POST", "/api/proposals/construction", {
+            "stateDigest": made["candidate"]["stateDigest"], "sourceRunId": first,
+            "script": "set_height(get('upper'), 4)"})
         self.assertEqual(revised["status"], "proposed")
         remade = self.call("POST", f"/api/proposals/{revised['proposalId']}/candidate", awaitSeconds=60)
         self.assertEqual(remade["status"], "succeeded", remade)
@@ -451,27 +448,29 @@ class FirstModelRecipeTests(unittest.TestCase):
         self.assertEqual(self.extents(second), {"mass-body": ("prism", {"base": 0.0, "top": 3.5}),
                                                 "upper-body": ("prism", {"base": 3.5, "top": 7.5})})
 
-        # The wall body the guide gives is complete as written.
+        # "A wall": geometry first, then its meaning on the same id, as one chain and one candidate.
         self.user("沿南边加一道墙。")
-        wall = self.call("POST", "/api/proposals", {
-            "stateDigest": remade["candidate"]["stateDigest"], "sourceRunId": second, "semanticEdit": {
-                "summary": "south wall", "entities": [{
-                    "entity_id": "wall-a", "schema": "Element@1", "parent_id": "model", "fields": {
-                        "component_id": "model", "producer": "wall",
-                        "references": {"base": {"level": "ground"}, "line": {"from": {"point": [0, 0]}, "to": {"point": [12, 0]}}},
-                        "params": {"height": 3, "thickness": 0.2}}}]}})
-        self.assertEqual(wall["status"], "proposed")
-        walled = self.call("POST", f"/api/proposals/{wall['proposalId']}/candidate", awaitSeconds=60)
+        south = self.call("POST", "/api/proposals/construction", {
+            "stateDigest": remade["candidate"]["stateDigest"], "sourceRunId": second,
+            "script": "south = extrude(rect(0, -0.2, 12, 0.2), 3)"})
+        self.assertEqual(south["status"], "proposed")
+        meaning = self.call("POST", "/api/proposals/facets", {
+            "stateDigest": remade["candidate"]["stateDigest"], "sourceProposalId": south["proposalId"],
+            "targets": [{"id": "south", "set": {"architectural.role": "wall"}}]})
+        self.assertEqual(meaning["status"], "proposed")
+        walled = self.call("POST", f"/api/proposals/{meaning['proposalId']}/candidate", awaitSeconds=60)
         self.assertEqual(walled["status"], "succeeded", walled)
-        self.assert_no_extra_round_trips(2)
-        self.assertEqual(self.extents(walled["candidateId"])["wall-a"], ("wall", {"base": 0.0, "top": 3.0}))
+        self.assert_no_extra_round_trips(3)
+        self.assertEqual(self.extents(walled["candidateId"])["south-body"], ("prism", {"base": 0.0, "top": 3.0}))
+        model = self.client.get("/api/construction/model", params={"run": walled["candidateId"]}).json()
+        [row] = [entity for entity in model["entities"] if entity["id"] == "south"]
+        self.assertEqual(row["facets"], {"architectural.role": "wall"})
 
     def test_preparing_an_existing_design_keeps_it_and_answers_its_base(self):
         self.user("继续")
         first = self.call("POST", "/api/project/modeling")
-        proposal = self.call("POST", "/api/proposals/sketch", {
-            "stateDigest": first["stateDigest"], "componentId": "mass", "elementId": "mass-body",
-            "parentComponentId": "model", "profile": [[0, 0], [4, 0], [4, 3], [0, 3]], "height": 3, "baseLevel": "ground"})
+        proposal = self.call("POST", "/api/proposals/construction", {
+            "stateDigest": first["stateDigest"], "script": "mass = extrude(rect(0, 0, 4, 3), 3)"})
         made = self.call("POST", f"/api/proposals/{proposal['proposalId']}/candidate", awaitSeconds=60)
         self.assertEqual(made["status"], "succeeded", made)
         before = self.client.get("/api/state").json()

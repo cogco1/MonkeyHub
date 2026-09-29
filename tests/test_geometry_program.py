@@ -23,6 +23,10 @@ from archflow.state.geometry_program import (
     SemanticBinding,
 )
 
+from dataclasses import replace
+
+from archflow.state.geometry_program import GeometryParameter, GeometryParameterKind, delivered_object_ids
+
 
 EVIDENCE = "evidence:geometry-test"
 
@@ -278,6 +282,40 @@ class OperationStatementTests(unittest.TestCase):
             self._operation(statements={"wedge_low": 0.5})
         with self.assertRaises(TypeError):
             self._operation(statements=[("wedge_low", "0.5")])
+
+
+class DeliveredObjectTests(unittest.TestCase):
+    """#419: a program delivers what nothing consumes and what it retains for inspection."""
+
+    def setUp(self) -> None:
+        from tests.test_geometry_compiler import _proposal, _state
+
+        self.proposal = _proposal(_state())
+
+    def _with(self, op_id: str, **flags: bool):
+        extra = tuple(
+            GeometryParameter.create(name=name, kind=GeometryParameterKind.BOOLEAN, value=value)
+            for name, value in flags.items()
+        )
+        operations = tuple(
+            replace(item, parameters=tuple(sorted((*item.parameters, *extra), key=lambda p: p.name)))
+            if item.op_id == op_id else item
+            for item in self.proposal.operations
+        )
+        return replace(self.proposal, operations=operations)
+
+    def test_unconsumed_outputs_are_delivered_and_an_unretained_curve_is_not(self) -> None:
+        self.assertEqual(delivered_object_ids(self.proposal), ("clearance", "frame", "hardware", "leaf"))
+
+    def test_a_consumed_output_retained_for_inspection_is_delivered(self) -> None:
+        self.assertIn("opening-tool", delivered_object_ids(self._with("opening-tool", retain_for_inspection=True)))
+
+    def test_a_curve_is_delivered_only_when_retained(self) -> None:
+        self.assertIn("unrelated-axis", delivered_object_ids(self._with("unrelated", retain_for_inspection=True)))
+
+    def test_an_operation_may_name_no_semantic_binding(self) -> None:
+        operation = replace(self.proposal.operations[0], semantic_binding_ids=())
+        self.assertEqual(operation.to_dict()["semantic_binding_ids"], [])
 
 
 if __name__ == "__main__":

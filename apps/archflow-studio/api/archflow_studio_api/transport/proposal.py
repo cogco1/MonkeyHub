@@ -135,14 +135,6 @@ class SketchActionDto(BaseModel):
         description="required when componentId is new here: the existing component it belongs under, "
                     "which is what decides the seat that builds it",
     )
-    semantic_kind: str | None = Field(
-        alias="semanticKind",
-        default=None,
-        min_length=1,
-        description="optional: what a new component is, as a registered alias, when the architect has said so. "
-                    "Omit it for geometry whose meaning is not established; the component is created without "
-                    "semantics and can be enriched later under the same componentId",
-    )
     element_id: str = Field(
         alias="elementId",
         min_length=1,
@@ -271,10 +263,6 @@ class DocumentTracingRequestDto(BaseModel):
     tracing: DocumentTracingSourceDto
     component_id: str = Field(alias="componentId", min_length=1)
     parent_component_id: str | None = Field(alias="parentComponentId", default=None, min_length=1)
-    semantic_kind: str | None = Field(
-        alias="semanticKind", default=None, min_length=1,
-        description="optional: what a new component is, when stated; omit it for geometry whose meaning is not established",
-    )
     base_level: str | None = Field(alias="baseLevel", default=None, min_length=1)
     base_datum: str | None = Field(alias="baseDatum", default=None, min_length=1)
     height: float = Field(ge=0, allow_inf_nan=False,
@@ -456,34 +444,65 @@ class DeleteElementRequestDto(BaseModel):
 
 
 def _semantic_edit_schema(schema: dict[str, Any]) -> None:
-    """Reuse the compiler's producer contracts for direct, partial upserts."""
+    """Describe a semantic edit on its own terms, coupled to no other schema.
 
-    from monkeyarch.capabilities.element_producers import producer_signatures
+    A semantic edit upserts named record rows for the Studio's own editors —
+    component intents, design readings, parameter bindings and named
+    relationships — never geometry: geometry is authored with ``POST
+    /api/proposals/construction`` and meaning is added with ``POST
+    /api/proposals/facets``. Entities and relations are kept loosely typed
+    (``additionalProperties: true``) rather than derived from the in-app
+    intent agent's own response schema, so a later rewrite of that schema
+    (Task C7) cannot change what this route advertises.
+    """
 
-    from ..application.intent_agent import response_schema
-
-    signatures = producer_signatures()
-    edit = response_schema(strict=False)["properties"]["semanticEdit"]["anyOf"][1]
-    edit["required"] = ["summary"]
-    for name, identity in (("entities", "entity_id"), ("parameters", "key"), ("relations", "relation_id")):
-        items = edit["properties"][name]["items"]
-        for variant in items.get("anyOf", [items]):
-            variant["required"] = [identity]
-            variant["description"] = "Upsert: omitted fields retain the existing value; new items need their complete declared fields."
-            fields = variant.get("properties", {}).get("fields")
-            if fields is not None:
-                variant["description"] = (
-                    "Upsert: omitted outer fields retain existing values; entity fields are merged by key. "
-                    "A supplied params or references object replaces that entire object. Preserve every unchanged "
-                    "nested member, such as a prism's profile when changing height. New items need their complete declared fields."
-                )
-                for field_variant in fields.get("anyOf", [fields]):
-                    field_variant["required"] = []
-                    # Each producer says what it makes, so a reader can choose
-                    # one before asking for its whole contract.
-                    for producer in field_variant.get("properties", {}).get("producer", {}).get("enum", ()):
-                        field_variant["description"] = signatures[producer]["description"]
-    schema.update(edit)
+    text = {"type": "string"}
+    nullable_text = {"type": ["string", "null"]}
+    strings = {"type": "array", "items": text}
+    entity = {
+        "type": "object",
+        "additionalProperties": True,
+        "description": (
+            "One record row this edit upserts by entity_id: a component intent (Component@1 with intent, "
+            "source_refs), a design reading (Reading@1), or another named record row the Studio's own editors "
+            "write. Geometry is authored with POST /api/proposals/construction and meaning is added with POST "
+            "/api/proposals/facets; this array does not describe geometry. Omitted fields on an existing id "
+            "retain their value; a new id needs its complete declared fields."
+        ),
+    }
+    parameter = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "key": text, "value": {"type": "number"}, "unit": text,
+            "expr": nullable_text, "inputs": strings,
+            "epistemic_status": {"type": "string", "enum": ["declared", "derived", "hypothesis"]},
+            "source_ref": nullable_text,
+        },
+        "required": ["key"],
+        "description": "Upsert by key: omitted fields retain the existing value; a new key needs its complete declared fields.",
+    }
+    relation = {
+        "type": "object",
+        "additionalProperties": True,
+        "description": "A named relationship row this edit upserts by relation_id; omitted fields on an existing id retain their value.",
+    }
+    schema.update({
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["summary"],
+        "properties": {
+            "summary": text,
+            "entities": {"type": "array", "items": entity},
+            "parameters": {"type": "array", "items": parameter},
+            "relations": {"type": "array", "items": relation},
+            "removeEntityIds": strings,
+            "removeParameterKeys": strings,
+            "removeRelationIds": strings,
+            "protected": strings,
+            "kept": strings,
+        },
+    })
 
 
 class SemanticEditRequestDto(BaseModel):
@@ -569,7 +588,7 @@ class ProposalRequestDto(BaseModel):
     semantic_edit: SemanticEditRequestDto | None = Field(
         alias="semanticEdit", default=None,
         description="Submit the current Agent's typed component edit directly, without another model call. "
-        "Entity producer inputs use @parameter_key bindings; expressions belong to Parameter.expr and inputs. "
+        "Entity numeric inputs use @parameter_key bindings; expressions belong to Parameter.expr and inputs. "
         "Exactly one of semanticEdit and utterance is required.",
     )
     keep: list[str] = Field(default_factory=list, description="Additional entity:/parameter: refs this edit must preserve.")

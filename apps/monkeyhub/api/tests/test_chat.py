@@ -275,8 +275,11 @@ def wait_for(read, predicate, timeout=8):
 
 
 
-def _tools_of(module):
-    """The tools the stdio server advertises, read from its own listing."""
+def _tools_of(module, external=None):
+    """The tools the stdio server advertises, read from its own listing.
+
+    ``external`` lists them as an external presentation connection does.
+    """
 
     import io, json as _json
     from unittest.mock import patch as _patch
@@ -290,7 +293,7 @@ def _tools_of(module):
             return None
     reader, writer = _Reader(chr(10).join(lines) + chr(10)), _Writer()
     with _patch.object(module.sys, "stdin", reader), _patch.object(module.sys, "stdout", writer):
-        module._mcp("http://127.0.0.1:1", "00000000-0000-4000-8000-000000000000")
+        module._mcp("http://127.0.0.1:1", "00000000-0000-4000-8000-000000000000", external)
     answer = _json.loads(writer.getvalue().strip().splitlines()[-1])
     return answer["result"]["tools"]
 
@@ -641,12 +644,11 @@ class ChatTests(unittest.TestCase):
     def test_turn_envelope_reuses_connected_action_contract(self):
         tools = {tool["name"]: tool for tool in _tools_of(chat)}
         modelling = tools["studio_request"]["description"]
-        for contract in ("/api/proposals/sketch", "/api/capabilities", "sourceRunId",
-                         "keep", "against=<runId>", "never send the request again",
-                         "never guess a nearby id"):
+        for contract in ("/api/proposals/construction", "/api/construction/model", "/api/capabilities",
+                         "sourceRunId", "keep", "against=<runId>", "never send the request again"):
             self.assertIn(contract, modelling)
-        # #408: a stated word goes straight to Studio; the agent is not sent to the alias table first.
-        self.assertIn("send their word as semanticKind", modelling)
+        # #419: meaning is added later, to the same id, and only when the user states it.
+        self.assertIn("MEANING: only when the user says what a part is, POST /api/proposals/facets", modelling)
         self.assertNotIn("GET /api/semantics supplies", modelling)
         for provider in ("codex", "claude"):
             with self.subTest(provider=provider):
@@ -662,7 +664,7 @@ class ChatTests(unittest.TestCase):
                     self.assertIn(f"project {session.projectId} at {session.projectDir}", envelope)
                     # One action contract, rather than endpoint recipes repeated
                     # in the prompt sent to the CLI on every native-session turn.
-                    for duplicate in ("/api/proposals/sketch", "/api/capabilities", "awaitSeconds"):
+                    for duplicate in ("/api/proposals/construction", "/api/capabilities", "awaitSeconds"):
                         self.assertNotIn(duplicate, envelope)
                     for boundary in ("Project files are read-only", "the user's keep conditions",
                                      "do not claim approval, issuance or printer upload",
@@ -1140,7 +1142,8 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(str(UUID(headers["Idempotency-Key"])), headers["Idempotency-Key"])
             return path.removeprefix(prefix)
         self.assertIsNone(headers, "Readback and service identity checks do not admit a mutation")
-        if path.startswith(("/api/proposals/", "/api/jobs/", "/api/candidates/", "/api/state")) or path == "/api/project":
+        if path.startswith(("/api/proposals/", "/api/jobs/", "/api/candidates/", "/api/state", "/api/construction",
+                            "/api/domains")) or path == "/api/project":
             self.assertEqual(base, "http://127.0.0.1:8791")
         return path
 
@@ -1161,7 +1164,9 @@ class ChatTests(unittest.TestCase):
         ]
         forwarded = []
         description = next(tool for tool in _tools_of(chat) if tool["name"] == "studio_request")["description"]
-        for path in ("/api/program", "/api/options", "/api/semantics", "/api/options/{id}/select"):
+        # GET /api/semantics stays callable below; the guide no longer names it,
+        # because meaning is added with facets rather than a semantic kind (#419).
+        for path in ("/api/program", "/api/options", "/api/options/{id}/select"):
             self.assertIn(path, description)
 
         def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
@@ -1395,10 +1400,10 @@ class ChatTests(unittest.TestCase):
         schema_tool = next(tool for tool in described if tool["name"] == "studio_schema")
         # The action, its fields and its units are stated where the CLI reads
         # them, so making a massing needs no schema round trip at all.
-        for stated in ("/api/proposals/sketch", "stateDigest", "componentId", "elementId",
-                       "profile", "height", "baseLevel", "metres", "[x, z]",
-                       "/api/proposals/{id}/candidate", "GET /api/state/frame", "/api/project/modeling",
-                       "/api/proposals/elevation", "剖透视", "pathPrefix /api/drawings", "pathPrefix /api/board"):
+        for stated in ("POST /api/proposals/construction", "stateDigest", "script", "rect(", "extrude(",
+                       "at=top(", "cut(", "metres", "(x, z)", "Y up",
+                       "/api/proposals/{id}/candidate", "GET /api/construction/model", "/api/project/modeling",
+                       "剖透视", "pathPrefix /api/drawings", "pathPrefix /api/board"):
             self.assertIn(stated, request_tool["description"], stated)
         # Drawing work is one line upfront; its full text is the guide the
         # drawing and Board prefixes answer with.
@@ -1446,8 +1451,8 @@ class ChatTests(unittest.TestCase):
                                    "/api/documents/{asset_sha256}/bytes": {"get": {"summary": "read document bytes"}},
                                    "/api/visual-reviews": {"post": {"summary": "separate review allowance"}},
                                    "/api/drawings/plans/dimension-proposal": {"post": {"summary": "propose plan dimensions"}},
-                                   "/api/proposals/sketch": {"post": {"summary": "draw"}},
-                                   "/api/proposals/elevation": {"post": {"summary": "edit elevation"}},
+                                   "/api/proposals/construction": {"post": {"summary": "construct"}},
+                                   "/api/proposals/facets": {"post": {"summary": "add facets"}},
                                    "/api/options/{option_id}/select": {"post": {"summary": "select"}}},
                         "components": {"schemas": {}}}
             return {"method": method, "body": body, "path": path}
@@ -1462,28 +1467,28 @@ class ChatTests(unittest.TestCase):
                     "method": "POST", "path": "/api/project/modeling", "body": {"projectId": "other"},
                 })
             self.assertEqual(wrong_project.exception.error.code, "CHAT_PROJECT_MISMATCH")
+            script = "mass = extrude(rect(0, 0, 6, 4), 3.2)"
             drawn = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
-                "method": "POST", "path": "/api/proposals/sketch",
-                "body": {"stateDigest": "a" * 64, "componentId": "portico", "elementId": "drawn-1",
-                         "profile": [[0, 0], [6, 0], [6, 4], [0, 4]], "height": 3.2,
-                         "baseLevel": "level-ground"},
+                "method": "POST", "path": "/api/proposals/construction",
+                "body": {"stateDigest": "a" * 64, "script": script},
             })
-            self.assertEqual(drawn["path"], "/api/proposals/sketch")
-            self.assertEqual(drawn["body"]["height"], 3.2)
-            elevation_body = {"stateDigest": "a" * 64, "sourceRunId": "candidate-before",
+            self.assertEqual((drawn["path"], drawn["body"]),
+                             ("/api/proposals/construction", {"stateDigest": "a" * 64, "script": script}))
+            # A later script continues from a candidate and an unexecuted chain,
+            # with the same source fields every write carries.
+            continued_body = {"stateDigest": "a" * 64, "sourceRunId": "candidate-before",
                               "sourceStageRef": "stage-base", "sourceProposalId": "proposal-before",
-                              "elementId": "drawn-1", "action": "set-base", "value": 2,
-                              "keep": ["entity:porch"]}
+                              "script": 'set_base(get("mass"), 2)', "keep": ["entity:block-1"]}
             raised = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
-                "method": "POST", "path": "/api/proposals/elevation", "body": elevation_body,
+                "method": "POST", "path": "/api/proposals/construction", "body": continued_body,
             })
-            self.assertEqual((raised["path"], raised["body"]), ("/api/proposals/elevation", elevation_body))
-            with self.assertRaises(HubFailure) as wrong_elevation_project:
+            self.assertEqual((raised["path"], raised["body"]), ("/api/proposals/construction", continued_body))
+            with self.assertRaises(HubFailure) as wrong_construction_project:
                 chat.call_tool(self.store.hub_url, session.id, "studio_request", {
-                    "method": "POST", "path": "/api/proposals/elevation",
-                    "body": {**elevation_body, "projectId": "other"},
+                    "method": "POST", "path": "/api/proposals/construction",
+                    "body": {**continued_body, "projectId": "other"},
                 })
-            self.assertEqual(wrong_elevation_project.exception.error.code, "CHAT_PROJECT_MISMATCH")
+            self.assertEqual(wrong_construction_project.exception.error.code, "CHAT_PROJECT_MISMATCH")
             documents = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
                 "method": "GET", "path": "/api/documents?runId=studio-drawing-1",
             })
@@ -1573,8 +1578,8 @@ class ChatTests(unittest.TestCase):
                     self.assertEqual(refused.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
             # A documented template can be read as a schema, which is what an
             # exploring turn used to fail on.
-            for template in ("/api/options/{option_id}/select", "/api/proposals/sketch", "/api/project/modeling",
-                             "/api/proposals/elevation"):
+            for template in ("/api/options/{option_id}/select", "/api/proposals/construction", "/api/project/modeling",
+                             "/api/proposals/facets"):
                 answer = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
                                         {"method": "POST", "path": template})
                 self.assertEqual(answer["method"], "POST")
@@ -1704,143 +1709,369 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(len(retained["change"]["changes"]), 2783)
             self.assertEqual(len(retained["impact"]["direct"]), 2783)
 
-    def test_schema_query_selects_the_actual_producer_inputs(self):
+    # ---- #419: one construction script makes geometry; producers and meaning stay out of it
+
+    def test_studio_schema_answers_the_proposal_contract_and_takes_no_producer(self):
+        """No producer index: the action's own schema, and a producer is an unknown argument."""
+
         session = self.create()
-        variants = [{"properties": {"producer": {"enum": [name]},
-                                     "params": {"properties": {field: {"type": "number"}}}}}
-                    for name, field in (("prism", "height"), ("loft", "profile_size"))]
         document = {
             "paths": {"/api/proposals": {"post": {
                 "summary": "Author an edit", "requestBody": {"$ref": "#/components/schemas/ProposalRequestDto"},
-                "responses": {"201": {"$ref": "#/components/schemas/ProposalDto"}}}}},
+                "responses": {"201": {"description": "Created",
+                                      "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProposalDto"}}}},
+                              "422": {"description": "Refused"}}}},
+                      "/api/construction/model": {"get": {
+                "summary": "Read the model",
+                "responses": {"200": {"description": "The model",
+                                      "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ModelDto"}}}}}}}},
             "components": {"schemas": {
                 "ProposalRequestDto": {"properties": {"semanticEdit": {"$ref": "#/components/schemas/SemanticEditRequestDto"}}},
-                "SemanticEditRequestDto": {"properties": {
-                    "entities": {"items": {"anyOf": [{"properties": {"fields": {"anyOf": variants}}}]}},
-                    "parameters": {"type": "array"}}},
-                "ProposalDto": {"description": "The independently queryable complete response"},
+                "SemanticEditRequestDto": {"properties": {"parameters": {"type": "array"}}},
+                "ProposalDto": {"description": "The complete response"},
+                "ModelDto": {"description": "What a read answers"},
             }},
         }
+        tools = {tool["name"]: tool for tool in _tools_of(chat)}
+        self.assertNotIn("producer", tools["studio_schema"]["inputSchema"]["properties"])
+        # Each bound tool is held to exactly the arguments it advertises.
+        for name in ("studio_schema", "studio_request", "fab_request"):
+            self.assertEqual(set(tools[name]["inputSchema"]["properties"]), chat._TOOL_ARGUMENTS[name], name)
         with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
                 patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(document))):
             answer = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
-                "method": "POST", "path": "/api/proposals", "producer": "loft"})
-            schema = answer["components"]["schemas"]["SemanticEditRequestDto"]
-            selected = schema["properties"]["entities"]["items"]["anyOf"][0]["properties"]["fields"]["anyOf"]
-            self.assertEqual(selected, [variants[1]])
-            self.assertEqual(schema["properties"]["parameters"], {"type": "array"})
-            self.assertNotIn("ProposalDto", answer["components"]["schemas"])
-            index = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
                 "method": "POST", "path": "/api/proposals"})
-            self.assertEqual([row["producer"] for row in index["producers"]], ["prism", "loft"])
-            self.assertNotIn("components", index)
-            with self.assertRaises(HubFailure) as unavailable:
-                chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
-                    "method": "POST", "path": "/api/proposals", "producer": "missing"})
-            self.assertIn("loft", unavailable.exception.error.detail)
-            self.assertIn("prism", unavailable.exception.error.detail)
+            read = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                "method": "GET", "path": "/api/construction/model"})
+        self.assertEqual(set(answer), {"path", "method", "summary", "body", "components", "note"})
+        # Request inputs only (#404 F7): the answer arrives when the call is sent.
+        self.assertEqual(set(answer["components"]["schemas"]), {"ProposalRequestDto", "SemanticEditRequestDto"})
+        self.assertNotIn("ProposalDto", json.dumps(answer))
+        self.assertNotIn("ModelDto", json.dumps(read))
+        # A retired option is refused by name, before any runtime is resolved or
+        # any request made, rather than ignored as if it had taken effect.
+        with patch.object(chat, "_bound_studio") as studio, patch.object(chat, "_request_json") as request:
+            for name, arguments in (
+                ("studio_schema", {"method": "POST", "path": "/api/proposals", "producer": "prism"}),
+                ("studio_schema", {"producer": "prism"}),
+                ("studio_request", {"method": "POST", "path": "/api/proposals", "body": {}, "producer": "prism"}),
+                ("fab_request", {"method": "GET", "path": "/api/fab/profiles", "producer": "prism"}),
+                ("studio_request", {"method": "GET", "path": "/api/construction/model", "run": "candidate-1"}),
+            ):
+                with self.subTest(name=name, arguments=arguments), self.assertRaises(HubFailure) as refused:
+                    chat.call_tool(self.store.hub_url, session.id, name, arguments)
+                self.assertEqual((refused.exception.status, refused.exception.error.code), (422, "CHAT_TOOL_INVALID"))
+                unknown = next(key for key in arguments if key not in {"method", "path", "body"})
+                self.assertIn(f"{name} has no argument {unknown}", refused.exception.error.detail)
+            studio.assert_not_called()
+            request.assert_not_called()
 
-    def test_agent_guide_puts_geometry_first_and_takes_producers_from_studio(self):
-        """Ordinary geometry needs no GridAxis or semanticKind, and producers come from Studio (#400)."""
+    def test_the_agent_contract_names_no_producer_classification_or_backend(self):
+        """The layer rule for every tool text; "wall" appears only as a facet value in MEANING/CAPABILITIES."""
 
-        from archflow_studio_api.main import create_app as studio_app
-        from archflow_studio_api.settings import StudioSettings
+        from monkeyarch.construction.vocabulary import layer_rule_violations
+        from monkeyhub_api.models import ChatPresentationBindRequest
 
-        tools = {tool["name"]: tool for tool in _tools_of(chat)}
-        modelling = tools["studio_request"]["description"]
-        self.assertNotIn("under a built component and semanticKind", modelling)
-        for rule in ("lowest sufficient expression", "semanticKind is optional",
-                     "Never ask for a GridAxis or a semanticKind for ordinary geometry",
-                     "only when the user asks for it or the meaning is already established"):
-            self.assertIn(rule, modelling)
+        external = ChatPresentationBindRequest(projectDir=str(self.project), sourceSessionId="external-session")
+        for listed in (_tools_of(chat), _tools_of(chat, external)):
+            texts, names = [], []
 
-        project = self.root / "geometry-first"
-        FilesystemProjectRepository.initialize(project, project_id="geometry-first",
-                                               initial_state={"project_id": "geometry-first", "version": 0})
-        with TestClient(studio_app(StudioSettings(project_dir=project, cad_export="off"))) as client:
-            document = client.get("/openapi.json").json()
-        entity = document["components"]["schemas"]["SemanticEditRequestDto"]["properties"]["entities"]["items"]
-        offered = sorted({name for variant in entity["anyOf"]
-                          for item in variant["properties"]["fields"].get("anyOf", ())
-                          for name in item["properties"]["producer"]["enum"]})
-        self.assertIn("curve", offered)
-        # No hand-written producer list that could drift from Studio's.
-        producer_field = tools["studio_schema"]["inputSchema"]["properties"]["producer"]["description"]
-        self.assertEqual([name for name in offered if name in producer_field], [])
-        # The one producer the guide names, as its example of a specialized one, is Studio's.
-        self.assertIn("such as wall", modelling)
-        self.assertIn("wall", offered)
+            def collect(value):
+                if isinstance(value, dict):
+                    for key, item in value.items():
+                        if key == "description" and isinstance(item, str):
+                            texts.append(item)
+                            continue
+                        if key == "properties" and isinstance(item, dict):
+                            names.extend(item)
+                        collect(item)
+                elif isinstance(value, list):
+                    for item in value:
+                        collect(item)
+
+            for tool in listed:
+                if tool["name"] != "studio_request":
+                    collect(tool)
+                    continue
+                lines = tool["description"].splitlines()
+                start = next(i for i, line in enumerate(lines) if line.startswith("MEANING:"))
+                end = next(i for i, line in enumerate(lines) if line.startswith("DOMAINS:"))
+                # Stage C: the user has said what a part is, and a facet value may name it.
+                self.assertEqual(layer_rule_violations("\n".join(lines[start:end])), ("wall",))
+                texts.append("\n".join(lines[:start] + lines[end:]))
+                collect(tool["inputSchema"])
+            self.assertGreater(len(texts), len(listed))
+            for text in texts:
+                self.assertEqual(layer_rule_violations(text), (), text[:160])
+            for name in names:
+                self.assertEqual(layer_rule_violations(name), (), name)
+
+    def test_the_inline_script_and_verbs_are_the_interpreters_own(self):
+        """The guide's example runs as written and names the ids it promises; its verbs exist."""
+
+        from archflow.project.refs import ProjectVersionRef
+        from archflow.state.state_record import Entity, StateRecord
+        from monkeyarch.construction import compile_construction_script, vocabulary
+
+        modelling = next(tool for tool in _tools_of(chat) if tool["name"] == "studio_request")["description"]
+        lines = modelling.splitlines()
+        first = next(i for i, line in enumerate(lines) if line.startswith("The script is a small Python-like program")) + 1
+        example = []
+        for line in lines[first:]:
+            if not line.startswith("  "):
+                break
+            example.append(line[2:])
+        # What POST /api/project/modeling seeds: a modelling root and a ground level at zero.
+        evidence = "input:monkeyarch-modeling-setup"
+        record = StateRecord(
+            project_id="guide", run_id="authored",
+            entities=(Entity("model", "Component@1", {"intent": "Root for candidate modeling", "source_refs": [evidence]}),
+                      Entity("ground", "Level@1", {"role": "ground", "elevation": 0.0}, basis_refs=(evidence,))),
+            evidence_refs=(evidence,), option={"option_id": "modeling"}, base=ProjectVersionRef("guide", 0, "0" * 64))
+        result = compile_construction_script("\n".join(example), record, root_component_id="model")
+        made = sorted(row["entity_id"] for row in result.entities if row["schema"] == "Component@1")
+        # "w in a loop gives w-1..w-4": the ids the guide promises are the ones the script makes.
+        self.assertEqual(made, ["mass", "upper", "w-1", "w-2", "w-3", "w-4"])
+        at = next(i for i, line in enumerate(lines) if line.startswith("Verbs:"))
+        listed = " ".join(lines[at:at + 2]).removeprefix("Verbs:").strip().rstrip(".").replace("|", " ").split()
+        contract = vocabulary()
+        known = {verb["name"] for verb in contract["verbs"]} | set(contract["language"]["builtins"])
+        self.assertEqual([name for name in listed if name not in known], [])
+        self.assertEqual(len(listed), len(set(listed)))
+        for stated in ("GET /api/construction lists every verb and argument",
+                       "POST /api/proposals/construction {stateDigest, script",
+                       "CURRENT MODEL: GET /api/construction/model gives stateDigest",
+                       "Without ?run=<candidateId> it reads the default",
+                       "POST /api/proposals/facets", "POST /api/proposals/hosted-opening",
+                       "GET /api/domains/{structure|envelope}/readiness", "semanticEdit never carries geometry"):
+            self.assertIn(stated, modelling)
+
+    def test_semantic_edit_carries_no_geometry_or_meaning(self):
+        """Element/Type rows point to the construction route, meaning to facets; nothing is sent (#419)."""
 
         session = self.create()
+        session.status = "running"
+        geometry = [
+            {"entity_id": "block-1-body", "schema": "Element@1", "parent_id": None,
+             "fields": {"component_id": "block-1", "producer": "prism", "references": {"base": {"level": "ground"}},
+                        "params": {"profile": [[0, 0], [4, 0], [4, 3], [0, 3]], "height": 3}}},
+            {"entity_id": "frame-type", "schema": "Type@1",
+             "fields": {"producer": "prism", "references": {}, "params": {"height": 2}}},
+            # An upsert may leave out schema; it still rewrites that element's geometry.
+            {"entity_id": "block-1-body", "fields": {"params": {"height": 4}}},
+            {"entity_id": "block-1-body", "fields": {"references": {"base": {"datum": "mass-top"}}}},
+        ]
+        meaning = [
+            {"entity_id": "block-1", "schema": "Component@1", "fields": {"intent": "a block", "semantic_kind": "slab"}},
+            {"entity_id": "block-1", "fields": {"semanticKind": "slab"}},
+            {"entity_id": "block-1", "schema": "Component@1", "fields": {"facets": {"architectural.role": "slab"}}},
+            {"entity_id": "block-1", "schema": "Component@1", "fields": {"roles": ["role.load_bearing"]}},
+        ]
+        source = {"stateDigest": "a" * 64, "sourceRunId": "candidate-a"}
+        with patch.object(chat, "_bound_studio") as studio, patch.object(chat, "_request_json") as request:
+            for rows, said in ((geometry, "Geometry is authored with POST /api/proposals/construction; semanticEdit "
+                                          "carries parameters, relations, readings and component intents."),
+                               (meaning, "Meaning is added with POST /api/proposals/facets.")):
+                for row in rows:
+                    for key in ("semanticEdit", "semantic_edit"):
+                        body = {**source, key: {"summary": "an edit", "entities": [
+                            {"entity_id": "block-1", "schema": "Component@1", "fields": {"intent": "a block"}}, row]}}
+                        with self.subTest(row=row, key=key), self.assertRaises(HubFailure) as refused:
+                            chat.call_tool(self.store.hub_url, session.id, "studio_request",
+                                           {"method": "POST", "path": "/api/proposals", "body": body})
+                        self.assertEqual((refused.exception.status, refused.exception.error.code, refused.exception.error.detail),
+                                         (422, "CHAT_TOOL_INVALID", said))
+            studio.assert_not_called()
+            request.assert_not_called()
+
+        sent = []
+
+        def forward(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
+            sent.append((method, path, body))
+            return {"proposalId": "proposal-1", "status": "proposed"}
+
+        accepted = [
+            {"summary": "Storey height", "parameters": [{"key": "storey", "value": 3.2, "unit": "m"}]},
+            {"summary": "Say what the block is for and what was assumed", "entities": [
+                {"entity_id": "block-1", "schema": "Component@1", "fields": {"intent": "the first study block"}},
+                {"entity_id": "reading-1", "schema": "Reading@1",
+                 "fields": {"note": "The site edge is assumed straight.", "subject_refs": ["entity:block-1"]}}]},
+        ]
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=forward):
+            for edit in accepted:
+                with self.subTest(edit=edit["summary"]):
+                    answer = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                        "method": "POST", "path": "/api/proposals", "body": {**source, "semanticEdit": edit}})
+                    self.assertEqual(answer["proposalId"], "proposal-1")
+        self.assertEqual(sent, [("POST", "/api/proposals", {**source, "semanticEdit": edit, "projectId": session.projectId})
+                                for edit in accepted])
+
+    def test_the_construction_routes_replace_the_producer_routes(self):
+        """The allow-lists take the construction contract and refuse the routes it replaced, naming the new one."""
+
+        added = [("GET", "/api/construction"), ("GET", "/api/construction/model"),
+                 ("GET", "/api/construction/model?run=candidate-1"),
+                 ("GET", "/api/domains/structure/readiness"), ("GET", "/api/domains/envelope/readiness?run=candidate-1"),
+                 ("POST", "/api/proposals/construction"), ("POST", "/api/proposals/facets"),
+                 ("POST", "/api/proposals/hosted-opening")]
+        kept = [("GET", "/api/state/frame"), ("GET", "/api/state/volumes?run=candidate-1"), ("POST", "/api/state/closure"),
+                ("POST", "/api/proposals"), ("POST", "/api/proposals/proposal-1/candidate"), ("GET", "/api/semantics")]
+        replaced = {("GET", "/api/state"): "GET /api/construction/model",
+                    ("GET", "/api/state?run=candidate-1"): "GET /api/construction/model",
+                    **{("POST", f"/api/proposals/{name}"): "POST /api/proposals/construction"
+                       for name in ("sketch", "transform", "push-pull", "delete", "elevation")}}
+        patterns = {"GET": chat._READ, "POST": chat._POST}
+        for method, path in added + kept:
+            self.assertTrue(patterns[method].fullmatch(urlsplit(path).path), (method, path))
+        for method, path in replaced:
+            self.assertIsNone(patterns[method].fullmatch(urlsplit(path).path), (method, path))
+        self.assertIsNone(chat._READ.fullmatch("/api/domains/Structure/readiness"))
+
+        session = self.create()
+        session.status = "running"
+        # A replaced route is refused with the route that replaced it, before
+        # any runtime is resolved: nothing is started or sent to explain it.
+        with patch.object(chat, "_bound_studio") as studio, patch.object(chat, "_request_json") as request:
+            for (method, path), replacement in replaced.items():
+                for tool in ("studio_request", "studio_schema"):
+                    with self.subTest(tool=tool, method=method, path=path), self.assertRaises(HubFailure) as refused:
+                        chat.call_tool(self.store.hub_url, session.id, tool, {"method": method, "path": path, "body": {}})
+                    self.assertEqual((refused.exception.status, refused.exception.error.code), (422, "CHAT_TOOL_UNAVAILABLE"))
+                    self.assertIn(f"use {replacement}", refused.exception.error.detail)
+                    self.assertIn("Nothing was executed", refused.exception.error.detail)
+            studio.assert_not_called()
+            request.assert_not_called()
+
+        sent = []
+        document = {"paths": {
+            "/api/construction": {"get": {"summary": "The construction vocabulary"}},
+            "/api/construction/model": {"get": {"summary": "The model in construction terms"}},
+            "/api/domains/{domain}/readiness": {"get": {"summary": "What a domain reads"}},
+            "/api/proposals/construction": {"post": {"summary": "Run a construction script"}},
+            "/api/proposals/facets": {"post": {"summary": "Add meaning"}},
+            "/api/proposals/hosted-opening": {"post": {"summary": "Host a door or window"}},
+            # The web client's own drawing routes stay in the Runtime.
+            "/api/state": {"get": {"summary": "The state record"}},
+            "/api/proposals/sketch": {"post": {"summary": "Draw"}},
+            "/api/proposals/push-pull": {"post": {"summary": "Push-pull"}},
+        }, "components": {"schemas": {}}}
+
+        def forward(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
+            if path == "/openapi.json":
+                return json.loads(json.dumps(document))
+            sent.append((method, path, body))
+            return {"method": method, "path": path, "body": body}
+
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=forward):
+            for method, path in added:
+                body = {"stateDigest": "a" * 64} if method == "POST" else None
+                with self.subTest(method=method, path=path):
+                    answer = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                        "method": method, "path": path, **({"body": body} if body else {})})
+                    self.assertEqual((answer["method"], answer["path"], answer["body"]), (method, path, body))
+            self.assertEqual(sent, [(method, path, {"stateDigest": "a" * 64} if method == "POST" else None)
+                                    for method, path in added])
+            listing = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {})
+            self.assertEqual({(row["method"], row["path"]) for row in listing["actions"]},
+                             {("GET", "/api/construction"), ("GET", "/api/construction/model"),
+                              ("GET", "/api/domains/{domain}/readiness"), ("POST", "/api/proposals/construction"),
+                              ("POST", "/api/proposals/facets"), ("POST", "/api/proposals/hosted-opening")})
+            for method, template in (("GET", "/api/domains/{domain}/readiness"), ("POST", "/api/proposals/construction")):
+                schema = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
+                                        {"method": method, "path": template})
+                self.assertEqual((schema["method"], schema["path"]), (method, template))
+
+    def test_the_domain_index_is_a_chat_read_beside_each_domains_readiness(self):
+        """#419: an agent learns which domains there are (GET /api/domains) as well as what one reads."""
+
+        for path in ("/api/domains", "/api/domains/structure/readiness", "/api/domains/envelope/readiness"):
+            self.assertIsNotNone(chat._READ.fullmatch(path), path)
+        for path in ("/api/domains/", "/api/domains/structure", "/api/domains/structure/readiness/more"):
+            self.assertIsNone(chat._READ.fullmatch(path), path)
+
+        session = self.create()
+        session.status = "running"
+        sent = []
+        document = {"paths": {
+            "/api/domains": {"get": {"summary": "Every known domain"}},
+            "/api/domains/{domain}/readiness": {"get": {"summary": "What a domain reads"}},
+        }, "components": {"schemas": {}}}
+
+        def forward(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
+            if path == "/openapi.json":
+                return json.loads(json.dumps(document))
+            sent.append((method, path))
+            return {"domains": [{"id": "structure"}, {"id": "envelope"}]}
+
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=forward):
+            answer = chat.call_tool(self.store.hub_url, session.id, "studio_request",
+                                    {"method": "GET", "path": "/api/domains"})
+            listing = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {"pathPrefix": "/api/domains"})
+        self.assertEqual(answer, {"domains": [{"id": "structure"}, {"id": "envelope"}]})
+        self.assertEqual(sent, [("GET", "/api/domains")])
+        self.assertEqual({(row["method"], row["path"]) for row in listing["actions"]},
+                         {("GET", "/api/domains"), ("GET", "/api/domains/{domain}/readiness")})
+
+    def test_studio_schema_finds_literal_routes_before_templated_ones(self):
+        """A templated route listed earlier in the OpenAPI document must not shadow a literal
+        route that also matches it (#419): /api/proposals/{proposal_id} (GET only) must not hide
+        the POST-only /api/proposals/construction and /api/proposals/facets literal routes."""
+
+        session = self.create()
+        document = {"paths": {
+            "/api/proposals/{proposal_id}": {"get": {"summary": "Read a proposal"}},
+            "/api/proposals/construction": {"post": {"summary": "Run a construction script"}},
+            "/api/proposals/facets": {"post": {"summary": "Add meaning"}},
+        }, "components": {"schemas": {}}}
         with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
                 patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(document))):
-            with self.assertRaises(HubFailure) as unknown:
-                chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
-                    "method": "POST", "path": "/api/proposals", "producer": "not-a-producer"})
-            self.assertIn(str(offered), unknown.exception.error.detail)
-            curve = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
-                "method": "POST", "path": "/api/proposals", "producer": "curve"})
-            fields = curve["components"]["schemas"]["SemanticEditRequestDto"]["properties"]["entities"]["items"]
-            selected = {name for variant in fields["anyOf"]
-                        for item in variant["properties"]["fields"].get("anyOf", ())
-                        for name in item["properties"]["producer"]["enum"]}
-            self.assertEqual(selected, {"curve"})
-            component = next(variant["properties"]["fields"] for variant in fields["anyOf"]
-                             if variant["properties"]["schema"]["enum"] == ["Component@1"])
-            self.assertNotIn("semantic_kind", component.get("required", ()))
+            for path in ("/api/proposals/construction", "/api/proposals/facets"):
+                with self.subTest(path=path):
+                    answer = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
+                                            {"method": "POST", "path": path})
+                    self.assertEqual((answer["path"], answer["summary"]), (path, document["paths"][path]["post"]["summary"]))
+            # A concrete id still resolves through the templated route: nothing
+            # about preferring literal matches may break normal template lookup.
+            schema = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
+                                    {"method": "GET", "path": "/api/proposals/abc123"})
+            self.assertEqual((schema["path"], schema["summary"]), ("/api/proposals/{proposal_id}", "Read a proposal"))
 
-    def test_the_producer_index_is_compact_and_read_from_the_running_studio(self):
-        """#413: the unfiltered answer was 67,550 characters, over the CLI's tool-output limit."""
+    def test_construction_proposals_answer_without_the_rows_they_generated(self):
+        """Like a semantic edit, a script's proposal comes back without its edits and operator; its report stays."""
 
-        from archflow_studio_api.main import create_app as studio_app
-        from archflow_studio_api.settings import StudioSettings
-
-        project = self.root / "producer-index"
-        FilesystemProjectRepository.initialize(project, project_id="producer-index",
-                                               initial_state={"project_id": "producer-index", "version": 0})
-        with TestClient(studio_app(StudioSettings(project_dir=project, cad_export="off"))) as client:
-            document = client.get("/openapi.json").json()
-        entity = document["components"]["schemas"]["SemanticEditRequestDto"]["properties"]["entities"]["items"]
-        element = next(variant["properties"]["fields"]["anyOf"] for variant in entity["anyOf"]
-                       if variant["properties"]["schema"]["enum"] == ["Element@1"])
-        contract = [item["properties"]["producer"]["enum"][0] for item in element]
         session = self.create()
-        served = [document]
+        session.status = "running"
+        report = {"report": [{"id": "mass", "form": "solid", "status": "created"}], "log": ["done"]}
+
+        def answer(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            self._studio_tool_path(base, path, method, headers, session)
+            return {"proposalId": "proposal-1", "status": "proposed", "decisionOperator": {"entities": ["rows"]},
+                    "change": {"kind": "edit_components", "changes": [{"entityId": "entity:mass", "action": "create"}],
+                               "edits": {"entities": ["generated rows"]}}, "construction": report}
+
         with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
-                patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(served[0]))):
-            index = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
-                "method": "POST", "path": "/api/proposals"})
-            self.assertLess(len(json.dumps(index)), 3000)
-            self.assertEqual([row["producer"] for row in index["producers"]], contract)
-            self.assertEqual(contract[0], "prism", "most general first, as the contract orders them")
-            for row, item in zip(index["producers"], element):
-                self.assertTrue(row["summary"])
-                self.assertTrue(item["description"].startswith(row["summary"]), "the producer's own description")
-            full = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
-                "method": "POST", "path": "/api/proposals", "producer": "wall"})
-            self.assertIn("SemanticEditRequestDto", full["components"]["schemas"])
-            self.assertGreater(len(json.dumps(full)), len(json.dumps(index)))
-            # No list of its own: a Studio offering another producer is answered with it.
-            changed = json.loads(json.dumps(document))
-            variants = changed["components"]["schemas"]["SemanticEditRequestDto"]["properties"]["entities"]["items"]["anyOf"]
-            for variant in variants:
-                alternatives = variant["properties"]["fields"].get("anyOf")
-                if alternatives is not None:
-                    alternatives[:] = [item for item in alternatives if item["properties"]["producer"]["enum"] != ["loft"]]
-                    alternatives.append({"description": "A trial producer. More text.",
-                                         "properties": {"producer": {"enum": ["trial"]}}})
-            served[0] = changed
-            index = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
-                "method": "POST", "path": "/api/proposals"})
-            self.assertEqual([row["producer"] for row in index["producers"]],
-                             [name for name in contract if name != "loft"] + ["trial"])
-            self.assertEqual(index["producers"][-1]["summary"], "A trial producer")
+                patch.object(chat, "_request_json", side_effect=answer):
+            for path, body in (("/api/proposals/construction", {"stateDigest": "a" * 64, "script": "mass = extrude(rect(0, 0, 4, 3), 3)"}),
+                               ("/api/proposals/facets", {"stateDigest": "a" * 64, "targets": [{"id": "mass", "set": {"material.name": "brick"}}]}),
+                               ("/api/proposals/hosted-opening", {"stateDigest": "a" * 64, "host": "mass", "kind": "door"})):
+                with self.subTest(path=path):
+                    result = chat.call_tool(self.store.hub_url, session.id, "studio_request",
+                                            {"method": "POST", "path": path, "body": body})
+                    self.assertNotIn("decisionOperator", result)
+                    self.assertEqual(result["change"], {"kind": "edit_components",
+                                                        "changes": [{"entityId": "entity:mass", "action": "create"}]})
+                    self.assertEqual(result["construction"], report)
 
     def test_the_agent_guide_does_not_grow(self):
-        """#413 moved the producer answer into studio_schema without adding guide lines.
-
-        #404 F7 moved every domain but modeling behind one line each: the CLI
+        """#404 F7 moved every domain but modeling behind one line each: the CLI
         loads this description before every turn, and it was 15,972 characters.
+        #419 states the construction script there instead of a producer index.
         """
 
         tools = {tool["name"]: tool for tool in _tools_of(chat)}
@@ -1848,7 +2079,6 @@ class ChatTests(unittest.TestCase):
         self.assertLessEqual(len(modelling.splitlines()), 106)
         self.assertLessEqual(len(modelling), 10000)
         self.assertLessEqual(len(json.dumps(list(tools.values()), ensure_ascii=False)), 28000)
-        self.assertIn("studio_schema POST /api/proposals answers the index of producers", modelling)
         for prefix in chat._GUIDES:
             self.assertIn(f"pathPrefix {prefix}", modelling, "each domain is named with where its text is")
             self.assertNotIn(chat._GUIDES[prefix].splitlines()[-1], modelling)
@@ -1904,9 +2134,9 @@ class ChatTests(unittest.TestCase):
         with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
                 patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(document))):
             answers = {}
-            for label, arguments, most in (("sketch", {"method": "POST", "path": "/api/proposals/sketch"}, 12000),
+            for label, arguments, most in (("construction", {"method": "POST", "path": "/api/proposals/construction"}, 6000),
                                            ("admissions", {"method": "POST", "path": "/api/admissions"}, 4000),
-                                           ("wall", {"method": "POST", "path": "/api/proposals", "producer": "wall"}, 20000)):
+                                           ("proposals", {"method": "POST", "path": "/api/proposals"}, 12000)):
                 answer = answers[label] = chat.call_tool(self.store.hub_url, session.id, "studio_schema", arguments)
                 text = json.dumps(answer, ensure_ascii=False)
                 self.assertLessEqual(len(text), most, label)
@@ -1914,45 +2144,33 @@ class ChatTests(unittest.TestCase):
                 self.assertNotIn('"title"', text)
                 self.assertNotIn("x-monkey", text, "headers are the adapter's to send")
                 self.assertTrue(answer["note"].startswith("Request inputs only"))
-            # Naming a repeat loses nothing: expanded, the wall answer is the
+            # Naming a repeat loses nothing: expanded, the proposal answer is the
             # compacted contract, and its references stay where they were.
-            wall = answers["wall"]
-            schemas = wall["components"]["schemas"]
-            self.assertTrue(any(name.startswith("Shared") for name in schemas))
+            schemas = answers["proposals"]["components"]["schemas"]
             edit = expand(schemas["SemanticEditRequestDto"], schemas)
-            original = chat._compact(document["components"]["schemas"]["SemanticEditRequestDto"])
-            element = lambda value: next(variant for variant in value["properties"]["entities"]["items"]["anyOf"]  # noqa: E731
-                                         if variant["properties"]["schema"]["enum"] == ["Element@1"])
-            fields = element(edit)["properties"]["fields"]["anyOf"]
-            self.assertEqual([row["properties"]["producer"]["enum"] for row in fields], [["wall"]])
-            wall_contract = next(row for row in element(original)["properties"]["fields"]["anyOf"]
-                                 if row["properties"]["producer"]["enum"] == ["wall"])
-            self.assertEqual(fields[0], wall_contract)
+            self.assertEqual(edit, expand(chat._compact(document["components"]["schemas"]["SemanticEditRequestDto"]), schemas))
             # A nullable field reads as its type, marked, and a property named
             # like a keyword is still a property.
-            sketch = answers["sketch"]["components"]["schemas"]["SketchPrismRequestDto"]["properties"]
-            self.assertEqual((sketch["baseLevel"]["type"], sketch["baseLevel"]["nullable"]), ("string", True))
+            script = answers["construction"]["components"]["schemas"]["ConstructionRequestDto"]["properties"]
+            self.assertEqual((script["summary"]["type"], script["summary"]["nullable"]), ("string", True))
             self.assertEqual(chat._compact({"properties": {"title": {"type": "string", "title": "Title"}}}),
                              {"properties": {"title": {"type": "string"}}})
 
     def test_tool_rows_name_what_a_schema_or_discovery_answer_read(self):
-        """#404 comment item 1: a producer index showed as a 320-character JSON preview."""
+        """#404 comment item 1: a schema answer showed as a 320-character JSON preview."""
 
-        index = {"path": "/api/proposals", "method": "POST", "producers": [{"producer": "prism", "summary": "x" * 400}],
-                 "next": "Ask again with producer set to one of these for its authoring contract."}
-        self.assertEqual(chat._tool_values(json.dumps(index)), (["read the producer index of POST /api/proposals"], None))
-        contract = {"path": "/api/proposals", "method": "POST", "summary": "Create", "body": {"$ref": "x"},
-                    "producer": "wall", "note": "Request inputs only; each $ref names an entry of components.schemas."}
+        contract = {"path": "/api/proposals/construction", "method": "POST", "summary": "Create", "body": {"$ref": "x" * 400},
+                    "note": "Request inputs only; each $ref names an entry of components.schemas."}
         self.assertEqual(chat._tool_values(json.dumps(contract)),
-                         (["read the schema of POST /api/proposals for producer wall"], None))
+                         (["read the schema of POST /api/proposals/construction"], None))
         listing = {"actions": [], "total": 12, "offset": 0, "limit": 30, "guide": "DRAWINGS", "note": "..."}
         self.assertEqual(chat._tool_values(json.dumps(listing)), (["listed 12 actions with their guide"], None))
         # A request answer that happens to carry a path and a method is not a schema read.
         self.assertEqual(chat._tool_values(json.dumps({"path": "/a", "method": "GET", "status": "ok"}))[0], ["status: ok"])
         row, _, _ = chat._tool_activity({"tool": "studio_schema", "server": "monkeyhub", "status": "completed",
-                                         "arguments": {"method": "POST", "path": "/api/proposals"},
-                                         "result": {"content": [{"type": "text", "text": json.dumps(index)}]}})
-        self.assertEqual(row.splitlines()[1], "read the producer index of POST /api/proposals")
+                                         "arguments": {"method": "POST", "path": "/api/proposals/construction"},
+                                         "result": {"content": [{"type": "text", "text": json.dumps(contract)}]}})
+        self.assertEqual(row.splitlines()[1], "read the schema of POST /api/proposals/construction")
         self.assertLess(len(row), 200)
 
     def test_a_tool_call_before_the_first_turn_is_not_told_the_chat_stopped(self):
@@ -1970,7 +2188,7 @@ class ChatTests(unittest.TestCase):
         session = self.create()
         with patch.object(chat, "_request_json", return_value=session.model_dump()), \
                 self.assertRaises(HubFailure) as refused:
-            chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state"})
+            chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/construction/model"})
         self.assertEqual(refused.exception.error.code, "CHAT_NOT_RUNNING")
         self.assertIn("has not started a turn yet", refused.exception.error.detail)
 
@@ -1980,23 +2198,20 @@ class ChatTests(unittest.TestCase):
         session = self.create()
         session.status = "running"
         description = next(tool for tool in _tools_of(chat) if tool["name"] == "studio_request")["description"]
-        for stated in ("GET /api/capabilities/candidate.modify_existing?target=",
-                       "&elementId=<the element>", "GET /api/capabilities?goal=",
+        # A geometry id is the component the capability targets; its element is
+        # the runtime's, so naming one is optional (#419).
+        for stated in ("GET /api/capabilities/candidate.modify_existing?target=<id>&run=<candidateId>",
+                       "(elementId is optional)", "GET /api/capabilities?goal=",
                        "POST /api/capabilities/{capabilityId}/run", "awaitSeconds: 60",
                        "keep is a list", "never send the request again",
-                       "GET /api/state?run=<candidateId>", "original baseStateDigest",
-                       "Multiple observation and revision cycles",
-                       # #404 F4: authored params/references are opt-in, and an
-                       # edit that sends them replaces them whole; what it omits,
-                       # dependencies included, is retained (what an agent sends).
-                       "GET /api/state?authored=true", "fields/dependencies are retained",
-                       "components/elements"):
+                       "GET /api/construction/model?run=<candidateId>", "original baseStateDigest",
+                       "Multiple observation and revision cycles"):
             self.assertIn(stated, description, stated)
         for restriction in ("Never generate an intermediate", "READ ONCE", "do not read the index",
-                            "yield_time_ms", "functions.wait"):
+                            "yield_time_ms", "functions.wait", "&elementId=<the element>"):
             self.assertNotIn(restriction, description)
-        # The quick sketch and exact-source comparison remain discoverable.
-        self.assertIn("/api/proposals/sketch", description)
+        # The construction route and exact-source comparison remain discoverable.
+        self.assertIn("/api/proposals/construction", description)
         self.assertIn("compare?against=<runId>", description)
 
         def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
@@ -2296,7 +2511,7 @@ class ChatTests(unittest.TestCase):
                 return {"processId": 123, "sourceRevision": "same-revision"}
             if path == "/api/project":
                 return {"projectId": session.projectId, "projectDir": session.projectDir}
-            if path == "/api/state":
+            if path == "/api/construction/model":
                 self.assertEqual(base, "http://127.0.0.1:8791")
                 return {"stateDigest": "a" * 64}
             raise AssertionError(f"unexpected call: {method} {path}")
@@ -2310,7 +2525,7 @@ class ChatTests(unittest.TestCase):
         session.status = "running"
         request, state = self._preparing_hub(session, starts_after=2)
         with patch.object(chat, "_request_json", side_effect=request), patch.object(chat, "_PREPARE_POLL_S", 0.01):
-            answer = chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state"})
+            answer = chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/construction/model"})
         self.assertEqual(answer, {"stateDigest": "a" * 64})
         self.assertEqual((state["opens"], state["starts"]), (1, 1))
         description = next(tool for tool in _tools_of(chat) if tool["name"] == "studio_request")["description"]
@@ -2323,7 +2538,7 @@ class ChatTests(unittest.TestCase):
                    "error": {"code": "WORKER_EXITED", "detail": "The project service exited with code 3."}}
         request, state = self._preparing_hub(session, worker=crashed)
         with patch.object(chat, "_request_json", side_effect=request), self.assertRaises(HubFailure) as refused:
-            chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state"})
+            chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/construction/model"})
         self.assertEqual(refused.exception.error.code, "WORKER_EXITED")
         # The Hub's own words first, then what the agent can do about it: tell the user.
         self.assertTrue(refused.exception.error.detail.startswith("The project service exited with code 3. "))
@@ -2350,7 +2565,7 @@ class ChatTests(unittest.TestCase):
         session.status = "running"
         request, state = self._preparing_hub(session, attached_id="other-project")
         with patch.object(chat, "_request_json", side_effect=request), self.assertRaises(HubFailure) as refused:
-            chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state"})
+            chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/construction/model"})
         self.assertEqual(refused.exception.error.code, "CHAT_PROJECT_MISMATCH")
         self.assertEqual(state["starts"], 0)
 
@@ -2376,7 +2591,7 @@ class ChatTests(unittest.TestCase):
         def call():
             try:
                 answers.append(chat.call_tool(self.store.hub_url, session.id, "studio_request",
-                                              {"method": "GET", "path": "/api/state"}))
+                                              {"method": "GET", "path": "/api/construction/model"}))
             except BaseException as exc:  # noqa: BLE001 - reported below
                 failures.append(exc)
 
@@ -2559,8 +2774,8 @@ class ChatTests(unittest.TestCase):
         request, sent = self._finishing_service(session, job_states=[{"jobId": "job-1", "status": "succeeded"}])
         with patch.object(chat, "_request_json", side_effect=request):
             for arguments in (
-                {"method": "GET", "path": "/api/state", "awaitSeconds": 30},
-                {"method": "POST", "path": "/api/proposals/sketch", "awaitSeconds": 30},
+                {"method": "GET", "path": "/api/construction/model", "awaitSeconds": 30},
+                {"method": "POST", "path": "/api/proposals/construction", "awaitSeconds": 30},
                 {"method": "POST", "path": "/api/capabilities/candidate.modify_existing/run",
                  "awaitSeconds": 0},
                 {"method": "POST", "path": "/api/capabilities/candidate.modify_existing/run",
@@ -2621,7 +2836,7 @@ class ChatTests(unittest.TestCase):
             self.assertNotIn("accessCode", result["body"])
             session.projectId = "other"
             with self.assertRaises(HubFailure) as changed:
-                chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state"})
+                chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/construction/model"})
             self.assertEqual(changed.exception.error.code, "CHAT_PROJECT_MISMATCH")
 
     def test_tools_route_each_chat_to_its_project_while_both_are_running(self):
@@ -2650,19 +2865,19 @@ class ChatTests(unittest.TestCase):
             if path == "/api/project":
                 bound = second if wrong_binding else session
                 return {"projectId": bound.projectId, "projectDir": bound.projectDir}
-            self.assertEqual(path, "/api/state")
+            self.assertEqual(path, "/api/construction/model")
             return {"projectId": session.projectId}
 
         with patch.object(chat, "_request_json", side_effect=request):
             for session in (first, second):
-                result = chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state"})
+                result = chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/construction/model"})
                 self.assertEqual(result["projectId"], session.projectId)
             wrong_binding = True
-            before = sum(path == "/api/state" for _, path, _ in calls)
+            before = sum(path == "/api/construction/model" for _, path, _ in calls)
             with self.assertRaises(HubFailure) as refused:
-                chat.call_tool(self.store.hub_url, first.id, "studio_request", {"method": "GET", "path": "/api/state"})
+                chat.call_tool(self.store.hub_url, first.id, "studio_request", {"method": "GET", "path": "/api/construction/model"})
             self.assertEqual(refused.exception.error.code, "CHAT_PROJECT_MISMATCH")
-            self.assertEqual(sum(path == "/api/state" for _, path, _ in calls), before)
+            self.assertEqual(sum(path == "/api/construction/model" for _, path, _ in calls), before)
         self.store.stop(first.id)
         self.assertEqual(self.store.get(second.id).status, "running")
         self.store.stop(second.id)

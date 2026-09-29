@@ -2101,7 +2101,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
         execution = project.repository.load_json(record_ref_from_uri(seat["cad"]["execution_ref"], "demo"))
         self.assertEqual(execution["identity"]["binding"]["run_id"], "run-2")
         self.assertTrue(execution["readback_verified"])
-        self.assertIn("obj-wall-south-cut", execution["reused_object_ids"])
+        self.assertIn("obj-wall-south", execution["reused_object_ids"])
         self.assertEqual(_sha256_of(source_path), source_sha)
         self.assertEqual(second["source_run_receipt_ref"], first["receipt_ref"])
         self.assertEqual(self.checks(project.repository, second)["columns-plinth-stands-on"]["status"], "held")
@@ -2113,7 +2113,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
         self.assertEqual(production["cache_checks"]["wall-south.element_row"], "same")
         build = next(event["details"] for event in spans if event["phase"] == "geometry_build")
         self.assertEqual(build["recomputed_object_ids"], ["obj-columns-plinth"])
-        self.assertIn("obj-wall-south-cut", build["reused_object_ids"])
+        self.assertIn("obj-wall-south", build["reused_object_ids"])
 
     def test_unchanged_seat_is_reused_across_a_new_run_binding(self) -> None:
         from unittest.mock import patch
@@ -2229,7 +2229,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
         self.assertEqual(lookup["cache_reason"], "verified_source_export", lookup)
         seat = second["seat_results"][0]
         self.assertEqual(seat["cad"]["path"], "incremental")
-        self.assertIn("obj-wall-south-cut", seat["cad"]["reused_object_ids"])
+        self.assertIn("obj-wall-south", seat["cad"]["reused_object_ids"])
         self.assertFalse(elsewhere.exists(), elsewhere)
 
     def test_changed_source_step_is_never_reused_under_its_old_receipt(self) -> None:

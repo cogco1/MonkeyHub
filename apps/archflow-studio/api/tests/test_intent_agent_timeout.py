@@ -56,11 +56,14 @@ SELECTION = Selection(component_id="portico", element_id=None)
 ANSWER = json.dumps(
     {
         "status": "compiled",
-        "targetComponentId": "portico",
-        "elementId": "portico-base",
+        "script": None,
+        "facets": None,
+        "parameters": None,
         "utterance": "increase height by 10 %",
+        "targetId": "portico-base",
         "why": "a little = +10 %",
         "question": None,
+        "contextRefs": [],
     }
 )
 
@@ -185,7 +188,10 @@ class CodexSuccessTests(CodexReceiptTestCase):
             request.payload["selection"],
             {"component_id": "portico", "element_id": None, "gestures": []},
         )
-        self.assertIn("elements", request.payload["record_sheet"])
+        # The sheet the call was bound to reads the model in construction terms.
+        self.assertIn("construction", request.payload["record_sheet"])
+        self.assertIn("portico", {row["id"] for row in request.payload["record_sheet"]["model"]})
+        self.assertEqual(compilation.target_id, "portico-base")
         # What the agent said, decoded, is what the receipt's output carries.
         self.assertEqual(receipt.output["utterance"], "increase height by 10 %")
         self.assertEqual(receipt.output["status"], "compiled")

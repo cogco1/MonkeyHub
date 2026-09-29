@@ -782,11 +782,13 @@ def _keep(resolved: Sequence[_Resolved]) -> tuple[str, tuple[str, ...]]:
 
 
 def _remove(resolved: Sequence[_Resolved]) -> str:
+    # What the agent's prompt says too (intent_agent.SYSTEM_PROMPT): a
+    # construction script deletes geometry; the scalar grammar never does.
     subjects = _subjects(resolved)
     where = ", ".join(subjects) if subjects else "nothing the record names"
     return (
-        f"remove mark on {where} · the grammar has no form that removes; "
-        "ask before proposing"
+        f"remove mark on {where} · it may become a script that deletes the "
+        "marked geometry; ask first when the target is unclear"
     )
 
 

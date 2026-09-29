@@ -249,7 +249,8 @@
         "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified conversion-provider selection; provider execution remains separate from the standalone SKP reader, with no project writes.",
         "native 3DM drawing-shape decoding (planar BRep, linear extrusion, supported curves and meshes), with block transforms, visibility, units and explicit faceted/mesh approximation quality; unsupported geometry is refused",
         "independent local SketchUp C API reading of visible face geometry into meters/Z-up meshes; nested instances, transformations, holes and visibility, without launching a desktop host",
-        "Transport-neutral integration pack manifests, installed-component and per-capability qualification views over existing adapters; one bounded local software discovery registry for Rhino, Blender, SketchUp and retained AutoCAD discovery."
+        "Transport-neutral integration pack manifests, installed-component and per-capability qualification views over existing adapters; one bounded local software discovery registry for Rhino, Blender, SketchUp and retained AutoCAD discovery.",
+        "how the OCCT executor realizes a difference: a profile-with-holes extrusion when every void pierces an extruded base along its extrusion, otherwise a boolean cut (difference_strategy auto, boolean or profile_with_holes), recorded as the receipt's lowering"
       ],
       "does_not_own": [
         "translating the program into a script - adapters.cad_program",
@@ -401,7 +402,8 @@
         "a section perspective cuts every selected shape exactly with an oriented box on the kept side and solves visibility once with a perspective projector whose picture plane is the section plane, the shapes located in the eye's camera frame (HLRBRep's perspective misjudges back faces and silhouettes under a non-identity projector frame); the plane's sections map through the same camera move and projector",
         "Imported meshes and saved render meshes retain their faceted/approximation quality; no native reader creates a STEP or an OCCT execution receipt. SKP originals remain with the application owner; the reader does not write project data.",
         "SKP-derived mesh object IDs follow persistent instance paths and tag IDs within the same model; names and geometry changes do not mint new object identities. Unsupported or missing persistent IDs are refused.",
-        "Discovery/status never launches software, loads vendor libraries, queries a network/license or writes project data. Detected software, installed components and verified capabilities remain separate; qualification never grants project authority. CAD_BACKEND_REGISTRY remains the only compiled execution registry."
+        "Discovery/status never launches software, loads vendor libraries, queries a network/license or writes project data. Detected software, installed components and verified capabilities remain separate; qualification never grants project authority. CAD_BACKEND_REGISTRY remains the only compiled execution registry.",
+        "both difference strategies realize the same exact solid against the same predicted bounds and readback; the receipt's lowering names only differences not realized by a boolean"
       ],
       "status": "canonical",
       "tests": [
@@ -470,7 +472,8 @@
       ],
       "depends_on": [
         "adapters.cad_program",
-        "archflow.adapters.cad_program"
+        "archflow.adapters.cad_program",
+        "state.geometry_program"
       ],
       "used_by": [
         "archflow/adapters/cad_execution.py",
@@ -529,10 +532,13 @@
         "lift_to_base_level",
         "CadTranslation",
         "CadTranslationError",
+        "DifferenceBoundsError",
         "translate_step_import_to_rhino_python",
         "ROOT_LAYER"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "state.geometry_program"
+      ],
       "used_by": [
         "archflow/adapters/cad_execution.py",
         "archflow/adapters/cad_patch.py",
@@ -548,7 +554,10 @@
         "coordinates pass through as the program states them; the translator performs no frame conversion",
         "every physical object is named and carries its archflow:* identity strings",
         "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError",
-        "planar_surface preserves its explicitly closed profile and datum elevation with AddPlanarSrf, without extrusion or capping; analytic bounds retain the zero-thickness plane"
+        "planar_surface preserves its explicitly closed profile and datum elevation with AddPlanarSrf, without extrusion or capping; analytic bounds retain the zero-thickness plane",
+        "a difference keeps its base's predicted bounds when every base vertex survives outside every void's box, for any base whose points are its own vertices",
+        "a void whose box does not overlap its base's box is refused by name: it removes nothing",
+        "a boolean_difference whose bounds cannot be determined analytically fails DifferenceBoundsError, a CadTranslationError that says whether a void misses its base"
       ],
       "status": "canonical",
       "tests": [
@@ -929,7 +938,10 @@
         "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; planar-surface compress_above fixes world +Y points at or below a threshold, scales the rest and inserts crossing-edge intersections, refusing nonplanar results and inherited or direct parameter bindings; loft section controls support translation, rotation, copy and scale while retaining type, identity and datum binding; normal lofts refuse nonuniform scaling because refitting is not an equivalent transform, and loft push/pull is unsupported; dependent and parameter-bound changes retain the existing intent guards",
         "one datum-bound polyline curve producer for authored lines, sampled freehand and segmented arcs; no face, thickness, top datum or support relation is inferred",
         "straight-wall authoring accepts explicit project-local point references through the existing resolver and retains @parameter binding and hosted opening relations",
-        "Absolute numeric prism/face base references and read-only placement of drawn elements through their existing datum dependencies; free placement publishes its own fixed base instead of binding an editable Level."
+        "Absolute numeric prism/face base references and read-only placement of drawn elements through their existing datum dependencies; free placement publishes its own fixed base instead of binding an editable Level.",
+        "the voids relation: with_void_hosts annotates every ElementRow with the hosts naming it (voided_by); a void keeps obj-<id>, retained hidden, with no top datum or support relation; a host emits <id>-body and the difference that keeps obj-<id>",
+        "realising a block as a wall in place (wall_fields_from_block, #419 Stage C): a rectangular prism standing on a level or datum becomes the wall producer's fields under the same element id; the line runs the way the longest side runs (the first of equal ones), on that side when the block lies right of it, else on the opposite long face, so along starts beside the side's first corner whichever way the outline winds and doors and windows are set out from the line's face; corners rounded to the nanometre still make a rectangle; a tilted plane, panel cutouts, an outline that is not a rectangle or is bound to parameters, and a block lifted off its base are refused with the reason",
+        "where a wall's along is measured on a line of two stated points (wall_along_line): the same turn produce_wall makes when inward lies left of the line"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",
@@ -965,6 +977,9 @@
         "validate_element_contract",
         "edit_drawn_element",
         "drawn_element_placement",
+        "with_void_hosts",
+        "wall_fields_from_block",
+        "wall_along_line",
         "element_vertical_extent",
         "parameter_unit",
         "canonical_params"
@@ -986,7 +1001,8 @@
       "used_by": [
         "monkeyarch/runtime/project_runner.py",
         "tests/test_element_producers.py",
-        "tests/test_cad_patch.py"
+        "tests/test_cad_patch.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/construction.py"
       ],
       "invariants": [
         "no producer computes a plan coordinate itself; every position goes through resolve_plan",
@@ -1001,7 +1017,11 @@
         "an unfilled semicircular wall opening passes its explicit shape and spring height to wall_solver and creates no frame or leaf",
         "rectangular_cutouts require an ordered axis-aligned rectangular prism profile; untouched panels retain their original operation id, and a cut panel publishes no whole-prism top datum",
         "a planar-surface produces no top datum or support relation; its single outer boundary must be simple and explicitly closed; holes, thickness and extra fields are refused",
-        "a prism elevation defaults to zero for retained inputs; without a top reference elevation moves the whole extrusion while height leaves its bottom fixed; with a top reference both declared height and derived height account for elevation"
+        "a prism elevation defaults to zero for retained inputs; without a top reference elevation moves the whole extrusion while height leaves its bottom fixed; with a top reference both declared height and derived height account for elevation",
+        "an element acts as a void only because a host names it in references.voids; nothing on the element states it and no classification is required",
+        "a host's delivered object is obj-<id> with or without voids",
+        "a wall publishes <id>-top as a horizontal prism does: its base datum plus its height, published by obj-<id>",
+        "a block realised as a wall keeps its element id, obj-<id>, its bounds and <id>-top; its base, height or top, voids and every other field are kept, and the fields given are not changed"
       ],
       "status": "canonical",
       "tests": [
@@ -1011,7 +1031,8 @@
         "tests/test_project_runner.py",
         "tests/test_prism_cutouts.py",
         "tests/test_occt_execution.py",
-        "tests/test_wall_explicit_point_reference.py"
+        "tests/test_wall_explicit_point_reference.py",
+        "tests/test_wall_realization.py"
       ],
       "notes": "The single geometry-emission owner on the spine; monument vocabulary (solids of revolution, boolean chains, classical-order members) would be added here rather than beside it."
     },
@@ -1028,7 +1049,8 @@
         "the lineage / round / proposal / deferral / escalation records and their persistence through the repository",
         "reloading one exact compiled program from its retained record",
         "the planar_surface function contract: one explicit POINTS3 boundary, optional datum-relative base_offset and no input objects",
-        "the retained CURVE function contract accepts optional datum-relative base_offset beside points and basis; the existing polyline representation serves drawn curves"
+        "the retained CURVE function contract accepts optional datum-relative base_offset beside points and basis; the existing polyline representation serves drawn curves",
+        "the extrusion and loft function contracts' optional retain_for_inspection, and the loft's optional hidden_for_inspection"
       ],
       "does_not_own": [
         "compiling the proposal into objects and digests - compilers.geometry",
@@ -1109,12 +1131,17 @@
         "a round is capped by policy; exhausting the cap deposits a deferral or escalation record, not a result",
         "every round is retained before the next one is authored",
         "the function contract checks parameters by kind and statements by shape; an operation that declares nothing decodes and re-encodes to the same bytes it always did",
-        "datum-seated lofts accept an optional base_offset in metres, matching the existing extrusion and revolve seat-height contract"
+        "datum-seated lofts accept an optional base_offset in metres, matching the existing extrusion and revolve seat-height contract",
+        "the authoring contract states relations and results, not operation idioms: a host_cut member may be any region derived from its host or consumed together with it",
+        "an operation may state no semantic binding when all of its outputs are construction",
+        "an assembly's interface_refs are only the relations the record's connections declare, and it may name none: the provider contract offers the declared refs with minItems 0 and says to leave it empty when none is declared"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_production_policy.py",
-        "tests/test_element_producers.py"
+        "tests/test_element_producers.py",
+        "tests/test_wall_realization.py",
+        "tests/test_geometry_authoring_contract.py"
       ],
       "notes": "The runner drives it with an inline RecordedProposalProvider for replay; a live provider enters through studio.intent, which signs its call with the same ports.model receipt."
     },
@@ -1175,13 +1202,15 @@
         "every member is placed relative to the void the wall granted",
         "a void whose opening id has no type fails OpeningSolverError rather than being left empty",
         "member operation ids are scoped by the hosting wall: an opening id is unique inside its wall, not inside the building, and a wall id already prefixing the opening id is not doubled",
-        "rectangular window and door types cannot silently fill a non-rectangular hosted aperture"
+        "rectangular window and door types cannot silently fill a non-rectangular hosted aperture",
+        "an opening that names no interface_ref carries no interface: the solver never states a spatial relation it was not given (#419 R17)"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_element_producers.py",
         "tests/test_opening_solver.py",
-        "tests/test_occt_execution.py"
+        "tests/test_occt_execution.py",
+        "tests/test_wall_realization.py"
       ],
       "notes": "P092 filler side; P099 gives the arrayed placement so N identical openings share one member definition."
     },
@@ -1395,7 +1424,8 @@
         "the wall is one solid; every opening is a void request the wall hosts, never a separate subtraction chain",
         "an opening's position is expressed in wall coordinates (along, across), never in project coordinates",
         "a contract violation - non-positive size, an opening outside the wall, overlapping voids - fails WallSolverError",
-        "a semicircular aperture has head minus spring height equal to half its width, with its spring at or above its sill; rectangular opening serialization is unchanged"
+        "a semicircular aperture has head minus spring height equal to half its width, with its spring at or above its sill; rectangular opening serialization is unchanged",
+        "a wall delivers obj-<wall> with or without openings or voids; once cut, its uncut extrusion is obj-<wall>-body, consumed by the cut and the apertures"
       ],
       "status": "canonical",
       "tests": [
@@ -1478,7 +1508,9 @@
         "a structurally invalid input raises; a semantically rejected proposal returns a receipt with issues and no program",
         "every issue is appended, not short-circuited, so one round reports every independent failure",
         "the compiled program is bound to the state digest and, on a revision, to the predecessor program digest",
-        "operation order is deterministic for one proposal"
+        "operation order is deterministic for one proposal",
+        "only a delivered object (state.geometry_program.delivered_object_ids) must be owned by a semantic binding; a consumed intermediate may be unowned",
+        "a host_cut member is derived from its named host or consumed together with it by one operation; no operation kind is prescribed"
       ],
       "status": "canonical",
       "tests": [
@@ -3200,6 +3232,8 @@
         "NativeModelSource",
         "CLEANUP_TOLERANCE_MM",
         "object_semantics",
+        "current_object_id",
+        "inspection_witness_ids",
         "DrawnView",
         "DrawingCache"
       ],
@@ -3228,7 +3262,9 @@
         "Dressing has independent object ids, uses fixed view coordinates or exact physical-object anchors, never creates design entities and never silently rebinds missing anchors.",
         "A section perspective's picture plane is its section plane: the cut is true to scale at the recorded 1:N, nothing on the eye's side is drawn, and the receipt records the request, the exact plane and the resolved camera (eye, target, up, field of view) that draw the same bytes again; a plane that misses the drawn objects and an eye on the kept side or on the plane are refused by name before anything is written.",
         "Native source receipts name the original model and its registration, GUID instance paths and geometry quality; STEP-derived receipt fields and old digest meanings remain unchanged.",
-        "The receipt's projection counts stay those of the solve; the SVG draws the cleaned lines and the receipt's cleanup says what was removed. A receipt retained before cleanup reads cold with cleanup None."
+        "The receipt's projection counts stay those of the solve; the SVG draws the cleaned lines and the receipt's cleanup says what was removed. A receipt retained before cleanup reads cold with cleanup None.",
+        "hidden inspection witnesses are left out of cut plans, model-axis elevations, section perspectives and review sheets alike",
+        "a retained obj-<X>-cut reference reads as obj-<X> only when the model lacks the former and has the latter; no other name is rebound"
       ],
       "status": "canonical",
       "tests": [
@@ -3271,6 +3307,41 @@
         "tests/test_semantics.py"
       ],
       "notes": ""
+    },
+    {
+      "module_id": "semantics.facets",
+      "owner_path": "archflow/semantics/facets.py",
+      "purpose": "The registered L3 facets a component may carry once its meaning is established: namespaced key/value pairs, each key either a closed set of values or free text.",
+      "owns": [
+        "the facet vocabulary (architectural.role, architectural.enclosure, structural.role, material.name, fabrication.method), which keys are free text, and the free-text length bounds"
+      ],
+      "does_not_own": [
+        "roles - semantics.roles",
+        "conditions - semantics.conditions",
+        "refusing a record's facets - state.record"
+      ],
+      "inputs": [],
+      "outputs": [],
+      "public_api": [
+        "FACETS",
+        "FACET_KEYS",
+        "FREE_TEXT_MIN",
+        "FREE_TEXT_MAX",
+        "allowed_facet_values",
+        "suggest_facet_key"
+      ],
+      "depends_on": [],
+      "used_by": [
+        "archflow/state/state_record.py"
+      ],
+      "invariants": [
+        "a facet is not an entity type and not a role or a condition (ADR-006); an enumerated key accepts only its closed set of values, a free-text key accepts 1-120 characters"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_facets.py"
+      ],
+      "notes": "Facets live on Component@1.fields.facets (spec docs/2026-09-28-construction-api.md §3.4); GH-419 Task C2."
     },
     {
       "module_id": "semantics.registry",
@@ -3682,7 +3753,8 @@
         "the program proposal record and its digest (GeometryProgramProposal)",
         "project levels and grid axes as published datums (ProjectLevel, ProjectLevels, ProjectGridAxis, ProjectGrids, verify_project_datums)",
         "compiled geometry program/object values, asset substitution receipts and their retained serialization shared by the MonkeyArch compiler and ArchFlow CAD adapters",
-        "PLANAR_SURFACE: one explicitly closed planar polygon without thickness; operation construction rejects open, non-planar, self-intersecting and degenerate boundaries"
+        "PLANAR_SURFACE: one explicitly closed planar polygon without thickness; operation construction rejects open, non-planar, self-intersecting and degenerate boundaries",
+        "which objects a program delivers (delivered_object_ids): outputs nothing consumes, except unretained curves, and outputs whose operation states retain_for_inspection"
       ],
       "does_not_own": [
         "producing operations from design content (capabilities/element_producers.py, wall_solver, opening_solver)",
@@ -3740,7 +3812,8 @@
         "CompiledGeometryProgram",
         "CompiledGeometryObject",
         "AssetSubstitutionReceipt",
-        "GeometryCompilationError"
+        "GeometryCompilationError",
+        "delivered_object_ids"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3768,7 +3841,9 @@
         "every numeric field is finite and every collection is bounded",
         "a datum id namespace is unique across levels and grid axes (verify_project_datums)",
         "a proposal names the design-state digest it was produced from",
-        "never writes the filesystem"
+        "never writes the filesystem",
+        "an operation may name no semantic binding; allowing it changes no retained serialization",
+        "a hosted assembly may cite no interface; one that cites any serializes exactly as before"
       ],
       "status": "canonical",
       "tests": [
@@ -3776,7 +3851,8 @@
         "tests/test_geometry_compiler.py",
         "tests/test_geometry_program.py",
         "tests/test_interface_datums.py",
-        "tests/test_occt_execution.py"
+        "tests/test_occt_execution.py",
+        "tests/test_wall_realization.py"
       ],
       "notes": "Defines its own digest_value/require_sha256 instead of using contracts.canonical, a second digest implementation on the spine; at 1564 lines it is the largest contract module."
     },
@@ -4040,6 +4116,7 @@
         "bootstrap_developed_state",
         "design_components_of",
         "component_semantics",
+        "component_facets",
         "developed_design_view",
         "RecordBinding",
         "legacy_state_digest",
@@ -4067,6 +4144,7 @@
         "project.refs",
         "relations.contracts",
         "semantics.conditions",
+        "semantics.facets",
         "semantics.registry",
         "semantics.roles",
         "state.design_portfolio",
@@ -4107,7 +4185,9 @@
         "semantic edits check protected closure before and after the edit; a deleted entity releases its incident relationships, while remaining dangling references are refused",
         "a wall type supplies producer parameters and references, not a second instance store; changing a type or a bound parameter propagates to its instances",
         "Lock changes alter only existing Parameter.lock_authority; exact bases and ordinary value/dependency protections remain enforced, new downstream bindings are allowed, and only an explicit unlock permits detaching existing locked bindings",
-        "a record is a value: its readings (digest, state_digest, dependency_edges, resolve_element_bindings, per-entity parameter bindings, design_components_of per source and developed_design_view per argument tuple) are taken once per instance and kept on it; dataclasses.replace starts a new instance with nothing kept, and resolve_element_bindings hands each caller rows of its own"
+        "a record is a value: its readings (digest, state_digest, dependency_edges, resolve_element_bindings, per-entity parameter bindings, design_components_of per source and developed_design_view per argument tuple) are taken once per instance and kept on it; dataclasses.replace starts a new instance with nothing kept, and resolve_element_bindings hands each caller rows of its own",
+        "an element named in another element's references.voids is upstream of it: changing the void invalidates the host",
+        "facets on a component are its only L3 meaning a capability may read; changing them changes no element, object, datum or dependency"
       ],
       "status": "canonical",
       "tests": [
@@ -4859,7 +4939,9 @@
         "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, adopting the architect's own Sync, or the Hub Agent's Continue on the user's bound words through a Hub-managed Runtime) does; every selection onto a run is retained as an attributed design.continued event and admits no Candidate; a recorded continuation keeps its source position's branch",
         "a page's representation status is derived on read and never stored; an explicit page replacement answers before what the page depicts; a missing or unverifiable page or input is unavailable and is never rebound; a person's keep (a drawing's follow: frozen, Publish's freeze) is frozen; each consumer keeps its own wire words",
         "an answer is remembered only in memory and only under a stable ReadToken, which is read from the project's layout watch (project.watch) and never walked on a request: this process's writes change the token at once and leave it unstable until the watch has seen them, another process's once the watch sees them (about a second); closing the binding gives back its share of the watch",
-        "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view"
+        "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view",
+        "the drawing context publishes every wall's <id>-top from the producer itself, in production order, so a drawn shape standing on a wall keeps its drawing controls",
+        "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)"
       ],
       "status": "canonical",
       "tests": [
@@ -4878,7 +4960,8 @@
         "apps/archflow-studio/api/tests/test_conditional_reads.py",
         "apps/archflow-studio/api/tests/test_derivation_memo.py",
         "apps/archflow-studio/api/tests/test_indexed_reads.py",
-        "apps/archflow-studio/api/tests/test_index_changes.py"
+        "apps/archflow-studio/api/tests/test_index_changes.py",
+        "apps/archflow-studio/api/tests/test_hosted_opening.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -5088,7 +5171,7 @@
       "owns": [
         "the intent grammar: four exact utterance forms (set, set to, increase by %, decrease by %) plus one optional keep clause",
         "the IntentProvider seam that resolves an utterance to one numeric target in the record and builds its DecisionOperator",
-        "the agent seam that compiles free text into a scalar sentence or typed component edit (deterministic, codex subprocess, Anthropic Messages), or returns a design question or unsupported capability; the record sheet an agent may see",
+        "the agent seam that compiles free text into a scalar sentence or a construction answer (a construction script, facets, parameters) (deterministic, codex subprocess, Anthropic Messages), or returns a design question or unsupported capability; the record sheet an agent may see, in construction terms (#419: for a design request the construction vocabulary and the model by geometry id with facets and the capabilities they unlock; numeric controls by geometry id; backend prose in construction words; no realisation name, record row or classification but facets)",
         "the receipt of a Studio model call: the request it was bound to, the provider's version and fingerprint, and how the call ended",
         "resolving a picked object to a component and element from its archflow:* user strings, and saying when it is unbound, unknown or stale",
         "reading circle / arrow / keep / remove and freehand / line / ruler / arc annotations into facts the record can vouch for, retaining their screen control points, colour, line width, manual ruler label and recorded view as annotation context without granting geometry or execution authority",
@@ -5102,8 +5185,8 @@
         "the in-process episode store, and the flush that writes judgements made before a run into the next run made against the same state; a judgement is retained only into a run that happened, an episode that met no run says so and is lost on restart; the payload states facts only (ADR-004)",
         "the scope step: which elements a change is agreed to reach - the element, the stack that seats on it (support relations and base references, intersected with the record's closure), or everything on its datum; asked (SCOPE_UNRESOLVED) only when a stack exists and the request did not say, never for an explicitly picked element",
         "the derived-control answer: a capability a reference pins is named with its source (CONTROL_IS_DERIVED) and never compiled - the source's own editable controls when it is an element, the terminal authored-control answer when it is a level",
-        "compiling an Agent semantic component edit from the queried producer signatures and the current record into the existing typed StateRecordOperator; POST /api/proposals accepts either scalar utterance or direct semanticEdit with no second model, supports partial parameter/entity upserts and preserves exact-base proposal continuation",
-        "showing the Agent project types, source readings, parameter bindings and named relationships as context; advertising Reading@1 note, exact subject refs and source ref for retained design conditions through the existing semantic proposal; no geometry program or deferred replay payload is accepted as semantic authoring",
+        "turning the in-app Agent's construction answer into one proposal through studio.construction (design_proposal: a script with its parameters or parameters alone, then facets folded onto the same base) and a modified semantic proposal into its revision on top of it; POST /api/proposals accepts either scalar utterance or direct semanticEdit with no second model, supports partial parameter/entity upserts and preserves exact-base proposal continuation",
+        "showing the in-app Agent source readings, parameter bindings and named relationships as context beside the construction model; advertising Reading@1 note, exact subject refs and source ref for retained design conditions through the existing semantic proposal; no geometry program or deferred replay payload is accepted as semantic authoring",
         "retaining complete 2D page stroke and plain-text revisions and page comments through P036 against exact source-file content, named run and page; reading exact submitted revisions into source context beside existing 3D gesture facts",
         "retaining submitted document words and their exact annotation references before intent resolution, and carrying that retained context with scalar or semantic proposals and modifications",
         "refusing unknown or mismatched document model sources before a model call; retaining resolved sourceRunId and the exact document association in comments and proposals, including clarification continuations",
@@ -5351,7 +5434,9 @@
         "CandidatePool",
         "PoolCandidate",
         "PoolStudy",
-        "POST /api/candidate-reviews"
+        "POST /api/candidate-reviews",
+        "kept_refs",
+        "resolve_keep_refs"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -5378,6 +5463,9 @@
         "studio.study",
         "adapters.drawing_svg",
         "archflow.adapters.occt_backend",
+        "monkeyarch.construction",
+        "monkeyarch.construction.vocabulary",
+        "semantics.facets",
         "studio.memory"
       ],
       "used_by": [
@@ -5393,8 +5481,8 @@
         "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py"
       ],
       "invariants": [
-        "an utterance is parsed, never interpreted; scalar edits use the four forms; component edits use the typed Entity, Parameter and Relation payload",
-        "a compiled scalar answer parses as the grammar and a component edit satisfies the existing typed contract; invalid agent scalar output is INTENT_AGENT_FAILED rather than a request for the architect to repair fields or grammar",
+        "an utterance is parsed, never interpreted; scalar edits use the four forms; the in-app Agent changes geometry only with a construction script, meaning only with facets and controls with parameters or one scalar sentence, and the construction owner chooses every realisation; direct component edits (POST /api/proposals semanticEdit) use the typed Entity, Parameter and Relation payload",
+        "a compiled scalar answer parses as the grammar and a construction answer compiles through the construction contract (a refused script answers 422 CONSTRUCTION_INVALID with its line, column and source line); an answer outside the closed answer schema, a keep ref the record does not declare, or a scalar sentence aimed at an id the record does not declare, is INTENT_AGENT_FAILED rather than a request for the architect to repair fields or grammar; a scalar sentence aimed at a geometry id with several parts is a question naming them",
         "a clarification chain advances or terminates: a round that leaves the target, the missing slots and the candidates where they were is answered UNSUPPORTED, never asked again",
         "a pending intent is bound to a stateDigest; one opened against a state the project has left is void and answers STALE_CLARIFICATION",
         "one intent ends in exactly one of four outcomes, and only COMPILED is a proposal",
@@ -5426,7 +5514,7 @@
         "candidate generation and option selection never commit a Stage; explicit acceptance verifies retained replay, model and validation before exact branch-head CAS",
         "ordinary Stage acceptance never issues canonical HEAD; repeat acceptance returns the same committed Stage",
         "explicit proposal endorsement retains only that choice and does not supersede alternatives or other explorations sharing its base",
-        "A scoped request retains the complete validation closure privately; numeric and explicitly local design requests send only relevant state, dependencies, affected hosts and applicable keep constraints. Global or unresolved design requests retain full context. Server adaptation preserves untouched data and refuses unrelated, shared, derived or locked-control changes; at most two exact-reference supplements grant no additional write scope",
+        "A scoped request retains the complete validation closure privately; numeric and explicitly local design requests send only relevant state, dependencies, affected hosts and applicable keep constraints. Global or unresolved design requests retain full context. Server adaptation preserves untouched data and refuses unrelated, shared, derived or locked-control changes; a local answer's script and facets may change only its targets, checked while the answer is read (outside them is a malformed-answer receipt naming the geometry ids the agent saw); at most two exact-reference supplements grant no additional write scope",
         "Before every provider attempt, the application text estimate must fit the configured context budget or return unsupported without a model invocation. This estimate excludes provider framing and image tokens and is not billed usage",
         "A context supplement names one to sixteen existing references and makes progress; at most three provider calls are made and reading another target never grants a write",
         "Provider counters are kept per actual attempt; preflight text estimates exclude provider framing and image token costs, are labelled estimates, and never populate billed token counters",
@@ -5458,7 +5546,9 @@
         "admissions are read only from the fixed studio-admissions run, never by enumerating runs; a run is in at most one live record as a result or a superseded attempt; an identical retry returns the retained record and any other claim on a claimed run, or rejecting or superseding a committed Stage's run, is ADMISSION_CONFLICT",
         "the admission gate is Stage acceptance's own preflight (C1 replay, C2 completed and not executing, C3 review readiness against the exact base, C5 one complete model) plus C4 object readback and C7 supersession; if any result fails nothing is retained and every failing clause is named",
         "a person (ui or retroactive) may admit a result that is not review-ready as a comparison option, retaining the failing clauses as its marker; an Agent (hub-chat) admission is review-ready, needs the Hub-managed boundary and a bound message, and rejects only on the user's bound words; Stage acceptance still requires review readiness and refuses a run with a live rejection",
-        "admission accepts no Stage, advances no branch, moves no Working Head and writes no working position; a Runtime connected to a shared project refuses admissions until they synchronize"
+        "admission accepts no Stage, advances no branch, moves no Working Head and writes no working position; a Runtime connected to a shared project refuses admissions until they synchronize",
+        "an elevation edit on a record whose rows cannot be read answers 422 ELEVATION_EDIT_INVALID, never a 500",
+        "the record's keep resolution protects what a keep names: each resolved ref, and for a kept geometry id its own parts and its child components' parts, never a shape a script placed under it (made_by_construction), so every route that takes keep, bare ids included, protects a geometry's form"
       ],
       "status": "canonical",
       "tests": [
@@ -6788,6 +6878,75 @@
       "reason": "Design step 4 (stacking and massing): several masses side by side with their metrics, the architect choosing; the generative provider plugs into the pack transform later."
     },
     {
+      "module_id": "studio.construction",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/construction.py",
+      "purpose": "Serve the construction contract (#419, spec 3.2-3.5): one construction script becomes one Studio proposal, facets add meaning to existing geometry, the model reads back in construction terms with the capabilities its facets unlock, and the first of them, hosted-opening, puts a door or window on geometry that means a wall.",
+      "owns": [
+        "POST /api/proposals/construction, POST /api/proposals/facets, POST /api/proposals/hosted-opening, GET /api/construction and GET /api/construction/model",
+        "the modelling root new script geometry goes under: model when a seat builds it, else the first component a seat builds that is not itself script-made geometry",
+        "a refused script as 422 CONSTRUCTION_INVALID with line, column and source line, including the record's refusal of the rows a script produced, answered at the script line that made the shape it names and in construction words",
+        "facet upserts on Component@1 through the component edit path, with stripped non-blank text and unknown or non-component targets refused",
+        "the construction model view: geometry rows with facets and the capabilities facets unlock (hosted-opening for architectural.role = wall)",
+        "the hosted-opening capability (Stage C): a door or window on a component of one element whose facets unlock it (architectural.role = wall), else 409 ENRICHMENT_REQUIRED naming the facet to add; a block realised as a wall in place first, else 422 HOST_NOT_WALL_SHAPED with the reason; ids opening-<n> skipping opening and type ids in use; a family as the type <opening>-type, checked by constructing it (FAMILY_INVALID); an optional interfaceRef that must be a relationship ref the record's connections declare (INTERFACE_UNKNOWN names them); the record's refusal as OPENING_INVALID in construction words",
+        "the model view's openings per component of one element and its alongLine, where a door's or window's along is measured",
+        "one proposal from the in-app Agent's construction answer (design_proposal): a script with its parameters or parameters alone, then facets on what that leaves, folded onto the same exact base"
+      ],
+      "does_not_own": [
+        "the construction language, its lowering and the geometry view (construction.script)",
+        "the facet vocabulary and its record validation (semantics.facets, state.record)",
+        "typing a component edit, proposal chaining and the stale-base check (studio.intent)",
+        "running a proposal as a candidate (studio.candidate)",
+        "realising a block as a wall and where along is measured (capabilities.element_producers); door and window families and their members (capabilities.opening_solver)"
+      ],
+      "public_api": [
+        "ConstructionProposal",
+        "CompiledScript",
+        "ConstructionRefused",
+        "EnrichmentRequired",
+        "MODEL_ROOT",
+        "capabilities_of",
+        "construction_model",
+        "construction_proposal",
+        "design_proposal",
+        "facets_proposal",
+        "hosted_opening_proposal",
+        "in_construction_words",
+        "modelling_root",
+        "script_result"
+      ],
+      "depends_on": [
+        "capabilities.element_producers",
+        "capabilities.opening_solver",
+        "monkeyarch.construction",
+        "monkeyarch.construction.vocabulary",
+        "semantics.facets",
+        "state.record"
+      ],
+      "invariants": [
+        "a script is compiled against the exact record of the proposal's source, including an unexecuted proposal it continues; nothing is written and nothing runs until the candidate route runs the proposal",
+        "the construction compiler chooses how each shape is realised; no route or DTO here names a producer, and the agent-facing text keeps the layer rule",
+        "a refusal answers the script line that caused it, or passes through unchanged when it names no shape of the script",
+        "a facet edit upserts only the named components; every element, object, datum and dependency edge stays byte-identical",
+        "an agent's answer is one proposal: its script, parameters and facets are read on the design the earlier parts would make, and what it keeps is judged on the whole of it, a keep it reaches making a reviewable conflict",
+        "a script's proposal is about the first geometry it makes, changes or removes, by line, else the modelling root; the modelling root is model when a seat builds it, else the first component a seat builds that is not a shape a script made",
+        "a capability is listed on an entity only when its facets unlock it",
+        "a door or window is proposed only on a component whose facets unlock hosted-opening; the host keeps its element id, its delivered object and its published top, so what stands on it keeps standing",
+        "every hosted-opening refusal says what to do: the facet to add, the reason the shape cannot take one as drawn, or the family's or the record's own sentence"
+      ],
+      "status": "provisional",
+      "files": [
+        "apps/archflow-studio/api/archflow_studio_api/application/construction.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/construction.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/construction.py"
+      ],
+      "tests": [
+        "apps/archflow-studio/api/tests/test_construction_routes.py",
+        "apps/archflow-studio/api/tests/test_hosted_opening.py",
+        "apps/archflow-studio/api/tests/test_construction_first_authoring.py"
+      ],
+      "reason": "GH-419: the agent authors geometry with one construction script and the runtime chooses producers; meaning and the capabilities it unlocks arrive later as facets on the same identity."
+    },
+    {
       "module_id": "state.program_sheet",
       "owner_path": "archflow/state/program_sheet.py",
       "purpose": "The architect's program sheet and the two directions between it and a record's spatial option: one sheet row per Space@1, and a typed operator for what a sheet adds.",
@@ -8007,6 +8166,210 @@
         "apps/monkeyhub/web/workspaces/test/publishWorkspace.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/publicationSaveQueue.test.ts"
       ]
+    },
+    {
+      "module_id": "construction.script",
+      "owner_path": "monkeyarch/construction/__init__.py",
+      "purpose": "The agent-facing way to author geometry (#419, L1): one bounded construction script, interpreted and never executed, over a small generic vocabulary; what it leaves is lowered to Component@1/Element@1 rows, where producers are chosen, and a record reads back in the same construction terms.",
+      "owns": [
+        "the construction language: an ast allow-list interpreter whose work is bounded - characters, steps (walking a sequence or a shape's points costs steps, and a comparison what it may walk), a wall-clock deadline that lowering runs under too, loop iterations, call depth, nesting, elements per list and per script, a profile edge-pair budget, 100 000 points in all and geometry results - refusing at a line with ConstructionError (CONSTRUCTION_INVALID)",
+        "the construction vocabulary ConstructionVocabulary@1: verbs, signatures, conventions, limits and one example, the single table the interpreter binds its verbs from",
+        "the layer rule over L1 text (LAYER_RULE_TOKENS, case-insensitive substrings): no realisation name, classification field or backend word",
+        "construction values: plan and plane profiles, drawing planes, level and top anchors, parameter bindings, loft sections, and transforms baked into a shape's definition",
+        "construction identity: name(), module-level variables, then <host>-cut-<12 hex> and shape-<12 hex> hashed from the chain of statements that made the shape (the module-level statement, the statements it called, down to the one that made it); <id>-body elements; reuse only of construction-made components (made_by_construction, the one test of what a script made); the session reads the same ids while the script runs, so a new shape given the id of existing geometry is its current version",
+        "lowering construction results to Component@1/Element@1 rows, the one place a producer is chosen for script-authored geometry",
+        "script edits of existing geometry in place, rewriting only its element's params and references",
+        "cuts authored as the host element's references.voids, kept when a new shape redefines existing geometry",
+        "the construction geometry view: per component form, bounds, cuts, cutBy and hidden, without producers",
+        "pre-checking the cut and support relations a script leaves, including against record geometry it never reached, before any row is written",
+        "the script's model for every top a shape reads: a row the script changed or a shape it redefined is the current version of that geometry, an element standing on them is measured again, and the report's bounds are produced for the rows the script leaves and what they mention, never the whole project",
+        "the bounds of produced operations read in dependency order, whatever order a producer gives them in"
+      ],
+      "does_not_own": [
+        "producing geometry from rows (capabilities.element_producers)",
+        "deriving, validating or persisting the successor record (state.record and the Studio edit path)",
+        "routes, proposals, candidates and the agent contract transport (the Studio construction route)",
+        "backend lowering and certification (L5)"
+      ],
+      "inputs": [
+        "construction script text",
+        "StateRecord",
+        "the modelling root component id"
+      ],
+      "outputs": [
+        "ConstructionResult: semanticEdit-shaped entities, remove_entity_ids, report, print log, summary, line_of",
+        "ConstructionVocabulary@1",
+        "geometry view rows"
+      ],
+      "public_api": [
+        "ConstructionError",
+        "ConstructionResult",
+        "compile_construction_script",
+        "vocabulary",
+        "geometry_view",
+        "ELEMENT_SUFFIX",
+        "made_by_construction",
+        "layer_rule_violations",
+        "LAYER_RULE_TOKENS"
+      ],
+      "depends_on": [
+        "adapters.cad_program",
+        "capabilities.element_producers",
+        "capabilities.reference_resolver",
+        "monkeyarch.construction.identity",
+        "monkeyarch.construction.lowering",
+        "monkeyarch.construction.script",
+        "monkeyarch.construction.shapes",
+        "monkeyarch.construction.vocabulary",
+        "project.refs",
+        "state.derivation",
+        "state.geometry_program",
+        "state.record"
+      ],
+      "used_by": [
+        "tests/test_construction_script.py",
+        "tests/test_construction_lowering.py"
+      ],
+      "invariants": [
+        "A script is parsed with ast and walked by an allow-list; Python never compiles or executes it.",
+        "A refused script saves nothing and names its line, column and source line in one sentence.",
+        "Producers are chosen in lowering and nowhere else; no producer name reaches the vocabulary or a refusal.",
+        "Running a script again with the same names updates the same geometry and emits no new Component@1.",
+        "An id that already names anything but construction-made geometry is refused by name, never overwritten; geometry realized with support for openings is changed only with get(), never redefined.",
+        "A get() edit rewrites only its element's params and references; an existing component is never re-emitted.",
+        "geometry_view never raises; bounds it cannot predict are None.",
+        "No single step does unbounded work; no refusal repeats a script value at length.",
+        "xs += [...] extends the list xs in place, as Python does, and counts only what it adds, for xs and for every list or tuple holding it.",
+        "A new shape that redefines existing geometry keeps what that geometry cuts until the script uncuts it.",
+        "An unnamed shape's id is hashed from the chain of statements that made it (whitespace ignored) and how many shapes that chain made before it, so re-running a script updates the same shapes and the same helper called from two statements makes two; such an id that names anything but construction-made geometry is refused.",
+        "What the record cuts and carries is checked against the model the script leaves, at the line that made it wrong.",
+        "Lowering runs under the script's deadline, and the shapes a script leaves hold at most 100 000 points.",
+        "Every top a shape reads during the script resolves through the script's model, with an explicit stack: the current version of what the script changed or redefined, an element whose supports were touched produced again, else what the record publishes; a top that leads back to itself is refused.",
+        "The report's bounds are what the model view will predict for the rows the script leaves: the record's rows overlaid with the script's, produced for the reported elements and every element they mention (supports, cutters, hosts) - never the whole project, which is neither applied nor validated for the report.",
+        "top() of existing geometry stands on what publishes a horizontal top: a prism drawn in plan or any wall, moved or not; a cutter's top carries nothing",
+        "A cut the predicted export bounds cannot follow (it misses its host, or takes away a whole corner or side of it, alone or with its host's other cutters) is refused at the line of the cut that made it, naming the cutters the prediction refuses, when the script made, changed, cut or uncut the host or one of its cutters; among geometry the script never reached it only leaves the bounds unknown."
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_construction_script.py",
+        "tests/test_construction_lowering.py",
+        "tests/test_wall_realization.py"
+      ],
+      "notes": "Spec docs/2026-09-28-construction-api.md section 3.1. The interpreter's verbs and the vocabulary are one table (script.IMPLEMENTED_VERBS is checked against vocabulary.VERBS at import).",
+      "files": [
+        "monkeyarch/construction/__init__.py",
+        "monkeyarch/construction/script.py",
+        "monkeyarch/construction/shapes.py",
+        "monkeyarch/construction/identity.py",
+        "monkeyarch/construction/lowering.py",
+        "monkeyarch/construction/vocabulary.py"
+      ]
+    },
+    {
+      "module_id": "capabilities.domain_readiness",
+      "owner_path": "monkeyarch/capabilities/domain_readiness.py",
+      "purpose": "L4: the honest entry gate a technical domain calls before it runs - read only the semantics it needs, and answer an explicit enrichment request for what is missing instead of guessing it from shape, producer or name.",
+      "owns": [
+        "DomainNeeds and the DOMAINS registry: each domain's architectural.role read set and the facet keys it needs once it reads",
+        "readiness: sorting every Component@1 that owns an Element@1 other than a hidden cutter into read, a request for a missing architectural.role, a request for missing needed facets, or neither, per domain",
+        "describe: one domain's own reads/needs/known_facets with no record in hand",
+        "DomainUnknown, naming the domains that are registered"
+      ],
+      "does_not_own": [
+        "validating or storing a facet value - archflow.semantics.facets and the State Record's own facet validation",
+        "reading a facet off a Component@1 - archflow.state.state_record.component_facets",
+        "running any domain's own structural, thermal or other evaluation - no such engine exists yet; this is only the gate",
+        "serving the HTTP routes - apps/archflow-studio/api/archflow_studio_api/application/domains.py (studio.domains)"
+      ],
+      "inputs": [
+        "StateRecord",
+        "a domain name"
+      ],
+      "outputs": [
+        "{domain, status, reads, requests, known_facets} readiness mapping",
+        "{domain, reads, needs, known_facets} description mapping"
+      ],
+      "public_api": [
+        "DomainNeeds",
+        "DOMAINS",
+        "DomainUnknown",
+        "describe",
+        "readiness"
+      ],
+      "depends_on": [
+        "archflow.semantics.facets",
+        "semantics.facets",
+        "archflow.state.state_record",
+        "state.record"
+      ],
+      "used_by": [
+        "tests/test_domain_readiness.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/domains.py"
+      ],
+      "invariants": [
+        "never infers architectural.role, structural.role, architectural.enclosure or material.name from geometry, producer or names (D-419-0)",
+        "a Component@1 with no owned Element@1 is neither read nor asked about",
+        "a Component@1 whose every Element@1 another element names in references.voids (a hidden cutter, a construction helper) is neither read nor asked about; once uncut it is considered again",
+        "a role outside a domain's read set is neither read nor asked about",
+        "reads and requests are both sorted by id; the missing keys within a request are sorted"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_domain_readiness.py"
+      ],
+      "notes": "spec docs/2026-09-28-construction-api.md §3.6 (GH-419 Task C5). No structural or thermal engine exists behind this gate yet; it is the readiness question every future domain tool will call first."
+    },
+    {
+      "module_id": "studio.domains",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/domains.py",
+      "purpose": "Serve L4 domain readiness: GET /api/domains describes every known domain, GET /api/domains/{domain}/readiness answers whether a domain can evaluate the bound project's projection now.",
+      "owns": [
+        "domains_index: every known domain, described, with no project in hand",
+        "domain_readiness: one domain's readiness against the projection GET /api/state?run= would resolve, and the 404 DOMAIN_UNKNOWN refusal for an unrecognised domain"
+      ],
+      "does_not_own": [
+        "what a domain reads and needs, or sorting components into reads/requests - monkeyarch.capabilities.domain_readiness (capabilities.domain_readiness)",
+        "resolving a run to a projection - application.projection.project_state (studio.binding)",
+        "adding or editing a component's facets - the generic semanticEdit route (studio.intent)"
+      ],
+      "inputs": [
+        "ProjectBinding",
+        "a domain name",
+        "an optional run id"
+      ],
+      "outputs": [
+        "{domains: [...]} index mapping",
+        "the readiness mapping monkeyarch.capabilities.domain_readiness.readiness answers"
+      ],
+      "public_api": [
+        "domains_index",
+        "domain_readiness"
+      ],
+      "depends_on": [
+        "monkeyarch.capabilities.domain_readiness",
+        "capabilities.domain_readiness",
+        "studio.binding",
+        "studio.shell"
+      ],
+      "used_by": [
+        "apps/archflow-studio/api/archflow_studio_api/routes/domains.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
+        "apps/archflow-studio/api/tests/test_domains.py"
+      ],
+      "files": [
+        "apps/archflow-studio/api/archflow_studio_api/application/domains.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/domains.py"
+      ],
+      "invariants": [
+        "GET /api/domains never 404s: only the per-domain readiness route names an unknown domain",
+        "the domain name is checked before the project is read, so an unknown domain refuses the same way regardless of project state",
+        "neither route writes"
+      ],
+      "status": "canonical",
+      "tests": [
+        "apps/archflow-studio/api/tests/test_domains.py"
+      ],
+      "notes": "spec docs/2026-09-28-construction-api.md §3.6 (GH-419 Task C5)."
     }
   ]
 }

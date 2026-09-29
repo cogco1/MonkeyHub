@@ -112,6 +112,21 @@ class DeleteElementTestCase(unittest.TestCase):
         # And the element is still there to be worked with.
         self.assertIn("portico-base", [row["elementId"] for row in self.client.get("/api/state").json()["elements"]])
 
+    def test_a_cutter_is_refused_with_what_it_cuts(self) -> None:
+        # #419: a host names its cutters in references.voids; that host is cut by the cutter, not standing on it.
+        made = self.client.post("/api/proposals/construction", json={
+            "stateDigest": self.digest(), "script": "mass = extrude(rect(0, 3, 6, 4), 3)\n"
+                                                    "cutter = extrude(rect(2, 2.5, 2, 1), 2)\ncut(mass, cutter)"})
+        self.assertEqual(made.status_code, 201, made.text)
+        refused = self.client.post("/api/proposals/delete", json={
+            "stateDigest": made.json()["baseStateDigest"], "sourceProposalId": made.json()["proposalId"],
+            "elementId": "cutter-body"})
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertEqual(refused.json()["code"], "ELEMENT_HAS_DEPENDENTS")
+        detail = refused.json()["detail"]
+        self.assertIn("cutter-body cannot be removed on its own: mass-body is cut by it.", detail)
+        self.assertNotIn("stand", detail)
+
     def test_deleting_something_that_is_not_an_element_is_refused(self) -> None:
         for target in ("portico", "level-ground", "nothing-here"):
             refused = self.client.post("/api/proposals/delete", json={
