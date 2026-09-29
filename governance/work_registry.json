@@ -1,4 +1,39 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-252",
+      "lanes": [
+        {
+          "id": "recipe-skill",
+          "status": "active",
+          "branch": "codex/252-recipe-skill",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-252-recipe-skill",
+          "base_ref": "33698fdb",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "studio.memory",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/memory.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/memory.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/memory.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
+            "apps/monkeyhub/api/tests/test_chat_feedback.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/api/tests/test_skill_library.py",
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "apps/monkeyhub/web/src/api/generated/",
+            "docs/adr/ADR-009-memory-layer.md",
+            "docs/PROJECT_RUNTIME.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
