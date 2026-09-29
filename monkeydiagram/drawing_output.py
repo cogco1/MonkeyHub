@@ -613,37 +613,57 @@ _DXF_FIXED_TIME = "2000-01-01T00:00:00.000000+00:00"
 
 
 def _reproducible_dxf(text: str) -> str:
-    """The same drawing without the time it was written: fixed dates, content-derived GUIDs.
+    """The same drawing without when or in which process it was written: one fixed time, content-derived GUIDs.
 
     A DXF is a sequence of (group code, value) line pairs. The header dates
-    and ezdxf's own "written at" markers become one fixed time, and the two
-    GUIDs are derived from the rest of the file, so the same scene always
-    gives the same bytes and another scene another fingerprint.
+    and ezdxf's own "written at" markers become one fixed time; the CLASSES
+    section, which ezdxf fills from a set in whatever order a process hashes
+    it, is written in class-name order (no proxy object here refers to a
+    class by its position); and the two GUIDs are derived from the rest of
+    the file. The same scene therefore always gives the same bytes, and
+    another scene another fingerprint.
     """
 
     lines = text.split("\n")
-    guid_lines, pending = [], None
-    for index in range(0, len(lines) - 1, 2):
-        code, value = lines[index].strip(), lines[index + 1]
+    tail = lines[len(lines) // 2 * 2:]
+    pairs = [[lines[index], lines[index + 1]] for index in range(0, len(lines) - 1, 2)]
+    guids, pending = [], None
+    for pair in pairs:
+        code, value = pair[0].strip(), pair[1]
         if pending is not None:
             if pending in _DXF_DATES:
-                lines[index + 1] = _DXF_FIXED_DATE
+                pair[1] = _DXF_FIXED_DATE
             else:
-                guid_lines.append(index + 1)
+                guids.append(pair)
             pending = None
         elif code == "9" and value in _DXF_DATES + _DXF_GUIDS:
             pending = value
         elif code == "1":
             written = _DXF_WRITTEN_AT.match(value)
             if written:
-                lines[index + 1] = f"{written.group(1)} @ {_DXF_FIXED_TIME}"
-    for index in guid_lines:
-        lines[index] = "{00000000-0000-0000-0000-000000000000}"
-    digest = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
-    for number, index in enumerate(guid_lines):
+                pair[1] = f"{written.group(1)} @ {_DXF_FIXED_TIME}"
+    begin = next((index for index in range(len(pairs) - 1) if [value for _, value in pairs[index:index + 2]]
+                  == ["SECTION", "CLASSES"] and pairs[index + 1][0].strip() == "2"), None)
+    if begin is not None:
+        end = next(index for index in range(begin + 2, len(pairs)) if pairs[index][1] == "ENDSEC"
+                   and pairs[index][0].strip() == "0")
+        blocks = []
+        for pair in pairs[begin + 2:end]:
+            if pair[0].strip() == "0":
+                blocks.append([pair])
+            elif blocks:
+                blocks[-1].append(pair)
+            else:
+                raise ValueError("the DXF CLASSES section does not start with a class")
+        blocks.sort(key=lambda block: next((value for code, value in block if code.strip() == "1"), ""))
+        pairs[begin + 2:end] = [pair for block in blocks for pair in block]
+    for pair in guids:
+        pair[1] = "{00000000-0000-0000-0000-000000000000}"
+    digest = hashlib.sha256("\n".join(value for pair in pairs for value in pair).encode("utf-8")).hexdigest()
+    for number, pair in enumerate(guids):
         start = number * 32 % 64
-        lines[index] = "{" + str(uuid.UUID(hex=digest[start:start + 32])).upper() + "}"
-    return "\n".join(lines)
+        pair[1] = "{" + str(uuid.UUID(hex=digest[start:start + 32])).upper() + "}"
+    return "\n".join([value for pair in pairs for value in pair] + tail)
 
 
 def render_dxf(source, font_mapping: Mapping[str, str | Path] | None = None, *,

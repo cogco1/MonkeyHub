@@ -75,6 +75,24 @@ class DrawingOutputTests(unittest.TestCase):
             self.assertRegex(values[name], r"^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$")
         self.read_dxf()
 
+    def test_another_process_writes_the_same_dxf_bytes(self):
+        import os
+        import subprocess
+        import sys
+
+        # ezdxf lists its DXF classes from a set, in the order each process hashes it.
+        script = ("import hashlib, sys, reportlab; from pathlib import Path; "
+                  "from monkeydiagram.drawing_output import PaperCanvas, render_dxf; "
+                  "font = Path(reportlab.__file__).parent / 'fonts' / 'Vera.ttf'; "
+                  "c = PaperCanvas(font_mapping={'Test': font}); c.start_sheet('A01', (420, 297)); "
+                  "c.setFont('Test', 12); c.drawString(30, 40, 'SHEET A01'); c.line(10, 10, 200, 120); "
+                  "print(hashlib.sha256(render_dxf(c)).hexdigest())")
+        root = str(Path(__file__).resolve().parents[1])
+        digests = {subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True,
+                                  env={**os.environ, "PYTHONHASHSEED": seed, "PYTHONPATH": root}).stdout.strip()
+                   for seed in ("1", "4", "7")}
+        self.assertEqual(len(digests), 1, digests)
+
     def test_explicit_sheets_keep_paper_size_and_do_not_invent_a_final_page(self):
         c = self.canvas
         c.drawString(30, 40, "SHEET A01")

@@ -577,6 +577,32 @@ class CutPlanTests(CandidateTestCase):
         self.assertEqual(rebuilt["viewRecipe"]["frame"], frame, "a rebuild on the newer model keeps the section")
         self.assertEqual(self.repository.read_head(), self.head)
 
+    def test_a_sheet_of_the_exact_model_names_one_model_source_for_every_view(self):
+        views = [
+            {"id": "room-plan-view", "placeMm": [20, 30], "plan": {"cutHeight": 1.2, "bottom": 0, "scaleDenominator": 50}},
+            {"id": "room-section-view", "placeMm": [20, 180], "markOn": "room-plan-view", "markLabel": "B",
+             "plan": {"section": {"line": [[-1, 2], [5, 2]], "keep": "left"}, "depth": 3, "scaleDenominator": 50}},
+            {"id": "room-axon-view", "placeMm": [240, 30], "elevation": {"view": "axon", "scaleDenominator": 100}},
+        ]
+        body = {"projectId": PROJECT_ID, "modelSource": self.model, "styleId": "arch364-technical", "paperSizeMm": [420, 297],
+                "title": "ROOM", "views": views}
+        response = self.client.post("/api/drawings/sheets", json=body)
+        self.assertEqual(response.status_code, 201, response.text)
+        sheet = response.json()
+        self.assertEqual((sheet["modelSource"], sheet["viewRecipe"]["source"]["modelSource"]), (self.model, self.model))
+        self.assertNotIn("sourceAsset", sheet["viewRecipe"])
+        documents = {row["revisionRef"]: row for row in self.client.get("/api/documents").json()["documents"] if row["revisionRef"]}
+        for row in sheet["viewRecipe"]["views"]:
+            self.assertEqual(documents[row["revisionRef"]]["modelSource"], self.model, row["id"])
+        self.assertEqual([row["kind"] for row in sheet["viewRecipe"]["views"]], ["plan", "section", "axon"])
+        self.assertEqual(sheet["viewRecipe"]["views"][1]["title"], "SECTION B-B")
+        count = len(self.client.get("/api/documents").json()["documents"])
+        stale = self.client.post("/api/drawings/sheets", json={**body, "modelSource": {**self.model, "stateDigest": "0" * 64}})
+        self.assertEqual(stale.status_code, 409, stale.text)
+        self.assertEqual(len(self.client.get("/api/documents").json()["documents"]), count, "a stale source draws nothing")
+        self.assertEqual(self.client.post("/api/drawings/sheets", json=body).json(), sheet)
+        self.assertEqual(self.repository.read_head(), self.head)
+
     def test_a_drawing_kept_on_a_chosen_version_stays_there_until_rebuilt(self):
         kept = self.generate(follow="frozen")
         self.assertEqual(kept["viewRecipe"]["follow"], "frozen")
