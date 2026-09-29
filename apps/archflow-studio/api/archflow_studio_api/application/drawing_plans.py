@@ -33,7 +33,8 @@ from .artifacts import (
 from .binding import retained_sources
 from .decisions import project_recipe
 from .drawings import (
-    VIEW_MARGIN, _complete_source, _elevation_view, _selected_source, _document_source, DrawingAssetSource, require_unit,
+    VIEW_MARGIN, _complete_source, _elevation_view, _selected_source, _document_source, DrawingAssetSource, is_vertical_section,
+    refuse_other_kind, require_unit,
 )
 from .drawing_dimensions import resolve_plan_dimensions, list_plan_dimension_intents
 from .intent import component_edit_proposal
@@ -65,12 +66,6 @@ def _plan_source(binding, source_stage_ref, model_source, source_asset=None):
         if matches:
             stage_ref = next(iter(matches))
     return model, stage_ref
-
-
-def is_vertical_section(recipe) -> bool:
-    """Whether a cut-plan recipe is a vertical section: its frame has CAD +Z up; a plan's looks down -Z."""
-    frame = (recipe or {}).get("frame") or {}
-    return list(frame.get("up", ())) == [0, 0, 1]
 
 
 def _frame_corners(receipt, object_ids, origin, axes):
@@ -391,6 +386,9 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
                              or document.previous_revision_ref == previous_revision_ref)):
                     document_bytes(binding, document.run_id, document.asset_sha256, document.revision_ref)
                     return document
+            if previous is None:
+                # A new drawing under an id that names an elevation, section perspective or sheet would take its place.
+                refuse_other_kind(binding, drawing_id, "cut-plan", "vertical section" if vertical else "plan")
             if previous is not None:
                 # Check the exact predecessor under the same lock as registration,
                 # before projection writes anything. A retry found its own child

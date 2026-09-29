@@ -4528,6 +4528,8 @@ export type ElevationDrawingDto = {
     ] | null;
     /**
      * Drawingid
+     *
+     * Default elevation-<view>. A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
      */
     drawingId?: string | null;
     /**
@@ -4640,6 +4642,8 @@ export type ElevationRequestDto = {
     ] | null;
     /**
      * Drawingid
+     *
+     * Default elevation-<view>. A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
      */
     drawingId?: string | null;
     /**
@@ -7740,6 +7744,8 @@ export type PlanDimensionReadDto = {
 export type PlanDrawingDto = {
     /**
      * Drawingid
+     *
+     * A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
      */
     drawingId?: string | null;
     /**
@@ -8057,6 +8063,8 @@ export type PlanRequestDto = {
     sourceAsset?: DrawingAssetSourceDto | null;
     /**
      * Drawingid
+     *
+     * A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
      */
     drawingId?: string | null;
     /**
@@ -10403,7 +10411,7 @@ export type SectionPerspectiveDrawingDto = {
     /**
      * Drawingid
      *
-     * Default section-perspective; the same id continues that drawing's revisions.
+     * Default section-perspective; the same id continues that drawing's revisions. A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
      */
     drawingId?: string | null;
     /**
@@ -10470,7 +10478,7 @@ export type SectionPerspectiveRequestDto = {
     /**
      * Drawingid
      *
-     * Default section-perspective; the same id continues that drawing's revisions.
+     * Default section-perspective; the same id continues that drawing's revisions. A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
      */
     drawingId?: string | null;
     /**
@@ -10760,7 +10768,7 @@ export type SheetRequestDto = {
     /**
      * Drawingid
      *
-     * With views: the sheet's drawing identity (default sheet-<sheetNumber>). Without views it is the style id.
+     * With views: the sheet's drawing identity (default sheet-<sheetNumber>), never one of its views' ids. Without views it is the style id. A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.
      */
     drawingId?: string | null;
     /**
@@ -10784,7 +10792,7 @@ export type SheetViewDto = {
     /**
      * Id
      *
-     * The view's drawingId. An identical view reads its registered revision back; a changed one registers another revision under this id without replacing the earlier page (a plan's revision chain continues only through previousRevisionRef on its own route). A horizontal plan's id never takes a vertical section, nor a section's a plan (DRAWING_ORIENTATION_CHANGED).
+     * The view's drawingId. An identical view reads its registered revision back; a changed one registers another revision under this id without replacing the earlier page (a plan's revision chain continues only through previousRevisionRef on its own route). A horizontal plan's id never takes a vertical section, nor a section's a plan (DRAWING_ORIENTATION_CHANGED), and no id takes another kind of drawing (DRAWING_KIND_CHANGED).
      */
     id: string;
     /**

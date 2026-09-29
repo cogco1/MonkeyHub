@@ -35,7 +35,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, record_ref_from_uri, require_identifier
 from monkeydiagram.drawing_elevation import (
-    SECTION_PERSPECTIVE_KIND, UNIT_METRES, DrawingElevationError, DrawnView, ElevationSource,
+    CUT_PLAN_KIND, ELEVATION_KIND, SECTION_PERSPECTIVE_KIND, UNIT_METRES, DrawingElevationError, DrawnView, ElevationSource,
     NativeModelSource, ElevationView, SectionPerspectiveError, SectionPerspectiveView, axonometric_frame,
     freeze_model_axis_elevation, freeze_section_perspective, inspection_witness_ids, object_semantics,
     project_model_axis_elevation, read_elevation_source, read_model_axis_elevation, VerifiedElevationSource,
@@ -88,6 +88,38 @@ def require_unit(requested: str | None, unit: str) -> None:
     if requested is not None and requested != unit:
         raise StudioError(422, "DRAWING_UNIT_MISMATCH", f"The request is written in {requested}, but the source model is "
                                                         f"in {unit}; state its coordinates and distances in {unit}.")
+
+
+def is_vertical_section(recipe) -> bool:
+    """Whether a cut-plan recipe is a vertical section: its frame has CAD +Z up; a plan's looks down -Z."""
+    frame = (recipe or {}).get("frame") or {}
+    return list(frame.get("up", ())) == [0, 0, 1]
+
+
+#: The kinds of drawing a drawing id can name, as a refusal says them.
+DRAWING_KINDS = {CUT_PLAN_KIND: "cut plan", ELEVATION_KIND: "elevation", SECTION_PERSPECTIVE_KIND: "section perspective",
+                 "review-sheet": "review sheet", "view-sheet": "view sheet"}
+
+
+def refuse_other_kind(binding: ProjectBinding, drawing_id: str, kind: str, what: str) -> None:
+    """A drawing id names one kind of drawing for as long as the project keeps it.
+
+    The Diagram opens the newest document of each drawing id, so another kind
+    registered under it (an elevation or a sheet where a plan was) would
+    silently take that drawing's place. ``what`` is the requested drawing as
+    the refusal names it. Documents without a drawing kind (uploads, renders)
+    never count. Call it under ``_document_source_lock`` where a registration
+    follows, and before anything is drawn or written.
+    """
+
+    for document in list_documents(binding, None):
+        recipe = document.view_recipe or {}
+        other = recipe.get("kind")
+        if document.drawing_id != drawing_id or other not in DRAWING_KINDS or other == kind:
+            continue
+        name = ("vertical section" if is_vertical_section(recipe) else "plan") if other == CUT_PLAN_KIND else DRAWING_KINDS[other]
+        raise StudioError(409, "DRAWING_KIND_CHANGED", f"Drawing {drawing_id} is {'an' if name[0] in 'aeiou' else 'a'} "
+                                                       f"{name}; draw this {what} under another drawing id.")
 
 
 def _selected_source(
@@ -532,7 +564,7 @@ def model_view(binding: ProjectBinding, *, model_source: ModelSource, view: str)
 
 def _registered_drawing(
     binding: ProjectBinding, monitor: StudioMonitor, operation: dict[str, Any], *, model_source: ModelSource | DrawingAssetSource,
-    stage_ref: ProjectRecordRef | None, drawing_id: str, same_recipe, freeze,
+    stage_ref: ProjectRecordRef | None, drawing_id: str, kind: str, what: str, same_recipe, freeze,
 ) -> SourceDocument:
     """A drawing request's registered revision: the exact registered one read back, or a new one retained and registered.
 
@@ -592,6 +624,11 @@ def _registered_drawing(
             if document.drawing_id == drawing_id and (closest is None or
                     sum(value == "same" for value in checks.values()) > sum(value == "same" for value in closest_checks.values())):
                 closest, closest_checks = document, checks
+        try:
+            refuse_other_kind(binding, drawing_id, kind, what)
+        except StudioError:
+            details.update(cache_status="refused", cache_reason="drawing_kind_changed")
+            raise
         details.update(
             cache_status="miss", cache_reason="no_registered_drawing" if closest is None else "registered_inputs_changed",
             cache_checks={"drawing_id": "missing"} if closest is None else closest_checks,
@@ -695,8 +732,9 @@ def generate_elevation(
                 raise StudioError(409, "DRAWING_GENERATION_FAILED", str(exc)) from exc
 
         return _registered_drawing(binding, monitor, operation, model_source=model_source, stage_ref=stage_ref,
-                                   drawing_id=drawing_id, same_recipe=lambda document: document.view_recipe == document_recipe,
-                                   freeze=freeze)
+                                   drawing_id=drawing_id, kind=ELEVATION_KIND,
+                                   what="axonometric" if view == "axon" else "elevation",
+                                   same_recipe=lambda document: document.view_recipe == document_recipe, freeze=freeze)
 
 
 @retained_sources
@@ -773,7 +811,8 @@ def generate_section_perspective(
                          (recipe.get("sourceAsset") == model_source.to_dict() and recipe.get("follow") == "frozen")))
 
         return _registered_drawing(binding, monitor, operation, model_source=model_source, stage_ref=stage_ref,
-                                   drawing_id=drawing_id, same_recipe=same_recipe, freeze=freeze)
+                                   drawing_id=drawing_id, kind=SECTION_PERSPECTIVE_KIND, what="section perspective",
+                                   same_recipe=same_recipe, freeze=freeze)
 
 
 def _drawn_sheet(binding, monitor, run_id, verified, frames, selected, layout, recipe_json) -> dict[str, bytes]:
@@ -833,23 +872,28 @@ def _sheet_files(canvas, recipe_json: str) -> dict[str, bytes]:
 
 def _retain_sheet(binding, model_source, stage_ref, files, *, file_name: str, drawing_id: str,
                   recipe: dict[str, Any]) -> SourceDocument:
-    """Retain a sheet's four files beside each other in its source run and register its PDF in the documents list."""
+    """Retain a sheet's four files beside each other in its source run and register its PDF in the documents list.
+
+    A drawing id that already names another kind of drawing is refused before a file is written.
+    """
 
     _document_pages(files["pdf"], "application/pdf")
     digest = hashlib.sha256(files["pdf"]).hexdigest()
-    run = binding.load_run(model_source.run_id)
-    destination = PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=run.run_id)
-    for role, media_type in SHEET_FILES:
-        binding.repository.put_workspace_file(
-            run=run, destination=destination, artifact_id=f"drawing-{'sheet' if role == 'pdf' else role}-{digest}",
-            workspace_relative_path=f"documentation/{digest}/sheet.{role}", media_type=media_type,
-            source=BytesIO(files[role]),
+    with _document_source_lock:
+        refuse_other_kind(binding, drawing_id, recipe["kind"], DRAWING_KINDS[recipe["kind"]])
+        run = binding.load_run(model_source.run_id)
+        destination = PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=run.run_id)
+        for role, media_type in SHEET_FILES:
+            binding.repository.put_workspace_file(
+                run=run, destination=destination, artifact_id=f"drawing-{'sheet' if role == 'pdf' else role}-{digest}",
+                workspace_relative_path=f"documentation/{digest}/sheet.{role}", media_type=media_type,
+                source=BytesIO(files[role]),
+            )
+        return save_document(
+            binding, model_source.run_id, file_name, "application/pdf", base64.b64encode(files["pdf"]).decode("ascii"),
+            _model_binding(model_source), drawing_id=drawing_id, source_stage_ref=None if stage_ref is None else stage_ref.uri,
+            view_recipe=recipe, generated_at=datetime.now(timezone.utc).isoformat(),
         )
-    return save_document(
-        binding, model_source.run_id, file_name, "application/pdf", base64.b64encode(files["pdf"]).decode("ascii"),
-        _model_binding(model_source), drawing_id=drawing_id, source_stage_ref=None if stage_ref is None else stage_ref.uri,
-        view_recipe=recipe, generated_at=datetime.now(timezone.utc).isoformat(),
-    )
 
 
 def _sheet_fonts() -> dict[str, Path]:
@@ -959,6 +1003,8 @@ def generate_sheet(
                     document_bytes(binding, document.run_id, document.asset_sha256)
                     operation["details"].update(cache_status="hit", execution_path="retained_drawing")
                     return document
+            # Before anything is drawn; _retain_sheet checks again as it registers.
+            refuse_other_kind(binding, style_id, "review-sheet", "review sheet")
         operation["details"].update(cache_status="miss", execution_path="full_projection")
         layout = dict(style_id=style_id, bounds=bounds, length_unit=verified.length_unit,
                       title=binding.project_id, scale_denominator=scale_denominator,
@@ -998,7 +1044,7 @@ def _axis(vector) -> str | None:
 
 def _sheet_view_kind(view: Mapping[str, Any], recipe: Mapping[str, Any]) -> str:
     if view["kind"] == "plan":
-        return "section" if list(recipe["frame"]["up"]) == [0, 0, 1] else "plan"
+        return "section" if is_vertical_section(recipe) else "plan"
     if view["kind"] == "elevation":
         return "axon" if view["arguments"].get("view") == "axon" else "elevation"
     return view["kind"]
@@ -1154,6 +1200,11 @@ def _view_sheet(binding, *, source_stage_ref, model_source, source_asset, style_
     number = sheet_number or "01"
     drawing_id = drawing_id or f"sheet-{number}"
     require_identifier(drawing_id, "drawing_id")
+    # A view's id is its own drawing's; the sheet cannot share it, nor take another kind's (checked again as it registers).
+    if any(view["id"] == drawing_id for view in views):
+        raise StudioError(409, "DRAWING_KIND_CHANGED", f"View {drawing_id} and its sheet cannot share one drawing id; "
+                                                       "give the sheet or that view another.")
+    refuse_other_kind(binding, drawing_id, "view-sheet", "view sheet")
     fonts = _sheet_fonts()
     sources = {"source_stage_ref": source_stage_ref, "model_source": model_source, "source_asset": source_asset}
     rows, placed, kinds, recipes = [], {}, {}, {}

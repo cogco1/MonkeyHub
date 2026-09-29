@@ -148,6 +148,11 @@ LengthUnit = Literal["meter", "millimeter", "inch", "foot"]
 LENGTH_UNIT = (
     "The length unit this request's coordinates and distances are written in. It must be the source model's own unit: "
     "another one is refused (DRAWING_UNIT_MISMATCH), never converted. Omitted reads them in the source unit.")
+DRAWING_ID_KIND = (
+    "A drawing id names one kind of drawing for as long as the project keeps it: a plan, a vertical section, an "
+    "elevation or axonometric, a section perspective, a review sheet or a view sheet. A request that would register "
+    "another kind under an existing id is refused (DRAWING_KIND_CHANGED; a plan and a section, "
+    "DRAWING_ORIENTATION_CHANGED): give the new drawing its own id.")
 
 
 class DrawingAssetSourceDto(BaseModel):
@@ -171,7 +176,8 @@ class PlanDrawingDto(BaseModel):
     """What POST /api/drawings/plans draws, without its project and source: a horizontal cut plan, or with
     ``section`` a vertical section, composed the same way. A sheet view takes these fields as they are."""
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
-    drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+    drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$",
+                                   description=DRAWING_ID_KIND)
     file_name: str | None = Field(alias="fileName", default=None, max_length=240, description=(
         "Optional human-readable name for a new cut plan. A missing extension is completed as .png; only .png is accepted. "
         "Existing drawings keep their name: omitted or blank inherits it, and a different name is refused. "
@@ -409,7 +415,8 @@ class ElevationDrawingDto(BaseModel):
     direction: tuple[Finite, Finite, Finite] | None = Field(default=None, description=(
         "axon only: the direction from the model toward the viewer in CAD X/Y/Z, any length; [1, -1, 1] is the isometric "
         "from +X, -Y, +Z. It may not be vertical. Omitted is [-1, -1, 1], the model view's axon."))
-    drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+    drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$",
+                                   description="Default elevation-<view>. " + DRAWING_ID_KIND)
     hidden_lines: bool = Field(alias="hiddenLines", default=False)
     scale_denominator: int = Field(alias="scaleDenominator", default=100, ge=1, le=10000)
     length_unit: LengthUnit | None = Field(alias="lengthUnit", default=None, description=LENGTH_UNIT)
@@ -450,7 +457,8 @@ class SectionPerspectiveDrawingDto(BaseModel):
     """What POST /api/drawings/section-perspectives draws, without its project and source. A sheet view takes these."""
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$",
-                                   description="Default section-perspective; the same id continues that drawing's revisions.")
+                                   description="Default section-perspective; the same id continues that drawing's revisions. "
+                                               + DRAWING_ID_KIND)
     section: SectionLineDto | SectionPlaneDto
     camera: SectionCameraDto | None = Field(
         default=None, description=(
@@ -513,7 +521,8 @@ class SheetViewDto(BaseModel):
         "The view's drawingId. An identical view reads its registered revision back; a changed one registers another "
         "revision under this id without replacing the earlier page (a plan's revision chain continues only through "
         "previousRevisionRef on its own route). A horizontal plan's id never takes a vertical section, nor a "
-        "section's a plan (DRAWING_ORIENTATION_CHANGED)."))
+        "section's a plan (DRAWING_ORIENTATION_CHANGED), and no id takes another kind of drawing "
+        "(DRAWING_KIND_CHANGED)."))
     place_mm: tuple[Finite, Finite] = Field(alias="placeMm", description=(
         "Where the drawing's top-left corner goes: paper mm from the sheet's top-left. Its title and scale sit just "
         "above it; a drawing that leaves the frame or overlaps another or the title strip is refused "
@@ -587,7 +596,8 @@ class SheetRequestDto(DrawingSourceRequestDto):
                                      description="With views: the sheet's number in its title strip and file (default 01).")
     drawing_id: str | None = Field(alias="drawingId", default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$",
                                    description=(
-        "With views: the sheet's drawing identity (default sheet-<sheetNumber>). Without views it is the style id."))
+        "With views: the sheet's drawing identity (default sheet-<sheetNumber>), never one of its views' ids. Without "
+        "views it is the style id. " + DRAWING_ID_KIND))
     length_unit: LengthUnit | None = Field(alias="lengthUnit", default=None, description=LENGTH_UNIT)
 
     @model_validator(mode="after")

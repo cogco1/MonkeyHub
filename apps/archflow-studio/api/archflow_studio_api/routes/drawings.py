@@ -87,7 +87,8 @@ def create_plan(request: Request, payload: PlanRequestDto) -> SourceDocumentDto:
     Both are one composition over the exact source (the cut filled, what lies beyond it drawn); a rebuild keeps its
     orientation, plane, kept side and depth. Refusals are named: SECTION_PLANE_NOT_MODEL_AXIS,
     SECTION_PLANE_MISSES_MODEL, SECTION_LINE_DEGENERATE, SECTION_NORMAL_DEGENERATE, DRAWING_ORIENTATION_CHANGED,
-    DRAWING_SECTION_ANNOTATION_INVALID, DRAWING_UNIT_MISMATCH and the cut plan's own.
+    DRAWING_KIND_CHANGED (the id names another kind of drawing), DRAWING_SECTION_ANNOTATION_INVALID,
+    DRAWING_UNIT_MISMATCH and the cut plan's own.
     """
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:

@@ -4271,6 +4271,8 @@ _GUIDES = {
         "draws (default: the model's far side); lengthUnit, when given, must be the source's own unit (DRAWING_UNIT_MISMATCH); cropUv is its window in u",
         "(along the paper) and v (Z). It takes no dimensions or entourage. A rebuild with previousRevisionRef keeps its plane, depth and window unless",
         "stated, and a drawingId stays a plan or a section (DRAWING_ORIENTATION_CHANGED): give a new section its own drawingId.",
+        "Every drawingId keeps the kind it first named - plan, section, elevation or axonometric, section perspective, sheet - so",
+        "reusing one for another kind is refused (DRAWING_KIND_CHANGED); a sheet and its views each take their own ids.",
         "AXONOMETRIC: POST /api/drawings/elevations {view: 'axon', direction: [dx, dy, dz]}, the direction from the model toward the viewer ([1, -1, 1] is",
         "the isometric from +X, -Y, +Z; default [-1, -1, 1]; never vertical). It is foreshortened: its scaleDenominator is a display size, not a measurable one.",
         "SEE A VIEW: GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image",

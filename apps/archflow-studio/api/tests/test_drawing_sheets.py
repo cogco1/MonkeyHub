@@ -149,6 +149,51 @@ class ImportedModelDrawingTests(unittest.TestCase):
         self.assertEqual(orientations, {(plan["drawingId"], False), (section["drawingId"], True)})
         self.unchanged()
 
+    def test_a_drawing_id_keeps_its_kind(self):
+        # The Diagram opens the newest document of each drawing id: another kind under it would take that drawing's place.
+        self.post("plans", cutHeight=0.3, bottom=-0.1, scaleDenominator=50, drawingId="plan")
+        front = self.post("elevations", view="front", scaleDenominator=100, drawingId="front")
+        self.post("section-perspectives", section=SECTION, depth=3, scaleDenominator=100, drawingId="perspective")
+        before = self.documents()
+        for route, body, detail in (
+            ("elevations", {"view": "front", "drawingId": "plan"}, "Drawing plan is a plan; draw this elevation "),
+            ("elevations", {"view": "axon", "drawingId": "perspective"},
+             "Drawing perspective is a section perspective; draw this axonometric "),
+            ("section-perspectives", {"section": SECTION, "depth": 3, "drawingId": "front"},
+             "Drawing front is an elevation; draw this section perspective "),
+            ("plans", {"cutHeight": 0.3, "bottom": -0.1, "drawingId": "front"}, "Drawing front is an elevation; draw this plan "),
+            ("plans", {"section": SECTION, "depth": 3, "drawingId": "perspective"},
+             "Drawing perspective is a section perspective; draw this vertical section "),
+            ("sheets", {"styleId": "arch400-white", "scaleDenominator": 50}, None),
+        ):
+            with self.subTest(route=route, drawing=body.get("drawingId", body.get("styleId"))):
+                if route == "sheets":
+                    # A review sheet's drawing id is its style id: a plan named so keeps it.
+                    self.post("plans", cutHeight=0.3, bottom=-0.1, scaleDenominator=50, drawingId="arch400-white")
+                    before = self.documents()
+                    detail = "Drawing arch400-white is a plan; draw this review sheet "
+                refused = self.post(route, 409, scaleDenominator=body.pop("scaleDenominator", 100), **body)
+                self.assertEqual(refused["code"], "DRAWING_KIND_CHANGED")
+                self.assertTrue(refused["detail"].startswith(detail), refused["detail"])
+        # A sheet view names its drawing id, and so does the sheet itself; neither takes another kind's.
+        viewed = self.sheet(409, views=[{"id": "plan", "placeMm": [20, 30], "elevation": {"view": "front", "scaleDenominator": 100}}])
+        self.assertEqual(viewed["code"], "DRAWING_KIND_CHANGED")
+        self.assertTrue(viewed["detail"].startswith("View plan: Drawing plan is a plan; draw this elevation "), viewed["detail"])
+        for body, detail in (({"drawingId": "front"}, "Drawing front is an elevation; draw this view sheet "),
+                             ({"drawingId": "plan-low", "views": [{"id": "plan-low", "placeMm": [20, 30], "plan": {
+                                 "cutHeight": 0.2, "bottom": -0.1, "scaleDenominator": 50}}]},
+                              "View plan-low and its sheet cannot share one drawing id")):
+            with self.subTest(sheet=body["drawingId"]):
+                refused = self.sheet(409, **body)
+                self.assertEqual(refused["code"], "DRAWING_KIND_CHANGED")
+                self.assertTrue(refused["detail"].startswith(detail), refused["detail"])
+        self.assertEqual(self.documents(), before, "no refusal drew or registered anything")
+        # The same kind keeps its id: an identical request reads back, a changed one is another revision under it.
+        self.assertEqual(self.post("elevations", view="front", scaleDenominator=100, drawingId="front"), front)
+        right = self.post("elevations", view="right", scaleDenominator=100, drawingId="front")
+        self.assertEqual((right["drawingId"], right["viewRecipe"]["kind"]), ("front", "model-axis-elevation"))
+        self.unchanged()
+
     def test_an_axonometric_is_retained_from_a_stated_direction(self):
         iso = self.post("elevations", view="axon", direction=[1, -1, 1], scaleDenominator=200, drawingId="iso")
         look = iso["viewRecipe"]["look"]
