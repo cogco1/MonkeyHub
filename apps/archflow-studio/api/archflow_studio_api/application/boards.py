@@ -171,6 +171,16 @@ def _page_raster(
     return output.getvalue()
 
 
+def page_export_png(data: bytes, mime_type: str, page_index: int) -> bytes:
+    """One page as the PNG a Board PNG export writes at its full size: a PDF page at 144 dpi over white.
+
+    A view sheet's retained PNG is this export of its PDF, so both answer with
+    the same pixels. Deterministic: the same bytes give the same PNG.
+    """
+
+    return _page_raster(data, mime_type, page_index, "png", None)
+
+
 #: The longest edge of a page raster, in pixels.
 PAGE_RASTER_EDGE = 2048
 

@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import unittest
 
-from monkeydiagram.drawing_output import MM_PER_PT, PaperCanvas, render_dxf, render_pdf
+from monkeydiagram.drawing_output import MM_PER_PT, PaperCanvas, render_dxf, render_pdf, render_svg
 
 
 DRAWING_DEPS = all(find_spec(name) is not None for name in ("reportlab", "fontTools", "ezdxf"))
@@ -28,6 +28,83 @@ class DrawingOutputTests(unittest.TestCase):
         self.assertFalse(audit.has_errors)
         self.assertFalse(audit.has_fixes)
         return doc
+
+    def test_svg_draws_the_same_scene_in_paper_millimetres_with_pens_fills_and_live_text(self):
+        from xml.etree import ElementTree
+        c = self.canvas
+        c.setLineWidth(0.5 / MM_PER_PT)
+        c.setDash([4 / MM_PER_PT, 1 / MM_PER_PT])
+        c.line(10 / MM_PER_PT, 20 / MM_PER_PT, 172.56 / MM_PER_PT, 20 / MM_PER_PT)
+        c.setDash([])
+        c.setFillColor((0.5, 0.5, 0.5))
+        c.rect(0, 0, 10 / MM_PER_PT, 5 / MM_PER_PT, stroke=0, fill=1)
+        c.drawString(30 / MM_PER_PT, 40 / MM_PER_PT, "SECTION A-A")
+        root = ElementTree.fromstring(render_svg(c))
+        ns = "{http://www.w3.org/2000/svg}"
+        self.assertEqual((root.get("width"), root.get("height"), root.get("viewBox")), ("420mm", "297mm", "0 0 420 297"))
+        line, fill = root.findall(f"{ns}path")
+        self.assertEqual(line.get("d"), "M10,277 L172.56,277")
+        self.assertEqual((line.get("stroke-width"), line.get("stroke-dasharray"), line.get("fill")), ("0.5", "4 1", "none"))
+        self.assertEqual((fill.get("fill"), fill.get("fill-rule"), fill.get("stroke")), ("#808080", "evenodd", "none"))
+        text = root.find(f"{ns}text")
+        self.assertEqual(text.text, "SECTION A-A")
+        self.assertEqual(text.get("transform"), "translate(30 257)")
+        self.assertEqual(text.get("font-family"), "Bitstream Vera Sans")
+
+    def test_svg_text_xml_cannot_carry_is_drawn_as_the_replacement_character(self):
+        from xml.etree import ElementTree
+        c = self.canvas
+        c.setTitle("TWO\x0bBOXES")
+        c.drawString(30 / MM_PER_PT, 40 / MM_PER_PT, "NOTE\x0b1\x1f & <2>")
+        root = ElementTree.fromstring(render_svg(c))
+        ns = "{http://www.w3.org/2000/svg}"
+        self.assertEqual(root.find(f"{ns}title").text, "TWO\ufffdBOXES")
+        self.assertEqual(root.find(f"{ns}text").text, "NOTE\ufffd1\ufffd & <2>")
+
+    def test_the_same_scene_gives_the_same_dxf_bytes_whenever_it_is_written(self):
+        import time
+
+        self.canvas.drawString(30, 40, "SHEET A01")
+        self.canvas.drawString(30, 80, "Issued 1.0 @ 2026-09-29T10:00:00+00:00")
+        self.canvas.line(10, 10, 200, 120)
+        first = render_dxf(self.canvas)
+        # ezdxf stamps the time, a random GUID pair and its own write time into every file it writes.
+        time.sleep(0.05)
+        self.assertEqual(render_dxf(self.canvas), first)
+        lines = first.decode("utf-8").splitlines()
+        written = [line for line in lines if re.search(r" @ \d{4}-\d\d-\d\dT", line)]
+        self.assertIn("Issued 1.0 @ 2026-09-29T10:00:00+00:00", written, "the scene's own text is never rewritten")
+        written.remove("Issued 1.0 @ 2026-09-29T10:00:00+00:00")
+        self.assertTrue(written and all(line.endswith(" @ 2000-01-01T00:00:00.000000+00:00") for line in written),
+                        "the write time is one fixed time")
+        values = {lines[i]: lines[i + 2] for i in range(len(lines) - 2) if lines[i].startswith("$")}
+        self.assertEqual(values["$TDCREATE"], values["$TDUPDATE"])
+        # The fingerprint follows the content: another scene has another one.
+        self.canvas.drawString(30, 80, "REVISED")
+        other = render_dxf(self.canvas).decode("utf-8").splitlines()
+        other_values = {other[i]: other[i + 2] for i in range(len(other) - 2) if other[i].startswith("$")}
+        self.assertNotEqual(values["$FINGERPRINTGUID"], other_values["$FINGERPRINTGUID"])
+        for name in ("$FINGERPRINTGUID", "$VERSIONGUID"):
+            self.assertRegex(values[name], r"^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$")
+        self.read_dxf()
+
+    def test_another_process_writes_the_same_dxf_bytes(self):
+        import os
+        import subprocess
+        import sys
+
+        # ezdxf lists its DXF classes from a set, in the order each process hashes it.
+        script = ("import hashlib, sys, reportlab; from pathlib import Path; "
+                  "from monkeydiagram.drawing_output import PaperCanvas, render_dxf; "
+                  "font = Path(reportlab.__file__).parent / 'fonts' / 'Vera.ttf'; "
+                  "c = PaperCanvas(font_mapping={'Test': font}); c.start_sheet('A01', (420, 297)); "
+                  "c.setFont('Test', 12); c.drawString(30, 40, 'SHEET A01'); c.line(10, 10, 200, 120); "
+                  "print(hashlib.sha256(render_dxf(c)).hexdigest())")
+        root = str(Path(__file__).resolve().parents[1])
+        digests = {subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True,
+                                  env={**os.environ, "PYTHONHASHSEED": seed, "PYTHONPATH": root}).stdout.strip()
+                   for seed in ("1", "4", "7")}
+        self.assertEqual(len(digests), 1, digests)
 
     def test_explicit_sheets_keep_paper_size_and_do_not_invent_a_final_page(self):
         c = self.canvas

@@ -17,6 +17,7 @@ from monkeydiagram.drawing_svg import (
     dimension_placement_fits,
     render_svg_png,
     svg_objects,
+    svg_paper_marks,
 )
 from archflow.adapters.occt_backend import OcctDrawingPolyline, OcctDrawingRegion
 
@@ -363,6 +364,21 @@ class CutPlanSvgTests(unittest.TestCase):
             self.assertLess(image.crop((110, 110, 190, 190)).getextrema()[0], 128, "material is hatched")
             # SVG coordinate rounding may shift a single antialiased pixel; paper stroke widths and spacing remain identical.
             self.assertLess(ImageStat.Stat(ImageChops.difference(image, mm)).mean[0], 1)
+
+    def test_paper_marks_place_the_svg_at_its_own_scale_with_its_pens_and_roles(self):
+        (width, height), marks = svg_paper_marks(self.render())
+        self.assertEqual((width, height), (60.0, 60.0))
+        cut = [mark for mark in marks if mark.group == "section"]
+        self.assertTrue(cut and all(mark.object_id == "wall" and abs(mark.stroke_mm - 0.35) < 1e-9 for mark in cut))
+        rounded = [{(round(x, 6), round(y, 6)) for x, y in mark.points_mm} for mark in cut]
+        # 4 m at 1:100 is 40 mm on paper; SVG y runs down from the crop's top.
+        self.assertIn({(10.0, 50.0), (50.0, 50.0), (50.0, 10.0), (10.0, 10.0)}, rounded)
+        hatch = [mark for mark in marks if mark.group == "section-hatch"]
+        self.assertTrue(hatch and all(abs(mark.stroke_mm - 0.1) < 1e-9 and not mark.polygon for mark in hatch))
+        dimensioned = self.render(dimensions=({"id": "w", "status": "resolved", "start": [0, 0], "end": [4, 0],
+                                               "value": 4, "label": "4000", "offsetMm": -6},))
+        with self.assertRaises(DrawingSvgError):
+            svg_paper_marks(dimensioned)
 
     def test_resolved_dimension_text_and_marks_are_drawn_from_the_svg_and_unresolved_are_not(self):
         from PIL import Image

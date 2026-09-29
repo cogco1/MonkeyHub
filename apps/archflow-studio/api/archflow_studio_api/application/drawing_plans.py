@@ -1,10 +1,15 @@
-"""One editable cut-plan recipe over the existing exact document and model owners."""
+"""One editable cut-plan recipe over the existing exact document and model owners.
+
+A cut plan is a horizontal cut looking down, or a vertical model-axis section
+looking along X or Y; both are the same composition (``freeze_cut_plan``) and
+a drawing keeps the orientation it was made with through every rebuild.
+"""
 
 from __future__ import annotations
 
 from dataclasses import asdict, replace
 from copy import deepcopy
-from itertools import chain, count
+from itertools import chain, count, product
 from datetime import datetime, timezone
 from uuid import uuid4
 from pathlib import PurePath
@@ -17,8 +22,9 @@ from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
 from monkeydiagram.drawing_elevation import (
-    DrawingElevationError, ElevationView, NativeModelSource, current_object_id, freeze_cut_plan, read_elevation_source,
-    read_model_axis_elevation, plan_dressing_anchors, resolve_plan_dressing,
+    DrawingElevationError, ElevationView, NativeModelSource, SectionPerspectiveError, current_object_id, freeze_cut_plan,
+    inspection_witness_ids, model_axis_section, read_elevation_source, read_model_axis_elevation, plan_dressing_anchors,
+    resolve_plan_dressing,
 )
 
 from .artifacts import (
@@ -26,7 +32,10 @@ from .artifacts import (
 )
 from .binding import retained_sources
 from .decisions import project_recipe
-from .drawings import _complete_source, _elevation_view, _selected_source, _document_source, DrawingAssetSource
+from .drawings import (
+    VIEW_MARGIN, _complete_source, _elevation_view, _selected_source, _document_source, DrawingAssetSource, is_vertical_section,
+    refuse_other_kind, require_unit,
+)
 from .drawing_dimensions import resolve_plan_dimensions, list_plan_dimension_intents
 from .intent import component_edit_proposal
 from .intent_requests import in_unit
@@ -57,6 +66,86 @@ def _plan_source(binding, source_stage_ref, model_source, source_asset=None):
         if matches:
             stage_ref = next(iter(matches))
     return model, stage_ref
+
+
+def _frame_corners(receipt, object_ids, origin, axes):
+    """Each object's bounding-box corners in a frame: (object id, [(u, v, depth), ...])."""
+    for object_id in object_ids:
+        bounds = receipt["readback"][object_id]["bbox"]
+        corners = product(*zip(bounds["min"], bounds["max"]))
+        yield object_id, [tuple(sum((p - o) * a for p, o, a in zip(point, origin, axis)) for axis in axes)
+                          for point in corners]
+
+
+def _drawn_objects(receipt, hidden):
+    """The physical objects a cut plan draws, as ``freeze_cut_plan`` selects them.
+
+    Neither hidden by the recipe (a retained name read as the model now names
+    it, ``current_object_id``) nor inspection evidence the source keeps hidden.
+    """
+    physical = receipt["physical_object_ids"]
+    left_out = {current_object_id(name, set(physical)) for name in hidden} | inspection_witness_ids(receipt)
+    return [object_id for object_id in physical if object_id not in left_out]
+
+
+def _frames_something(receipt, frame: ElevationView, hidden) -> bool:
+    """Whether a drawn object's bounds reach the frame's window within its depth: no drawing of nothing is retained.
+
+    Bounds only, so it never refuses a drawing that has lines; one whose window
+    and slab hold no object at all would be an empty page.
+    """
+    u0, v0, u1, v1 = frame.crop_uv
+    try:
+        for _, points in _frame_corners(receipt, _drawn_objects(receipt, hidden), frame.origin,
+                                        (frame.right, frame.up, frame.look)):
+            us, vs, depths = zip(*points)
+            if (max(us) >= u0 and min(us) <= u1 and max(vs) >= v0 and min(vs) <= v1
+                    and max(depths) >= frame.near_depth and min(depths) <= frame.far_depth):
+                return True
+    except (KeyError, TypeError, ValueError):
+        return True  # without complete retained bounds the drawing itself decides what it holds
+    return False
+
+
+def _section_frame(receipt, *, name, section, prior_frame, depth, crop_uv, scale, unit, hidden):
+    """A vertical section's frame: its plane from ``section`` or the retained one, and its depth and window.
+
+    The plane must cut one of the drawn objects' bounds (SECTION_PLANE_MISSES_MODEL
+    before anything is drawn; the drawing owner still checks the exact cut). A
+    rebuild keeps its own depth and window unless the request states them, or
+    unless it turned to look the other way; a new section draws to the far side
+    of the model's bounds and frames what lies in that slab.
+    """
+    try:
+        if section is not None:
+            origin, look, right = model_axis_section(section, linear_deflection=.0001 / UNIT_METRES[unit])
+        else:
+            origin, look, right = (tuple(prior_frame[key]) for key in ("origin", "look", "right"))
+    except SectionPerspectiveError as exc:
+        raise StudioError(422, exc.code, str(exc)) from exc
+    kept = bool(prior_frame) and list(prior_frame.get("look", ())) == list(look)
+    try:
+        extents = dict(_frame_corners(receipt, _drawn_objects(receipt, hidden), origin, (right, (0, 0, 1), look)))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise StudioError(409, "DRAWING_SOURCE_INVALID",
+                          "The exact model has no complete retained bounds for this section.") from exc
+    if not any(min(d for *_, d in corners) < 0 < max(d for *_, d in corners) for corners in extents.values()):
+        raise StudioError(422, "SECTION_PLANE_MISSES_MODEL",
+                          "The section plane cuts none of the drawn objects; move it through the model.")
+    beyond = max(d for corners in extents.values() for *_, d in corners)
+    if depth is None:
+        depth = prior_frame["far_depth"] if kept else beyond * (1 + VIEW_MARGIN)
+    if crop_uv is None and kept:
+        crop_uv = prior_frame["crop_uv"]
+    if crop_uv is None:
+        seen = [corner for corners in extents.values() if max(d for *_, d in corners) >= 0
+                and min(d for *_, d in corners) <= depth for corner in corners]
+        us, vs = [u for u, _, _ in seen], [v for _, v, _ in seen]
+        margin = max(max(us) - min(us), max(vs) - min(vs), .001) * VIEW_MARGIN
+        crop_uv = (min(us) - margin, min(vs) - margin, max(us) + margin, max(vs) + margin)
+    return ElevationView(name=name, origin=origin, look=look, right=right, up=(0, 0, 1), crop_uv=tuple(crop_uv),
+                         near_depth=0, far_depth=depth, hidden_lines=False, linear_deflection=.0001 / UNIT_METRES[unit],
+                         scale_denominator=scale)
 
 
 def plan_frame(recipe) -> ElevationView:
@@ -110,8 +199,10 @@ def plan_vector(binding, *, run_id, asset_sha256, revision_ref):
     document = _plan_document(binding, run_id, asset_sha256, revision_ref)
     drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(revision_ref, binding.project_id))
     _, receipt = _complete_source(binding, _document_source(document), None if document.source_stage_ref is None else record_ref_from_uri(document.source_stage_ref, binding.project_id))
+    # Plan symbols are placed in a plan's X/Y; a vertical section offers no anchors for them.
+    anchors = [] if is_vertical_section(document.view_recipe) else plan_dressing_anchors(receipt)
     return {"svg": drawing.svg.decode("utf-8"), "assets": dressing_assets(),
-            "anchors": plan_dressing_anchors(receipt), "cleanup": drawing.receipt.get("cleanup")}
+            "anchors": anchors, "cleanup": drawing.receipt.get("cleanup")}
 
 
 def _cleanup_report(binding, revision_ref):
@@ -168,8 +259,14 @@ def _paper_rules(retained, hatch, beyond, spacing_mm):
 def generate_plan(binding, *, attribution, reason=None, source_kind=None, source_stage_ref=None, model_source=None,
                   drawing_id=None, file_name=None, previous_revision_ref=None, cut_height=None, bottom=None, scale_denominator=None,
                   crop_uv=None, cut_line_mm=None, visible_line_mm=None, hatch_spacing_mm=None, hatch=None, beyond=None,
-                  hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None, follow=None, source_asset=None):
+                  hidden_object_ids=None, dimensions=None, dressing=None, dressing_operations=None, follow=None, source_asset=None,
+                  section=None, depth=None, length_unit=None):
     """One cut-plan revision, or the retained one an identical request already made.
+
+    ``section`` (a plan line and kept side, or a plane) makes it a vertical
+    model-axis section drawn ``depth`` beyond its plane; a rebuild keeps the
+    plane, side and depth it was made with, and a horizontal plan stays
+    horizontal. ``length_unit``, when given, must be the source's own unit.
 
     A new drawing takes the project recipe for the pens and hatch spacing its
     request leaves open; a rebuild keeps its own (``_paper_values``).
@@ -185,33 +282,52 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
     old = {} if previous is None else previous.view_recipe
     if previous is not None and drawing_id not in (None, previous.drawing_id):
         raise StudioError(409, "DRAWING_REVISION_MISMATCH", "Continue the selected drawing identity.")
+    prior_frame = old.get("frame", {})
+    vertical = is_vertical_section(old) if previous is not None else section is not None
+    if previous is not None and vertical and (cut_height is not None or bottom is not None):
+        raise StudioError(409, "DRAWING_ORIENTATION_CHANGED",
+                          "This drawing is a vertical section; move its plane with section and depth, not a cut height.")
+    if previous is not None and not vertical and (section is not None or depth is not None):
+        raise StudioError(409, "DRAWING_ORIENTATION_CHANGED",
+                          "This drawing is a horizontal cut plan and stays one; draw a vertical section as a new drawing.")
+    if not vertical and depth is not None:
+        raise StudioError(422, "DRAWING_SECTION_REQUIRED", "depth belongs to a vertical section; give its section plane.")
+    if vertical and (dimensions or dressing or dressing_operations or old.get("dressing")):
+        raise StudioError(422, "DRAWING_SECTION_ANNOTATION_INVALID",
+                          "Opening dimensions and plan symbols belong to a horizontal cut plan, not a vertical section.")
     model_source, stage_ref = _plan_source(binding, source_stage_ref, model_source, source_asset)
     source, cad_receipt = _complete_source(binding, model_source, stage_ref)
     unit = cad_receipt["identity"]["length_unit"]
-    drawing_id = drawing_id or (previous.drawing_id if previous else _new_plan_id(binding))
-    prior_frame = old.get("frame", {})
-    cut = cut_height if cut_height is not None else prior_frame.get("origin", (0, 0, 1.2 / UNIT_METRES[unit]))[2]
-    low = bottom if bottom is not None else (prior_frame["origin"][2] - prior_frame["far_depth"] if prior_frame else 0)
+    require_unit(length_unit, unit)
+    drawing_id = drawing_id or (previous.drawing_id if previous else _new_plan_id(binding, "section" if vertical else "floor-plan"))
     scale = scale_denominator or (int(prior_frame["scale"].split(":")[1]) if prior_frame else 100)
-    if cut <= low:
-        raise StudioError(422, "DRAWING_DEPTH_INVALID", "The cut must be above the bottom of the plan view.")
+    if not vertical:
+        cut = cut_height if cut_height is not None else prior_frame.get("origin", (0, 0, 1.2 / UNIT_METRES[unit]))[2]
+        low = bottom if bottom is not None else (prior_frame["origin"][2] - prior_frame["far_depth"] if prior_frame else 0)
+        if cut <= low:
+            raise StudioError(422, "DRAWING_DEPTH_INVALID", "The cut must be above the bottom of the plan view.")
     if previous and _document_source(previous) != model_source:
         _, old_receipt = _complete_source(binding, _document_source(previous),
             None if previous.source_stage_ref is None else record_ref_from_uri(previous.source_stage_ref, binding.project_id))
         if old_receipt["identity"]["length_unit"] != unit:
             raise StudioError(409, "DRAWING_UNIT_CHANGED", "The source unit changed; the retained recipe cannot be reinterpreted in another unit.")
     try:
-        frame = replace(_elevation_view(cad_receipt, "top", hidden_lines=False, scale_denominator=scale),
-                        name=drawing_id, origin=(0, 0, cut), near_depth=0, far_depth=cut-low,
-                        linear_deflection=.0001 / UNIT_METRES[unit])
-        if crop_uv is not None or prior_frame:
-            frame = replace(frame, crop_uv=tuple(crop_uv if crop_uv is not None else prior_frame["crop_uv"]))
+        if vertical:
+            hidden = set(hidden_object_ids if hidden_object_ids is not None else old.get("hiddenObjectIds", []))
+            frame = _section_frame(cad_receipt, name=drawing_id, section=section, prior_frame=prior_frame, depth=depth,
+                                   crop_uv=crop_uv, scale=scale, unit=unit, hidden=hidden)
         else:
-            # Start with room for paper-space dimensions, not just the model's
-            # tight bounding box. Explicit and retained crops remain the user's.
-            margin = 15 * scale / (1000 * UNIT_METRES[unit])
-            x0, y0, x1, y1 = frame.crop_uv
-            frame = replace(frame, crop_uv=(x0-margin, y0-margin, x1+margin, y1+margin))
+            frame = replace(_elevation_view(cad_receipt, "top", hidden_lines=False, scale_denominator=scale),
+                            name=drawing_id, origin=(0, 0, cut), near_depth=0, far_depth=cut-low,
+                            linear_deflection=.0001 / UNIT_METRES[unit])
+            if crop_uv is not None or prior_frame:
+                frame = replace(frame, crop_uv=tuple(crop_uv if crop_uv is not None else prior_frame["crop_uv"]))
+            else:
+                # Start with room for paper-space dimensions, not just the model's
+                # tight bounding box. Explicit and retained crops remain the user's.
+                margin = 15 * scale / (1000 * UNIT_METRES[unit])
+                x0, y0, x1, y1 = frame.crop_uv
+                frame = replace(frame, crop_uv=(x0-margin, y0-margin, x1+margin, y1+margin))
         graphics = old.get("graphics", {})
         selected_stage = None if stage_ref is None else stage_ref.uri
         values = _paper_values(binding, selected_stage, graphics, {
@@ -249,9 +365,19 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
         retained_hidden = set(old.get("hiddenObjectIds", []))
         if unknown_hidden - retained_hidden:
             raise StudioError(422, "DRAWING_OBJECT_UNKNOWN", "A newly hidden object must exist in the selected exact model.")
+        if not _frames_something(cad_receipt, frame, set(recipe["hiddenObjectIds"])):
+            raise StudioError(422, "DRAWING_VIEW_EMPTY", "No drawn object reaches this drawing's window and depth; "
+                                                         "move the window or the cut onto the model.")
         with _document_source_lock:
             documents = list_documents(binding, None if previous is not None or explicit_drawing_id else model_source.run_id)
             named = previous or next((document for document in documents if document.drawing_id == drawing_id), None)
+            if previous is None and any(document.drawing_id == drawing_id and (document.view_recipe or {}).get("kind") == "cut-plan"
+                                        and is_vertical_section(document.view_recipe) != vertical for document in documents):
+                # Naming a drawing without its previous revision (as every sheet view does) adds a
+                # revision under that id; it never turns the drawing a person opens by that id.
+                raise StudioError(409, "DRAWING_ORIENTATION_CHANGED",
+                                  f"Drawing {drawing_id} is a {'horizontal cut plan' if vertical else 'vertical section'}; "
+                                  f"draw the {'section' if vertical else 'plan'} under another drawing id.")
             file_name = _plan_file_name(file_name, named, drawing_id)
             for document in documents:
                 if (document.drawing_id == drawing_id and _document_source(document) == model_source
@@ -260,6 +386,9 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
                              or document.previous_revision_ref == previous_revision_ref)):
                     document_bytes(binding, document.run_id, document.asset_sha256, document.revision_ref)
                     return document
+            if previous is None:
+                # A new drawing under an id that names an elevation, section perspective or sheet would take its place.
+                refuse_other_kind(binding, drawing_id, "cut-plan", "vertical section" if vertical else "plan")
             if previous is not None:
                 # Check the exact predecessor under the same lock as registration,
                 # before projection writes anything. A retry found its own child
@@ -292,15 +421,17 @@ def generate_plan(binding, *, attribution, reason=None, source_kind=None, source
                          "viewRecipe": recipe, "generatedAt": datetime.now(timezone.utc).isoformat()},
             )
             return _plan_document(binding, run.run_id, drawing.png_ref.sha256, drawing.receipt_ref.uri)
+    except SectionPerspectiveError as exc:
+        raise StudioError(422, exc.code, str(exc)) from exc
     except (DrawingElevationError, ValueError) as exc:
         raise StudioError(422, "DRAWING_PLAN_INVALID", str(exc)) from exc
 
 
-def _new_plan_id(binding):
-    """A new cut plan is its own drawing; only its revisions share its identity."""
+def _new_plan_id(binding, prefix="floor-plan"):
+    """A new cut plan (or vertical section) is its own drawing; only its revisions share its identity."""
     taken = {document.drawing_id for document in list_documents(binding)
              if (document.view_recipe or {}).get("kind") == "cut-plan"}
-    names = chain(("floor-plan",), (f"floor-plan-{n}" for n in count(2)))
+    names = chain((prefix,), (f"{prefix}-{n}" for n in count(2)))
     return next(name for name in names if name not in taken)
 
 
@@ -361,6 +492,15 @@ def _read_set(binding, receipt, frame, hidden):
     if canonical_digest(program) != identity["program_digest"]:
         raise ValueError("The exact compiled program does not match its CAD receipt.")
     x0, y0, x1, y1 = frame.crop_uv
+    if frame.up == (0, 0, 1):
+        # A vertical section reads what lies in its window and in the slab beyond its plane.
+        corners = _frame_corners(receipt, _drawn_objects(receipt, hidden), frame.origin,
+                                 (frame.right, frame.up, frame.look))
+        return load_compiled_geometry_program(program), {
+            object_id for object_id, points in corners
+            if not (max(u for u, _, _ in points) < x0 or min(u for u, _, _ in points) > x1
+                    or max(v for _, v, _ in points) < y0 or min(v for _, v, _ in points) > y1
+                    or max(d for *_, d in points) < 0 or min(d for *_, d in points) > frame.far_depth)}
     cut = frame.origin[2]
     low = cut - frame.far_depth
     selected = set()

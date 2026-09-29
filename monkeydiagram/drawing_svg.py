@@ -1177,6 +1177,8 @@ def _svg_marks(root):
 
     def walk(element, inherited):
         paint = {**inherited, **{key: element.get(key) for key in _PAINT if element.get(key) is not None}}
+        if element.tag == f"{{{SVG_NS}}}g" and element.get("id"):
+            paint["group"] = element.get("id")
         if element.tag in (_POLYLINE, _POLYGON):
             try:
                 points = tuple(
@@ -1279,6 +1281,48 @@ def svg_objects(svg: bytes) -> tuple[str, ...]:
     return tuple(sorted({name for is_polygon, name, *_ in _svg_marks(root) if not is_polygon and name}))
 
 
+@dataclass(frozen=True, slots=True)
+class DrawingMark:
+    """One polyline or poché of a drawing SVG on its own paper: mm from the top-left, pens in mm.
+
+    ``group`` is the role group it sits in (``visible``, ``hidden``,
+    ``section``, ``section-hatch``); ``grey`` is its stroke (polyline) or fill
+    (polygon) level, 0 black to 255 white.
+    """
+
+    polygon: bool
+    group: str | None
+    object_id: str | None
+    points_mm: tuple[tuple[float, float], ...]
+    stroke_mm: float
+    dash_mm: tuple[float, ...]
+    grey: int
+
+
+def svg_paper_marks(svg: bytes) -> tuple[tuple[float, float], tuple[DrawingMark, ...]]:
+    """The paper size and every mark of one ``drawing_svg`` document, in paper millimetres.
+
+    A sheet composer places these marks at the drawing's own scale without
+    re-projecting anything.  Dimension text is not a mark: an SVG carrying it
+    is refused rather than placed without it.
+    """
+
+    root, (min_x, min_y, width, height), (width_mm, height_mm) = _parse_svg(svg)
+    if any(True for _ in root.iter(f"{{{SVG_NS}}}text")):
+        raise DrawingSvgError("the SVG carries dimension text, which paper marks do not place")
+    sx, sy = width_mm / width, height_mm / height
+    marks = []
+    for is_polygon, object_id, points, stroke_width, dashes, paint in _svg_marks(root):
+        level = _grey(paint.get("fill", "#000") if is_polygon else paint.get("stroke", "#000"),
+                      "fill" if is_polygon else "stroke")
+        if level is None:
+            continue
+        marks.append(DrawingMark(is_polygon, paint.get("group"), object_id,
+                                 tuple(((x - min_x) * sx, (y - min_y) * sy) for x, y in points),
+                                 stroke_width * sx, tuple(v * sx for v in dashes), level))
+    return (width_mm, height_mm), tuple(marks)
+
+
 def render_svg_png(svg: bytes, *, dots_per_inch: int = 150) -> bytes:
     """Rasterise the SVG's own polylines and poché to a PNG at the SVG's physical size.
 
@@ -1355,6 +1399,7 @@ def render_svg_png(svg: bytes, *, dots_per_inch: int = 150) -> bytes:
 
 __all__ = [
     "CleanupReport",
+    "DrawingMark",
     "DrawingSvgError",
     "PNG_MEDIA_TYPE",
     "SVG_MEDIA_TYPE",
@@ -1365,4 +1410,5 @@ __all__ = [
     "dressing_assets",
     "render_svg_png",
     "svg_objects",
+    "svg_paper_marks",
 ]
