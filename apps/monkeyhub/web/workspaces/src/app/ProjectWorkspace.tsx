@@ -6,7 +6,7 @@ import type { ServerIdentity } from "../api/connection";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
 import type { PageSource } from "../workspaces/monkeyboard/boardScene";
 import type { BoardPageRequest } from "../workspaces/monkeyboard/Board";
-import type { BoardRenderChatRequest } from "../workspaces/monkeyboard/boardRender";
+import { BoardRenderError, type BoardRenderChatRequest } from "../workspaces/monkeyboard/boardRender";
 import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
 import App, { type WorkspaceDesignContext } from "./App";
 export type { WorkspaceDesignContext } from "./App";
@@ -57,6 +57,7 @@ export interface ProjectWorkspaceProps {
   /**
    * #253: an image discussion from this project's Board, for the host's conversation composer.
    * Only a request naming this workspace's own project is passed on; nothing is sent from here.
+   * A host that cannot take it throws a BoardRenderError, which the Board's dialog shows.
    */
   onRenderChatRequest?: (request: BoardRenderChatRequest) => void;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
@@ -252,9 +253,13 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     setDocumentIntent(undefined); setSketchRequest(request); setVisit(null);
     onWorkspaceChange("arch");
   }, [onWorkspaceChange]);
-  // #253: the Board stays on screen; the conversation composer receives the draft.
+  // #253: the Board stays on screen; the conversation composer receives the draft. A request
+  // naming another project is refused back to the Board's dialog rather than dropped.
   const renderChat = useMemo(() => onRenderChatRequest && ((request: BoardRenderChatRequest) => {
-    if (boundProjectId.current !== undefined && request.projectId === boundProjectId.current) onRenderChatRequest(request);
+    if (boundProjectId.current === undefined || request.projectId !== boundProjectId.current) {
+      throw new BoardRenderError("PROJECT_CHANGED", "The Board's request names a project this workspace is not bound to.");
+    }
+    onRenderChatRequest(request);
   }), [onRenderChatRequest]);
   useEffect(() => {
     if (!active || server.status !== "ready" || !documentRequest ||

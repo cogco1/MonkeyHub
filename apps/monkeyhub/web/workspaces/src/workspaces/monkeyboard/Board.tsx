@@ -13,7 +13,7 @@ import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
 import { BoardFeedbackError, prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedback";
 import { BoardFeedbackGeometryError, createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
 import { boardViewAppState, captureBoardView, pageSourceAt, type BoardDocumentOpen, type BoardViewState } from "./boardNavigation";
-import { prepareBoardRenderChatRequest, RENDER_REFERENCE_LIMIT, renderReferenceChoices, selectedRenderPages, type BoardRenderChatRequest } from "./boardRender";
+import { BoardRenderError, handOverBoardRender, RENDER_REFERENCE_LIMIT, renderReferenceChoices, selectedRenderPages, type BoardRenderChatRequest } from "./boardRender";
 import { boardDocumentFrameName, documentKey, documentMime, findSource, imageSource, isTracingPaperReview, nextDocumentPosition, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
 import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchFrameIds, sketchSummary, type BoardSketchRequest, type SketchFrameData, type SketchSkipReason } from "./boardSketch";
 import "./board.css";
@@ -246,9 +246,10 @@ const renderCopy = {
     details: "Exact sources", roleSource: "Source", roleReference: "Reference", page: "Page", cancel: "Cancel", send: "Continue in chat", sending: "Checking the images…",
     chooseSource: "Choose the source image.", failed: "The request could not be handed to the conversation.",
     errors: { EMPTY: "Write what you would like to discuss or render.", SOURCE_REQUIRED: "Choose the source image.", TOO_MANY_REFERENCES: `Choose at most ${RENDER_REFERENCE_LIMIT} references.`,
-      DUPLICATE: "The source and each reference must be different images.", PROJECT_CHANGED: "The document list now belongs to another project. Close this dialog and reopen the Board.",
+      DUPLICATE: "The source and each reference must be different images.", PROJECT_CHANGED: "This Board and the open project no longer match. Close this dialog and reopen the Board.",
       SOURCE_CHANGED: "The source image changed or was replaced. Close this dialog and select its current page.", REFERENCE_CHANGED: "A reference image changed or was replaced. Choose the references again.",
-      UNSUPPORTED: "Only registered PNG or JPEG images can be discussed for a render." } },
+      UNSUPPORTED: "Only registered PNG or JPEG images can be discussed for a render.",
+      CONVERSATION_UNAVAILABLE: "This project's conversation is not the one open. Close this dialog, open this project's conversation and try again." } },
   "zh-CN": { action: "讨论图片 / 渲染", title: "讨论这张图片", description: "选择源图和参考图，再写下你的要求。它会作为草稿放进对话；在对话里发送之前，不会发送或生成任何内容。",
     source: "源图", sourceHint: "渲染从这张图开始。", references: `参考图（可选，最多 ${RENDER_REFERENCE_LIMIT} 张）`, referencesHint: "渲染可以借鉴的图片。",
     addReference: "添加项目图片…", referencesFull: `最多 ${RENDER_REFERENCE_LIMIT} 张参考图`, marks: "图片按已登记的原图发送；画板上的批注和文字不会一起发送。",
@@ -256,9 +257,10 @@ const renderCopy = {
     details: "精确来源", roleSource: "源图", roleReference: "参考图", page: "第", cancel: "取消", send: "在对话中继续", sending: "正在核对图片…",
     chooseSource: "请选择源图。", failed: "未能把请求交给对话。",
     errors: { EMPTY: "请写下你想讨论或渲染的内容。", SOURCE_REQUIRED: "请选择源图。", TOO_MANY_REFERENCES: `最多选择 ${RENDER_REFERENCE_LIMIT} 张参考图。`,
-      DUPLICATE: "源图和每张参考图必须是不同的图片。", PROJECT_CHANGED: "资料列表已属于另一个项目，请关闭此窗口并重新打开画板。",
+      DUPLICATE: "源图和每张参考图必须是不同的图片。", PROJECT_CHANGED: "画板与当前打开的项目已不一致，请关闭此窗口并重新打开画板。",
       SOURCE_CHANGED: "源图已变化或已被替换，请关闭此窗口并重新选择它的当前图页。", REFERENCE_CHANGED: "参考图已变化或已被替换，请重新选择参考图。",
-      UNSUPPORTED: "只有已登记的 PNG 或 JPEG 图片可以用于渲染讨论。" } },
+      UNSUPPORTED: "只有已登记的 PNG 或 JPEG 图片可以用于渲染讨论。",
+      CONVERSATION_UNAVAILABLE: "当前打开的不是此项目的对话。请关闭此窗口，打开此项目的对话后再试。" } },
 };
 
 function renderError(error: unknown, language: "en" | "zh-CN"): string {
@@ -447,6 +449,7 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPubl
   /**
    * #253: hand one image discussion (a registered source page, up to three references and the
    * person's words) to the host's conversation composer. Without it the Board offers no such action.
+   * A host that cannot take it throws a BoardRenderError; the dialog then stays open with the reason.
    */
   onRenderChatRequest?: (request: BoardRenderChatRequest) => void;
   /** The place a returning operator left, when this board is being reopened. */
@@ -1141,13 +1144,15 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   };
   const closeRender = () => { renderOpen.current = false; setRenderDraft(null); };
   // The request carries only the chosen pages and words, checked against the documents read again
-  // now. The Board scene, its save queue and any unsaved edits stay exactly as they are.
+  // now; nothing saves or flushes the Board, so its unsaved edits stay unsaved. The dialog closes
+  // only once the host conversation took the request: a refusal keeps it open with the reason.
   const submitRender = async (content: string, source: PageSource | null, references: PageSource[]) => {
-    const request = await prepareBoardRenderChatRequest(studio, board.projectId, content, source, references);
-    const handOver = renderChatRef.current;
-    if (!alive.current || !handOver) return;
-    closeRender();
-    handOver(request);
+    await handOverBoardRender(studio, board.projectId, content, source, references, (request) => {
+      const host = renderChatRef.current;
+      if (!alive.current || !host) throw new BoardRenderError("CONVERSATION_UNAVAILABLE", "No conversation can take this discussion now.");
+      host(request);
+    });
+    if (alive.current) closeRender();
   };
   const enterCrit = () => {
     closeActions();

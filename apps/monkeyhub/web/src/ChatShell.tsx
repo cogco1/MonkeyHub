@@ -8,7 +8,7 @@ import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, Chat
 import { ProjectRuntimeProvider, useProjectRevision, useStudio } from "../workspaces/src/api/ProjectRuntimeContext";
 import { projectStores, relayHubStream } from "../workspaces/src/api/projectStore";
 import type { ModelSourceDto, RenderPageRefDto, SourceDocumentDto } from "../workspaces/src/api/generated";
-import type { BoardRenderChatRequest } from "../workspaces/src/workspaces/monkeyboard/boardRender";
+import { BoardRenderError, type BoardRenderChatRequest } from "../workspaces/src/workspaces/monkeyboard/boardRender";
 import { ImageThumbnail } from "../workspaces/src/workspaces/render/RenderResults";
 import { ModelThumbnail } from "../workspaces/src/features/artifacts/ModelThumbnail";
 import { MODEL_PREVIEW_RETAINED, previewSourceKey } from "../workspaces/src/features/artifacts/useRetainedModelPreview";
@@ -1082,7 +1082,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // composer, its exact pages on the card above them. Nothing is sent until the architect sends.
   const renderHandOver = useRef<(target: { projectDir?: string; projectId?: string }, request: BoardRenderChatRequest) => void>(() => undefined);
   renderHandOver.current = (target, request) => {
-    if (!target.projectDir || request.projectId !== target.projectId || selection.current.projectDir !== target.projectDir) return;
+    // Refused back to the Board's dialog, which keeps the words: never dropped, never put in another project's conversation.
+    if (!target.projectDir || request.projectId !== target.projectId || selection.current.projectDir !== target.projectDir) {
+      throw new BoardRenderError("CONVERSATION_UNAVAILABLE", "This project's conversation is not the one open.");
+    }
     const current = selection.current.chatId;
     const shown = current ? (chat?.id === current ? chat : sessions.find((row) => row.id === current)) : undefined;
     // An external or archived conversation has no composer: the discussion starts a new one in this project.

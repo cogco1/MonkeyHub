@@ -19,8 +19,13 @@ export type BoardRenderChatRequest = {
 export const RENDER_REFERENCE_LIMIT = 3;
 
 export type BoardRenderErrorCode = "EMPTY" | "SOURCE_REQUIRED" | "TOO_MANY_REFERENCES" | "DUPLICATE"
-  | "PROJECT_CHANGED" | "SOURCE_CHANGED" | "REFERENCE_CHANGED" | "UNSUPPORTED";
+  | "PROJECT_CHANGED" | "SOURCE_CHANGED" | "REFERENCE_CHANGED" | "UNSUPPORTED" | "CONVERSATION_UNAVAILABLE";
 
+/**
+ * Why a discussion was not handed over. A host that cannot take a request
+ * throws one too (PROJECT_CHANGED, CONVERSATION_UNAVAILABLE), so the Board's
+ * dialog stays open with the person's words and the reason.
+ */
 export class BoardRenderError extends Error {
   constructor(readonly code: BoardRenderErrorCode, message: string) {
     super(message);
@@ -85,10 +90,10 @@ const pageRef = (page: PageSource): RenderPageRefDto =>
   ({ runId: page.runId, assetSha256: page.assetSha256, revisionRef: page.revisionRef, pageIndex: page.pageIndex });
 
 /**
- * Re-read the registered documents and hand over exactly the chosen pages.
+ * Re-read the registered documents and name exactly the chosen pages.
  * Each must still be a registered PNG or JPEG page of this project that no
- * newer registration has replaced. Only the document list is read: the Board
- * scene, its save queue and its unsaved edits are left as they are.
+ * newer registration has replaced. Only the document list is read, and
+ * nothing is written.
  */
 export async function prepareBoardRenderChatRequest(studio: Pick<StudioClient, "documents">, projectId: string,
   content: string, source: PageSource | null, references: readonly PageSource[]): Promise<BoardRenderChatRequest> {
@@ -110,4 +115,18 @@ export async function prepareBoardRenderChatRequest(studio: Pick<StudioClient, "
   current(source, "SOURCE_CHANGED");
   for (const page of references) current(page, "REFERENCE_CHANGED");
   return { projectId, content: words, source: pageRef(source), references: references.map(pageRef) };
+}
+
+/**
+ * Check the chosen pages, then offer the request to the host conversation.
+ * The host takes it or refuses it by throwing, and a refusal reaches the
+ * caller, which closes its dialog only once this resolves. A request that
+ * fails its own checks is never offered; nothing is saved either way.
+ */
+export async function handOverBoardRender(studio: Pick<StudioClient, "documents">, projectId: string, content: string,
+  source: PageSource | null, references: readonly PageSource[], handOver: (request: BoardRenderChatRequest) => void,
+): Promise<BoardRenderChatRequest> {
+  const request = await prepareBoardRenderChatRequest(studio, projectId, content, source, references);
+  handOver(request);
+  return request;
 }

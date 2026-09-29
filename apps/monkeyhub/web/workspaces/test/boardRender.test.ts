@@ -120,16 +120,33 @@ test("a changed project, a stale or missing revision and an unsupported page are
     (error: { code?: string }) => error.code === "EMPTY");
 });
 
-test("handing over reads documents only; the unsaved Board scene is not touched", async () => {
+test("handing over asks the project only for its documents, then gives the host exactly the checked request", async () => {
   const calls: string[] = [];
   const studio = new Proxy({}, { get: (_target, name) => {
     calls.push(String(name));
     if (name === "documents") return async () => ({ projectId: "project-a", runId: null, documents: [courtyard, result] });
     return async () => { throw new Error(`unexpected ${String(name)}`); };
-  } }) as Parameters<Module["prepareBoardRenderChatRequest"]>[0];
-  const scene = [image("far", courtyard, { x: 12.5 }), { type: "freedraw", id: "unsaved-stroke", isDeleted: false }];
-  const before = structuredClone(scene);
-  await render.prepareBoardRenderChatRequest(studio, "project-a", "Warmer concrete.", page(courtyard), [page(result)]);
-  assert.deepEqual(calls, ["documents"], "no board save, annotation write or other request");
-  assert.deepEqual(scene, before);
+  } }) as Parameters<Module["handOverBoardRender"]>[0];
+  const taken: unknown[] = [];
+  const request = await render.handOverBoardRender(studio, "project-a", " Warmer concrete. ", page(courtyard), [page(result)],
+    (value) => { taken.push(structuredClone(value)); });
+  assert.deepEqual(calls, ["documents"], "no board save, annotation write or other project request");
+  assert.deepEqual(taken, [{ projectId: "project-a", content: "Warmer concrete.", source: page(courtyard), references: [page(result)] }],
+    "the host takes the request once, as checked");
+  assert.deepEqual(request, taken[0]);
+});
+
+test("a host that cannot take the request refuses it back to the Board, and an unchecked request never reaches it", async () => {
+  const { studio } = listing([courtyard, result]);
+  const offered: unknown[] = [];
+  await assert.rejects(render.handOverBoardRender(studio, "project-a", "Warmer concrete.", page(courtyard), [page(result)], (value) => {
+    offered.push(value);
+    throw new render.BoardRenderError("CONVERSATION_UNAVAILABLE", "This project's conversation is not the one open.");
+  }), (error: { code?: string }) => error.code === "CONVERSATION_UNAVAILABLE",
+  "the refusal reaches the dialog, which stays open with it");
+  assert.equal(offered.length, 1);
+  await assert.rejects(render.handOverBoardRender(studio, "project-a", "Warmer concrete.", page(material), [],
+    () => assert.fail("a page that failed its check is not offered")), (error: { code?: string }) => error.code === "SOURCE_CHANGED");
+  await assert.rejects(render.handOverBoardRender(studio, "project-a", "  ", page(courtyard), [],
+    () => assert.fail("empty words are not offered")), (error: { code?: string }) => error.code === "EMPTY");
 });
