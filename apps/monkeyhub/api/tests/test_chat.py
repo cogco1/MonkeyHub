@@ -1810,6 +1810,9 @@ class ChatTests(unittest.TestCase):
                 self.assertEqual(layer_rule_violations(text), (), text[:160])
             for name in names:
                 self.assertEqual(layer_rule_violations(name), (), name)
+        # The domain guides studio_schema answers with are tool text too.
+        for prefix, guide in chat._GUIDES.items():
+            self.assertEqual(layer_rule_violations(guide), (), prefix)
 
     def test_the_inline_script_and_verbs_are_the_interpreters_own(self):
         """The guide's example runs as written and names the ids it promises; its verbs exist."""
