@@ -114,6 +114,10 @@ STUDIO_CANDIDATE_DELTA = "studio-candidate-delta"
 STUDIO_BOARD_SCENE = "studio-board-scene"
 STUDIO_PUBLICATION = "studio-publication"
 STUDIO_SCOPED_DECISION = "studio-scoped-decision"
+# Project memory is its own owner (#252, ADR-009): how the project works - where
+# its content is, where to look first - not what it settled, so it is neither a
+# scoped decision nor read by a build that only knows decisions.
+STUDIO_MEMORY_RECORD = "studio-memory-record"
 AUDIT_EVENT = "audit-event"
 # A Candidate is a closed-loop result plus admission (#294; owner decision Q1,
 # 2026-09-25). No existing kind can hold that verdict: a working-draft row is
@@ -178,6 +182,16 @@ _TABLE: tuple[RecordKind, ...] = (
         "strength, target, scope and exact source evidence it was said "
         "against, and the revision it supersedes; it accepts no Stage, "
         "acquires no lock and changes no design state",
+    ),
+    RecordKind(
+        STUDIO_MEMORY_RECORD,
+        "StudioMemoryRecord@1",
+        PersistenceArea.RUN_REVIEW.value,
+        "one immutable revision of one project memory item in the fixed "
+        "studio-memory run: its key, kind (a locator or a source policy), "
+        "scope, when it applies, its value, explicit authority, the user's "
+        "own words and message it was saved from, and the revision it "
+        "supersedes; it copies no content it names and changes no design state",
     ),
     RecordKind(
         CANDIDATE_ADMISSION,

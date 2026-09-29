@@ -98,55 +98,6 @@ class ChatFeedbackTests(unittest.TestCase):
         self.assertEqual(self.writes, [])
         self.assertEqual(self.client.get("/api/decisions").json()["decisions"], [])
 
-    def test_chat_retains_project_memory_but_never_a_recipe_or_other_kinds(self):
-        """#252: a source policy and a locator are saved from the user's words; a recipe is not."""
-
-        self.user("以后查材料先去 A 建材库、B 手册，别用 C 网站。")
-        # The user's words are the whole evidence and the one target goes unsaid, as the guide says.
-        guide = chat._GUIDES["/api/decisions"]
-        self.assertIn("source {kind: 'words'}", guide)
-        self.assertIn("omit targetRef (it is always research:sources)", guide)
-        self.assertIn("omit targetRef (it is always locator:content)", guide)
-        policy = {key: value for key, value in self.body.items() if key != "targetRef"}
-        policy.update({"disposition": "require", "strength": "soft_preference", "source": {"kind": "words"},
-                       "scope": {"domain": "research", "extent": "project"},
-                       "typedBinding": {"kind": "source-policy", "topic": "材料", "keys": ["materials"],
-                                        "prefer": ["A 建材库", "B 手册"], "avoid": ["C 网站"]}})
-        saved = self.tool("/api/decisions", policy)
-        self.assertEqual((saved["disposition"], saved["scope"]["domain"], saved["sourceKind"], saved["source"],
-                          saved["targetRef"]), ("require", "research", "agent", {"kind": "words"}, "research:sources"))
-        self.assertEqual(saved["rawLanguage"], self.session["messages"][-1]["content"])
-        self.assertEqual(saved["messageSource"], {"sessionId": self.session["id"], "messageId": self.session["messages"][-1]["id"]})
-        # A later turn's prepared (default) context carries it when its words are about materials.
-        context = {"projectId": self.session["projectId"], "utterance": "查一下这种砖的材料性能",
-                   **{key: self.body["source"][key] for key in ("sourceRunId", "stateDigest")}}
-        with TestClient(create_app(self.settings)) as cold:
-            handed = cold.post("/api/intents/context", json=context).json()["scopedDecisions"]
-            self.assertEqual([row["decisionId"] for row in handed], [saved["decisionId"]])
-            self.assertEqual(cold.post("/api/intents/context", json={**context, "utterance": "把檐口压低一点"})
-                             .json()["scopedDecisions"], [])
-        for change in ({"disposition": "require", "scope": {"domain": "drawing", "extent": "project"}},
-                       {"disposition": "refer", "scope": {"domain": "design", "extent": "project"}},
-                       {"disposition": "keep", "scope": {"domain": "research", "extent": "project"}},
-                       {"disposition": "require", "scope": "research"}):
-            with self.subTest(change=change), self.assertRaises(HubFailure) as refused:
-                self.tool("/api/decisions", {**policy, **change})
-            self.assertEqual(refused.exception.error.code, "CHAT_FEEDBACK_INVALID")
-        # A locator passes the chat's gate; the Runtime still checks its target (a path here, refused there).
-        with self.assertRaises(HubFailure) as target:
-            self.tool("/api/decisions", {**self.body, "disposition": "refer", "strength": "hard",
-                                         "targetRef": "locator:content", "scope": {"domain": "locator", "extent": "project"},
-                                         "typedBinding": {"kind": "locator", "label": "项目图框",
-                                                          "target": "D:/drawings/frame.dwg"}})
-        self.assertNotEqual(target.exception.error.code, "CHAT_FEEDBACK_INVALID")
-        self.assertEqual(len(self.writes), 2, "the policy and the locator reached the Runtime; the refused kinds did not")
-        # The policy is revoked from the user's later words, like avoid/keep feedback.
-        self.user("撤销刚才的查材料来源。")
-        revoked = self.tool(f"/api/decisions/{saved['decisionId']}/revisions",
-                            {"projectId": self.session["projectId"], "expectedRevisionRef": saved["revisionRef"],
-                             "action": "revoke"})
-        self.assertEqual(revoked["status"], "revoked")
-
     def test_revoke_binds_new_user_message_and_preserves_original_feedback(self):
         saved = self.save()
         original = deepcopy(self.session)
@@ -183,7 +134,7 @@ class ChatFeedbackTests(unittest.TestCase):
     def test_feedback_schema_is_the_runtime_contract_with_narrow_chat_inputs(self):
         saved = self.save()
         for path, key, hidden, field, values in (
-            ("/api/decisions", "DecisionRequestDto", {"rawLanguage", "messageSource", "sourceKind"}, "disposition", ["avoid", "keep", "refer", "require"]),
+            ("/api/decisions", "DecisionRequestDto", {"rawLanguage", "messageSource", "sourceKind"}, "disposition", ["avoid", "keep"]),
             (f"/api/decisions/{saved['decisionId']}/revisions", "DecisionRevisionRequestDto", {"reason", "revisionMessageSource", "replacement"}, "action", ["revoke"]),
         ):
             schema = self.tool(path, name="studio_schema")["components"]["schemas"][key]
@@ -191,6 +142,83 @@ class ChatFeedbackTests(unittest.TestCase):
             self.assertFalse(hidden.intersection(schema["required"]))
             self.assertEqual(schema["properties"][field]["enum"], values)
         self.assertIn("rawLanguage", self.client.get("/openapi.json").json()["components"]["schemas"]["DecisionRequestDto"]["required"])
+
+    def test_chat_saves_and_revokes_project_memory_from_the_users_words(self):
+        """#252: memory is its own owner; the chat binds the user's words to it as it does for feedback."""
+
+        self.user("以后查材料先去 A 建材库、B 手册，别用 C 网站。")
+        policy = {"projectId": self.session["projectId"], "kind": "source_policy",
+                  "value": {"topic": "材料", "keys": ["materials"], "prefer": ["A 建材库", "B 手册"], "avoid": ["C 网站"]}}
+        for change in ({"rawLanguage": "made up"}, {"sourceKind": "human"},
+                       {"messageSource": {"sessionId": "other", "messageId": "fake"}}, {"kind": "recipe"}):
+            with self.subTest(change=change), self.assertRaises(HubFailure) as refused:
+                self.tool("/api/memory", {**policy, **change})
+            self.assertEqual(refused.exception.error.code, "CHAT_FEEDBACK_INVALID")
+        self.assertEqual(self.writes, [])
+        saved = self.tool("/api/memory", deepcopy(policy))
+        self.assertEqual(saved["provenance"], {
+            "rawLanguage": self.session["messages"][-1]["content"], "sourceKind": "agent", "evidenceRefs": [],
+            "messageSource": {"sessionId": self.session["id"], "messageId": self.session["messages"][-1]["id"]}})
+        self.assertEqual((saved["kind"], saved["authority"], saved["scope"]), ("source_policy", "explicit", "project"))
+        # A later turn's prepared (default) context carries it when its words are about materials.
+        context = {"projectId": self.session["projectId"], "utterance": "查一下这种砖的材料性能",
+                   **{key: self.body["source"][key] for key in ("sourceRunId", "stateDigest")}}
+        with TestClient(create_app(self.settings)) as cold:
+            pack = cold.post("/api/intents/context", json=context).json()
+            self.assertEqual([row["memory"]["memoryId"] for row in pack["memory"]], [saved["memoryId"]])
+            self.assertEqual(pack["scopedDecisions"], [])
+            self.assertEqual(cold.post("/api/intents/context", json={**context, "utterance": "把檐口压低一点"})
+                             .json()["memory"], [])
+        # The chat reads memory, and a where-is question, through the product tool.
+        self.assertEqual([row["memoryId"] for row in self.tool("/api/memory", method="GET")["memory"]], [saved["memoryId"]])
+        self.assertEqual(self.tool("/api/memory/locate?q=图框在哪", method="GET")["locators"], [])
+        # A locator passes the chat's gate; the Runtime still checks its target (a path here, refused there).
+        with self.assertRaises(HubFailure) as target:
+            self.tool("/api/memory", {"projectId": self.session["projectId"], "kind": "locator",
+                                      "value": {"label": "项目图框", "target": "D:/drawings/frame.dwg"}})
+        self.assertEqual(target.exception.error.code, "LOCATOR_TARGET_INVALID")
+        self.assertEqual(len(self.writes), 2, "the policy and the locator reached the Runtime; the refused ones did not")
+        # Decisions stay avoid/keep only: memory is not a decision disposition.
+        for disposition in ("refer", "require"):
+            with self.subTest(disposition=disposition), self.assertRaises(HubFailure):
+                self.tool("/api/decisions", {**self.body, "disposition": disposition})
+        # Revoked from the user's later words, which the chat binds as the reason.
+        later = self.user("撤销刚才的查材料来源。")
+        with self.assertRaises(HubFailure):
+            self.tool(f"/api/memory/{saved['memoryId']}/revisions",
+                      {"projectId": self.session["projectId"], "expectedRevisionRef": saved["revisionRef"],
+                       "action": "revoke", "reason": "made up"})
+        revoked = self.tool(f"/api/memory/{saved['memoryId']}/revisions",
+                            {"projectId": self.session["projectId"], "expectedRevisionRef": saved["revisionRef"],
+                             "action": "revoke"})
+        self.assertEqual((revoked["status"], revoked["reason"], revoked["revisionMessageSource"], revoked["provenance"]),
+                         ("revoked", later["content"], {"sessionId": self.session["id"], "messageId": later["id"]},
+                          saved["provenance"]))
+        # An item a person saved in the Studio is theirs: the chat cannot revoke it.
+        person = self.client.post("/api/memory", json={**policy, "value": {**policy["value"], "topic": "规范",
+                                                                            "keys": ["regulations"]},
+                                                       "rawLanguage": "规范只查官方的", "sourceKind": "human"}).json()
+        with self.assertRaises(HubFailure) as theirs:
+            self.tool(f"/api/memory/{person['memoryId']}/revisions",
+                      {"projectId": self.session["projectId"], "expectedRevisionRef": person["revisionRef"],
+                       "action": "revoke"})
+        self.assertEqual(theirs.exception.error.code, "CHAT_FEEDBACK_UNAVAILABLE")
+
+    def test_memory_schema_is_the_runtime_contract_with_narrow_chat_inputs(self):
+        self.user("项目图框在第一页。")
+        saved = self.client.post("/api/memory", json={
+            "projectId": self.session["projectId"], "kind": "source_policy", "rawLanguage": "查材料先去 A",
+            "sourceKind": "human", "value": {"topic": "材料", "keys": ["materials"], "prefer": ["A"]}}).json()
+        for path, key, hidden in (
+            ("/api/memory", "MemoryRequestDto", {"rawLanguage", "messageSource", "sourceKind"}),
+            (f"/api/memory/{saved['memoryId']}/revisions", "MemoryRevisionRequestDto",
+             {"reason", "revisionMessageSource", "replacement"}),
+        ):
+            schema = self.tool(path, name="studio_schema")["components"]["schemas"][key]
+            self.assertFalse(hidden.intersection(schema["properties"]))
+            self.assertFalse(hidden.intersection(schema.get("required", [])))
+        self.assertEqual(schema["properties"]["action"]["enum"], ["revoke"])
+        self.assertIn("/api/memory/locate", chat._GUIDES["/api/memory"])
 
     def test_runtime_authorization_refusal_is_not_bypassed_or_retried(self):
         def deny(base, path, *args, **kwargs):

@@ -343,6 +343,58 @@ export type AgentReadingDto = {
 };
 
 /**
+ * AppliesWhenDto
+ */
+export type AppliesWhenDto = {
+    /**
+     * Domains
+     *
+     * the task domains it applies in; empty means every domain
+     */
+    domains: Array<'design' | 'drawing' | 'copy' | 'research'>;
+    /**
+     * Topics
+     */
+    topics: Array<string>;
+    /**
+     * Keys
+     */
+    keys: Array<'materials' | 'regulations' | 'products' | 'precedents'>;
+    /**
+     * Stageref
+     */
+    stageRef: string | null;
+};
+
+/**
+ * AppliesWhenRequestDto
+ */
+export type AppliesWhenRequestDto = {
+    /**
+     * Stageref
+     *
+     * an exact Stage of this project the item applies under; omitted, it applies project-wide
+     */
+    stageRef?: string | null;
+};
+
+/**
+ * ArtifactContentRefDto
+ *
+ * One retained artifact, by the sha256 its receipt certifies.
+ */
+export type ArtifactContentRefDto = {
+    /**
+     * Kind
+     */
+    kind: 'artifact';
+    /**
+     * Sha256
+     */
+    sha256: string;
+};
+
+/**
  * ArtifactListDto
  *
  * The wire form of ``GET /api/artifacts``.
@@ -362,22 +414,6 @@ export type ArtifactListDto = {
      * runs whose records could not be listed, named not hidden
      */
     skippedRuns: Array<string>;
-};
-
-/**
- * ArtifactLocatorTargetDto
- *
- * One retained artifact, by the sha256 its receipt certifies.
- */
-export type ArtifactLocatorTargetDto = {
-    /**
-     * Kind
-     */
-    kind: 'artifact';
-    /**
-     * Sha256
-     */
-    sha256: string;
 };
 
 /**
@@ -452,6 +488,26 @@ export type AuthoredControlDraftDto = {
      * the model's objects of the component, as the catalog binds them
      */
     objectNames?: Array<string>;
+};
+
+/**
+ * BoardContentRefDto
+ *
+ * One element on one exact retained board revision.
+ */
+export type BoardContentRefDto = {
+    /**
+     * Kind
+     */
+    kind: 'board';
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string;
+    /**
+     * Elementid
+     */
+    elementId: string;
 };
 
 /**
@@ -554,26 +610,6 @@ export type BoardExportRequestDto = {
      * Optional longest pixel edge for transient PNG/JPEG previews; omitted exports retain 144 dpi.
      */
     maxEdge?: number | null;
-};
-
-/**
- * BoardLocatorTargetDto
- *
- * One element on one exact retained board revision.
- */
-export type BoardLocatorTargetDto = {
-    /**
-     * Kind
-     */
-    kind: 'board';
-    /**
-     * Revisionsha256
-     */
-    revisionSha256: string;
-    /**
-     * Elementid
-     */
-    elementId: string;
 };
 
 /**
@@ -1990,11 +2026,11 @@ export type ContextPackDto = {
      */
     scopedDecisions?: Array<DecisionDto>;
     /**
-     * Locators
+     * Memory
      *
-     * the project's locators this utterance asks about, found by scope and then by its words alone, each target re-read now. A stale one is kept with its reason, never replaced by a guess; a locator names content and copies none of it
+     * the project's memory this utterance is about (studio.memory): locators, each target re-read now and a stale one kept with its reason, and source policies saying where to look first for its topic. Found by scope, then appliesWhen, then the words; it is how the project works, not a decision, and it copies no content it names
      */
-    locators?: Array<LocatorMatchDto>;
+    memory?: Array<MemoryMatchDto>;
     /**
      * Studyevidence
      *
@@ -2169,14 +2205,13 @@ export type DecisionAttributionDto = {
  * decisions), the projection's own Stage and the focus the request already
  * names answer for it. Present, it names the one domain the turn reads and is
  * checked exactly like a decision's own evidence; it never invents a Stage or a
- * design source. 'research' reads only the source policies whose topic the
- * utterance is about; no other domain is ever handed one.
+ * design source.
  */
 export type DecisionContextDto = {
     /**
      * Domain
      */
-    domain: 'drawing' | 'copy' | 'design' | 'research';
+    domain: 'drawing' | 'copy' | 'design';
     /**
      * Stageref
      */
@@ -2233,7 +2268,7 @@ export type DecisionDto = {
     /**
      * Disposition
      */
-    disposition: 'keep' | 'reject' | 'avoid' | 'require' | 'lock' | 'defer' | 'refer';
+    disposition: 'keep' | 'reject' | 'avoid' | 'require' | 'lock' | 'defer';
     /**
      * Strength
      */
@@ -2253,8 +2288,6 @@ export type DecisionDto = {
     } & DocumentDecisionSourceDto) | ({
         kind: 'design';
     } & DesignDecisionSourceDto) | ({
-        kind: 'words';
-    } & WordsDecisionSourceDto) | ({
         kind: 'recipe-export';
     } & RecipeExportDecisionSourceDto);
     /**
@@ -2272,11 +2305,7 @@ export type DecisionDto = {
         kind: 'parameter';
     } & DecisionParameterBindingDto) | ({
         kind: 'recipe';
-    } & DecisionRecipeBindingDto) | ({
-        kind: 'locator';
-    } & DecisionLocatorBindingDto) | ({
-        kind: 'source-policy';
-    } & SourcePolicyBindingDto) | null;
+    } & DecisionRecipeBindingDto) | null;
     attribution: DecisionAttributionDto;
     /**
      * Createdat
@@ -2322,32 +2351,6 @@ export type DecisionListDto = {
      * Decisions
      */
     decisions: Array<DecisionDto>;
-};
-
-/**
- * DecisionLocatorBindingDto
- *
- * What this locator points at, as it was resolved when saved.
- */
-export type DecisionLocatorBindingDto = {
-    /**
-     * Kind
-     */
-    kind: 'locator';
-    /**
-     * Label
-     */
-    label: string;
-    /**
-     * Target
-     */
-    target: ({
-        kind: 'document';
-    } & DocumentLocatorTargetDto) | ({
-        kind: 'artifact';
-    } & ArtifactLocatorTargetDto) | ({
-        kind: 'board';
-    } & BoardLocatorTargetDto);
 };
 
 /**
@@ -2420,22 +2423,18 @@ export type DecisionRequestDto = {
     /**
      * Disposition
      */
-    disposition: 'keep' | 'reject' | 'avoid' | 'require' | 'lock' | 'defer' | 'refer';
+    disposition: 'keep' | 'reject' | 'avoid' | 'require' | 'lock' | 'defer';
     /**
      * Strength
      */
     strength: 'hard' | 'strong_preference' | 'soft_preference' | 'temporary';
     /**
      * Targetref
-     *
-     * what the decision is about; may be omitted in the locator and research domains, whose one target (locator:content, research:sources) is then filled in
      */
-    targetRef?: string | null;
+    targetRef: string;
     scope: DecisionScopeDto;
     /**
      * Source
-     *
-     * the exact evidence it was said against; {kind: 'words'} (the user's message named in messageSource, nothing else) evidences a source policy only
      */
     source: ({
         kind: 'board';
@@ -2443,9 +2442,7 @@ export type DecisionRequestDto = {
         kind: 'document';
     } & DocumentDecisionSourceDto) | ({
         kind: 'design';
-    } & DesignDecisionSourceDto) | ({
-        kind: 'words';
-    } & WordsDecisionSourceDto);
+    } & DesignDecisionSourceDto);
     /**
      * Applicability
      *
@@ -2461,17 +2458,13 @@ export type DecisionRequestDto = {
     /**
      * Typedbinding
      *
-     * 'parameter' names a design parameter whose value, unit and lock the server reads itself; 'recipe' carries a project recipe's paper-space values, retained only for a person's confirmed 'require' decision in the drawing domain; 'locator' names retained project content for a 'refer' decision in the locator domain; 'source-policy' says where to look first for a topic, for a 'require' decision in the research domain
+     * 'parameter' names a design parameter whose value, unit and lock the server reads itself; 'recipe' carries a project recipe's paper-space values, retained only for a person's confirmed 'require' decision in the drawing domain
      */
     typedBinding?: ({
         kind: 'parameter';
     } & ParameterBindingRequestDto) | ({
         kind: 'recipe';
-    } & RecipeBindingRequestDto) | ({
-        kind: 'locator';
-    } & LocatorBindingRequestDto) | ({
-        kind: 'source-policy';
-    } & SourcePolicyBindingDto) | null;
+    } & RecipeBindingRequestDto) | null;
 };
 
 /**
@@ -2512,7 +2505,7 @@ export type DecisionScopeDto = {
     /**
      * Domain
      */
-    domain: 'drawing' | 'copy' | 'design' | 'research' | 'locator';
+    domain: 'drawing' | 'copy' | 'design';
     /**
      * Extent
      */
@@ -3046,6 +3039,34 @@ export type DocumentCommentsDto = {
 };
 
 /**
+ * DocumentContentRefDto
+ *
+ * One registered document at its exact revision, and one page of it when named.
+ */
+export type DocumentContentRefDto = {
+    /**
+     * Kind
+     */
+    kind: 'document';
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex?: number | null;
+};
+
+/**
  * DocumentDecisionSourceDto
  *
  * One registered page of one document at the exact revision it was read at.
@@ -3124,34 +3145,6 @@ export type DocumentGestureDto = {
      * Required only for polyline: whether the ordered editable vertices close into a contour. The first point is not repeated.
      */
     closed?: boolean | null;
-};
-
-/**
- * DocumentLocatorTargetDto
- *
- * One registered document at its exact revision, and one page of it when named.
- */
-export type DocumentLocatorTargetDto = {
-    /**
-     * Kind
-     */
-    kind: 'document';
-    /**
-     * Runid
-     */
-    runId: string;
-    /**
-     * Assetsha256
-     */
-    assetSha256: string;
-    /**
-     * Revisionref
-     */
-    revisionRef?: string | null;
-    /**
-     * Pageindex
-     */
-    pageIndex?: number | null;
 };
 
 /**
@@ -5115,20 +5108,34 @@ export type LocalDraftSourceDto = {
 };
 
 /**
- * LocatorBindingRequestDto
+ * LocatorValueDto
+ */
+export type LocatorValueDto = {
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Target
+     */
+    target: ({
+        kind: 'document';
+    } & DocumentContentRefDto) | ({
+        kind: 'artifact';
+    } & ArtifactContentRefDto) | ({
+        kind: 'board';
+    } & BoardContentRefDto);
+};
+
+/**
+ * LocatorValueRequestDto
  *
  * Where one piece of retained project content is, under the name the user calls it.
  *
- * A 'refer' decision in the locator domain, applying by 'scope' to the project
- * or one Stage. The target must resolve now; a string target (an absolute
- * machine path or a URL) is refused with its reason: register the file first.
- * Saved for sourceKind 'human', or 'agent' with the user's messageSource.
+ * The target must resolve now. A string target (an absolute machine path or a
+ * URL) is refused with its reason: register the file as a project document first.
  */
-export type LocatorBindingRequestDto = {
-    /**
-     * Kind
-     */
-    kind: 'locator';
+export type LocatorValueRequestDto = {
     /**
      * Label
      *
@@ -5142,55 +5149,11 @@ export type LocatorBindingRequestDto = {
      */
     target: ({
         kind: 'document';
-    } & DocumentLocatorTargetDto) | ({
+    } & DocumentContentRefDto) | ({
         kind: 'artifact';
-    } & ArtifactLocatorTargetDto) | ({
+    } & ArtifactContentRefDto) | ({
         kind: 'board';
-    } & BoardLocatorTargetDto) | string;
-};
-
-/**
- * LocatorListDto
- */
-export type LocatorListDto = {
-    /**
-     * Projectid
-     */
-    projectId: string;
-    /**
-     * Query
-     */
-    query: string;
-    /**
-     * Locators
-     */
-    locators: Array<LocatorMatchDto>;
-};
-
-/**
- * LocatorMatchDto
- *
- * One locator a lookup found, and whether its target resolves now.
- *
- * 'stale' is never dropped: the content moved or went, and staleReason says
- * how. Nothing is guessed in its place.
- */
-export type LocatorMatchDto = {
-    decision: DecisionDto;
-    /**
-     * Status
-     */
-    status: 'current' | 'stale';
-    /**
-     * Stalereason
-     */
-    staleReason: string | null;
-    /**
-     * Matchedterms
-     *
-     * the normalized terms the words shared with this locator
-     */
-    matchedTerms: Array<string>;
+    } & BoardContentRefDto) | string;
 };
 
 /**
@@ -5391,6 +5354,249 @@ export type MassingOptionRequestDto = {
     programTargets?: {
         [key: string]: number;
     } | null;
+};
+
+/**
+ * MemoryDto
+ *
+ * One memory item at one revision, as this project retains it.
+ */
+export type MemoryDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Memoryid
+     */
+    memoryId: string;
+    /**
+     * Revisionref
+     */
+    revisionRef: string;
+    /**
+     * Previousrevisionref
+     */
+    previousRevisionRef: string | null;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Status
+     *
+     * 'superseded' is derived: a revision that is no longer its chain's tip
+     */
+    status: 'active' | 'superseded' | 'revoked';
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Kind
+     */
+    kind: 'locator' | 'source_policy';
+    /**
+     * Scope
+     */
+    scope: 'project';
+    appliesWhen: AppliesWhenDto;
+    /**
+     * Value
+     */
+    value: LocatorValueDto | SourcePolicyValueDto;
+    /**
+     * Authority
+     */
+    authority: 'explicit';
+    provenance: MemoryProvenanceDto;
+    attribution: DecisionAttributionDto;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    revisionMessageSource?: MessageSourceDto | null;
+};
+
+/**
+ * MemoryHistoryDto
+ */
+export type MemoryHistoryDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Memoryid
+     */
+    memoryId: string;
+    /**
+     * Revisions
+     */
+    revisions: Array<MemoryDto>;
+};
+
+/**
+ * MemoryListDto
+ */
+export type MemoryListDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Memory
+     */
+    memory: Array<MemoryDto>;
+};
+
+/**
+ * MemoryLocateDto
+ */
+export type MemoryLocateDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Query
+     */
+    query: string;
+    /**
+     * Locators
+     */
+    locators: Array<MemoryMatchDto>;
+};
+
+/**
+ * MemoryMatchDto
+ *
+ * One item a turn's words are about.
+ *
+ * A locator's 'stale' is never dropped: the content moved or went, and
+ * staleReason says how. Nothing is guessed in its place. A source policy is
+ * always 'current'.
+ */
+export type MemoryMatchDto = {
+    memory: MemoryDto;
+    /**
+     * Status
+     */
+    status: 'current' | 'stale';
+    /**
+     * Stalereason
+     */
+    staleReason: string | null;
+    /**
+     * Matchedterms
+     *
+     * the normalized terms the words shared with this item
+     */
+    matchedTerms: Array<string>;
+};
+
+/**
+ * MemoryProvenanceDto
+ */
+export type MemoryProvenanceDto = {
+    /**
+     * Rawlanguage
+     */
+    rawLanguage: string;
+    messageSource: MessageSourceDto | null;
+    /**
+     * Sourcekind
+     */
+    sourceKind: 'human' | 'agent';
+    /**
+     * Evidencerefs
+     */
+    evidenceRefs: Array<DocumentContentRefDto | ArtifactContentRefDto | BoardContentRefDto>;
+};
+
+/**
+ * MemoryRequestDto
+ *
+ * One memory item, saved from the user's own words or a person's explicit action.
+ *
+ * 'agent' names the user's message in messageSource: an agent never saves one
+ * as the user's on its own, and nothing is inferred from behaviour.
+ */
+export type MemoryRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Kind
+     *
+     * 'locator' (value {label, target}) or 'source_policy' (value {topic, keys, prefer, avoid, note}); recipe, preference, habit and standard are reserved
+     */
+    kind: 'locator' | 'source_policy';
+    /**
+     * Value
+     */
+    value: LocatorValueRequestDto | SourcePolicyValueDto;
+    /**
+     * Scope
+     *
+     * organization, team and user are reserved for the library project
+     */
+    scope?: 'project';
+    appliesWhen?: AppliesWhenRequestDto | null;
+    /**
+     * Authority
+     *
+     * observed and inferred are reserved
+     */
+    authority?: 'explicit';
+    /**
+     * Rawlanguage
+     *
+     * the user's own words, unedited
+     */
+    rawLanguage: string;
+    messageSource?: MessageSourceDto | null;
+    /**
+     * Sourcekind
+     */
+    sourceKind: 'human' | 'agent';
+    /**
+     * Evidencerefs
+     *
+     * retained content the words were said about, if any; the user's message alone is enough
+     */
+    evidenceRefs?: Array<DocumentContentRefDto | ArtifactContentRefDto | BoardContentRefDto>;
+};
+
+/**
+ * MemoryRevisionRequestDto
+ *
+ * Revoke or supersede one memory item, against the revision the caller read.
+ */
+export type MemoryRevisionRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Expectedrevisionref
+     */
+    expectedRevisionRef: string;
+    /**
+     * Action
+     */
+    action: 'revoke' | 'supersede';
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    revisionMessageSource?: MessageSourceDto | null;
+    replacement?: MemoryRequestDto | null;
 };
 
 /**
@@ -10848,20 +11054,14 @@ export type SourceDocumentRequestDto = {
 };
 
 /**
- * SourcePolicyBindingDto
+ * SourcePolicyValueDto
  *
  * Where to look first for a research topic, and what to avoid.
  *
- * A 'require' decision in the research domain, applying by 'scope'. Held hard,
- * it must be followed: use a preferred source, never an avoided one. Held as
- * a preference, it is a default the current request can override. Saved for
- * sourceKind 'human', or 'agent' with the user's messageSource.
+ * A soft default the current request can override unless the user's words
+ * say it must be followed; say which sources were used.
  */
-export type SourcePolicyBindingDto = {
-    /**
-     * Kind
-     */
-    kind: 'source-policy';
+export type SourcePolicyValueDto = {
     /**
      * Topic
      *
@@ -12443,22 +12643,6 @@ export type VolumesDto = {
      * Honesty
      */
     honesty: Array<string>;
-};
-
-/**
- * WordsDecisionSourceDto
- *
- * The user's own message, named in messageSource, and nothing on screen.
- *
- * Evidences a source policy (the research domain) only: "查材料先去 A、B,别用 C"
- * is about no page, board or design, so a new project can hold one. A person's
- * action without a message names what it was taken on instead.
- */
-export type WordsDecisionSourceDto = {
-    /**
-     * Kind
-     */
-    kind: 'words';
 };
 
 /**
@@ -14836,52 +15020,6 @@ export type CreateDecisionApiDecisionsPostResponses = {
 };
 
 export type CreateDecisionApiDecisionsPostResponse = CreateDecisionApiDecisionsPostResponses[keyof CreateDecisionApiDecisionsPostResponses];
-
-export type FindLocatorsApiLocatorsGetData = {
-    body?: never;
-    headers?: {
-        /**
-         * X-Monkey-Operation
-         */
-        'x-monkey-operation'?: string | null;
-        /**
-         * X-Monkey-Parent
-         */
-        'x-monkey-parent'?: string | null;
-    };
-    path?: never;
-    query: {
-        /**
-         * Q
-         *
-         * the words asking where something is
-         */
-        q: string;
-        /**
-         * Stageref
-         */
-        stageRef?: string | null;
-    };
-    url: '/api/locators';
-};
-
-export type FindLocatorsApiLocatorsGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type FindLocatorsApiLocatorsGetError = FindLocatorsApiLocatorsGetErrors[keyof FindLocatorsApiLocatorsGetErrors];
-
-export type FindLocatorsApiLocatorsGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: LocatorListDto;
-};
-
-export type FindLocatorsApiLocatorsGetResponse = FindLocatorsApiLocatorsGetResponses[keyof FindLocatorsApiLocatorsGetResponses];
 
 export type ReadDecisionApiDecisionsDecisionIdGetData = {
     body?: never;
@@ -17978,6 +18116,207 @@ export type ReadWorkingSourceApiWorkingSourceGetResponses = {
 };
 
 export type ReadWorkingSourceApiWorkingSourceGetResponse = ReadWorkingSourceApiWorkingSourceGetResponses[keyof ReadWorkingSourceApiWorkingSourceGetResponses];
+
+export type ReadMemoryApiMemoryGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Kind
+         */
+        kind?: 'locator' | 'source_policy' | null;
+    };
+    url: '/api/memory';
+};
+
+export type ReadMemoryApiMemoryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadMemoryApiMemoryGetError = ReadMemoryApiMemoryGetErrors[keyof ReadMemoryApiMemoryGetErrors];
+
+export type ReadMemoryApiMemoryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MemoryListDto;
+};
+
+export type ReadMemoryApiMemoryGetResponse = ReadMemoryApiMemoryGetResponses[keyof ReadMemoryApiMemoryGetResponses];
+
+export type CreateMemoryApiMemoryPostData = {
+    body: MemoryRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/memory';
+};
+
+export type CreateMemoryApiMemoryPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateMemoryApiMemoryPostError = CreateMemoryApiMemoryPostErrors[keyof CreateMemoryApiMemoryPostErrors];
+
+export type CreateMemoryApiMemoryPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: MemoryDto;
+};
+
+export type CreateMemoryApiMemoryPostResponse = CreateMemoryApiMemoryPostResponses[keyof CreateMemoryApiMemoryPostResponses];
+
+export type LocateApiMemoryLocateGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Q
+         *
+         * the words asking where something is
+         */
+        q: string;
+        /**
+         * Stageref
+         */
+        stageRef?: string | null;
+    };
+    url: '/api/memory/locate';
+};
+
+export type LocateApiMemoryLocateGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LocateApiMemoryLocateGetError = LocateApiMemoryLocateGetErrors[keyof LocateApiMemoryLocateGetErrors];
+
+export type LocateApiMemoryLocateGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MemoryLocateDto;
+};
+
+export type LocateApiMemoryLocateGetResponse = LocateApiMemoryLocateGetResponses[keyof LocateApiMemoryLocateGetResponses];
+
+export type ReadMemoryItemApiMemoryMemoryIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Memory Id
+         */
+        memory_id: string;
+    };
+    query?: never;
+    url: '/api/memory/{memory_id}';
+};
+
+export type ReadMemoryItemApiMemoryMemoryIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadMemoryItemApiMemoryMemoryIdGetError = ReadMemoryItemApiMemoryMemoryIdGetErrors[keyof ReadMemoryItemApiMemoryMemoryIdGetErrors];
+
+export type ReadMemoryItemApiMemoryMemoryIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MemoryHistoryDto;
+};
+
+export type ReadMemoryItemApiMemoryMemoryIdGetResponse = ReadMemoryItemApiMemoryMemoryIdGetResponses[keyof ReadMemoryItemApiMemoryMemoryIdGetResponses];
+
+export type ReviseMemoryApiMemoryMemoryIdRevisionsPostData = {
+    body: MemoryRevisionRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Memory Id
+         */
+        memory_id: string;
+    };
+    query?: never;
+    url: '/api/memory/{memory_id}/revisions';
+};
+
+export type ReviseMemoryApiMemoryMemoryIdRevisionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReviseMemoryApiMemoryMemoryIdRevisionsPostError = ReviseMemoryApiMemoryMemoryIdRevisionsPostErrors[keyof ReviseMemoryApiMemoryMemoryIdRevisionsPostErrors];
+
+export type ReviseMemoryApiMemoryMemoryIdRevisionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: MemoryDto;
+};
+
+export type ReviseMemoryApiMemoryMemoryIdRevisionsPostResponse = ReviseMemoryApiMemoryMemoryIdRevisionsPostResponses[keyof ReviseMemoryApiMemoryMemoryIdRevisionsPostResponses];
 
 export type RequestProjectionApiProjectionsGetData = {
     body?: never;

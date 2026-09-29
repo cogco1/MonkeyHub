@@ -117,6 +117,8 @@ NO_VERSION_IDENTITY = {
     "StudioRenderJob@2": "an image attempt bound to document, model-content and Stage refs; its run manifest owns the canonical base",
     "StudioScopedDecision@1": "a scoped judgement: it names content digests, run ids and record "
     "refs, and embeds no canonical version; its fixed run manifest owns that base",
+    "StudioMemoryRecord@1": "a project memory item: it names content digests and record refs, and embeds no "
+    "canonical version; its fixed run manifest owns that base",
     "StudioSourceDocument@1": "an uploaded document by digest; no base",
     "StudioWorkingCopy@1": "a work copy by digest; no base",
 }

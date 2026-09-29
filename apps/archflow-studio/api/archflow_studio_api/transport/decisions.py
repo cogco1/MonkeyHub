@@ -6,9 +6,7 @@ reaches, and the exact evidence it was said against. The server adds only what
 it can vouch for itself — the decision's identity, its revision chain, who
 asked for it through which surface, and the parameter value it read. A
 project recipe's paper-space values are the one binding the caller states:
-they are what the person chose. A locator's target and label, and a source
-policy's topic and sources, are the user's too: project memory (#252) is these
-two decision forms, not a second store.
+they are what the person chose.
 """
 
 from __future__ import annotations
@@ -17,18 +15,14 @@ from typing import Annotated, Any, Literal, Mapping, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ..application.decisions import DecisionRevision, LocatorMatch
+from ..application.decisions import DecisionRevision
 from .drawings import PlanRequestDto
 
 SHA256 = r"^[0-9a-f]{64}$"
 
-Disposition = Literal["keep", "reject", "avoid", "require", "lock", "defer", "refer"]
+Disposition = Literal["keep", "reject", "avoid", "require", "lock", "defer"]
 Strength = Literal["hard", "strong_preference", "soft_preference", "temporary"]
-Domain = Literal["drawing", "copy", "design", "research", "locator"]
-# What a turn can read as its domain. Locators are looked up by the turn's
-# words instead (ContextPack ``locators``, GET /api/locators).
-ContextDomain = Literal["drawing", "copy", "design", "research"]
-ResearchKey = Literal["materials", "regulations", "products", "precedents"]
+Domain = Literal["drawing", "copy", "design"]
 Extent = Literal["project", "stage", "targets"]
 Applicability = Literal["scope", "exact-source"]
 SourceKind = Literal["human", "agent", "evaluator", "deterministic-rule"]
@@ -80,27 +74,8 @@ class RecipeExportDecisionSourceDto(_Frozen):
     export_sha256: str = Field(alias="exportSha256", pattern=SHA256)
 
 
-class WordsDecisionSourceDto(_Frozen):
-    """The user's own message, named in messageSource, and nothing on screen.
-
-    Evidences a source policy (the research domain) only: "查材料先去 A、B,别用 C"
-    is about no page, board or design, so a new project can hold one. A person's
-    action without a message names what it was taken on instead.
-    """
-
-    kind: Literal["words"]
-
-
-# What a turn or a decision can be said while looking at.
 DecisionSourceDto = Annotated[
     Union[BoardDecisionSourceDto, DocumentDecisionSourceDto, DesignDecisionSourceDto],
-    Field(discriminator="kind"),
-]
-
-# What a decision request can cite: what it was said while looking at, or the
-# user's words alone.
-DecisionRequestSourceDto = Annotated[
-    Union[BoardDecisionSourceDto, DocumentDecisionSourceDto, DesignDecisionSourceDto, WordsDecisionSourceDto],
     Field(discriminator="kind"),
 ]
 
@@ -108,7 +83,7 @@ DecisionRequestSourceDto = Annotated[
 # imported recipe came from.
 RetainedDecisionSourceDto = Annotated[
     Union[BoardDecisionSourceDto, DocumentDecisionSourceDto, DesignDecisionSourceDto,
-          WordsDecisionSourceDto, RecipeExportDecisionSourceDto],
+          RecipeExportDecisionSourceDto],
     Field(discriminator="kind"),
 ]
 
@@ -222,73 +197,8 @@ class RecipeInspectDto(_Frozen):
     import_strength: Literal["soft_preference"] = Field(alias="importStrength", default="soft_preference")
 
 
-class DocumentLocatorTargetDto(_Frozen):
-    """One registered document at its exact revision, and one page of it when named."""
-
-    kind: Literal["document"]
-    run_id: str = Field(alias="runId", min_length=1, max_length=128)
-    asset_sha256: str = Field(alias="assetSha256", pattern=SHA256)
-    revision_ref: str | None = Field(alias="revisionRef", default=None, min_length=1)
-    page_index: int | None = Field(alias="pageIndex", default=None, ge=0, strict=True)
-
-
-class ArtifactLocatorTargetDto(_Frozen):
-    """One retained artifact, by the sha256 its receipt certifies."""
-
-    kind: Literal["artifact"]
-    sha256: str = Field(pattern=SHA256)
-
-
-class BoardLocatorTargetDto(_Frozen):
-    """One element on one exact retained board revision."""
-
-    kind: Literal["board"]
-    revision_sha256: str = Field(alias="revisionSha256", pattern=SHA256)
-    element_id: str = Field(alias="elementId", min_length=1, max_length=256)
-
-
-LocatorTargetDto = Annotated[
-    Union[DocumentLocatorTargetDto, ArtifactLocatorTargetDto, BoardLocatorTargetDto],
-    Field(discriminator="kind"),
-]
-
-
-class LocatorBindingRequestDto(_Frozen):
-    """Where one piece of retained project content is, under the name the user calls it.
-
-    A 'refer' decision in the locator domain, applying by 'scope' to the project
-    or one Stage. The target must resolve now; a string target (an absolute
-    machine path or a URL) is refused with its reason: register the file first.
-    Saved for sourceKind 'human', or 'agent' with the user's messageSource.
-    """
-
-    kind: Literal["locator"]
-    label: str = Field(min_length=1, max_length=80, description="the user's short name for it, e.g. 项目图框")
-    target: Union[LocatorTargetDto, Annotated[str, Field(max_length=4096)]] = Field(
-        description="the retained content itself; a string is accepted only to be refused with its reason")
-
-
-class SourcePolicyBindingDto(_Frozen):
-    """Where to look first for a research topic, and what to avoid.
-
-    A 'require' decision in the research domain, applying by 'scope'. Held hard,
-    it must be followed: use a preferred source, never an avoided one. Held as
-    a preference, it is a default the current request can override. Saved for
-    sourceKind 'human', or 'agent' with the user's messageSource.
-    """
-
-    kind: Literal["source-policy"]
-    topic: str = Field(min_length=1, max_length=200, description="the topic in the user's words")
-    keys: list[ResearchKey] = Field(min_length=1, max_length=4)
-    prefer: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(
-        default_factory=list, max_length=16, description="sources to look in first, in order: site domains or names")
-    avoid: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(
-        default_factory=list, max_length=16, description="sources not to use: site domains or names")
-    note: str | None = Field(default=None, max_length=500)
-
-
 TypedBindingRequestDto = Annotated[
-    Union[ParameterBindingRequestDto, RecipeBindingRequestDto, LocatorBindingRequestDto, SourcePolicyBindingDto],
+    Union[ParameterBindingRequestDto, RecipeBindingRequestDto],
     Field(discriminator="kind"),
 ]
 
@@ -314,16 +224,8 @@ class DecisionRecipeBindingDto(_Frozen):
     graphics: RecipeGraphicsDto
 
 
-class DecisionLocatorBindingDto(_Frozen):
-    """What this locator points at, as it was resolved when saved."""
-
-    kind: Literal["locator"]
-    label: str
-    target: LocatorTargetDto
-
-
 DecisionTypedBindingDto = Annotated[
-    Union[DecisionParameterBindingDto, DecisionRecipeBindingDto, DecisionLocatorBindingDto, SourcePolicyBindingDto],
+    Union[DecisionParameterBindingDto, DecisionRecipeBindingDto],
     Field(discriminator="kind"),
 ]
 
@@ -343,16 +245,9 @@ class DecisionRequestDto(_Frozen):
     )
     disposition: Disposition
     strength: Strength
-    target_ref: str | None = Field(
-        alias="targetRef", default=None, min_length=1, max_length=192,
-        description="what the decision is about; may be omitted in the locator and research domains, whose one "
-        "target (locator:content, research:sources) is then filled in",
-    )
+    target_ref: str = Field(alias="targetRef", min_length=1, max_length=192)
     scope: DecisionScopeDto
-    source: DecisionRequestSourceDto = Field(
-        description="the exact evidence it was said against; {kind: 'words'} (the user's message named in "
-        "messageSource, nothing else) evidences a source policy only",
-    )
+    source: DecisionSourceDto
     applicability: Applicability = Field(
         description="'scope' survives later revisions inside the scope; 'exact-source' applies "
         "only while the caller reads the very source it was said against",
@@ -368,9 +263,7 @@ class DecisionRequestDto(_Frozen):
         alias="typedBinding", default=None,
         description="'parameter' names a design parameter whose value, unit and lock the server reads "
         "itself; 'recipe' carries a project recipe's paper-space values, retained only for a person's "
-        "confirmed 'require' decision in the drawing domain; 'locator' names retained project content for "
-        "a 'refer' decision in the locator domain; 'source-policy' says where to look first for a topic, "
-        "for a 'require' decision in the research domain",
+        "confirmed 'require' decision in the drawing domain",
     )
 
 
@@ -453,11 +346,10 @@ class DecisionContextDto(_Frozen):
     decisions), the projection's own Stage and the focus the request already
     names answer for it. Present, it names the one domain the turn reads and is
     checked exactly like a decision's own evidence; it never invents a Stage or a
-    design source. 'research' reads only the source policies whose topic the
-    utterance is about; no other domain is ever handed one.
+    design source.
     """
 
-    domain: ContextDomain
+    domain: Domain
     stage_ref: str | None = Field(alias="stageRef", default=None, min_length=1)
     target_refs: list[Annotated[str, Field(min_length=1, max_length=192)]] | None = Field(
         alias="targetRefs", default=None, max_length=32,
@@ -496,29 +388,3 @@ def decision_dto(revision: DecisionRevision, *, status: str | None = None) -> De
         reason=payload["reason"],
         revisionMessageSource=payload.get("revisionMessageSource"),
     )
-
-
-class LocatorMatchDto(_Frozen):
-    """One locator a lookup found, and whether its target resolves now.
-
-    'stale' is never dropped: the content moved or went, and staleReason says
-    how. Nothing is guessed in its place.
-    """
-
-    decision: DecisionDto
-    status: Literal["current", "stale"]
-    stale_reason: str | None = Field(alias="staleReason")
-    matched_terms: list[str] = Field(alias="matchedTerms",
-                                     description="the normalized terms the words shared with this locator")
-
-
-class LocatorListDto(_Frozen):
-    project_id: str = Field(alias="projectId")
-    query: str
-    locators: list[LocatorMatchDto]
-
-
-def locator_match_dto(match: LocatorMatch) -> LocatorMatchDto:
-    return LocatorMatchDto(decision=decision_dto(match.revision),
-                           status="current" if match.stale_reason is None else "stale",
-                           staleReason=match.stale_reason, matchedTerms=list(match.matched_terms))

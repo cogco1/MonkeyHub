@@ -10,4 +10,4 @@ One file per decision a later session would be tempted to reverse. Ten lines eac
 - [ADR-006-semantics-compile-to-registered-ids](ADR-006-semantics-compile-to-registered-ids.md)
 - [ADR-007-container-states-and-stage-rules](ADR-007-container-states-and-stage-rules.md)
 - [ADR-008-one-tree-many-projections](ADR-008-one-tree-many-projections.md)
-- [ADR-009-memory-is-scoped-decisions](ADR-009-memory-is-scoped-decisions.md)
+- [ADR-009-memory-layer](ADR-009-memory-layer.md)

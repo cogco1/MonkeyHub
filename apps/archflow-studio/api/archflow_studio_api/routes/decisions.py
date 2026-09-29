@@ -17,13 +17,11 @@ from ..transport.decisions import (
     DecisionListDto,
     DecisionRequestDto,
     DecisionRevisionRequestDto,
-    LocatorListDto,
     RecipeImportRequestDto,
     RecipeInspectRequestDto,
     RecipeInspectDto,
     RecipeExportFileDto,
     decision_dto,
-    locator_match_dto,
 )
 from ..transport.errors import StudioError
 
@@ -46,24 +44,6 @@ def read_decisions(request: Request) -> DecisionListDto:
         projectId=binding.project_id,
         decisions=[decision_dto(row) for row in decisions.list_decisions(binding)],
     )
-
-
-@router.get("/locators", response_model=LocatorListDto, response_model_by_alias=True)
-def find_locators(
-    request: Request,
-    q: str = Query(min_length=1, max_length=2000, description="the words asking where something is"),
-    stage_ref: str | None = Query(alias="stageRef", default=None, min_length=1),
-) -> LocatorListDto:
-    """Where retained content is, by the user's words: each target re-read now, stale ones kept.
-
-    The context read hands the same matches for a turn's utterance; this read
-    needs no design source, so a project with only documents or a board can ask.
-    """
-
-    binding = bound_project(request.app.state)
-    return LocatorListDto(projectId=binding.project_id, query=q,
-                          locators=[locator_match_dto(row) for row in
-                                    decisions.find_locators(binding, q, stage_ref=stage_ref)])
 
 
 @router.get("/decisions/{decision_id}", response_model=DecisionHistoryDto, response_model_by_alias=True)

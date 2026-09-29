@@ -31,7 +31,8 @@ from ..application.visual_observation import (
 )
 from ..application.visual_reviews import planned_frames
 from .capability import CapabilitySourceDto, CapabilityTargetDto, KeepScopeDto, detail_dto
-from .decisions import DecisionContextDto, DecisionDto, LocatorMatchDto, decision_dto, locator_match_dto
+from .decisions import DecisionContextDto, DecisionDto, decision_dto
+from .memory import MemoryMatchDto, memory_match_dto
 from .proposal import STATE_DIGEST_PATTERN, ProposalDto
 from .artifacts import ModelSourceDto, model_source_dto
 from .study import StudyRevisionRequestDto, study_evidence_dto
@@ -547,11 +548,12 @@ class ContextPackDto(BaseModel):
         "deferred, superseded and derived-stale ones are left out, and no transcript is "
         "carried; it authorizes nothing and changes no reference",
     )
-    locators: list[LocatorMatchDto] = Field(
+    memory: list[MemoryMatchDto] = Field(
         default_factory=list,
-        description="the project's locators this utterance asks about, found by scope and then by its words "
-        "alone, each target re-read now. A stale one is kept with its reason, never replaced by a guess; "
-        "a locator names content and copies none of it",
+        description="the project's memory this utterance is about (studio.memory): locators, each target re-read "
+        "now and a stale one kept with its reason, and source policies saying where to look first for its topic. "
+        "Found by scope, then appliesWhen, then the words; it is how the project works, not a decision, and it "
+        "copies no content it names",
     )
     study_evidence: list[dict[str, Any]] = Field(
         alias="studyEvidence", default_factory=list,
@@ -884,7 +886,7 @@ BLOCKED_NOTE = (
 def context_pack_dto(
     description, context, preflight: Mapping[str, Any] | None, model_facts: Mapping[str, Any],
     *, confirmed_stage: Mapping[str, Any] | None = None, scoped_decisions: Sequence[Any] = (),
-    locators: Sequence[Any] = (), study_evidence: Sequence[Mapping[str, Any]] = (),
+    memory: Sequence[Any] = (), study_evidence: Sequence[Mapping[str, Any]] = (),
 ) -> ContextPackDto:
     """One capability description and one compiled read context, as the pack.
 
@@ -907,7 +909,7 @@ def context_pack_dto(
         preflight=None if preflight is None else dict(preflight),
         confirmed_stage=None if confirmed_stage is None else ConfirmedStageContextDto(**confirmed_stage),
         scoped_decisions=[decision_dto(row) for row in scoped_decisions],
-        locators=[locator_match_dto(row) for row in locators],
+        memory=[memory_match_dto(row) for row in memory],
         study_evidence=[study_evidence_dto(row) for row in study_evidence],
         honesty=[
             *detail.honesty,
