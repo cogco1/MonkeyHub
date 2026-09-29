@@ -1,4 +1,31 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-253",
+      "lanes": [
+        {
+          "id": "board-render",
+          "status": "active",
+          "branch": "codex/253-board-render",
+          "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-253-board-render",
+          "base_ref": "5e327d08",
+          "contributor": "Claude (continuing Codex's interrupted GH-253 Board integration)",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "hub.shell",
+            "studio.board"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "docs/SYSTEM_MAP.md",
+            "governance/module_registry.json"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
