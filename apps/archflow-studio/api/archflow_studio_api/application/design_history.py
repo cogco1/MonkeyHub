@@ -1539,6 +1539,10 @@ def _requested(spec: Mapping[str, Any]) -> dict[str, Any]:
         raise _admission_invalid("Each result is admitted, rejected or withdrawn.")
     if task["kind"] != TASK_HUB_CHAT and any(row["outcome"] == WITHDRAWN for row in results):
         raise _admission_invalid("Only the Hub Agent withdraws a result it made in its chat; a person rejects one.")
+    if any(row["outcome"] == WITHDRAWN for row in results) and any(row["outcome"] != WITHDRAWN for row in results):
+        # A MonkeyHub from before withdrawals leaves a record it cannot read out
+        # whole (#404 F13): nothing admitted or rejected may travel with one.
+        raise _admission_invalid("A withdrawal is its own record: withdraw in one request, and admit or reject in another.")
     if study is not None and study["baseRunId"] in named | attempts_seen:
         raise _admission_invalid("A Study's base is where its results start, not one of them.")
     if task["kind"] == TASK_HUB_CHAT:

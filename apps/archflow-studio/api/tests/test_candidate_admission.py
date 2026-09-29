@@ -466,6 +466,23 @@ class CandidateAdmissionTests(AdmissionFixture):
         self.assertEqual((record["messageSource"], record["rawLanguage"]), (message, "keep the lower one"))
         self.assertEqual(list(self.admitted(self.pool())), [kept])
 
+    def test_a_withdrawal_is_its_own_record(self) -> None:
+        """#404 F13: an older build leaves a record with a withdrawal out whole, so nothing admitted rides along."""
+        stage = self.stage()
+        kept = self.result(stage, 2.4)
+        tried = self.result(stage, 2.8)
+        hub = self.managed()
+        message = {"sessionId": "chat-1", "messageId": "message-7"}
+        answer = self.admit({"runId": kept, "outcome": "admitted"}, {"runId": tried, "outcome": "withdrawn"},
+                            task="hub-chat", client=hub, expect=422, messageSource=message)
+        self.assertEqual(answer["code"], "ADMISSION_INVALID")
+        self.assertIn("its own record", answer["detail"])
+        withdrawn = self.admit({"runId": tried, "outcome": "withdrawn"}, task="hub-chat", client=hub,
+                               messageSource=message)
+        self.assertEqual([(row["runId"], row["outcome"]) for row in withdrawn["results"]], [(tried, "withdrawn")])
+        self.admit({"runId": kept, "outcome": "admitted"}, task="hub-chat", client=hub, messageSource=message)
+        self.assertEqual(list(self.admitted(self.pool())), [kept])
+
     def test_competing_and_unreadable_records_are_named_left_out_and_block_writes(self) -> None:
         stage = self.stage()
         kept = self.result(stage, 2.4)
