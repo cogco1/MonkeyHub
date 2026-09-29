@@ -57,7 +57,8 @@ const ROUTES: ReadonlyArray<readonly [RegExp, RegExp, StepKey]> = [
   [/^POST$/, /^\/drawings\/sheets$/, "sheet"],
   [/^GET$/, /^\/state(\/frame|\/volumes)?$/, "state"],
   [/^GET$/, /^\/documents$/, "documents"],
-  [/^POST$/, /^\/proposals(\/(sketch|transform|push-pull|elevation|delete|parameter-locks))?$/, "proposal"],
+  // The producer routes #419 replaced still name proposals in retained transcripts.
+  [/^POST$/, /^\/proposals(\/(construction|facets|hosted-opening|sketch|transform|push-pull|elevation|delete|parameter-locks))?$/, "proposal"],
   [/^GET$/, /^\/proposals\/[^/]+$/, "proposalRead"],
   [/^GET$/, /^\/candidates\/[^/]+\/compare$/, "compare"],
   [/^GET$/, /^\/candidates\/[^/]+$/, "candidateRead"],
