@@ -12,6 +12,7 @@ import { ModelThumbnail } from "../workspaces/src/features/artifacts/ModelThumbn
 import { MODEL_PREVIEW_RETAINED, previewSourceKey } from "../workspaces/src/features/artifacts/useRetainedModelPreview";
 import type { WorkspaceDesignContext, WorkspacePosition } from "../workspaces/src/app/ProjectWorkspace";
 import { MonitorPage } from "./MonitorPage";
+import { ChatCard, ChatCardDetails } from "./ChatCard";
 import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessageContent";
 import { ChatSuggestionCard } from "./ChatSuggestionCard";
 import type { PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
@@ -85,6 +86,13 @@ type PreparationStep = "connect" | "service" | "model";
  * this page's own waiting, never a service that is starting.
  */
 type Opening = { token: number; id: AppId; projectDir: string | null; chatId: string | null; startedAt: number; panelBefore: boolean; shown: boolean; abort: AbortController };
+/**
+ * #284: one result a Study card asked to see beside the model it was made from. `request` goes to
+ * the project workspace `runtimeId` while `tool` stays on screen in the chat that asked; `before` is
+ * what was on screen, put back by Back from this comparison, and `opener` is the card control pressed.
+ */
+type Comparison = { request: { candidateRunId: string; requestId: number }; projectDir: string; runtimeId: string;
+  chatId: string | null; tool: AppId; before: { panel: boolean; tool: AppId | null }; opener: HTMLButtonElement | null };
 /**
  * GH-285: the admission time and dismissal the Hub now reports; GH-58: whether an operation that
  * needs recovery can be recovered at all. Read here until the generated client carries them.
@@ -439,13 +447,12 @@ function ProcessRow({ turn, running, open, t, onToggle }: {
         <span className="chat-process__mark" aria-hidden="true">{stepMark(step.status)}</span>
         <span>{stepText(describeStep(step), names)}{step.status === "failed" && <span className="chat-process__step-failed"> · {t.processStepFailed}</span>}</span>
       </li>)}</ol>
-      <details className="chat-process__technical">
-        <summary>{t.processTechnical}</summary>
+      <ChatCardDetails className="chat-process__technical" summary={t.processTechnical}>
         <ol>{turn.steps.map((step) => <li key={step.id}>
           <code lang="en" translate="no">{rawLine(step)}</code>
           {rawDetail(step) && <pre lang="en" translate="no">{rawDetail(step)}</pre>}
         </li>)}</ol>
-      </details>
+      </ChatCardDetails>
     </div>}
   </div>;
 }
@@ -547,6 +554,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [activeTool, setActiveTool] = useState<AppId | null>(null);
   const [documentRequests, setDocumentRequests] = useState<Record<string, { source: PageSource; requestId: number }>>({});
   const documentRequestSequence = useRef(0);
+  const [comparison, setComparison] = useState<Comparison | null>(null);
+  const comparisonRef = useRef(comparison); comparisonRef.current = comparison;
+  const comparisonSequence = useRef(0);
+  // The opening a first comparison started, until it finishes; another chat or project stops it.
+  const comparisonOpening = useRef<{ token: number; projectDir: string; chatId: string | null } | null>(null);
+  const browserPages = useRef<HTMLDivElement>(null);
+  // Cancelling clears the request its workspace receives; it neither restores the view nor answers as Back.
+  const endComparison = () => { comparisonRef.current = null; setComparison(null); };
   const [panelWidth, setPanelWidth] = useState(() => initial.panelWidth ?? 620);
   const [toolBusy, setToolBusy] = useState<AppId | null>(null);
   // PP-1: the tool being opened, and the step each project's start path is on.
@@ -1387,6 +1402,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     const focus = view?.focus ? { runIds: view.focus.split(","), request: ++focusRequests.current } : undefined;
     const needsProject = id !== "monkeyfab" && id !== "monkeymonitor";
     if (needsProject && !projectDir) return false;
+    // #284: a new choice ends a comparison the Hub asked for, on the surface already shown too.
+    endComparison();
     // A new choice replaces a tool still being opened; what was on screen before that one stays the way back.
     const superseded = stopOpening();
     const panelBefore = superseded ? superseded.panelBefore : panel;
@@ -1463,6 +1480,84 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const back = panel && selectedTab && isTool(selectedTab.id) && selectedTab.returnTo
     && (selectedTab.projectDir ?? selectedTab.returnProject) === projectDir && currentTabs.some((tab) => tab.runtimeId) ? selectedTab.returnTo : undefined;
   const stepBack = () => { if (back) void openTool(back); else setPanel(false); };
+  /**
+   * #284: View changes on a Study card. The exact option opens beside the model it was made from, over
+   * the surface this project's mounted workspace shows; its candidate and editing base stay as they are.
+   * The request is published only once that workspace is on screen, which drops one that arrives unseen.
+   */
+  const compareResult = async (candidateRunId: string, opener: HTMLButtonElement) => {
+    if (!chat || chat.id !== chatId || !project || project.projectId !== chat.projectId || project.projectDir !== chat.projectDir) return;
+    const target = project.projectDir, targetId = project.projectId, targetChat = chatId;
+    const current = comparisonRef.current;
+    // Another option asked for over one on screen keeps the way back to what came before both.
+    const before = current?.projectDir === target && current.chatId === targetChat ? current.before : { panel, tool: activeTool };
+    const publish = (runtimeId: string, tool: AppId) => setComparison({ request: { candidateRunId, requestId: ++comparisonSequence.current },
+      projectDir: target, runtimeId, chatId: targetChat, tool, before, opener });
+    const mounted = tabs.find((tab) => tab.projectDir === target && tab.projectId === targetId && tab.runtimeId);
+    if (mounted) { setActiveTool(mounted.id); setPanel(true); publish(mounted.runtimeId!, mounted.id); return; }
+    // The first one opens this project's Design tree under it: the surface that needs no modeling seed.
+    const previous = openings.current;
+    const opened = openTool("tree");
+    const token = openingRef.current && openingRef.current.token > previous ? openingRef.current.token : null;
+    comparisonOpening.current = token === null ? null : { token, projectDir: target, chatId: targetChat };
+    const shown = await opened;
+    if (comparisonOpening.current?.token === token) comparisonOpening.current = null;
+    // Only the open this click started, still the latest, in the same chat: one superseded meanwhile asks for nothing,
+    // even after the architect comes back to this chat.
+    if (!shown || token === null || openings.current !== token
+      || selection.current.projectDir !== target || selection.current.chatId !== targetChat) return;
+    const attached = runtimeAttachments.current.get(target);
+    if (attached?.projectId === targetId) publish(attached.runtimeId, "tree");
+  };
+  // A hidden panel, or another chat, project or tool on screen, cancels the comparison asked for here and its way back.
+  useEffect(() => {
+    if (comparison && (!panel || comparison.projectDir !== projectDir || comparison.chatId !== chatId || comparison.tool !== activeTool)) endComparison();
+  }, [comparison, panel, projectDir, chatId, activeTool]);
+  // So does it for a first comparison's open still on its way: that open stops, as Cancel stops it.
+  useEffect(() => {
+    const pending = comparisonOpening.current;
+    if (!pending || (pending.projectDir === projectDir && pending.chatId === chatId)) return;
+    comparisonOpening.current = null;
+    if (openingRef.current?.token !== pending.token) return;
+    const stopped = stopOpening();
+    if (stopped && pending.projectDir === projectDir) setPanel(stopped.panelBefore);
+  }, [projectDir, chatId]);
+  /**
+   * Back in a comparison this Hub asked for. Only the matching request still on screen puts back what
+   * was there before it; a Design tree comparison never calls this, so no stale way back is used.
+   */
+  const comparisonCloser = useRef<(runtimeId: string) => void>(() => undefined);
+  comparisonCloser.current = (runtimeId) => {
+    const current = comparisonRef.current?.runtimeId === runtimeId ? comparisonRef.current : null;
+    if (current) endComparison();
+    const restore = current && current.projectDir === projectDir && current.chatId === chatId && current.tool === activeTool ? current.before : null;
+    if (restore) { setActiveTool(restore.tool); setPanel(restore.panel); }
+    // The comparison took the focus with it: back to the card control when the panel closes, else to the surface shown again.
+    requestAnimationFrame(() => {
+      if (document.activeElement && document.activeElement !== document.body) return;
+      const opener = current?.opener;
+      if (restore && !restore.panel) {
+        if (opener?.isConnected && !opener.disabled) { opener.focus({ preventScroll: true }); opener.scrollIntoView({ block: "nearest" }); }
+        return;
+      }
+      const page = browserPages.current?.querySelector<HTMLElement>(":scope > :not([hidden])");
+      if (!page) return;
+      if (!(page instanceof HTMLIFrameElement) && !page.hasAttribute("tabindex")) {
+        page.tabIndex = -1;
+        page.addEventListener("blur", () => page.removeAttribute("tabindex"), { once: true });
+      }
+      page.focus({ preventScroll: true });
+    });
+  };
+  const comparisonCloseCallbacks = useRef(new Map<string, () => void>());
+  const workspaceComparisonClose = (runtimeId: string) => {
+    let callback = comparisonCloseCallbacks.current.get(runtimeId);
+    if (!callback) {
+      callback = () => comparisonCloser.current(runtimeId);
+      comparisonCloseCallbacks.current.set(runtimeId, callback);
+    }
+    return callback;
+  };
   // PP-1: the opening this conversation is waiting for, and its skeleton once it shows.
   const openingHere = opening && (opening.projectDir === null || (opening.projectDir === projectDir && opening.chatId === chatId)) ? opening : null;
   const skeleton = openingHere?.shown ? openingHere : null;
@@ -1771,14 +1866,29 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             {/* #302: one Study card per request, listing the options it produced; View opens the Design Tree on them. */}
             {turn.results.length > 0 && (() => {
               const options = resultCandidates(turn);
-              return <div className="chat-study" data-candidates={options.join(" ")}>
+              // #284: View changes compares one exact option; with several, the architect names which.
+              const compareDisabled = !project || project.projectId !== chat?.projectId || busy || Boolean(toolBusy);
+              const compareButton = (option: string, label: string, name?: string) => <button type="button" className="chat-activity__open"
+                data-compare={option} aria-label={name} aria-description={t.studyCompareHint} title={t.studyCompareHint} disabled={compareDisabled}
+                onClick={(event) => void compareResult(option, event.currentTarget)}>{label}</button>;
+              // Every option of the request stays grouped; none is promoted to "latest".
+              return <ChatCard className="chat-study" data-candidates={options.join(" ")} data-options={options.length > 1 ? "several" : undefined}
+                title={t.resultModels} status={<span className="chat-study__text">{t.studyReady(options.length)}</span>}
+                actions={<>
+                  <button type="button" className="chat-activity__open" disabled={!project || Boolean(toolBusy)}
+                    onClick={() => void openTool("tree", { focus: options.join(",") })}>{t.studyView}</button>
+                  {options.length === 1 ? compareButton(options[0]!, t.studyCompare)
+                    : <ChatCardDetails className="chat-study__compare" summary={t.studyCompare}>
+                      <ul className="chat-study__options" aria-label={t.studyCompareChoose}>{options.map((option, index) => <li key={option}>
+                        {compareButton(option, t.studyOption(index + 1), t.studyCompareOption(index + 1))}</li>)}</ul>
+                    </ChatCardDetails>}
+                </>}
+                details={{ label: t.processTechnical, children: <ul className="chat-study__ids">
+                  {options.map((option) => <li key={option}><code lang="en" translate="no">{option}</code></li>)}</ul> }}>
                 {projectRuntime ? <ProjectRuntimeProvider key={projectRuntime.runtimeId} runtimeId={projectRuntime.runtimeId} baseUrl={`${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`}>
                   <StudyThumbnails candidates={options} />
                 </ProjectRuntimeProvider> : <Icon name="tree" />}
-                <span className="chat-study__text">{t.studyReady(options.length)}</span>
-                <button type="button" className="chat-activity__open" disabled={!project || Boolean(toolBusy)}
-                  onClick={() => void openTool("tree", { focus: options.join(",") })}>{t.studyView}</button>
-              </div>;
+              </ChatCard>;
             })()}
           </Fragment>)}</div>}
         {running && !turns.at(-1)?.steps.length && <div className="chat-thinking" role="status"><span className="chat-thread__dot" data-status="running" />{t.thinking}</div>}
@@ -1798,7 +1908,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         {archived ? <div className="chat-archived-notice">
           <p>{t.archivedNotice}</p>
           <button className="chat-activity__open" disabled={archiveBusy !== null} onClick={() => void setArchived(chat!, false)}><Icon name="restore" /><span>{t.restoreChat}</span></button>
-        </div> : external ? <div className="chat-external-notice" role="status"><strong>{t.externalChat}</strong><p>{t.externalNotice}</p></div> : <form className="chat-composer" data-dragging={draggingFiles} onSubmit={(event) => void send(event)}
+        </div> : external ? <p className="chat-external-notice" role="status"><strong>{t.externalChat}</strong><span>{t.externalNotice}</span></p> : <form className="chat-composer" data-dragging={draggingFiles} onSubmit={(event) => void send(event)}
           data-context={designContext ? "ready" : workspaceContext?.projectId === project?.projectId ? workspaceContext?.unavailableReason ?? "none" : "none"}
           onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = !project || busy ? "none" : "copy"; setDraggingFiles(Boolean(project) && !busy); } }}
           onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFiles(false); }}
@@ -1869,7 +1979,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); setPanelWidth((width) => clampWidth(width + (event.key === "ArrowLeft" ? 32 : -32))); } }}
       onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setPanelWidth(clampWidth(window.innerWidth - event.clientX)); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} />}
     {(panel || workspaceTabs.length > 0) && <aside className="chat-browser" aria-label={t.browser} hidden={!panel} inert={!panel} aria-hidden={!panel}>
-      <div className="chat-browser__pages">{workspaceTabs.map((item) => {
+      <div className="chat-browser__pages" ref={browserPages}>{workspaceTabs.map((item) => {
         const visible = panel && item === selectedTab;
         if (item.id === "monkeymonitor") return <div className="chat-monitor-workspace" key={`${item.id}:${item.revision}`} hidden={!visible} inert={!visible}>
           <ErrorBoundary label={t.monitor}><MonitorPage preferences={preferences} active={visible} initialProjectId={item.monitorProjectId} openRequest={item.monitorOpenRequest} projects={projects} /></ErrorBoundary>
@@ -1881,8 +1991,12 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} candidateFollowsHead={item.followHead} treeFocus={item.focus ?? null}
                 refreshKey={item.revision} onChatRequest={focusConversation}
                 documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
+                comparisonRequest={comparison?.runtimeId === item.runtimeId ? comparison.request : null}
+                onComparisonClose={workspaceComparisonClose(item.runtimeId)}
                 onDesignContextChange={workspaceContextCallback(item.runtimeId)} onPositionChange={workspacePositionCallback(item.runtimeId)}
                 onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : workspace === "publish" ? "publish" : workspace === "drawing" ? "drawing" : workspace === "render" ? "monkeyrender" : workspace === "tree" ? "tree" : "monkeyarch";
+                  // #284: moving within this workspace, onto the same surface too, ends a comparison the Hub asked for here.
+                  if (comparisonRef.current?.runtimeId === item.runtimeId) endComparison();
                   setTabs((items) => items.map((tab) => tab.runtimeId === item.runtimeId ? { ...tab, id,
                     url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: workspace })}` } : tab));
                   if (selection.current.projectDir === item.projectDir) setActiveTool(id);

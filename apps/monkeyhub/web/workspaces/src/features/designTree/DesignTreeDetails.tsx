@@ -2,8 +2,8 @@
  * The inspector of the selected node, docked at the tree's right edge like
  * Modeling's versions (#353): the canvas gives it room, and where the tree is
  * narrower than 560 px it covers the canvas instead. The only place for
- * author, time and progress, and for the actions, kept apart. View never
- * moves Current; Continue does; Accept as next Stage exists on Current only
+ * author, time and progress, and for the actions, kept apart. View and
+ * Compare never move Current; Continue does; Accept as next Stage exists on Current only
  * and asks first. A done act confirms itself in the toast beside the chip
  * (FN-5); a refused one says why here.
  */
@@ -16,7 +16,7 @@ import { refusalWords, whenText, type TreeWords } from "./words";
 import { ProjectionThumbnail } from "../artifacts/ModelThumbnail";
 import { nodeModelSource } from "./previews";
 
-export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onConfirmAccept, onClose, onView, onRecordEdits = null }: {
+export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onConfirmAccept, onClose, onView, onCompare, onRecordEdits = null }: {
   tree: GrowthTree;
   node: TreeNode;
   words: TreeWords;
@@ -25,6 +25,8 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
   onConfirmAccept(open: boolean): void;
   onClose(): void;
   onView(node: TreeNode): void;
+  /** Opens this option beside the exact model it was made from, read-only (#284). */
+  onCompare?(node: TreeNode): void;
   /** Records Modeling's unrecorded edits, so a Continue they refused can go on (#302). */
   onRecordEdits?: (() => Promise<void>) | null;
 }) {
@@ -130,8 +132,8 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
           <button type="button" className="btn btn--small btn--primary" disabled={!node.runId} onClick={() => onView(node)}>{t("designTree.action.view")}</button>
           <button type="button" className="btn btn--small" data-action="continue" disabled={busy || !data.canContinue || isAnchor}
             onClick={() => void data.continueFrom(node.id)}>{continuing ? t("designTree.action.continuing") : t("designTree.action.continue")}</button>
-          {node.kind === "candidate" && <button type="button" className="btn btn--small" disabled title={t("designTree.action.compareLater")}
-            aria-describedby="design-tree-compare-later">{t("designTree.action.compare")} <small>· {t("designTree.action.later")}</small></button>}
+          {node.kind === "candidate" && onCompare && <button type="button" className="btn btn--small" data-action="compare" disabled={!node.runId}
+            onClick={() => onCompare(node)}>{t("designTree.action.compare")}</button>}
         </div>
         {data.canReview && <div className="design-tree-inspector__actions">
           <button type="button" className="btn btn--small" disabled={busy} onClick={() => void data.review(node.id, "endorse")}>{t("designTree.action.endorse")}</button>
@@ -142,7 +144,6 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
           </>}
           {reviewing && <span>{t("designTree.action.savingReview")}</span>}
         </div>}
-        {node.kind === "candidate" && <p id="design-tree-compare-later" className="visually-hidden">{t("designTree.action.compareLater")}</p>}
         <p className="design-tree-inspector__note">{data.canContinue ? t("designTree.action.hint") : t("designTree.outcome.cannotContinue")}</p>
       </>}
       {node.kind === "current" && <div className="design-tree-inspector__accept">

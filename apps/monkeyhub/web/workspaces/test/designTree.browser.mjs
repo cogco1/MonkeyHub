@@ -682,7 +682,8 @@ try {
   assert.match(await card.innerText(), /Option · Massing Study/);
   assert.match(await card.innerText(), /Admitted by\s*Agent \(on your words in chat\)/);
   assert.equal(await card.getByRole("button", { name: "View", exact: true }).isEnabled(), true);
-  assert.equal(await card.getByRole("button", { name: /Compare this Study/ }).isDisabled(), true, "Compare is marked for later");
+  assert.equal(await card.getByRole("button", { name: "Compare with original", exact: true }).isEnabled(), true,
+    "an option opens beside the model it was made from (#284)");
   assert.equal(await card.locator('[data-action="accept"]').count(), 0, "an option cannot be accepted");
   await card.getByRole("button", { name: "Endorse direction", exact: true }).click();
   await tab.waitForTimeout(100);
