@@ -1,4 +1,31 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-253",
+      "lanes": [
+        {
+          "id": "board-render",
+          "status": "active",
+          "branch": "codex/253-board-render",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-253-board-render",
+          "base_ref": "94f2e533",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": "Fix round 2 of the Board image -> Hub conversation lane: a Board hand-over that lands while a message is still being sent is refused back to the Board dialog (CONVERSATION_BUSY) before any composer state changes, so its words are never cleared by the finishing send; the mid-turn hold's CHAT_INTERJECTION_IMAGES notice clears when the reply stops running.",
+          "modules": [
+            "hub.shell",
+            "studio.board"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardRender.ts",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
