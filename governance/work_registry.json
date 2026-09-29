@@ -1,4 +1,31 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-463",
+      "lanes": [
+        {
+          "id": "library-only",
+          "status": "active",
+          "branch": "codex/463-library-only-skills",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-463-library-only-skills",
+          "base_ref": "1440b815",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/api/tests/test_skill_library.py",
+            "docs/PROJECT_RUNTIME.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
