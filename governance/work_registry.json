@@ -34,7 +34,9 @@
             "apps/archflow-studio/api/archflow_studio_api/main.py",
             "docs/adr/ADR-009-memory-is-scoped-decisions.md",
             "docs/adr/ADR-009-memory-layer.md",
-            "docs/adr/README.md"
+            "docs/adr/README.md",
+            "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
+            "apps/archflow-studio/api/tests/test_collaboration_auth.py"
           ],
           "depends_on": []
         }
