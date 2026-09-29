@@ -13,6 +13,7 @@ import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
 import { BoardFeedbackError, prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedback";
 import { BoardFeedbackGeometryError, createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
 import { boardViewAppState, captureBoardView, pageSourceAt, type BoardDocumentOpen, type BoardViewState } from "./boardNavigation";
+import { prepareBoardRenderChatRequest, RENDER_REFERENCE_LIMIT, renderReferenceChoices, selectedRenderPages, type BoardRenderChatRequest } from "./boardRender";
 import { boardDocumentFrameName, documentKey, documentMime, findSource, imageSource, isTracingPaperReview, nextDocumentPosition, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
 import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchFrameIds, sketchSummary, type BoardSketchRequest, type SketchFrameData, type SketchSkipReason } from "./boardSketch";
 import "./board.css";
@@ -237,6 +238,142 @@ function FeedbackDialog({ selection, language, returnFocus, onCancel, onSubmit, 
     </form>
   </dialog>;
 }
+const renderCopy = {
+  en: { action: "Discuss image / render", title: "Discuss this image", description: "Choose the source image and any references, then write your request. It goes to the conversation as a draft: nothing is sent or generated until you send it there.",
+    source: "Source image", sourceHint: "The image a render starts from.", references: `References (optional, up to ${RENDER_REFERENCE_LIMIT})`, referencesHint: "Images the render may borrow from.",
+    addReference: "Add a project image…", referencesFull: `Up to ${RENDER_REFERENCE_LIMIT} references`, marks: "The images go as registered; Board marks and notes stay on the Board.",
+    label: "What would you like to discuss or render?", placeholder: "For example: keep the roof and the viewpoint; make the concrete warmer, like the reference.",
+    details: "Exact sources", roleSource: "Source", roleReference: "Reference", page: "Page", cancel: "Cancel", send: "Continue in chat", sending: "Checking the images…",
+    chooseSource: "Choose the source image.", failed: "The request could not be handed to the conversation.",
+    errors: { EMPTY: "Write what you would like to discuss or render.", SOURCE_REQUIRED: "Choose the source image.", TOO_MANY_REFERENCES: `Choose at most ${RENDER_REFERENCE_LIMIT} references.`,
+      DUPLICATE: "The source and each reference must be different images.", PROJECT_CHANGED: "The document list now belongs to another project. Close this dialog and reopen the Board.",
+      SOURCE_CHANGED: "The source image changed or was replaced. Close this dialog and select its current page.", REFERENCE_CHANGED: "A reference image changed or was replaced. Choose the references again.",
+      UNSUPPORTED: "Only registered PNG or JPEG images can be discussed for a render." } },
+  "zh-CN": { action: "讨论图片 / 渲染", title: "讨论这张图片", description: "选择源图和参考图，再写下你的要求。它会作为草稿放进对话；在对话里发送之前，不会发送或生成任何内容。",
+    source: "源图", sourceHint: "渲染从这张图开始。", references: `参考图（可选，最多 ${RENDER_REFERENCE_LIMIT} 张）`, referencesHint: "渲染可以借鉴的图片。",
+    addReference: "添加项目图片…", referencesFull: `最多 ${RENDER_REFERENCE_LIMIT} 张参考图`, marks: "图片按已登记的原图发送；画板上的批注和文字不会一起发送。",
+    label: "你想讨论或渲染什么？", placeholder: "例如：屋顶和视角别动；参考右图，把混凝土调暖一点。",
+    details: "精确来源", roleSource: "源图", roleReference: "参考图", page: "第", cancel: "取消", send: "在对话中继续", sending: "正在核对图片…",
+    chooseSource: "请选择源图。", failed: "未能把请求交给对话。",
+    errors: { EMPTY: "请写下你想讨论或渲染的内容。", SOURCE_REQUIRED: "请选择源图。", TOO_MANY_REFERENCES: `最多选择 ${RENDER_REFERENCE_LIMIT} 张参考图。`,
+      DUPLICATE: "源图和每张参考图必须是不同的图片。", PROJECT_CHANGED: "资料列表已属于另一个项目，请关闭此窗口并重新打开画板。",
+      SOURCE_CHANGED: "源图已变化或已被替换，请关闭此窗口并重新选择它的当前图页。", REFERENCE_CHANGED: "参考图已变化或已被替换，请重新选择参考图。",
+      UNSUPPORTED: "只有已登记的 PNG 或 JPEG 图片可以用于渲染讨论。" } },
+};
+
+function renderError(error: unknown, language: "en" | "zh-CN"): string {
+  const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+  const known = renderCopy[language].errors as Record<string, string>;
+  return known[code] ?? errorText(error);
+}
+
+/** A small picture of one registered page, drawn by the Board's own page preview. */
+function RenderThumbnail({ source, thumbnail }: { source: PageSource; thumbnail: (source: PageSource) => Promise<string> }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const key = pageKey(source);
+  useEffect(() => {
+    let live = true;
+    setUrl(null);
+    thumbnail(source).then((value) => { if (live) setUrl(value); }, () => { /* the name still identifies the page */ });
+    return () => { live = false; };
+  }, [key]);
+  return url ? <img className="monkeyboard-render-thumb" src={url} alt="" /> : <span className="monkeyboard-render-thumb" aria-hidden="true" />;
+}
+
+/**
+ * #253: one image discussion, handed to the Hub's conversation as a draft. The
+ * roles are the person's explicit choice; the Board scene is neither read for
+ * the request nor saved by it, and nothing is sent or generated from here.
+ */
+function RenderDialog({ candidates, documents, language, returnFocus, active, thumbnail, onCancel, onSubmit }: {
+  candidates: PageSource[]; documents: SourceDocumentDto[]; language: "en" | "zh-CN"; returnFocus: HTMLElement | null; active: boolean;
+  thumbnail: (source: PageSource) => Promise<string>;
+  onCancel: () => void; onSubmit: (content: string, source: PageSource | null, references: PageSource[]) => Promise<void>;
+}) {
+  const dialog = useRef<HTMLDialogElement | null>(null);
+  const [source, setSource] = useState<PageSource | null>(candidates.length === 1 ? candidates[0] : null);
+  const [references, setReferences] = useState<PageSource[]>([]);
+  // Project images the person added from the documents list, beside the selected ones.
+  const [added, setAdded] = useState<PageSource[]>([]);
+  const [content, setContent] = useState("");
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const handedOver = useRef(false);
+  const [error, setError] = useState("");
+  const text = renderCopy[language];
+  useEffect(() => {
+    const element = dialog.current;
+    if (active) element?.showModal(); else element?.close();
+    // A handed-over request moves focus to the conversation; only a cancel returns it here.
+    return () => { element?.close(); if (active && !handedOver.current && returnFocus?.isConnected) returnFocus.focus(); };
+  }, [active]);
+  const describe = (page: PageSource) => {
+    const document = findSource(documents, page);
+    return document ? `${document.fileName} · ${language === "en" ? `${text.page} ${page.pageIndex + 1}/${document.pageCount}` : `${text.page} ${page.pageIndex + 1}/${document.pageCount} 页`}` : pageKey(page);
+  };
+  const unique = (pages: PageSource[]) => pages.filter((page, index) => pages.findIndex((item) => pageKey(item) === pageKey(page)) === index);
+  const sourceKey = source ? pageKey(source) : "";
+  const referenceRows = unique([...candidates, ...added]).filter((page) => pageKey(page) !== sourceKey);
+  const chosenKeys = new Set(references.map(pageKey));
+  const choices = renderReferenceChoices(documents, [...(source ? [source] : []), ...referenceRows]);
+  const full = references.length >= RENDER_REFERENCE_LIMIT;
+  const chooseSource = (page: PageSource) => { setSource(page); setReferences((rows) => rows.filter((row) => pageKey(row) !== pageKey(page))); };
+  const toggle = (page: PageSource, checked: boolean) => setReferences((rows) =>
+    checked ? (rows.length >= RENDER_REFERENCE_LIMIT || rows.some((row) => pageKey(row) === pageKey(page)) ? rows : [...rows, page])
+      : rows.filter((row) => pageKey(row) !== pageKey(page)));
+  const submit = async () => {
+    if (sendingRef.current) return;
+    sendingRef.current = true; setSending(true); setError("");
+    try { handedOver.current = true; await onSubmit(content, source, references); }
+    catch (cause) { handedOver.current = false; setError(`${text.failed} ${renderError(cause, language)}`); }
+    finally { sendingRef.current = false; setSending(false); }
+  };
+  return <dialog ref={dialog} className="monkeyboard-feedback monkeyboard-render" aria-labelledby="monkeyboard-render-title" onCancel={(event) => { event.preventDefault(); if (!sendingRef.current) onCancel(); }}>
+    <form onSubmit={(event) => { event.preventDefault(); void submit(); }} aria-busy={sending}>
+      <h2 id="monkeyboard-render-title">{text.title}</h2>
+      <p>{text.description}</p>
+      <fieldset className="monkeyboard-render-roles" disabled={sending}>
+        <legend>{text.source}</legend>
+        <p className="monkeyboard-render-hint">{text.sourceHint}</p>
+        <ul className="monkeyboard-render-pages">{candidates.map((page) => <li key={pageKey(page)}>
+          <label className="monkeyboard-render-page"><input type="radio" name="monkeyboard-render-source" checked={pageKey(page) === sourceKey}
+            onChange={() => chooseSource(page)} autoFocus={candidates.length > 1 && page === candidates[0]} />
+            <RenderThumbnail source={page} thumbnail={thumbnail} /><span>{describe(page)}</span></label>
+        </li>)}</ul>
+      </fieldset>
+      <fieldset className="monkeyboard-render-roles" disabled={sending}>
+        <legend>{text.references}</legend>
+        <p className="monkeyboard-render-hint">{text.referencesHint}</p>
+        {referenceRows.length > 0 && <ul className="monkeyboard-render-pages">{referenceRows.map((page) => <li key={pageKey(page)}>
+          <label className="monkeyboard-render-page"><input type="checkbox" checked={chosenKeys.has(pageKey(page))} disabled={!chosenKeys.has(pageKey(page)) && full}
+            onChange={(event) => toggle(page, event.target.checked)} />
+            <RenderThumbnail source={page} thumbnail={thumbnail} /><span>{describe(page)}</span></label>
+        </li>)}</ul>}
+        <select aria-label={text.addReference} value="" disabled={full || choices.length === 0} onChange={(event) => {
+          const page = choices.find((item) => pageKey(item) === event.target.value);
+          if (page) { setAdded((rows) => [...rows, page]); toggle(page, true); }
+        }}>
+          <option value="">{full ? text.referencesFull : text.addReference}</option>
+          {choices.map((page) => <option key={pageKey(page)} value={pageKey(page)}>{describe(page)}</option>)}
+        </select>
+      </fieldset>
+      <p className="monkeyboard-render-hint">{text.marks}</p>
+      <label htmlFor="monkeyboard-render-content">{text.label}</label>
+      <textarea id="monkeyboard-render-content" value={content} onChange={(event) => setContent(event.target.value)} placeholder={text.placeholder}
+        autoFocus={candidates.length === 1} required rows={4} disabled={sending} />
+      <details className="monkeyboard-render-details"><summary>{text.details}</summary>
+        <dl>{[...(source ? [[text.roleSource, source] as const] : []), ...references.map((page) => [text.roleReference, page] as const)].map(([role, page]) => <div key={`${role}:${pageKey(page)}`}>
+          <dt>{role} · {describe(page)}</dt>
+          <dd><code>{page.runId}</code><br /><code>{page.assetSha256}</code><br /><code>{page.revisionRef ?? "null"}</code> · <code>{page.pageIndex}</code></dd>
+        </div>)}</dl>
+      </details>
+      {!source && <p className="monkeyboard-render-hint" role="status">{text.chooseSource}</p>}
+      {error && <p className="monkeyboard-feedback-error" role="alert">{error}</p>}
+      <div className="monkeyboard-feedback-actions"><button type="button" onClick={onCancel} disabled={sending}>{text.cancel}</button>
+        <button className="monkeyboard-primary" type="submit" disabled={sending || !source || !content.trim()}>{sending ? text.sending : text.send}</button></div>
+    </form>
+  </dialog>;
+}
 type Preview = { dataURL: DataURL; width: number; height: number };
 
 function errorText(error: unknown): string {
@@ -300,13 +437,18 @@ async function sceneFiles(board: BoardDto, documents: SourceDocumentDto[], previ
 
 export interface BoardPageRequest { source: PageSource; requestId: string }
 
-export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPublish, restoreView = null, active = true, refreshKey = 0, expectedProjectId, pageRequest = null }: {
+export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPublish, onRenderChatRequest, restoreView = null, active = true, refreshKey = 0, expectedProjectId, pageRequest = null }: {
   onSubmit: (request: BoardDesignRequest) => void;
   /** Hand one calibrated sketch frame to the App, which runs it as a sketch proposal. */
   onSketch: (request: BoardSketchRequest) => void;
   /** Hand one registered page to the existing document editor, with this place on the board. */
   onOpenDocument?: (open: BoardDocumentOpen) => void;
   onPublish?: (revision: string, ids: string[]) => void;
+  /**
+   * #253: hand one image discussion (a registered source page, up to three references and the
+   * person's words) to the host's conversation composer. Without it the Board offers no such action.
+   */
+  onRenderChatRequest?: (request: BoardRenderChatRequest) => void;
   /** The place a returning operator left, when this board is being reopened. */
   restoreView?: BoardViewState | null;
   active?: boolean;
@@ -333,7 +475,7 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPubl
     }).catch((cause) => { if (alive) setError(cause); });
     return () => { alive = false; };
   }, [attempt, expectedProjectId]);
-  if (loaded) return <BoardCanvas {...loaded} onSubmit={onSubmit} onSketch={onSketch} onOpenDocument={onOpenDocument} onPublish={onPublish} restoreView={restoreView} active={active} refreshKey={refreshKey} pageRequest={pageRequest} />;
+  if (loaded) return <BoardCanvas {...loaded} onSubmit={onSubmit} onSketch={onSketch} onOpenDocument={onOpenDocument} onPublish={onPublish} onRenderChatRequest={onRenderChatRequest} restoreView={restoreView} active={active} refreshKey={refreshKey} pageRequest={pageRequest} />;
   return <section className="monkeyboard monkeyboard-loading" aria-live="polite">
     <strong>MonkeyBoard</strong>
     <p>{error === null ? text.loading : text.loadFailed}</p>
@@ -341,12 +483,13 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPubl
   </section>;
 }
 
-function BoardCanvas({ board, documents: initialDocuments, files, failures, preview, onSubmit, onSketch, onOpenDocument, onPublish, restoreView, active, refreshKey, pageRequest }: {
+function BoardCanvas({ board, documents: initialDocuments, files, failures, preview, onSubmit, onSketch, onOpenDocument, onPublish, onRenderChatRequest, restoreView, active, refreshKey, pageRequest }: {
   board: BoardDto; documents: SourceDocumentDto[]; files: BinaryFiles; failures: string[]; preview: PreviewLoader;
   onSubmit: (request: BoardDesignRequest) => void;
   onSketch: (request: BoardSketchRequest) => void;
   onOpenDocument?: (open: BoardDocumentOpen) => void;
   onPublish?: (revision: string, ids: string[]) => void;
+  onRenderChatRequest?: (request: BoardRenderChatRequest) => void;
   restoreView: BoardViewState | null;
   active: boolean;
   refreshKey: number;
@@ -381,6 +524,12 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const [replacement, setReplacement] = useState<{ document: SourceDocumentDto; pageIndex: number } | null>(null);
   const replacementReturnFocus = useRef<HTMLElement | null>(null);
   const replacementOpen = useRef(false);
+  // #253: the registered images the selection names, and those an open image discussion started from.
+  const [renderPages, setRenderPages] = useState<PageSource[]>([]);
+  const [renderDraft, setRenderDraft] = useState<PageSource[] | null>(null);
+  const renderReturnFocus = useRef<HTMLElement | null>(null);
+  const renderOpen = useRef(false);
+  const renderChatRef = useRef(onRenderChatRequest); renderChatRef.current = onRenderChatRequest;
   const feedbackQueued = useRef(false);
   const [feedbackWaiting, setFeedbackWaiting] = useState(false);
   const [pages, setPages] = useState<Record<string, number>>({});
@@ -500,9 +649,13 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     };
   });
   const updateContext = (elements: readonly ExcalidrawElement[], appState: AppState) => {
-    const next = appState.editingTextElement || appState.newElement || appState.selectionElement || appState.isResizing || appState.isRotating
-      ? null : feedbackContext(elements, appState.selectedElementIds, documentsRef.current);
+    const gesture = appState.editingTextElement || appState.newElement || appState.selectionElement || appState.isResizing || appState.isRotating;
+    const next = gesture ? null : feedbackContext(elements, appState.selectedElementIds, documentsRef.current);
     setContext((previous) => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+    // Offered only where a host conversation can take an image discussion.
+    const images = gesture || !renderChatRef.current ? []
+      : selectedRenderPages(elements as unknown as readonly Record<string, unknown>[], appState.selectedElementIds, documentsRef.current);
+    setRenderPages((previous) => JSON.stringify(previous) === JSON.stringify(images) ? previous : images);
     // The panel follows the selected sketch frame; only what it shows is compared,
     // so dragging a shape inside the frame does not re-render it on every pointer move.
     const sketch = sketchSelectionOf(elements, appState.selectedElementIds);
@@ -698,7 +851,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     let live = true;
     let refreshing = false;
     const refresh = async () => {
-      if (!live || refreshing || document.hidden || feedbackOpen.current || replacementOpen.current) {
+      if (!live || refreshing || document.hidden || feedbackOpen.current || replacementOpen.current || renderOpen.current) {
         readRevision.current = undefined;
         return;
       }
@@ -861,7 +1014,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   // Camera changes never enter the saved scene or clear the user's selection.
   const focusSources = useCallback((sources: PageSource[], select: boolean) => {
     const api = canvas.current;
-    if (!api || !alive.current || !active || !ready || document.hidden || queue.getState().conflict || feedbackOpen.current || replacementOpen.current) return false;
+    if (!api || !alive.current || !active || !ready || document.hidden || queue.getState().conflict || feedbackOpen.current || replacementOpen.current || renderOpen.current) return false;
     const state = api.getAppState();
     if (state.cursorButton === "down" || state.selectionElement || state.selectedElementsAreBeingDragged || state.newElement || state.editingTextElement || state.isResizing || state.isRotating) return false;
     const keys = new Set(sources.map(pageKey));
@@ -917,7 +1070,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       if (focusFrame.current !== null) window.cancelAnimationFrame(focusFrame.current);
       focusFrame.current = null;
     };
-  }, [update, feedback, replacement, scheduleUpdateFocus]);
+  }, [update, feedback, replacement, renderDraft, scheduleUpdateFocus]);
   const focusUpdate = () => {
     if (update && focusSources(update.sources, true)) pendingFocus.current = null;
   };
@@ -975,6 +1128,26 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       feedbackQueued.current = false;
       if (alive.current) { setFeedbackWaiting(false); openFeedbackNow(); }
     });
+  };
+  // #253: an image discussion starts from the images selected now; roles are chosen in its dialog.
+  const openRender = () => {
+    const api = canvas.current;
+    if (!api || !ready || !renderChatRef.current) return;
+    const pages = selectedRenderPages(api.getSceneElements() as unknown as readonly Record<string, unknown>[],
+      api.getAppState().selectedElementIds, documentsRef.current);
+    if (!pages.length) return;
+    renderReturnFocus.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null;
+    renderOpen.current = true; setRenderDraft(pages);
+  };
+  const closeRender = () => { renderOpen.current = false; setRenderDraft(null); };
+  // The request carries only the chosen pages and words, checked against the documents read again
+  // now. The Board scene, its save queue and any unsaved edits stay exactly as they are.
+  const submitRender = async (content: string, source: PageSource | null, references: PageSource[]) => {
+    const request = await prepareBoardRenderChatRequest(studio, board.projectId, content, source, references);
+    const handOver = renderChatRef.current;
+    if (!alive.current || !handOver) return;
+    closeRender();
+    handOver(request);
   };
   const enterCrit = () => {
     closeActions();
@@ -1080,7 +1253,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   useEffect(() => {
     if (!critMode || !active) return;
     const leave = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !feedbackOpen.current) { event.preventDefault(); exitCrit(); }
+      if (event.key === "Escape" && !feedbackOpen.current && !renderOpen.current) { event.preventDefault(); exitCrit(); }
     };
     window.addEventListener("keydown", leave);
     return () => window.removeEventListener("keydown", leave);
@@ -1202,7 +1375,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         </ProjectCanvas>
         {!ready && <div className="monkeyboard-initializing" role="status">{text.loading}</div>}
         {busy && <div className="monkeyboard-busy" role="status">{text.busy}</div>}
-        {!critMode && (context || source) && <div className="monkeyboard-context" role="group" aria-label={language === "en" ? "Selected drawing actions" : "选中图纸操作"}>
+        {!critMode && (context || source || renderPages.length > 0) && <div className="monkeyboard-context" role="group" aria-label={language === "en" ? "Selected drawing actions" : "选中图纸操作"}>
           {contextDocument && contextSource && <div className="monkeyboard-context-source">
             <div className="monkeyboard-context-identity">
               <span>{selectionCopy[language].selected} · {contextSource.pageIndex + 1}/{contextDocument.pageCount}</span>
@@ -1213,6 +1386,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
           <div className="monkeyboard-context-actions">
             {source && selected && onOpenDocument && <button disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(selected)}>{text.openPage}</button>}
             {source && <button disabled={!ready || busy || saveState.conflict} onClick={openSelectedReplacement}>{replacementCopy[language].action}</button>}
+            {/* #253: a plain registered image needs no model; nothing is saved or sent from here. */}
+            {onRenderChatRequest && renderPages.length > 0 && <button type="button" className="monkeyboard-render-open" disabled={!ready} onClick={openRender}>{renderCopy[language].action}</button>}
             {context && (context.reason === "modelRequired" && context.source
               ? <button type="button" className="monkeyboard-context-next" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(context.source!)}>{boardText.linkModel}</button>
               : <button className="monkeyboard-primary monkeyboard-context-next" disabled={!!context.reason || !ready || busy || saveState.conflict || feedbackWaiting} aria-describedby={context.reason ? "monkeyboard-context-hint" : undefined} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>)}
@@ -1230,5 +1405,11 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       {text.hint}{onOpenDocument ? ` · ${text.openHint}` : ""}</StatusLine>
     {feedback && <FeedbackDialog active={active} onOpenDocument={openDocument} selection={feedback} language={language} returnFocus={feedbackReturnFocus.current} onCancel={() => { feedbackOpen.current = false; setFeedback(null); }} onSubmit={submitFeedback} />}
     {replacement && <ReplacementDialog active={active} target={replacement} language={language} returnFocus={replacementReturnFocus.current} onCancel={() => { replacementOpen.current = false; setReplacement(null); }} onSubmit={replacePage} />}
+    {renderDraft && onRenderChatRequest && <RenderDialog active={active} candidates={renderDraft} documents={documents} language={language}
+      returnFocus={renderReturnFocus.current} thumbnail={async (page) => {
+        const document = findSource(documentsRef.current, page);
+        if (!document) throw new Error("unregistered page");
+        return (await preview(document, page.pageIndex)).dataURL;
+      }} onCancel={closeRender} onSubmit={submitRender} />}
   </section>;
 }
