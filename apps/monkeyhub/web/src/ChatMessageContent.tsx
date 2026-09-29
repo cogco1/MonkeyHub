@@ -1,11 +1,14 @@
 import { Fragment, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { marked, type Token, type Tokens } from "marked";
 import type { ChatAttachment, ChatMessage } from "./api/generated";
+import { ChatCard } from "./ChatCard";
 import "./ChatMessageContent.css";
 
 export type ChatDocument = NonNullable<ChatMessage["documents"]>[number];
 type Labels = { attachments: string; previewImage: string; close: string; download: string;
-  imageLoading: string; imageFailed: string; openDocument: string };
+  imageLoading: string; imageFailed: string; openDocument: string; filesTitle: string;
+  fileCount: (count: number) => string; fileDetails: (count: number) => string;
+  filePage: (page: number) => string; fileReference: (index: number) => string };
 
 /** Model text never supplies executable markup, image URLs or application routes. */
 function safeLink(value: string): string | undefined {
@@ -95,24 +98,68 @@ export function ChatMessageFiles({ sessionId, messageId, attachments = [], docum
   sessionId: string; messageId: string; attachments?: ChatAttachment[]; documents?: ChatDocument[];
   onOpenDocument?: (document: ChatDocument) => void; documentBusy?: boolean; labels: Labels;
 }) {
-  if (!attachments.length && !documents.length) return null;
-  return <ul className="chat-attachments chat-attachments--saved" aria-label={labels.attachments}>
-    {attachments.map((file) => {
-      const url = `/api/chat/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(file.id)}`;
-      return <li key={file.id} className="chat-saved-file">
-        {rasterTypes.has(file.mimeType) && <ImagePreview src={`${url}?inline=true`} name={file.name} downloadUrl={url} labels={labels} />}
-        <a href={url} download={file.name}><span className="chat-attachment__name" title={file.name}>{file.name}</span>
-          <span className="chat-attachment__size">{fileSize(file.size)}</span><span>{labels.download}</span></a>
-      </li>;
-    })}
-    {documents.map((file, index) => {
-      const url = `/api/chat/sessions/${encodeURIComponent(sessionId)}/documents/${encodeURIComponent(messageId)}/${index}`;
-      const downloadUrl = `${url}?download=true`;
-      return <li key={`${file.runId}:${file.assetSha256}:${file.revisionRef}:${file.pageIndex}`} className="chat-saved-file">
-        {rasterTypes.has(file.mimeType) && <ImagePreview src={url} name={file.fileName} downloadUrl={downloadUrl} labels={labels} />}
-        <a href={downloadUrl} download={file.fileName}><span className="chat-attachment__name" title={file.fileName}>{file.fileName}</span><span>{labels.download}</span></a>
-        {onOpenDocument && <button type="button" className="chat-activity__open" disabled={documentBusy} onClick={() => onOpenDocument(file)}>{labels.openDocument}</button>}
+  type FileRow = { key: string; name: string; mimeType: string; url: string; downloadUrl: string;
+    size?: number; document?: ChatDocument };
+  // A document's identity includes its page and revision. Keep its original route index;
+  // filenames and list order never establish a latest version or matching content.
+  const seen = new Set<string>();
+  const rows: FileRow[] = documents.flatMap((document, index) => {
+    const key = JSON.stringify([document.runId, document.assetSha256, document.revisionRef ?? null, document.pageIndex ?? 0]);
+    if (seen.has(key)) return [];
+    seen.add(key);
+    const url = `/api/chat/sessions/${encodeURIComponent(sessionId)}/documents/${encodeURIComponent(messageId)}/${index}`;
+    return [{ key, name: document.fileName, mimeType: document.mimeType, url, downloadUrl: `${url}?download=true`, document }];
+  });
+  const files = attachments.flatMap((file): FileRow[] => {
+    const key = `attachment:${file.id}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    const url = `/api/chat/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(file.id)}`;
+    return [{ key, name: file.name, mimeType: file.mimeType, url: `${url}?inline=true`, downloadUrl: url, size: file.size }];
+  });
+  rows.push(...files.filter((file) => rasterTypes.has(file.mimeType)), ...files.filter((file) => !rasterTypes.has(file.mimeType)));
+  if (!rows.length) return null;
+  const primary = rows.slice(0, 2), remaining = rows.slice(2);
+  const format = (file: FileRow) => file.mimeType === "application/pdf" ? "PDF"
+    : (file.name.includes(".") ? file.name.split(".").at(-1)! : file.mimeType.split("/").at(-1) ?? "").toUpperCase().slice(0, 12);
+  // Same-named rows are different bindings; number them so a row and its folded source line up.
+  const reference = (file: FileRow) => {
+    const sameName = rows.filter((row) => row.name === file.name);
+    return sameName.length > 1 ? labels.fileReference(sameName.indexOf(file) + 1) : null;
+  };
+  const list = (items: FileRow[]) => <ul className="chat-file-list" aria-label={labels.attachments}>
+    {items.map((file) => {
+      const itemReference = reference(file);
+      return <li key={file.key} className="chat-saved-file">
+        {rasterTypes.has(file.mimeType) && <ImagePreview src={file.url} name={file.name} downloadUrl={file.downloadUrl} labels={labels} />}
+        <div className="chat-file-row">
+          <div className="chat-file-row__label">
+            <span className="chat-file-row__name" title={file.name}>{file.name}</span>
+            <span className="chat-file-row__meta">{format(file)}
+              {file.size != null && <> · {fileSize(file.size)}</>}
+              {file.document && <> · {labels.filePage((file.document.pageIndex ?? 0) + 1)}</>}
+              {itemReference && <> · {itemReference}</>}
+            </span>
+          </div>
+          <div className="chat-file-row__actions">
+            {file.document && onOpenDocument && <button type="button" className="chat-activity__open" disabled={documentBusy}
+              onClick={() => onOpenDocument(file.document!)}>{labels.openDocument}</button>}
+            <a href={file.downloadUrl} download={file.name}>{labels.download}</a>
+          </div>
+        </div>
       </li>;
     })}
   </ul>;
+  const sources = rows.filter((row) => row.document);
+  return <ChatCard className="chat-files" title={labels.filesTitle} status={labels.fileCount(rows.length)}
+    details={remaining.length || sources.length ? { label: labels.fileDetails(remaining.length), children: <>
+      {remaining.length > 0 && list(remaining)}
+      {sources.length > 0 && <dl className="chat-file-sources">{sources.map((row) => <div key={row.key}>
+        <dt>{row.name} · {labels.filePage((row.document!.pageIndex ?? 0) + 1)}{reference(row) && <> · {reference(row)}</>}</dt>
+        <dd><code>{row.document!.runId}</code><br /><code>{row.document!.assetSha256}</code>
+          {row.document!.revisionRef && <><br /><code>{row.document!.revisionRef}</code></>}</dd>
+      </div>)}</dl>}
+    </> } : undefined}>
+    {list(primary)}
+  </ChatCard>;
 }
