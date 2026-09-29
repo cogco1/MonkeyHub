@@ -337,6 +337,19 @@
       "reason": "Builds the skill library's Claude plugin directory (#252) only under the caller-supplied nonproject Hub runtime cache/skill-plugins/<index digest>, staged beside its final name and renamed into place. It is derived from the library project's Runtime API, rebuilt only for a new index and never written into a project."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
+      "function": "learn",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace",
+        "unlink"
+      ],
+      "kind": "application_cache",
+      "owner": "hub.shell",
+      "reason": "Records the leftover Claude skills a library chat's init event listed (#463), atomically, only in the nonproject Hub runtime cache/skill-plugins/leftover-skills.json; never in a project."
+    },
+    {
       "path": "tools/workspace.py",
       "function": "create_worktree",
       "operations": [

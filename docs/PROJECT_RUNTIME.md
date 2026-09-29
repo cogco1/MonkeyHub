@@ -107,9 +107,30 @@ and writes the current versions into a Claude plugin in its own cache,
 `<runtime root>/cache/skill-plugins/<index digest>/` (`.claude-plugin/plugin.json`,
 `skills/<name>/SKILL.md`), rebuilt only when the index changes (`monkeyhub_api/skill_plugins.py`). A Claude
 chat is started with `--plugin-dir <that directory>`; Claude lists each name and description and reads a
-body only when it uses the skill. Nothing is written into any project. With no library set, the command is
-unchanged. The CLI (2.1.283) does not gate its `Skill` tool under `dontAsk`: an allow rule restricts nothing,
-and a chat can also load this machine's personal skills and plugins, which only a deny rule refuses.
+body only when it uses the skill. Nothing is written into any project.
+
+A Claude or Coding Plan chat sees the library's skills and nothing else (#463). The CLI (2.1.283) does not
+gate its `Skill` tool under `dontAsk`, so an allow rule restricts nothing, and deny rules cannot say
+"everything but the library"; left alone, a chat lists and can load this machine's personal skills, installed
+plugins and the CLI's bundled skills. So the Hub removes them where they come from:
+
+- With no library set, the chat starts with `--disable-slash-commands`: no skills are listed and there is no
+  `Skill` tool. It also gets `--setting-sources project,local` (with only `env` and `apiKeyHelper` carried in
+  `--settings`), so installed plugins stay unloaded: a plugin's startup hook would otherwise still inject its
+  own instructions into the chat.
+- With a library set, it adds `--setting-sources project,local`, which drops the user settings that enable
+  personal skills and plugins, and `--settings` with `{"disableBundledSkills": true, "skillOverrides":
+  {"<name>": "off", …}}`. Each override must be the string `"off"`: with any other value the CLI silently
+  ignores the whole `--settings` value. Of the user's own `settings.json` (under `CLAUDE_CONFIG_DIR` when set)
+  only `env` and `apiKeyHelper` are carried into that JSON, so sign-in and network settings still work.
+- The overrides are the skills those two leave in place: `design` and `doctor` on 2.1.283, and every one
+  learned since. When a library chat's `system/init` event lists a skill that is neither
+  `monkeyhub-library:*` nor already off, the Hub records it in
+  `<runtime root>/cache/skill-plugins/leftover-skills.json` under the event's `claude_code_version`, logs one
+  warning naming it, and turns it off from the next turn on. That file is non-canonical Hub cache, never in a
+  project; an override naming a skill a CLI does not have is tolerated.
+
+Codex chats neither load library skills nor are restricted here yet.
 
 A project's `recipe` memory item (ADR-009) names one library skill as `skill:<name>@<version>`. When a chat
 saves one, the Hub resolves the name the agent gave (`monkeyhub-library:<name>`, optionally with a version)
