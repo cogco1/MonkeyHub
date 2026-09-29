@@ -1056,37 +1056,66 @@ async function boardImageDiscussion() {
   await refused.waitFor({ state: "hidden" });
   assert.equal(board().title, "Render board, retitled");
 
-  // Sent, the message names exactly the chosen pages and no editing base.
+  // Sent, the message names exactly the chosen pages and no editing base. While it is still being
+  // sent, another hand-over is refused back to the Board's dialog, which keeps its words: landing now,
+  // they would be cleared when the send finished and leave the images with no words.
   const postsBefore = messagePosts().length;
+  let releaseSend;
+  chatMessageResponseGate = new Promise((resolve) => { releaseSend = resolve; });
   await composer.press("Enter");
+  for (let attempt = 0; messagePosts().length === postsBefore; attempt++) {
+    assert.ok(attempt < 200, "the message reaches the Hub");
+    await page.waitForTimeout(50);
+  }
+  for (const across of [0.5, 0.42, 0.58]) {
+    if (await discuss.isVisible()) break;
+    await page.mouse.click(canvas.x + canvas.width * across, canvas.y + canvas.height / 2);
+  }
+  await discuss.click();
+  await dialog.waitFor();
+  await dialog.getByLabel("Add a project image…", { exact: true }).selectOption({ label: "Material.png · Page 1/1" });
+  const correction = "Not the light: the concrete is too cold.";
+  const dialogWords = dialog.getByLabel("What would you like to discuss or render?", { exact: true });
+  await dialogWords.fill(correction);
+  await dialog.getByRole("button", { name: "Continue in chat", exact: true }).click();
+  await dialog.getByRole("alert").filter({ hasText: "A message is still being sent. Hand the images over again once it has gone." }).waitFor();
+  assert.equal(await dialog.isVisible(), true, "the dialog stays open while a message is being sent");
+  assert.equal(await dialogWords.inputValue(), correction, "the dialog keeps its words");
+  assert.equal(await composer.inputValue(), words, "the composer still shows only the message being sent");
+  releaseSend(); chatMessageResponseGate = Promise.resolve();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
   assert.deepEqual(messagePosts().slice(postsBefore).map(([, , body]) => body), [{ content: words, projectId, renderContext }]);
   const chat = sessions.find((row) => row.projectId === projectId && row.messages.some((message) => message.content === words));
   assert.equal(chat.status, "running");
+  assert.equal(await composer.inputValue(), "", "nothing of the refused hand-over reached the composer");
 
-  // While the reply runs the images wait for the next message: nothing goes into the running turn,
-  // and the composer never says a mid-turn message is about them.
+  // Once the message has gone, the same dialog hands over: during the running reply the images and
+  // words are held for the next message. Nothing goes into the running turn, and the composer never
+  // says a mid-turn message is about them.
+  await dialog.getByRole("button", { name: "Continue in chat", exact: true }).click();
+  await dialog.waitFor({ state: "hidden" });
+  assert.equal(await composer.inputValue(), correction);
   await card.locator(".chat-render-context__status").filter({ hasText: "Goes with your next message after this reply." }).waitFor();
   assert.notEqual(await target.innerText(), "About the attached images, not a model change");
-  const correction = "Not the light: the concrete is too cold.";
-  await composer.fill(correction);
   const interject = page.getByRole("button", { name: "Interject", exact: true });
   assert.equal(await interject.isDisabled(), true, "a draft holding images does not interject");
   assert.equal(await interject.getAttribute("aria-description"), "Goes with your next message after this reply.");
   await composer.press("Enter");
-  await page.locator(".chat-error").filter({ hasText: "Send the selected images after this reply finishes." }).waitFor();
+  const hold = page.locator(".chat-error").filter({ hasText: "Send the selected images after this reply finishes." });
+  await hold.waitFor();
   assert.equal(messagePosts().length, postsBefore + 1, "nothing was sent into the running turn");
   assert.equal(await composer.inputValue(), correction, "the words stay in the draft");
   assert.equal(await card.count(), 1, "the images stay attached");
   assert.equal(chat.status, "running");
   assert.notEqual(await target.innerText(), "About the attached images, not a model change");
 
-  // After the reply the correction goes with the same exact pages.
+  // When the reply ends the hold's notice goes, and the correction goes with the same exact pages.
   chat.messages.push({ id: `a-${chat.messages.length}`, role: "assistant", status: "complete",
     content: "The source reads as a cool courtyard. Which surface should warm?" });
   chat.status = "idle";
   emitRuntime();
   await page.getByRole("button", { name: "Send", exact: true }).waitFor();
+  await hold.waitFor({ state: "detached", timeout: 3000 });
   await page.waitForFunction(() => document.querySelector(".chat-target__text")?.textContent === "About the attached images, not a model change");
   await composer.press("Enter");
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();

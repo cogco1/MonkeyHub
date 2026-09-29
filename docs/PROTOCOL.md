@@ -1537,7 +1537,9 @@ with the instruction to look at each through `POST /api/board/export` before des
 Hub UI receives the pages from a Board hand-over and sends them with each message until the
 architect removes them, so a correction continues the same native session with the same pages;
 such a message carries no automatic editing base. While a reply runs, the composer holding them
-sends nothing: the pages and the words written beside them wait for the next message.
+sends nothing: the pages and the words written beside them wait for the next message. A hand-over
+that lands while a message is still being sent is refused back to the Board, whose dialog keeps
+its words.
 
 The bound tool also reads `GET /api/render/capabilities`, `GET /api/render/jobs` and
 `GET /api/render/jobs/{job_id}`, and posts `POST /api/render/jobs` through the operation admission

@@ -249,7 +249,8 @@ const renderCopy = {
       DUPLICATE: "The source and each reference must be different images.", PROJECT_CHANGED: "This Board and the open project no longer match. Close this dialog and reopen the Board.",
       SOURCE_CHANGED: "The source image changed or was replaced. Close this dialog and select its current page.", REFERENCE_CHANGED: "A reference image changed or was replaced. Choose the references again.",
       UNSUPPORTED: "Only registered PNG or JPEG images can be discussed for a render.",
-      CONVERSATION_UNAVAILABLE: "This project's conversation is not the one open. Close this dialog, open this project's conversation and try again." } },
+      CONVERSATION_UNAVAILABLE: "This project's conversation is not the one open. Close this dialog, open this project's conversation and try again.",
+      CONVERSATION_BUSY: "A message is still being sent. Hand the images over again once it has gone." } },
   "zh-CN": { action: "讨论图片 / 渲染", title: "讨论这张图片", description: "选择源图和参考图，再写下你的要求。它会作为草稿放进对话；在对话里发送之前，不会发送或生成任何内容。",
     source: "源图", sourceHint: "渲染从这张图开始。", references: `参考图（可选，最多 ${RENDER_REFERENCE_LIMIT} 张）`, referencesHint: "渲染可以借鉴的图片。",
     addReference: "添加项目图片…", referencesFull: `最多 ${RENDER_REFERENCE_LIMIT} 张参考图`, marks: "图片按已登记的原图发送；画板上的批注和文字不会一起发送。",
@@ -260,7 +261,8 @@ const renderCopy = {
       DUPLICATE: "源图和每张参考图必须是不同的图片。", PROJECT_CHANGED: "画板与当前打开的项目已不一致，请关闭此窗口并重新打开画板。",
       SOURCE_CHANGED: "源图已变化或已被替换，请关闭此窗口并重新选择它的当前图页。", REFERENCE_CHANGED: "参考图已变化或已被替换，请重新选择参考图。",
       UNSUPPORTED: "只有已登记的 PNG 或 JPEG 图片可以用于渲染讨论。",
-      CONVERSATION_UNAVAILABLE: "当前打开的不是此项目的对话。请关闭此窗口，打开此项目的对话后再试。" } },
+      CONVERSATION_UNAVAILABLE: "当前打开的不是此项目的对话。请关闭此窗口，打开此项目的对话后再试。",
+      CONVERSATION_BUSY: "还有一条消息正在发送。发送完成后，再把图片交过去。" } },
 };
 
 function renderError(error: unknown, language: "en" | "zh-CN"): string {

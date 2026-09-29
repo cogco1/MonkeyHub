@@ -19,12 +19,12 @@ export type BoardRenderChatRequest = {
 export const RENDER_REFERENCE_LIMIT = 3;
 
 export type BoardRenderErrorCode = "EMPTY" | "SOURCE_REQUIRED" | "TOO_MANY_REFERENCES" | "DUPLICATE"
-  | "PROJECT_CHANGED" | "SOURCE_CHANGED" | "REFERENCE_CHANGED" | "UNSUPPORTED" | "CONVERSATION_UNAVAILABLE";
+  | "PROJECT_CHANGED" | "SOURCE_CHANGED" | "REFERENCE_CHANGED" | "UNSUPPORTED" | "CONVERSATION_UNAVAILABLE" | "CONVERSATION_BUSY";
 
 /**
  * Why a discussion was not handed over. A host that cannot take a request
- * throws one too (PROJECT_CHANGED, CONVERSATION_UNAVAILABLE), so the Board's
- * dialog stays open with the person's words and the reason.
+ * throws one too (PROJECT_CHANGED, CONVERSATION_UNAVAILABLE, CONVERSATION_BUSY),
+ * so the Board's dialog stays open with the person's words and the reason.
  */
 export class BoardRenderError extends Error {
   constructor(readonly code: BoardRenderErrorCode, message: string) {

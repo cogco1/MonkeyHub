@@ -731,6 +731,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // context names; the label adds where Current stands, and says so when another model is on screen.
   const position = projectRuntime && workspaceContext?.projectId === project?.projectId ? positions[projectRuntime.runtimeId] ?? null : null;
   const running = chat?.id === chatId && chat.status === "running";
+  // #253: the mid-turn hold's notice is about this reply; it goes when the reply stops running.
+  useEffect(() => { if (!running) setError((current) => current?.code === "CHAT_INTERJECTION_IMAGES" ? null : current); }, [running]);
   // #253: a message carrying an image discussion names its own pages and no editing base (unless a New topic starts one).
   // While a reply runs nothing is about the images: they wait for the next message, and a mid-turn one is text alone.
   const imageTurn = Boolean(renderDraft) && contextMode !== "project" && !running;
@@ -1087,6 +1089,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (!target.projectDir || request.projectId !== target.projectId || selection.current.projectDir !== target.projectDir) {
       throw new BoardRenderError("CONVERSATION_UNAVAILABLE", "This project's conversation is not the one open.");
     }
+    // A send still in flight clears its draft when it finishes and would take these words with it.
+    // A running reply is different: nothing is in flight, and the draft waits until after the reply.
+    if (sending !== null) throw new BoardRenderError("CONVERSATION_BUSY", "A message is still being sent.");
     const current = selection.current.chatId;
     const shown = current ? (chat?.id === current ? chat : sessions.find((row) => row.id === current)) : undefined;
     // An external or archived conversation has no composer: the discussion starts a new one in this project.
