@@ -1,22 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-480",
-      "status": "active",
-      "branch": "codex/480-mvp-roadmap-owner",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-480-mvp-roadmap-owner",
-      "base_ref": "bf6e7465",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "docs/product/MVP_ROADMAP.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
