@@ -1,4 +1,48 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-404",
+      "lanes": [
+        {
+          "id": "remainder",
+          "status": "active",
+          "branch": "codex/404-remainder",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-404-remainder",
+          "base_ref": "13129a91",
+          "contributor": "Claude",
+          "reviewer": "Claude root task",
+          "handoff": "cloud session; master integrates",
+          "modules": [
+            "hub.shell",
+            "studio.intent"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime_models.py",
+            "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_project_runtime.py",
+            "apps/monkeyhub/api/tests/test_runtime_operations.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/api/tests/test_chat_presentation.py",
+            "apps/monkeyhub/api/tests/test_chat_feedback.py",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/src/api/generated/",
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "apps/monkeyhub/web/workspaces/src/features/designTree/words.ts",
+            "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
+            "apps/archflow-studio/api/archflow_studio_api/application/design_history.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/design_history.py",
+            "docs/PROJECT_RUNTIME.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
