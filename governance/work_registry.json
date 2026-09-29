@@ -1,42 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-244",
-      "lanes": [
-        {
-          "id": "drawing-integration",
-          "status": "active",
-          "branch": "codex/244-drawing-integration",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-244-drawing-integration",
-          "base_ref": "f43efc9a31c3647ad2bedf2d116a7ce217b22336",
-          "contributor": "Claude",
-          "reviewer": "Codex",
-          "handoff": "local session; the controller reviews and opens the PR; the Diagram UI follows once this contract lands",
-          "modules": [
-            "runtime.drawing_elevation",
-            "adapters.drawing_svg",
-            "documentation.drawings",
-            "studio.artifacts"
-          ],
-          "write_scope": [
-            "monkeydiagram/drawing_elevation.py",
-            "monkeydiagram/drawing_output.py",
-            "monkeydiagram/drawing_svg.py",
-            "monkeydiagram/documentation/drawings.py",
-            "monkeydiagram/documentation/styles.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/drawing_dimensions.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/drawing_corrections.py",
-            "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
-            "apps/monkeyhub/web/workspaces/src/api/generated",
-            "apps/monkeyhub/web/src/api/generated"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
