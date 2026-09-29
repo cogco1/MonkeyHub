@@ -1,46 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-252",
-      "lanes": [
-        {
-          "id": "project-memory",
-          "status": "active",
-          "branch": "codex/252-project-memory",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-252-project-memory",
-          "base_ref": "68406c96",
-          "contributor": "Claude",
-          "reviewer": "Claude root task",
-          "handoff": "cloud session; master integrates",
-          "modules": [
-            "studio.intent"
-          ],
-          "write_scope": [
-            "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/intent_context.py",
-            "apps/archflow-studio/api/archflow_studio_api/routes/decisions.py",
-            "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
-            "apps/monkeyhub/web/workspaces/src/api/generated/",
-            "apps/monkeyhub/api/monkeyhub_api/chat.py",
-            "apps/monkeyhub/api/tests/test_chat_feedback.py",
-            "apps/monkeyhub/api/tests/test_chat.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/memory.py",
-            "apps/archflow-studio/api/archflow_studio_api/routes/memory.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/memory.py",
-            "archflow/project/record_kinds.py",
-            "apps/archflow-studio/api/archflow_studio_api/main.py",
-            "docs/adr/ADR-009-memory-is-scoped-decisions.md",
-            "docs/adr/ADR-009-memory-layer.md",
-            "docs/adr/README.md",
-            "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
-            "apps/archflow-studio/api/tests/test_collaboration_auth.py"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
