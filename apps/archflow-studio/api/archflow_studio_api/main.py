@@ -523,22 +523,27 @@ def _prepare_first_reads(app: FastAPI) -> None:
     """What every first request would otherwise build for itself, built once while the process is idle (#449).
 
     FastAPI builds each included router's route state on the first request
-    routed through it, and the workspace's first reads also list every run's
+    routed through it, and the workspace's first reads each list every run's
     records (``prepare_bound_project``). Both are done here, on a thread of
     their own, once the process serves: a first request arriving meanwhile
-    waits for the one build instead of repeating it beside it. ``main`` asks
-    for it; an application a test builds binds on its first request as
-    before. A path no route has walks every router; nothing is answered or
-    recorded.
+    waits for the one build instead of repeating it beside it. A path no route
+    has walks every router; nothing is answered or recorded. ``main`` asks for
+    it; an application a test builds binds on its first request as before.
+
+    Not with a project index: its first load is announced to whoever follows
+    this worker's events, and ``test_runtime_sse`` expects that load to come
+    after the Hub's stream is open, which a faster first request can overtake.
     """
 
+    settings = app.state.settings
+    if settings.service_role == SHARED_PROJECT_ROLE or settings.project_index_dir is not None:
+        return
     unmatched = {"type": "http", "method": "GET", "path": "/api/\0", "raw_path": b"/api/%00",
                  "root_path": "", "query_string": b"", "headers": [], "app": app}
     try:
-        if app.state.settings.service_role != SHARED_PROJECT_ROLE:
-            from .application.binding import prepare_bound_project
+        from .application.binding import prepare_bound_project
 
-            prepare_bound_project(app.state)
+        prepare_bound_project(app.state)
         for route in app.router.routes:
             route.matches(dict(unmatched))
     except Exception:  # noqa: BLE001 - the first request opens and refuses for itself
