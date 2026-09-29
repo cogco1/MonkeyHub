@@ -258,27 +258,22 @@ _CLAUDE_APPROVED = (
 )
 
 
-def _claude_approved(runtime_root: Path, *, skills: bool = False) -> tuple[str, ...]:
+def _claude_approved(runtime_root: Path) -> tuple[str, ...]:
     """The names above, plus computer use on a machine whose policy allows it.
 
     Driving the desktop is not approved by being installed. The tools are
     always advertised, because their route answers a disabled machine with the
     file that turns them on, but a headless turn may only actually use them
-    where the owner of this machine said so. ``skills`` adds Claude's own Skill
-    tool when a library's skills are loaded (#252): reading a procedure, which
-    grants nothing the tools above do not. Only the library plugin's skills: the
-    CLI also lists this machine's personal skills and plugins, and those stay
-    refused.
+    where the owner of this machine said so.
     """
     # Imported inside every caller rather than at the top: computer_tools
     # reaches its routes through this module's own transport, and one of the
     # two has to be late for the other to exist.
     from . import computer_tools
 
-    approved = _CLAUDE_APPROVED + ((f"Skill({skill_plugins.PLUGIN_NAME}:*)",) if skills else ())
     if not computer_tools.read_policy(runtime_root).enabled:
-        return approved
-    return approved + tuple(
+        return _CLAUDE_APPROVED
+    return _CLAUDE_APPROVED + tuple(
         f"mcp__monkeyhub__{name}" for name in computer_tools.TOOL_NAMES
     )
 
@@ -1834,6 +1829,10 @@ class ChatStore:
             scratch = self._scratch_path(session.id)
             # The library project's skills, as a plugin Claude loads natively
             # (#252). None when no library is set: the command is then as before.
+            # Nothing is added to --allowedTools for them: under dontAsk the CLI
+            # (2.1.283) does not gate its Skill tool, so an allow rule restricts
+            # nothing. It also lists this machine's personal skills and plugins,
+            # which a chat can load too; only a deny rule refuses one.
             skills = skill_plugins.library_plugin_dir(self.runtime_root, self.hub_url)
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
                        "--include-partial-messages", "--permission-mode", "dontAsk", "--permission-prompts", "none",
@@ -1843,8 +1842,7 @@ class ChatStore:
                        # it with no prompt attached. Named rather than bypassed:
                        # reading, editing and running in the workspace above,
                        # plus this adapter's own tools and nothing else.
-                       "--tools", "default", "--allowedTools",
-                       ",".join(_claude_approved(self.runtime_root, skills=skills is not None)),
+                       "--tools", "default", "--allowedTools", ",".join(_claude_approved(self.runtime_root)),
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
                        *(("--plugin-dir", str(skills)) if skills is not None else ()),
                        "--add-dir", str(scratch),

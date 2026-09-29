@@ -106,9 +106,10 @@ set, the Hub prepares the library's Runtime as it prepares a chat's own project,
 and writes the current versions into a Claude plugin in its own cache,
 `<runtime root>/cache/skill-plugins/<index digest>/` (`.claude-plugin/plugin.json`,
 `skills/<name>/SKILL.md`), rebuilt only when the index changes (`monkeyhub_api/skill_plugins.py`). A Claude
-chat is started with `--plugin-dir <that directory>` and the `Skill` tool allowed; Claude lists each name and
-description and reads a body only when it uses the skill. Nothing is written into any project. With no
-library set, the command is unchanged.
+chat is started with `--plugin-dir <that directory>`; Claude lists each name and description and reads a
+body only when it uses the skill. Nothing is written into any project. With no library set, the command is
+unchanged. The CLI (2.1.283) does not gate its `Skill` tool under `dontAsk`: an allow rule restricts nothing,
+and a chat can also load this machine's personal skills and plugins, which only a deny rule refuses.
 
 A skill is only a procedure. Retaining or following one grants no permission, and the `permissions` its
 manifest lists are declared for a reader and enforced by nothing. Codex chats get no library skills yet:

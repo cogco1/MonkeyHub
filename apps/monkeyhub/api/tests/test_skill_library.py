@@ -139,11 +139,10 @@ class SkillLibraryTest(unittest.TestCase):
         self.session = store.create(ChatCreateRequest(projectDir=str(self.project), provider="claude"))
         self.add(HATCH)
 
-        # No library: nothing is read, and the command carries no skill.
+        # No library: nothing is read, and the command carries no plugin.
         with patch.object(chat, "_request_json", side_effect=AssertionError("no library, no call")):
             plain = self.claude_command(store)
         self.assertNotIn("--plugin-dir", plain)
-        self.assertNotIn("Skill", plain[plain.index("--allowedTools") + 1].split(","))
 
         save_application_settings(self.runtime, ApplicationSettingsDto(libraryDir=str(self.library)))
         projects = snapshot(self.project), snapshot(self.library)
@@ -159,17 +158,9 @@ class SkillLibraryTest(unittest.TestCase):
         self.assertTrue((plugin / "skills/hatch-review/SKILL.md").is_file())
         self.assertEqual(again[again.index("--plugin-dir") + 1], str(plugin))
         self.assertEqual(self.fetched, ["/api/skills/skill:hatch-review?version=1"], "the second chat fetched no body")
-        allowed = loaded[loaded.index("--allowedTools") + 1].split(",")
-        # Only the library plugin's skills may be used, not every skill the CLI lists.
-        self.assertIn("Skill(monkeyhub-library:*)", allowed)
-        self.assertNotIn("Skill", allowed)
-
-        # Only those two things differ from the command without a library.
+        # The plugin is the only difference from the command without a library.
         position = loaded.index("--plugin-dir")
-        reduced = loaded[:position] + loaded[position + 2:]
-        reduced[reduced.index("--allowedTools") + 1] = ",".join(
-            name for name in allowed if name != "Skill(monkeyhub-library:*)")
-        self.assertEqual(reduced, plain)
+        self.assertEqual(loaded[:position] + loaded[position + 2:], plain)
         # Starting the chat changed no project: not its own, not the library.
         self.assertEqual((snapshot(self.project), snapshot(self.library)), projects)
 
