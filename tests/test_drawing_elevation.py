@@ -264,6 +264,30 @@ class FreezeElevationTests(unittest.TestCase):
         self.assertEqual((again.receipt_ref, again.svg_ref, again.png_ref), (drawing.receipt_ref, drawing.svg_ref, drawing.png_ref))
         self.assertEqual(len(list_model_axis_elevations(reopened, "drawing-run")), 1)
 
+    def test_an_axonometric_is_a_parallel_view_from_any_non_vertical_direction_retained_like_an_elevation(self) -> None:
+        from monkeydiagram.drawing_elevation import axonometric_frame
+
+        right, up, look = axonometric_frame((1, -1, 1))
+        root2, root6, root3 = math.sqrt(2), math.sqrt(6), math.sqrt(3)
+        for actual, expected in ((right, (1 / root2, 1 / root2, 0)), (up, (-1 / root6, 1 / root6, 2 / root6)),
+                                 (look, (-1 / root3, 1 / root3, -1 / root3))):
+            for a, b in zip(actual, expected):
+                self.assertAlmostEqual(a, b, places=12)
+        for longer, unit in zip(axonometric_frame((-2, -2, 2)), axonometric_frame((-1, -1, 1))):
+            for a, b in zip(longer, unit):
+                self.assertAlmostEqual(a, b, places=12, msg="only the direction counts")
+        for direction in ((0, 0, 1), (0, 0, -3), (0, 0, 0), (1, 1), (1, float("inf"), 1)):
+            with self.subTest(direction=direction), self.assertRaises(DrawingElevationError):
+                axonometric_frame(direction)
+        view = ElevationView(name="axonometric", origin=(0, 0, 0), right=right, up=up, look=look,
+                             crop_uv=(-12, -8, 12, 12), near_depth=-40, far_depth=40, scale_denominator=200)
+        drawing = freeze_model_axis_elevation(self.repository, source=self.source, view=view, drawing_run_id="axon-run")
+        self.assertEqual(drawing.receipt["view"]["kind"], "model-axis-elevation")
+        self.assertEqual(drawing.receipt["view"]["look"], list(look))
+        self.assertGreater(drawing.receipt["projection"]["visible_polylines"], 0)
+        self.assertEqual(read_model_axis_elevation(self.repository, drawing.receipt_ref).svg, drawing.svg)
+        self.assertEqual(self.repository.read_head(), self.head)
+
     def test_observer_failure_cannot_change_drawing_or_hide_a_source_refusal(self) -> None:
         for error in (OSError("diagnostic unavailable"), asyncio.CancelledError()):
             with self.subTest(error=type(error).__name__):
@@ -680,6 +704,45 @@ class CutPlanTests(unittest.TestCase):
         with self.assertRaises(DrawingElevationError):
             freeze_cut_plan(self.repository, source=self.source, recipe=tilted, drawing_run_id="tilted-section")
         self.assertFalse(self.repository.layout.run("tilted-section").manifest.exists())
+
+    def test_a_model_axis_section_is_a_plan_line_or_a_plane_and_any_other_plane_is_refused_by_name(self):
+        from monkeydiagram.drawing_elevation import SectionPerspectiveError, model_axis_section
+
+        # Walking +X keeps the left (+Y): the viewer stands at -Y and looks +Y, the sheet's right is +X.
+        self.assertEqual(model_axis_section({"line": [[-1, 1.5], [5, 1.5]], "keep": "left"}),
+                         ((0.0, 1.5, 0.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0)))
+        self.assertEqual(model_axis_section({"line": [[-1, 1.5], [5, 1.5]], "keep": "right"}),
+                         ((0.0, 1.5, 0.0), (0.0, -1.0, 0.0), (-1.0, 0.0, 0.0)))
+        # The normal points to the removed side; the plane's other coordinates do not matter.
+        self.assertEqual(model_axis_section({"origin": [1.5, 7, 2], "normal": [-2, 0, 0]}),
+                         ((1.5, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, -1.0, 0.0)))
+        for section, code in (
+            ({"line": [[0, 0], [4, 3]], "keep": "left"}, "SECTION_PLANE_NOT_MODEL_AXIS"),
+            ({"origin": [0, 0, 1.2], "normal": [0, 0, 1]}, "SECTION_PLANE_NOT_MODEL_AXIS"),
+            ({"origin": [0, 0, 0], "normal": [1, 0, .1]}, "SECTION_PLANE_NOT_MODEL_AXIS"),
+            ({"line": [[1, 1], [1, 1]], "keep": "left"}, "SECTION_LINE_DEGENERATE"),
+            ({"origin": [0, 0, 0], "normal": [0, 0, 0]}, "SECTION_NORMAL_DEGENERATE"),
+            ({"line": [[0, float("nan")], [4, 0]], "keep": "left"}, "SECTION_VALUE_NOT_FINITE"),
+            ({"line": [[0, 0], [4, 0]]}, "SECTION_REQUEST_INVALID"),
+        ):
+            with self.subTest(section=section), self.assertRaises(SectionPerspectiveError) as caught:
+                model_axis_section(section)
+            self.assertEqual(caught.exception.code, code)
+
+    def test_a_vertical_section_through_nothing_is_refused_before_anything_is_written(self):
+        from monkeydiagram.drawing_elevation import SectionPerspectiveError, model_axis_section
+
+        # X = 6 lies beside the room: looking -X the whole room is beyond it, but nothing is cut.
+        origin, look, right = model_axis_section({"line": [[6, 4], [6, -1]], "keep": "right"})
+        self.assertEqual((origin, look, right), ((6.0, 0.0, 0.0), (-1.0, 0.0, 0.0), (0.0, 1.0, 0.0)))
+        view = ElevationView(name="beside", origin=origin, look=look, right=right, up=(0, 0, 1),
+                             crop_uv=(-1, -1, 5, 4), near_depth=0, far_depth=10, scale_denominator=50)
+        recipe = {**self.recipe, "name": "beside", "frame": view.to_dict(), "dimensions": []}
+        with self.assertRaises(SectionPerspectiveError) as caught:
+            freeze_cut_plan(self.repository, source=self.source, recipe=recipe, drawing_run_id="beside-run")
+        self.assertEqual(caught.exception.code, "SECTION_PLANE_MISSES_MODEL")
+        self.assertFalse(self.repository.layout.run("beside-run").manifest.exists())
+        self.assertEqual(self.repository.read_head(), self.head)
 
 
     def test_rebuild_preserves_deleted_hidden_object_intent_and_renders_remaining_source(self):

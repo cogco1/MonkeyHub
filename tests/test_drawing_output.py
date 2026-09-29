@@ -51,6 +51,30 @@ class DrawingOutputTests(unittest.TestCase):
         self.assertEqual(text.get("transform"), "translate(30 257)")
         self.assertEqual(text.get("font-family"), "Bitstream Vera Sans")
 
+    def test_the_same_scene_gives_the_same_dxf_bytes_whenever_it_is_written(self):
+        import time
+
+        self.canvas.drawString(30, 40, "SHEET A01")
+        self.canvas.line(10, 10, 200, 120)
+        first = render_dxf(self.canvas)
+        # ezdxf stamps the time, a random GUID pair and its own write time into every file it writes.
+        time.sleep(0.05)
+        self.assertEqual(render_dxf(self.canvas), first)
+        lines = first.decode("utf-8").splitlines()
+        written = [line for line in lines if re.search(r" @ \d{4}-\d\d-\d\dT", line)]
+        self.assertTrue(written and all(line.endswith(" @ 2000-01-01T00:00:00.000000+00:00") for line in written),
+                        "the write time is one fixed time")
+        values = {lines[i]: lines[i + 2] for i in range(len(lines) - 2) if lines[i].startswith("$")}
+        self.assertEqual(values["$TDCREATE"], values["$TDUPDATE"])
+        # The fingerprint follows the content: another scene has another one.
+        self.canvas.drawString(30, 80, "REVISED")
+        other = render_dxf(self.canvas).decode("utf-8").splitlines()
+        other_values = {other[i]: other[i + 2] for i in range(len(other) - 2) if other[i].startswith("$")}
+        self.assertNotEqual(values["$FINGERPRINTGUID"], other_values["$FINGERPRINTGUID"])
+        for name in ("$FINGERPRINTGUID", "$VERSIONGUID"):
+            self.assertRegex(values[name], r"^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$")
+        self.read_dxf()
+
     def test_explicit_sheets_keep_paper_size_and_do_not_invent_a_final_page(self):
         c = self.canvas
         c.drawString(30, 40, "SHEET A01")

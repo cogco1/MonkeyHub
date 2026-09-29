@@ -9,11 +9,13 @@ this adapter neither reads a project nor extracts geometry from a rendered PDF.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import hashlib
 from io import BytesIO, StringIO
 import math
 from pathlib import Path
 import re
 from typing import Any, Iterable, Mapping
+import uuid
 
 
 MM_PER_PT = 25.4 / 72.0
@@ -601,9 +603,55 @@ def _model_views(doc, views, regions, needs_hidden):
         y -= (crop[3]-crop[1])*1000 + 250
 
 
+#: The header dates ezdxf stamps with the time of writing, and the GUIDs it draws at random.
+_DXF_DATES = ("$TDCREATE", "$TDUCREATE", "$TDUPDATE", "$TDUUPDATE")
+_DXF_GUIDS = ("$FINGERPRINTGUID", "$VERSIONGUID")
+#: 2000-01-01 00:00 as ezdxf writes it for a reproducible file.
+_DXF_FIXED_DATE = "2451545.0"
+_DXF_WRITTEN_AT = re.compile(r"^(\S+) @ \d{4}-\d{2}-\d{2}T\S+$")
+_DXF_FIXED_TIME = "2000-01-01T00:00:00.000000+00:00"
+
+
+def _reproducible_dxf(text: str) -> str:
+    """The same drawing without the time it was written: fixed dates, content-derived GUIDs.
+
+    A DXF is a sequence of (group code, value) line pairs. The header dates
+    and ezdxf's own "written at" markers become one fixed time, and the two
+    GUIDs are derived from the rest of the file, so the same scene always
+    gives the same bytes and another scene another fingerprint.
+    """
+
+    lines = text.split("\n")
+    guid_lines, pending = [], None
+    for index in range(0, len(lines) - 1, 2):
+        code, value = lines[index].strip(), lines[index + 1]
+        if pending is not None:
+            if pending in _DXF_DATES:
+                lines[index + 1] = _DXF_FIXED_DATE
+            else:
+                guid_lines.append(index + 1)
+            pending = None
+        elif code == "9" and value in _DXF_DATES + _DXF_GUIDS:
+            pending = value
+        elif code == "1":
+            written = _DXF_WRITTEN_AT.match(value)
+            if written:
+                lines[index + 1] = f"{written.group(1)} @ {_DXF_FIXED_TIME}"
+    for index in guid_lines:
+        lines[index] = "{00000000-0000-0000-0000-000000000000}"
+    digest = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+    for number, index in enumerate(guid_lines):
+        start = number * 32 % 64
+        lines[index] = "{" + str(uuid.UUID(hex=digest[start:start + 32])).upper() + "}"
+    return "\n".join(lines)
+
+
 def render_dxf(source, font_mapping: Mapping[str, str | Path] | None = None, *,
                model_views=None, regions=None, needs_hidden=()) -> bytes:
-    """Render the same scene sequence as editable mm layouts; never read a PDF."""
+    """Render the same scene sequence as editable mm layouts; never read a PDF.
+
+    The same scenes give the same bytes: nothing records when the file was written.
+    """
     import ezdxf
     from ezdxf import path as cad_path, units
     scenes, fonts = _input(source, font_mapping)
@@ -679,4 +727,4 @@ def render_dxf(source, font_mapping: Mapping[str, str | Path] | None = None, *,
         raise ValueError(f"Invalid DXF scene output: {len(audit.errors)} errors, {len(audit.fixes)} fixes")
     buffer = StringIO()
     doc.write(buffer)
-    return buffer.getvalue().encode("utf-8")
+    return _reproducible_dxf(buffer.getvalue()).encode("utf-8")
