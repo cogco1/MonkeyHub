@@ -581,13 +581,16 @@ class _Wake(threading.Event):
     """The project observer's one wait.
 
     ``set`` asks the next pass for a full retained read, as a Hub mutation or
-    an open does. ``nudge`` only ends the wait, so the next pass compares its
-    small status values now without reading the project again.
+    a first open does. ``check`` asks it to read again now only if the project
+    moved since its last read, as opening an observed project again does.
+    ``nudge`` only ends the wait, so the next pass compares its small status
+    values now without reading the project again.
     """
 
     def __init__(self) -> None:
         super().__init__()
         self._read = False
+        self._check = False
 
     def set(self) -> None:
         self._read = True
@@ -596,11 +599,21 @@ class _Wake(threading.Event):
     def nudge(self) -> None:
         super().set()
 
+    def check(self) -> None:
+        """End the wait and read the project now if it moved since the last read (the idle fallback's question)."""
+        self._check = True
+        super().set()
+
     def take(self) -> bool:
         """End this wake; whether a full read was asked since the last take."""
         super().clear()
         read, self._read = self._read, False
         return read
+
+    def take_check(self) -> bool:
+        """Whether a moved-since-read check was asked since the last take."""
+        check, self._check = self._check, False
+        return check
 
 
 @dataclass
@@ -851,11 +864,22 @@ class ProjectRuntimeManager:
     def open(self, project_id: str, project_dir: str) -> ProjectRuntime:
         # Taken before the check, so a change during it is seen by the next get().
         signature = binding_signature(project_dir)
-        actual_id, actual_dir = _project(project_dir)
-        if actual_id != project_id:
-            raise HubFailure(409, "PROJECT_MISMATCH", "The requested project identity does not match this folder.")
-        key = project_key(actual_dir)
-        runtime_id = str(uuid5(NAMESPACE_URL, f"{actual_id}:{key}"))
+        key = project_key(project_dir)
+        runtime_id = str(uuid5(NAMESPACE_URL, f"{project_id}:{key}"))
+        with self._lock:
+            attached = self._projects.get(runtime_id)
+        # An attached runtime whose folder has the same two stats is the project
+        # it was verified to be, as in get(): a page opening it again (a reload)
+        # does not open and verify the whole project again (#449).
+        if (attached is None or signature is None or signature != attached.binding_signature
+                or project_key(attached.project_dir) != key):
+            actual_id, actual_dir = _project(project_dir)
+            if actual_id != project_id:
+                raise HubFailure(409, "PROJECT_MISMATCH", "The requested project identity does not match this folder.")
+            key = project_key(actual_dir)
+            runtime_id = str(uuid5(NAMESPACE_URL, f"{actual_id}:{key}"))
+        else:
+            actual_id, actual_dir = attached.project_id, attached.project_dir
         with self._lock:
             if self._closing.is_set():
                 raise HubFailure(409, "HUB_STOPPING", "Hub is closing.")
@@ -875,7 +899,12 @@ class ProjectRuntimeManager:
                 runtime.thread = threading.Thread(target=self._watch, args=(runtime,), daemon=True, name=f"hub-project-{project_id}")
                 runtime.thread.start()
                 self.emit("project/opened", runtime_id)
-            runtime.wake.set()
+                runtime.wake.set()
+            else:
+                # Already observed: read the project again now only if something
+                # on disk moved since the last read, as the idle fallback does,
+                # instead of a full read while the page that opened it loads.
+                runtime.wake.check()
             return runtime
 
     def get(self, runtime_id: str, project_id: str | None = None) -> ProjectRuntime:
@@ -1322,6 +1351,7 @@ class ProjectRuntimeManager:
         last_token: ReadToken | None = None
         while not self._closing.is_set():
             force_read = runtime.wake.take()
+            checked = runtime.wake.take_check()
             workers = self.applications.worker_snapshots(project_dir=runtime.project_dir)
             self._follow_worker(runtime, workers)
             worker_states = tuple((row.instance_id, row.state, row.healthy) for row in workers)
@@ -1329,7 +1359,7 @@ class ProjectRuntimeManager:
             active = runtime.operations._has_active() or any(
                 row.get("status") in {"queued", "running"} for row in (runtime.retained or {}).get("jobs", []))
             prompted = drained or force_read or active or worker_states != runtime.last_workers
-            due = prompted or time.monotonic() >= next_retained_read
+            due = prompted or checked or time.monotonic() >= next_retained_read
             try:
                 token = None
                 if due and not prompted:

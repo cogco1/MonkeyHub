@@ -106,7 +106,8 @@ export interface SessionHandle extends SessionSnapshot {
 }
 
 /** The hook's async transitions, also usable by isolated tests without a browser. */
-export function createSessionController(studio: StudioClient, serverBaseUrl = "", capabilities: readonly string[] = [], persistEditingBase = true, expectedProjectId?: string) {
+export function createSessionController(studio: StudioClient, serverBaseUrl = "", capabilities: readonly string[] = [], persistEditingBase = true, expectedProjectId?: string,
+  prefetchModel?: (source: ModelSourceDto) => void) {
   let snapshot: SessionSnapshot = {
     binding: null, session: idle, changingBase: false, baseError: null, persistenceFailed: false,
   };
@@ -172,6 +173,8 @@ export function createSessionController(studio: StudioClient, serverBaseUrl = ""
       const stageModelSource = useHead ? defaultStage?.modelSource ?? null : stageRef
         ? designHistory?.stages.find((stage) => stage.stageRef === stageRef)?.modelSource ?? null
         : requestedRunId === undefined && sameProject && previous.status === "ready" ? previous.value.stageModelSource ?? null : null;
+      // The model this base shows is named already: its bytes need not wait for the state (#449).
+      if (!background && stageModelSource) prefetchModel?.(stageModelSource);
       // Quiet candidate display already read this exact run. Reuse that value,
       // but still validate it against the fresh project binding below.
       const projection = (typeof requestedRunId === "string" ? alreadyReadProjection : undefined)
@@ -350,10 +353,13 @@ export function editingDigestForView(
 
 export function useSession(notice: (line: string) => void, capabilities: readonly string[] = [], initialBase?: {
   runId: string | null; sourceStageRef: string | null;
-}, persistEditingBase = true, expectedProjectId?: string): SessionHandle {
+}, persistEditingBase = true, expectedProjectId?: string, prefetchModel?: (source: ModelSourceDto) => void): SessionHandle {
   const studio = useStudio();
   const connection = useConnection();
-  const [controller] = useState(() => createSessionController(studio, connection.baseUrl, capabilities, persistEditingBase, expectedProjectId));
+  const prefetchRef = useRef(prefetchModel);
+  prefetchRef.current = prefetchModel;
+  const [controller] = useState(() => createSessionController(studio, connection.baseUrl, capabilities, persistEditingBase, expectedProjectId,
+    (source) => prefetchRef.current?.(source)));
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { reload } = controller;
   const failure = useCallback(() => controller.getSnapshot().baseError, [controller]);
