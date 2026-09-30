@@ -20,8 +20,7 @@ from monkeycad.patch import CadPatchError, PatchSelection, select_patch_operatio
 from monkeycad.program import expected_object_semantics
 from archflow.state.geometry_program import delivered_object_ids
 from monkeyarch.compilation.geometry import compile_geometry_program
-from cad_execution_fixture import _binding
-from portico_fixture import _compile, _rows
+from portico_fixture import _binding, _compile, _rows
 from spine_fixture import COMMITMENT, _only, _proposal, _state
 
 

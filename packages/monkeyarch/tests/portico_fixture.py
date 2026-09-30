@@ -4,6 +4,8 @@ The rows are the reference-reading producers' own slice (test_element_producers.
 column array, capitals, entablature and pediment on shared datums. ``_compile``
 turns rows into the compiled program over the spine fixture's state, as the
 incremental patch tests (test_cad_patch.py) and the relation checks read it.
+``_binding`` is the exact CAD binding of a compiled program, copied from the
+integration suite's support (tests/integration/support.py) for the patch tests.
 """
 
 from __future__ import annotations
@@ -11,7 +13,9 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 
-from archflow.state.geometry_program import ProjectGridAxis, ProjectGrids, ProjectLevel, ProjectLevels
+from monkeycad.execution import RhinoCadProgramBinding
+from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef
+from archflow.state.geometry_program import CompiledGeometryProgram, ProjectGridAxis, ProjectGrids, ProjectLevel, ProjectLevels
 from monkeyarch.authoring.element_producers import ElementRow, ProductionContext, produce_rows
 from monkeyarch.compilation.geometry import compile_geometry_program
 from monkeyarch.domain.reference_resolver import ReferenceContext
@@ -83,3 +87,38 @@ def _compile(rows, *, array_seed: str | None = None):
     result = compile_geometry_program(state, proposal, active_commitment_refs=(COMMITMENT,), interface_datums=datums, datum_bindings=bindings)
     assert result.program is not None, [(i.code.value, i.subject_id, i.detail) for i in result.receipt.issues]
     return result.program
+
+
+def _binding(
+    program: CompiledGeometryProgram,
+    *,
+    branch_id: str = "candidate-a",
+    stage_id: str = "stage-3",
+    record_sha: str = "8" * 64,
+    record_path: str | None = None,
+    media_type: str = "application/json",
+) -> RhinoCadProgramBinding:
+    base = program.proposal.base
+    branch = BranchRef(
+        run=RunRef(program.proposal.project_id, program.proposal.run_id, base),
+        branch_id=branch_id,
+        epoch=3,
+    )
+    if record_path is None:
+        record_path = (
+            f"runs/{program.proposal.run_id}/branches/{branch_id}/records/"
+            f"{stage_id}-geometry-program-{record_sha}.json"
+        )
+    return RhinoCadProgramBinding(
+        program_ref=ProjectRecordRef(
+            project_id=program.proposal.project_id,
+            relative_path=record_path,
+            sha256=record_sha,
+            media_type=media_type,
+        ),
+        branch=branch,
+        stage_id=stage_id,
+        program_digest=program.program_digest,
+        design_state_digest=program.proposal.design_state_digest,
+        predecessor_program_digest=program.proposal.predecessor_program_digest,
+    )
