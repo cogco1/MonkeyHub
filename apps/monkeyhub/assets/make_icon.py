@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Draw the MonkeyArch icon: monkeyarch.ico, plus a 512 px PNG preview.
 
-    py -3.12 apps/archflow-studio/assets/make_icon.py
+    py -3.12 apps/monkeyhub/assets/make_icon.py
 
 MonkeyArch is the software; ArchFlow stays the name of the method it runs --
 record-driven derivation of buildings. The mark has to carry both at once, so it

@@ -7650,6 +7650,7 @@
         "apps/monkeyhub/api/monkeyhub_api/runtime.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime_models.py",
         "apps/monkeyhub/desktop/",
+        "apps/monkeyhub/assets/",
         "apps/monkeyhub/web/src/MonitorPage.tsx",
         "apps/monkeyhub/web/src/MonitorPage.css",
         "apps/monkeyhub/web/src/monitorData.ts",
