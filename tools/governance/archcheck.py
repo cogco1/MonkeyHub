@@ -2,11 +2,12 @@
 
 Two modes. Without arguments it checks the tree: layer imports, filesystem
 write ownership, state authorities, the probe boundary, the entries Git tracks
-at the repository root and under docs/, the module registry and every path it
-names, and the live work registry -- GitHub Issue claims only, no two of them
-holding the same path or checkout. A path the policy configures must exist: a
-rule whose path is gone is reported, never skipped. So is a layer rule's target
-that names no module, since nothing can import it.
+at the repository root and under docs/, the module registry, every path it
+names and the namespace each module id begins with, and the live work registry
+-- GitHub Issue claims only, no two of them holding the same path or checkout.
+A path the policy configures must exist: a rule whose path is gone is
+reported, never skipped. So is a layer rule's target that names no module,
+since nothing can import it.
 
 With ``--changed <base>`` it checks one branch instead, using each commit's
 policy and work registry from Git. Once the scope rule exists in a parent, a
@@ -35,6 +36,8 @@ from typing import Any, Iterable, Iterator
 
 
 POLICY_SCHEMA = "ArchFlowArchitecturePolicy@1"
+# A module id's first segment, the namespace of the unit that holds its owner.
+MODULE_ID_NAMESPACE = re.compile(r"[a-z][a-z0-9_]*")
 
 
 class ArchitecturePolicyError(ValueError):
@@ -173,6 +176,29 @@ def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
             raise ArchitecturePolicyError(
                 "source_root cannot be import-only"
             )
+    # Optional until the registry's ids are renamed into their namespaces
+    # (#523); while the policy names no units, no id is checked against one.
+    namespaces = policy.get("module_id_namespaces")
+    if namespaces is not None:
+        if not isinstance(namespaces, dict) or not namespaces:
+            raise ArchitecturePolicyError(
+                "module_id_namespaces must map each distribution unit's directory to its namespace"
+            )
+        units: set[tuple[str, ...]] = set()
+        for unit, namespace in namespaces.items():
+            if not _repository_path(unit):
+                raise ArchitecturePolicyError(
+                    f"module_id_namespaces entry {unit!r} must be a repository-relative directory"
+                )
+            if _scope_parts(unit) in units:
+                raise ArchitecturePolicyError(
+                    f"module_id_namespaces names {unit!r} twice"
+                )
+            units.add(_scope_parts(unit))
+            if not isinstance(namespace, str) or not MODULE_ID_NAMESPACE.fullmatch(namespace):
+                raise ArchitecturePolicyError(
+                    f"module_id_namespaces[{unit!r}] must be one lowercase id segment, not {namespace!r}"
+                )
 
     write_sites = policy.get("allowed_write_sites")
     if not isinstance(write_sites, list):
@@ -390,8 +416,9 @@ def check_policy_paths(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFin
     fires: both would pass forever after a move that forgot the policy. The
     Python source roots name where module import names begin, so a ``src``
     directory holding checked Python must be one of them; otherwise its modules
-    would be named after the directories around them. Write sites and
-    authority symbols are held to the same rule by ``validate_policy``.
+    would be named after the directories around them. A distribution unit that
+    names a module-id namespace must exist too. Write sites and authority
+    symbols are held to the same rule by ``validate_policy``.
     """
 
     checked = tuple(
@@ -420,6 +447,13 @@ def check_policy_paths(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFin
             yield PolicyFinding(
                 ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
                 f"python_source_roots entry {python_root!r} {state}; no module import name begins there",
+            )
+    for unit in policy.get("module_id_namespaces") or {}:
+        state = directory_state(unit)
+        if state is not None:
+            yield PolicyFinding(
+                ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
+                f"module_id_namespaces entry {unit!r} {state}; no module id is checked against it",
             )
     unlisted: set[str] = set()
     for relative in checked:
@@ -956,6 +990,45 @@ def _registry_path_fields(data: dict[str, Any]) -> Iterator[tuple[str, object, s
 DEPENDENCY_PACKAGES = ("archflow.", "monkeycad.", "monkeyarch.", "monkeydiagram.")
 
 
+def _id_namespace(path: str, namespaces: dict[str, str]) -> tuple[str, str] | None:
+    """The distribution unit holding a repository path, and its module-id namespace.
+
+    Units are matched on whole path segments, so ``tools`` holds
+    ``tools/governance/archcheck.py`` but not ``toolsets/check.py``; the
+    longest unit holding the path wins.
+    """
+
+    parts = _scope_parts(path)
+    held = [
+        (len(_scope_parts(unit)), unit, namespace)
+        for unit, namespace in namespaces.items()
+        if parts[: len(_scope_parts(unit))] == _scope_parts(unit)
+    ]
+    if not held:
+        return None
+    _, unit, namespace = max(held)
+    return unit, namespace
+
+
+def _id_namespace_problem(module_id: str, owner_path: str, namespaces: dict[str, str]) -> str | None:
+    """Why a module id does not begin with its owner's namespace, or None when it does."""
+
+    found = _id_namespace(owner_path, namespaces)
+    if found is None:
+        return (
+            f"{module_id}: owner_path {owner_path} is in no distribution unit that module_id_namespaces "
+            "names, so its id has no namespace to begin with; name the unit there or move the owner into one"
+        )
+    unit, namespace = found
+    first = module_id.split(".", 1)[0]
+    if first == namespace:
+        return None
+    return (
+        f"{module_id}: owner_path {owner_path} is in {unit}, whose module ids begin with "
+        f"{namespace!r}, but this id begins with {first!r}"
+    )
+
+
 def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
     """The module registry must tell the truth, and a capability has one owner.
 
@@ -966,6 +1039,16 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
     functions (a copied helper is a duplicate owner). A module's imports are
     matched to owners by import name, which begins at the policy's
     ``python_source_roots``.
+
+    A module id's first segment is the namespace of the distribution unit
+    holding its ``owner_path``, as the policy's ``module_id_namespaces`` maps
+    them: ``packages/<p>/src/<p>`` is ``<p>``, the Project Runtime is
+    ``project_runtime``, the Hub API ``hub`` and ``tools/`` ``tools``. An id
+    named after a product, a retired service or another package's
+    subpackage is ``REGISTRY_ID_NAMESPACE``, and so is an owner outside every
+    unit. The rest of the id is not checked: MonkeyCAD and the Hub name
+    their owners by capability. Until the policy names its units the rule is
+    not applied.
     """
 
     registry_path = root / "governance" / "module_registry.json"
@@ -974,6 +1057,7 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
     data = json.loads(registry_path.read_text(encoding="utf-8"))
     entries = data.get("modules", [])
     rel_registry = registry_path.relative_to(root).as_posix()
+    namespaces = policy.get("module_id_namespaces")
     owners: dict[str, str] = {}
     ids: set[str] = set()
     owner_bodies: dict[str, tuple[str, str]] = {}
@@ -988,6 +1072,10 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
         if module_id in ids:
             yield PolicyFinding(rel_registry, 1, "REGISTRY_DUPLICATE_MODULE", f"module_id {module_id} listed twice")
         ids.add(module_id)
+        if namespaces is not None:
+            problem = _id_namespace_problem(module_id, entry.get("owner_path", ""), namespaces)
+            if problem is not None:
+                yield PolicyFinding(rel_registry, 1, "REGISTRY_ID_NAMESPACE", problem)
         owner = root / entry.get("owner_path", "")
         if not owner.is_file():
             yield PolicyFinding(rel_registry, 1, "REGISTRY_OWNER_MISSING", f"{module_id}: owner_path {entry.get('owner_path')} does not exist")
