@@ -30,8 +30,10 @@ does not change. Without it the candidate keeps no index.
 
 Each side runs in its own interpreter with its kernel source (``<code-root>``
 before #489, ``<code-root>/packages/archflow/src`` from it on), ``<code-root>``
-and ``<code-root>/apps/archflow-studio/api`` first on ``sys.path`` and refuses
-to run if ``archflow`` resolves anywhere else. This file imports nothing from
+and its runtime source (``<code-root>/apps/archflow-studio/api`` with the
+``archflow_studio_api`` package before #491, ``<code-root>/services/project-runtime/src``
+with ``project_runtime`` from it on) first on ``sys.path``, and refuses to run if
+``archflow`` or the runtime resolves anywhere else. This file imports nothing from
 either root; the worker half (``worker`` subcommand) imports the side it reads.
 """
 
@@ -39,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import json
 import os
 from pathlib import Path
@@ -65,11 +68,15 @@ SLOWER_MS = 200.0
 # How far into the past the scratch copy's newest time is moved, so the
 # project is settled (older than any racy window) before a side reads it.
 SETTLED_AGE_NS = 3600 * 1_000_000_000
-STUDIO_API = Path("apps") / "archflow-studio" / "api"
 # archflow left the code root for packages/archflow/src in #489. The job compares a change
 # with its base, so a side keeps the root layout until every base has the packages one;
 # then the root layout goes (``_kernel_source``).
 KERNEL_SOURCE = Path("packages") / "archflow" / "src"
+# The runtime left apps/archflow-studio/api for services/project-runtime/src in #491 and
+# was renamed with it; each side is read in its own layout until every base has the new
+# one, and then the old layout goes (``_runtime_source``).
+RUNTIME_SOURCE, RUNTIME_PACKAGE = Path("services") / "project-runtime" / "src", "project_runtime"
+BEFORE_491_RUNTIME = Path("apps") / "archflow-studio" / "api", "archflow_studio_api"
 # How long an opt-in index (``--index-dir``) is waited for to load or catch up.
 INDEX_WAIT_S = 600.0
 
@@ -111,23 +118,35 @@ def _kernel_source(code_root: Path) -> Path:
     return code_root if (code_root / "archflow" / "__init__.py").is_file() else code_root / KERNEL_SOURCE
 
 
-def _bind(code_root: Path) -> None:
-    """Put this side's code first on ``sys.path`` and prove it is what imports.
+def _runtime_source(code_root: Path) -> tuple[Path, str]:
+    """Where this side keeps the runtime, and its package name: services/project-runtime/src
+    and ``project_runtime`` from #491, apps/archflow-studio/api and its old name before."""
+
+    if (code_root / RUNTIME_SOURCE / RUNTIME_PACKAGE / "__init__.py").is_file():
+        return code_root / RUNTIME_SOURCE, RUNTIME_PACKAGE
+    return code_root / BEFORE_491_RUNTIME[0], BEFORE_491_RUNTIME[1]
+
+
+def _bind(code_root: Path) -> str:
+    """Put this side's code first on ``sys.path``, prove it is what imports, and answer the
+    side's runtime package name.
 
     Importing the runtime package puts the side's other source roots in front as well.
     """
 
     here = Path(__file__).resolve().parent
     rest = [entry for entry in sys.path if Path(entry or ".").resolve() != here]
-    first = dict.fromkeys(str(path) for path in (_kernel_source(code_root), code_root, code_root / STUDIO_API))
+    runtime_source, package = _runtime_source(code_root)
+    first = dict.fromkeys(str(path) for path in (_kernel_source(code_root), code_root, runtime_source))
     sys.path[:] = [*first, *rest]
     import archflow
-    import archflow_studio_api
+    runtime = importlib.import_module(package)
 
-    for module in (archflow, archflow_studio_api):
+    for module in (archflow, runtime):
         location = Path(module.__file__).resolve()
         if not location.is_relative_to(code_root.resolve()):
             raise SystemExit(f"{module.__name__} resolved to {location}, outside {code_root}")
+    return package
 
 
 def _write(path: Path, data: bytes) -> None:
@@ -173,10 +192,10 @@ def _index_state(binding: Any) -> dict[str, Any]:
 
 def _worker(code_root: Path, project_dir: Path, mode: str, bodies: Path,
             index_dir: Path | None = None) -> dict[str, Any]:
-    _bind(code_root)
+    runtime = _bind(code_root)
     from fastapi.testclient import TestClient
-    from archflow_studio_api.main import create_app
-    from archflow_studio_api.settings import StudioSettings
+    create_app = importlib.import_module(f"{runtime}.main").create_app
+    StudioSettings = importlib.import_module(f"{runtime}.settings").StudioSettings
     import archflow
 
     result: dict[str, Any] = {"mode": mode, "archflow": str(Path(archflow.__file__).resolve())}
@@ -185,7 +204,7 @@ def _worker(code_root: Path, project_dir: Path, mode: str, bodies: Path,
     with TestClient(app) as client:
         binding = None
         if index_dir is not None:
-            from archflow_studio_api.application.binding import bound_project
+            bound_project = importlib.import_module(f"{runtime}.application.binding").bound_project
 
             started = time.perf_counter()
             binding = bound_project(app.state)

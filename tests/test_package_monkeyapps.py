@@ -145,7 +145,7 @@ class PackageAdapterTests(unittest.TestCase):
         self.node = self.root / "node.exe"
         self.node.write_bytes(b"selected Node runtime")
         for directory in (
-            "apps/archflow-studio/api/archflow_studio_api",
+            "services/project-runtime/src/project_runtime",
             "apps/monkeyhub/api", "apps/monkeyhub/installer/third-party",
             "packages/monkeyfab/src/monkeyfab", "packages/monkeyfab/tests",
         ):
@@ -165,6 +165,7 @@ class PackageAdapterTests(unittest.TestCase):
             "packages/archflow/src/archflow/__init__.py", "packages/archflow/tests/test_project_repository.py",
             "packages/monkeyarch/src/monkeyarch/__init__.py",
             "packages/monkeymonitor/src/monkeymonitor/__init__.py", "packages/monkeymonitor/tests/test_core.py",
+            "services/project-runtime/src/project_runtime/__init__.py",
         ):
             target = self.source / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -203,6 +204,25 @@ class PackageAdapterTests(unittest.TestCase):
         self.assertIn("--omit=optional", installs[0].args[0])
         builds = [call.kwargs["cwd"] for call in run.call_args_list if "build" in call.args[0]]
         self.assertEqual(builds, [self.source / "apps/monkeyhub/web"])
+
+    def test_embedded_python_finds_the_runtime_where_the_bundle_ships_it(self) -> None:
+        # The bundled interpreter ignores PYTHONPATH, so python313._pth alone lets the
+        # Hub's --service studio and the runtime's -m projection worker import project_runtime.
+        embed = self.root / "python-embed.zip"
+        zipfile.ZipFile(embed, "w").close()
+        for manifest, extra in (("packages/archflow/pyproject.toml", "cad-occt"), ("packages/monkeyfab/pyproject.toml", "send")):
+            (self.source / manifest).write_text(
+                f"[project]\ndependencies = []\n[project.optional-dependencies]\n{extra} = []\n", encoding="utf-8")
+        python = self.root / "bundle/_runtime/python"
+        with patch.object(builder, "fetch_runtime", return_value=embed), patch.object(builder, "run") as run:
+            builder.prepare_runtime(self.source, python, self.root / "cache")
+        listed = (python / "python313._pth").read_text(encoding="utf-8").splitlines()
+        entry = next(line for line in listed if "project-runtime" in line)
+        # Read from the interpreter's directory, it is where collect_application puts project_runtime.
+        self.assertEqual((python / entry.replace("\\", "/")).resolve(),
+                         (self.root / "bundle/services/project-runtime/src").resolve())
+        for call in run.call_args_list:
+            self.assertIn(str(self.source / "services/project-runtime/requirements.txt"), call.args[0])
 
     def test_bundle_contains_adapter_node_registry_and_exact_release_notices(self) -> None:
         def upstream(url, **kwargs):
@@ -250,7 +270,9 @@ class PackageAdapterTests(unittest.TestCase):
         self.assertEqual((self.bundle / "apps/monkeyhub/web/dist/index.html").read_text(), "fixture")
         # The desktop shortcut and the browser launcher take the product icon from here.
         self.assertEqual((self.bundle / "apps/monkeyhub/assets/monkeyarch.ico").read_text(), "fixture")
-        self.assertFalse((self.bundle / "apps/archflow-studio/web").exists())
+        # The Project Runtime keeps its repository path, whose src python313._pth lists.
+        self.assertEqual((self.bundle / "services/project-runtime/src/project_runtime/__init__.py").read_text(), "fixture")
+        self.assertIn("services/project-runtime", builder.SOURCE_PATHS)
         urls = {call.args[0] for call in fetched.call_args_list}
         self.assertEqual(urls, {
             "https://raw.githubusercontent.com/nodejs/node/v24.14.0/LICENSE",

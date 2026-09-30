@@ -7,7 +7,7 @@
       "tools/verify_state_record.py",
       "tools/freeze_project_stage_workflow.py",
       "tools/open_stage_run.py",
-      "apps/archflow-studio/api/archflow_studio_api/main.py"
+      "services/project-runtime/src/project_runtime/main.py"
     ],
     "rule": "One owner per capability. EXTEND the owner; CREATE only with a written reason; a second implementation exists only behind an interface declared here."
   },
@@ -140,9 +140,9 @@
         "preview": "MonkeyArch"
       },
       "tests": [
-        "apps/archflow-studio/api/tests/test_capabilities.py",
-        "apps/archflow-studio/api/tests/test_proposals.py",
-        "apps/archflow-studio/api/tests/test_candidate.py"
+        "services/project-runtime/tests/test_capabilities.py",
+        "services/project-runtime/tests/test_proposals.py",
+        "services/project-runtime/tests/test_candidate.py"
       ],
       "status_note": "PARTIAL, and not yet PRODUCTION: the static entry describes a chain whose real-project run is verified separately. Runtime availability (is a project bound, is this state actionable) is answered per request, never from this entry."
     },
@@ -210,8 +210,8 @@
         "preview": "MonkeyArch"
       },
       "tests": [
-        "apps/archflow-studio/api/tests/test_boards.py",
-        "apps/archflow-studio/api/tests/test_binding.py",
+        "services/project-runtime/tests/test_boards.py",
+        "services/project-runtime/tests/test_binding.py",
         "packages/archflow/tests/test_project_repository.py"
       ],
       "status_note": "Initial input preparation is verified through real OCCT modeling and drawing tests; image interpretation is a separate task."
@@ -374,7 +374,7 @@
         "tests/test_occt_execution.py",
         "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+        "services/project-runtime/src/project_runtime/application/candidate.py",
         "tests/test_cad_backend_contract.py"
       ],
       "invariants": [
@@ -682,7 +682,7 @@
         "archflow.adapters.occt_backend"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+        "services/project-runtime/src/project_runtime/application/drawings.py",
         "packages/monkeydiagram/tests/test_mesh_views.py"
       ],
       "invariants": [
@@ -808,7 +808,7 @@
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
         "tools/run_project.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
+        "services/project-runtime/src/project_runtime/adapters/seats.py",
         "tests/test_discipline_seats.py",
         "tests/test_project_runner.py"
       ],
@@ -896,7 +896,7 @@
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tools/run_project.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
+        "services/project-runtime/src/project_runtime/adapters/seats.py",
         "tests/test_discipline_seats.py",
         "tests/test_project_runner.py"
       ],
@@ -1001,7 +1001,7 @@
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tests/test_element_producers.py",
         "tests/test_cad_patch.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/construction.py"
+        "services/project-runtime/src/project_runtime/application/construction.py"
       ],
       "invariants": [
         "no producer computes a plan coordinate itself; every position goes through resolve_plan",
@@ -1118,7 +1118,7 @@
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tools/run_project.py",
         "tools/verify_state_record.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+        "services/project-runtime/src/project_runtime/application/candidate.py",
         "tests/test_production_policy.py",
         "tests/test_element_producers.py",
         "tests/test_state_record.py"
@@ -1721,8 +1721,8 @@
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
-        "apps/archflow-studio/api/tests/test_intent_agent_timeout.py"
+        "services/project-runtime/src/project_runtime/application/intent_agent.py",
+        "services/project-runtime/tests/test_intent_agent_timeout.py"
       ],
       "invariants": [
         "a request is bound to a checkpoint digest and a context digest; nothing is invoked without both",
@@ -1946,8 +1946,8 @@
       "used_by": [
         "tools/run_project.py",
         "tools/verify_state_record.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py"
+        "services/project-runtime/src/project_runtime/application/projection.py",
+        "services/project-runtime/src/project_runtime/adapters/seats.py"
       ],
       "invariants": [
         "absent and unreadable are different refusals, and each names the file it wanted",
@@ -2081,10 +2081,10 @@
       "used_by": [
         "packages/archflow/src/archflow/project/repository.py",
         "packages/archflow/src/archflow/project/inputs.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/state.py",
+        "services/project-runtime/src/project_runtime/application/projection.py",
+        "services/project-runtime/src/project_runtime/application/intent.py",
+        "services/project-runtime/src/project_runtime/adapters/seats.py",
+        "services/project-runtime/src/project_runtime/transport/state.py",
         "packages/archflow/src/archflow/project/memo.py",
         "packages/archflow/src/archflow/project/watch.py"
       ],
@@ -2140,7 +2140,7 @@
         "project.repository"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
+        "services/project-runtime/src/project_runtime/application/binding.py",
         "packages/archflow/tests/test_project_location.py"
       ],
       "invariants": [
@@ -2229,9 +2229,9 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/project/repository.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
+        "services/project-runtime/src/project_runtime/application/binding.py",
+        "services/project-runtime/src/project_runtime/application/artifacts.py",
+        "services/project-runtime/src/project_runtime/application/projection.py",
         "packages/archflow/src/archflow/project/watch.py"
       ],
       "invariants": [
@@ -2345,11 +2345,11 @@
         "project.watch"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/index.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/index.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/conditional.py"
+        "services/project-runtime/src/project_runtime/application/binding.py",
+        "services/project-runtime/src/project_runtime/application/index.py",
+        "services/project-runtime/src/project_runtime/application/artifacts.py",
+        "services/project-runtime/src/project_runtime/routes/index.py",
+        "services/project-runtime/src/project_runtime/transport/conditional.py"
       ],
       "invariants": [
         "never a source of truth and never evidence: every row names the P036 record it was read from, and the index can be deleted at any time and rebuilt from P036",
@@ -2367,9 +2367,9 @@
       "status": "canonical",
       "tests": [
         "packages/archflow/tests/test_project_index.py",
-        "apps/archflow-studio/api/tests/test_indexed_reads.py",
-        "apps/archflow-studio/api/tests/test_index_changes.py",
-        "apps/archflow-studio/api/tests/test_projections.py"
+        "services/project-runtime/tests/test_indexed_reads.py",
+        "services/project-runtime/tests/test_index_changes.py",
+        "services/project-runtime/tests/test_projections.py"
       ],
       "notes": "Created because no owner held a persistent derived store (ADR-008 phase 1b, #365). It hears of changes only through project.watch and the repository write observer; it never walks the project itself.",
       "files": [
@@ -2428,7 +2428,7 @@
         "project.repository"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
+        "services/project-runtime/src/project_runtime/application/binding.py",
         "packages/archflow/src/archflow/project/index/keeper.py"
       ],
       "invariants": [
@@ -2443,8 +2443,8 @@
       "status": "canonical",
       "tests": [
         "packages/archflow/tests/test_project_watch.py",
-        "apps/archflow-studio/api/tests/test_conditional_reads.py",
-        "apps/archflow-studio/api/tests/test_derivation_memo.py"
+        "services/project-runtime/tests/test_conditional_reads.py",
+        "services/project-runtime/tests/test_derivation_memo.py"
       ],
       "notes": "Created because the 0a fingerprint walk sat on the request path (#363): on a busy disk it took 0.2-1.2 s once per TTL, and an unchanged 304 waited for it. The notification tests need Windows and skip elsewhere; the scanning tests run on every platform. Windows still refuses to rename a folder that contains a watched root while the watch holds its handle; the Hub and Studio close the watch with the project."
     },
@@ -2492,9 +2492,9 @@
         "packages/archflow/src/archflow/project/repository.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
+        "services/project-runtime/src/project_runtime/adapters/harness.py",
+        "services/project-runtime/src/project_runtime/application/artifacts.py",
+        "services/project-runtime/src/project_runtime/application/binding.py",
         "tools/freeze_project_stage_workflow.py",
         "tools/verify_state_record.py"
       ],
@@ -2560,18 +2560,18 @@
         "packages/archflow/src/archflow/project/issue.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/compare.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
+        "services/project-runtime/src/project_runtime/application/artifacts.py",
+        "services/project-runtime/src/project_runtime/application/binding.py",
+        "services/project-runtime/src/project_runtime/application/candidate.py",
+        "services/project-runtime/src/project_runtime/application/compare.py",
+        "services/project-runtime/src/project_runtime/adapters/harness.py",
         "tools/freeze_project_stage_workflow.py",
         "tools/verify_state_record.py",
         "packages/archflow/tests/test_record_kinds.py",
         "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/gestures.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/decisions.py"
+        "services/project-runtime/src/project_runtime/application/gestures.py",
+        "services/project-runtime/src/project_runtime/application/decisions.py"
       ],
       "invariants": [
         "a kind is matched exactly, or by its declared pattern; never as a prefix",
@@ -2639,8 +2639,8 @@
         "project.version_refs"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
+        "services/project-runtime/src/project_runtime/application/binding.py",
+        "services/project-runtime/src/project_runtime/application/validation.py",
         "packages/archflow/src/archflow/project/manifest.py",
         "packages/archflow/src/archflow/contracts/fields.py",
         "packages/archflow/src/archflow/project/containers.py",
@@ -2903,10 +2903,10 @@
         "packages/archflow/src/archflow/project/issue.py",
         "packages/archflow/src/archflow/project/location.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
+        "services/project-runtime/src/project_runtime/adapters/harness.py",
+        "services/project-runtime/src/project_runtime/adapters/seats.py",
+        "services/project-runtime/src/project_runtime/application/artifacts.py",
+        "services/project-runtime/src/project_runtime/application/binding.py",
         "tools/run_project.py",
         "tools/verify_state_record.py",
         "tools/freeze_project_stage_workflow.py",
@@ -3119,8 +3119,8 @@
         "tools/run_project.py",
         "tools/verify_state_record.py",
         "packages/archflow/src/archflow/state/state_record.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
+        "services/project-runtime/src/project_runtime/application/candidate.py",
+        "services/project-runtime/src/project_runtime/adapters/harness.py",
         "tests/test_project_runner.py",
         "tests/test_state_record.py",
         "tools/open_stage_run.py"
@@ -3246,7 +3246,7 @@
       ],
       "used_by": [
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py"
+        "services/project-runtime/src/project_runtime/application/drawings.py"
       ],
       "invariants": [
         "nothing is written before the source verified, the frame checked and the projection and both renderings succeeded",
@@ -3523,8 +3523,8 @@
         "state.operational_state"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/proposals.py"
+        "services/project-runtime/src/project_runtime/application/intent.py",
+        "services/project-runtime/src/project_runtime/application/proposals.py"
       ],
       "invariants": [
         "exact-base: an operator names the state digest it applies to and is refused against any other",
@@ -3536,7 +3536,7 @@
       "tests": [
         "packages/archflow/tests/test_operational_markov_compiler.py",
         "packages/archflow/tests/test_pantheon_compiled_state.py",
-        "apps/archflow-studio/api/tests/test_proposals.py"
+        "services/project-runtime/tests/test_proposals.py"
       ],
       "notes": "Canonical: the Studio's conversational proposals remain DecisionOperator@2 inputs to OperationalMarkovState. StateRecord application is separately owned by state.record through its closed StateRecordOperator; no Studio-local successor remains."
     },
@@ -3717,8 +3717,8 @@
         "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
+        "services/project-runtime/src/project_runtime/adapters/harness.py",
+        "services/project-runtime/src/project_runtime/application/projection.py",
         "tools/run_project.py"
       ],
       "invariants": [
@@ -3897,7 +3897,7 @@
         "packages/archflow/src/archflow/validation/engine.py",
         "packages/archflow/src/archflow/validation/model.py",
         "packages/archflow/src/archflow/submission/model.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/validation.py"
+        "services/project-runtime/src/project_runtime/application/validation.py"
       ],
       "invariants": [
         "facts, commitments, obligations and artifacts each carry unique ids",
@@ -3975,7 +3975,7 @@
         "packages/archflow/src/archflow/state/state_record.py",
         "packages/archflow/src/archflow/state/spatial.py",
         "packages/archflow/src/archflow/state/developed_design.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
+        "services/project-runtime/src/project_runtime/application/projection.py",
         "packages/archflow/src/archflow/state/design_portfolio.py",
         "packages/archflow/tests/test_operational_markov_compiler.py",
         "packages/archflow/src/archflow/state/stage_workflow.py",
@@ -3983,7 +3983,7 @@
         "packages/archflow/src/archflow/state/geometry_program.py",
         "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/intent.py"
+        "services/project-runtime/src/project_runtime/application/intent.py"
       ],
       "invariants": [
         "stores only future-relevant compiled consequences: no prompt history, tool transcripts or rejected drafts",
@@ -4159,10 +4159,10 @@
         "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/relation_checks.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/options.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/program.py",
+        "services/project-runtime/src/project_runtime/application/projection.py",
+        "services/project-runtime/src/project_runtime/application/candidate.py",
+        "services/project-runtime/src/project_runtime/application/options.py",
+        "services/project-runtime/src/project_runtime/application/program.py",
         "packages/archflow/src/archflow/state/program_sheet.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/element_reindex.py",
         "tools/reindex_project.py",
@@ -4190,11 +4190,11 @@
       "tests": [
         "tests/test_state_record.py",
         "tests/test_project_runner.py",
-        "apps/archflow-studio/api/tests/test_projection.py",
+        "services/project-runtime/tests/test_projection.py",
         "tests/test_massing_metrics.py",
         "tests/test_lintel_bearing.py",
         "tests/test_window_relational_update.py",
-        "apps/archflow-studio/api/tests/test_derivation_memo.py"
+        "services/project-runtime/tests/test_derivation_memo.py"
       ],
       "notes": "The projection is built here; state no longer imports runtime."
     },
@@ -4263,7 +4263,7 @@
         "packages/archflow/src/archflow/state/state_record.py",
         "packages/archflow/src/archflow/state/developed_design.py",
         "packages/archflow/src/archflow/state/design_portfolio.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/projection.py"
+        "services/project-runtime/src/project_runtime/application/projection.py"
       ],
       "invariants": [
         "no framework defaults: an option is always project-authored",
@@ -4345,7 +4345,7 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
+        "services/project-runtime/src/project_runtime/adapters/harness.py",
         "tools/run_project.py",
         "tools/freeze_project_stage_workflow.py",
         "tools/verify_state_record.py",
@@ -4370,7 +4370,7 @@
     },
     {
       "module_id": "studio.artifacts",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/artifacts.py",
       "purpose": "List and serve receipt-certified model exports, retain viewport captures, and import and serve PDF/image source documents in their exact project runs, including project-wide discovery for MonkeyBoard.",
       "owns": [
         "reading retained seat-rhino-execution and seat-occt-execution receipts into ArtifactRecord rows across a project's runs; exact STEP and mesh .3dm preview carry their format and representation and share their producing receipt",
@@ -4561,12 +4561,12 @@
         "studio.board"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
-        "apps/archflow-studio/api/tests/test_artifacts.py",
-        "apps/archflow-studio/api/tests/test_captures.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/gestures.py",
-        "apps/archflow-studio/api/tests/test_documents.py"
+        "services/project-runtime/src/project_runtime/application/candidate.py",
+        "services/project-runtime/src/project_runtime/application/validation.py",
+        "services/project-runtime/tests/test_artifacts.py",
+        "services/project-runtime/tests/test_captures.py",
+        "services/project-runtime/src/project_runtime/application/gestures.py",
+        "services/project-runtime/tests/test_documents.py"
       ],
       "invariants": [
         "a viewport capture is a non-canonical workspace file bound to the existing run named by the request; invalid or incomplete PNG data is refused before persistence; saving it never changes StateRecord or HEAD",
@@ -4611,49 +4611,49 @@
       ],
       "status": "canonical",
       "tests": [
-        "apps/archflow-studio/api/tests/test_artifacts.py",
-        "apps/archflow-studio/api/tests/test_cad_export.py",
-        "apps/archflow-studio/api/tests/test_captures.py",
+        "services/project-runtime/tests/test_artifacts.py",
+        "services/project-runtime/tests/test_cad_export.py",
+        "services/project-runtime/tests/test_captures.py",
         "apps/monkeyhub/web/test/modelPreviews.browser.mjs",
-        "apps/archflow-studio/api/tests/test_documents.py",
-        "apps/archflow-studio/api/tests/test_working_copies.py",
-        "apps/archflow-studio/api/tests/test_drawings.py",
-        "apps/archflow-studio/api/tests/test_drawing_plans.py",
-        "apps/archflow-studio/api/tests/test_drawing_dimensions.py",
-        "apps/archflow-studio/api/tests/test_model_exports.py",
-        "apps/archflow-studio/api/tests/test_model_source_index.py",
-        "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
+        "services/project-runtime/tests/test_documents.py",
+        "services/project-runtime/tests/test_working_copies.py",
+        "services/project-runtime/tests/test_drawings.py",
+        "services/project-runtime/tests/test_drawing_plans.py",
+        "services/project-runtime/tests/test_drawing_dimensions.py",
+        "services/project-runtime/tests/test_model_exports.py",
+        "services/project-runtime/tests/test_model_source_index.py",
+        "services/project-runtime/tests/test_model_load_monitoring.py",
         "apps/monkeyhub/web/test/externalModelImport.browser.mjs",
-        "apps/archflow-studio/api/tests/test_section_perspective.py",
-        "apps/archflow-studio/api/tests/test_native_drawings.py",
-        "apps/archflow-studio/api/tests/test_drawing_corrections.py",
-        "apps/archflow-studio/api/tests/test_conditional_reads.py",
-        "apps/archflow-studio/api/tests/test_derivation_memo.py",
-        "apps/archflow-studio/api/tests/test_indexed_reads.py",
-        "apps/archflow-studio/api/tests/test_projections.py",
-        "apps/archflow-studio/api/tests/test_drawing_sheets.py"
+        "services/project-runtime/tests/test_section_perspective.py",
+        "services/project-runtime/tests/test_native_drawings.py",
+        "services/project-runtime/tests/test_drawing_corrections.py",
+        "services/project-runtime/tests/test_conditional_reads.py",
+        "services/project-runtime/tests/test_derivation_memo.py",
+        "services/project-runtime/tests/test_indexed_reads.py",
+        "services/project-runtime/tests/test_projections.py",
+        "services/project-runtime/tests/test_drawing_sheets.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/drawing_dimensions.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/drawing_corrections.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/model_exports.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/model_exports.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/projections.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/projections.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/projections.py"
+        "services/project-runtime/src/project_runtime/application/artifacts.py",
+        "services/project-runtime/src/project_runtime/routes/artifacts.py",
+        "services/project-runtime/src/project_runtime/transport/artifacts.py",
+        "services/project-runtime/src/project_runtime/application/drawings.py",
+        "services/project-runtime/src/project_runtime/routes/drawings.py",
+        "services/project-runtime/src/project_runtime/transport/drawings.py",
+        "services/project-runtime/src/project_runtime/application/drawing_plans.py",
+        "services/project-runtime/src/project_runtime/application/drawing_dimensions.py",
+        "services/project-runtime/src/project_runtime/application/drawing_corrections.py",
+        "services/project-runtime/src/project_runtime/application/model_exports.py",
+        "services/project-runtime/src/project_runtime/routes/model_exports.py",
+        "services/project-runtime/src/project_runtime/application/projections.py",
+        "services/project-runtime/src/project_runtime/routes/projections.py",
+        "services/project-runtime/src/project_runtime/transport/projections.py"
       ]
     },
     {
       "module_id": "studio.board",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/boards.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/boards.py",
       "purpose": "Retain and reopen one single-operator project whiteboard scene for drawing layout, notes and meeting presentation, with exact registered document-page sources.",
       "owns": [
         "the main MonkeyBoard canvas scene and its immutable revision chain in the P036 studio-board run",
@@ -4719,10 +4719,10 @@
         "project.index"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
+        "services/project-runtime/src/project_runtime/routes/boards.py",
         "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
-        "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py"
+        "services/project-runtime/src/project_runtime/application/decisions.py",
+        "services/project-runtime/src/project_runtime/application/drawings.py"
       ],
       "invariants": [
         "reading an empty board creates no run; a valid first save uses runs/studio-board/records through P036",
@@ -4740,7 +4740,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "apps/archflow-studio/api/tests/test_boards.py",
+        "services/project-runtime/tests/test_boards.py",
         "apps/monkeyhub/web/test/boardScene.test.ts",
         "apps/monkeyhub/web/test/boardSaveQueue.test.ts",
         "apps/monkeyhub/web/test/boardFeedbackGeometry.test.ts",
@@ -4760,7 +4760,7 @@
     },
     {
       "module_id": "studio.binding",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/binding.py",
       "purpose": "Bind the process to one P036 project and one reference run, resolve which project a scoped path names, and project the exact State Record retained by that run into what a screen can read.",
       "owns": [
         "opening the located project on first use and holding that one binding for the process",
@@ -4932,14 +4932,14 @@
         "project.index"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/compare.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/health.py",
-        "apps/archflow-studio/api/tests/test_binding.py",
-        "apps/archflow-studio/api/tests/test_projection.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/projects.py"
+        "services/project-runtime/src/project_runtime/application/projection.py",
+        "services/project-runtime/src/project_runtime/application/candidate.py",
+        "services/project-runtime/src/project_runtime/application/compare.py",
+        "services/project-runtime/src/project_runtime/application/artifacts.py",
+        "services/project-runtime/src/project_runtime/routes/health.py",
+        "services/project-runtime/tests/test_binding.py",
+        "services/project-runtime/tests/test_projection.py",
+        "services/project-runtime/src/project_runtime/routes/projects.py"
       ],
       "invariants": [
         "the project root is never defaulted in code - it comes from the environment or --project-dir",
@@ -4959,50 +4959,50 @@
       ],
       "status": "canonical",
       "tests": [
-        "apps/archflow-studio/api/tests/test_binding.py",
-        "apps/archflow-studio/api/tests/test_projection.py",
-        "apps/archflow-studio/api/tests/test_protocol.py",
-        "apps/archflow-studio/api/tests/test_catalog.py",
-        "apps/archflow-studio/api/tests/test_conventions.py",
-        "apps/archflow-studio/api/tests/test_frame.py",
-        "apps/archflow-studio/api/tests/test_collaboration_http.py",
-        "apps/archflow-studio/api/tests/test_boards.py",
-        "apps/archflow-studio/api/tests/test_working_draft.py",
-        "apps/archflow-studio/api/tests/test_working_source.py",
-        "apps/archflow-studio/api/tests/test_attributed_continue.py",
-        "apps/archflow-studio/api/tests/test_representation_dependencies.py",
-        "apps/archflow-studio/api/tests/test_conditional_reads.py",
-        "apps/archflow-studio/api/tests/test_derivation_memo.py",
-        "apps/archflow-studio/api/tests/test_indexed_reads.py",
-        "apps/archflow-studio/api/tests/test_index_changes.py",
-        "apps/archflow-studio/api/tests/test_hosted_opening.py"
+        "services/project-runtime/tests/test_binding.py",
+        "services/project-runtime/tests/test_projection.py",
+        "services/project-runtime/tests/test_protocol.py",
+        "services/project-runtime/tests/test_catalog.py",
+        "services/project-runtime/tests/test_conventions.py",
+        "services/project-runtime/tests/test_frame.py",
+        "services/project-runtime/tests/test_collaboration_http.py",
+        "services/project-runtime/tests/test_boards.py",
+        "services/project-runtime/tests/test_working_draft.py",
+        "services/project-runtime/tests/test_working_source.py",
+        "services/project-runtime/tests/test_attributed_continue.py",
+        "services/project-runtime/tests/test_representation_dependencies.py",
+        "services/project-runtime/tests/test_conditional_reads.py",
+        "services/project-runtime/tests/test_derivation_memo.py",
+        "services/project-runtime/tests/test_indexed_reads.py",
+        "services/project-runtime/tests/test_index_changes.py",
+        "services/project-runtime/tests/test_hosted_opening.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/project.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/projects.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/state.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/project.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/state.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/catalog.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/conventions.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/frame.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/synchronization.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/synchronization.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/working_draft.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/working_draft.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/representation_dependencies.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/index.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/index.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/index.py"
+        "services/project-runtime/src/project_runtime/application/binding.py",
+        "services/project-runtime/src/project_runtime/application/projection.py",
+        "services/project-runtime/src/project_runtime/routes/project.py",
+        "services/project-runtime/src/project_runtime/routes/projects.py",
+        "services/project-runtime/src/project_runtime/routes/state.py",
+        "services/project-runtime/src/project_runtime/transport/project.py",
+        "services/project-runtime/src/project_runtime/transport/state.py",
+        "services/project-runtime/src/project_runtime/application/catalog.py",
+        "services/project-runtime/src/project_runtime/application/conventions.py",
+        "services/project-runtime/src/project_runtime/application/frame.py",
+        "services/project-runtime/src/project_runtime/application/synchronization.py",
+        "services/project-runtime/src/project_runtime/routes/synchronization.py",
+        "services/project-runtime/src/project_runtime/application/working_draft.py",
+        "services/project-runtime/src/project_runtime/routes/working_draft.py",
+        "services/project-runtime/src/project_runtime/transport/working_draft.py",
+        "services/project-runtime/src/project_runtime/application/representation_dependencies.py",
+        "services/project-runtime/src/project_runtime/application/index.py",
+        "services/project-runtime/src/project_runtime/routes/index.py",
+        "services/project-runtime/src/project_runtime/transport/index.py"
       ]
     },
     {
       "module_id": "studio.candidate",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/candidate.py",
       "purpose": "Execute a proposal as a detached candidate through the kernel's own runner, and read the finished run back out of the records it retained.",
       "owns": [
         "arranging the run - new run id, harness stage guard, seat pack, RunOptions - and calling run_project",
@@ -5117,13 +5117,13 @@
         "studio.binding"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
-        "apps/archflow-studio/api/tests/test_candidate.py",
-        "apps/archflow-studio/api/tests/test_queue.py",
-        "apps/archflow-studio/api/tests/test_events.py",
-        "apps/archflow-studio/api/tests/test_sse.py",
-        "apps/archflow-studio/api/tests/test_timings.py",
-        "apps/archflow-studio/api/tests/test_validation.py"
+        "services/project-runtime/src/project_runtime/application/validation.py",
+        "services/project-runtime/tests/test_candidate.py",
+        "services/project-runtime/tests/test_queue.py",
+        "services/project-runtime/tests/test_events.py",
+        "services/project-runtime/tests/test_sse.py",
+        "services/project-runtime/tests/test_timings.py",
+        "services/project-runtime/tests/test_validation.py"
       ],
       "invariants": [
         "a candidate is detached: it runs under the studio-candidate harness stage and advances no project stage",
@@ -5148,39 +5148,39 @@
       ],
       "status": "canonical",
       "tests": [
-        "apps/archflow-studio/api/tests/test_candidate.py",
-        "apps/archflow-studio/api/tests/test_cad_export.py",
-        "apps/archflow-studio/api/tests/test_queue.py",
-        "apps/archflow-studio/api/tests/test_events.py",
-        "apps/archflow-studio/api/tests/test_sse.py",
-        "apps/archflow-studio/api/tests/test_timings.py",
-        "apps/archflow-studio/api/tests/test_options.py",
-        "apps/archflow-studio/api/tests/test_document_annotations.py",
-        "apps/archflow-studio/api/tests/test_working_copies.py",
-        "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
+        "services/project-runtime/tests/test_candidate.py",
+        "services/project-runtime/tests/test_cad_export.py",
+        "services/project-runtime/tests/test_queue.py",
+        "services/project-runtime/tests/test_events.py",
+        "services/project-runtime/tests/test_sse.py",
+        "services/project-runtime/tests/test_timings.py",
+        "services/project-runtime/tests/test_options.py",
+        "services/project-runtime/tests/test_document_annotations.py",
+        "services/project-runtime/tests/test_working_copies.py",
+        "services/project-runtime/tests/test_model_load_monitoring.py",
         "apps/monkeyhub/web/test/candidatePreview.browser.mjs",
-        "apps/archflow-studio/api/tests/test_runtime.py",
-        "apps/archflow-studio/api/tests/test_worktrees.py"
+        "services/project-runtime/tests/test_runtime.py",
+        "services/project-runtime/tests/test_worktrees.py"
       ],
       "notes": "The whole module is arrangement: the kernel runner does the work, this decides when and with what.",
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/jobs.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/events.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
-        "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/candidates.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/events.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/candidate.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/events.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/runtime.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/runtime.py"
+        "services/project-runtime/src/project_runtime/application/candidate.py",
+        "services/project-runtime/src/project_runtime/application/jobs.py",
+        "services/project-runtime/src/project_runtime/application/events.py",
+        "services/project-runtime/src/project_runtime/adapters/harness.py",
+        "services/project-runtime/src/project_runtime/adapters/seats.py",
+        "services/project-runtime/src/project_runtime/routes/candidates.py",
+        "services/project-runtime/src/project_runtime/routes/events.py",
+        "services/project-runtime/src/project_runtime/transport/candidate.py",
+        "services/project-runtime/src/project_runtime/transport/events.py",
+        "services/project-runtime/src/project_runtime/application/runtime.py",
+        "services/project-runtime/src/project_runtime/routes/runtime.py",
+        "services/project-runtime/src/project_runtime/transport/runtime.py"
       ]
     },
     {
       "module_id": "studio.intent",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/intent.py",
       "purpose": "Turn an architect's sentence, click and strokes into a record-checked scalar or component proposal; distinguish design questions, unsupported tools and agent failures.",
       "owns": [
         "the intent grammar: four exact utterance forms (set, set to, increase by %, decrease by %) plus one optional keep clause",
@@ -5483,16 +5483,16 @@
         "studio.memory"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
-        "apps/archflow-studio/api/tests/test_intent_grammar.py",
-        "apps/archflow-studio/api/tests/test_intents.py",
-        "apps/archflow-studio/api/tests/test_clarification.py",
-        "apps/archflow-studio/api/tests/test_intent_agent_timeout.py",
-        "apps/archflow-studio/api/tests/test_gestures.py",
-        "apps/archflow-studio/api/tests/test_pick.py",
-        "apps/archflow-studio/api/tests/test_proposals.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py"
+        "services/project-runtime/src/project_runtime/application/candidate.py",
+        "services/project-runtime/src/project_runtime/application/validation.py",
+        "services/project-runtime/tests/test_intent_grammar.py",
+        "services/project-runtime/tests/test_intents.py",
+        "services/project-runtime/tests/test_clarification.py",
+        "services/project-runtime/tests/test_intent_agent_timeout.py",
+        "services/project-runtime/tests/test_gestures.py",
+        "services/project-runtime/tests/test_pick.py",
+        "services/project-runtime/tests/test_proposals.py",
+        "services/project-runtime/src/project_runtime/application/drawing_plans.py"
       ],
       "invariants": [
         "an utterance is parsed, never interpreted; scalar edits use the four forms; the in-app Agent changes geometry only with a construction script, meaning only with facets and controls with parameters or one scalar sentence, and the construction owner chooses every realisation; direct component edits (POST /api/proposals semanticEdit) use the typed Entity, Parameter and Relation payload",
@@ -5566,89 +5566,89 @@
       ],
       "status": "canonical",
       "tests": [
-        "apps/archflow-studio/api/tests/test_intent_grammar.py",
-        "apps/archflow-studio/api/tests/test_intents.py",
-        "apps/archflow-studio/api/tests/test_clarification.py",
-        "apps/archflow-studio/api/tests/test_intent_agent_timeout.py",
-        "apps/archflow-studio/api/tests/test_gestures.py",
-        "apps/archflow-studio/api/tests/test_pick.py",
-        "apps/archflow-studio/api/tests/test_proposals.py",
-        "apps/archflow-studio/api/tests/test_clarification_catalog.py",
-        "apps/archflow-studio/api/tests/test_episodes.py",
-        "apps/archflow-studio/api/tests/test_clarification_scope.py",
-        "apps/archflow-studio/api/tests/test_document_annotations.py",
-        "apps/archflow-studio/api/tests/test_working_copies.py",
-        "apps/archflow-studio/api/tests/test_document_visual_providers.py",
-        "apps/archflow-studio/api/tests/test_design_history.py",
-        "apps/archflow-studio/api/tests/test_model_usage.py",
-        "apps/archflow-studio/api/tests/test_intent_context.py",
-        "apps/archflow-studio/api/tests/test_intent_request_schemas.py",
-        "apps/archflow-studio/api/tests/test_intent_context_providers.py",
-        "apps/archflow-studio/api/tests/test_intent_budget.py",
-        "apps/archflow-studio/api/tests/test_capabilities.py",
-        "apps/archflow-studio/api/tests/test_delete.py",
-        "apps/archflow-studio/api/tests/test_sketch.py",
-        "apps/archflow-studio/api/tests/test_geometry_first_authoring.py",
-        "apps/archflow-studio/api/tests/test_wall_project_point_authoring.py",
-        "apps/archflow-studio/api/tests/test_deepening_parameterized_prisms.py",
+        "services/project-runtime/tests/test_intent_grammar.py",
+        "services/project-runtime/tests/test_intents.py",
+        "services/project-runtime/tests/test_clarification.py",
+        "services/project-runtime/tests/test_intent_agent_timeout.py",
+        "services/project-runtime/tests/test_gestures.py",
+        "services/project-runtime/tests/test_pick.py",
+        "services/project-runtime/tests/test_proposals.py",
+        "services/project-runtime/tests/test_clarification_catalog.py",
+        "services/project-runtime/tests/test_episodes.py",
+        "services/project-runtime/tests/test_clarification_scope.py",
+        "services/project-runtime/tests/test_document_annotations.py",
+        "services/project-runtime/tests/test_working_copies.py",
+        "services/project-runtime/tests/test_document_visual_providers.py",
+        "services/project-runtime/tests/test_design_history.py",
+        "services/project-runtime/tests/test_model_usage.py",
+        "services/project-runtime/tests/test_intent_context.py",
+        "services/project-runtime/tests/test_intent_request_schemas.py",
+        "services/project-runtime/tests/test_intent_context_providers.py",
+        "services/project-runtime/tests/test_intent_budget.py",
+        "services/project-runtime/tests/test_capabilities.py",
+        "services/project-runtime/tests/test_delete.py",
+        "services/project-runtime/tests/test_sketch.py",
+        "services/project-runtime/tests/test_geometry_first_authoring.py",
+        "services/project-runtime/tests/test_wall_project_point_authoring.py",
+        "services/project-runtime/tests/test_deepening_parameterized_prisms.py",
         "apps/monkeyhub/web/test/modelDraft.test.ts",
         "apps/monkeyhub/web/test/syncModelDraft.test.ts",
         "apps/monkeyhub/web/test/modelSync.browser.mjs",
-        "apps/archflow-studio/api/tests/test_acceptance_audit.py",
-        "apps/archflow-studio/api/tests/test_elevation.py",
+        "services/project-runtime/tests/test_acceptance_audit.py",
+        "services/project-runtime/tests/test_elevation.py",
         "apps/monkeyhub/web/test/elevation.browser.mjs",
-        "apps/archflow-studio/api/tests/test_decisions.py",
+        "services/project-runtime/tests/test_decisions.py",
         "tests/test_nonadjacent_stage_context.py",
-        "apps/archflow-studio/api/tests/test_visual_observation.py",
-        "apps/archflow-studio/api/tests/test_visual_reviews.py",
-        "apps/archflow-studio/api/tests/test_candidate_admission.py",
+        "services/project-runtime/tests/test_visual_observation.py",
+        "services/project-runtime/tests/test_visual_reviews.py",
+        "services/project-runtime/tests/test_candidate_admission.py",
         "tests/test_benchmark_visual_observation.py",
-        "apps/archflow-studio/api/tests/test_recipe_export.py",
+        "services/project-runtime/tests/test_recipe_export.py",
         "tests/test_export_drawing_recipe.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/clarification.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/pick.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/gestures.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/proposals.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/pick.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/pick.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/episodes.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/design_history.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/design_history.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/intent_context.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/intent_budget.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/capability.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/capabilities.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/capability.py",
+        "services/project-runtime/src/project_runtime/application/intent.py",
+        "services/project-runtime/src/project_runtime/application/intent_agent.py",
+        "services/project-runtime/src/project_runtime/application/clarification.py",
+        "services/project-runtime/src/project_runtime/application/pick.py",
+        "services/project-runtime/src/project_runtime/application/gestures.py",
+        "services/project-runtime/src/project_runtime/application/proposals.py",
+        "services/project-runtime/src/project_runtime/routes/intents.py",
+        "services/project-runtime/src/project_runtime/routes/pick.py",
+        "services/project-runtime/src/project_runtime/routes/proposals.py",
+        "services/project-runtime/src/project_runtime/transport/intent.py",
+        "services/project-runtime/src/project_runtime/transport/pick.py",
+        "services/project-runtime/src/project_runtime/transport/proposal.py",
+        "services/project-runtime/src/project_runtime/application/episodes.py",
+        "services/project-runtime/src/project_runtime/routes/episodes.py",
+        "services/project-runtime/src/project_runtime/application/design_history.py",
+        "services/project-runtime/src/project_runtime/transport/design_history.py",
+        "services/project-runtime/src/project_runtime/application/intent_context.py",
+        "services/project-runtime/src/project_runtime/application/intent_requests.py",
+        "services/project-runtime/src/project_runtime/application/intent_budget.py",
+        "services/project-runtime/src/project_runtime/application/capability.py",
+        "services/project-runtime/src/project_runtime/routes/capabilities.py",
+        "services/project-runtime/src/project_runtime/transport/capability.py",
         "tools/benchmark_intent_context.py",
         "apps/monkeyhub/web/src/features/stage/modelDraft.ts",
         "apps/monkeyhub/web/src/features/stage/syncModelDraft.ts",
         "apps/monkeyhub/web/src/api/project-runtime/client.ts",
-        "apps/archflow-studio/api/archflow_studio_api/application/elevation.py",
+        "services/project-runtime/src/project_runtime/application/elevation.py",
         "apps/monkeyhub/web/src/features/stage/ElevationPanel.tsx",
         "apps/monkeyhub/web/src/features/stage/ElevationPanel.css",
-        "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/decisions.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/visual_observation.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/visual_reviews.py",
+        "services/project-runtime/src/project_runtime/application/decisions.py",
+        "services/project-runtime/src/project_runtime/routes/decisions.py",
+        "services/project-runtime/src/project_runtime/transport/decisions.py",
+        "services/project-runtime/src/project_runtime/application/visual_observation.py",
+        "services/project-runtime/src/project_runtime/application/visual_reviews.py",
         "tools/benchmark_visual_observation.py",
         "tools/export_drawing_recipe.py"
       ]
     },
     {
       "module_id": "studio.memory",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/memory.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/memory.py",
       "purpose": "Remember how this project works - where its retained content is and where to look first for a topic - as its own revisioned records, apart from what the project settled.",
       "owns": [
         "project memory items (StudioMemoryRecord@1) in the one fixed explicit studio-memory P036 run: key, kind (locator | source_policy | recipe, whose value names a library skill as skill:<name>@<version> that the Hub pins from the configured library; preference, habit and standard reserved), scope (project; organization, team and user reserved for the library project), appliesWhen (domains, topics, keys, optional Stage), a kind-specific value, authority (explicit; observed and inferred reserved), provenance (the user's raw words, messageSource, sourceKind, evidence refs), version and status",
@@ -5716,19 +5716,19 @@
       ],
       "status": "provisional",
       "tests": [
-        "apps/archflow-studio/api/tests/test_project_memory.py"
+        "services/project-runtime/tests/test_project_memory.py"
       ],
       "notes": [],
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/memory.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/memory.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/memory.py"
+        "services/project-runtime/src/project_runtime/application/memory.py",
+        "services/project-runtime/src/project_runtime/routes/memory.py",
+        "services/project-runtime/src/project_runtime/transport/memory.py"
       ],
       "reason": "Created, not extended (#252, owner decision 2026-09-28, boundary comment 5877462835): memory is its own layer - how the project works, not the Project State decisions studio.intent keeps under #185 - so it gets its own owner, records and routes, and reuses the decisions' revision and provenance machinery by import."
     },
     {
       "module_id": "studio.render",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/rendering.py",
       "purpose": "Retain and execute independent image attempts in the existing project Runtime. CREATE: candidate jobs require proposals and design runs; artifacts owns saving, not paid image execution.",
       "status": "canonical",
       "owns": [
@@ -5773,17 +5773,17 @@
         "monkeymonitor"
       ],
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/render_contract.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/rendering.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/rendering.py",
-        "apps/archflow-studio/api/archflow_studio_api/render_adapters/__init__.py",
-        "apps/archflow-studio/api/archflow_studio_api/render_adapters/gemini.py"
+        "services/project-runtime/src/project_runtime/application/rendering.py",
+        "services/project-runtime/src/project_runtime/application/render_contract.py",
+        "services/project-runtime/src/project_runtime/routes/rendering.py",
+        "services/project-runtime/src/project_runtime/transport/rendering.py",
+        "services/project-runtime/src/project_runtime/render_adapters/__init__.py",
+        "services/project-runtime/src/project_runtime/render_adapters/gemini.py"
       ],
       "tests": [
-        "apps/archflow-studio/api/tests/test_rendering.py",
-        "apps/archflow-studio/api/tests/test_representation_dependencies.py",
-        "apps/archflow-studio/api/tests/test_render_gemini_adapter.py",
+        "services/project-runtime/tests/test_rendering.py",
+        "services/project-runtime/tests/test_representation_dependencies.py",
+        "services/project-runtime/tests/test_render_gemini_adapter.py",
         "apps/monkeyhub/web/test/renderWorkspace.browser.mjs"
       ],
       "inputs": [
@@ -5807,7 +5807,7 @@
     },
     {
       "module_id": "studio.skills",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/skills.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/skills.py",
       "purpose": "Retain reusable agent procedures (skills) as immutable versions in a project, read by the Hub from the library project. CREATE: no owner held reusable procedures; a scoped decision is a judgement compiled into later turns and a recipe is typed paper-space values, and neither carries a procedure (#252).",
       "status": "canonical",
       "owns": [
@@ -5838,12 +5838,12 @@
         "project.repository"
       ],
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/skills.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/skills.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/skills.py"
+        "services/project-runtime/src/project_runtime/application/skills.py",
+        "services/project-runtime/src/project_runtime/routes/skills.py",
+        "services/project-runtime/src/project_runtime/transport/skills.py"
       ],
       "tests": [
-        "apps/archflow-studio/api/tests/test_skills.py",
+        "services/project-runtime/tests/test_skills.py",
         "apps/monkeyhub/api/tests/test_skill_library.py"
       ],
       "inputs": [
@@ -5861,7 +5861,7 @@
     },
     {
       "module_id": "studio.shell",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/main.py",
+      "owner_path": "services/project-runtime/src/project_runtime/main.py",
       "purpose": "The Project Runtime: assemble the project-scoped FastAPI boundary MonkeyHub starts once per open project and read its configuration only from the environment the Hub resolved (contract: docs/PROJECT_RUNTIME.md).",
       "owns": [
         "create_app and the uvicorn entry point, and the lifespan that lets a running candidate finish",
@@ -5954,10 +5954,10 @@
         "project.index"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/routes/",
-        "apps/archflow-studio/api/tests/test_health.py",
-        "apps/archflow-studio/api/tests/test_settings.py",
-        "apps/archflow-studio/api/tests/test_errors.py",
+        "services/project-runtime/src/project_runtime/routes/",
+        "services/project-runtime/tests/test_health.py",
+        "services/project-runtime/tests/test_settings.py",
+        "services/project-runtime/tests/test_errors.py",
         "apps/monkeyhub/api/monkeyhub_api/main.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
         "apps/monkeyhub/launch-hub.ps1"
@@ -5987,37 +5987,37 @@
       ],
       "status": "canonical",
       "tests": [
-        "apps/archflow-studio/api/tests/test_health.py",
-        "apps/archflow-studio/api/tests/test_settings.py",
-        "apps/archflow-studio/api/tests/test_errors.py",
-        "apps/archflow-studio/api/tests/test_protocol.py",
-        "apps/archflow-studio/api/tests/test_monitoring.py",
-        "apps/archflow-studio/api/tests/test_collaboration_auth.py",
-        "apps/archflow-studio/api/tests/test_study_model.py",
-        "apps/archflow-studio/api/tests/test_conditional_reads.py"
+        "services/project-runtime/tests/test_health.py",
+        "services/project-runtime/tests/test_settings.py",
+        "services/project-runtime/tests/test_errors.py",
+        "services/project-runtime/tests/test_protocol.py",
+        "services/project-runtime/tests/test_monitoring.py",
+        "services/project-runtime/tests/test_collaboration_auth.py",
+        "services/project-runtime/tests/test_study_model.py",
+        "services/project-runtime/tests/test_conditional_reads.py"
       ],
       "notes": "Project Runtime contract: docs/PROJECT_RUNTIME.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/monkeyhub/web/src/api/project-runtime/connection.ts is the client boundary. User preferences and the Hub's application settings - their files, DTOs and routes - belong to hub.shell, as do browser appearance, language catalogs and workspace composition; this process serves APIs only.",
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/main.py",
-        "apps/archflow-studio/api/archflow_studio_api/settings.py",
-        "apps/archflow-studio/api/archflow_studio_api/protocol.py",
-        "apps/archflow-studio/api/archflow_studio_api/ports.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/health.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/protocol.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/errors.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/health.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/protocol.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
+        "services/project-runtime/src/project_runtime/main.py",
+        "services/project-runtime/src/project_runtime/settings.py",
+        "services/project-runtime/src/project_runtime/protocol.py",
+        "services/project-runtime/src/project_runtime/ports.py",
+        "services/project-runtime/src/project_runtime/routes/health.py",
+        "services/project-runtime/src/project_runtime/routes/protocol.py",
+        "services/project-runtime/src/project_runtime/routes/__init__.py",
+        "services/project-runtime/src/project_runtime/transport/errors.py",
+        "services/project-runtime/src/project_runtime/transport/health.py",
+        "services/project-runtime/src/project_runtime/transport/protocol.py",
+        "services/project-runtime/src/project_runtime/application/monitoring.py",
         "scripts/dev/run-project-runtime.ps1",
-        "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/synchronization.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/conditional.py"
+        "services/project-runtime/src/project_runtime/application/authentication.py",
+        "services/project-runtime/src/project_runtime/transport/synchronization.py",
+        "services/project-runtime/src/project_runtime/transport/conditional.py"
       ]
     },
     {
       "module_id": "studio.validation",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/validation.py",
       "purpose": "Say what a finished candidate validates to - the kernel's receipt - and, separately, whether it is ready for human review and what refuses it.",
       "owns": [
         "building the CandidateSubmission and asking archflow.validation.engine.validate_submission about it",
@@ -6087,12 +6087,12 @@
         "validation.model"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/routes/validation.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/candidates.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
-        "apps/archflow-studio/api/tests/test_validation.py",
-        "apps/archflow-studio/api/tests/test_impact.py",
-        "apps/archflow-studio/api/tests/test_compare.py"
+        "services/project-runtime/src/project_runtime/routes/validation.py",
+        "services/project-runtime/src/project_runtime/routes/candidates.py",
+        "services/project-runtime/src/project_runtime/application/intent.py",
+        "services/project-runtime/tests/test_validation.py",
+        "services/project-runtime/tests/test_impact.py",
+        "services/project-runtime/tests/test_compare.py"
       ],
       "invariants": [
         "the receipt and review readiness are deliberately two different answers and are never merged",
@@ -6105,19 +6105,19 @@
       ],
       "status": "canonical",
       "tests": [
-        "apps/archflow-studio/api/tests/test_validation.py",
-        "apps/archflow-studio/api/tests/test_impact.py",
-        "apps/archflow-studio/api/tests/test_compare.py"
+        "services/project-runtime/tests/test_validation.py",
+        "services/project-runtime/tests/test_impact.py",
+        "services/project-runtime/tests/test_compare.py"
       ],
       "notes": "On a ref-only CanonicalProjectState@1 the receipt effectively proves artifact presence and base match only, and says so.",
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/impact.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/compare.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/validation.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/validation.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/impact.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/compare.py"
+        "services/project-runtime/src/project_runtime/application/validation.py",
+        "services/project-runtime/src/project_runtime/application/impact.py",
+        "services/project-runtime/src/project_runtime/application/compare.py",
+        "services/project-runtime/src/project_runtime/routes/validation.py",
+        "services/project-runtime/src/project_runtime/transport/validation.py",
+        "services/project-runtime/src/project_runtime/transport/impact.py",
+        "services/project-runtime/src/project_runtime/transport/compare.py"
       ]
     },
     {
@@ -6155,7 +6155,7 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/validation/engine.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/validation.py"
+        "services/project-runtime/src/project_runtime/application/validation.py"
       ],
       "invariants": [
         "the content digest covers the complete submission, so a receipt proves which delta was checked, not merely which id",
@@ -6601,7 +6601,7 @@
         "validation.model"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/application/validation.py"
+        "services/project-runtime/src/project_runtime/application/validation.py"
       ],
       "invariants": [
         "read-only: the gates never mutate state and never write anything",
@@ -6648,8 +6648,8 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/validation/engine.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/validation.py"
+        "services/project-runtime/src/project_runtime/application/validation.py",
+        "services/project-runtime/src/project_runtime/transport/validation.py"
       ],
       "invariants": [
         "passed is true exactly when no ERROR finding exists",
@@ -6791,8 +6791,8 @@
         "state.record"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/application/options.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/options.py"
+        "services/project-runtime/src/project_runtime/application/options.py",
+        "services/project-runtime/src/project_runtime/transport/options.py"
       ],
       "invariants": [
         "never writes the filesystem and decides nothing",
@@ -6811,7 +6811,7 @@
     },
     {
       "module_id": "studio.options",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/options.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/options.py",
       "purpose": "Hold several massing options beside the record's own, each one deterministic transform of its SchematicPack@1, each measured, each retained in a run of its own.",
       "owns": [
         "the closed transform vocabulary (TRANSFORMS: add_floor, remove_floor, shift_volume, scale_volume, split_volume, pack)",
@@ -6869,18 +6869,18 @@
       ],
       "status": "provisional",
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/options.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/options.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/options.py"
+        "services/project-runtime/src/project_runtime/application/options.py",
+        "services/project-runtime/src/project_runtime/routes/options.py",
+        "services/project-runtime/src/project_runtime/transport/options.py"
       ],
       "tests": [
-        "apps/archflow-studio/api/tests/test_options.py"
+        "services/project-runtime/tests/test_options.py"
       ],
       "reason": "Design step 4 (stacking and massing): several masses side by side with their metrics, the architect choosing; the generative provider plugs into the pack transform later."
     },
     {
       "module_id": "studio.construction",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/construction.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/construction.py",
       "purpose": "Serve the construction contract (#419, spec 3.2-3.5): one construction script becomes one Studio proposal, facets add meaning to existing geometry, the model reads back in construction terms with the capabilities its facets unlock, and the first of them, hosted-opening, puts a door or window on geometry that means a wall.",
       "owns": [
         "POST /api/proposals/construction, POST /api/proposals/facets, POST /api/proposals/hosted-opening, GET /api/construction and GET /api/construction/model",
@@ -6936,14 +6936,14 @@
       ],
       "status": "provisional",
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/construction.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/construction.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/construction.py"
+        "services/project-runtime/src/project_runtime/application/construction.py",
+        "services/project-runtime/src/project_runtime/routes/construction.py",
+        "services/project-runtime/src/project_runtime/transport/construction.py"
       ],
       "tests": [
-        "apps/archflow-studio/api/tests/test_construction_routes.py",
-        "apps/archflow-studio/api/tests/test_hosted_opening.py",
-        "apps/archflow-studio/api/tests/test_construction_first_authoring.py"
+        "services/project-runtime/tests/test_construction_routes.py",
+        "services/project-runtime/tests/test_hosted_opening.py",
+        "services/project-runtime/tests/test_construction_first_authoring.py"
       ],
       "reason": "GH-419: the agent authors geometry with one construction script and the runtime chooses producers; meaning and the capabilities it unlocks arrive later as facets on the same identity."
     },
@@ -6995,8 +6995,8 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/project/inputs.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/program.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/program.py"
+        "services/project-runtime/src/project_runtime/application/program.py",
+        "services/project-runtime/src/project_runtime/routes/program.py"
       ],
       "invariants": [
         "pure: no I/O, no run, no record written",
@@ -7017,7 +7017,7 @@
     },
     {
       "module_id": "studio.program",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/program.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/program.py",
       "purpose": "Serve the program sheet both ways: which sheet a reader gets, and how one becomes a candidate run without touching the authored record.",
       "owns": [
         "choosing between the architect's input sheet and the record's derivation, and saying which, and whether the input sheet's state digest still matches; an explicit source run reads its retained derivation and remains the apply worker's source",
@@ -7055,13 +7055,13 @@
         "studio.artifacts"
       ],
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/program.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/program.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/program.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/semantics.py"
+        "services/project-runtime/src/project_runtime/application/program.py",
+        "services/project-runtime/src/project_runtime/routes/program.py",
+        "services/project-runtime/src/project_runtime/transport/program.py",
+        "services/project-runtime/src/project_runtime/transport/semantics.py"
       ],
       "tests": [
-        "apps/archflow-studio/api/tests/test_program.py"
+        "services/project-runtime/tests/test_program.py"
       ],
       "status": "provisional",
       "reason": "The studio's side of design step 2: the panel edits the sheet, applying it is a candidate, saving it is a local-mode write of the architect's own file."
@@ -7118,7 +7118,7 @@
       "status": "canonical",
       "tests": [
         "tests/test_create_project.py",
-        "apps/archflow-studio/api/tests/test_create_project.py",
+        "services/project-runtime/tests/test_create_project.py",
         "tests/test_project_format_migration.py"
       ],
       "notes": "CREATE only for the requested user-facing initialization command: existing tools operate on retained projects/runs and have no creation entry. Persistence is an EXTEND of project.repository, with no parallel writer. The --export-archive/--restore-archive flags stay here and delegate to project.archive, which the Hub API calls directly."
@@ -7245,7 +7245,7 @@
       ],
       "depends_on": [],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
+        "services/project-runtime/src/project_runtime/application/monitoring.py",
         "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
         "packages/monkeymonitor/src/monkeymonitor/__main__.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
@@ -7275,9 +7275,9 @@
         "tests/monkeymonitor/test_design_loop.py",
         "apps/monkeyhub/api/tests/test_chat_trace.py",
         "packages/monkeymonitor/tests/test_server.py",
-        "apps/archflow-studio/api/tests/test_monitoring.py",
-        "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
-        "apps/archflow-studio/api/tests/test_intent_budget.py",
+        "services/project-runtime/tests/test_monitoring.py",
+        "services/project-runtime/tests/test_model_load_monitoring.py",
+        "services/project-runtime/tests/test_intent_budget.py",
         "apps/monkeyhub/web/test/monitorData.test.ts"
       ],
       "notes": "CREATE explicitly requested by user. Existing ports.model owns provider receipt transport; neither it nor architectural workflow/evaluation owners owns cross-application token accounting, rates and engineering budget advice. Independent Python package and loopback API/CLI; MonkeyHub owns the single product UI. No separate architectural authority.",
@@ -7755,7 +7755,7 @@
         "apps/monkeyhub/web/test/designTree.browser.mjs",
         "apps/monkeyhub/web/test/modelComparison.test.ts",
         "apps/monkeyhub/api/tests/test_chat_admission.py",
-        "apps/archflow-studio/api/tests/test_agent_drawing_dressing.py",
+        "services/project-runtime/tests/test_agent_drawing_dressing.py",
         "apps/monkeyhub/web/test/errorBoundary.browser.mjs",
         "apps/monkeyhub/web/test/catalogs.test.ts",
         "apps/monkeyhub/api/tests/test_integrations.py",
@@ -7843,7 +7843,7 @@
       ],
       "does_not_own": [
         "Choosing the roots: governance/architecture_policy.json lists them and tools.archcheck checks them",
-        "The production entry points' setup: apps/monkeyhub/run.py, the monkeyhub_api.chat MCP start and the archflow_studio_api package read the same list themselves, because they run before anything in the checkout is importable and the runtime may not import tools",
+        "The production entry points' setup: apps/monkeyhub/run.py, the monkeyhub_api.chat MCP start and the project_runtime package read the same list themselves, because they run before anything in the checkout is importable and the runtime may not import tools",
         "The bundle's python313._pth (tools.package_monkeyapps) and CI's per-package editable installs"
       ],
       "inputs": [
@@ -8016,8 +8016,8 @@
         "packages/monkeydiagram/tests/test_drawing_standard.py",
         "packages/monkeydiagram/tests/test_drawing_output.py",
         "packages/monkeydiagram/tests/test_drawing_styles.py",
-        "apps/archflow-studio/api/archflow_studio_api/main.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py"
+        "services/project-runtime/src/project_runtime/main.py",
+        "services/project-runtime/src/project_runtime/application/drawings.py"
       ],
       "invariants": [
         "Source design and project information remain the only facts; drawing values do not confirm or mutate them.",
@@ -8101,7 +8101,7 @@
     },
     {
       "module_id": "studio.study",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/study.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/study.py",
       "purpose": "Retain corrected precedent evidence and conditional research in the existing Board document editor, with inspectable polygon tests and configured model proposals, without changing canonical design state.",
       "owns": [
         "Study evidence revisions tied to a registered document page, retained through P036 research-evidence-ledger records",
@@ -8158,7 +8158,7 @@
         "studio.board"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/routes/study.py"
+        "services/project-runtime/src/project_runtime/routes/study.py"
       ],
       "invariants": [
         "Study writes only its named study run and retained records; it does not accept a DesignStage, advance a branch or issue canonical HEAD",
@@ -8172,25 +8172,25 @@
       ],
       "status": "provisional",
       "tests": [
-        "apps/archflow-studio/api/tests/test_study.py",
-        "apps/archflow-studio/api/tests/test_study_compare.py",
-        "apps/archflow-studio/api/tests/test_study_research.py",
-        "apps/archflow-studio/api/tests/test_study_model.py",
+        "services/project-runtime/tests/test_study.py",
+        "services/project-runtime/tests/test_study_compare.py",
+        "services/project-runtime/tests/test_study_research.py",
+        "services/project-runtime/tests/test_study_model.py",
         "apps/monkeyhub/web/test/documentStudy.test.ts",
         "apps/monkeyhub/web/test/documentStudy.browser.mjs"
       ],
       "notes": "EXTEND the existing Study owner. Document canvas and source store are reused; true polygon computation lives in MonkeyDiagram under this same capability. Historical bounds archive/compare behavior is retained, while polygon research results are independently named. Family judgments and historical causation remain unvalidated. Competing retained heads still require explicit reconciliation; exact archived revisions remain readable.",
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/study.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/study.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/study.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/study_model.py",
+        "services/project-runtime/src/project_runtime/application/study.py",
+        "services/project-runtime/src/project_runtime/routes/study.py",
+        "services/project-runtime/src/project_runtime/transport/study.py",
+        "services/project-runtime/src/project_runtime/application/study_model.py",
         "packages/monkeydiagram/src/monkeydiagram/study.py"
       ]
     },
     {
       "module_id": "studio.publication",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/publications.py",
       "purpose": "Retain editable communication pages and compile them to PPTX/PDF. CREATE: Board owns review and artifacts owns source bytes; neither owns ordered page composition or publication export.",
       "status": "canonical",
       "owns": [
@@ -8220,10 +8220,10 @@
         "project.repository"
       ],
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/publications.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/publication_output.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/publications.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/publications.py",
+        "services/project-runtime/src/project_runtime/application/publications.py",
+        "services/project-runtime/src/project_runtime/application/publication_output.py",
+        "services/project-runtime/src/project_runtime/routes/publications.py",
+        "services/project-runtime/src/project_runtime/transport/publications.py",
         "apps/monkeyhub/web/src/workspaces/publish/PublishWorkspace.tsx",
         "apps/monkeyhub/web/src/workspaces/publish/publicationSaveQueue.ts"
       ],
@@ -8243,8 +8243,8 @@
         "A placed source's status is studio.binding's representation-status projection in Publish's words: frozen for a source Publish keeps, missing when the page's own bytes cannot be read, stale for an outdated page or unverifiable inputs (a replacement names the newest page), and current otherwise, including a drawing kept on its chosen version"
       ],
       "tests": [
-        "apps/archflow-studio/api/tests/test_publications.py",
-        "apps/archflow-studio/api/tests/test_publication_dependencies.py",
+        "services/project-runtime/tests/test_publications.py",
+        "services/project-runtime/tests/test_publication_dependencies.py",
         "apps/monkeyhub/web/test/publishWorkspace.browser.mjs",
         "apps/monkeyhub/web/test/publicationSaveQueue.test.ts"
       ]
@@ -8361,7 +8361,7 @@
         "validating or storing a facet value - archflow.semantics.facets and the State Record's own facet validation",
         "reading a facet off a Component@1 - archflow.state.state_record.component_facets",
         "running any domain's own structural, thermal or other evaluation - no such engine exists yet; this is only the gate",
-        "serving the HTTP routes - apps/archflow-studio/api/archflow_studio_api/application/domains.py (studio.domains)"
+        "serving the HTTP routes - services/project-runtime/src/project_runtime/application/domains.py (studio.domains)"
       ],
       "inputs": [
         "StateRecord",
@@ -8386,7 +8386,7 @@
       ],
       "used_by": [
         "tests/test_domain_readiness.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/domains.py"
+        "services/project-runtime/src/project_runtime/application/domains.py"
       ],
       "invariants": [
         "never infers architectural.role, structural.role, architectural.enclosure or material.name from geometry, producer or names (D-419-0)",
@@ -8403,7 +8403,7 @@
     },
     {
       "module_id": "studio.domains",
-      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/domains.py",
+      "owner_path": "services/project-runtime/src/project_runtime/application/domains.py",
       "purpose": "Serve L4 domain readiness: GET /api/domains describes every known domain, GET /api/domains/{domain}/readiness answers whether a domain can evaluate the bound project's projection now.",
       "owns": [
         "domains_index: every known domain, described, with no project in hand",
@@ -8434,13 +8434,13 @@
         "studio.shell"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/routes/domains.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
-        "apps/archflow-studio/api/tests/test_domains.py"
+        "services/project-runtime/src/project_runtime/routes/domains.py",
+        "services/project-runtime/src/project_runtime/routes/__init__.py",
+        "services/project-runtime/tests/test_domains.py"
       ],
       "files": [
-        "apps/archflow-studio/api/archflow_studio_api/application/domains.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/domains.py"
+        "services/project-runtime/src/project_runtime/application/domains.py",
+        "services/project-runtime/src/project_runtime/routes/domains.py"
       ],
       "invariants": [
         "GET /api/domains never 404s: only the per-domain readiness route names an unknown domain",
@@ -8449,7 +8449,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "apps/archflow-studio/api/tests/test_domains.py"
+        "services/project-runtime/tests/test_domains.py"
       ],
       "notes": "spec docs/2026-09-28-construction-api.md §3.6 (GH-419 Task C5)."
     }

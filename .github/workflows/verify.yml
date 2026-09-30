@@ -45,7 +45,7 @@ jobs:
             packages/monkeymonitor/pyproject.toml
             packages/monkeycontrol/pyproject.toml
             packages/monkeyfab/pyproject.toml
-            apps/archflow-studio/api/requirements.txt
+            services/project-runtime/requirements.txt
 
       # Every event runs the same verification. The scope and whitespace checks
       # below only have a base to compare against on a pull request.
@@ -72,7 +72,7 @@ jobs:
           -e packages/monkeymonitor
           -e packages/monkeycontrol
           -e "packages/monkeyfab[send,test]"
-          -r apps/archflow-studio/api/requirements.txt
+          -r services/project-runtime/requirements.txt
           -r apps/monkeyhub/api/requirements.txt
           httpx2 pytest
 
@@ -102,7 +102,7 @@ jobs:
       - name: Studio API suite
         env:
           PYTHONPATH: ${{ github.workspace }}
-        run: python -m pytest apps/archflow-studio/api/tests -q
+        run: python -m pytest services/project-runtime/tests -q
 
       - name: Hub conversation and lifecycle tests
         env:
@@ -129,7 +129,7 @@ jobs:
             packages/monkeydiagram/pyproject.toml
             packages/monkeymonitor/pyproject.toml
             packages/monkeycontrol/pyproject.toml
-            apps/archflow-studio/api/requirements.txt
+            services/project-runtime/requirements.txt
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -144,7 +144,7 @@ jobs:
         run: >-
           python -m pip install -e packages/archflow -e packages/monkeyarch -e packages/monkeydiagram
           -e packages/monkeymonitor -e packages/monkeycontrol
-          -r apps/archflow-studio/api/requirements.txt
+          -r services/project-runtime/requirements.txt
           -r apps/monkeyhub/api/requirements.txt
 
       - name: Install web dependencies
@@ -260,7 +260,7 @@ jobs:
             packages/monkeydiagram/pyproject.toml
             packages/monkeymonitor/pyproject.toml
             packages/monkeycontrol/pyproject.toml
-            apps/archflow-studio/api/requirements.txt
+            services/project-runtime/requirements.txt
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -272,7 +272,7 @@ jobs:
             apps/monkeyhub/web/tools/openapi-ts/package-lock.json
 
       - name: Install API and test dependencies
-        run: python -m pip install -e "packages/archflow[cad-inspection]" -e packages/monkeyarch -e packages/monkeydiagram -e packages/monkeymonitor -e packages/monkeycontrol -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
+        run: python -m pip install -e "packages/archflow[cad-inspection]" -e packages/monkeyarch -e packages/monkeydiagram -e packages/monkeymonitor -e packages/monkeycontrol -r services/project-runtime/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 
       - name: Desktop update activation checks
         if: runner.os == 'Windows'
@@ -330,7 +330,7 @@ jobs:
 
       - name: Studio indexed reads on Windows
         if: runner.os == 'Windows'
-        working-directory: apps/archflow-studio/api
+        working-directory: services/project-runtime
         shell: python
         run: *index-suite
         env:
@@ -339,7 +339,7 @@ jobs:
           INDEX_TOP: .
 
       - name: API binding, protocol and candidate checks
-        working-directory: apps/archflow-studio/api
+        working-directory: services/project-runtime
         run: python -m unittest tests.test_health tests.test_protocol tests.test_candidate
 
       - name: Install web dependencies
@@ -392,7 +392,7 @@ jobs:
             packages/monkeydiagram/pyproject.toml
             packages/monkeymonitor/pyproject.toml
             packages/monkeycontrol/pyproject.toml
-            apps/archflow-studio/api/requirements.txt
+            services/project-runtime/requirements.txt
 
       # A pull request is compared with where it left its base branch; a push
       # to main with the main it replaced.
@@ -410,24 +410,35 @@ jobs:
           git worktree add "$RUNNER_TEMP/base" "$base"
 
       - name: Install API and test dependencies
-        run: python -m pip install -e "packages/archflow[cad-inspection]" -e packages/monkeyarch -e packages/monkeydiagram -e packages/monkeymonitor -e packages/monkeycontrol -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
+        run: python -m pip install -e "packages/archflow[cad-inspection]" -e packages/monkeyarch -e packages/monkeydiagram -e packages/monkeymonitor -e packages/monkeycontrol -r services/project-runtime/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 
       # The base code builds the project: the check promises that an existing
       # project reads the same, and a candidate that deliberately changes what
       # new runs record (GH-429, #402) writes data the base cannot read. A base
       # keeps archflow at its root before #489 and in packages/archflow/src from
-      # it on; both are on the path until every base has the packages layout.
+      # it on, and its runtime as archflow_studio_api in apps/archflow-studio/api
+      # before #491 and as project_runtime in services/project-runtime/src from it
+      # on. Every one of those roots is on the path, and the step runs in the
+      # runtime directory the base has, until every base has the new layouts.
       - name: Generate the synthetic project with the base
         shell: bash
-        working-directory: ${{ runner.temp }}/base/apps/archflow-studio/api
+        working-directory: ${{ runner.temp }}/base
         env:
-          PYTHONPATH: ${{ runner.temp }}/base${{ runner.os == 'Windows' && ';' || ':' }}${{ runner.temp }}/base/packages/archflow/src${{ runner.os == 'Windows' && ';' || ':' }}${{ runner.temp }}/base/apps/archflow-studio/api
-        run: >-
-          python -c "import os, pathlib, archflow, archflow_studio_api;
-          base = pathlib.Path(os.environ['RUNNER_TEMP'], 'base').resolve();
-          assert all(pathlib.Path(m.__file__).resolve().is_relative_to(base) for m in (archflow, archflow_studio_api)), 'the base code must build the project';
-          from tests.synthetic_project import build_synthetic_project;
-          print(build_synthetic_project(pathlib.Path(os.environ['RUNNER_TEMP']) / 'projects'))"
+          PYTHONPATH: ${{ runner.temp }}/base${{ runner.os == 'Windows' && ';' || ':' }}${{ runner.temp }}/base/packages/archflow/src${{ runner.os == 'Windows' && ';' || ':' }}${{ runner.temp }}/base/apps/archflow-studio/api${{ runner.os == 'Windows' && ';' || ':' }}${{ runner.temp }}/base/services/project-runtime/src
+        run: |
+          if [ -d services/project-runtime ]; then
+            cd services/project-runtime && runtime=project_runtime
+          else
+            cd apps/archflow-studio/api && runtime=archflow_studio_api
+          fi
+          python - "$runtime" <<'PY'
+          import importlib, os, pathlib, sys, archflow
+          runtime = importlib.import_module(sys.argv[1])
+          base = pathlib.Path(os.environ['RUNNER_TEMP'], 'base').resolve()
+          assert all(pathlib.Path(m.__file__).resolve().is_relative_to(base) for m in (archflow, runtime)), 'the base code must build the project'
+          from tests.synthetic_project import build_synthetic_project
+          print(build_synthetic_project(pathlib.Path(os.environ['RUNNER_TEMP']) / 'projects'))
+          PY
 
       - name: Projection parity, conditional reads and timings
         shell: bash

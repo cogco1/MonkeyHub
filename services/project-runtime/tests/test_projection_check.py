@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 
 from .synthetic_project import MIN_RUNS, build_synthetic_project
 
-REPOSITORY = Path(__file__).resolve().parents[4]
+REPOSITORY = Path(__file__).resolve().parents[3]
 _spec = importlib.util.spec_from_file_location("projection_check", REPOSITORY / "tools" / "projection_check.py")
 projection_check = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(projection_check)
@@ -130,7 +133,8 @@ class VerdictTests(unittest.TestCase):
 
 
 class LayoutTests(unittest.TestCase):
-    """A base from before #489 keeps archflow at its root; the check reads either layout."""
+    """A base from before #489 keeps archflow at its root, and one from before #491 keeps its
+    runtime under its old name in apps/; the check reads either layout."""
 
     def test_each_side_imports_archflow_from_where_it_keeps_it(self) -> None:
         root = Path(tempfile.mkdtemp())
@@ -142,6 +146,37 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(projection_check._kernel_source(old), old)
         self.assertEqual(projection_check._kernel_source(new), new / "packages" / "archflow" / "src")
         self.assertEqual(projection_check._kernel_source(REPOSITORY), REPOSITORY / "packages" / "archflow" / "src")
+
+    def test_each_side_binds_the_runtime_it_keeps_and_nothing_else(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        before, after = root / "before-491", root / "from-491"
+        sides = {
+            before: (before / "apps" / "archflow-studio" / "api", "archflow_studio_api"),
+            after: (after / "services" / "project-runtime" / "src", "project_runtime"),
+        }
+        for code_root, (source, package) in sides.items():
+            for module in (code_root / "packages" / "archflow" / "src" / "archflow", source / package):
+                module.mkdir(parents=True)
+                (module / "__init__.py").write_text("", encoding="utf-8")
+            self.assertEqual(projection_check._runtime_source(code_root), (source, package))
+        self.assertEqual(projection_check._runtime_source(REPOSITORY),
+                         (REPOSITORY / "services" / "project-runtime" / "src", "project_runtime"))
+        # _bind rewrites sys.path and imports, so each side binds in an interpreter of its own,
+        # as the worker does; each answers its own package name, found under its own root.
+        tool = REPOSITORY / "tools" / "projection_check.py"
+        script = ("import importlib.util, sys; from pathlib import Path; "
+                  "spec = importlib.util.spec_from_file_location('projection_check', sys.argv[1]); "
+                  "tool = importlib.util.module_from_spec(spec); spec.loader.exec_module(tool); "
+                  "package = tool._bind(Path(sys.argv[2])); "
+                  "print(package, Path(sys.modules[package].__file__).resolve().relative_to(Path(sys.argv[2]).resolve()).as_posix())")
+        environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+        for code_root, (source, package) in sides.items():
+            with self.subTest(side=code_root.name):
+                bound = subprocess.run([sys.executable, "-c", script, str(tool), str(code_root)], cwd=str(root),
+                                       env=environment, capture_output=True, text=True, timeout=60)
+                self.assertEqual(bound.returncode, 0, bound.stderr)
+                self.assertEqual(bound.stdout.split(), [package, (source / package / "__init__.py").relative_to(code_root).as_posix()])
 
 
 class EndToEndTests(unittest.TestCase):
