@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from archflow.project.refs import record_ref_from_uri
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from monkeyarch.construction.vocabulary import layer_rule_violations
+from monkeyarch.authoring.construction.vocabulary import layer_rule_violations
 
 from .support import EVIDENCE, PROJECT_ID, RECORD_PAYLOAD, make_empty_project, write_runner_record
 from .test_construction_routes import ConstructionTestCase, _exported, _texts

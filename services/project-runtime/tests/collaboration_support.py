@@ -12,7 +12,7 @@ from pathlib import Path
 
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord, developed_design_view
-from monkeyarch.runtime.project_runner import CAD_BACKEND_OCCT, RunOptions, run_project
+from monkeyarch.application.project_runner import CAD_BACKEND_OCCT, RunOptions, run_project
 from project_runtime.application.harness import HARNESS_PHASE, STAGE_ID, harness_guard
 from project_runtime.application.seats import seats_of
 from project_runtime.application.artifacts import ModelSource, list_artifacts, require_complete_model

@@ -13,14 +13,14 @@ import json
 import unittest
 from dataclasses import replace
 
-from monkeyarch.capabilities.opening_solver import (
+from monkeyarch.domain.opening_solver import (
     DoorType,
     OpeningSolverError,
     WindowType,
     solve_door,
     solve_window,
 )
-from monkeyarch.capabilities.wall_solver import OpeningKind, OpeningRequest, WallElement, solve_wall
+from monkeyarch.domain.wall_solver import OpeningKind, OpeningRequest, WallElement, solve_wall
 from archflow.state.geometry_program import AssemblyRole, GeometryOperationKind
 
 WINDOW = WindowType("window-type-1", frame_width=0.09, frame_depth=0.18, frame_projection=0.1,
@@ -172,7 +172,7 @@ class ContractTests(unittest.TestCase):
         from OCP.TopExp import TopExp_Explorer
 
         from monkeycad.occt_backend import build_program_shapes, measure_shape
-        from monkeyarch.compilers.geometry import compile_geometry_program
+        from monkeyarch.compilation.geometry import compile_geometry_program
         from archflow.state.geometry_program import InterfaceDatum, InterfaceDatumKind, LengthUnit
         from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
 

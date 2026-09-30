@@ -28,7 +28,7 @@ import math
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Mapping
 
-from monkeyarch.capabilities.reference_resolver import (
+from monkeyarch.domain.reference_resolver import (
     HostLine,
     ReferenceContext,
     ReferenceError,
@@ -36,8 +36,8 @@ from monkeyarch.capabilities.reference_resolver import (
     resolve_elevation,
     resolve_plan,
 )
-from monkeyarch.capabilities.opening_solver import DoorType, WindowType, solve_openings
-from monkeyarch.capabilities.wall_solver import HostedVoid, OpeningKind, OpeningRequest, WallElement, WallSolverError, solve_wall, subtract_rectangular_cutouts
+from monkeyarch.domain.opening_solver import DoorType, WindowType, solve_openings
+from monkeyarch.domain.wall_solver import HostedVoid, OpeningKind, OpeningRequest, WallElement, WallSolverError, solve_wall, subtract_rectangular_cutouts
 from archflow.project.refs import require_identifier
 from archflow.state.geometry_program import (
     DatumBinding,

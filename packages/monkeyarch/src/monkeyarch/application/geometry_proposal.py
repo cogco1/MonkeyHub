@@ -38,7 +38,7 @@ from archflow.state.geometry_program import (
     decode_proposal_items,
     load_geometry_program_proposal,
 )
-from monkeyarch.compilers.geometry import (
+from monkeyarch.compilation.geometry import (
     GeometryIssue,
     GeometryIssueCode,
     compile_geometry_program,

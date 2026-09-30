@@ -39,14 +39,14 @@ from typing import Any, Mapping
 
 from archflow.state.geometry_program import DifferenceBoundsError
 from archflow.state.state_record import StateRecord
-from monkeyarch.capabilities.element_producers import (
+from monkeyarch.authoring.element_producers import (
     ElementProducerError,
     produce_rows,
     production_order,
     with_void_hosts,
 )
-from monkeyarch.construction.identity import ELEMENT_SUFFIX, Naming, identify, identity_of, made_by_construction
-from monkeyarch.construction.script import (
+from monkeyarch.authoring.construction.identity import ELEMENT_SUFFIX, Naming, identify, identity_of, made_by_construction
+from monkeyarch.authoring.construction.script import (
     MAX_CUTTERS,
     MAX_ID,
     TIME_OUT,
@@ -55,7 +55,7 @@ from monkeyarch.construction.script import (
     _statement_error,
     run_script,
 )
-from monkeyarch.construction.shapes import (
+from monkeyarch.authoring.construction.shapes import (
     _PRODUCTION_ERRORS,
     EDITABLE_PRODUCERS,
     Box,

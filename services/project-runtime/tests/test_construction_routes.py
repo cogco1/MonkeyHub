@@ -26,8 +26,7 @@ from monkeycad.three_dm_inspector import inspect_three_dm
 from archflow.state.state_record import apply_state_record_operator, component_facets
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from monkeyarch.construction import vocabulary
-from monkeyarch.construction.vocabulary import layer_rule_violations
+from monkeyarch.authoring.construction.vocabulary import layer_rule_violations, vocabulary
 
 from .support import (
     PROJECT_ID,
@@ -321,7 +320,7 @@ class ConstructionRefusalTestCase(ConstructionTestCase):
 
     def test_runtime_sentences_come_back_in_construction_words_only(self) -> None:
         from project_runtime.application.construction import in_construction_words
-        from monkeyarch.construction.vocabulary import LAYER_RULE_TOKENS
+        from monkeyarch.authoring.construction.vocabulary import LAYER_RULE_TOKENS
 
         for runtime, words in (
             # The runtime's host rule, said whole.

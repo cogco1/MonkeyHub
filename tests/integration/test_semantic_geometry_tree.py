@@ -5,7 +5,7 @@ import hashlib
 from pathlib import Path
 import unittest
 
-from monkeyarch.compilers.geometry import (
+from monkeyarch.compilation.geometry import (
     GeometryIssueCode,
     compile_geometry_program,
 )

@@ -6,8 +6,8 @@ from copy import deepcopy
 from typing import Any, Mapping
 
 from archflow.state.state_record import project_grids_of, project_levels_of
-from monkeyarch.capabilities.element_producers import ProductionContext, element_rows_of, produce_rows
-from monkeyarch.capabilities.reference_resolver import ReferenceContext
+from monkeyarch.authoring.element_producers import ProductionContext, element_rows_of, produce_rows
+from monkeyarch.domain.reference_resolver import ReferenceContext
 
 from ..errors import StudioError
 from .intent import component_edit_proposal

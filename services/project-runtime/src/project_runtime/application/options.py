@@ -8,7 +8,7 @@ it and nothing that measured either. This module is that table.
 
 **An option is a record, not a picture.** Each one is the current record's own
 ``SchematicPack@1`` with one deterministic transform applied, and it is
-measured by ``monkeyarch.capabilities.massing_metrics`` on the successor record that selecting
+measured by ``monkeyarch.domain.massing_metrics`` on the successor record that selecting
 it would run — so the numbers on the card are the numbers of the thing that
 would be built, not of an approximation of it. Nothing here computes geometry,
 and nothing here writes the authored record.
@@ -41,7 +41,7 @@ from typing import Any, Mapping, Sequence
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import SELECTED_SPATIAL_OPTION
-from monkeyarch.capabilities.massing_metrics import (
+from monkeyarch.domain.massing_metrics import (
     EnvelopeFinding,
     MassingMetrics,
     MassingMetricsError,

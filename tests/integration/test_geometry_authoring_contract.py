@@ -6,8 +6,8 @@ import unittest
 from dataclasses import replace
 
 from archflow.state.geometry_program import AssemblyRole
-from monkeyarch.capabilities import geometry_proposal
-from monkeyarch.capabilities.geometry_proposal import (
+from monkeyarch.application import geometry_proposal
+from monkeyarch.application.geometry_proposal import (
     GeometryProposalPolicy,
     GeometryProposalStatus,
     produce_geometry_program_proposal,

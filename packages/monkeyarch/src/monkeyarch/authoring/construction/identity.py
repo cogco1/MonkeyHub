@@ -23,7 +23,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable, Sequence
 
-from monkeyarch.construction.shapes import RowShape, Shape
+from monkeyarch.authoring.construction.shapes import RowShape, Shape
 
 ELEMENT_SUFFIX = "-body"
 HASH_DIGITS = 12

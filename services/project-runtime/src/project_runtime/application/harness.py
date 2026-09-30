@@ -24,7 +24,7 @@ from archflow.project.record_kinds import (
 )
 from archflow.project.refs import RunRef
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyarch.runtime.project_runner import StageExecutionGuard
+from monkeyarch.application.project_runner import StageExecutionGuard
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.state_record import RecordBinding

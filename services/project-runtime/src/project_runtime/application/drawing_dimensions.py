@@ -15,8 +15,8 @@ from archflow.project.record_kinds import SEAT_OCCT_EXECUTION
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 from archflow.state.state_record import parameter_bindings_of, project_grids_of, project_levels_of
-from monkeyarch.capabilities.element_producers import ProductionContext, element_rows_of, produce_rows
-from monkeyarch.capabilities.reference_resolver import ReferenceContext
+from monkeyarch.authoring.element_producers import ProductionContext, element_rows_of, produce_rows
+from monkeyarch.domain.reference_resolver import ReferenceContext
 from monkeydiagram.drawing_elevation import ElevationView, VerifiedElevationSource
 from monkeydiagram.drawing_svg import dimension_placement_fits
 

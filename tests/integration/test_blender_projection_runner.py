@@ -16,7 +16,7 @@ class ProjectionRunnerTests(unittest.TestCase):
         from archflow.project.repository import FilesystemProjectRepository
         from archflow.project.refs import record_ref_from_uri
         from archflow.state.stage_workflow import DesignPhase
-        from monkeyarch.runtime.project_runner import run_project
+        from monkeyarch.application.project_runner import run_project
         from archflow.project.layout import cad_workspace_path
 
         demo = os.environ.get("ARCHFLOW_PROJECTION_DEMO_ROOT")

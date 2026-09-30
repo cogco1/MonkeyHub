@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from monkeyarch.construction.vocabulary import LAYER_RULE_TOKENS, layer_rule_violations
+from monkeyarch.authoring.construction.vocabulary import LAYER_RULE_TOKENS, layer_rule_violations
 
 # The three routes an agent reads to author and mean geometry (spec Sec.3.2);
 # none of their request schemas may name a producer or semanticKind.

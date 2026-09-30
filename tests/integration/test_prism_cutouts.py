@@ -9,10 +9,10 @@ from monkeycad.cad_patch import select_patch_operations
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import Entity, Parameter, StateRecord, StateRecordEditKind, StateRecordOperator, apply_state_record_operator
-from monkeyarch.capabilities.element_producers import ElementProducerError, ElementRow, ProductionContext, produce_rows
-from monkeyarch.capabilities.reference_resolver import ReferenceContext
-from monkeyarch.capabilities.wall_solver import WallSolverError, subtract_rectangular_cutouts
-from monkeyarch.compilers.geometry import compile_geometry_program
+from monkeyarch.authoring.element_producers import ElementProducerError, ElementRow, ProductionContext, produce_rows
+from monkeyarch.domain.reference_resolver import ReferenceContext
+from monkeyarch.domain.wall_solver import WallSolverError, subtract_rectangular_cutouts
+from monkeyarch.compilation.geometry import compile_geometry_program
 from tests.integration.test_element_producers import BASIS, PN, _grids, _levels, _op_params
 from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
 from tests.integration import test_project_runner as runner_support

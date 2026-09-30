@@ -689,7 +689,7 @@ class ConstructionIntentTests(IntentTestCase):
 
     def test_a_modified_decision_changes_the_proposal_on_top_of_it(self) -> None:
         from archflow.state.state_record import apply_state_record_operator
-        from monkeyarch.construction.vocabulary import layer_rule_violations
+        from monkeyarch.authoring.construction.vocabulary import layer_rule_violations
 
         self.app.state.intent_compiler = scripted(script=TWO_BLOCKS, why="Two stacked masses.")
         status, body = self.ask("Add two stacked masses beside the portico.", targetComponentId=None)
@@ -774,7 +774,7 @@ class ConstructionIntentTests(IntentTestCase):
 
     def test_the_model_schema_is_the_construction_contract(self) -> None:
         from archflow.semantics.facets import FACETS
-        from monkeyarch.construction.vocabulary import LIMITS, layer_rule_violations
+        from monkeyarch.authoring.construction.vocabulary import LIMITS, layer_rule_violations
 
         from project_runtime.application.intent_agent import SYSTEM_PROMPT
 

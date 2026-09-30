@@ -898,7 +898,7 @@ BASIS = ("reading:plate",)
 
 
 def _reference_context():
-    from monkeyarch.capabilities.reference_resolver import ReferenceContext
+    from monkeyarch.domain.reference_resolver import ReferenceContext
     from archflow.state.geometry_program import (
         ProjectGridAxis,
         ProjectGrids,
@@ -923,7 +923,7 @@ def _reference_context():
 def _produced_program(*rows):
     """The real producers' operations, wrapped as the program the translator reads."""
 
-    from monkeyarch.capabilities.element_producers import ProductionContext, produce_rows
+    from monkeyarch.authoring.element_producers import ProductionContext, produce_rows
 
     context = ProductionContext(references=_reference_context(), published={})
     operations = [
@@ -941,7 +941,7 @@ def _produced_program(*rows):
 
 
 def _wedge_row(line=None, **params):
-    from monkeyarch.capabilities.element_producers import ElementRow
+    from monkeyarch.authoring.element_producers import ElementRow
 
     start, end = line or (0.0, 4.0)          # metres along the W axis, which runs +x
     return ElementRow(
@@ -959,7 +959,7 @@ def _wedge_row(line=None, **params):
 
 
 def _shell_row(**params):
-    from monkeyarch.capabilities.element_producers import ElementRow
+    from monkeyarch.authoring.element_producers import ElementRow
 
     return ElementRow(
         "rotunda-shell",
@@ -982,7 +982,7 @@ def _shell_row(**params):
 
 
 def _prism_row():
-    from monkeyarch.capabilities.element_producers import ElementRow
+    from monkeyarch.authoring.element_producers import ElementRow
 
     return ElementRow(
         "plinth",

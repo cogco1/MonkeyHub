@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from monkeyarch.capabilities.wall_solver import HostedVoid, OpeningKind
+from monkeyarch.domain.wall_solver import HostedVoid, OpeningKind
 from archflow.project.refs import require_identifier
 from archflow.state.geometry_program import (
     AssemblyKind,

@@ -10,9 +10,9 @@ import unittest
 
 from archflow.project.refs import ProjectVersionRef
 from archflow.state.state_record import Entity, StateRecord
-from monkeyarch.construction import ConstructionError, compile_construction_script, vocabulary
-from monkeyarch.construction.script import IMPLEMENTED_VERBS
-from monkeyarch.construction.vocabulary import LAYER_RULE_TOKENS, layer_rule_violations
+from monkeyarch.authoring.construction.lowering import compile_construction_script
+from monkeyarch.authoring.construction.script import IMPLEMENTED_VERBS, ConstructionError
+from monkeyarch.authoring.construction.vocabulary import LAYER_RULE_TOKENS, layer_rule_violations, vocabulary
 
 EVIDENCE = "input:monkeyarch-modeling-setup"
 
@@ -449,7 +449,7 @@ class BoundedWorkTests(ConstructionTestCase):
         self.assertLessEqual(max(len(line) for line in self.log("print([[0] * 100] * 90)")), 2003)
 
     def test_a_wall_clock_deadline_is_checked_with_every_step(self) -> None:
-        from monkeyarch.construction import script as interpreter
+        from monkeyarch.authoring.construction import script as interpreter
 
         original = interpreter.LIMITS["seconds"]
         interpreter.LIMITS["seconds"] = 0
@@ -460,8 +460,8 @@ class BoundedWorkTests(ConstructionTestCase):
         self.assertIn("longer than 5 s", error.message)
 
     def test_lowering_runs_under_the_same_deadline(self) -> None:
-        from monkeyarch.construction.lowering import _Lowering
-        from monkeyarch.construction.script import run_script
+        from monkeyarch.authoring.construction.lowering import _Lowering
+        from monkeyarch.authoring.construction.script import run_script
 
         session, lines = run_script("x = 1\na = extrude(rect(0, 0, 1, 1), 1)\nb = extrude(rect(2, 0, 1, 1), 1)",
                                     _record())

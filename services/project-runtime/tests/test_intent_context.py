@@ -179,7 +179,7 @@ class IntentContextTests(unittest.TestCase):
         # Inject a missing advertised contract independently of which producers
         # the owner supports today; the retained record still names its producer.
         # The owner's signatures are read privately: the sheet a model reads carries none.
-        from monkeyarch.capabilities import element_producers
+        from monkeyarch.authoring import element_producers
 
         record, sheet = fixture()
         self.assertNotIn("producerSignatures", sheet)
@@ -200,7 +200,7 @@ class IntentContextTests(unittest.TestCase):
                     if item.entity_id in {"window-23", "window-type"} else item
                     for item in record.entities))
                 sheet = sheet_of(record, Selection("facade", "window-23"))
-                from monkeyarch.capabilities.element_producers import producer_signatures
+                from monkeyarch.authoring.element_producers import producer_signatures
                 properties = producer_signatures()[producer]["parameters"]["properties"]
                 self.assertNotIn("width", properties)
                 if producer == "loft":
@@ -463,7 +463,7 @@ class ModelContextTests(unittest.TestCase):
         self.assertNotIn("relationships", public)
 
     def test_design_path_reads_the_model_in_construction_terms(self):
-        from monkeyarch.construction import vocabulary
+        from monkeyarch.authoring.construction.vocabulary import vocabulary
         from project_runtime.application.intent_agent import _design_facts
 
         record, sheet = fixture()

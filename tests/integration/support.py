@@ -26,10 +26,10 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from monkeyarch.capabilities.geometry_proposal import (
+from monkeyarch.application.geometry_proposal import (
     GeometryProposalProviderIdentity,
 )
-from monkeyarch.compilers.geometry import compile_geometry_program
+from monkeyarch.compilation.geometry import compile_geometry_program
 from archflow.ports.model import ModelInvocationReceipt, ModelInvocationStatus
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import SELECTED_SPATIAL_OPTION
@@ -714,7 +714,7 @@ class ProducerFixture(unittest.IsolatedAsyncioTestCase):
     async def produce(self, provider, **extra):
         """One bounded production run against this fixture's project."""
 
-        from monkeyarch.capabilities.geometry_proposal import (
+        from monkeyarch.application.geometry_proposal import (
             GeometryProposalPolicy,
             produce_geometry_program_proposal,
         )

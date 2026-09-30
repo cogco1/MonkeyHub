@@ -43,15 +43,15 @@ from archflow.state.state_record import (
     project_levels_of,
     resolve_element_bindings,
 )
-from monkeyarch.capabilities.element_producers import (
+from monkeyarch.authoring.element_producers import (
     ElementProducerError,
     ElementRow,
     ProductionContext,
     element_rows_of,
     produce_rows,
 )
-from monkeyarch.capabilities.reference_resolver import ReferenceContext
-from monkeyarch.construction.vocabulary import LIMITS
+from monkeyarch.domain.reference_resolver import ReferenceContext
+from monkeyarch.authoring.construction.vocabulary import LIMITS
 
 EDITABLE_PRODUCERS = frozenset({"prism", "planar-surface", "curve", "loft", "wall"})
 MAX_PROFILE_POINTS = LIMITS["profilePoints"]

@@ -16,7 +16,8 @@ declares ``SpatialGridBasis(horizontal_area_per_cell=1.0,
 area_unit="square_metres")`` for every option it builds, and one cell of ``y``
 is one metre by the same lattice. The boxes themselves are read by
 ``state.record.volume_boxes_of`` — the one reader of that field, shared with
-``runtime.project_runner``'s relation check — and never re-derived here.
+the relation check of ``monkeyarch.application.project_runner`` — and never
+re-derived here.
 
 **A level's top face.** ``SpatialLevel.top_y`` is ``base_y + height - 1``: the
 topmost cell a level *occupies*. A height in metres is the distance to the

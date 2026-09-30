@@ -27,9 +27,9 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity
+from monkeyarch.application.geometry_proposal import GeometryProposalProviderIdentity
 from archflow.state.geometry_program import load_compiled_geometry_program
-from monkeyarch.capabilities.discipline_seats import SeatSpec
+from monkeyarch.domain.discipline_seats import SeatSpec
 from monkeycad.cad_execution import patch_composed_three_dm
 from archflow.project.layout import cad_workspace_path
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -42,7 +42,7 @@ from archflow.project.record_kinds import (
     STUDIO_CANDIDATE_DELTA,
 )
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef, record_ref_from_uri
-from monkeyarch.runtime.project_runner import CAD_BACKEND_OCCT, RunOptions, run_project
+from monkeyarch.application.project_runner import CAD_BACKEND_OCCT, RunOptions, run_project
 from archflow.state.state_record import (
     SchematicPack,
     StateRecord,
