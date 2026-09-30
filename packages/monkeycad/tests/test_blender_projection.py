@@ -12,8 +12,7 @@ from monkeycad.backends.occt.backend import OcctBackend
 from monkeycad.execution import CadExecutionError, CadExecutionRequest
 from monkeycad.backends.blender import projection
 from monkeycad.backends.occt.kernel import occt_available
-from tests.integration.test_occt_execution import _box, _program_of
-from tests.integration.test_cad_execution import _binding
+from cad_fixture import _binding, _box, _program_of
 
 BLENDER = os.environ.get("ARCHFLOW_BLENDER_EXECUTABLE")
 
