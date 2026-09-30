@@ -18,6 +18,7 @@ from archflow.project.record_kinds import STATE_RECORD
 from archflow.project.refs import ProjectRecordRef
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import Entity, StateRecord
+from monkeyarch.domain.massing_transforms import ADD_FLOOR, SCALE_VOLUME
 
 from .evaluator import EvaluationRequest, EvaluationResult, MassingEvaluator
 from .retained import evaluate_retained, load_retained_request
@@ -65,10 +66,11 @@ def create_public_massing_fixture(project_root: Path) -> tuple[RetainedCandidate
     """Create, retain and reopen 24 fixed options; never promote project HEAD.
 
     Widths 4..7, depths 3..5, and 1/2 storeys are authored choices. Geometry
-    arithmetic stays in ``studio.options.make_option``. The returned requests
+    arithmetic stays in the Runtime's ``make_option`` and MonkeyArch's massing
+    transforms. The returned requests
     use run/content bindings captured before reopening, not inferred on read.
-    The source-tree import uses the existing Studio package without copying its
-    transforms or adding that application to the core package's dependencies.
+    The source-tree import uses the existing Runtime package without copying its
+    option path or adding that application to the core package's dependencies.
     """
 
     options = import_module("services.project-runtime.src.project_runtime.application.options")
@@ -88,14 +90,14 @@ def create_public_massing_fixture(project_root: Path) -> tuple[RetainedCandidate
     saved = []
     for width in range(4, 8):
         for depth in range(3, 6):
-            scale = {"transform": options.SCALE_VOLUME,
+            scale = {"transform": SCALE_VOLUME,
                      "parameters": {"volume_id": "block", "sx": width / 6, "sz": depth / 4}}
             scaled = options.make_option(binding, store, source, state_digest=source.state_digest, **scale)
             for floors in (1, 2):
                 transforms = (scale,)
                 option = scaled
                 if floors == 2:
-                    add_floor = {"transform": options.ADD_FLOOR, "parameters": {}}
+                    add_floor = {"transform": ADD_FLOOR, "parameters": {}}
                     option = options.make_option(binding, store, scaled.record,
                                                  state_digest=scaled.record.state_digest, **add_floor)
                     transforms = (scale, add_floor)

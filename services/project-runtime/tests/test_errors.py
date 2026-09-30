@@ -11,6 +11,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from monkeyarch.authoring.frame import FrameError
+from monkeyarch.domain.massing_transforms import MassingTransformError
 from project_runtime.main import OWNER_REFUSALS, create_app
 from project_runtime.settings import StudioSettings
 from project_runtime.errors import BlockedNeedsHuman, StudioError
@@ -186,6 +187,7 @@ class RefusalDetailTests(unittest.TestCase):
 # One refusal of each kind an owner package raises, as its own code raises it.
 OWNER_REFUSAL_EXAMPLES = (
     FrameError("UNKNOWN_REF", "the record carries no entity:level-grond."),
+    MassingTransformError("LAST_FLOOR", "this massing has one floor."),
 )
 
 
@@ -212,7 +214,7 @@ class OwnerRefusalTests(unittest.TestCase):
 
     def test_every_kind_the_table_maps_is_exercised_here(self) -> None:
         self.assertEqual({type(refusal) for refusal in OWNER_REFUSAL_EXAMPLES}, set(OWNER_REFUSALS))
-        self.assertEqual(dict(OWNER_REFUSALS), {FrameError: 422})
+        self.assertEqual(dict(OWNER_REFUSALS), {FrameError: 422, MassingTransformError: 422})
 
     def test_each_refusal_answers_its_status_with_its_own_code_and_sentence(self) -> None:
         for index, refusal in enumerate(OWNER_REFUSAL_EXAMPLES):

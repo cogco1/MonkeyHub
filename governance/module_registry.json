@@ -6039,7 +6039,8 @@
         "documentation.drawings",
         "monkeydiagram.documentation.styles",
         "project.index",
-        "monkeyarch.authoring.frame"
+        "monkeyarch.authoring.frame",
+        "monkeyarch.domain.massing_transforms"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/api/routes/",
@@ -6855,20 +6856,22 @@
     {
       "module_id": "state.massing_metrics",
       "owner_path": "packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py",
-      "purpose": "What a massing option measures - footprint, gross floor area, floor count, height, program share - and how it stands in a buildable envelope, read from the record's own Volume@1 / MassingLevel@1 entities in the kernel's voxel lattice.",
+      "purpose": "What a massing option measures - footprint, gross floor area, floor count, height, program share - and how it stands in a buildable envelope, read from the record's own Volume@1 / MassingLevel@1 entities in the kernel's voxel lattice, and the six moves that make a massing option out of the record's own pack.",
       "owns": [
         "the massing quantities and their frame (MassingMetrics, LevelFootprint, massing_metrics)",
         "CELL_AREA_M2: one plan cell is one square metre, as schematic_proposal's SpatialGridBasis declares",
         "the union-of-plan-rectangles footprint, counted once where volumes overlap",
         "the three envelope findings and their whole vocabulary (EnvelopeFinding, envelope_check, VOLUME_OUTSIDE_ENVELOPE, HEIGHT_EXCEEDED, FAR_EXCEEDED)",
         "saying what could not be measured rather than measuring zero (MassingMetrics.honesty)",
-        "the typed refusal of a record or envelope that makes a measurement impossible (MassingMetricsError)"
+        "the typed refusal of a record or envelope that makes a measurement impossible (MassingMetricsError)",
+        "the closed transform vocabulary (TRANSFORMS: add_floor, remove_floor, shift_volume, scale_volume, split_volume, pack)",
+        "each transform's arithmetic on the pack and its typed refusals (MassingTransformError naming UNKNOWN_TRANSFORM, PACK_REQUIRED, PACK_INVALID, NOTHING_TO_RAISE, LAST_FLOOR, NOTHING_LEFT, UNKNOWN_AXIS, SPLIT_OUTSIDE_VOLUME, NO_MASSING, UNKNOWN_VOLUME, WHOLE_CELLS or POSITIVE_FACTOR)"
       ],
       "does_not_own": [
         "reading a Volume@1 box (state.record.volume_boxes_of)",
         "the massing entity vocabulary (state.record)",
         "the SiteBounds/SpatialLevel shapes the lattice comes from (state.spatial)",
-        "transforming a massing or holding options beside one another (studio.options)",
+        "holding options beside one another, retaining one and running the selected one (studio.options)",
         "compiling geometry from a massing (compilation/geometry.py)"
       ],
       "inputs": [
@@ -6891,27 +6894,41 @@
         "MassingMetricsError",
         "VOLUME_OUTSIDE_ENVELOPE",
         "envelope_check",
-        "massing_metrics"
+        "massing_metrics",
+        "TRANSFORMS",
+        "ADD_FLOOR",
+        "REMOVE_FLOOR",
+        "SHIFT_VOLUME",
+        "SCALE_VOLUME",
+        "SPLIT_VOLUME",
+        "PACK",
+        "MassingTransformError",
+        "require_transform",
+        "transformed"
       ],
       "depends_on": [
         "state.record"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/options.py",
-        "services/project-runtime/src/project_runtime/api/dto/options.py"
+        "services/project-runtime/src/project_runtime/api/dto/options.py",
+        "labs/candidate_evaluation/retained_fixture.py"
       ],
       "invariants": [
         "never writes the filesystem and decides nothing",
         "a plan bound that is not a whole cell is reported in honesty, never rounded",
         "an absent envelope key makes no finding",
-        "efficiency is null, never zero, when no program target was given or there is no floor area"
+        "efficiency is null, never zero, when no program target was given or there is no floor area",
+        "a move is whole-cell arithmetic on the pack and nothing else: it neither measures, retains nor runs the option, and a move it cannot make is refused by name with nothing changed"
       ],
       "status": "canonical",
       "files": [
-        "packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py"
+        "packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py",
+        "packages/monkeyarch/src/monkeyarch/domain/massing_transforms.py"
       ],
       "tests": [
-        "tests/integration/test_massing_metrics.py"
+        "tests/integration/test_massing_metrics.py",
+        "packages/monkeyarch/tests/test_massing_transforms.py"
       ],
       "reason": "Snaptrude shows GFA, floor count and efficiency beside every massing option; here they are read from the record's own massing entities, once, by one module, so the studio's options and any later provider measure the same thing."
     },
@@ -6920,42 +6937,35 @@
       "owner_path": "services/project-runtime/src/project_runtime/application/options.py",
       "purpose": "Hold several massing options beside the record's own, each one deterministic transform of its SchematicPack@1, each measured, each retained in a run of its own.",
       "owns": [
-        "the closed transform vocabulary (TRANSFORMS: add_floor, remove_floor, shift_volume, scale_volume, split_volume, pack)",
-        "each transform's arithmetic on the pack and its typed refusals",
         "the in-process option table and its ids and run ids (OptionStore, MassingOption, OptionsTable, RUN_PREFIX, PERSISTENCE)",
         "retaining one option as selected-spatial-option in its own option-NNN run",
         "the record's volumes as the panel reads them (RecordMassing, RecordVolume, record_massing, baseline_pack)",
+        "making one option with a monkeyarch.domain.massing_transforms move: the move's name is checked before an option id is reserved, and the successor record the selection would run is measured before the pack is retained",
         "POST /api/options, GET /api/options, POST /api/options/{option_id}/select, GET /api/state/volumes",
         "carrying optional exact modelSource from POST /api/options, including pack requests, on its existing in-memory MassingOption and wire response; selection rechecks and passes that original source to the common candidate worker"
       ],
       "does_not_own": [
-        "measuring a massing (state.massing_metrics)",
+        "measuring a massing, or the moves that make an option out of a pack (state.massing_metrics)",
         "reading the record's massing as a pack (state.record.schematic_pack_of)",
         "deriving the successor record a selection runs (state.record)",
         "running a candidate (studio.candidate)",
         "the record kind vocabulary (project.record_kinds)"
       ],
       "public_api": [
-        "ADD_FLOOR",
         "MassingOption",
         "OptionStore",
         "OptionsTable",
-        "PACK",
         "PERSISTENCE",
         "RecordMassing",
         "RecordVolume",
-        "REMOVE_FLOOR",
         "RUN_PREFIX",
-        "SCALE_VOLUME",
-        "SHIFT_VOLUME",
-        "SPLIT_VOLUME",
-        "TRANSFORMS",
         "baseline_pack",
         "make_option",
         "record_massing"
       ],
       "depends_on": [
         "state.massing_metrics",
+        "monkeyarch.domain.massing_transforms",
         "state.record",
         "state.spatial",
         "project.ports",
