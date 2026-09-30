@@ -18,10 +18,10 @@ from typing import Any, Mapping
 
 from archflow.project.refs import ProjectVersionRef
 from archflow.project.refs import require_identifier
-from archflow.state.operational_state import require_logical_ref
 from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 from archflow.contracts.fields import (
     number,
+    require_logical_ref,
 )
 
 

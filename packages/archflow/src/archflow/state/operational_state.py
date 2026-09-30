@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Mapping
 
 from archflow.project.refs import (
     BranchRef,
@@ -22,10 +21,14 @@ from archflow.project.refs import (
 from archflow.state.commitments import Commitment
 from archflow.contracts.canonical import canonical_json
 from archflow.contracts.fields import (
+    enum_member,
     list_of as _list,
     mapping as _mapping,
+    require_local_id,
+    require_logical_ref,
     string_tuple,
     tuple_of,
+    unbounded_text as _text,
     unique as _unique,
 )
 
@@ -33,15 +36,6 @@ from archflow.contracts.fields import (
 _MAX_ITEMS = 4096
 _MAX_FACT_JSON_BYTES = 64_000
 _MAX_QUALIFICATION_CHARS = 1_000
-#: Portable ``scheme:path`` logical-reference shape. This is the single source
-#: for typed validation and provider-facing JSON Schema publication.
-PORTABLE_LOGICAL_REF_PATTERN = (
-    r"^(?![Ff][Ii][Ll][Ee]:)(?![A-Za-z]:[\\/])"
-    r"[A-Za-z][A-Za-z0-9+.-]*:[^\s\\]+$"
-)
-
-_PORTABLE_REF = re.compile(PORTABLE_LOGICAL_REF_PATTERN)
-_LOCAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$")
 
 
 class StateDomain(StrEnum):
@@ -88,39 +82,6 @@ class DependencyEffect(StrEnum):
 
 class OperationalStateMigrationRequired(ValueError):
     """A legacy state lacks semantics that must not be invented."""
-
-
-def _text(value: object, field: str) -> str:
-    """Unbounded non-empty text; logical refs and legacy documents use it."""
-
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{field} must be non-empty text")
-    return value
-
-
-def require_logical_ref(value: object, field: str) -> str:
-    text = _text(value, field)
-    if text.lower().startswith("file:") or re.match(r"^[A-Za-z]:[\\/]", text):
-        raise ValueError(f"{field} cannot be an absolute machine path")
-    if _PORTABLE_REF.fullmatch(text) is None:
-        raise ValueError(f"{field} must be a portable logical reference")
-    return text
-
-
-def require_local_id(value: object, field: str) -> str:
-    text = _text(value, field)
-    if _LOCAL_ID.fullmatch(text) is None:
-        raise ValueError(f"{field} must be a portable local id")
-    return text
-
-
-def _enum(enum_type: type[StrEnum], value: object, field: str) -> Any:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be text")
-    try:
-        return enum_type(value)
-    except ValueError as exc:
-        raise ValueError(f"{field} has an unsupported value") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,17 +215,17 @@ class StateFact:
         if set(payload) != expected:
             raise ValueError("state fact schema drifted")
         return cls(
-            domain=_enum(
-                StateDomain,
+            domain=enum_member(
                 payload["domain"],
+                StateDomain,
                 "fact domain",
             ),
             key=payload["key"],
             value=payload["value"],
             source_ref=payload["source_ref"],
-            epistemic_status=_enum(
-                FactEpistemicStatus,
+            epistemic_status=enum_member(
                 payload["epistemic_status"],
+                FactEpistemicStatus,
                 "fact epistemic_status",
             ),
             confidence=payload["confidence"],
@@ -423,9 +384,9 @@ class DesignObligation:
             obligation_id=payload["obligation_id"],
             statement=payload["statement"],
             source_ref=payload["source_ref"],
-            status=_enum(
-                ObligationStatus,
+            status=enum_member(
                 payload["status"],
+                ObligationStatus,
                 "obligation status",
             ),
             subject_refs=string_tuple(
@@ -530,9 +491,9 @@ class DependencyEdge:
             downstream_ref=payload["downstream_ref"],
             relation=payload["relation"],
             source_ref=payload["source_ref"],
-            effect=_enum(
-                DependencyEffect,
+            effect=enum_member(
                 payload["effect"],
+                DependencyEffect,
                 "dependency effect",
             ),
         )

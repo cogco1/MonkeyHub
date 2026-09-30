@@ -19,7 +19,7 @@ from archflow.project.refs import (
     RunRef,
     require_identifier,
 )
-from archflow.state.operational_state import require_logical_ref
+from archflow.contracts.fields import require_logical_ref
 from archflow.state.spatial import SchematicOption
 from archflow.contracts.canonical import canonical_digest, require_sha256
 from archflow.contracts.fields import (

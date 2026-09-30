@@ -70,9 +70,9 @@ from archflow.state.geometry_program import (
     SemanticBinding,
     required_assembly_roles,
 )
-from archflow.state.operational_state import PORTABLE_LOGICAL_REF_PATTERN
 from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 from archflow.contracts.fields import (
+    PORTABLE_LOGICAL_REF_PATTERN,
     mapping as _mapping,
 )
 

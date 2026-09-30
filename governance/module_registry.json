@@ -1095,7 +1095,6 @@
         "archflow.project.refs",
         "archflow.state.developed_design",
         "archflow.state.geometry_program",
-        "archflow.state.operational_state",
         "archflow.state.spatial",
         "archflow.state.stage_workflow",
         "archflow.state.state_record",
@@ -1109,7 +1108,6 @@
         "project.refs",
         "state.developed_design",
         "state.geometry_program",
-        "state.operational_state",
         "state.record",
         "state.spatial",
         "state.stage_workflow"
@@ -1484,13 +1482,12 @@
         "archflow.project.refs",
         "archflow.state.developed_design",
         "archflow.state.geometry_program",
-        "archflow.state.operational_state",
         "archflow.state.state_record",
         "contracts.canonical",
+        "contracts.fields",
         "project.refs",
         "state.developed_design",
         "state.geometry_program",
-        "state.operational_state",
         "state.record"
       ],
       "used_by": [
@@ -1628,11 +1625,12 @@
         "exact mapping key-set checks used to detect schema drift (exact_mapping)",
         "payload field primitives: mapping, list_of, tuple_of, typed_tuple, string_tuple, unique, number, positive, refs, ids",
         "scheme-qualified logical-ref syntax, rejecting file: and drive-letter paths (logical_ref)",
-        "sorted-unique bounded tuples of refs and identifiers (deterministic_refs, deterministic_identifiers)"
+        "portable logical-ref and local-id syntax (require_logical_ref, require_local_id, PORTABLE_LOGICAL_REF_PATTERN)",
+        "sorted-unique bounded tuples of refs and identifiers (deterministic_refs, deterministic_identifiers)",
+        "unbounded non-empty text and the enum member a text value names (unbounded_text, enum_member)"
       ],
       "does_not_own": [
         "identifier syntax itself, which it delegates to project.refs.require_identifier",
-        "the logical-ref validator used by the operational-state family (state.operational_state.require_logical_ref is a parallel)",
         "digesting or serializing the values it validates (contracts.canonical)"
       ],
       "inputs": [
@@ -1661,7 +1659,12 @@
         "text",
         "tuple_of",
         "typed_tuple",
-        "unique"
+        "unique",
+        "PORTABLE_LOGICAL_REF_PATTERN",
+        "require_logical_ref",
+        "require_local_id",
+        "unbounded_text",
+        "enum_member"
       ],
       "depends_on": [
         "project.refs"
@@ -1670,16 +1673,24 @@
         "packages/archflow/src/archflow/relations/contracts.py",
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/geometry_program.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py"
+        "packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py",
+        "packages/archflow/src/archflow/state/design_portfolio.py",
+        "packages/archflow/src/archflow/state/developed_design.py",
+        "packages/archflow/src/archflow/state/spatial.py",
+        "packages/archflow/src/archflow/state/stage_workflow.py",
+        "packages/archflow/src/archflow/state/decision_operator.py",
+        "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py"
       ],
       "invariants": [
         "a tuple field must already be sorted and unique; the validator never sorts on the caller's behalf",
         "collections are bounded at 4096 items",
-        "validation is total: an unexpected type raises rather than being coerced"
+        "validation is total: an unexpected type raises rather than being coerced",
+        "a portable logical ref refuses file: and drive-letter paths and anything outside PORTABLE_LOGICAL_REF_PATTERN, with no length bound"
       ],
       "status": "canonical",
       "tests": [],
-      "notes": "Canonical, but all four of its consumers are themselves fold targets and no test imports it directly; finite_number is never imported.",
+      "notes": "Canonical. require_logical_ref (from state.operational_state, #512) and logical_ref are two rules on purpose: the state modules' refs are unbounded and take no underscore in the scheme, and one rule for both would change what their records accept. No test imports it directly; finite_number is never imported.",
       "untested_reason": "field primitives with no behaviour of their own; every StateRecord/GeometryProgram round-trip test exercises them"
     },
     {
@@ -2605,7 +2616,7 @@
         "digesting content (contracts.canonical)",
         "mapping a ref onto a filesystem path (project.layout)",
         "reading or writing anything a ref names (project.repository)",
-        "logical (scheme-qualified) refs, which are not project refs (contracts.fields.logical_ref, state.operational_state.require_logical_ref)"
+        "logical (scheme-qualified) refs, which are not project refs (contracts.fields.logical_ref, contracts.fields.require_logical_ref)"
       ],
       "inputs": [
         "str identifier",
@@ -3644,7 +3655,6 @@
         "contracts.canonical",
         "contracts.fields",
         "project.refs",
-        "state.operational_state",
         "state.spatial"
       ],
       "used_by": [
@@ -3707,7 +3717,6 @@
         "contracts.fields",
         "project.refs",
         "state.design_portfolio",
-        "state.operational_state",
         "state.spatial",
         "state.stage_workflow",
         "project.version_refs"
@@ -3815,8 +3824,7 @@
       "depends_on": [
         "contracts.canonical",
         "contracts.fields",
-        "project.refs",
-        "state.operational_state"
+        "project.refs"
       ],
       "used_by": [
         "packages/archflow/src/archflow/adapters/cad_execution.py",
@@ -3917,7 +3925,6 @@
       "owner_path": "packages/archflow/src/archflow/state/operational_state.py",
       "purpose": "The branch-local kernel state (facts, bindings, locks, obligations, dependency edges) that the State Record and every downstream contract reuse.",
       "owns": [
-        "portable logical-ref and local-id syntax (require_logical_ref, require_local_id, PORTABLE_LOGICAL_REF_PATTERN)",
         "the state domain and fact epistemic vocabularies (StateDomain, FactEpistemicStatus)",
         "canonical fact values and facts (FactValue, StateFact)",
         "parameter bindings and authority locks (ParameterBinding, StateLock)",
@@ -3958,9 +3965,6 @@
         "FactValue",
         "ParameterBinding",
         "StateLock",
-        "require_logical_ref",
-        "require_local_id",
-        "PORTABLE_LOGICAL_REF_PATTERN",
         "load_operational_state_record",
         "LegacyOperationalMarkovStateV2",
         "OperationalStateMigrationRequired"
@@ -3973,16 +3977,10 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/state/state_record.py",
-        "packages/archflow/src/archflow/state/spatial.py",
-        "packages/archflow/src/archflow/state/developed_design.py",
         "services/project-runtime/src/project_runtime/application/projection.py",
-        "packages/archflow/src/archflow/state/design_portfolio.py",
         "packages/archflow/tests/test_operational_markov_compiler.py",
         "packages/archflow/src/archflow/state/stage_workflow.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
-        "packages/archflow/src/archflow/state/geometry_program.py",
-        "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "services/project-runtime/src/project_runtime/application/intent.py"
       ],
       "invariants": [
@@ -3997,7 +3995,7 @@
         "packages/archflow/tests/test_operational_markov_compiler.py",
         "packages/archflow/tests/test_pantheon_compiled_state.py"
       ],
-      "notes": "The widest state dependency after project.refs; it carries its own _version_dict/_branch_dict serde parallel to contracts.branch, and require_logical_ref is a second logical-ref validator alongside contracts.fields.logical_ref."
+      "notes": "The widest state dependency after project.refs; it carries its own _version_dict/_branch_dict serde parallel to contracts.branch."
     },
     {
       "module_id": "state.program",
@@ -4252,7 +4250,6 @@
         "contracts.canonical",
         "contracts.fields",
         "project.refs",
-        "state.operational_state",
         "state.stage_workflow",
         "project.version_refs"
       ],

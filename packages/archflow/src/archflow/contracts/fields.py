@@ -6,12 +6,22 @@ import math
 import re
 from collections.abc import Mapping
 from enum import Enum
+from typing import Any
 
 from archflow.project.refs import require_identifier
 
 
 _LOGICAL_REF = re.compile(r"^[A-Za-z][A-Za-z0-9+._-]*:[^\s\\]{1,1023}$")
 _MAX_ITEMS = 4_096
+#: Portable ``scheme:path`` logical-reference shape. This is the single source
+#: for typed validation and provider-facing JSON Schema publication.
+PORTABLE_LOGICAL_REF_PATTERN = (
+    r"^(?![Ff][Ii][Ll][Ee]:)(?![A-Za-z]:[\\/])"
+    r"[A-Za-z][A-Za-z0-9+.-]*:[^\s\\]+$"
+)
+
+_PORTABLE_REF = re.compile(PORTABLE_LOGICAL_REF_PATTERN)
+_LOCAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$")
 
 
 def text(value: object, field: str, *, maximum: int = 2_000) -> str:
@@ -22,6 +32,14 @@ def text(value: object, field: str, *, maximum: int = 2_000) -> str:
         or len(value) > maximum
     ):
         raise ValueError(f"{field} must be bounded non-empty trimmed text")
+    return value
+
+
+def unbounded_text(value: object, field: str) -> str:
+    """Unbounded non-empty text; logical refs and legacy documents use it."""
+
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be non-empty text")
     return value
 
 
@@ -44,6 +62,29 @@ def logical_ref(value: object, field: str) -> str:
             f"{field} must be bounded scheme-qualified logical-ref text"
         )
     return value
+
+
+def require_logical_ref(value: object, field: str) -> str:
+    """A portable ``scheme:path`` ref (``PORTABLE_LOGICAL_REF_PATTERN``).
+
+    Not ``logical_ref``: this rule has no length bound and no underscore in
+    the scheme. The state modules validate their refs with it, so exchanging
+    one rule for the other would change what their records accept.
+    """
+
+    text = unbounded_text(value, field)
+    if text.lower().startswith("file:") or re.match(r"^[A-Za-z]:[\\/]", text):
+        raise ValueError(f"{field} cannot be an absolute machine path")
+    if _PORTABLE_REF.fullmatch(text) is None:
+        raise ValueError(f"{field} must be a portable logical reference")
+    return text
+
+
+def require_local_id(value: object, field: str) -> str:
+    text = unbounded_text(value, field)
+    if _LOCAL_ID.fullmatch(text) is None:
+        raise ValueError(f"{field} must be a portable local id")
+    return text
 
 
 def deterministic_refs(
@@ -82,6 +123,17 @@ def enum_value(value: object, enum_type: type[Enum], field: str) -> Enum:
     if not isinstance(value, enum_type):
         raise TypeError(f"{field} must be {enum_type.__name__}")
     return value
+
+
+def enum_member(value: object, enum_type: type[Enum], field: str) -> Any:
+    """The member of ``enum_type`` that a text value names."""
+
+    if not isinstance(value, str):
+        raise TypeError(f"{field} must be text")
+    try:
+        return enum_type(value)
+    except ValueError as exc:
+        raise ValueError(f"{field} has an unsupported value") from exc
 
 
 def finite_number(value: object, field: str) -> int | float:
@@ -195,8 +247,10 @@ def ids(
 
 
 __all__ = [
+    "PORTABLE_LOGICAL_REF_PATTERN",
     "deterministic_identifiers",
     "deterministic_refs",
+    "enum_member",
     "enum_value",
     "exact_mapping",
     "finite_number",
@@ -208,9 +262,12 @@ __all__ = [
     "number",
     "positive",
     "refs",
+    "require_local_id",
+    "require_logical_ref",
     "string_tuple",
     "text",
     "tuple_of",
     "typed_tuple",
+    "unbounded_text",
     "unique",
 ]

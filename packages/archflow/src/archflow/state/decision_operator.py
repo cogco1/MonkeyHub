@@ -26,13 +26,13 @@ from archflow.state.operational_state import (
     ParameterBinding,
     StateFact,
     StateLock,
-    require_local_id,
-    require_logical_ref,
 )
 from archflow.contracts.canonical import canonical_json
 from archflow.contracts.fields import (
     list_of as _list,
     mapping,
+    require_local_id,
+    require_logical_ref,
     string_tuple as _string_tuple,
     text,
     tuple_of,
