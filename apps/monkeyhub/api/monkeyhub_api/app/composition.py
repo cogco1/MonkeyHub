@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.requests import Request
-from archflow.adapters.integration_packs import IntegrationPackManager
+from monkeycad.integration_packs import IntegrationPackManager
 
 from project_runtime.errors import StudioError
 

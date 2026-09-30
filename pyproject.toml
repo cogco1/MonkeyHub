@@ -6,5 +6,5 @@
 # name cannot share a process. monkeycontrol's test_trace.py and test_cli.py repeat
 # monkeymonitor's and monkeyfab's names, and monkeyfab's suite needs Fab's own dependencies:
 # both run on their own, as CI runs every test root. So do the Runtime's and the Hub's suites.
-testpaths = ["tests", "tools/tests", "packages/archflow/tests", "packages/monkeyarch/tests",
-             "packages/monkeydiagram/tests", "packages/monkeymonitor/tests"]
+testpaths = ["tests", "tools/tests", "packages/archflow/tests", "packages/monkeycad/tests",
+             "packages/monkeyarch/tests", "packages/monkeydiagram/tests", "packages/monkeymonitor/tests"]

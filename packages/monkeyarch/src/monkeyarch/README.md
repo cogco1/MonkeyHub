@@ -2,7 +2,7 @@
 
 3D modeling and spatial revision: element production, wall/opening/reference solving, re-indexing, model proposal compilation, relation checks and project-run orchestration.
 
-The workflow consumes shared ArchFlow facts, geometry values, CAD adapters and P036 project ports. The application host coordinates explicit handoffs with MonkeyDiagram; neither workflow imports the other.
+The workflow consumes shared ArchFlow facts, geometry values and P036 project ports; its runner executes CAD through `monkeycad`. The application host coordinates explicit handoffs with MonkeyDiagram; neither workflow imports the other.
 
 Owners and public contracts: [system map](../../../../docs/architecture/system-map.md). File responsibilities: [repository layout](../../../../docs/architecture/repository-layout.md).
 

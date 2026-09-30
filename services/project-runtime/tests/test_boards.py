@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from pypdf import PdfReader
 
-from archflow.adapters import occt_backend
+from monkeycad import occt_backend
 from archflow.project import repository as project_repository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.repository import FilesystemProjectRepository
@@ -50,7 +50,7 @@ class BoardTests(unittest.TestCase):
     def test_empty_board_project_can_create_its_first_real_model_and_drawing(self) -> None:
         import time
         import json
-        from archflow.adapters.occt_backend import occt_available
+        from monkeycad.occt_backend import occt_available
         from archflow.state.state_record import StateRecord
 
         if not occt_available():

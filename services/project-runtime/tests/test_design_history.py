@@ -12,7 +12,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.adapters import occt_backend
+from monkeycad import occt_backend
 from archflow.project.record_kinds import CANDIDATE_REVIEW, DESIGN_STAGE, STUDIO_CANDIDATE_DELTA
 from archflow.project.refs import record_ref_from_uri
 from archflow.state.state_record import StateRecordEditKind, StateRecordOperator

@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from archflow.adapters.local_cad_discovery import Discovery, discover_local_cad
-from archflow.adapters.model_formats import ConversionError, ThreeDM
-from archflow.adapters import sketchup_reader as reader
+from monkeycad.local_cad_discovery import Discovery, discover_local_cad
+from monkeycad.model_formats import ConversionError, ThreeDM
+from monkeycad import sketchup_reader as reader
 
 
 class SketchUpReaderBoundaryTests(unittest.TestCase):

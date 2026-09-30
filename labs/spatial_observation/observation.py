@@ -10,7 +10,7 @@ import math
 import re
 from typing import Mapping, Sequence
 
-from archflow.adapters.occt_backend import StepEntry, measure_occt_solid_pairs, measure_shape
+from monkeycad.occt_backend import StepEntry, measure_occt_solid_pairs, measure_shape
 
 
 @dataclass(frozen=True)

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from math import ceil, hypot, isfinite
 from typing import Any, Mapping, Sequence
 
-from archflow.adapters.cad_execution import OcctDrawingPolyline
+from monkeycad.cad_execution import OcctDrawingPolyline
 from ..drawing_output import PaperCanvas
 
 _MM = 72.0 / 25.4

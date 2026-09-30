@@ -95,7 +95,7 @@ Every project-scoped responsibility the product needs, behind `/api` (`api/route
 The two remaining route files answer about the process, not about the project:
 `api/routes/health.py` and `api/routes/protocol.py` are its identity (§5). Both belong to `studio.shell`.
 
-Also: the CAD/OCCT/Rhino execution and inspection adapters (`packages/archflow/src/archflow/adapters`), selected by
+Also: the CAD/OCCT/Rhino execution and inspection package (`packages/monkeycad/src/monkeycad`), selected by
 `ARCHFLOW_STUDIO_CAD_EXPORT`; the evaluator/generator jobs; and every retained-record write
 through `archflow.project.repository`. In production the runtime is the only writer of a
 project. The Hub's runtime records and admission journal are observations, not a second

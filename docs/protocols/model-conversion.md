@@ -113,9 +113,9 @@ routes do not establish complete SketchUp, Rhino or DWG round-trip fidelity.
 
 Generated fixtures include an offset triangle, millimeter 3DM, and curved 3DM
 without a render mesh (expected refusal). Python unittest coverage is in
-`packages/archflow/tests/test_model_formats.py`, the Runtime's `services/project-runtime/tests/test_model_exports.py`,
+`packages/monkeycad/tests/test_model_formats.py`, the Runtime's `services/project-runtime/tests/test_model_exports.py`,
 and the Hub's `apps/monkeyhub/api/tests/test_model_export_chat.py`. The native rhino3dm reader reopens 3DM;
-the optional `packages/archflow/tests/model_export_glb_reader.mjs` reopens the generated triangle
+the optional `packages/monkeycad/tests/model_export_glb_reader.mjs` reopens the generated triangle
 with the frontend's independent Three.js GLTFLoader and asserts mesh/triangle
 counts and Y-up meter bounds. Invoke it with the installed Three.js package
 directory and generated GLB path. No SKP/DWG fixtures are fabricated.

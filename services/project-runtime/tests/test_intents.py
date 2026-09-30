@@ -20,7 +20,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from archflow.adapters import occt_backend
+from monkeycad import occt_backend
 
 from project_runtime.application.intent_agent import (
     CODEX,

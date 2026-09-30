@@ -22,7 +22,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from archflow.adapters.three_dm_inspector import inspect_three_dm
+from monkeycad.three_dm_inspector import inspect_three_dm
 from archflow.state.state_record import apply_state_record_operator, component_facets
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings

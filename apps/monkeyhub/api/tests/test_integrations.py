@@ -19,8 +19,8 @@ from tools.dev import source_roots  # noqa: E402 - this checkout's tools, found 
 source_roots.put_first(ROOT)
 
 from fastapi.testclient import TestClient
-from archflow.adapters.integration_packs import IntegrationPackManager
-from archflow.adapters.local_cad_discovery import Discovery, Installation
+from monkeycad.integration_packs import IntegrationPackManager
+from monkeycad.local_cad_discovery import Discovery, Installation
 from monkeyhub_api.app.composition import HubSettings, create_app
 
 

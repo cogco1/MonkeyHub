@@ -115,7 +115,7 @@ class WallProjectPointAuthoringTests(unittest.TestCase):
 
     @unittest.skipUnless(importlib.util.find_spec("OCP") and importlib.util.find_spec("rhino3dm"),"OCCT and preview dependencies are required")
     def test_real_export_cut_and_parametric_continuation_survive_restart(self):
-        from archflow.adapters.occt_backend import read_step, measure_shape, classify_program_point
+        from monkeycad.occt_backend import read_step, measure_shape, classify_program_point
         settings=StudioSettings(cad_export="occt",project_dir=self.project)
         with TestClient(create_app(settings)) as client:
             digest,_=self.initialize(client)

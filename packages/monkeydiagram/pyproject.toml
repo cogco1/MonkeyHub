@@ -13,7 +13,9 @@ dependencies = []
 
 [project.optional-dependencies]
 # Shared paper-scene PDF/DXF output; the drawing grammar itself uses stdlib only.
-drawings = ["reportlab==5.0.0", "ezdxf==1.4.4", "fonttools==4.64.0", "shapely==2.1.2"]
+# Pillow rasterises the drawing SVG preview and the mesh views to PNG
+# (drawing_svg.render_svg_png, mesh_views).
+drawings = ["reportlab==5.0.0", "ezdxf==1.4.4", "fonttools==4.64.0", "shapely==2.1.2", "Pillow>=12.3,<13"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

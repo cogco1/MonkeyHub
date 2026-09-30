@@ -1,6 +1,6 @@
 """Deterministic SVG for drawing polylines, and a PNG rendered from that SVG.
 
-The first real drawing consumer: ``adapters.cad_execution`` returns plain
+The first real drawing consumer: ``monkeycad.cad_execution`` returns plain
 ``OcctDrawingPolyline`` values (object id, ``visible``/``hidden``, points in
 the drawing frame); this module crops them to the view's window and
 serialises them as one SVG whose every polyline still names its source
@@ -44,7 +44,7 @@ from typing import Any, Mapping, Sequence
 from xml.etree import ElementTree
 from xml.sax.saxutils import quoteattr
 
-from archflow.adapters.occt_backend import OcctDrawingPolyline, OcctDrawingRegion
+from monkeycad.occt_backend import OcctDrawingPolyline, OcctDrawingRegion
 
 SVG_MEDIA_TYPE = "image/svg+xml"
 PNG_MEDIA_TYPE = "image/png"
@@ -1337,7 +1337,7 @@ def render_svg_png(svg: bytes, *, dots_per_inch: int = 150) -> bytes:
 
     try:
         from PIL import Image, ImageDraw, ImageFont
-    except ImportError as exc:  # pragma: no cover - Pillow ships in the cad-occt extra
+    except ImportError as exc:  # pragma: no cover - Pillow ships in the drawings extra
         raise DrawingSvgError("Pillow is required to render the SVG preview") from exc
     if isinstance(dots_per_inch, bool) or not isinstance(dots_per_inch, int) or dots_per_inch <= 0:
         raise DrawingSvgError("dots_per_inch must be a positive integer")

@@ -28,8 +28,8 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from archflow.adapters import cad_execution, occt_backend
-from archflow.adapters.cad_execution import (
+from monkeycad import cad_execution, occt_backend
+from monkeycad.cad_execution import (
     CadCapabilityError,
     CadExecutionError,
     CadExecutionStatus,
@@ -44,9 +44,9 @@ from archflow.adapters.cad_execution import (
     section_occt_regions,
     split_step_objects,
 )
-from archflow.adapters import cad_program
-from archflow.adapters.cad_program import CadTranslationError
-from archflow.adapters.three_dm_inspector import inspect_three_dm
+from monkeycad import cad_program
+from monkeycad.cad_program import CadTranslationError
+from monkeycad.three_dm_inspector import inspect_three_dm
 from monkeyarch.capabilities.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 from archflow.state.geometry_program import CompiledGeometryObject, CompiledGeometryProgram
@@ -70,7 +70,7 @@ from tools.dev import source_roots
 
 OCCT_AVAILABLE = occt_backend.occt_available()
 NEEDS_OCCT = unittest.skipUnless(
-    OCCT_AVAILABLE, "cadquery-ocp is not installed: python -m pip install -e 'packages/archflow[cad-occt]'"
+    OCCT_AVAILABLE, "cadquery-ocp is not installed: python -m pip install -e 'packages/monkeycad[occt]'"
 )
 PYTHON = sys.executable
 
@@ -477,7 +477,7 @@ class OpenLoftExecutionTests(unittest.TestCase):
     def test_a_shape_of_the_other_closure_fails_the_readback_in_either_direction(self) -> None:
         """A declared solid that reads back open, and a declared surface that reads back closed, are both refused by name."""
 
-        from archflow.adapters.cad_execution import _verify_step_readback
+        from monkeycad.cad_execution import _verify_step_readback
 
         drum, flight = _compile(_record_with(DRUM_ELEMENT)), _compile(_stair_record())
         with tempfile.TemporaryDirectory() as tmp:
@@ -1333,7 +1333,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp).resolve()
-            with patch("archflow.adapters.cad_execution.write_preview_three_dm", forgetting_materials):
+            with patch("monkeycad.cad_execution.write_preview_three_dm", forgetting_materials):
                 receipt, _ = _execute(program, binding, workspace, "unbound@occt")
             self.assertIs(receipt.status, CadExecutionStatus.FAILED)
             self.assertEqual(
@@ -1358,7 +1358,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp).resolve()
-            with patch("archflow.adapters.cad_execution.write_preview_three_dm", opaque_glass):
+            with patch("monkeycad.cad_execution.write_preview_three_dm", opaque_glass):
                 receipt, _ = _execute(program, binding, workspace, "opaque-glass@occt")
             self.assertIs(receipt.status, CadExecutionStatus.FAILED)
             self.assertEqual(
@@ -2112,7 +2112,7 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
     """Measure only requested final objects from real STEP readback, including legitimate joints."""
 
     def test_cold_read_boxes_distinguish_separation_contact_and_positive_common_volume(self) -> None:
-        from archflow.adapters.cad_execution import measure_occt_solid_pairs
+        from monkeycad.cad_execution import measure_occt_solid_pairs
 
         program = _program_of(*(_box(name, [x, 0.0, 0.0], [1.0, 1.0, 1.0]) for name, x in (
             ("body", 0.0), ("separated", 2.0), ("touching", 1.0), ("penetrating", 0.75),
@@ -2132,7 +2132,7 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
                 self.assertAlmostEqual(measured[pair]["common_volume_m3"], volume, places=8)
 
     def test_millimeter_step_reports_distance_in_meters_and_volume_in_cubic_meters(self) -> None:
-        from archflow.adapters.cad_execution import measure_occt_solid_pairs
+        from monkeycad.cad_execution import measure_occt_solid_pairs
         from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
         from OCP.gp import gp_Pnt
 
@@ -2149,7 +2149,7 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
         self.assertAlmostEqual(measured[("body", "penetrating")]["common_volume_m3"], 0.25, places=8)
 
     def test_a_window_ring_and_pane_can_touch_inside_overlapping_bounds_without_checking_consumed_bars(self) -> None:
-        from archflow.adapters.cad_execution import measure_occt_solid_pairs
+        from monkeycad.cad_execution import measure_occt_solid_pairs
 
         program = _compile(_window_record())
         frame_op = next(op for op in program.proposal.operations if op.op_id == "frame-wall-south-window-south")
@@ -2178,7 +2178,7 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
             self.assertIn(consumed_pair[0], requested[consumed_pair]["detail"])
 
     def test_missing_duplicate_or_null_final_objects_stay_unchecked(self) -> None:
-        from archflow.adapters.cad_execution import measure_occt_solid_pairs
+        from monkeycad.cad_execution import measure_occt_solid_pairs
         from OCP.TopoDS import TopoDS_Shape
 
         program = _program_of(_box("body", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]), _box("other", [2.0, 0.0, 0.0], [1.0, 1.0, 1.0]))
@@ -2202,7 +2202,7 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
                     self.assertTrue(measured[pair]["detail"])
 
     def test_a_cold_read_open_surface_is_not_certified_as_nonpenetrating(self) -> None:
-        from archflow.adapters.cad_execution import measure_occt_solid_pairs
+        from monkeycad.cad_execution import measure_occt_solid_pairs
 
         program = _program_of(_box("body", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]), _loft("surface", cap_ends=False))
         pair = ("body-object", "surface-object")
@@ -2546,7 +2546,7 @@ class ImportBoundaryTests(unittest.TestCase):
         """Ordinary create/save/reopen paths import the owner; they must not pay for a kernel."""
 
         completed = subprocess.run(
-            [PYTHON, "-c", "import sys, archflow.adapters.cad_execution; print(sorted(m for m in sys.modules if m in ('OCP', 'rhino3dm')))"],
+            [PYTHON, "-c", "import sys, monkeycad.cad_execution; print(sorted(m for m in sys.modules if m in ('OCP', 'rhino3dm')))"],
             capture_output=True,
             text=True,
             cwd=str(Path(__file__).resolve().parents[2]),

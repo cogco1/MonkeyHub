@@ -121,7 +121,7 @@ Set-Location $ArchSource
 py -3.12 -m venv "$ArchRuntime\venv"
 $ArchPython = "$ArchRuntime\venv\Scripts\python.exe"
 $env:PATH = "$ArchRuntime\venv\Scripts;" + $env:PATH
-& $ArchPython -m pip install -e 'packages/archflow[cad-inspection]'
+& $ArchPython -m pip install -e packages/archflow -e 'packages/monkeycad[inspection]'
 & $ArchPython -m pip install -r services/project-runtime/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 & $ArchPython -m pip check
 npm.cmd ci --prefix apps/monkeyhub/web
@@ -231,7 +231,7 @@ npm.cmd run build
 
 ### Blender 同事的首次复跑与接手
 
-当前源码已实现 Blender 的首个场景保存与冷读回闭环。先读 [Issue #13](https://github.com/cogco1/MonkeyHub/issues/13) 和[Blender 执行指南](../../packages/archflow/src/archflow/adapters/README.md#blender-scene-execution)，用 `python tools/governance/devctl.py module compiled-cad-execution` 查现有 owner，再查询精确的 `adapters.cad_execution`。公共契约 [#15](https://github.com/cogco1/MonkeyHub/pull/15)、协作工具 [#17](https://github.com/cogco1/MonkeyHub/pull/17) 和 Blender [#18](https://github.com/cogco1/MonkeyHub/pull/18) 已按顺序合入；复跑应取同时包含三者的约定 `main` 提交，记录实际 SHA、lane 和独立 worktree。旧 Phase 1 基线 `681fc9f1` 不含 Blender 实现，不能用它验收 Blender。
+当前源码已实现 Blender 的首个场景保存与冷读回闭环。先读 [Issue #13](https://github.com/cogco1/MonkeyHub/issues/13) 和[Blender 执行指南](../../packages/monkeycad/src/monkeycad/README.md#blender-scene-execution)，用 `python tools/governance/devctl.py module compiled-cad-execution` 查现有 owner，再查询精确的 `monkeycad.blender`。公共契约 [#15](https://github.com/cogco1/MonkeyHub/pull/15)、协作工具 [#17](https://github.com/cogco1/MonkeyHub/pull/17) 和 Blender [#18](https://github.com/cogco1/MonkeyHub/pull/18) 已按顺序合入；复跑应取同时包含三者的约定 `main` 提交，记录实际 SHA、lane 和独立 worktree。旧 Phase 1 基线 `681fc9f1` 不含 Blender 实现，不能用它验收 Blender。
 
 支持正尺寸 box `SOLID`、简单平面多边形的直线 `EXTRUSION`，包含 `base_level` / `base_offset` 和不落在截面平面内的拉伸向量。其他操作在启动 Blender 前明确返回不支持。输出是保留 ArchFlow 对象/语义身份的 mesh `.blend`；原生读回证据经现有项目接口保存，项目 `HEAD` 不因候选执行改变。它尚不提供全量功能等价或 Hub 模型显示。
 
@@ -244,7 +244,7 @@ python -m unittest tests.integration.test_blender_cad tests.integration.test_cad
 
 测试使用临时 workspace/project，通过两个独立后台进程先保存、再打开检查。未设置该变量时，真实宿主用例会 skip，不能将其写成通过。已有精确输出可由 runner 复用；有 source 时保留来源文件并按当前程序完整重建，不承诺增量 patch 或 `.blend` 字节重现。
 
-PR #18 已在 Blender 4.3.2 完成 15 项测试，包括真实保存/冷读、重启复用和候选修改；其公共 CAD、runner、record kinds 与 CLI 的另外 112 项检查通过。Rhino 独立执行按[真实宿主验收命令](../../packages/archflow/src/archflow/adapters/README.md#rhino-host-acceptance)显式启用，默认 skip 不算验收。#13 已于 2026-09-15 关闭：第二个账号从 fresh clone 在真实 Blender 4.3.0 上复跑通过（由 agent 执行），关闭时未要求真人交接。
+PR #18 已在 Blender 4.3.2 完成 15 项测试，包括真实保存/冷读、重启复用和候选修改；其公共 CAD、runner、record kinds 与 CLI 的另外 112 项检查通过。Rhino 独立执行按[真实宿主验收命令](../../packages/monkeycad/src/monkeycad/README.md#rhino-host-acceptance)显式启用，默认 skip 不算验收。#13 已于 2026-09-15 关闭：第二个账号从 fresh clone 在真实 Blender 4.3.0 上复跑通过（由 agent 执行），关闭时未要求真人交接。
 
 接手时先读 #13 与已合入的 #15、#17、#18，再运行 `python tools/governance/devctl.py work` 确认有无登记中的 Blender lane；原 Blender lane 已关闭。用 `python -m pytest tools/tests/test_devctl_work.py tools/tests/test_archcheck_scopes.py -v` 可复跑三条独立模拟 lane、故意生产路径重叠与明确先后交接。测试演练不代替真人接手：新成员应在自己的 worktree 复现选定任务，将版本、结果和遇到的问题交给约定 reviewer。开发继续沿公共 CAD 契约；缺少共享契约时先提交上游 PR，再更新依赖分支，Blender lane 不修改 Hub/App Server 实现。
 

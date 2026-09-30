@@ -12,10 +12,10 @@ import os
 import subprocess
 from pathlib import Path
 
-import archflow.adapters.cad_execution as cad
-from archflow.adapters.local_cad_discovery import resolve_blender_executable
-from archflow.adapters.blender_worker import READBACK_PREFIX, UNIT_SETTINGS
-from archflow.adapters.cad_program import CadTranslationError, _rgb, expected_object_semantics
+import monkeycad.cad_execution as cad
+from monkeycad.local_cad_discovery import resolve_blender_executable
+from monkeycad.blender_worker import READBACK_PREFIX, UNIT_SETTINGS
+from monkeycad.cad_program import CadTranslationError, _rgb, expected_object_semantics
 from archflow.contracts.canonical import canonical_json
 from archflow.project.record_kinds import SEAT_BLENDER_EXECUTION
 from archflow.state.geometry_program import (
@@ -239,7 +239,7 @@ class BlenderBackend:
     SCHEMA = "BlenderExecutionReceipt@1"
 
     def validate_options(self, options):
-        from archflow.adapters.cad_backend import _options
+        from monkeycad.cad_backend import _options
 
         # The legacy runner CLI supplies powershell even when a different
         # backend is selected. As with OCCT, it has no effect on execution.
@@ -250,7 +250,7 @@ class BlenderBackend:
             raise cad.CadExecutionError("blender_executable must be a path or command name")
 
     def execute(self, request):
-        from archflow.adapters.cad_backend import _unsupported
+        from monkeycad.cad_backend import _unsupported
 
         self.validate_options(request.backend_options)
         request.binding.bind_program(request.program)
@@ -306,7 +306,7 @@ class BlenderBackend:
         return result
 
     def read_receipt(self, request, payload):
-        from archflow.adapters.cad_backend import CadArtifact, CadExecutionResult, _check_receipt
+        from monkeycad.cad_backend import CadArtifact, CadExecutionResult, _check_receipt
 
         _check_receipt(request, payload, self.SCHEMA)
         if (payload.get("backend") != self.backend_id or payload["identity"].get("up_axis") != "Z" or

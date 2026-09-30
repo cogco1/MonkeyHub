@@ -426,8 +426,8 @@ class CandidateRunTests(CandidateTestCase):
         self.assertIn("INSPECTION_NOT_FOUND", candidate["objectReadbackError"])
 
     def test_first_candidate_reads_actual_objects_and_keeps_them_after_restart(self) -> None:
-        from archflow.adapters.occt_backend import occt_available
-        from archflow.adapters.three_dm_inspector import inspect_three_dm
+        from monkeycad.occt_backend import occt_available
+        from monkeycad.three_dm_inspector import inspect_three_dm
 
         if not occt_available():
             self.skipTest("cadquery-ocp is not installed")
@@ -461,7 +461,7 @@ class CandidateRunTests(CandidateTestCase):
 
         restarted = TestClient(create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)))
         self.addCleanup(restarted.close)
-        with mock.patch("archflow.adapters.cad_execution.execute_occt_export", side_effect=AssertionError("A retained read must not run CAD")):
+        with mock.patch("monkeycad.cad_execution.execute_occt_export", side_effect=AssertionError("A retained read must not run CAD")):
             recovered = restarted.get(path)
         self.assertEqual(recovered.status_code, 200, recovered.text)
         self.assertIsNone(recovered.json()["jobId"])
@@ -1155,9 +1155,9 @@ class CandidateComponentRemovalTests(CandidateTestCase):
 
     def test_component_removal_disappears_from_the_real_composed_model(self) -> None:
         import base64
-        from archflow.adapters import occt_backend
-        from archflow.adapters.cad_execution import patch_composed_three_dm
-        from archflow.adapters.three_dm_inspector import inspect_three_dm_contents
+        from monkeycad import occt_backend
+        from monkeycad.cad_execution import patch_composed_three_dm
+        from monkeycad.three_dm_inspector import inspect_three_dm_contents
         from project_runtime.application.artifacts import ModelSource
         from archflow.state.geometry_program import load_compiled_geometry_program
         if not occt_backend.occt_available():

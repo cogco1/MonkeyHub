@@ -20,7 +20,7 @@ from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 from PIL import Image, PngImagePlugin
 
-from archflow.adapters import occt_backend
+from monkeycad import occt_backend
 from archflow.project.index import (
     ArtifactRow, CandidateRow, IndexCommit, IndexStamp, IndexUnavailable, ProjectIndex, RunRows, StageRow, TreeRows,
     add_commit_listener,

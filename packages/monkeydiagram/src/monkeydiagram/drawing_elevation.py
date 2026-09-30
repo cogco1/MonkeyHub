@@ -6,7 +6,7 @@ as it is real: a source run's exact STEP (certified by its retained
 object GUID paths and explicit exact/faceted/approximate geometry quality;
 it does not acquire a compiled-program or STEP receipt. Every selected shape takes part in
 one exact hidden-line solve for a frame stated along the model axes
-(``adapters.cad_execution.project_occt_lines``), the visible (and, on
+(``monkeycad.cad_execution.project_occt_lines``), the visible (and, on
 request, hidden) polylines are cropped and serialised as one deterministic
 SVG whose every polyline names its source physical object, a PNG is
 rendered from that SVG (``monkeydiagram.drawing_svg``), and the two files plus
@@ -58,7 +58,7 @@ from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 from uuid import uuid4
 
-from archflow.adapters.cad_execution import (
+from monkeycad.cad_execution import (
     OcctBackendError,
     OcctDrawingPolyline,
     StepEntry,
@@ -68,7 +68,7 @@ from archflow.adapters.cad_execution import (
     section_occt_regions,
     read_step,
 )
-from archflow.adapters.occt_backend import OcctSectionPerspective, project_occt_section_perspective
+from monkeycad.occt_backend import OcctSectionPerspective, project_occt_section_perspective
 from monkeydiagram.drawing_svg import (
     PNG_MEDIA_TYPE,
     SVG_MEDIA_TYPE,
@@ -543,7 +543,7 @@ def read_elevation_source(repository: FilesystemProjectRepository, source: Eleva
 
 
 def _read_native_source(repository, source):
-    from archflow.adapters.occt_backend import read_three_dm, measure_shape
+    from monkeycad.occt_backend import read_three_dm, measure_shape
 
     project_id = repository.load_manifest().project_id
     run = repository.load_run(source.run_id)

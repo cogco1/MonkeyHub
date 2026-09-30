@@ -19,7 +19,7 @@ from monkeydiagram.drawing_svg import (
     svg_objects,
     svg_paper_marks,
 )
-from archflow.adapters.occt_backend import OcctDrawingPolyline, OcctDrawingRegion
+from monkeycad.occt_backend import OcctDrawingPolyline, OcctDrawingRegion
 
 SVG = "{http://www.w3.org/2000/svg}"
 

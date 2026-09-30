@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "services/project-r
 
 from fastapi.testclient import TestClient
 
-from archflow.adapters import occt_backend
+from monkeycad import occt_backend
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import (

@@ -19,8 +19,8 @@ from tools.dev import source_roots
 # ``python -m labs...`` puts only the checkout on the path; the lab imports from its other source roots too.
 source_roots.put_first(Path(__file__).resolve().parents[2])
 
-from archflow.adapters.cad_execution import CadProgramBinding, execute_occt_export
-from archflow.adapters.occt_backend import classify_point, measure_occt_solid_pairs, measure_shape
+from monkeycad.cad_execution import CadProgramBinding, execute_occt_export
+from monkeycad.occt_backend import classify_point, measure_occt_solid_pairs, measure_shape
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import SEAT_OCCT_EXECUTION, STATE_RECORD, stage_geometry_program
 from archflow.project.refs import BranchRef

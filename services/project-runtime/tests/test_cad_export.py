@@ -40,9 +40,9 @@ from project_runtime.settings import (
     StudioSettings,
 )
 
-from archflow.adapters import cad_execution, occt_backend
-from archflow.adapters.cad_execution import CadCapabilityError
-from archflow.adapters.three_dm_inspector import inspect_three_dm
+from monkeycad import cad_execution, occt_backend
+from monkeycad.cad_execution import CadCapabilityError
+from monkeycad.three_dm_inspector import inspect_three_dm
 from archflow.state.geometry_program import load_compiled_geometry_program
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import record_ref_from_uri
@@ -78,7 +78,7 @@ def no_rhino():
     """Fail the test if anything reaches the Rhino entry points or starts a process."""
 
     return mock.patch.multiple(
-        "archflow.adapters.cad_execution",
+        "monkeycad.cad_execution",
         prepare_rhino_three_dm_export=_refuse_rhino,
         execute_rhino_three_dm_export=_refuse_rhino,
     )
@@ -92,7 +92,7 @@ def no_cad_at_all():
     """Fail the test if a read path runs any CAD executor."""
 
     return mock.patch(
-        "archflow.adapters.cad_execution.execute_occt_export",
+        "monkeycad.cad_execution.execute_occt_export",
         side_effect=AssertionError("reading retained artifacts must not run CAD"),
     )
 

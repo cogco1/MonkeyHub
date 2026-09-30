@@ -951,6 +951,11 @@ def _registry_path_fields(data: dict[str, Any]) -> Iterator[tuple[str, object, s
             yield f"capability {capability.get('capability_id', '?')} tests", value, "file"
 
 
+# The packages whose imports a registry entry's depends_on must declare: the kernel, the
+# CAD package that left it (#514) and both workflows.
+DEPENDENCY_PACKAGES = ("archflow.", "monkeycad.", "monkeyarch.", "monkeydiagram.")
+
+
 def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
     """The module registry must tell the truth, and a capability has one owner.
 
@@ -1016,7 +1021,7 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
         for symbol in entry.get("public_api", ()):
             if symbol.isidentifier() and symbol not in defined:
                 yield PolicyFinding(rel_registry, 1, "REGISTRY_SYMBOL_MISSING", f"{module_id}: public_api symbol {symbol} is not defined in {entry['owner_path']} or its files")
-        # Dependencies cover shared core and both workflow packages.
+        # Dependencies cover the shared core, the CAD package and both workflow packages.
         actual: set[str] = set()
         for path in span:
             if path.suffix != ".py" or not path.is_file():
@@ -1026,10 +1031,10 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
             except SyntaxError:
                 continue
             for node in ast.walk(tree2):
-                if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(("archflow.", "monkeyarch.", "monkeydiagram.")):
+                if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(DEPENDENCY_PACKAGES):
                     actual.add(owner_by_module.get(node.module, node.module))
                 elif isinstance(node, ast.Import):
-                    actual.update(owner_by_module.get(a.name, a.name) for a in node.names if a.name.startswith(("archflow.", "monkeyarch.", "monkeydiagram.")))
+                    actual.update(owner_by_module.get(a.name, a.name) for a in node.names if a.name.startswith(DEPENDENCY_PACKAGES))
         declared = set()
         for dep in entry.get("depends_on", ()):
             declared.add(owner_by_module.get(dep, dep))

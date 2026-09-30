@@ -4,7 +4,7 @@ from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
 from OCP.gp import gp_Pnt
 
-from archflow.adapters.occt_backend import StepEntry
+from monkeycad.occt_backend import StepEntry
 from labs.spatial_observation.observation import Annotation, Binding, Scene, changes
 
 

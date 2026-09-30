@@ -29,8 +29,8 @@ change the 3D model; applying it to the model is an explicit handoff to MonkeyAr
 **ArchFlow** owns the shared project and contract foundation. The Python source now
 separates `packages/archflow/`, `packages/monkeyarch/` and `packages/monkeydiagram/`, with two peer Web workspaces
 and a shared application host. Modeling algorithms and drawing execution live in their
-respective packages. Shared geometry values remain in `archflow.state.geometry_program`
-so CAD adapters do not import the modeling compiler. The dependency direction and
+respective packages, CAD execution in `packages/monkeycad/`. Shared geometry values remain in
+`archflow.state.geometry_program` so the CAD package does not import the modeling compiler. The dependency direction and
 current file map are defined in [repository-layout.md](repository-layout.md).
 
 The UI direction is two peer workspace entries. MonkeyDiagram can begin with an
@@ -87,7 +87,7 @@ element producers                 packages/monkeyarch/src/monkeyarch/capabilitie
 GeometryProgramProposal           packages/archflow/src/archflow/state/geometry_program.py
   │ compile_geometry_program       packages/monkeyarch/src/monkeyarch/compilers/geometry.py — the one compiler
   ▼
-CAD                               packages/archflow/src/archflow/adapters/cad_program.py → cad_execution.py → cad_patch.py
+CAD                               packages/monkeycad/src/monkeycad/cad_program.py → cad_execution.py → cad_patch.py
   │ three_dm_inspector             readback is evidence, never intent
   ▼
 relation checks                   packages/monkeyarch/src/monkeyarch/capabilities/relation_checks.py — plain domain values

@@ -1369,7 +1369,7 @@ def _no_rhino():
     import subprocess
     from unittest.mock import patch
 
-    return (patch.multiple("archflow.adapters.cad_execution", prepare_rhino_three_dm_export=_refuse_rhino, execute_rhino_three_dm_export=_refuse_rhino),
+    return (patch.multiple("monkeycad.cad_execution", prepare_rhino_three_dm_export=_refuse_rhino, execute_rhino_three_dm_export=_refuse_rhino),
             patch.multiple(subprocess, Popen=_refuse_rhino, run=_refuse_rhino))
 
 
@@ -1409,7 +1409,7 @@ class _ExportProject:
 
 
 try:
-    from archflow.adapters import occt_backend as _occt_backend
+    from monkeycad import occt_backend as _occt_backend
     _OCCT = _occt_backend.occt_available()
 except Exception:  # the backend is optional; the tests below say so
     _OCCT = False
@@ -1602,7 +1602,7 @@ class OcctExportTests(unittest.TestCase):
 
     def test_failed_step_reports_elapsed_without_claiming_delivered_objects(self) -> None:
         from unittest.mock import patch
-        from archflow.adapters import cad_execution
+        from monkeycad import cad_execution
         from tests.integration.test_cad_execution import _binding
         from tests.integration.test_occt_execution import _box, _program_of
 
@@ -1736,8 +1736,8 @@ class OcctExportTests(unittest.TestCase):
         """
 
         from unittest.mock import patch
-        from archflow.adapters import cad_execution
-        from archflow.adapters.cad_execution import CadCapabilityError
+        from monkeycad import cad_execution
+        from monkeycad.cad_execution import CadCapabilityError
 
         real = cad_execution.execute_occt_export
 
@@ -1854,7 +1854,7 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
 
     def test_a_failed_seat_export_does_not_turn_its_predicted_bounds_into_a_solid_check(self) -> None:
         from unittest.mock import patch
-        from archflow.adapters import cad_execution
+        from monkeycad import cad_execution
 
         real = cad_execution.execute_occt_export
 
@@ -1878,7 +1878,7 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
 
     def test_cached_exports_are_cold_read_again_and_the_solid_result_is_retained_once(self) -> None:
         from unittest.mock import patch
-        from archflow.adapters import cad_execution
+        from monkeycad import cad_execution
 
         project = _ExportProject(self, self._pair_record())
         first = self._run_required(project)
@@ -1900,7 +1900,7 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
 
     def test_cold_read_failure_or_step_changed_after_export_leaves_the_current_required_check_unchecked(self) -> None:
         from unittest.mock import patch
-        from archflow.adapters import cad_execution
+        from monkeycad import cad_execution
         from monkeyarch.runtime import project_runner
 
         for failure in ("cold-read", "changed-bytes"):
@@ -1931,7 +1931,7 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
                 self.assertEqual(closure["findings"], [{"code": "missing_check", "requirement_id": "solid_nonpenetration", "receipt_id": self.RELATION_ID, "refs": []}])
 
     def test_real_separated_objects_cannot_certify_a_relation_to_a_different_entity(self) -> None:
-        from archflow.adapters.cad_execution import measure_occt_solid_pairs, read_step
+        from monkeycad.cad_execution import measure_occt_solid_pairs, read_step
 
         pair = (self.PAIR[0], "obj-third-plinth")
         record = self._pair_record(13.0, pair=pair)
@@ -1953,7 +1953,7 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
         self.assertEqual(closure["findings"], [{"code": "missing_check", "requirement_id": "solid_nonpenetration", "receipt_id": self.RELATION_ID, "refs": []}])
 
     def test_a_same_host_relation_cannot_include_another_hosts_final_object(self) -> None:
-        from archflow.adapters.cad_execution import measure_occt_solid_pairs, read_step
+        from monkeycad.cad_execution import measure_occt_solid_pairs, read_step
 
         record = self._pair_record(13.0)
         relations = tuple(replace(relation, object=relation.subject) if relation.relation_id == self.RELATION_ID else relation for relation in record.relations)
@@ -2019,8 +2019,8 @@ class IncrementalSourceRunTests(unittest.TestCase):
 
     def test_shared_missing_intermediate_does_not_rebuild_an_unchanged_final_object(self) -> None:
         from unittest.mock import patch
-        from archflow.adapters import occt_backend
-        from archflow.adapters.cad_execution import execute_occt_export
+        from monkeycad import occt_backend
+        from monkeycad.cad_execution import execute_occt_export
         from tests.integration.test_cad_execution import _binding
         from tests.integration.test_occt_execution import _array, _box, _program_of
 
@@ -2332,8 +2332,8 @@ class CadBackendSelectionTests(unittest.TestCase):
             raise RhinoReached("prepare_rhino_three_dm_export was called")
 
         project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)), cad_backend="rhino")
-        with patch("archflow.adapters.cad_execution.prepare_rhino_three_dm_export", side_effect=reached), \
-             patch("archflow.adapters.cad_execution.execute_occt_export", side_effect=AssertionError("OCCT must not run for the rhino backend")):
+        with patch("monkeycad.cad_execution.prepare_rhino_three_dm_export", side_effect=reached), \
+             patch("monkeycad.cad_execution.execute_occt_export", side_effect=AssertionError("OCCT must not run for the rhino backend")):
             with self.assertRaises(RhinoReached):
                 project.run_once()
         self.assertEqual(project.files("seat-structure"), [])
