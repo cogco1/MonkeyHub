@@ -14,7 +14,7 @@
 | --- | --- |
 | `API` | `apps/archflow-studio/api/archflow_studio_api` |
 | `HUBAPI` | `apps/monkeyhub/api/monkeyhub_api` |
-| `WS` | `apps/monkeyhub/web/workspaces/src` |
+| `WS` | `apps/monkeyhub/web/src` |
 | `HUB` | `apps/monkeyhub/web/src` |
 | `P036` | `archflow/project` |
 
@@ -93,7 +93,7 @@ The Hub assigns `hub-cand-<operation>` ids before dispatch (`HUBAPI/runtime.py:3
   - running lines, from `active` plus jobs (`:302-334`);
   - up to 50 `result` lines, one for every recovery or saved row off the head's line (`:197`, `:337-379`).
 
-  Its only consumer is the Hub project card (`HUB/ChatShell.tsx:1044-1070`). The client wrapper has no caller (`WS/api/client.ts:198-201`).
+  Its only consumer is the Hub project card (`HUB/ChatShell.tsx:1044-1070`). The client wrapper has no caller (`WS/api/project-runtime/client.ts:198-201`).
 - **Working Head.** `GET /api/working-source` resolves the head from `working.json.current`, then the main line's head Stage, then the reference run (`API/application/working_draft.py:328-346`, `:412-458`). The head's lineage is derived from deltas (`:245-277`).
 - **Modeling auto-show.** `autoShowRef` (`WS/app/App.tsx:372-375`) takes the latest requested run. The effect loads it view-only and posts "the candidate's model is on screen · not accepted" (`:2952-3017`). A `candidate.succeeded` event refreshes artifacts, working copies and the working draft (`:495-501`, `:1078-1087`).
 - **Hub delivery.**
@@ -320,7 +320,7 @@ Owners were checked with `python tools/devctl.py module studio.intent` (and `stu
 | Slice | Owner | Files | Tests / acceptance |
 | --- | --- | --- | --- |
 | **S1: fact and gate** | `studio.intent`, `project.record_kinds` | `P036/record_kinds.py` (kind, note, reason); `API/application/design_history.py` (extract the accept preflight; `admit`; `studio-admissions` reader and writer on the `decisions.py` pattern); `API/routes/episodes.py` (`POST`/`GET /api/admissions`); `API/transport/design_history.py`; `docs/PROTOCOL.md`; `governance/module_registry.json` | New `apps/archflow-studio/api/tests/test_candidate_admission.py`: a1→a2 admitted superseding a1 gives exactly 1 Candidate; a rejected result is retained and not listed; a new binding after restart gives the same pool; each clause C1–C7 refuses; an identical retry is idempotent and a conflicting one gets 409; accept refuses a rejected run; `tests/test_record_kinds.py`. Covers issue acceptance 1, 2, 3, 5, 7, 8 at the API level. |
-| **S2: readers and the #284 API** | `studio.intent`, `studio.candidate`, `studio.binding` | `design_history.py` (`candidates`/`studies`, legacy derivation); `API/application/runtime.py` (`_result_lines` annotation); `API/application/working_draft.py` (warning on a rejected head); transports; the generated TS client, `WS/api/client.ts` | Tree fixture: S2 → worktree A (2 runs, admitted), B (admitted), C (rejected) gives exactly A and B in one Study under S2, and the same after restart. Accepting a B descendant gives S3 "from B". A legacy Stage without a record derives as admitted. A TESTMODEL-shaped fixture gives 0 Candidates. |
+| **S2: readers and the #284 API** | `studio.intent`, `studio.candidate`, `studio.binding` | `design_history.py` (`candidates`/`studies`, legacy derivation); `API/application/runtime.py` (`_result_lines` annotation); `API/application/working_draft.py` (warning on a rejected head); transports; the generated TS client, `WS/api/project-runtime/client.ts` | Tree fixture: S2 → worktree A (2 runs, admitted), B (admitted), C (rejected) gives exactly A and B in one Study under S2, and the same after restart. Accepting a B descendant gives S3 "from B". A legacy Stage without a record derives as admitted. A TESTMODEL-shaped fixture gives 0 Candidates. |
 | **S3: Hub Agent contract and delivery** | `hub.shell` | `HUBAPI/chat.py` (allow `/api/admissions`; message binding like `_feedback_body`; prompt: close each loop with one admission, name superseded attempts, declare the Study, reject only on bound words); `HUB/ChatShell.tsx` (auto-open only admitted results or a turn's final result; "open result" wording) | `apps/monkeyhub/api/tests/test_chat.py` allowlist and binding; web delivery tests. A TESTMODEL-shaped chat replay gives 1 rejection and admitted results with superseded attempts (issue acceptance 1, 4). |
 | **S4: attributed Continue** | `studio.binding`, `hub.shell` | `API/application/working_draft.py` and `API/routes/working_draft.py` (`AuditEvent@1 design.continued`, attribution); `HUBAPI/chat.py` (Agent `PUT /api/working-draft` with a bound message) | A Continue on the user's words moves the Working Head and survives restart, and its event is readable. Continue never admits. Generation still never moves the head. |
 | S5: Design Tree UI | #284 | consumes S2 | #284 acceptance |
@@ -400,7 +400,7 @@ S3 ● Current
    - The proposal-level `accepted` episode route (`API/routes/proposals.py:396-507`) becomes redundant; #290 decides whether to retire it.
 4. **Human admission versus review readiness.** V0 requires `review_ready` for every admission, so an admitted Candidate is always acceptable. Q2: may a human admit a result that has a recorded relation violation, as a comparison option?
 5. **Agent authority.** The Agent could admit at its stopping condition, and reject or Continue on bound user words. That is automatic admission without a click (§4.2). Q3: confirm this bounded policy, and whether a multi-variant task may admit all of its variants.
-6. **Exploration retirement.** `POST /api/working-copies` creation has no product caller (`WS/api/client.ts` wraps only read and select). Under "one canonical in, one parallel out", `study` on admissions replaces it; keep its readers for retained data. Q4: retire creation in S2?
+6. **Exploration retirement.** `POST /api/working-copies` creation has no product caller (`WS/api/project-runtime/client.ts` wraps only read and select). Under "one canonical in, one parallel out", `study` on admissions replaces it; keep its readers for retained data. Q4: retire creation in S2?
 7. **Naming collisions.**
    - "Admission" already means Hub request admission: `admitted_candidate_id` (`API/routes/candidates.py:342-359`), `CANDIDATE_ADMISSION_MISMATCH`, `admissionSequence` (`HUB/ChatShell.tsx:797-815`). Rename the internal helper when S3 touches it; the wire code needs a joint Hub change.
    - "Study" already names the precedent Study (`/api/studies`, `API/application/study.py`). Do not reuse that route or `study-*` runs; the UI label can still say Study.

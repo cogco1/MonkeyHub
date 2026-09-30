@@ -7,8 +7,8 @@
 
 I ran three browser tests on the built UI with synthetic fixtures:
 - `test/chatShell.browser.mjs`: 30 screenshots.
-- `workspaces/test/candidatePreview.browser.mjs --view-base`: 5 screenshots.
-- `workspaces/test/drawingCanvas.browser.mjs`: 2 screenshots.
+- `test/candidatePreview.browser.mjs --view-base`: 5 screenshots.
+- `test/drawingCanvas.browser.mjs`: 2 screenshots.
 
 `renderWorkspace.browser.mjs` failed twice: its Python runtime did not answer `/api/health` within 20 s. Render is therefore reviewed from code only. Nothing was run against a real Hub, provider or project.
 
@@ -16,7 +16,7 @@ I ran three browser tests on the built UI with synthetic fixtures:
 
 | Key | Meaning |
 | --- | --- |
-| `HUB` / `WS` | `apps/monkeyhub/web/src` / `apps/monkeyhub/web/workspaces/src` |
+| `HUB` / `WS` | `apps/monkeyhub/web/src` / `apps/monkeyhub/web/src` |
 | `EN` / `ZH` | `HUB/i18n/messages.en.ts` / `HUB/i18n/messages.zh-CN.ts` |
 | `shot:` | the folder that `node test/chatShell.browser.mjs` prints |
 | `base:` | the `VIEW_BASE_SCREENSHOTS` folder of `candidatePreview.browser.mjs --view-base` |
@@ -118,7 +118,7 @@ The owner asked for the review's open questions to be settled on the recommendat
 | ID | Problem · evidence | Proposal | P | Eff. | Owner |
 | --- | --- | --- | --- | --- | --- |
 | MC-1 | A footer card sits over the viewport. It holds “Versions N · Viewing … · New”, the picked object, a Board button, and “Next edit starts from … [Continue] [Return to default editing base]” with notices (`Stage.tsx:2040-2067, 1172-1201`). N counts Stages when design history is on, otherwise exports and options (`:1158-1162`). | Retire the card; the chip carries position and the viewing warning. Keep the picked-object label next to the selection. | P0 | M | #284 |
-| MC-2 | The Versions panel covers the model, at up to 720 × 480 px (`WS/styles.css:1281-1297`). It is a second history, containing: <br>• draft rows and a raw branch select; <br>• a Git-style fork form (`pattern` `[A-Za-z0-9]…`, placeholder “alternate-layout”); <br>• recovery points with an explanatory paragraph; <br>• Explorations, Candidates with Combine, and legacy runs. <br>(`VersionsStrip.tsx:86-168`) | Retire the design section when the tree lands. Keep “Files & exports” as a details view. | P0 | M | #284 |
+| MC-2 | The Versions panel covers the model, at up to 720 × 480 px (`WS/app/styles.css:1281-1297`). It is a second history, containing: <br>• draft rows and a raw branch select; <br>• a Git-style fork form (`pattern` `[A-Za-z0-9]…`, placeholder “alternate-layout”); <br>• recovery points with an explanatory paragraph; <br>• Explorations, Candidates with Combine, and legacy runs. <br>(`VersionsStrip.tsx:86-168`) | Retire the design section when the tree lands. Keep “Files & exports” as a details view. | P0 | M | #284 |
 | MC-3 | The workspace gets 43 % of a 1440 px window. The sidebar (244 px), chat (at least 360 px) and rail (76 px) leave a 620 px panel (`ChatShell.css:1, 6`; `shot:hub-arch.png`). At 1280 px the panel is capped at 595 px. | Collapse the sidebar automatically to its 60 px strip when a surface opens (it can be pinned open). Add a focus toggle that narrows the chat (proposal §5). | P1 | M | #283 |
 | MC-4 | The toolbar always shows a CAD plane select: XY, XZ, YZ, Face (`Stage.tsx:1707-1713`). “View options” mixes views with Clear, Open .3dm, Parameter locks, Screenshot and the Rhino export (`:1780-1870`). | Show the plane select only while a drawing tool is active. Split “…” into View and File. | P2 | S | #283 |
 | MC-5 | The Arch “Conversation” is a second chat. It is closed by default and has no control to reopen it (`App.tsx:502-513`), and it states “No agent is wired here” (`EN:521`). Board feedback and sketches open it by switching to Modeling (`ProjectWorkspace.tsx:100-107`). | Settle proposal Q4 in favour of one chat. Send Board feedback into the Hub chat as a message that carries its marks, and keep the deterministic compiler as a capability. | P1 | L | owner Q4 |

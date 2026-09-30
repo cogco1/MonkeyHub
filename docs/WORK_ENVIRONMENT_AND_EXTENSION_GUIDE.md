@@ -444,7 +444,7 @@ YYYYMMDD[-NN]_项目名称[_内容或图种][_RNN].扩展名
 
 ```text
 React / Vite / three.js / rhino3dm-wasm
-  apps/monkeyhub/web/workspaces
+  apps/monkeyhub/web
                 │ OpenAPI-generated SDK
                 ▼
 Project Runtime（FastAPI）
@@ -627,15 +627,15 @@ ArchFlow 继续复用现有 FastAPI/OpenAPI 与生成客户端，外部模块从
 
 ### 第 5 步：DTO 改动后生成客户端
 
-在 `apps/monkeyhub/web/workspaces`：
+在 `apps/monkeyhub/web`：
 
 ```powershell
 npm run api:generate
 npm run api:check
 ```
 
-`api:generate` 从真实 `create_app(...).openapi()` 生成 `src/api/generated/`。UI 再通过
-`src/api/client.ts` 的现有门面调用，不直接修改 generated 文件。
+`api:generate` 从真实 `create_app(...).openapi()` 生成 `src/api/project-runtime/generated/`。UI 再通过
+`src/api/project-runtime/client.ts` 的现有门面调用，不直接修改 generated 文件。
 
 ### 第 6 步：以行为闭环验收
 
@@ -712,7 +712,7 @@ $env:PATH = "$RuntimeRoot\venv\Scripts;" + $env:PATH
 & $Python -m pip install -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 & $Python -m pip check
 npm.cmd ci --prefix apps/monkeyhub/web
-npm.cmd ci --prefix apps/monkeyhub/web/workspaces/tools/openapi-ts
+npm.cmd ci --prefix apps/monkeyhub/web/tools/openapi-ts
 python -c "import sys; print(sys.executable)"
 ```
 
@@ -801,7 +801,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SourceRoot\scripts\dev
 前台运行 `archflow_studio_api.main`，Ctrl+C 结束。它没有配置文件、没有默认项目、没有启动窗口和托盘，
 也不管理任何生命周期；其余设置全部是 API 本来就读取的 `ARCHFLOW_STUDIO_*` 环境变量。
 “可独立运行”不等于“独立产品入口”：生产环境里项目运行时的生命周期只属于 MonkeyHub。工作区测试页位于
-`apps/monkeyhub/web/workspaces/test/`，不进入生产构建；实际产品交互通过 Hub 验收。
+`apps/monkeyhub/web/test/`，不进入生产构建；实际产品交互通过 Hub 验收。
 
 #### 手动联调
 
@@ -823,7 +823,7 @@ $env:ARCHFLOW_STUDIO_RHINO_EXPORT = '0'
 $SourceRoot = 'D:\code\ARCHFLOW_V4'
 Set-Location "$SourceRoot\apps\monkeyhub\web"
 $env:ARCHFLOW_STUDIO_API_URL = 'http://127.0.0.1:18080'
-npx.cmd vite --config workspaces/test/vite.config.ts --port 15174
+npx.cmd vite --config test/vite.config.ts --port 15174
 ```
 
 打开测试页 `http://127.0.0.1:15174/test/workspace.html`（仅隔离回归，不进入生产构建）。这组端口与默认的一键启动端口分开；端口被占用时一起改 API 端口和

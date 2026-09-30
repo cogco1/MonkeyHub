@@ -46,11 +46,10 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 ├─ monkeycontrol/                桌面自动化动作契约与执行
 ├─ apps/monkeyfab/               制造算法、CLI、参数和测试，默认随 Hub 打包
 ├─ apps/monkeyhub/               唯一应用入口：api/、desktop/、installer/、run.py、launch-hub.ps1
-│  └─ web/                       唯一生产前端、依赖与构建
-│     ├─ src/                    Hub 导航、聊天、设置与统一语言目录
-│     └─ workspaces/src/
+│  └─ web/                       唯一生产前端、依赖与构建；另有 test/、scripts/、tools/、assets/
+│     └─ src/                    单一源根：Hub 导航、聊天、设置、统一语言目录与项目工作区
 │        ├─ app/                 同页项目工作区组合与设计反馈
-│        ├─ api/                 每项目独立客户端与 Runtime Provider
+│        ├─ api/project-runtime/ 每项目独立客户端与 Runtime Provider
 │        └─ workspaces/
 │           ├─ monkeyarch/       三维建模交互
 │           ├─ monkeydiagram/    Board 双击图页打开的精确页面编辑
@@ -208,8 +207,8 @@ MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 
 | `apps/monkeyfab/`（`src/monkeyfab/`、`tests/`、`pyproject.toml`） | `packages/monkeyfab/`；安装包内仍是 `apps/monkeyfab/` | #490 |
 | `apps/archflow-studio/api/archflow_studio_api/` | `services/project-runtime/src/project_runtime/` | #491 |
 | `apps/archflow-studio/api/tests/`、`apps/archflow-studio/api/requirements.txt`、`apps/archflow-studio/README.md` | `services/project-runtime/{tests/,requirements.txt,README.md}`；`apps/archflow-studio/` 删除 | #491 |
-| `apps/monkeyhub/web/workspaces/src/`、`workspaces/test/` | `apps/monkeyhub/web/src/`、`web/test/`，按子树平移，不改文件名 | #492 |
-| `apps/monkeyhub/web/workspaces/{scripts,tools,assets}/` | `apps/monkeyhub/web/{scripts,tools,assets}/` | #492 |
+| `apps/monkeyhub/web/workspaces/src/`、`workspaces/test/` | `apps/monkeyhub/web/src/`、`web/test/`，按子树平移，不改文件名；会与 Hub 自己的文件同名的放进各自目录：`api/` → `src/api/project-runtime/`，`styles.css` → `src/app/styles.css` | #492 |
+| `apps/monkeyhub/web/workspaces/{scripts,tools,assets}/` | `apps/monkeyhub/web/{scripts,tools,assets}/`；Runtime 的 OpenAPI schema 生成到 `web/.generated/project-runtime/` | #492 |
 | 根 `tests/` 中只测一个包、且不借用其他测试 helper 的文件（含 `tests/monkeycontrol/`） | `packages/<包名>/tests/`，随该包搬迁 | #488–#490 |
 | 根 `tests/` 中其余测试 | 只属于一个 owner 的去该 owner 的 `tests/`；互相借用 helper 的一组整体进 `tests/integration/`；测 tools 的进 `tools/tests/`；打包测试进 `tests/packaging/`；基准驱动与数据进 `tools/benchmarks/` | #493 |
 | `docs/` 根目录的大写与日期前缀文件、`docs/testing/` | `docs/{architecture,product,protocols,development,design,research,audits}/`，小写 kebab 文件名；新增 `docs/README.md` | #494 |
