@@ -76,9 +76,12 @@ from tests.integration.support import (
     COMMITMENT,
     EVIDENCE,
     RECORD_PAYLOAD,
+    _array,
     _binding as _synthetic_binding,
+    _box,
     _only,
     _program as _synthetic_program,
+    _program_of,
     _proposal,
     _state,
     authored_record,
@@ -1527,21 +1530,6 @@ def _loft(op_id: str, *, profile_basis: str = "polyline", cap_ends: bool = True)
     )
 
 
-def _box(op_id: str, origin: list[float], size: list[float]) -> GeometryOperation:
-    return GeometryOperation(
-        op_id=op_id,
-        kind=GeometryOperationKind.SOLID,
-        output_object_ids=(f"{op_id}-object",),
-        input_object_ids=(),
-        frame_id="world",
-        parameters=(
-            GeometryParameter.create(name="origin", kind=GeometryParameterKind.VECTOR3, value=origin, unit=LengthUnit.METER),
-            GeometryParameter.create(name="size", kind=GeometryParameterKind.VECTOR3, value=size, unit=LengthUnit.METER),
-        ),
-        semantic_binding_ids=("body-binding",),
-    )
-
-
 def _intersection_program(*boxes: GeometryOperation) -> CompiledGeometryProgram:
     """The synthetic fixture with the given boxes met by one ``boolean_intersection``; only the meet is physical."""
 
@@ -1555,21 +1543,6 @@ def _intersection_program(*boxes: GeometryOperation) -> CompiledGeometryProgram:
         semantic_binding_ids=("body-binding",),
     )
     return _program_of(*boxes, meet)
-
-
-def _array(op_id: str, source: GeometryOperation, *, count: int, step: list[float]) -> GeometryOperation:
-    return GeometryOperation(
-        op_id=op_id,
-        kind=GeometryOperationKind.ARRAY,
-        output_object_ids=(f"{op_id}-object",),
-        input_object_ids=(source.output_object_ids[0],),
-        frame_id="world",
-        parameters=(
-            GeometryParameter.create(name="count", kind=GeometryParameterKind.INTEGER, value=count),
-            GeometryParameter.create(name="step", kind=GeometryParameterKind.VECTOR3, value=step, unit=LengthUnit.METER),
-        ),
-        semantic_binding_ids=("body-binding",),
-    )
 
 
 def _radial_array(op_id: str, source: GeometryOperation) -> GeometryOperation:
@@ -1586,26 +1559,6 @@ def _radial_array(op_id: str, source: GeometryOperation) -> GeometryOperation:
         ),
         semantic_binding_ids=("body-binding",),
     )
-
-
-def _program_of(*operations: GeometryOperation) -> CompiledGeometryProgram:
-    """The synthetic fixture carrying exactly these operations, executed in the given order."""
-
-    program = _synthetic_program()
-    binding = replace(program.proposal.semantic_bindings[0], object_ids=tuple(sorted(op.output_object_ids[0] for op in operations)))
-    proposal = replace(
-        program.proposal, operations=tuple(sorted(operations, key=lambda op: op.op_id)), semantic_bindings=(binding,)
-    )
-    objects = tuple(
-        sorted(
-            (
-                CompiledGeometryObject(object_id=op.output_object_ids[0], producer_op_id=op.op_id, object_digest=f"{index}" * 64)
-                for index, op in enumerate(operations, start=1)
-            ),
-            key=lambda item: item.object_id,
-        )
-    )
-    return replace(program, proposal=proposal, operation_order=tuple(op.op_id for op in operations), objects=objects)
 
 
 L_SLAB = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 0.0, 4.0], [4.0, 0.0, 4.0], [4.0, 0.0, 8.0], [0.0, 0.0, 8.0]]

@@ -181,8 +181,8 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
   基准驱动在 `tools/benchmarks/`。一个测试导入的只有某个 owner 和这个 owner 自己可以导入的，就进这个 owner 的 `tests/`（#522）：
   MonkeyArch 的测试可以经内核和 MonkeyCAD 执行几何，MonkeyDiagram 的测试可以用 MonkeyCAD 取截面，Runtime 的测试可以用它组合的各包。
 - 测试模块不兼当夹具库。一个测试根里共用的夹具放在按内容命名的 `*_fixture.py`（如 `packages/monkeyarch/tests/spine_fixture.py`、
-  `runner_fixture.py`），名字在共用一个 pytest 进程的测试根（根 `pyproject.toml` 的 `testpaths`）之间不重复；Runtime 的测试包用相对导入。
-  一个测试根不能导入另一个根的测试，两个根都要用的夹具各留一份，文首写明从哪里复制。
+  `runner_fixture.py`），名字在共用一个 pytest 进程的测试根（根 `pyproject.toml` 的 `testpaths`）之间不重复；Runtime 的测试包用相对导入，
+  `tests/integration/` 共用的放在它的 `support.py`。一个测试根不能导入另一个根的测试，两个根都要用的夹具各留一份，文首写明从哪里复制。
 - `tests/integration/` 只有五个跨包测试和它们共用的 `support.py`：`test_project_runner`（MonkeyArch 的 runner 加 `tools.project`
   的阶段命令与 MonkeyMonitor 的用量行）、`test_occt_execution`（OCCT 执行 MonkeyArch 编出的程序，另有 MonkeyDiagram 出图和 Hub web
   读取预览）、`test_version_refs`（内核的版本引用声明对照 CAD 与图纸记录的写入者）、`test_project_format_migration`（内核的格式迁移经

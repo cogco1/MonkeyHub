@@ -14,7 +14,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -51,7 +50,6 @@ from archflow.project.repository import (
     _cascade_records,
     _retained_category,
     _json_bytes,
-    _replace_atomic,
     _sha256,
     _write_immutable,
     inspect_project_format,
@@ -67,7 +65,7 @@ from archflow.state.spatial import (
     SpatialOptionProposal,
 )
 from archflow.state.state_record import RECORD_BINDING_PHASE, developed_design_view
-from tests.integration.support import _record as state_record_fixture, authored_record
+from tests.integration.support import ProjectFormatFixture, _record as state_record_fixture, authored_record
 from archflow.state.stage_workflow import (
     CompositeStageClosureReceipt,
     DesignPhase,
@@ -85,219 +83,7 @@ load_workflow_owners()
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
-class ProjectFormatPlannerTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
-
-    # ---- fixtures
-
-    def current_project(self, name: str = "current-building") -> FilesystemProjectRepository:
-        """A project this build creates itself, at the current format version."""
-
-        repository = FilesystemProjectRepository.initialize(
-            self.root / name,
-            project_id=name,
-            initial_state={"phase": "design"},
-            authored_record={"schema": "StateRecord@1", "draft": "initial"},
-            seat_pack={"schema": "SeatPack@1", "seats": []},
-        )
-        self.populate(repository)
-        return repository
-
-    def legacy_envelope(self, name: str) -> Path:
-        """A format-1 project exactly as an older build first wrote one.
-
-        The bytes are the historical ones: ``CanonicalSnapshot@1`` carries no
-        semantic digest, and the version reference names the snapshot file.
-        Nothing here has ever been opened for writing, so the project carries
-        none of the repository's advisory lock files.
-        """
-
-        root = self.root / name
-        for directory in ("canonical", "events", "runs"):
-            (root / directory).mkdir(parents=True)
-        _write_immutable(
-            root / "project.json",
-            _json_bytes({
-                "schema": "ArchFlowProject@1",
-                "project_id": name,
-                "format_version": LEGACY_FORMAT_VERSION,
-            }),
-        )
-        self.write_legacy_version(root, {"phase": "design"})
-        return root
-
-    def write_legacy_version(
-        self, root: Path, state: dict, **event_fields: object,
-    ) -> ProjectVersionRef:
-        """Publish one more version exactly as an older build wrote it.
-
-        ``compare_and_swap`` needs a promotion receipt and a run of its own, so
-        a multi-version legacy fixture is written as the historical bytes. The
-        same helper writes v0, so the fixture has one spelling of a published
-        legacy version rather than two that can drift apart.
-        """
-
-        head_path = root / "HEAD"
-        previous = (
-            json.loads(head_path.read_text(encoding="utf-8"))
-            if head_path.exists() else None
-        )
-        project_id = root.name
-        parent = previous["current"] if previous else None
-        version = 0 if parent is None else parent["version"] + 1
-        snapshot_bytes = _json_bytes({
-            "schema": "CanonicalSnapshot@1",
-            "project_id": project_id,
-            "version": version,
-            "parent": parent,
-            "state": dict(state),
-        })
-        snapshot_digest = _sha256(snapshot_bytes)
-        snapshot_path = f"canonical/{record_file_name(f'state-v{version:06d}', snapshot_digest)}"
-        _write_immutable(root / snapshot_path, snapshot_bytes)
-        head_ref = ProjectVersionRef(project_id, version, snapshot_digest)
-        event_bytes = _json_bytes({
-            "schema": "ProjectEvent@1",
-            "project_id": project_id,
-            "event_type": "project.initialized" if parent is None else "candidate.promoted",
-            "decision": "accepted",
-            "run_id": None,
-            "from": parent,
-            "to": head_ref.to_dict(),
-            "previous_event": previous["event"] if previous else None,
-            "decision_receipt": None,
-            **event_fields,
-        })
-        event_digest = _sha256(event_bytes)
-        event_path = f"events/{record_file_name(f'event-v{version:06d}', event_digest)}"
-        _write_immutable(root / event_path, event_bytes)
-        head_payload = _json_bytes({
-            "schema": "ProjectHead@1",
-            "project_id": project_id,
-            "current": head_ref.to_dict(),
-            "snapshot": {"relative_path": snapshot_path, "sha256": snapshot_digest,
-                         "media_type": "application/json"},
-            "event": {"relative_path": event_path, "sha256": event_digest,
-                      "media_type": "application/json"},
-        })
-        if previous is None:
-            _write_immutable(head_path, head_payload)
-        else:
-            _replace_atomic(head_path, head_payload)
-        return head_ref
-
-    def legacy_project_in(self, root: Path, name: str) -> FilesystemProjectRepository:
-        """The same legacy fixture, built under a directory of the caller's."""
-
-        previous, self.root = self.root, root
-        try:
-            return self.legacy_project(name)
-        finally:
-            self.root = previous
-
-    def legacy_project(self, name: str = "legacy-building") -> FilesystemProjectRepository:
-        """A format-1 project an older build went on to author and use."""
-
-        repository = FilesystemProjectRepository.open(self.legacy_envelope(name))
-        repository.initialize_authored_inputs(
-            expected_head=repository.read_head(),
-            expected_record=None,
-            authored_record={"schema": "StateRecord@1", "draft": "initial"},
-            seat_pack={"schema": "SeatPack@1", "seats": []},
-        )
-        self.populate(repository)
-        return repository
-
-    def populate(self, repository: FilesystemProjectRepository) -> None:
-        """Give a project retained runs, records, a design branch and bytes.
-
-        The second run is never referenced from HEAD or from the design branch,
-        so a closure that only followed published history would miss it.
-        """
-
-        stage = self.stage(repository, "first")
-        repository.compare_and_swap_design_branch(
-            branch_id="main",
-            expected_head=None,
-            branch={"branch_id": "main", "parent_branch": None,
-                    "fork_stage": stage.to_dict(), "head_stage": stage.to_dict()},
-        )
-        self.stage(repository, "extra")
-
-    def stage(self, repository: FilesystemProjectRepository, name: str):
-        run = repository.create_run(name)
-        artifact = repository.ingest(
-            run=run,
-            destination=PersistenceDestination(PersistenceArea.OBJECT),
-            artifact_id=name,
-            media_type="model/3dm",
-            source=io.BytesIO(f"model-{name}".encode()),
-        )
-        record = repository.put_json(
-            run=run,
-            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
-            record_kind=STATE_RECORD,
-            payload={"schema": "StateRecord@1", "run": run.to_dict(), "model": {
-                "project_id": run.project_id, "relative_path": artifact.relative_path,
-                "sha256": artifact.sha256, "media_type": artifact.media_type}},
-        )
-        return repository.put_json(
-            run=run,
-            destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=name),
-            record_kind=DESIGN_STAGE,
-            payload={"schema": "DesignStage@1", "candidate_id": name,
-                     "parent_stage": None, "record": record.to_dict()},
-        )
-
-    def install_historical_record(
-        self, repository: FilesystemProjectRepository, kind: str,
-        *, embeds_base: bool = True, note: str = "historical",
-    ) -> Path:
-        """Write a retained record whose kind this build no longer registers.
-
-        Archived lanes left records like this behind; ``put_json`` refuses to
-        write one now, but readers must keep them. Whether such a record
-        *embeds a project-version identity* is the whole question a migration
-        has to answer, so the fixture can write either kind.
-        """
-
-        payload = {
-            "schema": "RetiredLaneNote@1",
-            "project_id": repository.layout.project_id,
-            "note": note,
-        }
-        if embeds_base:
-            payload["base"] = repository.read_head().to_dict()
-        data = _json_bytes(payload)
-        path = (repository.layout.run("extra").records
-                / record_file_name(kind, _sha256(data)))
-        _write_immutable(path, data)
-        return path
-
-    def corrupt_a_retained_record(self, repository: FilesystemProjectRepository) -> None:
-        """Make one retained record disagree with the digest in its file name."""
-
-        for path in sorted((repository.layout.run("extra").records).glob("*.json")):
-            path.chmod(0o644)
-            path.write_bytes(b'{"schema": "StateRecord@1"}\n')
-
-    # ---- the whole project directory, locks included
-
-    def fingerprint(self, root: Path) -> dict[str, tuple[int, str]]:
-        return {
-            path.relative_to(root).as_posix(): (
-                path.stat().st_size, _sha256(path.read_bytes()),
-            )
-            for path in sorted(root.rglob("*"))
-            if path.is_file()
-        }
-
-    def assert_unchanged(self, root: Path, before: dict[str, tuple[int, str]]) -> None:
-        self.assertEqual(self.fingerprint(root), before)
-
+class ProjectFormatPlannerTests(ProjectFormatFixture):
     # ---- detection
 
     def test_current_project_is_detected_as_current_and_needs_no_migration(self) -> None:
