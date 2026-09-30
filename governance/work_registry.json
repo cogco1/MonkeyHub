@@ -1,21 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-521",
-      "status": "active",
-      "branch": "codex/521-hub-splits",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-521-hub-splits",
-      "base_ref": "c175e7b3bae4265455afe90f4211d67055aee8a2",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "hub.shell",
-        "tools.package_monkeyapps"
-      ],
-      "write_scope": [],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
