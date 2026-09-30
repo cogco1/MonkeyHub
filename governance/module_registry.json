@@ -6048,7 +6048,8 @@
         "project.index",
         "monkeyarch.authoring.frame",
         "monkeyarch.domain.massing_transforms",
-        "monkeydiagram.documentation.sheet_layout"
+        "monkeydiagram.documentation.sheet_layout",
+        "monkeydiagram.study"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/api/routes/",
@@ -8249,7 +8250,7 @@
       "purpose": "Retain corrected precedent evidence and conditional research in the existing Board document editor, with inspectable polygon tests and configured model proposals, without changing canonical design state.",
       "owns": [
         "Study evidence revisions tied to a registered document page, retained through P036 research-evidence-ledger records",
-        "validation of trace inputs and confirmed/proposed/rejected status, deterministic geometric projections and bounded counterfactual experiments",
+        "validation of trace inputs and confirmed/proposed/rejected status, deterministic geometric projections and bounded counterfactual experiments: the method, in monkeydiagram.study (canonical_evidence, derive, research_snapshot_of; StudyEvidenceError STUDY_EVIDENCE_INVALID), which reads no project",
         "explicit correction against the current Study revision, and cold reads that replay a retained revision's own findings after verifying its exact source and evidence",
         "the Study side panel and independent evidence draft in the existing document page editor",
         "editable, evidence-linked competing explanations, gaps, polygon counterfactual predictions/outcomes and conditional CompositionPattern/DesignPrior revisions",
@@ -8286,6 +8287,14 @@
         "POST /api/studies/propose",
         "list_studies",
         "polygon_observations",
+        "canonical_evidence",
+        "derive",
+        "composition_graph",
+        "check_research_links",
+        "research_snapshot_of",
+        "StudySource",
+        "StudyEvidenceError",
+        "CURRENT_DERIVATION_METHOD",
         "web: DocumentStudyPanel",
         "study_evidence_context"
       ],
@@ -8299,7 +8308,8 @@
         "project.record_kinds",
         "ports.model",
         "studio.intent",
-        "studio.board"
+        "studio.board",
+        "monkeydiagram.study"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/api/routes/study.py"
@@ -8321,9 +8331,10 @@
         "services/project-runtime/tests/test_study_research.py",
         "services/project-runtime/tests/test_study_model.py",
         "apps/monkeyhub/web/test/documentStudy.test.ts",
-        "apps/monkeyhub/web/test/documentStudy.browser.mjs"
+        "apps/monkeyhub/web/test/documentStudy.browser.mjs",
+        "packages/monkeydiagram/tests/test_study_method.py"
       ],
-      "notes": "EXTEND the existing Study owner. Document canvas and source store are reused; true polygon computation lives in MonkeyDiagram under this same capability. Historical bounds archive/compare behavior is retained, while polygon research results are independently named. Family judgments and historical causation remain unvalidated. Competing retained heads still require explicit reconciliation; exact archived revisions remain readable.",
+      "notes": "EXTEND the existing Study owner. Document canvas and source store are reused; the method - trace validation, derivations, polygon computation and research snapshots - lives in monkeydiagram.study under this same capability (#519), and the Runtime keeps the retained ledger, its cold reads and writes. Historical bounds archive/compare behavior is retained, while polygon research results are independently named. Family judgments and historical causation remain unvalidated. Competing retained heads still require explicit reconciliation; exact archived revisions remain readable.",
       "files": [
         "services/project-runtime/src/project_runtime/application/study.py",
         "services/project-runtime/src/project_runtime/api/routes/study.py",

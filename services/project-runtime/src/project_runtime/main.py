@@ -35,6 +35,7 @@ from archflow.project.index import IndexCommit, add_commit_listener
 from monkeyarch.authoring.frame import FrameError
 from monkeyarch.domain.massing_transforms import MassingTransformError
 from monkeydiagram.documentation.sheet_layout import SheetLayoutError
+from monkeydiagram.study import StudyEvidenceError
 
 from .api import routes
 from .api.routes import memory as memory_routes
@@ -90,6 +91,7 @@ OWNER_REFUSALS: Mapping[type[Exception], int] = MappingProxyType({
     FrameError: 422,
     MassingTransformError: 422,
     SheetLayoutError: 422,
+    StudyEvidenceError: 422,
 })
 
 
