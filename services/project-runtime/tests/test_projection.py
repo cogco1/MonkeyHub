@@ -13,9 +13,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.application.projection import UNSTATED_PHASE
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.projection import UNSTATED_PHASE
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from archflow.project.refs import RunRef
 from archflow.project.record_kinds import RUNNER_RUN_RECEIPT
@@ -70,7 +70,7 @@ class StateProjectionTests(unittest.TestCase):
                 self.assertEqual(response.json()["code"], "DESIGN_STAGE_REF_INVALID")
 
     def test_type_inherited_parameter_bindings_keep_their_source_in_the_projection(self) -> None:
-        from archflow_studio_api.application.projection import _elements
+        from project_runtime.application.projection import _elements
 
         payload = deepcopy(RECORD_PAYLOAD)
         payload["entities"].append({

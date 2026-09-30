@@ -25,17 +25,17 @@ from archflow.project.index import (
     ArtifactRow, CandidateRow, IndexCommit, IndexStamp, IndexUnavailable, ProjectIndex, RunRows, StageRow, TreeRows,
     add_commit_listener,
 )
-from archflow_studio_api.application import projections
-from archflow_studio_api.application.artifacts import ModelSource
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.projections import (
+from project_runtime.application import projections
+from project_runtime.application.artifacts import ModelSource
+from project_runtime.application.binding import bound_project
+from project_runtime.application.projections import (
     CURRENT, DONE, ERROR, MODEL_LINES, PENDING, REST, TREE_RECIPE, BlobStore, ProjectionError, ProjectionQueue,
     RenderCancelled, RenderFailed, RenderRefused, RenderResult, StatusTable, SubprocessRenderer, projection_key,
     projection_spec, recipe_of, tree_model_sources,
 )
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.errors import StudioError
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.errors import StudioError
 
 from .support import PROJECT_ID, advance_head, make_empty_project
 
@@ -196,7 +196,7 @@ class KeyTests(unittest.TestCase):
             self.assertNotEqual(projection_spec(SOURCE).key, before)
 
     def test_every_pipeline_input_reaches_the_key(self):
-        from archflow_studio_api.application import drawings
+        from project_runtime.application import drawings
         from monkeydiagram import mesh_views
 
         before = projection_spec(SOURCE)
@@ -1099,7 +1099,7 @@ class RouteTests(unittest.TestCase):
     def test_commits_of_the_projection_queue_alone_queue_nothing(self):
         from archflow.project.index import IndexToken
         from archflow.project.index.keeper import _announce
-        from archflow_studio_api.main import _project_commits
+        from project_runtime.main import _project_commits
 
         class State:  # what the listener reads of the application's state
             projections, binding = Mock(), None
@@ -1241,9 +1241,9 @@ class RenderProcessTests(unittest.TestCase):
 
     def test_a_run_on_an_older_canonical_base_is_drawn_but_not_acted_on(self):
         from archflow.project.repository import FilesystemProjectRepository
-        from archflow_studio_api.application.binding import ProjectBinding
-        from archflow_studio_api.application.drawings import draw_model_view
-        from archflow_studio_api.application.projection import project_state, require_actionable
+        from project_runtime.application.binding import ProjectBinding
+        from project_runtime.application.drawings import draw_model_view
+        from project_runtime.application.projection import project_state, require_actionable
 
         copy = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, copy, True)

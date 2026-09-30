@@ -30,9 +30,9 @@ from unittest.mock import AsyncMock
 from fastapi.testclient import TestClient
 import uvicorn
 
-from archflow_studio_api.main import _watch_managed_stdin, create_app
-from archflow_studio_api.routes.events import stream_events
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import _watch_managed_stdin, create_app
+from project_runtime.routes.events import stream_events
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, make_project
 

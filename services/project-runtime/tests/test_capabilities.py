@@ -20,9 +20,9 @@ from fastapi.testclient import TestClient
 
 from archflow.adapters.three_dm_inspector import inspect_three_dm
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.application import capability as capability_module
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application import capability as capability_module
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, RECORD_PAYLOAD, SEATS_PAYLOAD, make_project
 

@@ -16,10 +16,10 @@ from archflow.adapters.three_dm_inspector import inspect_three_dm_contents, insp
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_MODEL_ASSET
-from archflow_studio_api.application.artifacts import list_documents, replacement_cause
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.artifacts import list_documents, replacement_cause
+from project_runtime.application.binding import bound_project
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest
 from .test_drawing_plans import replacing
 
@@ -243,7 +243,7 @@ class NativeDrawingTests(unittest.TestCase):
         except ConversionError as exc:
             self.skipTest(str(exc))
         # Reuse the adapter's native SDK fixture builder, not private design data.
-        spec = importlib.util.spec_from_file_location("skp_test_fixture", Path(__file__).resolve().parents[4] / "tests/test_sketchup_reader.py")
+        spec = importlib.util.spec_from_file_location("skp_test_fixture", Path(__file__).resolve().parents[3] / "tests/test_sketchup_reader.py")
         helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helper)
         path = self.root / "source.skp"

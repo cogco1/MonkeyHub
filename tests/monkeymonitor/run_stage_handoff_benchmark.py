@@ -26,8 +26,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from tests.monkeymonitor import run_turn_benchmark as harness
 from fastapi.testclient import TestClient
-from archflow_studio_api.main import create_app as create_studio
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app as create_studio
+from project_runtime.settings import StudioSettings
 
 PROJECT_ID = "demo-project"
 LOCKS = ("mass_x0", "mass_x1", "mass_y0", "mass_y1", "mass_z0", "mass_height")

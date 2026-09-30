@@ -20,8 +20,8 @@ import unittest
 from fastapi.testclient import TestClient
 
 from archflow.project.refs import record_ref_from_uri
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from monkeyarch.construction.vocabulary import layer_rule_violations
 
 from .support import EVIDENCE, PROJECT_ID, RECORD_PAYLOAD, make_empty_project, write_runner_record
@@ -245,9 +245,9 @@ class HostedOpeningRefusalTestCase(HostedOpeningTestCase):
     def test_the_model_lists_the_capability_only_where_the_route_takes_the_host(self) -> None:
         # The wall meaning alone does not make a host: a cutter and a geometry id of several parts carry the
         # facet, yet the route refuses them, so the model view offers them no hosted-opening either.
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.application.construction import construction_model
-        from archflow_studio_api.application.projection import project_proposed_record, project_state
+        from project_runtime.application.binding import bound_project
+        from project_runtime.application.construction import construction_model
+        from project_runtime.application.projection import project_proposed_record, project_state
 
         chain = self.construct(BLOCK + "\ncutter = extrude(rect(1, -0.1, 1, 0.5), 1)\ncut(block, cutter)")
         faceted = self.facets([{"id": identifier, "set": {"architectural.role": "wall"}}

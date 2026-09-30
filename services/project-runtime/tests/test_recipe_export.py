@@ -20,9 +20,9 @@ from fastapi.testclient import TestClient
 
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.refs import record_ref_from_uri
-from archflow_studio_api.application.authentication import LOCAL_ACTOR_ID, ORIGIN_STUDIO, ActorAttribution
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.decisions import (
+from project_runtime.application.authentication import LOCAL_ACTOR_ID, ORIGIN_STUDIO, ActorAttribution
+from project_runtime.application.binding import bound_project
+from project_runtime.application.decisions import (
     DECISIONS_RUN_ID,
     RECIPE_EXPORT_SCHEMA,
     import_recipe,
@@ -32,9 +32,9 @@ from archflow_studio_api.application.decisions import (
     revise_decision,
     save_decision,
 )
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.errors import StudioError
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.errors import StudioError
 
 from .support import PROJECT_ID, make_project
 from .test_decisions import DecisionFixture, document_source, message

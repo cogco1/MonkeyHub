@@ -19,10 +19,10 @@ from fastapi.testclient import TestClient
 from archflow.project import watch
 from archflow.project.record_kinds import STATE_RECORD
 from archflow.project.repository import ProjectIntegrityError
-from archflow_studio_api.application.artifacts import list_artifacts
-from archflow_studio_api.application.binding import ProjectBinding
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.artifacts import list_artifacts
+from project_runtime.application.binding import ProjectBinding
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, add_later_run, make_project, retain_rhino_receipt
 from .test_conditional_reads import settle

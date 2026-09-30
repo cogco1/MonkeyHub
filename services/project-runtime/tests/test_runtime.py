@@ -8,13 +8,13 @@ from unittest.mock import patch
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, STUDIO_CANDIDATE_WORKFLOW
 from archflow.project.refs import record_ref_from_uri
-from archflow_studio_api.application.binding import ProjectBinding, bound_project
-from archflow_studio_api.application.artifacts import ModelSource
-from archflow_studio_api.application.design_history import initialize_design_stage
-from archflow_studio_api.application.runtime import inspect_runtime
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.errors import StudioError
-from archflow_studio_api.transport.runtime import runtime_dto
+from project_runtime.application.binding import ProjectBinding, bound_project
+from project_runtime.application.artifacts import ModelSource
+from project_runtime.application.design_history import initialize_design_stage
+from project_runtime.application.runtime import inspect_runtime
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.errors import StudioError
+from project_runtime.transport.runtime import runtime_dto
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_candidate import CandidateTestCase
@@ -27,13 +27,13 @@ def no_design_projection():
 
     with ExitStack() as stack:
         for target in (
-            "archflow_studio_api.application.candidate.describe",
-            "archflow_studio_api.application.candidate.project_state",
-            "archflow_studio_api.application.design_history.read_design_history",
-            "archflow_studio_api.application.design_history.project_state",
-            "archflow_studio_api.application.artifacts.project_state",
-            "archflow_studio_api.application.projection.developed_design_view",
-            "archflow_studio_api.application.candidate.execute_candidate",
+            "project_runtime.application.candidate.describe",
+            "project_runtime.application.candidate.project_state",
+            "project_runtime.application.design_history.read_design_history",
+            "project_runtime.application.design_history.project_state",
+            "project_runtime.application.artifacts.project_state",
+            "project_runtime.application.projection.developed_design_view",
+            "project_runtime.application.candidate.execute_candidate",
         ):
             stack.enter_context(patch(target, side_effect=AssertionError(f"Status invoked {target}")))
         yield

@@ -16,14 +16,14 @@ from archflow.adapters import occt_backend
 from archflow.project.record_kinds import CANDIDATE_REVIEW, DESIGN_STAGE, STUDIO_CANDIDATE_DELTA
 from archflow.project.refs import record_ref_from_uri
 from archflow.state.state_record import StateRecordEditKind, StateRecordOperator
-from archflow_studio_api.application.artifacts import list_artifacts
-from archflow_studio_api.application.authentication import ActorAttribution
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.candidate import replay_candidate, run_operator
-from archflow_studio_api.application.design_history import review_judgements, save_review_judgement
-from archflow_studio_api.application.projection import project_state
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.artifacts import list_artifacts
+from project_runtime.application.authentication import ActorAttribution
+from project_runtime.application.binding import bound_project
+from project_runtime.application.candidate import replay_candidate, run_operator
+from project_runtime.application.design_history import review_judgements, save_review_judgement
+from project_runtime.application.projection import project_state
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import (
     PROJECT_ID, REFERENCE_RUN_ID, RECORD_PAYLOAD, SEATS_PAYLOAD, advance_head,
@@ -151,7 +151,7 @@ class DesignHistoryTests(DesignHistoryFixture):
             self.assertEqual(response.status_code, 201, response.text)
             self.assertEqual(response.json()["disposition"], "unreviewed")
             self.assertEqual(response.json()["endorsedBy"], "architect-a")
-            with patch("archflow_studio_api.routes.episodes._attribution",
+            with patch("project_runtime.routes.episodes._attribution",
                        return_value=ActorAttribution("architect-c", True, "hub")):
                 renewed = restarted.post("/api/candidate-reviews", json={
                     "projectId": PROJECT_ID, "subjectKind": "candidate", "subjectRef": stage["candidateId"], "action": "endorse"})
@@ -189,7 +189,7 @@ class DesignHistoryTests(DesignHistoryFixture):
                                           attribution=ActorAttribution(action, True, "hub"))
 
         with (patch.object(repository, "put_json", side_effect=hold_first_write),
-              patch("archflow_studio_api.application.design_history.review_judgements", side_effect=read_reviews),
+              patch("project_runtime.application.design_history.review_judgements", side_effect=read_reviews),
               ThreadPoolExecutor(max_workers=2) as workers):
             first = workers.submit(save, "archive")
             try:
@@ -262,10 +262,10 @@ class DesignHistoryTests(DesignHistoryFixture):
         with TestClient(create_app(self.settings)) as restarted:
             binding = bound_project(restarted.app.state)
             with (
-                patch("archflow_studio_api.application.artifacts.project_state", side_effect=AssertionError("listing projected a state")),
-                patch("archflow_studio_api.application.projection.project_state", side_effect=AssertionError("listing projected a state")),
-                patch("archflow_studio_api.application.catalog.build_catalog", side_effect=AssertionError("listing built a catalog")),
-                patch("archflow_studio_api.application.design_history.read_stage", side_effect=AssertionError("listing read a full Stage view")),
+                patch("project_runtime.application.artifacts.project_state", side_effect=AssertionError("listing projected a state")),
+                patch("project_runtime.application.projection.project_state", side_effect=AssertionError("listing projected a state")),
+                patch("project_runtime.application.catalog.build_catalog", side_effect=AssertionError("listing built a catalog")),
+                patch("project_runtime.application.design_history.read_stage", side_effect=AssertionError("listing read a full Stage view")),
                 patch.object(binding, "_survey", side_effect=AssertionError("candidate source surveyed every run")),
                 patch.object(binding, "candidate_delta", wraps=binding.candidate_delta) as read_delta,
             ):

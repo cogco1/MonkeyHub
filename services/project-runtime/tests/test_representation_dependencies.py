@@ -7,10 +7,10 @@ from fastapi.testclient import TestClient
 import pytest
 
 from archflow.adapters.occt_backend import occt_available
-from archflow_studio_api.application.artifacts import ModelSource, _page_replacements, list_documents, save_document
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.representation_dependencies import RepresentationReads, representation_status
-from archflow_studio_api.main import create_app
+from project_runtime.application.artifacts import ModelSource, _page_replacements, list_documents, save_document
+from project_runtime.application.binding import bound_project
+from project_runtime.application.representation_dependencies import RepresentationReads, representation_status
+from project_runtime.main import create_app
 
 from . import test_drawing_plans as plans
 from . import test_publications as publication

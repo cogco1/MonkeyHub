@@ -15,10 +15,10 @@ import { createServer } from "vite";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = path.resolve(webRoot, "../../..");
-const apiRoot = path.join(repoRoot, "apps/archflow-studio/api");
+const apiRoot = path.join(repoRoot, "services/project-runtime");
 const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-render-browser-"));
 const python = process.env.PYTHON ?? "python";
-const pythonEnv = { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [repoRoot, apiRoot].join(path.delimiter) };
+const pythonEnv = { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [repoRoot, path.join(apiRoot, "src")].join(path.delimiter) };
 const errors = [], requests = [], processes = [], passed = [];
 let browser, page, server, current, hubOrigin;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -41,15 +41,15 @@ from PIL import Image, ImageDraw
 from starlette.responses import Response
 import uvicorn
 from tools import source_roots
-source_roots.put_first(Path.cwd().parents[2])
+source_roots.put_first(Path.cwd().parents[1])
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_RENDER_JOB
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.artifacts import save_document
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.application.render_contract import RenderCapability, RenderOutput, RenderProviderError
+from project_runtime.application.binding import bound_project
+from project_runtime.application.artifacts import save_document
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.application.render_contract import RenderCapability, RenderOutput, RenderProviderError
 root, project_id, port = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
 capture_fixture = project_id == 'capture'
 reference_run = None

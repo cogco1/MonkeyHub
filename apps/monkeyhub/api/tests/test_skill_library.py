@@ -26,8 +26,8 @@ source_roots.put_first(ROOT)
 from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.main import create_app as create_studio
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app as create_studio
+from project_runtime.settings import StudioSettings
 from monkeyhub_api import chat, skill_plugins
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest

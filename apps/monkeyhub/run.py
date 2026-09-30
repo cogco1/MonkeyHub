@@ -156,7 +156,7 @@ def main() -> None:
             raise SystemExit("--service requires studio or monitor")
         service, args = args[1], args[2:]
         if service == "studio":
-            from archflow_studio_api.main import main as serve
+            from project_runtime.main import main as serve
         elif service == "monitor":
             from monkeymonitor.__main__ import main as serve
         else:

@@ -12,10 +12,10 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
-from archflow_studio_api.application.authentication import read_actor_credentials, require_actor
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import SettingsError, StudioSettings
-from archflow_studio_api.transport.errors import StudioError
+from project_runtime.application.authentication import read_actor_credentials, require_actor
+from project_runtime.main import create_app
+from project_runtime.settings import SettingsError, StudioSettings
+from project_runtime.transport.errors import StudioError
 
 from .support import PROJECT_ID, make_project
 
@@ -89,7 +89,7 @@ class CollaborationAuthTests(unittest.TestCase):
         client = self.client(shared=False)
         path = "/api/drawings/plans/status"
         payload = {"runId": "source-run", "assetSha256": "a" * 64, "revisionRef": "retained-drawing"}
-        with patch("archflow_studio_api.routes.drawings.plan_status", return_value={
+        with patch("project_runtime.routes.drawings.plan_status", return_value={
             "status": "current", "detail": "Matches the exact source.", "dimensions": [],
         }) as inspect:
             read = client.post(path, headers=self.headers("reader"), json=payload)
@@ -112,15 +112,15 @@ class CollaborationAuthTests(unittest.TestCase):
         self.assertEqual(denied.json()["code"], "SERVICE_ROLE_FORBIDDEN")
 
     def test_a_drawing_revision_is_attributed_to_the_authenticated_actor_and_its_surface(self) -> None:
-        from archflow_studio_api.application.artifacts import DocumentPage, SourceDocument
-        from archflow_studio_api.application.authentication import ActorAttribution
+        from project_runtime.application.artifacts import DocumentPage, SourceDocument
+        from project_runtime.application.authentication import ActorAttribution
 
         drawn = SourceDocument(PROJECT_ID, "drawing-run", "a" * 64, "plan.png", "image/png", 1, (DocumentPage(0, 4, 3),))
         body = {"projectId": PROJECT_ID, "sourceStageRef": "retained-stage", "reason": "Match the section's pens."}
         for instance, origin in ((None, "studio"), ("hub-1", "hub")):
             client = self.client(shared=False)
             client.app.state.managed_instance_id = instance
-            with self.subTest(origin=origin), patch("archflow_studio_api.routes.drawings.generate_plan",
+            with self.subTest(origin=origin), patch("project_runtime.routes.drawings.generate_plan",
                                                     return_value=drawn) as generate:
                 path = "/api/drawings/plans"
                 self.assertEqual(client.post(path, headers=self.headers("reader"), json=body).status_code, 403)
@@ -253,7 +253,7 @@ class CollaborationAuthTests(unittest.TestCase):
         self.assertEqual(client.get("/api/release-check", headers=self.headers("reviewer")).status_code, 403)
 
     def test_shared_service_starts_without_constructing_any_agent(self) -> None:
-        with patch("archflow_studio_api.main.compiler_from_settings", side_effect=AssertionError("agent started")):
+        with patch("project_runtime.main.compiler_from_settings", side_effect=AssertionError("agent started")):
             client = self.client(intent_provider="codex", codex_executable="does-not-exist", cad_export="occt")
         self.assertIsNone(client.app.state.intent_compiler)
         with self.assertRaises(StudioError):

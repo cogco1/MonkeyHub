@@ -24,8 +24,8 @@ from fastapi.testclient import TestClient
 
 from archflow.adapters.three_dm_inspector import inspect_three_dm
 from archflow.state.state_record import apply_state_record_operator, component_facets
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from monkeyarch.construction import vocabulary
 from monkeyarch.construction.vocabulary import layer_rule_violations
 
@@ -146,8 +146,8 @@ class ConstructionTestCase(unittest.TestCase):
         raise AssertionError("the candidate never finished")
 
     def record(self, run: str | None = None):
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.application.projection import project_state
+        from project_runtime.application.binding import bound_project
+        from project_runtime.application.projection import project_state
 
         return project_state(bound_project(self.client.app.state), run).record
 
@@ -290,10 +290,10 @@ class ConstructionRefusalTestCase(ConstructionTestCase):
     def test_a_record_refusal_is_answered_at_the_first_line_it_names_and_otherwise_passes_through(self) -> None:
         from unittest import mock
 
-        from archflow_studio_api.application import construction
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.application.projection import project_state
-        from archflow_studio_api.transport.errors import StudioError
+        from project_runtime.application import construction
+        from project_runtime.application.binding import bound_project
+        from project_runtime.application.projection import project_state
+        from project_runtime.transport.errors import StudioError
 
         binding = bound_project(self.client.app.state)
         projection = project_state(binding)
@@ -320,7 +320,7 @@ class ConstructionRefusalTestCase(ConstructionTestCase):
             self.assertIs(raised.exception, error, "a refusal that names no shape of the script is not a script line")
 
     def test_runtime_sentences_come_back_in_construction_words_only(self) -> None:
-        from archflow_studio_api.application.construction import in_construction_words
+        from project_runtime.application.construction import in_construction_words
         from monkeyarch.construction.vocabulary import LAYER_RULE_TOKENS
 
         for runtime, words in (
@@ -427,7 +427,7 @@ class ConstructionKeepAndTargetTestCase(ConstructionTestCase):
     """What a keep protects on every route, and which geometry a proposal is about (#419 C7 round 2)."""
 
     def test_a_kept_geometry_id_keeps_its_parts_and_never_a_shape_placed_under_it(self) -> None:
-        from archflow_studio_api.application.construction import kept_refs
+        from project_runtime.application.construction import kept_refs
 
         # A script's shape is parented under the modelling root (portico) and is still its own geometry.
         record = self.successor(self.construct("plinth = extrude(rect(0, 3, 4, 2), 0.2)"))

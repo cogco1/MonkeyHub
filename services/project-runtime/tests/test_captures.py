@@ -13,8 +13,8 @@ import unittest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project
 from .support import runner_state_digest, retain_runner_receipt

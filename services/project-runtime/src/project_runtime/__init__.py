@@ -1,10 +1,10 @@
 """The Project Runtime: the project-scoped backend MonkeyHub starts once per open project.
 
-Historically the ArchFlow Studio API; the package name is kept, the product name is not
-(contract: docs/PROJECT_RUNTIME.md). The package sits outside ``archflow`` on purpose. It
-validates requests, shapes transport payloads and manages task lifecycle; design state,
-dependencies, validation, geometry and commit are calls *into* the kernel, never a second
-implementation beside it.
+Historically the ArchFlow Studio API; since #491 the package is ``project_runtime`` in
+services/project-runtime (contract: docs/PROJECT_RUNTIME.md). The package sits outside
+``archflow`` on purpose. It validates requests, shapes transport payloads and manages task
+lifecycle; design state, dependencies, validation, geometry and commit are calls *into* the
+kernel, never a second implementation beside it.
 
 Importing this package puts this checkout's Python source roots on ``sys.path`` so
 ``archflow``, ``monkeydiagram`` and the other packages resolve no matter which directory the
@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 import sys
 
-# __init__.py -> archflow_studio_api -> api -> archflow-studio -> apps -> root
+# __init__.py -> project_runtime -> src -> project-runtime -> services -> root
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 
 # The architecture policy lists where import names begin (tools/source_roots.py). A root

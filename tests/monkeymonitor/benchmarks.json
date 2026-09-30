@@ -1,5 +1,5 @@
 {
-  "fixture": "apps/archflow-studio/api/tests/support.py",
+  "fixture": "services/project-runtime/tests/support.py",
   "fixture_revision": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
   "provider": "codex",
   "model": null,

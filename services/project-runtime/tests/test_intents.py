@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 
 from archflow.adapters import occt_backend
 
-from archflow_studio_api.application.intent_agent import (
+from project_runtime.application.intent_agent import (
     CODEX,
     AGENT_FAILED,
     Compilation,
@@ -32,12 +32,12 @@ from archflow_studio_api.application.intent_agent import (
     record_sheet,
     response_schema,
 )
-from archflow_studio_api.application.construction import in_construction_words
-from archflow_studio_api.application.projection import project_state
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.errors import StudioError
+from project_runtime.application.construction import in_construction_words
+from project_runtime.application.projection import project_state
+from project_runtime.application.binding import bound_project
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.errors import StudioError
 
 from .support import (
     PROJECT_ID,
@@ -200,7 +200,7 @@ class ProviderLengthTests(IntentTestCase):
         from types import SimpleNamespace
         from unittest.mock import patch
 
-        from archflow_studio_api.application import intent_agent
+        from project_runtime.application import intent_agent
 
         answer = {"status": "compiled", "why": "Apply the stated height.", "question": None, "contextRefs": [],
                   "actions": [{"op": "set_parameter", "field": "height", "value": value, "unit": unit}]}
@@ -776,7 +776,7 @@ class ConstructionIntentTests(IntentTestCase):
         from archflow.semantics.facets import FACETS
         from monkeyarch.construction.vocabulary import LIMITS, layer_rule_violations
 
-        from archflow_studio_api.application.intent_agent import SYSTEM_PROMPT
+        from project_runtime.application.intent_agent import SYSTEM_PROMPT
 
         schema = response_schema(strict=False)
         self.assertEqual(schema["required"], ["status", "script", "facets", "parameters", "keep", "utterance",
@@ -814,7 +814,7 @@ class LocalDesignAnswerTests(IntentTestCase):
         from types import SimpleNamespace
         from unittest.mock import patch
 
-        from archflow_studio_api.application import construction, intent_agent
+        from project_runtime.application import construction, intent_agent
 
         answer = {"status": "compiled", "script": RAISED_BASE + "\n" + PLINTH, "facets": None, "parameters": None,
                   "keep": None, "utterance": None, "targetId": "portico-base", "why": "Raise the base on a plinth.",
@@ -1258,7 +1258,7 @@ class AnswerParsingTests(unittest.TestCase):
 
     def test_an_in_app_script_fits_the_answers_output_budget(self) -> None:
         # #419 C7 round 1: 12 000 characters, not the language's 20 000, so a design answer fits its 5 000 tokens.
-        from archflow_studio_api.application.intent_agent import SCRIPT_CHARACTERS
+        from project_runtime.application.intent_agent import SCRIPT_CHARACTERS
 
         self.assertEqual(SCRIPT_CHARACTERS, 12_000)
         self.assertEqual(len(_parsed(_answer(script="#" * 12_000)).script), 12_000)
@@ -1348,7 +1348,7 @@ class ProviderOnTheWireTests(IntentTestCase):
         self.assertEqual(response.json()["intentProvider"], "unknown")
 
     def test_the_codex_compiler_names_itself_and_its_model(self) -> None:
-        from archflow_studio_api.application.intent_agent import CodexCompiler
+        from project_runtime.application.intent_agent import CodexCompiler
 
         # A real executable, because building the compiler reads its version:
         # the screen names the agent this process actually has.
@@ -1369,7 +1369,7 @@ def benchmark_prompt(scenario: str) -> str:
     claims to be about had changed.
     """
 
-    root = Path(__file__).resolve().parents[4]
+    root = Path(__file__).resolve().parents[3]
     config = json.loads((root / "tests/monkeymonitor/benchmarks.json").read_text(encoding="utf-8"))
     return next(row["prompt"] for row in config["scenarios"] if row["id"] == scenario)
 
@@ -1399,7 +1399,7 @@ class ContextPackTests(IntentTestCase):
 
     def test_advertised_reading_edit_survives_candidate_and_cold_task_context(self) -> None:
         from jsonschema import Draft202012Validator
-        from archflow_studio_api.transport.proposal import SemanticEditRequestDto
+        from project_runtime.transport.proposal import SemanticEditRequestDto
 
         reading = {
             "entity_id": "entry-condition", "schema": "Reading@1", "parent_id": "portico",
@@ -1464,7 +1464,7 @@ class ContextPackTests(IntentTestCase):
         # #419 C7 round 1: the model view is built for the in-app agent's design requests only.
         from unittest.mock import patch
 
-        from archflow_studio_api.application import intent_agent
+        from project_runtime.application import intent_agent
 
         with patch.object(intent_agent, "construction_model", wraps=intent_agent.construction_model) as built:
             for utterance in ("Raise portico-cornice height to 0.5 m.", "Reorganize the whole portico."):
@@ -1545,7 +1545,7 @@ class ContextPackTests(IntentTestCase):
 
     def test_explicit_lock_candidate_cold_context_refuses_bypass_and_explicit_unlock_restores_editing(self) -> None:
         from archflow.state.state_record import StateRecord
-        from archflow_studio_api.application.candidate import replay_candidate
+        from project_runtime.application.candidate import replay_candidate
 
         head = self.repository.read_head()
 
@@ -1723,7 +1723,7 @@ class ContextPackTests(IntentTestCase):
     def test_an_obstacle_the_record_already_answers_advertises_no_runnable_request(self) -> None:
         from unittest.mock import patch
 
-        from archflow_studio_api.routes import intents as route
+        from project_runtime.routes import intents as route
 
         # The shape the record's own preflight answers a locked control with.
         # No fixture here binds an element field to a locked or derived

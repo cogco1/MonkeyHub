@@ -37,14 +37,15 @@ from tools.rehearse_project_archive import (
 )
 
 REPO = Path(__file__).resolve().parents[1]
-STUDIO_API = REPO / "apps/archflow-studio/api"
+STUDIO_API = REPO / "services/project-runtime/src"
+STUDIO_SUPPORT = REPO / "services/project-runtime/tests/support.py"
 DOCUMENT_BYTES = b"the original registered source bytes"
 
 
 def studio_support():
     """The Studio's own project fixture, loaded by path.
 
-    ``apps/archflow-studio/api/tests`` may not import ``tools``, so the
+    ``services/project-runtime/tests`` may not import ``tools``, so the
     rehearsal's test lives here, where both sides are importable, and the
     fixture module is loaded by path the way the Hub's lifecycle test loads
     its own support file.
@@ -53,7 +54,7 @@ def studio_support():
     if str(STUDIO_API) not in sys.path:
         sys.path.insert(0, str(STUDIO_API))
     spec = importlib.util.spec_from_file_location(
-        "studio_fixture_support", STUDIO_API / "tests" / "support.py"
+        "studio_fixture_support", STUDIO_SUPPORT
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -319,8 +320,8 @@ class RehearsalRuntimePhaseTests(RehearsalDriverTestCase):
             sys.path.insert(0, str(STUDIO_API))
         from fastapi.testclient import TestClient
 
-        from archflow_studio_api.main import create_app
-        from archflow_studio_api.settings import StudioSettings
+        from project_runtime.main import create_app
+        from project_runtime.settings import StudioSettings
 
         evidence = export_and_restore(
             self.source,

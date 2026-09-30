@@ -15,8 +15,8 @@ from unittest import mock
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, retain_rhino_receipt, runner_state_digest
 from .test_documents import image_bytes, two_page_pdf
@@ -224,7 +224,7 @@ class DocumentAnnotationTests(unittest.TestCase):
     def test_proposal_continuation_retains_source_compilation_and_request_after_restart(self) -> None:
         from archflow.ports.model import ModelInvocationReceipt
         from archflow.project.repository import FilesystemProjectRepository
-        from archflow_studio_api.application.gestures import require_document_comment_source
+        from project_runtime.application.gestures import require_document_comment_source
         from .test_candidate import _compilation_receipt, _load_kind
 
         saved = self.save(self.png, [stroke()], comment="Raise this base and retain the source page.")
@@ -251,7 +251,7 @@ class DocumentAnnotationTests(unittest.TestCase):
         final = self.app.state.proposals.get(final_id)
         self.assertEqual(final.document_comment_ref, first.document_comment_ref)
         self.assertEqual(set(self.repository.layout.runs.iterdir()), before_runs)
-        with mock.patch("archflow_studio_api.application.gestures.require_document_comment_source",
+        with mock.patch("project_runtime.application.gestures.require_document_comment_source",
                         wraps=require_document_comment_source) as verify_source:
             started = self.client.post(f"/api/proposals/{final_id}/candidate")
             self.assertEqual(started.status_code, 202, started.text)
@@ -689,8 +689,8 @@ class DocumentTracingTests(unittest.TestCase):
         self.assertEqual(result.json()["code"], "TRACING_CALIBRATION_REQUIRED")
 
     def test_exact_old_revision_and_later_correction_replace_one_object_across_candidates(self):
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.application.projection import project_state
+        from project_runtime.application.binding import bound_project
+        from project_runtime.application.projection import project_state
 
         head = self.repository.read_head()
         page = self.save()
@@ -743,9 +743,9 @@ class DocumentTracingTests(unittest.TestCase):
         self.assertEqual(refused.json()["code"], "TRACING_TARGET_MISMATCH")
 
     def test_missing_source_at_worker_boundary_leaves_no_run_and_retry_keeps_same_page(self):
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.application.gestures import require_document_trace
-        from archflow_studio_api.transport.errors import StudioError
+        from project_runtime.application.binding import bound_project
+        from project_runtime.application.gestures import require_document_trace
+        from project_runtime.transport.errors import StudioError
 
         page = self.save()
         proposal = self.draw(page).json()
@@ -755,7 +755,7 @@ class DocumentTracingTests(unittest.TestCase):
             with self.assertRaises(StudioError) as failure:
                 require_document_trace(bound_project(self.client.app.state), invalid)
             self.assertEqual(failure.exception.code, "TRACING_SOURCE_MISMATCH")
-        with mock.patch("archflow_studio_api.application.gestures.document_bytes", side_effect=StudioError(409, "DOCUMENT_UNAVAILABLE", "Source bytes unavailable")):
+        with mock.patch("project_runtime.application.gestures.document_bytes", side_effect=StudioError(409, "DOCUMENT_UNAVAILABLE", "Source bytes unavailable")):
             job = self.candidate(proposal)
         self.assertEqual(job["status"], "failed", job)
         self.assertEqual(set(self.repository.layout.runs.iterdir()), runs)

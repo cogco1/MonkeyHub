@@ -860,8 +860,8 @@ def _check_providers(commands: Mapping[str, tuple[str, ...]], environment: Mappi
 def _project_binding(project_id: str, project_dir: str):
     """The conversation's own project, opened read-only, once its identity is verified."""
 
-    from archflow_studio_api.application.binding import ProjectBinding
-    from archflow_studio_api.settings import StudioSettings
+    from project_runtime.application.binding import ProjectBinding
+    from project_runtime.settings import StudioSettings
 
     if _project(project_dir) != (project_id, project_dir):
         raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The conversation's project identity changed.")
@@ -878,8 +878,8 @@ def _registered_page(binding, ref: ChatDocumentRef):
     """
 
     from archflow.project.repository import ProjectRepositoryError
-    from archflow_studio_api.application.artifacts import list_documents
-    from archflow_studio_api.transport.errors import StudioError
+    from project_runtime.application.artifacts import list_documents
+    from project_runtime.transport.errors import StudioError
 
     try:
         document = next((row for row in list_documents(binding, ref.runId)
@@ -907,8 +907,8 @@ def _render_images(project_id: str, project_dir: str, context: ChatRenderContext
     """
 
     from archflow.project.repository import ProjectRepositoryError
-    from archflow_studio_api.application.artifacts import list_documents
-    from archflow_studio_api.transport.errors import StudioError
+    from project_runtime.application.artifacts import list_documents
+    from project_runtime.transport.errors import StudioError
 
     binding = _project_binding(project_id, project_dir)
     bound = []
@@ -1369,7 +1369,7 @@ class ChatStore:
                                            url=self.hub_url + "/?" + urlencode({"chatId": session.id}))
 
     def _document(self, session, ref: ChatDocumentRef):
-        from archflow_studio_api.application.artifacts import document_bytes
+        from project_runtime.application.artifacts import document_bytes
 
         binding = _project_binding(session.projectId, session.projectDir)
         document = _registered_page(binding, ref)
@@ -1379,8 +1379,8 @@ class ChatStore:
             # A drawing page is shown, not only named (#404 item 9): the exact page as the PNG
             # the Board export gives, which also verifies the source bytes against P036.
             from dataclasses import replace
-            from archflow_studio_api.application.boards import BoardExportPage, export_board_pages
-            from archflow_studio_api.transport.errors import StudioError
+            from project_runtime.application.boards import BoardExportPage, export_board_pages
+            from project_runtime.transport.errors import StudioError
             try:
                 page = export_board_pages(binding, [BoardExportPage(ref.runId, ref.assetSha256, ref.revisionRef, ref.pageIndex)],
                                           "png", False, 2048)
@@ -2359,7 +2359,7 @@ class ChatStore:
                     + (
                         f"You are working in this Hub's own source checkout at {_source_checkout()}, which is where "
                         "you start and what you may read, change and run: its rules are in AGENTS.md, its services "
-                        "start from apps/monkeyhub/run.py and apps/archflow-studio, and the design tools you call "
+                        "start from apps/monkeyhub/run.py and services/project-runtime, and the design tools you call "
                         "are the ones running from it. Project data is written only through those tools and the "
                         "P036 interfaces, never by editing the project's own files. "
                         if _source_checkout() is not None else

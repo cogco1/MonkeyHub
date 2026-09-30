@@ -13,10 +13,10 @@ import shutil
 import tempfile
 import unittest
 
-from archflow_studio_api.application.binding import ProjectBinding
-from archflow_studio_api.application.impact import impact
-from archflow_studio_api.application.projection import project_state
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.binding import ProjectBinding
+from project_runtime.application.impact import impact
+from project_runtime.application.projection import project_state
+from project_runtime.settings import StudioSettings
 
 from .support import (
     PROJECT_ID,

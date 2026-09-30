@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from archflow.adapters.occt_backend import occt_available
-from archflow_studio_api.main import create_app
+from project_runtime.main import create_app
 
 from . import test_drawing_plans as plans
 from . import test_publications as publication

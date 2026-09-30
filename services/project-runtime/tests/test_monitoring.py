@@ -17,16 +17,16 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from httpx2 import ASGITransport, AsyncClient
 
-from archflow_studio_api.application.intent_agent import DeterministicCompiler, Selection
-from archflow_studio_api.application.jobs import JobRegistry
-from archflow_studio_api.application.monitoring import MonitoredCompiler, StudioMonitor, candidate_event_id
+from project_runtime.application.intent_agent import DeterministicCompiler, Selection
+from project_runtime.application.jobs import JobRegistry
+from project_runtime.application.monitoring import MonitoredCompiler, StudioMonitor, candidate_event_id
 from archflow.project.refs import record_ref_from_uri
 from monkeyarch.runtime import project_runner
 from monkeymonitor.store import BUSY_NOTICE, UsageLog
 from monkeymonitor.trace import build_traces
 from monkeymonitor.usage import TokenUsage
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project
 from .test_cad_export import NEEDS_OCCT, OcctCandidateTestCase, no_process
@@ -168,7 +168,7 @@ class MonitoringTests(unittest.TestCase):
                 return SimpleNamespace(receipt=None, status="compiled", provider=self.provider, model=self.model)
         compiler = Compiler()
         wrapped = MonitoredCompiler(compiler, BrokenStore())
-        with self.assertLogs("archflow_studio_api.application.monitoring", level="WARNING"):
+        with self.assertLogs("project_runtime.application.monitoring", level="WARNING"):
             self.assertEqual(wrapped.compile(message="x", selection=Selection(None, None), projection=SimpleNamespace(project_id="example")).status, "compiled")
         self.assertEqual(compiler.calls, 1)
 
@@ -527,7 +527,7 @@ class MonitoringOcctTests(OcctCandidateTestCase):
     def test_hub_turn_reaches_real_cad_readback_validation_and_preview(self):
         # The CLI message below is an explicit provider fixture; CAD and the
         # Studio/Monitor boundaries execute for real in this disposable project.
-        with patch.object(sys, "path", [str(Path(__file__).resolve().parents[3] / "monkeyhub/api"), *sys.path]):
+        with patch.object(sys, "path", [str(Path(__file__).resolve().parents[3] / "apps/monkeyhub/api"), *sys.path]):
             from monkeyhub_api.chat_trace import HubTurnObserver
         from monkeymonitor.server import MonitorData
 
@@ -634,7 +634,7 @@ class MonitoringOcctTests(OcctCandidateTestCase):
             self.assertNotIn("set height", self.store.path.read_text())
 
             following_id = self.generate_from_stage(accepted, 3.1)
-            with patch.object(self.store, "append", side_effect=OSError("diagnostic disk unavailable")), self.assertLogs("archflow_studio_api.application.monitoring", level="WARNING"):
+            with patch.object(self.store, "append", side_effect=OSError("diagnostic disk unavailable")), self.assertLogs("project_runtime.application.monitoring", level="WARNING"):
                 response = self.accept_from_stage(following_id, accepted)
             self.assertEqual(response.status_code, 200, response.text)
             following = response.json()

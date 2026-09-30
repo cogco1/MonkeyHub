@@ -12,10 +12,10 @@ from unittest.mock import patch
 import zlib
 
 from archflow.ports.model import ModelPhase
-from archflow_studio_api.application import intent_agent
-from archflow_studio_api.application.intent_agent import CodexCompiler
-from archflow_studio_api.application.monitoring import MonitoredCompiler, StudioMonitor
-from archflow_studio_api.application.visual_observation import (
+from project_runtime.application import intent_agent
+from project_runtime.application.intent_agent import CodexCompiler
+from project_runtime.application.monitoring import MonitoredCompiler, StudioMonitor
+from project_runtime.application.visual_observation import (
     Criterion, EvidenceFrame, ObservationUsage, ProviderAnswer, ProviderCapability, ReviewReason, SourceRef,
     StudioModelVisualProvider, TaskClass, VisualBudgetRefused, VisualObservationInvalid, VisualProviderFailed,
     VisualObservation, VisualReviewBudget, VisualReviewInvalid, VisualReviewRequest, VisualSourceMismatch, bind_frames,
@@ -349,7 +349,7 @@ class CodexTransportTests(unittest.TestCase):
                 seen.append(receipt)
                 return output, receipt
 
-            with patch("archflow_studio_api.application.visual_observation.invoke_structured", side_effect=spy):
+            with patch("project_runtime.application.visual_observation.invoke_structured", side_effect=spy):
                 with_facts = VisualReviewRequest(
                     domain="modeling", source_refs=(SourceRef.model(RUN, STATE, ASSET),), view_recipe=("top", "front"),
                     task="Make the void feel generous.", known_facts=(fact,),

@@ -10,9 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.main import create_app
-from archflow_studio_api.application.monitoring import MonitoredCompiler
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.application.monitoring import MonitoredCompiler
+from project_runtime.settings import StudioSettings
 from monkeymonitor.store import UsageLog
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest
@@ -56,10 +56,10 @@ class ModelLoadMonitoringTests(unittest.TestCase):
         })
 
     def test_ingestion_cold_then_retry_reuses_exact_bytes_without_inspection(self):
-        from archflow_studio_api.application.artifacts import inspect_three_dm_contents
+        from project_runtime.application.artifacts import inspect_three_dm_contents
         head = self.repository.layout.head.read_bytes()
         captured = self.emissions()
-        with patch("archflow_studio_api.application.artifacts.inspect_three_dm_contents",
+        with patch("project_runtime.application.artifacts.inspect_three_dm_contents",
                    wraps=inspect_three_dm_contents) as inspect:
             first = self.model_upload()
             second = self.model_upload()
@@ -96,7 +96,7 @@ class ModelLoadMonitoringTests(unittest.TestCase):
                                          params={"runId": REFERENCE_RUN_ID})
                 self.assertEqual(download.status_code, 200, download.text if download.status_code != 200 else "")
                 self.assertEqual(download.content, expected)
-            with patch("archflow_studio_api.application.artifacts.inspect_three_dm_contents",
+            with patch("project_runtime.application.artifacts.inspect_three_dm_contents",
                        side_effect=AssertionError("unchanged registered source must not be re-inspected")):
                 from .test_working_copies import register_model
                 repeated = register_model(restarted, REFERENCE_RUN_ID,
@@ -113,7 +113,7 @@ class ModelLoadMonitoringTests(unittest.TestCase):
         self.assertIn("model_ingest.inspect", failed)
         self.assertNotIn("model_ingest.persist", {row.phase for row in rows})
         with patch.object(self.app.state.monitor.store, "append", side_effect=OSError("offline")):
-            with self.assertLogs("archflow_studio_api.application.monitoring", level="WARNING"):
+            with self.assertLogs("project_runtime.application.monitoring", level="WARNING"):
                 response = self.model_upload()
         self.assertEqual(response.status_code, 201, response.text)
         # A failed import released the registration lock and retained no bad source.
@@ -158,7 +158,7 @@ class ModelLoadMonitoringTests(unittest.TestCase):
 
     def test_disabled_or_broken_logger_does_not_change_the_operation(self):
         with patch.object(self.app.state.monitor.store, "append", side_effect=OSError("offline")) as append:
-            with self.assertLogs("archflow_studio_api.application.monitoring", level="WARNING"):
+            with self.assertLogs("project_runtime.application.monitoring", level="WARNING"):
                 result = self.client.post("/api/events/model-load", json=self.payload)
             self.assertEqual(result.status_code, 200)
             self.assertEqual(result.json(), {"recorded": False})
@@ -286,7 +286,7 @@ class ExternalModelImportTests(unittest.TestCase):
     def test_empty_project_retains_external_revisions_without_design_state(self):
         import base64
         from .support import make_empty_project
-        from archflow_studio_api.application.binding import bound_project
+        from project_runtime.application.binding import bound_project
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             repository = make_empty_project(root)
@@ -314,7 +314,7 @@ class ExternalModelImportTests(unittest.TestCase):
                     downloaded = restarted.get(f"/api/artifacts/{row['sha256']}/bytes")
                     self.assertEqual(downloaded.status_code, 200)
                     self.assertEqual(downloaded.content, data)
-                with patch("archflow_studio_api.application.artifacts.inspect_three_dm_contents",
+                with patch("project_runtime.application.artifacts.inspect_three_dm_contents",
                            side_effect=AssertionError("repeat import must reuse the registered source")):
                     repeated = restarted.post("/api/model-assets", json={"projectId": PROJECT_ID,
                         "fileName": "renamed.3dm", "contentBase64": base64.b64encode(rows[0][1]).decode()})

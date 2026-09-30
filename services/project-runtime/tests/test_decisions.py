@@ -22,8 +22,8 @@ from archflow.project.refs import ProjectRecordRef, record_file_name
 from archflow.project.repository import undeclared_version_identities
 from archflow.project.version_refs import locations, restate
 from archflow.state.state_record import StateRecord
-from archflow_studio_api.application.binding import ProjectBinding, bound_project
-from archflow_studio_api.application.decisions import (
+from project_runtime.application.binding import ProjectBinding, bound_project
+from project_runtime.application.decisions import (
     DECISIONS_RUN_ID,
     RECIPE_KEYS,
     compile_scoped_decisions,
@@ -31,11 +31,11 @@ from archflow_studio_api.application.decisions import (
     focus_refs,
     project_recipe,
 )
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.decisions import RecipeGraphicsDto
-from archflow_studio_api.transport.drawings import PlanRequestDto
-from archflow_studio_api.transport.errors import StudioError
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.decisions import RecipeGraphicsDto
+from project_runtime.transport.drawings import PlanRequestDto
+from project_runtime.transport.errors import StudioError
 
 from .support import (
     PROJECT_ID,

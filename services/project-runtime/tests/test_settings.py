@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.main import create_app, main
-from archflow_studio_api.settings import (
+from project_runtime.main import create_app, main
+from project_runtime.settings import (
     CAD_EXPORT_ENV,
     CAD_EXPORT_OCCT,
     CAD_EXPORT_OFF,
@@ -43,7 +43,7 @@ class SettingsTests(unittest.TestCase):
         with patch.dict(os.environ, {
             "ARCHFLOW_STUDIO_PROJECT_DIR": "unused-project",
             "ARCHFLOW_STUDIO_BIND": "127.0.0.1",
-        }, clear=True), patch("archflow_studio_api.main.uvicorn.run") as serve:
+        }, clear=True), patch("project_runtime.main.uvicorn.run") as serve:
             with self.assertRaisesRegex(SettingsError, "loopback"):
                 main(["--host", "0.0.0.0"])
             serve.assert_not_called()
@@ -51,8 +51,8 @@ class SettingsTests(unittest.TestCase):
         with patch.dict(os.environ, {
             "ARCHFLOW_STUDIO_PROJECT_DIR": "unused-project",
             "ARCHFLOW_STUDIO_BIND": "0.0.0.0",
-        }, clear=True), patch("archflow_studio_api.main.create_app") as create, patch(
-            "archflow_studio_api.main.uvicorn.run"
+        }, clear=True), patch("project_runtime.main.create_app") as create, patch(
+            "project_runtime.main.uvicorn.run"
         ) as serve:
             main(["--host", "127.0.0.1"])
             self.assertEqual(create.call_args.args[0].bind_host, "127.0.0.1")
@@ -61,8 +61,8 @@ class SettingsTests(unittest.TestCase):
     def test_cli_project_dir_binds_the_explicit_project_over_the_environment(self) -> None:
         with patch.dict(os.environ, {
             "ARCHFLOW_STUDIO_PROJECT_DIR": "inherited-project",
-        }, clear=True), patch("archflow_studio_api.main.create_app") as create, patch(
-            "archflow_studio_api.main.uvicorn.run"
+        }, clear=True), patch("project_runtime.main.create_app") as create, patch(
+            "project_runtime.main.uvicorn.run"
         ) as serve:
             main(["--project-dir", "explicit-project", "--port", "18001"])
             self.assertEqual(create.call_args.args[0].project_dir, Path("explicit-project"))
@@ -84,10 +84,10 @@ class SettingsTests(unittest.TestCase):
     def test_the_codex_executable_resolves_through_path(self) -> None:
         with patch.dict(os.environ, {"ARCHFLOW_STUDIO_PROJECT_DIR": "some/project"}, clear=False):
             os.environ.pop("ARCHFLOW_STUDIO_CODEX", None)
-            with patch("archflow_studio_api.settings.shutil.which", return_value=r"C:\npm\codex.CMD") as which:
+            with patch("project_runtime.settings.shutil.which", return_value=r"C:\npm\codex.CMD") as which:
                 self.assertEqual(StudioSettings.from_env().codex_executable, r"C:\npm\codex.CMD")
             which.assert_called_once_with("codex")
-            with patch("archflow_studio_api.settings.shutil.which", return_value=None):
+            with patch("project_runtime.settings.shutil.which", return_value=None):
                 self.assertEqual(StudioSettings.from_env().codex_executable, "codex")
         absolute = str(Path(tempfile.gettempdir()) / "tools" / "codex.exe")
         with patch.dict(
@@ -95,7 +95,7 @@ class SettingsTests(unittest.TestCase):
             {"ARCHFLOW_STUDIO_PROJECT_DIR": "some/project", "ARCHFLOW_STUDIO_CODEX": absolute},
             clear=False,
         ):
-            with patch("archflow_studio_api.settings.shutil.which") as which:
+            with patch("project_runtime.settings.shutil.which") as which:
                 self.assertEqual(StudioSettings.from_env().codex_executable, absolute)
             which.assert_not_called()
 

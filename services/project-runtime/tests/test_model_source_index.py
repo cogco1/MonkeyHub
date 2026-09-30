@@ -10,10 +10,10 @@ from uuid import UUID
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application import artifacts
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.binding import bound_project
+from project_runtime.application import artifacts
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest
 
 

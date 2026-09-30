@@ -30,11 +30,11 @@ from fastapi.testclient import TestClient
 from archflow.project.layout import FINGERPRINT_SETTLED_NS
 from archflow.project.record_kinds import STUDIO_BOARD_SCENE
 from archflow.project.refs import record_file_name
-from archflow_studio_api.application.binding import MEMO_ENTRIES, ProjectBinding, bound_project
-from archflow_studio_api.application.boards import BOARD_RUN_ID
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.conditional import CONDITIONAL_READS
+from project_runtime.application.binding import MEMO_ENTRIES, ProjectBinding, bound_project
+from project_runtime.application.boards import BOARD_RUN_ID
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.conditional import CONDITIONAL_READS
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, retain_rhino_receipt
 from .test_documents import image_bytes
@@ -171,7 +171,7 @@ class ConditionalReadTests(unittest.TestCase):
 
     def test_the_memo_answers_the_same_bytes_without_reading_again(self) -> None:
         first = self.client.get("/api/design-history", params={"branchId": "main"})
-        with mock.patch("archflow_studio_api.routes.episodes.read_design_history",
+        with mock.patch("project_runtime.routes.episodes.read_design_history",
                         side_effect=AssertionError("read again")):
             second = self.client.get("/api/design-history", params={"branchId": "main"})
 
@@ -214,7 +214,7 @@ class ConditionalReadTests(unittest.TestCase):
         self.assertNotEqual(after.headers["etag"], before.headers["etag"])
 
     def test_an_unsettled_project_neither_answers_not_modified_nor_remembers(self) -> None:
-        from archflow_studio_api.application import boards
+        from project_runtime.application import boards
 
         before = self.client.get("/api/board")
         self.client.put("/api/board", json=board(before.json()["revisionSha256"], "moving"))
@@ -281,7 +281,7 @@ class ConditionalReadTests(unittest.TestCase):
     def test_artifact_bytes_find_their_receipt_once_and_hash_every_read(self) -> None:
         self.assertEqual(self.client.get(f"/api/artifacts/{MODEL_SHA256}/bytes").status_code, 200)
         model = self.repository.layout.run(REFERENCE_RUN_ID).workspaces / "cad-studio-stage" / "model.3dm"
-        with mock.patch("archflow_studio_api.application.artifacts.list_artifacts",
+        with mock.patch("project_runtime.application.artifacts.list_artifacts",
                         side_effect=AssertionError("listed again")):
             self.assertEqual(self.client.get(f"/api/artifacts/{MODEL_SHA256}/bytes").content, MODEL_BYTES)
             # Rewritten in place, so no directory moves: only the hash can tell.
@@ -296,7 +296,7 @@ class ConditionalReadTests(unittest.TestCase):
         url = f"/api/documents/{digest}/bytes"
         first = self.client.get(url, params={"runId": REFERENCE_RUN_ID})
         self.assertEqual(first.status_code, 200)
-        with mock.patch("archflow_studio_api.application.artifacts.list_documents",
+        with mock.patch("project_runtime.application.artifacts.list_documents",
                         side_effect=AssertionError("listed again")):
             self.assertEqual(self.client.get(url, params={"runId": REFERENCE_RUN_ID}).content, first.content)
 

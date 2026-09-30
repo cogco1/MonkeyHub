@@ -35,8 +35,8 @@ from archflow.project.refs import RunRef
 from archflow.state.program_sheet import PROGRAM_SHEET_SCHEMA
 from archflow.state.state_record import RECORD_BINDING_PHASE, legacy_state_digest
 
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import (
     PORTICO_RECORD_PAYLOAD,
@@ -395,12 +395,12 @@ class ApplyTests(ProgramTestCase):
         self.assertEqual(answer["code"], "STALE_BASE")
 
     def test_worker_refuses_when_head_moves_after_program_preflight(self) -> None:
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.application.candidate import run_operator
-        from archflow_studio_api.application.program import operator_for
-        from archflow_studio_api.application.projection import project_state
-        from archflow_studio_api.transport.errors import StudioError
-        from archflow_studio_api.transport.program import ProgramSheetDto, sheet_payload
+        from project_runtime.application.binding import bound_project
+        from project_runtime.application.candidate import run_operator
+        from project_runtime.application.program import operator_for
+        from project_runtime.application.projection import project_state
+        from project_runtime.transport.errors import StudioError
+        from project_runtime.transport.program import ProgramSheetDto, sheet_payload
 
         binding = bound_project(self.client.app.state)
         projection = project_state(binding)
@@ -704,9 +704,9 @@ class SelectedProgramTests(ProgramTestCase):
 
     def source_sheet(self) -> dict:
         from archflow.state.program_sheet import sheet_from_record
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.application.projection import project_state
-        from archflow_studio_api.transport.program import sheet_dto
+        from project_runtime.application.binding import bound_project
+        from project_runtime.application.projection import project_state
+        from project_runtime.transport.program import sheet_dto
 
         projection = project_state(bound_project(self.client.app.state), self.source_run_id)
         return sheet_dto(sheet_from_record(projection.record)).model_dump(by_alias=True)
@@ -725,7 +725,7 @@ class SelectedProgramTests(ProgramTestCase):
             self.client.get(f"/api/artifacts/{other['assetSha256']}/bytes").status_code, 200,
         )
 
-        with patch("archflow_studio_api.routes.program.run_operator", return_value={}) as worker:
+        with patch("project_runtime.routes.program.run_operator", return_value={}) as worker:
             response = self.client.post("/api/program", json={
                 "sourceRunId": self.source_run_id,
                 "stateDigest": self.source_state["stateDigest"],
@@ -758,7 +758,7 @@ class SelectedProgramTests(ProgramTestCase):
               "sheet": self.get("/api/program")["sheet"]}, "MODEL_SOURCE_MISMATCH"),
         ):
             with self.subTest(change=change), patch(
-                "archflow_studio_api.routes.program.run_operator", return_value={},
+                "project_runtime.routes.program.run_operator", return_value={},
             ) as worker:
                 response = self.client.post("/api/program", json={**request, **change})
                 self.assertEqual(response.status_code, 409, response.text)
@@ -769,7 +769,7 @@ class SelectedProgramTests(ProgramTestCase):
                 )
 
     def test_selected_read_derives_its_record_instead_of_the_authored_sheet(self) -> None:
-        from archflow_studio_api.transport.program import ProgramSheetDto, sheet_payload
+        from project_runtime.transport.program import ProgramSheetDto, sheet_payload
 
         sheet = self.source_sheet()
         sheet["departments"][0]["name"] = "Unapplied authored brief"

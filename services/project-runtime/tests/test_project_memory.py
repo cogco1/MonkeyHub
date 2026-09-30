@@ -26,10 +26,10 @@ from fastapi.testclient import TestClient
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_MEMORY_RECORD
-from archflow_studio_api.application.decisions import DECISIONS_RUN_ID
-from archflow_studio_api.application.memory import MEMORY_RUN_ID, lexical_terms
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.decisions import DECISIONS_RUN_ID
+from project_runtime.application.memory import MEMORY_RUN_ID, lexical_terms
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_empty_project
 from .test_decisions import DecisionFixture, board_source, message
@@ -37,7 +37,7 @@ from .test_documents import two_page_pdf
 
 LOCATOR_WORDS = "项目图框在这份文件里,第一页就是"
 POLICY_WORDS = "查材料先去 A、B,别用 C"
-REPOSITORY = Path(__file__).resolve().parents[4]
+REPOSITORY = Path(__file__).resolve().parents[3]
 # The last main before project memory existed: the build an older desktop
 # install still runs, and can roll back to.
 BEFORE_MEMORY = "2a34db0019578d872aabd0a61b175a93db48c859"
@@ -432,6 +432,8 @@ class CrossVersionTests(MemoryFixture):
         with TemporaryDirectory() as directory:
             base = Path(directory)
             archive = base / "base.tar"
+            # That build's own layout: its packages at the root, its runtime as
+            # archflow_studio_api in apps/archflow-studio/api (#489-#491 moved them later).
             with archive.open("wb") as handle:
                 subprocess.run([git, "-C", str(REPOSITORY), "archive", "--format=tar", BEFORE_MEMORY,
                                 "archflow", "monkeyarch", "monkeydiagram", "monkeymonitor", "governance",

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "project-runtime"
+version = "0.1.0"
+description = "The Project Runtime: the project-scoped API service MonkeyHub starts once per open project."
+requires-python = ">=3.12"
+# The pinned requirements stay in requirements.txt, which CI and the desktop packager
+# install; this manifest reads that one list rather than keeping a second. archflow,
+# monkeyarch, monkeydiagram and monkeymonitor come from the same checkout (packages/) or
+# bundle; they are not published distributions, so naming them would send pip to an index.
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# No [tool.pytest.ini_options]: the root one keeps pytest's rootdir at the checkout,
+# whose conftest.py puts this checkout's source roots first.

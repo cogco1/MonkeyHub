@@ -10,9 +10,9 @@ import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.application.binding import bound_project
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.application.binding import bound_project
 from archflow.adapters.model_formats import GLB, ThreeDM, Mesh, Scene, convert, ConversionError
 from .support import make_project, PROJECT_ID, REFERENCE_RUN_ID
 
@@ -130,7 +130,7 @@ class ExportJobTests(unittest.TestCase):
             self.assertTrue(result["providerCandidates"])
 
     def test_converter_runtime_failure_is_retained(self):
-        with patch('archflow_studio_api.application.model_exports.convert', side_effect=RuntimeError('converter stopped')):
+        with patch('project_runtime.application.model_exports.convert', side_effect=RuntimeError('converter stopped')):
             result = self.finish(self.submit())
         self.assertEqual(result['status'],'failed')
         self.assertEqual(result['failureReason'],'converter stopped')

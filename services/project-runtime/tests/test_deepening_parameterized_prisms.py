@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_cad_export import NEEDS_OCCT, OcctCandidateTestCase, no_process

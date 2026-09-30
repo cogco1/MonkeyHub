@@ -20,16 +20,16 @@ from urllib.request import urlopen
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.application.binding import ProjectBinding
-from archflow_studio_api.main import _source_revision, _watch_managed_stdin, create_app, main
-from archflow_studio_api.protocol import SERVER_VERSION
-from archflow_studio_api.settings import REMOTE_MODE, StudioSettings
+from project_runtime.application.binding import ProjectBinding
+from project_runtime.main import _source_revision, _watch_managed_stdin, create_app, main
+from project_runtime.protocol import SERVER_VERSION
+from project_runtime.settings import REMOTE_MODE, StudioSettings
 
 from .support import PROJECT_ID, make_project
 
 
-_API_ROOT = Path(__file__).resolve().parents[1]
-_SOURCE_PYTHONPATH = os.pathsep.join((str(_API_ROOT.parents[2]), str(_API_ROOT)))
+_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+_SOURCE_PYTHONPATH = os.pathsep.join((str(_SERVICE_ROOT.parents[1]), str(_SERVICE_ROOT / "src")))
 
 
 class HealthRouteTests(unittest.TestCase):
@@ -107,7 +107,7 @@ class ManagedStudioTests(unittest.TestCase):
             log_path = root / "studio.log"
             with log_path.open("wb") as log:
                 child = subprocess.Popen(
-                    [sys.executable, "-m", "archflow_studio_api.main", "--port", str(port),
+                    [sys.executable, "-m", "project_runtime.main", "--port", str(port),
                      "--project-dir", str(root / "missing-project"),
                      "--managed-stdin", "--managed-instance-id", "cold-pipe-test"],
                     env=environment, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
@@ -148,8 +148,8 @@ from pathlib import Path
 import sys
 import threading
 from anyio import to_thread
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 app = create_app(StudioSettings(cad_export="off", project_dir=Path("unbound-placeholder")))
 
@@ -192,7 +192,7 @@ asyncio.run(check())
             root = Path(directory)
             revision = "b" * 40
             (root / "source-version.txt").write_text(revision + "\n", encoding="utf-8")
-            with patch("archflow_studio_api.main.subprocess.run") as git:
+            with patch("project_runtime.main.subprocess.run") as git:
                 self.assertEqual(_source_revision(root), revision)
                 git.assert_not_called()
             (root / "source-version.txt").write_text("0.1.0\n", encoding="utf-8")
@@ -208,8 +208,8 @@ asyncio.run(check())
             web = Path(directory)
             environment = {"ARCHFLOW_STUDIO_PROJECT_DIR": str(web / "missing-project")}
             with patch.dict(os.environ, environment, clear=True), patch(
-                "archflow_studio_api.main.uvicorn.run"
-            ) as serve, patch("archflow_studio_api.main._source_revision", return_value="b" * 40):
+                "project_runtime.main.uvicorn.run"
+            ) as serve, patch("project_runtime.main._source_revision", return_value="b" * 40):
                 main([])
             app = serve.call_args.args[0]
             with TestClient(app) as client:
@@ -225,10 +225,10 @@ asyncio.run(check())
     def test_managed_cli_reports_the_actual_instance_and_waits_for_normal_stop(self) -> None:
         environment = {"ARCHFLOW_STUDIO_PROJECT_DIR": "unbound-placeholder"}
         with patch.dict(os.environ, environment, clear=True), patch(
-            "archflow_studio_api.main.uvicorn.Server"
+            "project_runtime.main.uvicorn.Server"
         ) as server_type, patch(
-            "archflow_studio_api.main.sys.stdin", io.StringIO("stop\n")
-        ), patch("archflow_studio_api.main._source_revision", return_value="c" * 40):
+            "project_runtime.main.sys.stdin", io.StringIO("stop\n")
+        ), patch("project_runtime.main._source_revision", return_value="c" * 40):
             main(["--managed-stdin", "--managed-instance-id", "hub-launch-123"])
         server_type.return_value.run.assert_called_once_with()
         app = server_type.call_args.args[0].app

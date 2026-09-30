@@ -13,15 +13,15 @@ import shutil
 import tempfile
 import unittest
 
-from archflow_studio_api.application.binding import ProjectBinding
-from archflow_studio_api.application.intent import (
+from project_runtime.application.binding import ProjectBinding
+from project_runtime.application.intent import (
     DeterministicIntentProvider,
     ParsedIntent,
     parse_utterance,
 )
-from archflow_studio_api.application.projection import project_state
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.errors import BlockedNeedsHuman
+from project_runtime.application.projection import project_state
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.errors import BlockedNeedsHuman
 
 from .support import PROJECT_ID, make_project
 
@@ -264,7 +264,7 @@ class ProviderRefusalTests(unittest.TestCase):
 
     def test_the_keep_resolver_is_one_public_function(self) -> None:
         # #419: the grammar's keep clause and an agent's stated keep are read by this one resolver.
-        from archflow_studio_api.application.intent import resolve_keep_refs
+        from project_runtime.application.intent import resolve_keep_refs
 
         self.assertEqual(resolve_keep_refs(self.projection, ("span", "portico-base", "entity:portico", "span")),
                          ("entity:portico", "entity:portico-base", "parameter:span"))

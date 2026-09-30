@@ -12,8 +12,8 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID
 

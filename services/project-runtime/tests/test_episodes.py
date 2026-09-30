@@ -36,12 +36,12 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.application import episodes
-from archflow_studio_api.application.binding import record_kind
-from archflow_studio_api.application.episodes import SCHEMA
-from archflow_studio_api.application.proposals import PERSISTENCE
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application import episodes
+from project_runtime.application.binding import record_kind
+from project_runtime.application.episodes import SCHEMA
+from project_runtime.application.proposals import PERSISTENCE
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import (
     EVIDENCE,

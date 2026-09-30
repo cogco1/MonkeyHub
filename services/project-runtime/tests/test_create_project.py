@@ -12,15 +12,15 @@ import unittest
 from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, RECORD_PAYLOAD, SEATS_PAYLOAD
 
 
 class ProjectCreationTests(unittest.TestCase):
     def create_project(self, *args: str) -> None:
-        command = Path(__file__).resolve().parents[4] / "tools/create_project.py"
+        command = Path(__file__).resolve().parents[3] / "tools/create_project.py"
         result = subprocess.run([sys.executable, str(command), *args], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 

@@ -25,13 +25,13 @@ import unittest
 # Importing the API package first puts this repository's root on ``sys.path``,
 # so ``archflow`` below is this checkout's kernel and not one installed into
 # the environment.
-import archflow_studio_api  # noqa: F401
+import project_runtime  # noqa: F401
 
 from archflow.contracts.canonical import canonical_digest
 from archflow.ports.model import ModelInvocationStatus, ModelPhase
 
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.intent_agent import (
+from project_runtime.application.binding import bound_project
+from project_runtime.application.intent_agent import (
     AGENT_FAILED,
     CODEX_DEFAULT_MODEL_ID,
     CODEX_PROVIDER_ID,
@@ -39,10 +39,10 @@ from archflow_studio_api.application.intent_agent import (
     IntentAgentFailed,
     Selection,
 )
-from archflow_studio_api.application.projection import project_state
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.errors import StudioError
+from project_runtime.application.projection import project_state
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.errors import StudioError
 
 from .support import CODEX_SHIM_VERSION, PROJECT_ID, make_project, write_codex_shim
 
@@ -231,7 +231,7 @@ class CodexMalformedTests(CodexReceiptTestCase):
 
 class CodexBuildTests(unittest.TestCase):
     def test_a_codex_that_cannot_say_its_version_refuses_to_be_built(self) -> None:
-        from archflow_studio_api.settings import SettingsError
+        from project_runtime.settings import SettingsError
 
         with self.assertRaises(SettingsError) as caught:
             CodexCompiler(executable=str(Path(tempfile.gettempdir()) / "no-codex-here"))

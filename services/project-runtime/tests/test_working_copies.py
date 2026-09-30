@@ -18,10 +18,10 @@ from fastapi.testclient import TestClient
 from archflow.adapters.three_dm_inspector import ThreeDmInspectionError, ThreeDmInspectionErrorCode
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT, STUDIO_WORKING_COPY
-from archflow_studio_api.application.binding import record_kind
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.binding import record_kind
+from project_runtime.application.binding import bound_project
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from .support import PROJECT_ID, REFERENCE_RUN_ID, RECORD_PAYLOAD, make_project, retain_runner_receipt, runner_state_digest
 from .test_documents import image_bytes
 from .test_document_annotations import stroke, page_ref, page_visual
@@ -162,7 +162,7 @@ class WorkingCopyTests(unittest.TestCase):
         head = layout.head.read_bytes()
         for label, data, inspection_value, inspection_error in cases:
             with self.subTest(case=label):
-                inspection = (mock.patch("archflow_studio_api.application.artifacts.inspect_three_dm_contents",
+                inspection = (mock.patch("project_runtime.application.artifacts.inspect_three_dm_contents",
                                          return_value=inspection_value, side_effect=inspection_error)
                               if inspection_value is not None or inspection_error else nullcontext())
                 with inspection as inspected:

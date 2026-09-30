@@ -16,7 +16,7 @@ import sys
 
 # Importing the API package first puts the repository root on ``sys.path``;
 # the fixture then reaches the kernel the same way the service does.
-import archflow_studio_api  # noqa: F401
+import project_runtime  # noqa: F401
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.inputs import load_authored_record

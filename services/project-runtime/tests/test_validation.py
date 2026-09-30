@@ -34,22 +34,22 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.application.artifacts import ArtifactRecord, ModelSource
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.candidate import (
+from project_runtime.application.artifacts import ArtifactRecord, ModelSource
+from project_runtime.application.binding import bound_project
+from project_runtime.application.candidate import (
     CandidateRun,
     RelationTotals,
     describe,
 )
-from archflow_studio_api.application.validation import (
+from project_runtime.application.validation import (
     EFFECTIVE_CHECKS,
     EXPORTS_CLAUSE,
     VALIDATOR_NAMES,
     VALIDATOR_NOTE,
     validate_candidate,
 )
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from archflow.project.refs import ProjectVersionRef
 from archflow.project.ports import PersistenceArea, PersistenceDestination

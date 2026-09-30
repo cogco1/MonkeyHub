@@ -14,10 +14,10 @@ from urllib.error import HTTPError, URLError
 
 from PIL import Image
 
-from archflow_studio_api.application.render_contract import (
+from project_runtime.application.render_contract import (
     RenderImage, RenderInput, RenderOutputOptions, RenderPageRef, RenderProviderError,
 )
-from archflow_studio_api.render_adapters import gemini
+from project_runtime.render_adapters import gemini
 
 KEY = "synthetic-test-key-never-live"
 MODEL = "gemini-3-pro-image"

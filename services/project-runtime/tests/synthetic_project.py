@@ -38,12 +38,12 @@ from PIL import Image
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecordEditKind, StateRecordOperator
-from archflow_studio_api.application import design_history, working_draft
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.candidate import run_operator
-from archflow_studio_api.application.projection import project_state
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application import design_history, working_draft
+from project_runtime.application.binding import bound_project
+from project_runtime.application.candidate import run_operator
+from project_runtime.application.projection import project_state
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from monkeyarch.runtime import project_runner
 
 from . import support

@@ -21,10 +21,10 @@ from fastapi.testclient import TestClient
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import AUDIT_EVENT
-from archflow_studio_api.application.binding import bound_project, record_kind
-from archflow_studio_api.application.design_history import AUDIT_EVENT_SCHEMA
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.binding import bound_project, record_kind
+from project_runtime.application.design_history import AUDIT_EVENT_SCHEMA
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID
 from .test_design_history import DesignHistoryFixture

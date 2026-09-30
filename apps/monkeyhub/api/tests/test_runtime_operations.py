@@ -28,11 +28,11 @@ from fastapi.testclient import TestClient
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, RUNNER_RUN_RECEIPT
 from archflow.project.refs import record_ref_from_uri
-from archflow_studio_api.application.binding import ProjectBinding, bound_project
-from archflow_studio_api.application.runtime import inspect_runtime
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.runtime import runtime_dto
+from project_runtime.application.binding import ProjectBinding, bound_project
+from project_runtime.application.runtime import inspect_runtime
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.runtime import runtime_dto
 from monkeyhub_api.models import HubFailure
 from monkeyhub_api.runtime import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager
 
@@ -142,7 +142,7 @@ class OperationRecoveryTests(unittest.TestCase):
         admission, _ = self.admission(path, session_id=session_id)
         # Allocate the exact run before dispatch, then lose the HTTP reply.
         # Only id allocation is controlled; Studio executes and retains the run.
-        with patch("archflow_studio_api.routes.candidates._run_id", return_value=admission.record.candidateId):
+        with patch("project_runtime.routes.candidates._run_id", return_value=admission.record.candidateId):
             accepted = self.client.post(path)
         self.assertEqual(accepted.status_code, 202, accepted.text)
         self.manager.interrupted(admission, "injected lost candidate response")
@@ -150,7 +150,7 @@ class OperationRecoveryTests(unittest.TestCase):
         return admission, accepted.json()
 
     def model(self, run_id, state_digest):
-        data = (ROOT / "apps/archflow-studio/api/tests/fixtures/model-source-a.3dm").read_bytes()
+        data = (ROOT / "services/project-runtime/tests/fixtures/model-source-a.3dm").read_bytes()
         response = self.client.post("/api/model-assets", json={"projectId": self.fixture.PROJECT_ID,
             "runId": run_id, "stateDigest": state_digest, "fileName": "model.3dm",
             "contentBase64": base64.b64encode(data).decode()})
@@ -583,7 +583,7 @@ class OperationRecoveryTests(unittest.TestCase):
         self.manager = self.durable_manager()
         self.assertFalse(self.record(admission).committed)
         self.assertIsNone(self.record(admission).resultDigest)
-        with patch("archflow_studio_api.application.candidate.execute_candidate", side_effect=AssertionError("cold replay")):
+        with patch("project_runtime.application.candidate.execute_candidate", side_effect=AssertionError("cold replay")):
             self.manager.reconcile(self.snapshot(), worker_alive=False)
         record = self.record(admission)
         self.assertEqual(record.status, "completed")
@@ -607,7 +607,7 @@ class OperationRecoveryTests(unittest.TestCase):
         cold = self.durable_manager()
         self.assertTrue(all(row.resultDigest is None for row in cold.records()))
         with TestClient(cold_app) as client, patch(
-            "archflow_studio_api.application.candidate.execute_candidate", side_effect=AssertionError("cold replay"),
+            "project_runtime.application.candidate.execute_candidate", side_effect=AssertionError("cold replay"),
         ):
             response = client.get("/api/runtime", params=[("candidateId", row.record.candidateId)
                 for row in (older, newer, unfinished)])
@@ -637,7 +637,7 @@ class OperationRecoveryTests(unittest.TestCase):
         before_runs = bound_project(self.app.state).run_ids()
         retained = self.snapshot()
         candidate = next(row for row in retained["candidates"] if row["candidateId"] == accepted["candidateId"])
-        with patch("archflow_studio_api.application.candidate.execute_candidate", side_effect=AssertionError("replayed")):
+        with patch("project_runtime.application.candidate.execute_candidate", side_effect=AssertionError("replayed")):
             self.manager.reconcile(retained, worker_alive=False)
             repeated, fresh = self.manager.admit(admission.record.operationId, *admission.signature[:2], b"",
                 retained=retained, source="studio", session_id=None)

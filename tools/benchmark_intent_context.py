@@ -29,13 +29,13 @@ from archflow.project.refs import ProjectVersionRef, RunRef
 from archflow.state.operational_state import DesignObligation
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.state_record import Entity, Parameter, Relation, StateRecord, ValidatorBinding
-from archflow_studio_api.application.binding import ReferenceRun
-from archflow_studio_api.application.intent_agent import (
+from project_runtime.application.binding import ReferenceRun
+from project_runtime.application.intent_agent import (
     MAX_OUTPUT_TOKENS, SYSTEM_PROMPT, Selection, _compile_context_request, _context_budget, _prompt,
     record_sheet, response_schema,
 )
-from archflow_studio_api.application.projection import StateProjection, _elements
-from archflow_studio_api.application.intent_context import model_context
+from project_runtime.application.projection import StateProjection, _elements
+from project_runtime.application.intent_context import model_context
 
 
 def _cached_tokenizer_file(blobpath: str, expected_hash: str | None = None) -> bytes:
@@ -174,8 +174,8 @@ def benchmark(sibling_counts, count):
             compiler = CaptureCompiler()
             # Preflight warnings are already tested by the runtime suite. This
             # command's only output is its machine-readable benchmark result.
-            with patch("archflow_studio_api.application.intent_agent.log"), patch(
-                "archflow_studio_api.application.intent_agent._context_budget", side_effect=compiler.observe_budget,
+            with patch("project_runtime.application.intent_agent.log"), patch(
+                "project_runtime.application.intent_agent._context_budget", side_effect=compiler.observe_budget,
             ):
                 result = _compile_context_request(compiler, message=message, selection=selection,
                                                   projection=projection, operation_observer=None)

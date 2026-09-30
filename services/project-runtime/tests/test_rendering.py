@@ -10,11 +10,11 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.render_contract import RenderCapability, RenderOutput, RenderProviderError
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings, SettingsError
-from archflow_studio_api.application.artifacts import ModelSource, save_document
+from project_runtime.application.binding import bound_project
+from project_runtime.application.render_contract import RenderCapability, RenderOutput, RenderProviderError
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings, SettingsError
+from project_runtime.application.artifacts import ModelSource, save_document
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_RENDER_JOB
 
@@ -388,7 +388,7 @@ def test_provider_preflight_rejection_does_not_count_as_a_model_call(setup):
 
 
 def test_real_gemini_adapter_mock_transport_through_http_and_p036(setup):
-    from archflow_studio_api.render_adapters.gemini import GeminiImageRenderAdapter
+    from project_runtime.render_adapters.gemini import GeminiImageRenderAdapter
     from .test_render_gemini_adapter import RecordingTransport, final_image, image_bytes
 
     client, app, repository, _ = setup

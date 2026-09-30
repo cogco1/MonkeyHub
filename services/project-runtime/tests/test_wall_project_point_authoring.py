@@ -13,8 +13,8 @@ from fastapi.testclient import TestClient
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 
 class WallProjectPointAuthoringTests(unittest.TestCase):

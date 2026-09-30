@@ -25,16 +25,16 @@ from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from archflow.project.record_kinds import STUDIO_DOCUMENT_MODEL_SOURCE, STUDIO_SOURCE_DOCUMENT
 from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
-from archflow_studio_api.application.artifacts import (
+from project_runtime.application.artifacts import (
     WORK_COPY_WORKSPACE,
     DocumentWorkCopy,
     document_bytes,
     list_document_work_copies,
 )
-from archflow_studio_api.application.binding import ProjectBinding, ReadToken
-from archflow_studio_api.application.events import StudioEvents
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.errors import StudioError
+from project_runtime.application.binding import ProjectBinding, ReadToken
+from project_runtime.application.events import StudioEvents
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.errors import StudioError
 
 from .chat import _NoRedirect, _project
 from .models import HubError, HubFailure
@@ -1031,8 +1031,8 @@ class ProjectRuntimeManager:
             workers=[worker_dto(row) for row in workers])
 
     def _read_retained(self, runtime: ProjectRuntime, *, worker=None) -> dict:
-        from archflow_studio_api.application.runtime import inspect_runtime
-        from archflow_studio_api.transport.runtime import runtime_dto
+        from project_runtime.application.runtime import inspect_runtime
+        from project_runtime.transport.runtime import runtime_dto
         ids = runtime.operations.candidate_ids()
         run_ids = runtime.binding.run_ids()
         candidates = {}

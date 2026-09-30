@@ -271,8 +271,8 @@ class DesignLoopChecksTests(unittest.TestCase):
     @unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
     def test_exact_readback_rejects_a_notched_wing_with_the_same_bbox_and_clear_court(self):
         from fastapi.testclient import TestClient
-        from archflow_studio_api.main import create_app
-        from archflow_studio_api.settings import StudioSettings
+        from project_runtime.main import create_app
+        from project_runtime.settings import StudioSettings
 
         with tempfile.TemporaryDirectory() as temporary:
             fixture = design_loop.bench.project_fixture()

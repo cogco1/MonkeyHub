@@ -14,15 +14,15 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.main import create_app
-from archflow_studio_api.protocol import (
+from project_runtime.main import create_app
+from project_runtime.protocol import (
     CAD_EXPORT_CAPABILITY,
     PROTOCOL,
     RHINO_EXPORT_CAPABILITY,
     SERVER_NAME,
     SERVER_VERSION,
 )
-from archflow_studio_api.settings import (
+from project_runtime.settings import (
     CAD_EXPORT_RHINO,
     LOCAL_MODE,
     REMOTE_MODE,

@@ -28,13 +28,13 @@ from archflow.adapters.occt_backend import occt_available
 from archflow.adapters.three_dm_inspector import inspect_three_dm_index
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.refs import record_ref_from_uri
-from archflow_studio_api.application.artifacts import DocumentPage, ModelSource, SourceDocument
-from archflow_studio_api.application.decisions import RecipeValue
-from archflow_studio_api.application.drawing_corrections import (
+from project_runtime.application.artifacts import DocumentPage, ModelSource, SourceDocument
+from project_runtime.application.decisions import RecipeValue
+from project_runtime.application.drawing_corrections import (
     classify, corrections, recipe_diff, recipe_holds, recipe_suggestions,
 )
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project
 from .test_agent_drawing_dressing import files, hub_chat
@@ -318,7 +318,7 @@ class WhoAskedTests(ImportedPlans):
         self.assertEqual(agent["attribution"]["origin"], "studio", "who asked is still the boundary's own record")
         # The kind never makes or tells revisions apart: the Agent asking for
         # exactly what a person drew gets that person's revision, as they asked.
-        with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan",
+        with patch("project_runtime.application.drawing_plans.freeze_cut_plan",
                    side_effect=AssertionError("an identical request is the retained revision")):
             self.assertEqual(self.agent(self.plan("plan-a", unknown, hatchSpacingMm=3)), person)
         with TestClient(create_app(self.settings)) as client:

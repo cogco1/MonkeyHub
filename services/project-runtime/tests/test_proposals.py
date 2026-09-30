@@ -20,9 +20,9 @@ from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.application.proposals import read_refs_of, write_refs_of
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.application.proposals import read_refs_of, write_refs_of
 
 from archflow.state.decision_operator import DecisionOperator
 
@@ -744,8 +744,8 @@ class DirectSemanticProposalTests(ProposalTestCase):
 
     def test_existing_entity_metadata_upserts_preserve_omitted_fields(self):
         from archflow.state.state_record import apply_state_record_operator
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.application.projection import project_state
+        from project_runtime.application.binding import bound_project
+        from project_runtime.application.projection import project_state
 
         base = project_state(bound_project(self.client.app.state)).record
         for edit in (

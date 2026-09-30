@@ -21,9 +21,9 @@ from fastapi.testclient import TestClient
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import SEAT_RHINO_EXECUTION
 
-from archflow_studio_api.application import artifacts
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application import artifacts
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import (
     PROJECT_ID,
@@ -247,8 +247,8 @@ class ArtifactTests(unittest.TestCase):
         self.assertEqual(len(payload["artifacts"]), 5)
 
     def test_single_run_listing_reads_its_refs_once_and_byte_lookup_stays_in_that_run(self) -> None:
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.transport.errors import StudioError
+        from project_runtime.application.binding import bound_project
+        from project_runtime.transport.errors import StudioError
 
         other = self.repository.create_run("another-export-run")
         retain_rhino_receipt(self.repository, other, stage_id="other-stage", file_name="copy.3dm", payload_bytes=MODEL_BYTES)

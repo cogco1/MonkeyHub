@@ -14,12 +14,12 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import archflow_studio_api  # noqa: F401
+import project_runtime  # noqa: F401
 from archflow.ports.model import ModelInvocationStatus
 from archflow.state.state_record import Entity, Parameter
-from archflow_studio_api.application import intent_agent
-from archflow_studio_api.application.intent_agent import AnthropicCompiler, CodexCompiler, IntentAgentFailed, Selection
-from archflow_studio_api.application.projection import _elements
+from project_runtime.application import intent_agent
+from project_runtime.application.intent_agent import AnthropicCompiler, CodexCompiler, IntentAgentFailed, Selection
+from project_runtime.application.projection import _elements
 from monkeyarch.construction import vocabulary
 
 from .test_intent_context import fixture
@@ -609,7 +609,7 @@ class ConstructionContractProviderTests(unittest.TestCase):
     def test_a_kept_geometry_id_keeps_its_own_parts_and_not_the_shapes_placed_under_it(self):
         # A change reaches parts, never a geometry id's own row, so keeping the id keeps its parts. The
         # shapes a script made are placed under the modelling root and are each their own geometry.
-        from archflow_studio_api.application.construction import kept_refs
+        from project_runtime.application.construction import kept_refs
 
         record = self.projection.record
         self.assertEqual(kept_refs(record, ("entity:block", "parameter:module")),
@@ -620,7 +620,7 @@ class ConstructionContractProviderTests(unittest.TestCase):
     def test_the_design_sheets_grammar_has_no_sentence_keep(self):
         # #419 C7 round 2: a design answer states what it keeps in keep; the parser still reads the
         # sentence form for the web client.
-        from archflow_studio_api.application.intent import ACCEPTED_FORMS, parse_utterance
+        from project_runtime.application.intent import ACCEPTED_FORMS, parse_utterance
 
         answer = construction_answer(status="unsupported", why="Nothing to change yet.")
         for name in PROVIDERS:
@@ -631,7 +631,7 @@ class ConstructionContractProviderTests(unittest.TestCase):
 
     def test_a_local_script_whose_writes_cannot_be_checked_is_malformed(self):
         # #419 C7 round 2: the scope check fails closed, with the compile's reason.
-        from archflow_studio_api.application.construction import ConstructionRefused
+        from project_runtime.application.construction import ConstructionRefused
         from monkeyarch.construction import ConstructionError
 
         answer = construction_answer(script="b = get('block')\nset_height(b, 3)", targetId="block",

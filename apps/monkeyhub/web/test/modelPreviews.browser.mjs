@@ -10,9 +10,9 @@ import { createServer } from "vite";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = path.resolve(webRoot, "../../..");
-const apiRoot = path.join(repoRoot, "apps/archflow-studio/api");
+const apiRoot = path.join(repoRoot, "services/project-runtime");
 const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-model-preview-browser-"));
-const pythonEnv = { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [repoRoot, apiRoot].join(path.delimiter) };
+const pythonEnv = { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [repoRoot, path.join(apiRoot, "src")].join(path.delimiter) };
 const passed = [], errors = [], captures = [];
 let browser, page, server, child, origin, current, runtimeLog = "";
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -30,10 +30,10 @@ import sys, base64, hashlib, rhino3dm
 from pathlib import Path
 import uvicorn
 from tests.support import make_project, PROJECT_ID, REFERENCE_RUN_ID, runner_state_digest, retain_runner_receipt
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.application.artifacts import register_model_asset
-from archflow_studio_api.application.binding import bound_project
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.application.artifacts import register_model_asset
+from project_runtime.application.binding import bound_project
 root, port = Path(sys.argv[1]), int(sys.argv[2])
 repo, _ = make_project(root)
 second = repo.create_run('preview-other-run')

@@ -94,7 +94,7 @@ EQUIVALENCE_HARNESS_WORKFLOW = "equivalence-harness-workflow"
 EQUIVALENCE_HARNESS_ENVELOPE = "equivalence-harness-envelope"
 STATE_RECORD_EQUIVALENCE = "state-record-equivalence"
 
-# ---- the Studio's kinds (apps/archflow-studio/api)
+# ---- the Studio's kinds (services/project-runtime)
 
 STUDIO_CANDIDATE_WORKFLOW = "studio-candidate-workflow"
 STUDIO_CANDIDATE_ENVELOPE = "studio-candidate-envelope"

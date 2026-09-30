@@ -8,15 +8,15 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import archflow_studio_api  # noqa: F401
+import project_runtime  # noqa: F401
 from archflow.state.operational_state import DesignObligation
 from archflow.state.state_record import Entity, Parameter, Relation, StateRecord, ValidatorBinding
-from archflow_studio_api.application.intent_agent import Selection, record_sheet
-from archflow_studio_api.application import intent_context
-from archflow_studio_api.application.intent_context import compile_context, compile_task_context, confirmed_stage_context, expand_context, control_unit, model_context, pack_context
-from archflow_studio_api.application.projection import _elements
+from project_runtime.application.intent_agent import Selection, record_sheet
+from project_runtime.application import intent_context
+from project_runtime.application.intent_context import compile_context, compile_task_context, confirmed_stage_context, expand_context, control_unit, model_context, pack_context
+from project_runtime.application.projection import _elements
 from fastapi.testclient import TestClient
-from archflow_studio_api.main import create_app
+from project_runtime.main import create_app
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_design_history import DesignHistoryFixture
@@ -464,7 +464,7 @@ class ModelContextTests(unittest.TestCase):
 
     def test_design_path_reads_the_model_in_construction_terms(self):
         from monkeyarch.construction import vocabulary
-        from archflow_studio_api.application.intent_agent import _design_facts
+        from project_runtime.application.intent_agent import _design_facts
 
         record, sheet = fixture()
         context = compile_context("reorganize the gallery", sheet, record=record)
@@ -705,7 +705,7 @@ class StudyEvidenceContextRouteTests(DesignHistoryFixture):
         self.assertEqual(self.repository.read_head(), self.initial_head)
 
     def test_unrequested_studies_are_not_read(self):
-        from archflow_studio_api.routes import intents
+        from project_runtime.routes import intents
         self.save_study()
         with patch.object(intents, "read_study", side_effect=AssertionError("unrequested study read")):
             answer = self.client.post("/api/intents/context", json=self.context_request())

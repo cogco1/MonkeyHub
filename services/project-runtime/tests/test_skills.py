@@ -15,9 +15,9 @@ from fastapi.testclient import TestClient
 
 from archflow.project.record_kinds import STUDIO_SKILL, require_registered
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.application.skills import MAX_BODY_BYTES, SKILLS_RUN_ID
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.skills import MAX_BODY_BYTES, SKILLS_RUN_ID
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 PROJECT_ID = "skill-library"
 BODY = "When reviewing a plan's hatching:\n\n1. Read the drawing recipe.\n2. List every region hatched twice.\n"

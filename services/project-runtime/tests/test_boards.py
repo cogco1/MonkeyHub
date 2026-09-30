@@ -23,10 +23,10 @@ from archflow.adapters import occt_backend
 from archflow.project import repository as project_repository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.application import boards
-from archflow_studio_api.application.boards import BOARD_RUN_ID, MAX_BOARD_BYTES
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application import boards
+from project_runtime.application.boards import BOARD_RUN_ID, MAX_BOARD_BYTES
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID
 from .test_candidate import CandidateTestCase

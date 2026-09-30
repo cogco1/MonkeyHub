@@ -15,10 +15,10 @@ from archflow.project.record_kinds import PROJECT_STAGE_WORKFLOW, STATE_RECORD
 from archflow.project.refs import record_ref_from_uri
 from archflow.state.stage_workflow import DesignPhase
 
-from archflow_studio_api.application.binding import ProjectBinding
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.errors import StudioError
+from project_runtime.application.binding import ProjectBinding
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.errors import StudioError
 
 from .support import (
     HARNESS_RUN_ID,

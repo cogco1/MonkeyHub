@@ -294,7 +294,7 @@ def drawing_pipeline(kind: str) -> dict[str, Any]:
 
         return {"kind": kind, "code": {**_source_files(*_OCCT_DRAWING, "monkeydiagram.drawing_output",
                                                          "monkeydiagram.documentation.styles",
-                                                         "archflow_studio_api.application.boards"),
+                                                         "project_runtime.application.boards"),
                                        "sheet": hashlib.sha256("".join(inspect.getsource(function) for function in (
                                            _drawn_sheet, _sheet_files, _view_sheet_scene)).encode("utf-8")).hexdigest()[:16]},
                 "fonts": {role: hashlib.sha256(path.read_bytes()).hexdigest()[:16] for role, path in _sheet_fonts().items()},
@@ -304,7 +304,7 @@ def drawing_pipeline(kind: str) -> dict[str, Any]:
     if kind == DOCUMENT_PAGE:
         from .boards import PAGE_RASTER_EDGE
 
-        return {"kind": kind, "edge": PAGE_RASTER_EDGE, "code": _source_files("archflow_studio_api.application.boards"),
+        return {"kind": kind, "edge": PAGE_RASTER_EDGE, "code": _source_files("project_runtime.application.boards"),
                 "libraries": {name: _library_version(name) for name in ("PyMuPDF", "Pillow")}}
     raise ValueError(f"{kind!r} is not an on-demand projection")
 

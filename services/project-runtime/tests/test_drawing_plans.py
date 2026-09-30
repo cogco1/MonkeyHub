@@ -19,12 +19,12 @@ from archflow.adapters.occt_backend import occt_available
 from archflow.project.record_kinds import DRAWING_PROJECTION_RECEIPT
 from archflow.project.refs import record_ref_from_uri
 from monkeydiagram.drawing_elevation import read_model_axis_elevation
-from archflow_studio_api.application import drawing_plans
-from archflow_studio_api.application.artifacts import _chain_head, _page_replacements, list_documents, replacement_cause
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.decisions import RECIPE_KEYS
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application import drawing_plans
+from project_runtime.application.artifacts import _chain_head, _page_replacements, list_documents, replacement_cause
+from project_runtime.application.binding import bound_project
+from project_runtime.application.decisions import RECIPE_KEYS
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_candidate import CandidateTestCase
@@ -307,7 +307,7 @@ class CutPlanTests(CandidateTestCase):
             for doc in (first, second):
                 result = client.get(f"/api/documents/{doc['assetSha256']}/bytes", params={"runId": doc["runId"], "revisionRef": doc["revisionRef"]})
                 self.assertEqual(result.status_code, 200, result.text[:200] if result.status_code != 200 else "")
-        with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
+        with patch("project_runtime.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
             again = self.generate()
         self.assertEqual(again, first)
 
@@ -649,7 +649,7 @@ class CutPlanTests(CandidateTestCase):
         first = self.generate()
         second = self.generate(previousRevisionRef=first["revisionRef"], cutLineMm=.5)
         before = {path.relative_to(self.repository.layout.root) for path in self.repository.layout.root.rglob("*")}
-        with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("must not project")):
+        with patch("project_runtime.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("must not project")):
             self.assertEqual(self.generate(previousRevisionRef=first["revisionRef"], cutLineMm=.5), second)
             result = self.client.post("/api/drawings/plans", json={"projectId": PROJECT_ID,
                 "sourceStageRef": self.stage["stageRef"], "previousRevisionRef": first["revisionRef"], "cutLineMm": .6})
@@ -710,7 +710,7 @@ class CutPlanTests(CandidateTestCase):
         self.assertEqual(restored["attribution"]["origin"], "studio")
         self.assertEqual(restored["reason"], "Restore the lighter cut line.")
         before = self.client.get("/api/documents").json()
-        with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
+        with patch("project_runtime.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
             again = self.generate(previousRevisionRef=second["revisionRef"],
                                   cutLineMm=first["viewRecipe"]["graphics"]["cutLineMm"])
             self.assertEqual(self.generate(previousRevisionRef=restored["revisionRef"]), restored)
@@ -746,11 +746,11 @@ class CutPlanTests(CandidateTestCase):
             self.assertEqual(vector.json()["cleanup"], expected)
             self.assertNotIn("cleanup", document["viewRecipe"])
             self.assertNotIn("cleanup", document["viewRecipe"]["graphics"])
-        with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
+        with patch("project_runtime.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
             self.assertEqual(self.generate(previousRevisionRef=cleaned["revisionRef"]), cleaned)
 
     def test_graphics_rules_are_paper_space_and_old_recipes_render_byte_identical(self):
-        not_projected = patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan",
+        not_projected = patch("project_runtime.application.drawing_plans.freeze_cut_plan",
                               side_effect=AssertionError("cache must not project"))
         first = self.generate()
         self.assertEqual(set(first["viewRecipe"]["graphics"]), {"cutLineMm", "visibleLineMm", "hatchSpacingMm"})
@@ -802,7 +802,7 @@ class CutPlanTests(CandidateTestCase):
         self.assertNotIn("reason", asked["viewRecipe"])
         # Who and why never make or tell apart revisions: an identical request
         # is the retained revision, as it was asked for.
-        with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
+        with patch("project_runtime.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
             self.assertEqual(self.generate(previousRevisionRef=asked["revisionRef"], reason="Asked again."), asked)
         # A runtime the Hub manages attributes its requests to the Hub.
         self.app.state.managed_instance_id = "hub-1"
@@ -829,7 +829,7 @@ class CutPlanTests(CandidateTestCase):
         return response.json()
 
     def test_a_new_drawing_takes_the_project_recipe_an_explicit_value_wins_and_a_rebuild_keeps_its_own(self):
-        not_projected = patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan",
+        not_projected = patch("project_runtime.application.drawing_plans.freeze_cut_plan",
                               side_effect=AssertionError("cache must not project"))
         before = self.generate()
         defaults = {"cutLineMm": .35, "visibleLineMm": .18, "hatchSpacingMm": 2}
@@ -862,8 +862,8 @@ class CutPlanTests(CandidateTestCase):
         script = textwrap.dedent("""
             import json, sys
             from fastapi.testclient import TestClient
-            from archflow_studio_api.main import create_app
-            from archflow_studio_api.settings import StudioSettings
+            from project_runtime.main import create_app
+            from project_runtime.settings import StudioSettings
 
             project_dir, project_id, stage_ref = sys.argv[1:4]
             with TestClient(create_app(StudioSettings(project_dir=project_dir, cad_export="occt"))) as client:
@@ -905,7 +905,7 @@ class CutPlanTests(CandidateTestCase):
         fresh = self.generate(drawingId="plan-c")
         self.assertEqual(fresh["viewRecipe"]["graphics"], first["viewRecipe"]["graphics"])
         # The drawing made under the recipe keeps its values: its rebuild is its own revision.
-        with patch("archflow_studio_api.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
+        with patch("project_runtime.application.drawing_plans.freeze_cut_plan", side_effect=AssertionError("cache must not project")):
             self.assertEqual(self.generate(drawingId="plan-b", previousRevisionRef=taken["revisionRef"]), taken)
 
     def test_a_hard_recipe_beats_a_strong_preference_and_an_explicit_value_still_wins(self):

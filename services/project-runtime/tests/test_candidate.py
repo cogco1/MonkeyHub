@@ -35,10 +35,10 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.application.binding import bound_project, record_kind
-from archflow_studio_api.application.candidate import execute_candidate, replay_candidate
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.binding import bound_project, record_kind
+from project_runtime.application.candidate import execute_candidate, replay_candidate
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from archflow.contracts.canonical import canonical_json
 from archflow.ports.model import (
@@ -51,7 +51,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.archive import restore_project_archive, write_project_archive
 from archflow.project.repository import FilesystemProjectRepository
 
-from archflow_studio_api.transport.errors import StudioError
+from project_runtime.transport.errors import StudioError
 
 from .support import (
     PROJECT_ID,
@@ -410,7 +410,7 @@ class CandidateRunTests(CandidateTestCase):
         self.assertEqual(
             restarted.get(f"/api/jobs/{accepted['jobId']}").status_code, 404
         )
-        with mock.patch("archflow_studio_api.application.candidate._executed_record",
+        with mock.patch("project_runtime.application.candidate._executed_record",
                         side_effect=AssertionError("a lost proposal has no executed parameter values to describe")):
             response = restarted.get(f"/api/candidates/{accepted['candidateId']}")
 
@@ -569,7 +569,7 @@ class CandidateRunTests(CandidateTestCase):
     def test_element_only_candidate_does_not_read_unused_executed_parameters(self) -> None:
         accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
         self.assertEqual(job["status"], "succeeded", job)
-        with mock.patch("archflow_studio_api.application.candidate._executed_record",
+        with mock.patch("project_runtime.application.candidate._executed_record",
                         side_effect=AssertionError("an element-only closure needs no executed parameter values")):
             response = self.client.get(f"/api/candidates/{accepted['candidateId']}")
         self.assertEqual(response.status_code, 200, response.text)
@@ -932,7 +932,7 @@ class CandidateContinuationTests(CandidateTestCase):
             self.assertEqual(response.json()["code"], "REFERENCE_BASE_STALE")
 
     def test_queued_continuation_rechecks_the_selected_record(self) -> None:
-        from archflow_studio_api.application.jobs import JobRegistry
+        from project_runtime.application.jobs import JobRegistry
         self.app.state.jobs.shutdown()
         self.app.state.jobs = JobRegistry(self.app.state.events, max_workers=1)
         proposal = self.propose(**self.source_body)
@@ -1117,7 +1117,7 @@ class CandidateComponentRemovalTests(CandidateTestCase):
     def test_retained_seat_refs_cannot_fall_back_when_missing_or_bound_to_another_run(self) -> None:
         from archflow.project.refs import record_ref_from_uri
         from archflow.state.state_record import StateRecord, StateRecordEditKind, StateRecordOperator
-        from archflow_studio_api.adapters.seats import candidate_seats, SeatsError
+        from project_runtime.adapters.seats import candidate_seats, SeatsError
 
         source_id, _ = self.source()
         source = StateRecord.from_dict(_run_state_record(self.repository, source_id))
@@ -1158,7 +1158,7 @@ class CandidateComponentRemovalTests(CandidateTestCase):
         from archflow.adapters import occt_backend
         from archflow.adapters.cad_execution import patch_composed_three_dm
         from archflow.adapters.three_dm_inspector import inspect_three_dm_contents
-        from archflow_studio_api.application.artifacts import ModelSource
+        from project_runtime.application.artifacts import ModelSource
         from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
         if not occt_backend.occt_available():
             self.skipTest("cadquery-ocp is not installed")
@@ -1600,7 +1600,7 @@ class CandidateSourceEdgesTests(unittest.TestCase):
     def test_a_source_with_edges_is_not_reported_as_having_none(self) -> None:
         from types import SimpleNamespace
 
-        from archflow_studio_api.application import candidate
+        from project_runtime.application import candidate
 
         source = SimpleNamespace(edges=tuple(f"edge-{index}" for index in range(8)), parameters=())
         default = SimpleNamespace(edges=(), parameters=())

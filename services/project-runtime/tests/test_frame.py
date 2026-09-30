@@ -23,10 +23,10 @@ from fastapi.testclient import TestClient
 
 from archflow.state.state_record import StateRecord
 
-from archflow_studio_api.application.frame import closure_of_refs, frame_of
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.errors import StudioError
+from project_runtime.application.frame import closure_of_refs, frame_of
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.errors import StudioError
 
 from .support import (
     PORTICO_RECORD_PAYLOAD,

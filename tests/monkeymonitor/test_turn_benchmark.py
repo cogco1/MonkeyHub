@@ -25,8 +25,8 @@ class BenchmarkTests(unittest.TestCase):
 
     def test_actual_candidate_satisfies_geometry_and_authored_checks(self):
         from fastapi.testclient import TestClient
-        from archflow_studio_api.main import create_app
-        from archflow_studio_api.settings import StudioSettings
+        from project_runtime.main import create_app
+        from project_runtime.settings import StudioSettings
 
         with tempfile.TemporaryDirectory() as temporary:
             fixture = benchmark.project_fixture()

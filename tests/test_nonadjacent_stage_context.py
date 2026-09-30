@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps/archflow-studio/api"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services/project-runtime/src"))
 
 from fastapi.testclient import TestClient
 
@@ -20,18 +20,18 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import (
     Entity, StateRecordEditKind, StateRecordOperator, compile_parameter_locks,
 )
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.candidate import run_operator
-from archflow_studio_api.application.projection import project_state
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.binding import bound_project
+from project_runtime.application.candidate import run_operator
+from project_runtime.application.projection import project_state
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from tests import test_window_relational_update as window
 from tests.test_project_runner import _no_rhino
 
 # Load API fixtures by their full package so they do not shadow kernel tests.
-support = import_module("apps.archflow-studio.api.tests.support")
-CandidateTestCase = import_module("apps.archflow-studio.api.tests.test_candidate").CandidateTestCase
-register_model = import_module("apps.archflow-studio.api.tests.test_working_copies").register_model
+support = import_module("services.project-runtime.tests.support")
+CandidateTestCase = import_module("services.project-runtime.tests.test_candidate").CandidateTestCase
+register_model = import_module("services.project-runtime.tests.test_working_copies").register_model
 PROJECT_ID, SEATS_PAYLOAD = support.PROJECT_ID, support.SEATS_PAYLOAD
 retain_runner_receipt = support.retain_runner_receipt
 runner_state_digest = support.runner_state_digest

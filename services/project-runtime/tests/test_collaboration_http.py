@@ -30,7 +30,7 @@ from .collaboration_support import seed_collaboration_project
 from .support import PROJECT_ID
 
 
-SOURCE_ROOT = Path(__file__).resolve().parents[4]
+SOURCE_ROOT = Path(__file__).resolve().parents[3]
 DEADLINE_SECONDS = 60
 
 
@@ -50,8 +50,8 @@ class _Service:
 
     def start(self):
         source = Path(os.environ.get("ARCHFLOW_COLLABORATION_SOURCE_ROOT", SOURCE_ROOT)).resolve()
-        api = source / "apps" / "archflow-studio" / "api"
-        if not (api / "archflow_studio_api" / "main.py").is_file():
+        api = source / "services" / "project-runtime" / "src"
+        if not (api / "project_runtime" / "main.py").is_file():
             raise AssertionError(f"No Studio API in test source root: {source}")
         environment = {key: value for key, value in os.environ.items()
                        if not key.startswith("ARCHFLOW_STUDIO_")
@@ -68,7 +68,7 @@ class _Service:
         # code throughout the child, never the driver's source checkout.
         bootstrap = (
             f"import sys; sys.path[:0] = {[str(api), str(source)]!r}; "
-            "from archflow_studio_api.main import main; main()"
+            "from project_runtime.main import main; main()"
         )
         command = [os.environ.get("ARCHFLOW_COLLABORATION_PYTHON", sys.executable),
                    "-c", bootstrap, "--project-dir", str(self.project),

@@ -10,22 +10,22 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from archflow_studio_api.application.intent_agent import Selection
-from archflow_studio_api.application.intent_budget import build_context_budget
-from archflow_studio_api.application.monitoring import MonitoredCompiler
+from project_runtime.application.intent_agent import Selection
+from project_runtime.application.intent_budget import build_context_budget
+from project_runtime.application.monitoring import MonitoredCompiler
 from monkeymonitor.store import UsageLog
 from monkeymonitor.usage import TokenUsage, UsageEvent, diagnostic_details
-from archflow_studio_api.settings import StudioSettings, SettingsError, CONTEXT_BUDGET_ENV, PROJECT_DIR_ENV
+from project_runtime.settings import StudioSettings, SettingsError, CONTEXT_BUDGET_ENV, PROJECT_DIR_ENV
 
 
 class ContextBudgetTests(unittest.TestCase):
     def test_process_budget_override_reaches_the_provider_without_changing_model(self):
-        from archflow_studio_api.application.intent_agent import compiler_from_settings
+        from project_runtime.application.intent_agent import compiler_from_settings
         with patch.dict(os.environ, {PROJECT_DIR_ENV: str(Path.cwd()), CONTEXT_BUDGET_ENV: "4096",
                                     "ARCHFLOW_STUDIO_INTENT_PROVIDER": "codex",
                                     "ARCHFLOW_STUDIO_INTENT_MODEL": "configured-model"}, clear=True):
             settings = StudioSettings.from_env()
-        with patch("archflow_studio_api.application.intent_agent._codex_version", return_value="fixture-cli"):
+        with patch("project_runtime.application.intent_agent._codex_version", return_value="fixture-cli"):
             compiler = compiler_from_settings(settings)
         self.assertEqual(compiler.context_budget_tokens, 4096)
         self.assertEqual(compiler.model, "configured-model")

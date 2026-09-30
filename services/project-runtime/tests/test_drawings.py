@@ -19,13 +19,13 @@ from PIL import Image
 from archflow.adapters import occt_backend
 from archflow.project.refs import record_ref_from_uri
 from monkeydiagram.drawing_elevation import read_model_axis_elevation
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.application.artifacts import ModelSource
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.drawings import _complete_source
-from archflow_studio_api.application.gestures import require_document_comment_source
-from archflow_studio_api.application.projection import project_state
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.application.artifacts import ModelSource
+from project_runtime.application.binding import bound_project
+from project_runtime.application.drawings import _complete_source
+from project_runtime.application.gestures import require_document_comment_source
+from project_runtime.application.projection import project_state
 
 from .support import PROJECT_ID, retain_runner_receipt
 from .test_candidate import CandidateTestCase
@@ -73,9 +73,9 @@ class DrawingTests(CandidateTestCase):
         before = {path.relative_to(project_root): path.read_bytes() for path in project_root.rglob("*") if path.is_file()}
         for view in ("front", "back", "left", "right", "top", "axon"):
             with self.subTest(view=view), patch(
-                "archflow_studio_api.application.drawings.project_model_axis_elevation",
+                "project_runtime.application.drawings.project_model_axis_elevation",
                 wraps=project_model_axis_elevation,
-            ) as project, patch("archflow_studio_api.application.drawings.mesh_line_view", wraps=mesh_line_view) as mesh:
+            ) as project, patch("project_runtime.application.drawings.mesh_line_view", wraps=mesh_line_view) as mesh:
                 response = self.client.get("/api/drawings/model-view", params={**self.model, "view": view})
                 self.assertEqual(response.status_code, 200, response.text)
                 result = response.json()
@@ -102,9 +102,9 @@ class DrawingTests(CandidateTestCase):
             self.assertEqual(response.status_code, 200, response.text)
             return response.json()
 
-        with patch("archflow_studio_api.application.drawings.project_model_axis_elevation",
+        with patch("project_runtime.application.drawings.project_model_axis_elevation",
                    wraps=project_model_axis_elevation) as project, \
-                patch("archflow_studio_api.application.drawings.mesh_line_view", wraps=mesh_line_view) as mesh:
+                patch("project_runtime.application.drawings.mesh_line_view", wraps=mesh_line_view) as mesh:
             top, axon = read(self.client, "top"), read(self.client, "axon")
             again = read(self.client, "axon")
             with TestClient(create_app(self.settings)) as reopened:
@@ -141,7 +141,7 @@ class DrawingTests(CandidateTestCase):
         self.assertEqual(self.client.get("/api/documents", params={"runId": self.model["runId"]}).json()["documents"], [])
 
     def test_a_drawn_view_reports_load_and_render_time_separately(self):
-        from archflow_studio_api.application.drawings import draw_model_view
+        from project_runtime.application.drawings import draw_model_view
 
         binding = bound_project(self.app.state)
         for view in ("axon", "front"):
@@ -179,7 +179,7 @@ class DrawingTests(CandidateTestCase):
             self.assertEqual(mixed.json()["code"], "MODEL_SOURCE_MISMATCH")
 
     def test_model_view_refuses_mismatched_or_tampered_sources_before_projection(self):
-        with patch("archflow_studio_api.application.drawings.project_model_axis_elevation",
+        with patch("project_runtime.application.drawings.project_model_axis_elevation",
                    side_effect=AssertionError("invalid sources must not be rendered")):
             for key in ("stateDigest", "assetSha256"):
                 response = self.client.get("/api/drawings/model-view", params={**self.model, key: "0" * 64})
@@ -205,7 +205,7 @@ class DrawingTests(CandidateTestCase):
         before_runs = set(self.repository.layout.runs.iterdir())
         for style_id, scale in (("arch400-white", 20), ("arch364-technical", 40)):
             with self.subTest(style=style_id), patch(
-                "archflow_studio_api.application.drawings.project_occt_lines", wraps=project_occt_lines,
+                "project_runtime.application.drawings.project_occt_lines", wraps=project_occt_lines,
             ) as project:
                 result = self.sheet(styleId=style_id, scaleDenominator=scale, notes=["Review dimensions on the retained model."])
                 self.assertEqual(result.status_code, 201, result.text)
@@ -244,7 +244,7 @@ class DrawingTests(CandidateTestCase):
                 dxf = ezdxf.readfile(workspace.with_suffix(".dxf"))
                 self.assertTrue(any(len(layout) for layout in dxf.layouts if layout.name != "Model"))
                 with TestClient(create_app(self.settings)) as reopened, patch(
-                    "archflow_studio_api.application.drawings.project_occt_lines", side_effect=AssertionError("cached sheet cannot run HLR"),
+                    "project_runtime.application.drawings.project_occt_lines", side_effect=AssertionError("cached sheet cannot run HLR"),
                 ), patch("monkeydiagram.drawing_output.render_pdf", side_effect=AssertionError("cached PDF cannot be rerendered")):
                     repeated = reopened.post("/api/drawings/sheets", json={
                         "projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"], "styleId": style_id,
@@ -268,7 +268,7 @@ class DrawingTests(CandidateTestCase):
         outline = next(name for name in physical if "cornice" in name)
         original = self.sheet()
         self.assertEqual(original.status_code, 201, original.text)
-        with patch("archflow_studio_api.application.drawings.project_occt_lines", wraps=project_occt_lines) as project:
+        with patch("project_runtime.application.drawings.project_occt_lines", wraps=project_occt_lines) as project:
             result = self.sheet(hiddenObjectIds=[hidden], outlineObjectIds=[outline], notes=["Base hidden for review."])
         self.assertEqual(result.status_code, 201, result.text)
         changed = result.json()
@@ -284,7 +284,7 @@ class DrawingTests(CandidateTestCase):
     def test_sheet_invalid_selections_or_oversized_scale_leave_no_drawing(self):
         receipt = self.repository.load_json(record_ref_from_uri(self.step["receiptRef"], PROJECT_ID))
         physical = receipt["physical_object_ids"]
-        with patch("archflow_studio_api.application.drawings.project_occt_lines", side_effect=AssertionError("invalid request cannot run HLR")):
+        with patch("project_runtime.application.drawings.project_occt_lines", side_effect=AssertionError("invalid request cannot run HLR")):
             for body, code in (
                 ({"hiddenObjectIds": ["not-a-physical-object"]}, "DRAWING_OBJECT_UNKNOWN"),
                 ({"outlineObjectIds": ["not-a-physical-object"]}, "DRAWING_OBJECT_UNKNOWN"),
@@ -320,7 +320,7 @@ class DrawingTests(CandidateTestCase):
         self.assertEqual(*pages)
         step_path = self.repository.layout.root / self.step["relativePath"]
         step_path.write_bytes(step_path.read_bytes() + b"\nchanged-source")
-        with patch("archflow_studio_api.application.drawings.project_occt_lines", side_effect=AssertionError("changed source cannot run HLR")):
+        with patch("project_runtime.application.drawings.project_occt_lines", side_effect=AssertionError("changed source cannot run HLR")):
             response = self.sheet()
         self.assertEqual(response.status_code, 409, response.text)
         self.assertEqual(response.json()["code"], "DRAWING_COMPLETE_SOURCE_UNAVAILABLE")
@@ -363,7 +363,7 @@ class DrawingTests(CandidateTestCase):
         self.assertEqual(drawing.receipt["source"]["step"]["sha256"], self.step["sha256"])
         self.assertEqual(drawing.run.base, self.head)
         with TestClient(create_app(self.settings)) as reopened, patch(
-            "archflow_studio_api.application.drawings.freeze_model_axis_elevation",
+            "project_runtime.application.drawings.freeze_model_axis_elevation",
             side_effect=AssertionError("the retained top projection must not be regenerated"),
         ):
             repeated = reopened.post("/api/drawings/elevations", json={
@@ -410,7 +410,7 @@ class DrawingTests(CandidateTestCase):
         self.assertEqual(hlr.details["input_object_ids"], parent.details["input_object_ids"])
         self.assertNotIn("recomputed_object_ids", hlr.details)
         with TestClient(create_app(self.settings)) as reopened, patch(
-            "archflow_studio_api.application.drawings.freeze_model_axis_elevation",
+            "project_runtime.application.drawings.freeze_model_axis_elevation",
             side_effect=AssertionError("a verified cache hit must not project again"),
         ):
             second = reopened.post("/api/drawings/elevations", json={
@@ -472,7 +472,7 @@ class DrawingTests(CandidateTestCase):
     def test_logging_failure_cannot_interrupt_real_generation_and_document_registration(self) -> None:
         self.enable_monitor()
         with patch.object(self.app.state.monitor.store, "append", side_effect=OSError("diagnostic disk unavailable")), \
-                self.assertLogs("archflow_studio_api.application.monitoring", level="WARNING"):
+                self.assertLogs("project_runtime.application.monitoring", level="WARNING"):
             generated = self.generate()
         self.assertEqual(generated.status_code, 201, generated.text)
         with TestClient(create_app(self.settings)) as reopened:
@@ -492,7 +492,7 @@ class DrawingTests(CandidateTestCase):
         self.assertEqual(generated.status_code, 201, generated.text)
         drawing = read_model_axis_elevation(self.repository, record_ref_from_uri(generated.json()["revisionRef"], PROJECT_ID))
         self.repository.layout.resolve_record(drawing.png_ref).write_bytes(drawing.png + b"changed")
-        with patch("archflow_studio_api.application.drawings.freeze_model_axis_elevation",
+        with patch("project_runtime.application.drawings.freeze_model_axis_elevation",
                    side_effect=AssertionError("an unavailable cached revision must not be replaced")):
             refused = self.generate()
         self.assertEqual(refused.status_code, 409, refused.text)
@@ -664,7 +664,7 @@ class DrawingTests(CandidateTestCase):
 
     def test_generation_order_and_original_time_survive_cold_idempotent_reads(self) -> None:
         times = (datetime(2026, 9, 9, 8, 0, tzinfo=timezone.utc), datetime(2026, 9, 9, 9, 0, tzinfo=timezone.utc))
-        with patch("archflow_studio_api.application.drawings.datetime") as clock:
+        with patch("project_runtime.application.drawings.datetime") as clock:
             clock.now.side_effect = times
             first = self.generate()
             self.assertEqual(first.status_code, 201, first.text)
@@ -803,7 +803,7 @@ class DrawingProjectionTests(CandidateTestCase):
         blobs = self.cache / "projections" / "blobs"
         shutil.rmtree(blobs)
         blobs.write_bytes(b"not a folder")
-        with self.assertLogs("archflow_studio_api.application.projections", "WARNING") as logged:
+        with self.assertLogs("project_runtime.application.projections", "WARNING") as logged:
             first = self.elevation("front-a")
         self.assertIn("could not be kept", "\n".join(logged.output))
         retained = self.retained(first)

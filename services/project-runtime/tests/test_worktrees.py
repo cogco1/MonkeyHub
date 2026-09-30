@@ -6,13 +6,13 @@ from unittest import mock
 from archflow.project.refs import record_ref_from_uri
 from archflow.state.state_record import StateRecordEditKind, StateRecordOperator
 
-from archflow_studio_api.application.artifacts import ModelSource, save_document
-from archflow_studio_api.application.binding import ProjectBinding, bound_project
-from archflow_studio_api.application.candidate import run_operator
-from archflow_studio_api.application.jobs import Job
-from archflow_studio_api.application.projection import project_state
-from archflow_studio_api.application.runtime import worktree_graph
-from archflow_studio_api.application.working_draft import lineage_of
+from project_runtime.application.artifacts import ModelSource, save_document
+from project_runtime.application.binding import ProjectBinding, bound_project
+from project_runtime.application.candidate import run_operator
+from project_runtime.application.jobs import Job
+from project_runtime.application.projection import project_state
+from project_runtime.application.runtime import worktree_graph
+from project_runtime.application.working_draft import lineage_of
 
 from .support import PROJECT_ID
 from .test_rendering import Adapter, finished, png, request, submit
@@ -220,7 +220,7 @@ class WorktreeGraphTests(WorkingSourceFixture):
             run = self.continue_from(run, height=height)
         self.adopt(run)
         binding = bound_project(self.app.state)
-        with mock.patch("archflow_studio_api.application.runtime.lineage_of", wraps=lineage_of) as walked:
+        with mock.patch("project_runtime.application.runtime.lineage_of", wraps=lineage_of) as walked:
             graph = worktree_graph(binding)
         self.assertEqual(graph.head.run_id, run)
         self.assertEqual([line.kind for line in graph.lines], ["head"])

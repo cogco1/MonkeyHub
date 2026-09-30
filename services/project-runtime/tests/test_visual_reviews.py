@@ -21,16 +21,16 @@ from fastapi.testclient import TestClient
 
 from archflow.adapters import occt_backend
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.application import intent_agent
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.intent_agent import CodexCompiler
-from archflow_studio_api.application.visual_observation import (
+from project_runtime.application import intent_agent
+from project_runtime.application.binding import bound_project
+from project_runtime.application.intent_agent import CodexCompiler
+from project_runtime.application.visual_observation import (
     Criterion, ReviewReason, SourceRef, TaskClass, VisualReviewBudget, VisualReviewRequest,
 )
-from archflow_studio_api.application.visual_reviews import PAGE_MAX_EDGE, review_sources
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.errors import StudioError
+from project_runtime.application.visual_reviews import PAGE_MAX_EDGE, review_sources
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.errors import StudioError
 
 from .support import PROJECT_ID
 from .test_candidate import CandidateTestCase
@@ -147,7 +147,7 @@ class PageReviewTests(unittest.TestCase):
         second = self.second_document_page()
         expected = [self.exported_page(), self.exported_page(source=second)]
         before = files(self.root)
-        with patch("archflow_studio_api.routes.intents.visual_provider",
+        with patch("project_runtime.routes.intents.visual_provider",
                    side_effect=AssertionError("the connected caller will observe these images")):
             response = self.review(delivery="frames", sourceRefs=[self.page, second])
         self.assertEqual(response.status_code, 200, response.text)
@@ -187,7 +187,7 @@ class PageReviewTests(unittest.TestCase):
         self.assertEqual(result["frames"][0]["viewRef"], "page-0")
         self.assertEqual(result["frames"][0]["sourceRef"], self.page)
         spent = result["budgetState"]
-        with patch("archflow_studio_api.application.visual_reviews.export_board_pages",
+        with patch("project_runtime.application.visual_reviews.export_board_pages",
                    side_effect=AssertionError("an unwarranted second look renders nothing")):
             for reason, addressed, code in (("first_bundle", [], "VISUAL_REVIEW_OUT_OF_ORDER"),
                                            ("after_repair", [], "VISUAL_REVIEW_NOT_WARRANTED"),
@@ -202,7 +202,7 @@ class PageReviewTests(unittest.TestCase):
     def test_frame_delivery_refuses_the_allowance_before_rendering_and_preserves_it(self):
         cases = (({**FRESH, "used": 2}, "VISUAL_BUDGET_EXHAUSTED"),
                  ({"taskClass": "deterministic_edit", "allowed": 0, "used": 0}, "VISUAL_REVIEW_NOT_WARRANTED"))
-        with patch("archflow_studio_api.application.visual_reviews.export_board_pages",
+        with patch("project_runtime.application.visual_reviews.export_board_pages",
                    side_effect=AssertionError("a refused review renders nothing")):
             for state, code in cases:
                 with self.subTest(code=code):
@@ -232,7 +232,7 @@ class PageReviewTests(unittest.TestCase):
             with self.subTest(overrides=overrides):
                 response = self.review(delivery="frames", **overrides)
                 self.assertEqual(response.status_code, 422, response.text)
-        with patch("archflow_studio_api.application.visual_reviews.export_board_pages") as export:
+        with patch("project_runtime.application.visual_reviews.export_board_pages") as export:
             export.return_value.content = png(width=2049)
             response = self.review(delivery="frames")
         self.assertEqual(response.status_code, 422, response.text)
@@ -241,7 +241,7 @@ class PageReviewTests(unittest.TestCase):
         self.assertNotIn("frames", response.json())
 
     def test_a_failed_page_renderer_returns_the_unspent_allowance_without_any_frames(self):
-        with patch("archflow_studio_api.application.visual_reviews.export_board_pages",
+        with patch("project_runtime.application.visual_reviews.export_board_pages",
                    side_effect=StudioError(502, "PAGE_RENDER_FAILED", "The page renderer failed.")):
             response = self.review(delivery="frames")
         self.assertEqual(response.status_code, 502, response.text)
@@ -307,7 +307,7 @@ class PageReviewTests(unittest.TestCase):
             "VISUAL_REVIEW_NOT_WARRANTED": {"taskClass": "deterministic_edit", "allowed": 0, "used": 0},
         }
         with codex_transport(PAGE_ANSWER) as (compiler, calls), patch(
-                "archflow_studio_api.application.visual_reviews.export_board_pages",
+                "project_runtime.application.visual_reviews.export_board_pages",
                 side_effect=AssertionError("a refused review renders nothing")):
             for code, state in cases.items():
                 with self.subTest(code=code):
@@ -319,7 +319,7 @@ class PageReviewTests(unittest.TestCase):
 
     def test_a_runtime_without_a_vision_provider_refuses_before_rendering(self):
         self.assertIsInstance(self.app.state.intent_compiler, intent_agent.DeterministicCompiler)
-        with patch("archflow_studio_api.application.visual_reviews.export_board_pages",
+        with patch("project_runtime.application.visual_reviews.export_board_pages",
                    side_effect=AssertionError("no provider, nothing to render for")):
             response = self.review()
         self.assertEqual(response.status_code, 409, response.text)
@@ -334,7 +334,7 @@ class PageReviewTests(unittest.TestCase):
             "a run the project does not have": ({**self.page, "runId": "no-such-run"}, "page-0"),
         }
         with codex_transport(PAGE_ANSWER) as (compiler, calls), patch(
-                "archflow_studio_api.application.boards._page_raster",
+                "project_runtime.application.boards._page_raster",
                 side_effect=AssertionError("a source that is not retained is not rasterized")):
             for name, (source, view) in stale.items():
                 with self.subTest(name):
@@ -354,7 +354,7 @@ class PageReviewTests(unittest.TestCase):
             "a frame in the allowance": self.review_body(budgetState={**FRESH, "frame": pixels}),
         }
         with codex_transport(PAGE_ANSWER) as (compiler, calls), patch(
-                "archflow_studio_api.application.visual_reviews.export_board_pages",
+                "project_runtime.application.visual_reviews.export_board_pages",
                 side_effect=AssertionError("a smuggled frame is refused before rendering")):
             self.app.state.intent_compiler = compiler
             for name, body in smuggled.items():
@@ -380,7 +380,7 @@ class PageReviewTests(unittest.TestCase):
                                                         if key != "revisionRef"}]),
         }
         with codex_transport(PAGE_ANSWER) as (compiler, calls), patch(
-                "archflow_studio_api.application.visual_reviews.export_board_pages",
+                "project_runtime.application.visual_reviews.export_board_pages",
                 side_effect=AssertionError("a malformed review renders nothing")):
             for name, overrides in malformed.items():
                 with self.subTest(name):
@@ -489,7 +489,7 @@ class ModelReviewTests(CandidateTestCase):
         views = ["front", "axon"]
         expected = [self.owner_view(view) for view in views]
         before = files(self.repository.layout.root)
-        with patch("archflow_studio_api.routes.intents.visual_provider",
+        with patch("project_runtime.routes.intents.visual_provider",
                    side_effect=AssertionError("frames use the current caller, not another provider")):
             response = self.review(self.model, views, delivery="frames")
         self.assertEqual(response.status_code, 200, response.text)
@@ -508,7 +508,7 @@ class ModelReviewTests(CandidateTestCase):
             "an asset the state never exported": {**self.model, "assetSha256": "0" * 64},
         }
         with codex_transport(model_answer(["top"])) as (compiler, calls), patch(
-                "archflow_studio_api.application.drawings.project_model_axis_elevation",
+                "project_runtime.application.drawings.project_model_axis_elevation",
                 side_effect=AssertionError("a stale source is never projected")):
             for name, source in stale.items():
                 with self.subTest(name):

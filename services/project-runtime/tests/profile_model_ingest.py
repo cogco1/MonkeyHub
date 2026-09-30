@@ -1,6 +1,6 @@
 """Manual local benchmark; private source bytes live only in a disposable test project.
 
-Run from apps/archflow-studio/api as python -m tests.profile_model_ingest --model PATH. This exercises the real API against
+Run from services/project-runtime as python -m tests.profile_model_ingest --model PATH. This exercises the real API against
 an empty test project; it measures external-source registration without inventing
 a semantic design state. It does not measure browser/network/Board readiness. Output is anonymous
 diagnostic JSON on stdout, not a project artifact or a committed model fixture.
@@ -22,13 +22,13 @@ import threading
 from time import perf_counter
 from unittest.mock import patch
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from archflow.adapters import three_dm_inspector
 from .support import PROJECT_ID, make_empty_project
 

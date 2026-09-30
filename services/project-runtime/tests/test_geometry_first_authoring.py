@@ -23,22 +23,22 @@ from fastapi.testclient import TestClient
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord, component_semantics
-from archflow_studio_api.application.intent import _unregistered_kinds_as_intent
-from archflow_studio_api.application.intent_agent import response_schema
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.intent import _unregistered_kinds_as_intent
+from project_runtime.application.intent_agent import response_schema
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 PROJECT_ID = "geometry-first"
-API_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = API_ROOT.parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
+API_ROOT = REPO_ROOT / "services" / "project-runtime" / "src"
 
 # Run in a fresh interpreter by the cold-reopen test: open the project from disk,
 # read the run it names, and continue editing it through the public routes.
 REOPEN_AND_CONTINUE = """
 import json, sys, time
 from fastapi.testclient import TestClient
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 project, project_id, run = sys.argv[1:4]
 

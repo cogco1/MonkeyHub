@@ -550,7 +550,7 @@ class SubprocessRenderer:
         if os.name == "nt":
             flags = subprocess.BELOW_NORMAL_PRIORITY_CLASS | subprocess.CREATE_NO_WINDOW
         process = subprocess.Popen(
-            [sys.executable, "-m", "archflow_studio_api.application.projections",
+            [sys.executable, "-m", "project_runtime.application.projections",
              "--project-dir", str(self.project_dir), "--memory-cap-mb", str(self.memory_cap_mb)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=environment, creationflags=flags,

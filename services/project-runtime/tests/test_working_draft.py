@@ -1,8 +1,8 @@
 """Autosave keeps frozen local commands separate from execution and acceptance."""
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_candidate import CandidateTestCase, CandidateArchiveTests
@@ -26,7 +26,7 @@ class WorkingDraftTests(CandidateTestCase):
     def test_candidate_is_listed_without_moving_current_and_manual_save_is_not_stage_or_issue(self):
         initial = self.read()
         self.assertIsNone(initial["revisionSha256"])
-        from archflow_studio_api.protocol import BASE_CAPABILITIES
+        from project_runtime.protocol import BASE_CAPABILITIES
         self.assertIn("working-draft", BASE_CAPABILITIES)
         head = self.repository.read_head()
         # GH-234 Q2: a generated candidate is retained and listed for recovery,
@@ -131,7 +131,7 @@ class WorkingDraftTests(CandidateTestCase):
         # GH-293: a candidate that starts right after Sync records its execution
         # in the working document. The autosave that read the position just
         # before still lands; only its own source guard can refuse it.
-        from archflow_studio_api.application.binding import bound_project
+        from project_runtime.application.binding import bound_project
         repository = bound_project(self.app.state).repository
         draft = {"source": self.source(), "commands": [{"kind": "translate", "offset": [1, 0, 0]}], "attempt": None}
         first = self.local(None, draft)
@@ -173,8 +173,8 @@ class WorkingDraftTests(CandidateTestCase):
     def test_uploaded_model_and_generated_composition_both_stay_after_cleanup(self):
         import base64
         from pathlib import Path
-        from archflow_studio_api.application.artifacts import register_model_asset
-        from archflow_studio_api.application.binding import bound_project
+        from project_runtime.application.artifacts import register_model_asset
+        from project_runtime.application.binding import bound_project
         content = base64.b64encode((Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes()).decode()
         for generated in (True, False):
             accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")

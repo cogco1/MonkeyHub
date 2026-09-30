@@ -1,6 +1,6 @@
 """A true section perspective: an exact cut, an exact perspective, poché, one retention boundary, named refusals.
 
-The Studio route over the same pipeline is tested in apps/archflow-studio/api/tests/test_section_perspective.py.
+The Studio route over the same pipeline is tested in services/project-runtime/tests/test_section_perspective.py.
 """
 
 from __future__ import annotations

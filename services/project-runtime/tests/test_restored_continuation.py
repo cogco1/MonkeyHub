@@ -22,8 +22,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from archflow.project.repository import FilesystemProjectRepository
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project
@@ -32,7 +32,7 @@ from .test_cad_export import NEEDS_OCCT, no_process, no_rhino
 JOB_DEADLINE = 180.0
 # The Studio API may not import ``tools``, and #56's rehearsal contract names
 # the CLI anyway, so export and restore go through the landed command itself.
-CREATE_PROJECT = Path(__file__).resolve().parents[4] / "tools/create_project.py"
+CREATE_PROJECT = Path(__file__).resolve().parents[3] / "tools/create_project.py"
 
 
 def create_project_cli(*args: str) -> str:

@@ -272,7 +272,7 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(self.files(), before)
 
     def test_source_drawing_keeps_native_vectors_and_editable_pptx_objects(self):
-        from archflow_studio_api.application.drawings import _sheet_fonts
+        from project_runtime.application.drawings import _sheet_fonts
         from monkeydiagram.drawing_output import PaperCanvas, render_pdf, MM_PER_PT
         drawing = PaperCanvas(font_mapping={"normal": _sheet_fonts()["normal"]})
         drawing.start_sheet("A01", (200 * MM_PER_PT, 100 * MM_PER_PT))
@@ -388,7 +388,7 @@ class PublicationTests(unittest.TestCase):
                     self.assertEqual(parsed[0].get_images(), [])
 
     def test_embedded_font_shared_line_widths_and_page_bottom_do_not_clip(self):
-        from archflow_studio_api.application.publication_output import _font
+        from project_runtime.application.publication_output import _font
         from fontTools.ttLib import TTFont
         font, family = _font()
         content = page("type")
@@ -483,9 +483,9 @@ class PagePreviewTests(unittest.TestCase):
         from pathlib import Path
         from fastapi.testclient import TestClient
         from archflow.project.repository import FilesystemProjectRepository
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.main import create_app
-        from archflow_studio_api.settings import StudioSettings
+        from project_runtime.application.binding import bound_project
+        from project_runtime.main import create_app
+        from project_runtime.settings import StudioSettings
 
         temporary = tempfile.TemporaryDirectory(prefix="studio-pages-")
         self.addCleanup(temporary.cleanup)
@@ -517,7 +517,7 @@ class PagePreviewTests(unittest.TestCase):
 
     def test_a_pdf_page_is_rasterised_once_at_boards_size_and_kept(self):
         from unittest.mock import patch
-        from archflow_studio_api.application import boards
+        from project_runtime.application import boards
 
         document = self.upload(two_page_pdf())
         with patch.object(boards, "page_raster", wraps=boards.page_raster) as drawn:
@@ -556,7 +556,7 @@ class PagePreviewTests(unittest.TestCase):
         shutil.rmtree(blobs, ignore_errors=True)
         blobs.parent.mkdir(parents=True, exist_ok=True)
         blobs.write_bytes(b"not a folder")
-        with self.assertLogs("archflow_studio_api.application.projections", "WARNING") as logged:
+        with self.assertLogs("project_runtime.application.projections", "WARNING") as logged:
             first = self.page(document, 1)
         self.assertIn("could not be kept", "\n".join(logged.output))
         with Image.open(BytesIO(first)) as image:
@@ -573,7 +573,7 @@ class PagePreviewTests(unittest.TestCase):
 
     def test_exports_draw_their_raster_previews_from_the_same_cache(self):
         from unittest.mock import patch
-        from archflow_studio_api.application import boards
+        from project_runtime.application import boards
 
         document = self.upload(_jpeg(), "section.jpg", "image/jpeg")
         saved = self.save_publication(request([page("p1", document=document)]))

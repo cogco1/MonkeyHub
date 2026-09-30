@@ -20,15 +20,15 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_DOCUMENT_MODEL_SOURCE, STUDIO_MODEL_ASSET, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectRecordRef, record_file_name
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.application.artifacts import (
+from project_runtime.application.artifacts import (
     _work_copy,
     list_document_work_copies,
     list_documents,
     save_document,
 )
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.binding import bound_project
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest
 

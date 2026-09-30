@@ -12,7 +12,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from archflow_studio_api.application.jobs import (
+from project_runtime.application.jobs import (
     EXCLUSIVE,
     EXCLUSIVE_REASON,
     PARALLEL,
@@ -21,7 +21,7 @@ from archflow_studio_api.application.jobs import (
     SUCCEEDED,
     JobRegistry,
 )
-from archflow_studio_api.transport.errors import StudioError
+from project_runtime.transport.errors import StudioError
 
 
 class Recorder:

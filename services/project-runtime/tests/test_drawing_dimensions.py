@@ -10,14 +10,14 @@ from fastapi.testclient import TestClient
 
 from archflow.adapters import occt_backend
 from archflow.project.refs import record_ref_from_uri
-from archflow_studio_api.application.artifacts import ModelSource
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.drawing_dimensions import (
+from project_runtime.application.artifacts import ModelSource
+from project_runtime.application.binding import bound_project
+from project_runtime.application.drawing_dimensions import (
     list_plan_dimension_intents, resolve_plan_dimensions,
 )
-from archflow_studio_api.application.drawings import _complete_source
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.drawings import _complete_source
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from monkeydiagram.drawing_elevation import ElevationView, read_elevation_source
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
@@ -135,7 +135,7 @@ class DrawingDimensionTests(CandidateTestCase):
 
     def test_hidden_semantic_wall_does_not_emit_an_ordinary_dimension(self):
         model, source = self.source()
-        with patch("archflow_studio_api.application.drawing_dimensions.section_occt_lines",
+        with patch("project_runtime.application.drawing_dimensions.section_occt_lines",
                    side_effect=AssertionError("hidden anchors do not need a section solve")):
             result, = self.resolve(model, source, hidden_object_ids=("obj-door-wall",))
         self.assertEqual(result["status"], "outside-view")
@@ -168,7 +168,7 @@ class DrawingDimensionTests(CandidateTestCase):
                                                 (replace(model, asset_sha256="0" * 64), source),
                                                 (model, replace(source, receipt=bad_receipt))):
             with self.subTest(model=supplied_model), patch(
-                "archflow_studio_api.application.drawing_dimensions.section_occt_lines",
+                "project_runtime.application.drawing_dimensions.section_occt_lines",
                 side_effect=AssertionError("mismatched proof cannot measure"),
             ):
                 result, = self.resolve(supplied_model, supplied_source)
@@ -211,7 +211,7 @@ class DrawingDimensionTests(CandidateTestCase):
         for replacement, expected in (((), "missing"), (lines + lines, "ambiguous"),
             (tuple(replace(line, points=tuple((x + 0.01, y) for x, y in line.points)) for line in lines), "missing")):
             with self.subTest(expected=expected), patch(
-                "archflow_studio_api.application.drawing_dimensions.section_occt_lines", return_value=replacement,
+                "project_runtime.application.drawing_dimensions.section_occt_lines", return_value=replacement,
             ):
                 result, = self.resolve(model, source)
                 self.assertEqual(result["status"], expected)
@@ -237,7 +237,7 @@ class DrawingDimensionTests(CandidateTestCase):
         self.assertIn("unit/value", result["driveReason"])
 
     def test_exact_step_units_convert_model_coordinates_once_and_keep_paper_offset_mm(self):
-        from archflow_studio_api.application.drawing_dimensions import _source_projection
+        from project_runtime.application.drawing_dimensions import _source_projection
 
         model, source = self.source()
         projection, artifact = _source_projection(self.binding, model, None)
@@ -253,7 +253,7 @@ class DrawingDimensionTests(CandidateTestCase):
             frame = replace(self.frame, origin=(0, 0, 1.2 * factor),
                             crop_uv=tuple(v * factor for v in self.frame.crop_uv), far_depth=1.2 * factor)
             with self.subTest(unit=unit), patch(
-                "archflow_studio_api.application.drawing_dimensions._source_projection", return_value=(projection, artifact),
+                "project_runtime.application.drawing_dimensions._source_projection", return_value=(projection, artifact),
             ), patch.object(self.binding.repository, "load_json", return_value=receipt):
                 result, = self.resolve(model, converted, frame=frame)
                 self.assertEqual(result["status"], "resolved", result)

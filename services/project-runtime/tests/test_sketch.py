@@ -17,8 +17,8 @@ import unittest
 from fastapi.testclient import TestClient
 
 from archflow.adapters.three_dm_inspector import inspect_three_dm
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest
 
@@ -79,9 +79,9 @@ class SketchTestCase(unittest.TestCase):
 
         closed = [*SQUARE, SQUARE[0]]
 
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.application.intent import sketch_prism_proposal
-        from archflow_studio_api.application.projection import project_state
+        from project_runtime.application.binding import bound_project
+        from project_runtime.application.intent import sketch_prism_proposal
+        from project_runtime.application.projection import project_state
 
         def sketched(profile, height):
             # The sketch route's request refuses the repeat; its producer call takes either.
@@ -552,14 +552,14 @@ class SketchNewComponentTestCase(unittest.TestCase):
         that produced nothing of its own change has to say so.
         """
 
-        from archflow_studio_api.application.binding import ProjectBinding
-        from archflow_studio_api.application.candidate import run_operator
-        from archflow_studio_api.transport.errors import StudioError
+        from project_runtime.application.binding import ProjectBinding
+        from project_runtime.application.candidate import run_operator
+        from project_runtime.transport.errors import StudioError
         from archflow.state.state_record import Entity, StateRecordEditKind, StateRecordOperator
 
         settings = StudioSettings(cad_export="occt", project_dir=self.project)
         binding = ProjectBinding.open(settings)
-        from archflow_studio_api.application.projection import project_state
+        from project_runtime.application.projection import project_state
 
         record = project_state(binding).record
         operator = StateRecordOperator(
@@ -638,8 +638,8 @@ class SketchDirectGeometryTestCase(unittest.TestCase):
         return job["candidateId"]
 
     def record(self, run: str):
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.application.projection import project_state
+        from project_runtime.application.binding import bound_project
+        from project_runtime.application.projection import project_state
 
         return project_state(bound_project(self.client.app.state), run).record
 
@@ -892,9 +892,9 @@ class ProposalCheckpointTestCase(unittest.TestCase):
         elements = {row["elementId"]: row for row in self.client.get(f"/api/state?run={run_id}").json()["elements"]}
         self.assertTrue({"chain-a", "chain-b", "chain-copy"} <= set(elements))
         self.assertNotIn("chain-temp", elements)
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.application.candidate import replay_candidate
-        from archflow_studio_api.application.projection import project_state
+        from project_runtime.application.binding import bound_project
+        from project_runtime.application.candidate import replay_candidate
+        from project_runtime.application.projection import project_state
 
         binding = bound_project(self.client.app.state)
         self.assertEqual(replay_candidate(binding, run_id).digest, project_state(binding, run_id).record.digest)
@@ -1060,9 +1060,9 @@ class PlanarCompressionProposalTestCase(unittest.TestCase):
 
     def proposed_record(self, proposal):
         from archflow.state.state_record import apply_state_record_operator
-        from archflow_studio_api.application.binding import bound_project
-        from archflow_studio_api.application.projection import project_state
-        from archflow_studio_api.application.proposals import operator_of
+        from project_runtime.application.binding import bound_project
+        from project_runtime.application.projection import project_state
+        from project_runtime.application.proposals import operator_of
 
         base = project_state(bound_project(self.client.app.state), proposal["sourceRunId"]).record
         retained = self.client.app.state.proposals.get(proposal["proposalId"])

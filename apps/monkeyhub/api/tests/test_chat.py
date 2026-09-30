@@ -1205,8 +1205,8 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(forwarded, routes, "Each request forwards once; reads preserve run and writes preserve exact source.")
 
     def test_action_discovery_reads_real_runtime_contracts_without_prior_path_knowledge(self):
-        from archflow_studio_api.main import create_app as studio_app
-        from archflow_studio_api.settings import StudioSettings
+        from project_runtime.main import create_app as studio_app
+        from project_runtime.settings import StudioSettings
 
         runtime = studio_app(StudioSettings(project_dir=self.project, cad_export="off"))
         self.addCleanup(runtime.state.jobs.shutdown)
@@ -2065,8 +2065,8 @@ class ChatTests(unittest.TestCase):
         in the same position is covered here without being named.
         """
 
-        from archflow_studio_api.main import create_app as studio_app
-        from archflow_studio_api.settings import StudioSettings
+        from project_runtime.main import create_app as studio_app
+        from project_runtime.settings import StudioSettings
 
         project = self.root / "discovery-round-trip"
         FilesystemProjectRepository.initialize(project, project_id="discovery-round-trip",
@@ -2160,8 +2160,8 @@ class ChatTests(unittest.TestCase):
     def test_schema_answers_are_request_inputs_with_repeats_named_once(self):
         """#404 F7: a schema answer was 9-35k characters of titles, responses and repeated subtrees."""
 
-        from archflow_studio_api.main import create_app as studio_app
-        from archflow_studio_api.settings import StudioSettings
+        from project_runtime.main import create_app as studio_app
+        from project_runtime.settings import StudioSettings
 
         project = self.root / "compact-schema"
         FilesystemProjectRepository.initialize(project, project_id="compact-schema",
@@ -3517,8 +3517,8 @@ class ChatTests(unittest.TestCase):
         import fitz
         from PIL import Image
         from urllib.error import HTTPError
-        from archflow_studio_api.main import create_app as studio_app
-        from archflow_studio_api.settings import StudioSettings
+        from project_runtime.main import create_app as studio_app
+        from project_runtime.settings import StudioSettings
 
         project = self.root / "chat-project"
         FilesystemProjectRepository.initialize(project, project_id="chat-project", initial_state={"project_id": "chat-project", "version": 0})
@@ -3656,11 +3656,11 @@ class ChatTests(unittest.TestCase):
         import io
         from urllib.error import HTTPError
         from PIL import Image
-        from archflow_studio_api.application.visual_observation import (
+        from project_runtime.application.visual_observation import (
             ObservationUsage, ProviderAnswer, ProviderCapability,
         )
-        from archflow_studio_api.main import create_app as studio_app
-        from archflow_studio_api.settings import StudioSettings
+        from project_runtime.main import create_app as studio_app
+        from project_runtime.settings import StudioSettings
 
         project = self.root / "chat-project"
         FilesystemProjectRepository.initialize(project, project_id="chat-project",
@@ -3708,7 +3708,7 @@ class ChatTests(unittest.TestCase):
 
         self.enterContext(patch.object(chat, "_request_json", side_effect=request))
         self.enterContext(patch.object(chat, "_SERVICE_OPENER")).open.side_effect = open_request
-        self.enterContext(patch("archflow_studio_api.routes.intents.visual_provider", return_value=Provider()))
+        self.enterContext(patch("project_runtime.routes.intents.visual_provider", return_value=Provider()))
         return session, page, sent
 
     def say(self, session, content):

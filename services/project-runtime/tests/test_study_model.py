@@ -25,13 +25,13 @@ from archflow.contracts.canonical import canonical_digest
 from archflow.ports.model import ModelInvocationReceipt, ModelInvocationStatus, ModelPhase
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER
-from archflow_studio_api.application import intent_agent, study_model
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.intent_agent import CodexCompiler, AnthropicCompiler, DeterministicCompiler, IntentAgentFailed
-from archflow_studio_api.application.monitoring import MonitoredCompiler, StudioMonitor
-from archflow_studio_api.transport.errors import StudioError
-from archflow_studio_api.transport.study import StudyResearchRequestDto
-from archflow_studio_api.routes import study as study_routes
+from project_runtime.application import intent_agent, study_model
+from project_runtime.application.binding import bound_project
+from project_runtime.application.intent_agent import CodexCompiler, AnthropicCompiler, DeterministicCompiler, IntentAgentFailed
+from project_runtime.application.monitoring import MonitoredCompiler, StudioMonitor
+from project_runtime.transport.errors import StudioError
+from project_runtime.transport.study import StudyResearchRequestDto
+from project_runtime.routes import study as study_routes
 from monkeymonitor.store import UsageLog
 
 from . import test_study_research as research_tests

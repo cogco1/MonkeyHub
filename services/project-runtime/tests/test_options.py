@@ -19,9 +19,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.application.binding import record_kind
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.binding import record_kind
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import (
     EVIDENCE,
@@ -654,7 +654,7 @@ class SelectedOptionsTests(OptionsTestCase):
         listed = self.client.get("/api/options").json()["options"]
         self.assertEqual([option["modelSource"] for option in listed], [source, source])
 
-        with patch("archflow_studio_api.application.candidate.run_operator", return_value={}) as worker:
+        with patch("project_runtime.application.candidate.run_operator", return_value={}) as worker:
             for option in (first, sent):
                 with self.subTest(transform=option["transform"]):
                     self.assertEqual(option["modelSource"], source)

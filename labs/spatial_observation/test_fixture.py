@@ -69,7 +69,7 @@ class PublicFixtureTests(unittest.TestCase):
     def test_all_five_pngs_match_current_production_model_view_byte_for_byte(self):
         views = self.base.render_views()
         # _drawing_recipe has loaded the actual Studio package.
-        from archflow_studio_api.application import drawings
+        from project_runtime.application import drawings
         verified = self.base._verified()
         binding = SimpleNamespace(repository=self.base.repository)
         with patch.object(drawings, "_complete_source", return_value=(self.base.elevation_source, verified.receipt)):

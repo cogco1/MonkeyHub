@@ -28,10 +28,10 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.application import candidate as candidate_module
-from archflow_studio_api.application.binding import record_kind
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import (
+from project_runtime.application import candidate as candidate_module
+from project_runtime.application.binding import record_kind
+from project_runtime.main import create_app
+from project_runtime.settings import (
     CAD_EXPORT_ENV,
     CAD_EXPORT_OFF,
     CAD_EXPORT_RHINO,

@@ -22,8 +22,8 @@ from fastapi.testclient import TestClient
 from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, SEAT_3DM_INSPECTION
 from archflow.state.state_record import StateRecord
 
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.catalog import (
+from project_runtime.application.binding import bound_project
+from project_runtime.application.catalog import (
     BOUND,
     EDITABLE,
     MISSING,
@@ -31,9 +31,9 @@ from archflow_studio_api.application.catalog import (
     UNKNOWN_COMPONENT,
     catalog_of,
 )
-from archflow_studio_api.application.projection import project_state
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.projection import project_state
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import (
     PROJECT_ID,

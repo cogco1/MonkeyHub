@@ -18,22 +18,22 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
-import archflow_studio_api  # noqa: F401
+import project_runtime  # noqa: F401
 
 from archflow.contracts.canonical import canonical_digest
 from archflow.ports.model import ModelInvocationStatus
-from archflow_studio_api.application import intent_agent
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.intent_agent import (
+from project_runtime.application import intent_agent
+from project_runtime.application.binding import bound_project
+from project_runtime.application.intent_agent import (
     AnthropicCompiler,
     CodexCompiler,
     DocumentVisual,
     IntentAgentFailed,
     Selection,
 )
-from archflow_studio_api.application.projection import project_state
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.projection import project_state
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import CODEX_SHIM_VERSION, PROJECT_ID, make_project
 

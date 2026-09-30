@@ -18,9 +18,9 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.binding import bound_project
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_conditional_reads import wait_until

@@ -5,16 +5,16 @@ import json
 from types import SimpleNamespace
 import unittest
 
-import archflow_studio_api  # noqa: F401
+import project_runtime  # noqa: F401
 from jsonschema import Draft202012Validator
 from archflow.project.refs import ProjectVersionRef
 from archflow.state.state_record import Entity, Lineage, Parameter, StateRecord, apply_state_record_operator
-from archflow_studio_api.application.intent import component_edit_proposal, parse_utterance
-from archflow_studio_api.application.intent_agent import _parse_answer, _strict_response_schema, record_sheet, response_schema, Selection
-from archflow_studio_api.application.intent_context import IntentContext, compile_context, model_context
-from archflow_studio_api.application.intent_requests import action_answer, action_preflight, provider_schema, request_schema, validate_request_answer
-from archflow_studio_api.application.projection import _elements
-from archflow_studio_api.transport.errors import StudioError
+from project_runtime.application.intent import component_edit_proposal, parse_utterance
+from project_runtime.application.intent_agent import _parse_answer, _strict_response_schema, record_sheet, response_schema, Selection
+from project_runtime.application.intent_context import IntentContext, compile_context, model_context
+from project_runtime.application.intent_requests import action_answer, action_preflight, provider_schema, request_schema, validate_request_answer
+from project_runtime.application.projection import _elements
+from project_runtime.transport.errors import StudioError
 
 
 def _record(*, bound=False, producer="wall", parameter_unit="m"):
@@ -239,7 +239,7 @@ class IntentRequestSchemaTests(unittest.TestCase):
 
     def test_lengths_convert_exactly_into_the_declared_unit(self):
         # #404 F17: one table serves the scalar seam and this path, with no float drift.
-        from archflow_studio_api.application.intent_requests import in_unit
+        from project_runtime.application.intent_requests import in_unit
         for value, unit, declared, expected in (
                 (1100, "mm", "m", 1.1), (2200, "mm", "m", 2.2), (5, "mm", "m", 0.005), (12.5, "cm", "m", 0.125),
                 (700, "mm", "m", 0.7), (10, "ft", "m", 3.048), (12, "in", "m", 0.3048), (1.2, "m", "mm", 1200),
@@ -253,7 +253,7 @@ class IntentRequestSchemaTests(unittest.TestCase):
         # #404 review of 13f8b7b7: a record may declare "Metres" or "M". The declared
         # side is read through the same aliases as the unit that was said.
         from decimal import Decimal
-        from archflow_studio_api.application.intent_requests import in_unit, in_unit_exact
+        from project_runtime.application.intent_requests import in_unit, in_unit_exact
         for value, unit, declared, expected in (
                 (2200, "mm", "Metres", 2.2), (2200, "mm", "M", 2.2), (2.2, "m", "millimetres", 2200),
                 (35, "cm", " Meter ", 0.35)):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from archflow_studio_api.application.conventions import parse_conventions
+from project_runtime.application.conventions import parse_conventions
 
 
 class ParseTests(unittest.TestCase):

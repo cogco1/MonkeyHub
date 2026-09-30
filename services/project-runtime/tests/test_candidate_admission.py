@@ -21,10 +21,10 @@ from archflow.project.record_kinds import (
     SEAT_RELATION_CHECK,
     STUDIO_WORKING_COPY,
 )
-from archflow_studio_api.application.authentication import request_action
-from archflow_studio_api.application.binding import ProjectBinding, bound_project
-from archflow_studio_api.main import create_app
-from archflow_studio_api.protocol import BASE_CAPABILITIES
+from project_runtime.application.authentication import request_action
+from project_runtime.application.binding import ProjectBinding, bound_project
+from project_runtime.main import create_app
+from project_runtime.protocol import BASE_CAPABILITIES
 from monkeyarch.capabilities.relation_checks import RelationCheck, RelationCheckReport
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID

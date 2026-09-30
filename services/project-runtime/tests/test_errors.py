@@ -10,9 +10,9 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.errors import BlockedNeedsHuman, StudioError
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.errors import BlockedNeedsHuman, StudioError
 
 from .support import (
     PROJECT_ID,

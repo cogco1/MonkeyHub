@@ -29,18 +29,18 @@ from fastapi.testclient import TestClient
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import Entity, Parameter
 
-from archflow_studio_api.application import clarification
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.clarification import (
+from project_runtime.application import clarification
+from project_runtime.application.binding import bound_project
+from project_runtime.application.clarification import (
     editable_descendants,
     kinds_in,
     property_in,
     resolve,
 )
-from archflow_studio_api.application.intent_agent import CODEX, Compilation, Selection
-from archflow_studio_api.application.projection import _elements, project_state
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.intent_agent import CODEX, Compilation, Selection
+from project_runtime.application.projection import _elements, project_state
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import (
     PROJECT_ID,

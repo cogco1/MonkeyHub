@@ -5,12 +5,12 @@ import unittest
 from fastapi.testclient import TestClient
 
 from archflow.state.state_record import apply_state_record_operator
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.projection import project_proposed_record, project_state
-from archflow_studio_api.application.proposals import operator_of
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.transport.state import to_dto
+from project_runtime.application.binding import bound_project
+from project_runtime.application.projection import project_proposed_record, project_state
+from project_runtime.application.proposals import operator_of
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+from project_runtime.transport.state import to_dto
 
 from . import test_sketch as sketch_tests
 

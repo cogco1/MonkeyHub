@@ -11,8 +11,8 @@ from unittest.mock import Mock, patch
 from archflow.ports.model import (
     ModelInvocationReceipt, ModelInvocationRequest, ModelInvocationStatus, ModelPhase,
 )
-from archflow_studio_api.application import intent_agent
-from archflow_studio_api.application.intent_agent import (
+from project_runtime.application import intent_agent
+from project_runtime.application.intent_agent import (
     AnthropicCompiler, CodexCompiler, IntentAgentFailed, Selection,
 )
 

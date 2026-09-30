@@ -19,8 +19,8 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from fastapi.testclient import TestClient
 
 from archflow.adapters.occt_backend import occt_available
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_candidate import CandidateTestCase
@@ -33,7 +33,7 @@ STUDIO = "http://127.0.0.1:8791"
 def hub_chat():
     """The Hub's chat adapter, which lives beside this API rather than inside it."""
 
-    with patch.object(sys, "path", [str(Path(__file__).resolve().parents[3] / "monkeyhub/api"), *sys.path]):
+    with patch.object(sys, "path", [str(Path(__file__).resolve().parents[3] / "apps/monkeyhub/api"), *sys.path]):
         from monkeyhub_api import chat
         from monkeyhub_api.models import HubFailure
     return chat, HubFailure

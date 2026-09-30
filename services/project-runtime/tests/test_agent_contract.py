@@ -18,8 +18,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from monkeyarch.construction.vocabulary import LAYER_RULE_TOKENS, layer_rule_violations
 
 # The three routes an agent reads to author and mean geometry (spec Sec.3.2);

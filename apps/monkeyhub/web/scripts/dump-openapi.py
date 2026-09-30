@@ -9,9 +9,9 @@ WEB_DIR = Path(__file__).resolve().parent.parent
 ROOT = WEB_DIR.parents[2]
 
 def main() -> None:
-    sys.path[:0] = [str(ROOT), str(ROOT / "apps/archflow-studio/api"), str(ROOT / "apps/monkeyhub/api")]
-    from archflow_studio_api.main import create_app as runtime_app
-    from archflow_studio_api.settings import StudioSettings
+    sys.path[:0] = [str(ROOT), str(ROOT / "services/project-runtime/src"), str(ROOT / "apps/monkeyhub/api")]
+    from project_runtime.main import create_app as runtime_app
+    from project_runtime.settings import StudioSettings
     from monkeyhub_api.main import create_app as hub_app, HubSettings
     with TemporaryDirectory(prefix="monkeyhub-schema-") as directory:
         applications = (
