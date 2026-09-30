@@ -247,11 +247,6 @@ MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 
 | R1-9 | #495 | tools 按用途分组：`tools/{dev,project,governance,release,benchmarks}/`，`tests/monkeymonitor/` 的基准驱动进 `tools/benchmarks/`。已落地 | R1-5 |
 | R1-10 | #496 | 去掉 `legacy_root_packages` 棘轮，确认没有遗留目录和引用，发布第一轮报告 | 以上全部 |
 
-archflow 搬迁（R1-3）和 Runtime 改名（R1-5）这两个 PR 里，CI 的 projection-parity 检查用 base 的旧布局和候选的新布局
-同时运行，需要临时识别两种布局：R1-3 起 `tools/benchmarks/projection_check.py` 的 `_kernel_source` 与 verify.yml 生成 base
-项目的那一步都认 archflow 在代码根或在 `packages/archflow/src`，R1-5 起两处也认 Runtime 在 `apps/archflow-studio/api`
-（`archflow_studio_api`）或在 `services/project-runtime/src`（`project_runtime`，`_runtime_source`）；所有 base 都是
-新布局之后，下一个 PR 删除这段逻辑。
 每次搬迁的完成标准是新位置能独立测试、宿主经明确入口调用、原使用流程仍可运行，不是新目录已经出现。
 
 ### 7.3 archcheck 如何守住布局
