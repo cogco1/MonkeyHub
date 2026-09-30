@@ -1,37 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-487",
-      "status": "active",
-      "branch": "codex/487-web-shared-assets",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-487-web-shared-assets",
-      "base_ref": "17ac51d57162cf2eca3f37f4336f32d748656aa2",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "hub.shell",
-        "tools.package_monkeyapps"
-      ],
-      "write_scope": [
-        "apps/shared-web/",
-        "packages/web-shared/",
-        "apps/monkeyhub/web/src/",
-        "apps/monkeyhub/web/workspaces/src/",
-        "apps/monkeyhub/web/workspaces/test/",
-        "apps/archflow-studio/assets/",
-        "apps/monkeyhub/assets/",
-        "apps/monkeyhub/desktop/tauri.conf.json",
-        "apps/monkeyhub/installer/install.ps1",
-        "apps/monkeyhub/launch-hub.ps1",
-        "tools/package_monkeyapps.py",
-        "pyproject.toml",
-        "docs/2026-09-24-monkeyhub-ui-reality-audit.md",
-        "docs/prototypes/candidate-graph/README.md",
-        "docs/prototypes/candidate-graph/prototype.css"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
