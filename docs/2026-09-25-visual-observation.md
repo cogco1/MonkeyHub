@@ -11,7 +11,7 @@
 
 | Short | Path |
 | --- | --- |
-| `API` | `apps/archflow-studio/api/archflow_studio_api` |
+| `API` | `services/project-runtime/src/project_runtime` |
 | `HUBAPI` | `apps/monkeyhub/api/monkeyhub_api` |
 | `WS` | `apps/monkeyhub/web/src` |
 | `MM` | `monkeymonitor` |
@@ -50,7 +50,7 @@
 
 | Path | Producer | Binding verified before pixels | Stale / forgery risk |
 | --- | --- | --- | --- |
-| `GET /api/drawings/model-view` (`API/routes/drawings.py:74-90` → `model_view`, `API/application/drawings.py:118-140`) | OCCT hidden-line projection of the retained STEP. Rasterised by Pillow, 150 dpi, ≤1024 px. Front, back, left, right or top only. | `require_model_source` (`API/application/artifacts.py:1074-1090`) checks the exact run, stateDigest and asset (409 `MODEL_SOURCE_MISMATCH` / `MODEL_SOURCE_UNREGISTERED`). `_complete_source` (`API/application/drawings.py:61-81`) requires the paired STEP; `read_elevation_source` re-hashes it. | Exact but not current. An older run still answers with no current/outdated flag (`apps/archflow-studio/api/tests/test_drawings.py:90`). No cache: every call projects again (6–40 s for 1–3 views in §6). No axonometric or perspective view. |
+| `GET /api/drawings/model-view` (`API/routes/drawings.py:74-90` → `model_view`, `API/application/drawings.py:118-140`) | OCCT hidden-line projection of the retained STEP. Rasterised by Pillow, 150 dpi, ≤1024 px. Front, back, left, right or top only. | `require_model_source` (`API/application/artifacts.py:1074-1090`) checks the exact run, stateDigest and asset (409 `MODEL_SOURCE_MISMATCH` / `MODEL_SOURCE_UNREGISTERED`). `_complete_source` (`API/application/drawings.py:61-81`) requires the paired STEP; `read_elevation_source` re-hashes it. | Exact but not current. An older run still answers with no current/outdated flag (`services/project-runtime/tests/test_drawings.py:90`). No cache: every call projects again (6–40 s for 1–3 views in §6). No axonometric or perspective view. |
 | `POST /api/board/export` (`API/routes/boards.py:31-46` → `export_board_pages`, `API/application/boards.py:170-221`) | `_page_raster` (`API/application/boards.py:144-167`): one registered PDF or image page as PNG/JPEG. | Exact registered bytes, revisionRef (null is not a wildcard) and page index. A digest mismatch is 409 `DOCUMENT_DIGEST_MISMATCH`. | Exact page, but not the Board scene. No server raster of a Board frame exists. No check against a newer replacement page. |
 | `POST /api/drawings/sheets`, `/drawings/elevations`, `/drawings/plans` (`API/application/drawings.py`, `drawing_plans.py`) | Retained PDF sheet, PNG/SVG elevation, cut-plan SVG | Exact model source and receipt. Cut plans alone have a Working Head status (`API/application/drawing_plans.py:267`). | Retained revisions; they are read as pages through board export. |
 | Render results (`API/application/rendering.py`) | Adapter output kept as a registered document | Freshness is recomputed on read (`_freshness`, `API/application/rendering.py:91-153`) against the Working Head. | The best-bound image source today. |
@@ -328,7 +328,7 @@ An exec round is one proposal → candidate → readback cycle. Wall time is the
 
 ## Checks run
 
-- `apps/archflow-studio/api/tests/test_visual_observation.py` (16 tests):
+- `services/project-runtime/tests/test_visual_observation.py` (16 tests):
   - source binding refuses a stale digest before the provider;
   - budget allowance, ordering, exhaustion and polish bounds;
   - schema and semantic validation;

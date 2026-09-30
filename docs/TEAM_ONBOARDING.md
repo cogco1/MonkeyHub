@@ -134,12 +134,12 @@ py -3.12 -m venv "$ArchRuntime\venv"
 $ArchPython = "$ArchRuntime\venv\Scripts\python.exe"
 $env:PATH = "$ArchRuntime\venv\Scripts;" + $env:PATH
 & $ArchPython -m pip install -e 'packages/archflow[cad-inspection]'
-& $ArchPython -m pip install -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
+& $ArchPython -m pip install -r services/project-runtime/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 & $ArchPython -m pip check
 npm.cmd ci --prefix apps/monkeyhub/web
 npm.cmd ci --prefix apps/monkeyhub/web/tools/openapi-ts
 
-Set-Location "$ArchSource\apps\archflow-studio\api"
+Set-Location "$ArchSource\services\project-runtime"
 $env:ARCHFLOW_ONBOARDING_PROJECTS = "$ArchRuntime\workspace\projects"
 & $ArchPython -c "import os; from pathlib import Path; from tests.support import make_empty_project; print(make_empty_project(Path(os.environ['ARCHFLOW_ONBOARDING_PROJECTS'])).layout.root)"
 ```
@@ -151,13 +151,13 @@ $env:ARCHFLOW_ONBOARDING_PROJECTS = "$ArchRuntime\workspace\projects"
 终端 A 沿用上述变量：
 
 ```powershell
-Set-Location "$ArchSource\apps\archflow-studio\api"
+Set-Location "$ArchSource\services\project-runtime\src"
 $env:ARCHFLOW_STUDIO_PROJECT_DIR = "$ArchRuntime\workspace\projects\demo-project"
 $env:ARCHFLOW_STUDIO_REFERENCE_RUN = ''
 $env:ARCHFLOW_STUDIO_MODE = 'local'
 $env:ARCHFLOW_STUDIO_INTENT_PROVIDER = 'deterministic'
 $env:ARCHFLOW_STUDIO_CAD_EXPORT = 'off'
-& $ArchPython -m archflow_studio_api.main --host 127.0.0.1 --port 18080
+& $ArchPython -m project_runtime.main --host 127.0.0.1 --port 18080
 ```
 
 终端 B 重新填写自己的源码路径：
@@ -213,7 +213,7 @@ $ArchSource = 'D:\code\ARCHFLOW_V4'
 $ArchRuntime = 'D:\runtime\archflow-first-trial'
 $ArchPython = "$ArchRuntime\venv\Scripts\python.exe"
 $env:PATH = "$ArchRuntime\venv\Scripts;" + $env:PATH
-Set-Location "$ArchSource\apps\archflow-studio\api"
+Set-Location "$ArchSource\services\project-runtime"
 & $ArchPython -m unittest tests.test_health tests.test_protocol tests.test_candidate
 Set-Location "$ArchSource\apps\monkeyhub\web"
 npm.cmd test
@@ -236,7 +236,7 @@ npm.cmd run build
 | 研究命令、输入与运行记录 | 工具箱 `src/hgr/cli.py`、`runner.py`、`store.py` | 对应 `tests/` 行为测试 |
 | 图表、报告、来源与归档 | 工具箱 `src/hgr/projections.py`，相关 `skills/<id>/` | 合成演示；只有改动涉及恢复/重建时再跑 benchmark |
 | MonkeyArch 交互 | ArchFlow `apps/monkeyhub/web/src/`，先查对应 feature | 交互测试、类型与构建；DTO 变化另查生成客户端 |
-| API 用例与项目绑定 | ArchFlow `apps/archflow-studio/api/archflow_studio_api/` | 对应路由与用例测试，保留项目及候选绑定 |
+| API 用例与项目绑定 | ArchFlow `services/project-runtime/src/project_runtime/` | 对应路由与用例测试，保留项目及候选绑定 |
 | 几何、依赖、验证或项目存储 | ArchFlow [SYSTEM_MAP.md](SYSTEM_MAP.md) 的现有模块 | registry 中该模块的测试与 `tools/archcheck.py` |
 
 新增 Skill 优先扩展真实已有条目，不复制两仓实现。研究问题和结论由成员提出；真实项目改动由项目任务确定。本清单不会自动派发新的模型算法、Skill 包或存储机制。

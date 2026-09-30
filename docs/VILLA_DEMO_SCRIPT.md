@@ -41,15 +41,15 @@ API：
 # 下面的绝对路径是示例，按本机的源码、Python、npm 与工作区位置替换。
 $SourceRoot = 'D:\Source\MonkeyHub'
 $WorkspaceRoot = 'D:\MonkeyHubRuntime\workspace'
-Set-Location -LiteralPath "$SourceRoot\apps\archflow-studio\api"
-$env:PYTHONPATH = "$SourceRoot;$SourceRoot\apps\archflow-studio\api"
+Set-Location -LiteralPath "$SourceRoot\services\project-runtime"
+$env:PYTHONPATH = "$SourceRoot;$SourceRoot\services\project-runtime\src"
 $env:ARCHFLOW_STUDIO_MODE = 'local'
 $env:ARCHFLOW_STUDIO_CAD_EXPORT = 'occt'
 $env:ARCHFLOW_STUDIO_REFERENCE_RUN = 'villa-demo-20260905-a02'
 $env:ARCHFLOW_STUDIO_INTENT_PROVIDER = 'codex'
 $env:ARCHFLOW_STUDIO_CODEX = 'C:\Program Files\nodejs\codex.cmd'
 & 'C:\Program Files\Python312\python.exe' `
-  -m archflow_studio_api.main --host 127.0.0.1 --port 8001 `
+  -m project_runtime.main --host 127.0.0.1 --port 8001 `
   --project-dir "$WorkspaceRoot\projects\villa-rotonda-reconstruction"
 ```
 

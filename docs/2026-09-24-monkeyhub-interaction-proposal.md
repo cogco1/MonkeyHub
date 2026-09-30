@@ -90,7 +90,7 @@
 | MonkeyArch · 建模 | rail「建模」；结果卡片「在建模中查看」 | 修改起点；查看中的模型 | 切走后保持挂载，相机与选择保留 | 底栏两行状态；设计历史覆盖视口 | 顶部条与设计历史抽屉（第 5 节） |
 | MonkeyBoard · 画板 | rail「工作面」组「画板」；左上角「画板 \| 排版」切换两种模式 | 页面及其 `modelSource` | 双击页进入图页编辑；返回画板恢复视角 | 页面不检查是否过期（审计 9.2c） | 过期提示与发反馈前选择（6.3） |
 | MonkeyDiagram 图页编辑 | 画板里双击页 | 该页的 run / asset / revision / page | 「返回画板」 | 打开时 rail 仍高亮画板（审计 §3）；刷新丢失；切到建模即关闭（[ProjectWorkspace.tsx:73](../apps/monkeyhub/web/src/app/ProjectWorkspace.tsx#L73)） | 顶部条显示「画板 › 页名」；页状态写进地址（B3）【仅 UI】 |
-| MonkeyDiagram · 图纸（工具） | rail「工具」组「图纸」，与渲染、制作、用量并列（#295、#300） | 同一项目、Project Runtime 与修改起点；出图来源 | 保持挂载；再按「图纸」回到打开前的工作区，从对话直接打开时收起面板 | 只列已接受的 Stage，而后端也接受精确的保留模型（[drawings.py:40](../apps/archflow-studio/api/archflow_studio_api/application/drawings.py#L40)）；与图页编辑共用一名（审计 §3） | 默认从修改起点出图（6.2） |
+| MonkeyDiagram · 图纸（工具） | rail「工具」组「图纸」，与渲染、制作、用量并列（#295、#300） | 同一项目、Project Runtime 与修改起点；出图来源 | 保持挂载；再按「图纸」回到打开前的工作区，从对话直接打开时收起面板 | 只列已接受的 Stage，而后端也接受精确的保留模型（[drawings.py:40](../services/project-runtime/src/project_runtime/application/drawings.py#L40)）；与图页编辑共用一名（审计 §3） | 默认从修改起点出图（6.2） |
 | 渲染 | rail「工具」组「渲染」；建模里的相机 | Modeling 当前视图（#273 已可抓取为冻结输入） | 结果自动进画板 | 引擎未配置时不指向设置（审计 9.1）；「发送到 Board」与自动接收重复（9.4） | 顶部条来源状态；空态链接设置（B3） |
 | 排版（画板的模式） | 画板左上角「画板 \| 排版」；画板「放入汇报」；`view=publish` 链接照旧 | 所选图片及其来源状态 | — | 在默认面板宽度下过窄（审计 9.4-3）；过期只在属性里显示 | 顶部条汇总过期数与「全部更新」 |
 | 用量（MonkeyMonitor） | rail「用量」（工具组） | 应带当前项目，目前默认全部 | 返回之前的工具 | 从项目进入不筛选该项目（#234 审计 B 项） | 从项目进入时默认筛选该项目（B3） |
@@ -167,7 +167,7 @@ Agent：已把主入口移到南立面中段，加了 3 m 深的雨棚；东侧�
 
 ### 6.2 模型 → 图纸
 
-- **默认从修改起点出图**【仅 UI】：后端已接受精确的保留模型（[drawings.py:40](../apps/archflow-studio/api/archflow_studio_api/application/drawings.py#L40)），只列 Stage 的限制只在界面里（审计 9.2a）。从 Stage 出图收进「更多」。
+- **默认从修改起点出图**【仅 UI】：后端已接受精确的保留模型（[drawings.py:40](../services/project-runtime/src/project_runtime/application/drawings.py#L40)），只列 Stage 的限制只在界面里（审计 9.2a）。从 Stage 出图收进「更多」。
 - **列表三态**【仅 UI】：每张图显示 跟随 / 已过期 / 已固定；已过期给「更新到修改起点」；重建时保留尺寸并报告断开的锚点（现有能力，审计 9.2a）。
 - **图纸命名**【仅 UI】：新建图纸可命名，选择器显示来源（Stage 或修改起点）和时间，不再都叫 `floor-plan.png`（审计 9.4-2）。
 - **未保存的修订**【仅 UI】：切换修订前确认；在别的工作区完成的保存要反映到界面（审计 9.2a、9.2d）。

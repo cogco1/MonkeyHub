@@ -9,8 +9,8 @@
 
 | Short | Path |
 | --- | --- |
-| `API` | `apps/archflow-studio/api/archflow_studio_api` |
-| `TESTS` | `apps/archflow-studio/api/tests` |
+| `API` | `services/project-runtime/src/project_runtime` |
+| `TESTS` | `services/project-runtime/tests` |
 | `RD` | `TESTS/test_representation_dependencies.py` |
 
 ## 0. Answer
@@ -142,9 +142,9 @@ The tests use fixtures only. The room fixture in `TESTS/test_drawing_plans.py::C
 Run from a checkout with the Studio API dependencies. `cadquery-ocp` is optional; without it the OCCT tests skip. Separate `PYTHONPATH` entries with `;` on Windows and `:` elsewhere.
 
 ```text
-PYTHONPATH=<repo>;<repo>/apps/archflow-studio/api;<repo>/apps/monkeyhub/api;<repo>/packages/monkeyfab/src
-python -m pytest -q apps/archflow-studio/api/tests/test_representation_dependencies.py -k three_exact
-python -m pytest -q apps/archflow-studio/api/tests/test_representation_dependencies.py
+PYTHONPATH=<repo>;<repo>/services/project-runtime/src;<repo>/apps/monkeyhub/api;<repo>/packages/monkeyfab/src
+python -m pytest -q services/project-runtime/tests/test_representation_dependencies.py -k three_exact
+python -m pytest -q services/project-runtime/tests/test_representation_dependencies.py
 ```
 
 What `-k three_exact` shows:

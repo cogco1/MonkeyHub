@@ -1,12 +1,12 @@
 # Project Runtime
 
-MonkeyHub is the application. This directory retains the internal Python package
-`archflow_studio_api` and shared artwork; its historical name is not a second product.
+MonkeyHub is the application. This directory holds the Project Runtime: the Python package
+`project_runtime` in `src/`, its tests and its requirements. It is not a second product.
 The [Project Runtime contract](../../docs/PROJECT_RUNTIME.md) defines project binding,
 process identity, lifecycle and API forwarding.
 
 Board and Arch render directly inside the Hub frontend. Diagram is the page editor
-opened from Board. Their source is in `../monkeyhub/web/src/`; there is no
+opened from Board. Their source is in `../../apps/monkeyhub/web/src/`; there is no
 Studio web server, standalone browser shell, iframe boundary or second frontend build.
 Application settings, navigation and language catalogs belong to Hub.
 
@@ -482,7 +482,7 @@ From the repo root:
 
 ```powershell
 py -3.12 tools/archcheck.py
-py -3.12 -m unittest discover -s apps/archflow-studio/api/tests -t apps/archflow-studio/api -v
+py -3.12 -m unittest discover -s services/project-runtime/tests -t services/project-runtime -v
 py -3.12 -m unittest discover -s tests
 ```
 
@@ -507,7 +507,7 @@ preview its export under the `CANDIDATE` chip → read the review-readiness card
 sentence and get a question card → open the evidence drawer; then the light theme and the
 900 px fold.
 
-Optional browser smoke scripts (`../monkeyhub/web/test/*.browser.mjs`) use an installed `playwright` package, or a filesystem module path supplied through `PLAYWRIGHT_MODULE`. `documentCanvas.browser.mjs` also requires `DOCUMENT_FIXTURES` pointing to its disposable PDF/image fixtures; these scripts use an explicit Project Runtime and the test-only workspace fixture and are separate from `npm test`.
+Optional browser smoke scripts (`../../apps/monkeyhub/web/test/*.browser.mjs`) use an installed `playwright` package, or a filesystem module path supplied through `PLAYWRIGHT_MODULE`. `documentCanvas.browser.mjs` also requires `DOCUMENT_FIXTURES` pointing to its disposable PDF/image fixtures; these scripts use an explicit Project Runtime and the test-only workspace fixture and are separate from `npm test`.
 
 ## Local Runtime and shared project collaboration
 
@@ -529,7 +529,7 @@ $env:ARCHFLOW_STUDIO_SERVICE_ROLE = 'shared_project'
 $env:ARCHFLOW_STUDIO_ACTORS_FILE = '<runtime-root>\config\actors.json'
 $env:ARCHFLOW_STUDIO_ORIGINS = 'http://127.0.0.1:8891'
 $env:ARCHFLOW_STUDIO_CAD_EXPORT = 'off'
-python -m archflow_studio_api.main --project-dir '<runtime-root>\workspace\shared\projects\demo-project' --host 127.0.0.1 --port 8890
+python -m project_runtime.main --project-dir '<runtime-root>\workspace\shared\projects\demo-project' --host 127.0.0.1 --port 8890
 ```
 
 The external actor file names unique credentials and explicit actions. Replace the example
@@ -551,7 +551,7 @@ $env:ARCHFLOW_STUDIO_SYNC_URL = 'http://127.0.0.1:8890'
 $env:ARCHFLOW_STUDIO_SYNC_PROJECT_ID = 'demo-project'
 $env:ARCHFLOW_STUDIO_SYNC_TOKEN = 'REPLACE_ALICE_TOKEN'
 $env:ARCHFLOW_STUDIO_CAD_EXPORT = 'occt'
-python -m archflow_studio_api.main --project-dir '<runtime-root>\workspace\alice\projects\demo-project' --host 127.0.0.1 --port 8891
+python -m project_runtime.main --project-dir '<runtime-root>\workspace\alice\projects\demo-project' --host 127.0.0.1 --port 8891
 ```
 
 Initialize the shared project's first Stage with the existing model-source endpoint. Then
@@ -571,7 +571,7 @@ authenticate multiple actors. The first shared project must already exist. The t
 test uses disposable synthetic inputs and actual OCCT models:
 
 ```powershell
-python -m pytest apps/archflow-studio/api/tests/test_collaboration_http.py -q
+python -m pytest services/project-runtime/tests/test_collaboration_http.py -q
 ```
 
 `ARCHFLOW_COLLABORATION_PYTHON` and `ARCHFLOW_COLLABORATION_SOURCE_ROOT` can point that test

@@ -111,8 +111,8 @@ and its remaining product validation.
 Entry points: `tools/run_project.py` (a run of one project), `tools/verify_state_record.py`
 (replay equivalence), `tools/freeze_project_stage_workflow.py`, `tools/issue_project.py`, and MonkeyHub.
 Its single frontend at `apps/monkeyhub/web/` renders Arch and Board directly; Diagram opens a
-Board page. The API-only Project Runtime remains at `apps/archflow-studio/api/` under its
-historical package name, with one process and one client binding per open project.
+Board page. The API-only Project Runtime is `services/project-runtime/` (package
+`project_runtime`), with one process and one client binding per open project.
 
 Shared foundations, under `packages/archflow/src/archflow/`: `project/refs.py` (the four
 references), `contracts/` (canonical JSON, digests, field parsing), `validation/{model,engine}.py`
@@ -232,7 +232,7 @@ the architect changes that decision; ask about a real conflict, not an internal 
 3. **Consolidate demonstrated reuse and bottlenecks.** Extract shared code when real
    consumers need it and remove the superseded production path together. Missing
    geometry vocabulary is added to the existing producers when a task needs it. The delivered OCCT export supports the bounded
-   solid/loft/boolean slice described in the [Studio README](../apps/archflow-studio/README.md);
+   solid/loft/boolean slice described in the [Studio README](../services/project-runtime/README.md);
    whole-stair/window production and synthetic candidate continuation are implemented.
    Explicitly uncapped polyline lofts preserve the drum and dome as open surfaces.
    The current short demo defers complex passage and ornament details so that a

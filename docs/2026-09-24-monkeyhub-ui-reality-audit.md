@@ -15,7 +15,7 @@
 | --- | --- |
 | `WS` | `apps/monkeyhub/web/src` |
 | `HUB` | `apps/monkeyhub/web/src` |
-| `API` | `apps/archflow-studio/api/archflow_studio_api` |
+| `API` | `services/project-runtime/src/project_runtime` |
 | `HUBAPI` | `apps/monkeyhub/api/monkeyhub_api` |
 
 ## 1. 结论

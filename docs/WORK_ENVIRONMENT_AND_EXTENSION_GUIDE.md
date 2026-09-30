@@ -25,7 +25,7 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 源码环境的一次依赖安装见 [Hub README](../apps/monkeyhub/README.md#python-entry-and-development)；
 权限请求直接呈现在工具活动中，停止会取消仍待回答的请求。
 Claude / Coding Plan 聊天的计算脚本和临时文件放在 Hub 提供的 `runtime/chats/<chatId>/scratch`；启动参数明确授权该目录，提示提供准确路径。不要写入 Claude 受保护的 `.claude` 配置目录；scratch 不是项目状态，设计结果仍通过连接工具和 P036 保存。
-每个项目使用独立的 Project Runtime 进程与端口（代码仍在 `apps/archflow-studio/api`，契约见 [docs/PROJECT_RUNTIME.md](PROJECT_RUNTIME.md)），右侧的 MonkeyArch、MonkeyDiagram、MonkeyBoard 在同一项目内共用这一个进程。
+每个项目使用独立的 Project Runtime 进程与端口（代码在 `services/project-runtime`，契约见 [docs/PROJECT_RUNTIME.md](PROJECT_RUNTIME.md)），右侧的 MonkeyArch、MonkeyDiagram、MonkeyBoard 在同一项目内共用这一个进程。
 不同项目可以并行聊天与建模；切换项目不停止其他项目，也不改写默认项目配置。已打开的工具页直接切换，保留加载状态。
 候选成功读回后立即打开模型，无需等待聊天整轮结束；再次打开同一候选复用页面。
 旧对话可以归档并恢复，原消息和原生 CLI 会话保留；运行中的对话需完成或停止后归档。
@@ -200,7 +200,7 @@ Git 源码仓 / worktree
   packages/archflow/         公共项目底座、建筑事实和技术接口（src/ 布局，自带 pyproject.toml 与本包测试）
   packages/monkeyarch/       三维建模算法与运行编排（src/ 布局，自带 pyproject.toml）
   packages/monkeydiagram/    图纸投影与表达（src/ 布局，自带 pyproject.toml 与本包测试）
-  apps/archflow-studio/api/  项目运行时；API-only，历史目录名保留
+  services/project-runtime/  项目运行时；API-only（src/ 布局，包名 project_runtime）
   governance/                owner、依赖与架构防火墙
   docs/                      人读文档，不是实时项目状态
   tests/                     测试代码；运行时只产生可丢弃的临时输出
@@ -321,7 +321,7 @@ python tools/package_monkeyapps.py --source-ref HEAD
    其中迁移顺序不可重跑，历史统计不是实时状态；实时 owner 仍以 registry 和代码为准。
 5. 当前任务只看对应的 GitHub Issue；谁在改哪些路径用 `python tools/devctl.py work` 查看。
 6. 涉及客户端时再读 [`PROTOCOL.md`](PROTOCOL.md) 与
-   [`apps/archflow-studio/README.md`](../apps/archflow-studio/README.md)。
+   [`services/project-runtime/README.md`](../services/project-runtime/README.md)。
 
 先复用已有能力。模块 owner 表示软件职责，可以包含多个实现文件，不是个人或必须塞满的单个文件。
 新增独立领域能力可以有自己的目录或外部包，经已有接口接入；同一职责已有实现时不再复制第二套。
@@ -448,7 +448,7 @@ React / Vite / three.js / rhino3dm-wasm
                 │ OpenAPI-generated SDK
                 ▼
 Project Runtime（FastAPI）
-  apps/archflow-studio/api/archflow_studio_api
+  services/project-runtime/src/project_runtime
   transport → routes → application → adapters
                 │ 调用现有 Python owner / 项目存储接口
                 ▼
@@ -550,8 +550,8 @@ Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-na
 | **MonkeyMonitor** | 用量、费用、耗时与计算过程查看 | `packages/monkeymonitor/`；Hub `appId: monkeymonitor` |
 | **MonkeyFab** | 制作与打印准备；当前支持分件及已切片文件发送 | 同仓 `packages/monkeyfab/` CLI；Hub `appId: monkeyfab`、`?view=fab` |
 
-**Studio** 是项目运行时保留的服务、协议和 Python 包标识，源码在
-`apps/archflow-studio/api/`。产品入口和唯一生产前端均为 MonkeyHub；建模、画板直接在
+**Studio** 是项目运行时保留的服务与协议标识，源码在
+`services/project-runtime/`（Python 包 `project_runtime`）。产品入口和唯一生产前端均为 MonkeyHub；建模、画板直接在
 Hub 中渲染，Diagram 是画板中的图页编辑器。每个项目拥有独立运行时和客户端，
 MonkeyMonitor 诊断服务仍独立运行，Usage 与 MonkeyFab 页面由 Hub 承载。
 
@@ -606,8 +606,8 @@ OpenAI 的公开 [Codex App Server 工程文章](https://openai.com/index/unlock
 ArchFlow 继续复用现有 FastAPI/OpenAPI 与生成客户端，外部模块从真实消费者的参数、结果契约接入，不把预留协议当作插件加载器。
 
 - 新的对外行为先决定是否属于 protocol feature；若是，在
-  `archflow_studio_api/protocol.py` 暴露 capability，并同步 `PROTOCOL.md` 的 route/status/error。
-- wire shape 只写在 `api/.../transport/` 的 Pydantic DTO；业务值留在 application/kernel 的普通
+  `project_runtime/protocol.py` 暴露 capability，并同步 `PROTOCOL.md` 的 route/status/error。
+- wire shape 只写在 `project_runtime/transport/` 的 Pydantic DTO；业务值留在 application/kernel 的普通
   domain type。
 - route 只接收调用所需身份和内容，不接收客户端指定的服务器路径。
 - 有持久化时先确认现有 项目存储接口 是否足够；不够只增加最窄的 area-bound capability，并由
@@ -709,7 +709,7 @@ py -3.12 -m venv "$RuntimeRoot\venv"
 $Python = "$RuntimeRoot\venv\Scripts\python.exe"
 $env:PATH = "$RuntimeRoot\venv\Scripts;" + $env:PATH
 & $Python -m pip install -e 'packages/archflow[cad-inspection]'
-& $Python -m pip install -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
+& $Python -m pip install -r services/project-runtime/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 & $Python -m pip check
 npm.cmd ci --prefix apps/monkeyhub/web
 npm.cmd ci --prefix apps/monkeyhub/web/tools/openapi-ts
@@ -797,8 +797,8 @@ $env:ARCHFLOW_STUDIO_INTENT_PROVIDER = 'deterministic'
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SourceRoot\scripts\dev\run-project-runtime.ps1" -ProjectDir $ProjectDir -Python $Python -Port 18080
 ```
 
-这个脚本只做一件事：要求显式 `-ProjectDir`，把源码根与 `apps/archflow-studio/api` 放进 `PYTHONPATH`，
-前台运行 `archflow_studio_api.main`，Ctrl+C 结束。它没有配置文件、没有默认项目、没有启动窗口和托盘，
+这个脚本只做一件事：要求显式 `-ProjectDir`，把源码根与 `services/project-runtime/src` 放进 `PYTHONPATH`，
+前台运行 `project_runtime.main`，Ctrl+C 结束。它没有配置文件、没有默认项目、没有启动窗口和托盘，
 也不管理任何生命周期；其余设置全部是 API 本来就读取的 `ARCHFLOW_STUDIO_*` 环境变量。
 “可独立运行”不等于“独立产品入口”：生产环境里项目运行时的生命周期只属于 MonkeyHub。工作区测试页位于
 `apps/monkeyhub/web/test/`，不进入生产构建；实际产品交互通过 Hub 验收。
@@ -808,13 +808,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SourceRoot\scripts\dev
 终端 A：
 
 ```powershell
-Set-Location "$SourceRoot\apps\archflow-studio\api"
+Set-Location "$SourceRoot\services\project-runtime\src"
 $env:ARCHFLOW_STUDIO_PROJECT_DIR = $ProjectDir
 $env:ARCHFLOW_STUDIO_REFERENCE_RUN = ''
 $env:ARCHFLOW_STUDIO_MODE = 'local'
 $env:ARCHFLOW_STUDIO_INTENT_PROVIDER = 'deterministic'
 $env:ARCHFLOW_STUDIO_RHINO_EXPORT = '0'
-& $Python -m archflow_studio_api.main --host 127.0.0.1 --port 18080
+& $Python -m project_runtime.main --host 127.0.0.1 --port 18080
 ```
 
 终端 B，重新设置自己选择的 `$SourceRoot`：
@@ -890,7 +890,7 @@ $result = Invoke-RestMethod "$api/state?run=$($accepted.candidateId)"
 ```powershell
 Set-Location $SourceRoot
 & $Python tools/archcheck.py
-Set-Location "$SourceRoot\apps\archflow-studio\api"
+Set-Location "$SourceRoot\services\project-runtime"
 & $Python -m unittest tests.test_health tests.test_protocol tests.test_candidate
 Set-Location "$SourceRoot\apps\monkeyhub\web"
 npm.cmd test
