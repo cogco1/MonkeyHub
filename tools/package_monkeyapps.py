@@ -63,10 +63,17 @@ from apps.monkeyhub.installer.patch import PatchError, create_patch, describe_pa
 UPDATE_INDEX_SCHEMA = "MonkeyHubUpdateIndex@1"
 UPDATE_CHANNEL = "unsigned-prerelease"
 RELEASE_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+# Each Python package ships at the bundle root, where python313._pth's ..\.. finds it,
+# wherever the repository keeps it, so a move changes neither the ._pth nor the bundle's layout.
+BUNDLED_PACKAGES = {
+    "archflow": "archflow", "monkeyarch": "monkeyarch",
+    "monkeydiagram": "packages/monkeydiagram/src/monkeydiagram",
+    "monkeymonitor": "monkeymonitor", "monkeycontrol": "monkeycontrol",
+}
 # Git, rather than the working directory, supplies these files. User runtime
 # configuration, projects, credentials, caches and local WIP never enter a ZIP.
 SOURCE_PATHS = (
-    "archflow", "monkeyarch", "monkeydiagram", "monkeymonitor", "monkeycontrol",
+    *BUNDLED_PACKAGES.values(),
     "apps/archflow-studio/api",
     "apps/monkeyhub", "apps/monkeyfab", "packages/web-shared", "OPEN_MONKEYHUB.cmd",
     "README.md", "SECURITY.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
@@ -230,8 +237,8 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
     # monkeycontrol travels with its PowerShell hosts: the installed Hub
     # imports it to expose the computer-use routes, and without the hosts the
     # package would be there and still unable to reach a desktop.
-    for name in ("archflow", "monkeyarch", "monkeydiagram", "monkeymonitor", "monkeycontrol"):
-        shutil.copytree(source / name, bundle / name)
+    for name, relative in BUNDLED_PACKAGES.items():
+        shutil.copytree(source / relative, bundle / name)
     for relative in ("apps/archflow-studio/api/archflow_studio_api", "apps/monkeyhub/assets",
                      "apps/monkeyhub/api", "apps/monkeyhub/installer", "apps/monkeyfab"):
         shutil.copytree(source / relative, bundle / relative,

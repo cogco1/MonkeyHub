@@ -65,7 +65,7 @@ def drawing_fixture() -> dict:
 
 class DrawingStandardTests(unittest.TestCase):
     def setUp(self):
-        config = Path(__file__).resolve().parents[1] / "monkeydiagram" / "documentation" / "drawing_standard_v0_1.json"
+        config = Path(__file__).resolve().parents[1] / "src" / "monkeydiagram" / "documentation" / "drawing_standard_v0_1.json"
         self.standard = json.loads(config.read_text(encoding="utf-8"))
         self.state = drawing_fixture()
 

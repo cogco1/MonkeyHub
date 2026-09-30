@@ -100,7 +100,7 @@ class DrawingOutputTests(unittest.TestCase):
                   "c = PaperCanvas(font_mapping={'Test': font}); c.start_sheet('A01', (420, 297)); "
                   "c.setFont('Test', 12); c.drawString(30, 40, 'SHEET A01'); c.line(10, 10, 200, 120); "
                   "print(hashlib.sha256(render_dxf(c)).hexdigest())")
-        root = str(Path(__file__).resolve().parents[1])
+        root = str(Path(__file__).resolve().parents[1] / "src")
         digests = {subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True,
                                   env={**os.environ, "PYTHONHASHSEED": seed, "PYTHONPATH": root}).stdout.strip()
                    for seed in ("1", "4", "7")}

@@ -372,8 +372,8 @@
         "tests/test_cad_execution.py",
         "tests/test_cad_patch.py",
         "tests/test_occt_execution.py",
-        "monkeydiagram/drawing_elevation.py",
-        "tests/test_drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/tests/test_drawing_elevation.py",
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
         "tests/test_cad_backend_contract.py"
       ],
@@ -566,7 +566,7 @@
     },
     {
       "module_id": "adapters.drawing_svg",
-      "owner_path": "monkeydiagram/drawing_svg.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/drawing_svg.py",
       "purpose": "Serialise drawing polylines, orthographic or a section perspective, as one deterministic SVG that names each polyline's source object, and render a PNG from those SVG bytes.",
       "owns": [
         "cropping projected polylines to the view window after visibility was solved (crop_polylines)",
@@ -618,9 +618,9 @@
         "archflow.adapters.occt_backend"
       ],
       "used_by": [
-        "monkeydiagram/drawing_elevation.py",
-        "tests/test_drawing_svg.py",
-        "tests/test_drawing_elevation.py"
+        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/tests/test_drawing_svg.py",
+        "packages/monkeydiagram/tests/test_drawing_elevation.py"
       ],
       "invariants": [
         "the same polylines, crop and options give the same SVG bytes; the same SVG gives the same PNG bytes",
@@ -632,14 +632,14 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_drawing_svg.py",
-        "tests/test_drawing_elevation.py"
+        "packages/monkeydiagram/tests/test_drawing_svg.py",
+        "packages/monkeydiagram/tests/test_drawing_elevation.py"
       ],
       "notes": "CREATE 2026-09-07 (A0 of docs/DRAWING_MODULE_ARCHITECTURE_PLAN.md): no owner serialised drawings; the PDF/DXF paper canvas in a teammate's worktree is a different output and stays out. Pillow renders the PNG (already installed with the Studio); no browser, image model or re-projection."
     },
     {
       "module_id": "adapters.mesh_views",
-      "owner_path": "monkeydiagram/mesh_views.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/mesh_views.py",
       "purpose": "Draw a fast look-only line view of named shapes from their triangles against a depth buffer: the model view's axonometric and the projection cache's thumbnails. Created because the exact hidden-line solve (adapters.cad_execution through runtime.drawing_elevation) grows too fast with object count for a view nobody retains, and no drawing owner rasterises meshes.",
       "owns": [
         "triangulating the named shapes at a caller-chosen chord error, after forgetting any mesh a shape already holds so a model read once draws every size as a fresh read would, and naming the curve-only objects left out (triangulate)",
@@ -683,7 +683,7 @@
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
-        "tests/test_mesh_views.py"
+        "packages/monkeydiagram/tests/test_mesh_views.py"
       ],
       "invariants": [
         "the same shapes, frame and size give the same PNG bytes",
@@ -693,7 +693,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_mesh_views.py"
+        "packages/monkeydiagram/tests/test_mesh_views.py"
       ],
       "notes": "numpy comes with the drawing requirements (shapely). GH-367 part A."
     },
@@ -2568,8 +2568,8 @@
         "tools/freeze_project_stage_workflow.py",
         "tools/verify_state_record.py",
         "tests/test_record_kinds.py",
-        "monkeydiagram/drawing_elevation.py",
-        "tests/test_drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/tests/test_drawing_elevation.py",
         "apps/archflow-studio/api/archflow_studio_api/application/gestures.py",
         "apps/archflow-studio/api/archflow_studio_api/application/decisions.py"
       ],
@@ -2911,7 +2911,7 @@
         "tools/verify_state_record.py",
         "tools/freeze_project_stage_workflow.py",
         "tools/issue_project.py",
-        "monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
         "tools/create_project.py",
         "archflow/project/watch.py"
       ],
@@ -3154,7 +3154,7 @@
     },
     {
       "module_id": "runtime.drawing_elevation",
-      "owner_path": "monkeydiagram/drawing_elevation.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
       "purpose": "Freeze model-axis projections, horizontal cut plans and section perspectives from verified STEP or registered native model geometry into SVG/PNG and the existing drawing receipt, without changing design state.",
       "owns": [
         "ElevationSource: the retained STEP and OcctExecutionReceipt@1 a drawing is derived from, and the verification that they agree (SHA, run, base, unit, Z-up, STEP names = physical object ids)",
@@ -3245,7 +3245,7 @@
         "archflow.adapters.occt_backend"
       ],
       "used_by": [
-        "tests/test_drawing_elevation.py",
+        "packages/monkeydiagram/tests/test_drawing_elevation.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawings.py"
       ],
       "invariants": [
@@ -3266,8 +3266,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_drawing_elevation.py",
-        "tests/test_drawing_section_perspective.py"
+        "packages/monkeydiagram/tests/test_drawing_elevation.py",
+        "packages/monkeydiagram/tests/test_drawing_section_perspective.py"
       ],
       "notes": "CREATE 2026-09-07: the plan's first real consumer at the application boundary. runtime.project_runner is the seat/stage loop and does not derive drawings; adapters have no repository authority. First frozen drawing: villa-rotonda-reconstruction run drawing-a0-20260907-villa-b-minus-y from source run studio-cand-20260906-010451-dca4de25-4e9d (external workspace, noncanonical)."
     },
@@ -7937,7 +7937,8 @@
         "--verify reads the release directory without building or installing; matching hashes establish consistency with that unsigned manifest, not publisher authenticity",
         "install.ps1 -RequireSignedRelease verifies the pinned publisher signature and binds the manifest to the archive, the source commit and every file of the tree that becomes the installation, before the first shortcut, launch or current-version move, and never falls back to an unsigned installation",
         "An installation without -RequireSignedRelease stays labelled candidate-unsigned; the builder signs nothing and no publisher key is held in this repository",
-        "Local patches are explicitly unsigned developer artifacts. Full base and target file hashes, exact commits and executable identity are checked; traversal, Windows path aliases and reparse points are rejected. Unchanged files are copied, never hardlinked; existing versions are never overwritten. Python runtime bytecode caches are excluded."
+        "Local patches are explicitly unsigned developer artifacts. Full base and target file hashes, exact commits and executable identity are checked; traversal, Windows path aliases and reparse points are rejected. Unchanged files are copied, never hardlinked; existing versions are never overwritten. Python runtime bytecode caches are excluded.",
+        "A package under packages/<name>/src/<name> ships at the bundle root as <name>/, where python313._pth's ..\\.. finds it, so the bundle's layout and the installed updater's required files do not change when a package moves (#488)"
       ],
       "used_by": [
         "apps/monkeyhub/installer/README.md"
@@ -7959,7 +7960,7 @@
     },
     {
       "module_id": "documentation.drawings",
-      "owner_path": "monkeydiagram/documentation/drawings.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/documentation/drawings.py",
       "purpose": "Validate and compile caller-supplied drawing information against a configurable drawing standard, and render common paper scenes to PDF and editable DXF.",
       "owns": [
         "Drawing Standard v0.1: configurable sheet, view, graphic, annotation, information, status, coordination and revision conventions",
@@ -8012,9 +8013,9 @@
         "adapters.cad_execution"
       ],
       "used_by": [
-        "tests/test_drawing_standard.py",
-        "tests/test_drawing_output.py",
-        "tests/test_drawing_styles.py",
+        "packages/monkeydiagram/tests/test_drawing_standard.py",
+        "packages/monkeydiagram/tests/test_drawing_output.py",
+        "packages/monkeydiagram/tests/test_drawing_styles.py",
         "apps/archflow-studio/api/archflow_studio_api/main.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawings.py"
       ],
@@ -8029,16 +8030,16 @@
       ],
       "status": "canonical",
       "files": [
-        "monkeydiagram/documentation/drawings.py",
-        "monkeydiagram/documentation/styles.py",
-        "monkeydiagram/documentation/drawing_standard_v0_1.json",
-        "monkeydiagram/documentation/drawing_state.schema.json",
-        "monkeydiagram/drawing_output.py"
+        "packages/monkeydiagram/src/monkeydiagram/documentation/drawings.py",
+        "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
+        "packages/monkeydiagram/src/monkeydiagram/documentation/drawing_standard_v0_1.json",
+        "packages/monkeydiagram/src/monkeydiagram/documentation/drawing_state.schema.json",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_output.py"
       ],
       "tests": [
-        "tests/test_drawing_standard.py",
-        "tests/test_drawing_styles.py",
-        "tests/test_drawing_output.py"
+        "packages/monkeydiagram/tests/test_drawing_standard.py",
+        "packages/monkeydiagram/tests/test_drawing_styles.py",
+        "packages/monkeydiagram/tests/test_drawing_output.py"
       ],
       "notes": "CREATE justified in docs/DRAWING_STANDARD_V0.1.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework."
     },
@@ -8184,7 +8185,7 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/study.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/study.py",
         "apps/archflow-studio/api/archflow_studio_api/application/study_model.py",
-        "monkeydiagram/study.py"
+        "packages/monkeydiagram/src/monkeydiagram/study.py"
       ]
     },
     {
