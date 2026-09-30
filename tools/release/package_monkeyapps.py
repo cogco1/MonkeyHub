@@ -66,14 +66,17 @@ RELEASE_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*
 # Each Python package ships at the bundle root, where python313._pth's ..\.. finds it,
 # wherever the repository keeps it, so a move changes neither the ._pth nor the bundle's layout.
 BUNDLED_PACKAGES = {
-    "archflow": "packages/archflow/src/archflow", "monkeyarch": "packages/monkeyarch/src/monkeyarch",
+    "archflow": "packages/archflow/src/archflow", "monkeycad": "packages/monkeycad/src/monkeycad",
+    "monkeyarch": "packages/monkeyarch/src/monkeyarch",
     "monkeydiagram": "packages/monkeydiagram/src/monkeydiagram",
     "monkeymonitor": "packages/monkeymonitor/src/monkeymonitor",
     "monkeycontrol": "packages/monkeycontrol/src/monkeycontrol",
 }
-# The kernel's manifest names the Python requirements and the cad-occt extra the
-# embedded runtime installs (prepare_runtime).
+# The kernel's and the CAD package's manifests name the Python requirements the embedded
+# runtime installs (prepare_runtime): the CAD package's own, its OCCT kernel with the
+# rhino3dm preview, and Pillow for the Blender projection's PNG check.
 KERNEL_MANIFEST = "packages/archflow/pyproject.toml"
+CAD_MANIFEST, CAD_EXTRAS = "packages/monkeycad/pyproject.toml", ("occt", "blender")
 # MonkeyFab ships at apps/monkeyfab, where python313._pth lists its src and installed
 # updaters require its files (apps/monkeyhub/installer/patch.py REQUIRED_FILES).
 FAB_BUNDLE, FAB_SOURCE = "apps/monkeyfab", "packages/monkeyfab"
@@ -86,7 +89,7 @@ BUNDLED_TOOLS = (
 # Git, rather than the working directory, supplies these files. User runtime
 # configuration, projects, credentials, caches and local WIP never enter a ZIP.
 SOURCE_PATHS = (
-    *BUNDLED_PACKAGES.values(), KERNEL_MANIFEST,
+    *BUNDLED_PACKAGES.values(), KERNEL_MANIFEST, CAD_MANIFEST,
     "services/project-runtime",
     "apps/monkeyhub", FAB_SOURCE, "packages/web-shared", "OPEN_MONKEYHUB.cmd",
     "README.md", "SECURITY.md", "pyproject.toml", *BUNDLED_TOOLS, "governance/module_registry.json",
@@ -137,8 +140,10 @@ def prepare_runtime(source: Path, destination: Path, cache: Path,
     with zipfile.ZipFile(fetch_runtime(cache)) as archive:
         archive.extractall(destination)
     metadata = tomllib.loads((source / KERNEL_MANIFEST).read_text(encoding="utf-8"))
-    requirements = [*metadata["project"]["dependencies"],
-                    *metadata["project"]["optional-dependencies"]["cad-occt"]]
+    cad = tomllib.loads((source / CAD_MANIFEST).read_text(encoding="utf-8"))
+    requirements = [*metadata["project"]["dependencies"], *cad["project"]["dependencies"],
+                    *(requirement for extra in CAD_EXTRAS
+                      for requirement in cad["project"]["optional-dependencies"][extra])]
     fab_metadata = tomllib.loads((source / FAB_SOURCE / "pyproject.toml").read_text(encoding="utf-8"))
     requirements.extend(fab_metadata["project"]["dependencies"])
     requirements.extend(fab_metadata["project"]["optional-dependencies"]["send"])
@@ -326,7 +331,7 @@ def smoke_runtime(bundle: Path) -> None:
     run([str(python), "-B", "-c", (
         "import sys,ssl,fastapi,uvicorn,pydantic,pypdf,rhino3dm; "
         "from PIL import Image; from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox; "
-        "import archflow,monkeyarch,monkeydiagram,monkeymonitor,monkeycontrol,project_runtime; "
+        "import archflow,monkeycad,monkeyarch,monkeydiagram,monkeymonitor,monkeycontrol,project_runtime; "
         "assert sys.version_info[:3]==(3,13,15); "
         "assert not BRepPrimAPI_MakeBox(1,2,3).Shape().IsNull(); "
         "assert Image.new('RGB',(2,2)).size==(2,2); "

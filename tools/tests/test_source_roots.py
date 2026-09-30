@@ -55,13 +55,13 @@ class SourceRootsTests(unittest.TestCase):
         # Neither PYTHONPATH nor a package installed from another checkout decides.
         script = ("import sys; from pathlib import Path; checkout = Path(sys.argv[1]); "
                   "sys.path.insert(0, str(checkout)); from tools.dev import source_roots; "
-                  "source_roots.put_first(checkout); import archflow, monkeydiagram; "
-                  "print(archflow.__file__); print(monkeydiagram.__file__)")
+                  "source_roots.put_first(checkout); import archflow, monkeydiagram, monkeycad; "
+                  "print(archflow.__file__); print(monkeydiagram.__file__); print(monkeycad.__file__)")
         environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
         finished = subprocess.run([sys.executable, "-c", script, str(REPO)], cwd=self.directory(), env=environment,
                                   capture_output=True, text=True, check=True)
         locations = finished.stdout.splitlines()
-        self.assertEqual(len(locations), 2, finished.stdout)
+        self.assertEqual(len(locations), 3, finished.stdout)
         for location in locations:
             self.assertTrue(Path(location).resolve().is_relative_to(REPO), location)
 

@@ -141,7 +141,11 @@ class WorkflowBoundaryTests(unittest.TestCase):
     def test_core_and_peer_workflow_reverse_imports_are_refused(self) -> None:
         for source, target in (
             ("packages/archflow/src/archflow/state/example.py", "monkeyarch.capabilities.element_producers"),
-            ("packages/archflow/src/archflow/adapters/example.py", "monkeydiagram.drawing_svg"),
+            ("packages/monkeycad/src/monkeycad/example.py", "monkeydiagram.drawing_svg"),
+            ("packages/monkeycad/src/monkeycad/example.py", "monkeyarch.runtime.project_runner"),
+            ("packages/monkeycad/src/monkeycad/example.py", "project_runtime.binding"),
+            ("packages/archflow/src/archflow/project/example.py", "monkeycad.cad_backend"),
+            ("packages/monkeyarch/src/monkeyarch/construction/example.py", "monkeycad.occt_backend"),
             ("packages/monkeyarch/src/monkeyarch/example.py", "monkeydiagram.drawing_svg"),
             ("packages/monkeydiagram/src/monkeydiagram/example.py", "monkeyarch.compilers.geometry"),
         ):
@@ -168,7 +172,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
                                                    _index_tree(ast.parse(f"import {target}")), self.policy))
                     self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
         findings = tuple(check_imports("packages/monkeydiagram/tests/test_example.py", _index_tree(ast.parse(
-            "from monkeydiagram.drawing_svg import drawing_svg\nfrom archflow.adapters import occt_backend"
+            "from monkeydiagram.drawing_svg import drawing_svg\nfrom monkeycad import occt_backend"
         )), self.policy))
         self.assertEqual((), findings)
 
@@ -196,7 +200,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
                     self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
 
     def test_registry_checks_dependencies_from_each_workflow_package(self) -> None:
-        for package in ("monkeyarch", "monkeydiagram"):
+        for package in ("monkeyarch", "monkeydiagram", "monkeycad"):
             with self.subTest(package=package), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 _write(root, "tools/consumer.py", f"import {package}.example\n")

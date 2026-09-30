@@ -7,6 +7,7 @@
     "packages/monkeydiagram",
     "packages/monkeymonitor",
     "packages/monkeycontrol",
+    "packages/monkeycad",
     "tools",
     "services/project-runtime",
     "tests",
@@ -26,7 +27,8 @@
     "packages/archflow/src",
     "packages/monkeyarch/src",
     "packages/monkeymonitor/src",
-    "packages/monkeycontrol/src"
+    "packages/monkeycontrol/src",
+    "packages/monkeycad/src"
   ],
   "repository_root_entries": [
     "apps",
@@ -65,6 +67,7 @@
     "packages/monkeymonitor/tests/",
     "packages/monkeycontrol/tests/",
     "packages/monkeyfab/tests/",
+    "packages/monkeycad/tests/",
     "tools/tests/",
     "docs/protocols/project-runtime-api.md",
     "governance/architecture_policy.json",
@@ -147,23 +150,23 @@
       "reason": "The durable project repository is the sole project-document filesystem writer."
     },
     {
-      "path": "packages/archflow/src/archflow/adapters/cad_execution.py",
+      "path": "packages/monkeycad/src/monkeycad/cad_execution.py",
       "function": "prepare_rhino_three_dm_export",
       "operations": [
         "open_write"
       ],
       "kind": "adapter_workspace",
-      "owner": "M078",
+      "owner": "monkeycad.rhino",
       "reason": "Exclusively creates a deterministic Rhino script inside the explicitly supplied non-symlink speculative workspace; saved 3DM output remains non-canonical."
     },
     {
-      "path": "packages/archflow/src/archflow/adapters/cad_execution.py",
+      "path": "packages/monkeycad/src/monkeycad/cad_execution.py",
       "function": "work_model_workspace",
       "operations": [
         "mkdir"
       ],
       "kind": "adapter_workspace",
-      "owner": "M078",
+      "owner": "monkeycad.rhino",
       "reason": "Creates one numbered attempt directory below the run's existing export workspace for an explicitly requested work-model export; nothing canonical is written, nothing is deleted, and a previous attempt is left where it can be read."
     },
     {
@@ -625,13 +628,13 @@
       "reason": "Creates the external --update-output and --update-work directories main() validated outside the source checkout, and writes one new MonkeyHub-<version>-update-index.json beside the patches create_patch wrote there."
     },
     {
-      "path": "packages/archflow/src/archflow/adapters/blender_cad.py",
+      "path": "packages/monkeycad/src/monkeycad/blender_cad.py",
       "function": "execute",
       "operations": [
         "open_write"
       ],
       "kind": "adapter_workspace",
-      "owner": "adapters.cad_execution",
+      "owner": "monkeycad.blender",
       "reason": "Exclusively writes the Blender transport plan into the explicit speculative workspace; a dedicated worker saves the .blend there and a fresh process reads it. Only the existing runner persists the native receipt through P036."
     },
     {
@@ -668,13 +671,13 @@
       "reason": "Existing frontend SDK generation writes only disposable OpenAPI schema inputs under .generated/ (the Hub's, and the project runtime's in project-runtime/); never project data."
     },
     {
-      "path": "packages/archflow/src/archflow/adapters/blender_projection.py",
+      "path": "packages/monkeycad/src/monkeycad/blender_projection.py",
       "function": "execute_blender_projection",
       "operations": [
         "write_text"
       ],
       "kind": "adapter_workspace",
-      "owner": "adapters.cad_execution",
+      "owner": "monkeycad.blender",
       "reason": "Writes only transport plan and subprocess logs beside OCCT bytes in the supplied speculative workspace. Existing runner retains projection receipts through P036."
     },
     {
@@ -934,6 +937,15 @@
       "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
     },
     {
+      "source": "packages/monkeycad/tests",
+      "targets": [
+        "tests",
+        "labs",
+        "archive"
+      ],
+      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+    },
+    {
       "source": "services/project-runtime/tests",
       "targets": [
         "labs"
@@ -959,7 +971,7 @@
     {
       "source": "packages/archflow/src/archflow/contracts",
       "targets": [
-        "archflow.adapters",
+        "monkeycad",
         "archflow.validation"
       ],
       "reason": "Canonical contract primitives may depend on project identity only, never on higher domain, control, runtime, or adapter layers."
@@ -967,7 +979,7 @@
     {
       "source": "packages/archflow/src/archflow/ports",
       "targets": [
-        "archflow.adapters",
+        "monkeycad",
         "archflow.validation"
       ],
       "reason": "External-world protocols may depend on stable identity contracts, never on their concrete adapters, orchestration, control, or validation implementations."
@@ -991,7 +1003,7 @@
         "tools",
         "archive"
       ],
-      "reason": "The Project Runtime (project_runtime) validates requests, streams events and manages task lifecycle; design state, dependencies, validation, geometry and commit are calls into archflow. Geometry mathematics, graphs, .3dm writing and state schemas live in archflow and are imported, never reimplemented beside it. Pydantic models here are transport shapes, not a second canonical state."
+      "reason": "The Project Runtime (project_runtime) validates requests, streams events and manages task lifecycle; design state, dependencies, validation, geometry and commit are calls into archflow. Geometry mathematics, graphs and state schemas live in archflow, and .3dm writing in monkeycad; they are imported, never reimplemented beside them. Pydantic models here are transport shapes, not a second canonical state."
     },
     {
       "source": "packages/archflow/src/archflow",
@@ -1002,7 +1014,31 @@
         "monkeyfab",
         "monkeycontrol"
       ],
-      "reason": "The shared ArchFlow core provides facts, persistence and CAD contracts; it cannot depend on either workflow."
+      "reason": "The shared ArchFlow core provides facts, persistence and the GeometryProgram contract the workflows and CAD share; it cannot depend on either workflow."
+    },
+    {
+      "source": "packages/archflow/src/archflow",
+      "targets": [
+        "monkeycad"
+      ],
+      "reason": "CAD executes the kernel's GeometryProgram contract, never the reverse: the core declares where CAD records keep their base (archflow.project.version_ref_owners) without loading CAD code, so a core-only process can read and migrate every project."
+    },
+    {
+      "source": "packages/monkeycad/src/monkeycad",
+      "targets": [
+        "monkeyarch",
+        "monkeydiagram",
+        "monkeymonitor",
+        "monkeyfab",
+        "monkeycontrol",
+        "project_runtime",
+        "monkeyhub_api",
+        "labs",
+        "tests",
+        "tools",
+        "archive"
+      ],
+      "reason": "CAD execution depends on the ArchFlow kernel alone: it runs a compiled program in OCCT, Rhino or Blender inside a caller-supplied workspace and reads model files. The workflows, the Runtime and the Hub call it; it never calls them, and it holds no project writer."
     },
     {
       "source": "packages/monkeyarch/src/monkeyarch",
@@ -1047,9 +1083,31 @@
       "reason": "Geometry compilation returns a domain value and has no project writer."
     },
     {
+      "source": "packages/monkeyarch/src/monkeyarch/capabilities",
+      "targets": [
+        "monkeycad"
+      ],
+      "reason": "MonkeyArch's domain, authoring and compilation code (capabilities/, construction/ and compilers/ until #516 layers them) works on the neutral GeometryProgram contract in archflow.state.geometry_program, its bounds included, and never executes CAD: only the runner (monkeyarch.runtime) calls a backend."
+    },
+    {
+      "source": "packages/monkeyarch/src/monkeyarch/construction",
+      "targets": [
+        "monkeycad"
+      ],
+      "reason": "MonkeyArch's domain, authoring and compilation code (capabilities/, construction/ and compilers/ until #516 layers them) works on the neutral GeometryProgram contract in archflow.state.geometry_program, its bounds included, and never executes CAD: only the runner (monkeyarch.runtime) calls a backend."
+    },
+    {
+      "source": "packages/monkeyarch/src/monkeyarch/compilers",
+      "targets": [
+        "monkeycad"
+      ],
+      "reason": "MonkeyArch's domain, authoring and compilation code (capabilities/, construction/ and compilers/ until #516 layers them) works on the neutral GeometryProgram contract in archflow.state.geometry_program, its bounds included, and never executes CAD: only the runner (monkeyarch.runtime) calls a backend."
+    },
+    {
       "source": "packages/monkeymonitor/src/monkeymonitor",
       "targets": [
         "archflow",
+        "monkeycad",
         "monkeyarch",
         "monkeydiagram",
         "project_runtime",
@@ -1063,6 +1121,7 @@
       "source": "packages/monkeyfab/src/monkeyfab",
       "targets": [
         "archflow",
+        "monkeycad",
         "monkeyarch",
         "monkeydiagram",
         "monkeymonitor",

@@ -163,6 +163,8 @@ class PackageAdapterTests(unittest.TestCase):
             "packages/monkeycontrol/src/monkeycontrol/hosts/execution_host.ps1",
             "packages/monkeydiagram/src/monkeydiagram/__init__.py", "packages/monkeydiagram/tests/test_svg.py",
             "packages/archflow/src/archflow/__init__.py", "packages/archflow/tests/test_project_repository.py",
+            "packages/monkeycad/src/monkeycad/__init__.py", "packages/monkeycad/src/monkeycad/blender_worker.py",
+            "packages/monkeycad/tests/test_model_formats.py",
             "packages/monkeyarch/src/monkeyarch/__init__.py",
             "packages/monkeymonitor/src/monkeymonitor/__init__.py", "packages/monkeymonitor/tests/test_core.py",
             "services/project-runtime/src/project_runtime/__init__.py",
@@ -210,9 +212,12 @@ class PackageAdapterTests(unittest.TestCase):
         # Hub's --service studio and the runtime's -m projection worker import project_runtime.
         embed = self.root / "python-embed.zip"
         zipfile.ZipFile(embed, "w").close()
-        for manifest, extra in (("packages/archflow/pyproject.toml", "cad-occt"), ("packages/monkeyfab/pyproject.toml", "send")):
+        for manifest, extras in (("packages/archflow/pyproject.toml", ()),
+                                 ("packages/monkeycad/pyproject.toml", ("occt", "blender", "inspection")),
+                                 ("packages/monkeyfab/pyproject.toml", ("send",))):
             (self.source / manifest).write_text(
-                f"[project]\ndependencies = []\n[project.optional-dependencies]\n{extra} = []\n", encoding="utf-8")
+                "[project]\ndependencies = []\n[project.optional-dependencies]\n"
+                + "".join(f'{extra} = ["{extra}-requirement"]\n' for extra in extras), encoding="utf-8")
         python = self.root / "bundle/_runtime/python"
         with patch.object(builder, "fetch_runtime", return_value=embed), patch.object(builder, "run") as run:
             builder.prepare_runtime(self.source, python, self.root / "cache")
@@ -224,6 +229,12 @@ class PackageAdapterTests(unittest.TestCase):
         self.assertEqual(run.call_count, 2)  # pip download, then pip install, both of the runtime's requirements
         for call in run.call_args_list:
             self.assertIn(str(self.source / "services/project-runtime/requirements.txt"), call.args[0])
+            # The CAD extras come from the CAD package's manifest: OCCT and the Blender PNG check, not
+            # inspection alone, which the OCCT extra already covers.
+            self.assertIn("occt-requirement", call.args[0])
+            self.assertIn("blender-requirement", call.args[0])
+            self.assertNotIn("inspection-requirement", call.args[0])
+            self.assertIn("send-requirement", call.args[0])
 
     def test_bundle_contains_adapter_node_registry_and_exact_release_notices(self) -> None:
         def upstream(url, **kwargs):
@@ -248,13 +259,18 @@ class PackageAdapterTests(unittest.TestCase):
         self.assertIn("packages/monkeydiagram/src/monkeydiagram", builder.SOURCE_PATHS)
         self.assertEqual((self.bundle / "archflow/__init__.py").read_text(), "fixture")
         self.assertIn("packages/archflow/src/archflow", builder.SOURCE_PATHS)
+        # Blender starts its worker by file name from beside blender_cad.py, so it ships in the package.
+        self.assertEqual((self.bundle / "monkeycad/__init__.py").read_text(), "fixture")
+        self.assertEqual((self.bundle / "monkeycad/blender_worker.py").read_text(), "fixture")
+        self.assertIn("packages/monkeycad/src/monkeycad", builder.SOURCE_PATHS)
         self.assertEqual((self.bundle / "monkeyarch/__init__.py").read_text(), "fixture")
         self.assertIn("packages/monkeyarch/src/monkeyarch", builder.SOURCE_PATHS)
         self.assertEqual((self.bundle / "monkeymonitor/__init__.py").read_text(), "fixture")
         self.assertIn("packages/monkeymonitor/src/monkeymonitor", builder.SOURCE_PATHS)
         self.assertFalse((self.bundle / "packages").exists())
-        # The embedded runtime's requirements are read from the kernel's own manifest.
+        # The embedded runtime's requirements are read from the kernel's and the CAD package's manifests.
         self.assertIn("packages/archflow/pyproject.toml", builder.SOURCE_PATHS)
+        self.assertIn("packages/monkeycad/pyproject.toml", builder.SOURCE_PATHS)
         # A user holding only the ZIP can still find the security-reporting route.
         self.assertEqual((self.bundle / "SECURITY.md").read_text(), "fixture")
         self.assertIn("SECURITY.md", builder.SOURCE_PATHS)
