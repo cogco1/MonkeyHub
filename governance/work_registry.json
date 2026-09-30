@@ -14,7 +14,9 @@
         "tools.archcheck"
       ],
       "write_scope": [
-        "tools/governance/archcheck.py"
+        "tools/governance/archcheck.py",
+        "docs/architecture/overview.md",
+        "docs/architecture/repository-layout.md"
       ],
       "depends_on": []
     }
