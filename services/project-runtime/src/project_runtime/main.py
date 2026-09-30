@@ -34,6 +34,7 @@ import uvicorn
 from archflow.project.index import IndexCommit, add_commit_listener
 from monkeyarch.authoring.frame import FrameError
 from monkeyarch.domain.massing_transforms import MassingTransformError
+from monkeydiagram.documentation.sheet_layout import SheetLayoutError
 
 from .api import routes
 from .api.routes import memory as memory_routes
@@ -88,6 +89,7 @@ async def _handle_studio_error(request: Request, exc: StudioError) -> JSONRespon
 OWNER_REFUSALS: Mapping[type[Exception], int] = MappingProxyType({
     FrameError: 422,
     MassingTransformError: 422,
+    SheetLayoutError: 422,
 })
 
 

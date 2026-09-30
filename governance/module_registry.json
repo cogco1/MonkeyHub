@@ -4493,7 +4493,7 @@
         "the content-keyed projection cache (ADR-008 #367): key = sha256(model asset sha256, kind, recipe hash, renderer, SALT) where renderer is the mesh renderer's source-derived version plus a digest of drawings.model_view_pipeline (view frame, crop margin, chord tolerance, the source of its framing and meshing, mesh_pipeline); every request, idle retry and re-queue first checks its source (check_model_view_source: the run's exact state and registered model, no geometry read) and a retry draws from the latest checked source; thumbnails read the run's own record, so a run on an older canonical base is drawn (require_readable) while actions keep require_actionable; PNG blobs in <project cache dir>/projections/blobs named by their own sha256, written then renamed and self-describing through text chunks; one status row per key in the project index's projection table (StatusTable), whose insert is the claim, with a per-key lock in the process; the queue is enqueued after every index commit (tree_model_sources: the working position's model, then what readers show, then the rest of the tree) and on a read miss; one low-priority render subprocess with timeout, memory cap, leases reclaimed at startup and after the timeout, bounded retries with backoff, a refused source or a cancel giving its attempt back, one model read for every size drawn next (load_model_view, draw_loaded_view), and a collector keeping what an index artifact reaches, replacing an older renderer's picture only once the current one is drawn, with a grace window",
         "drawings as on-demand projections (#368): an elevation's and a section perspective's SVG and PNG, a review sheet's PDF and DXF and a document page's raster are kinds of the same content-keyed cache (drawing-elevation, drawing-section-perspective, drawing-sheet, document-page), keyed by the input asset's sha256, a recipe holding every field that changes the bytes (the complete view and the drawn source content: geometry digest, unit, objects, bounds and semantics) and a renderer digest of the drawing code, fonts and libraries (drawings.drawing_pipeline); ProjectionQueue.on_demand draws one in the request that needs it through the existing generator, at most once per key, and the worker never draws them; issuing reads the cached files back and retains them in P036 byte for byte with a receipt of its own",
         "the retained axonometric: POST /api/drawings/elevations view axon, from a stated direction toward the viewer (default the model view's -X, -Y, +Z), framed on every physical object's bounds like an elevation",
-        "view sheets through POST /api/drawings/sheets: same-source plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own generator from the sheet's one source (modelSource, Stage or unbound imported asset) and named in the sheet recipe by its exact revision, placed at its own scale where the caller put it, with default titles, subtitles and scale labels from each view's own frame and a section's cut line on a plan; front/right/top requests keep the review sheet's layout and defaults; every sheet is one paper scene retained as PDF, DXF, SVG and PNG beside each other in its source run and registered as its PDF, which names the other three files' digests; GET /api/drawings/{asset_sha256}/files/{file_format} reads a view revision's SVG/PNG, only by its revisionRef (DRAWING_REVISION_REQUIRED), or a sheet's four files, verified"
+        "view sheets through POST /api/drawings/sheets: same-source plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own generator from the sheet's one source (modelSource, Stage or unbound imported asset) and named in the sheet recipe by its exact revision, placed at its own scale where the caller put it, with default titles, subtitles and scale labels from each view's own frame and a section's cut line on a plan, as monkeydiagram.documentation.sheet_layout lays them out; front/right/top requests keep the review sheet's layout and defaults; every sheet is one paper scene retained as PDF, DXF, SVG and PNG beside each other in its source run and registered as its PDF, which names the other three files' digests; GET /api/drawings/{asset_sha256}/files/{file_format} reads a view revision's SVG/PNG, only by its revisionRef (DRAWING_REVISION_REQUIRED), or a sheet's four files, verified"
       ],
       "does_not_own": [
         "producing the export or its receipt - monkeycad.execution and its backends, through runtime.project_runner",
@@ -4650,7 +4650,8 @@
         "project.index",
         "adapters.mesh_views",
         "studio.board",
-        "monkeydiagram.corrections"
+        "monkeydiagram.corrections",
+        "monkeydiagram.documentation.sheet_layout"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/candidate.py",
@@ -6046,7 +6047,8 @@
         "monkeydiagram.documentation.styles",
         "project.index",
         "monkeyarch.authoring.frame",
-        "monkeyarch.domain.massing_transforms"
+        "monkeyarch.domain.massing_transforms",
+        "monkeydiagram.documentation.sheet_layout"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/api/routes/",
@@ -8116,7 +8118,8 @@
       "owns": [
         "PaperCanvas recording of resolved paper primitives with glyph and stroke bounds, and PDF/DXF/SVG serialization of those same scenes (SVG in paper mm with live text); the same scene always gives the same DXF bytes: the header dates and ezdxf's write time are one fixed time, its class table is in name order whatever the process's hashing, and its GUIDs derive from the file's content",
         "reusable ARCH400 white presentation and ARCH364 technical sheet styles extracted from existing drawings; compose_review_sheet places caller-supplied orthographic linework and measured dimensions at one explicit scale without changing model geometry",
-        "compose_view_sheet: caller-placed retained drawings (SheetView: a drawing's svg_paper_marks at its own paper size, placed at a top-left in mm) on a caller-sized paper in a style's frame margin and type sizes, each titled with its subtitle and scale label, a section's cut line with arrows and label on the plan it crosses (SheetSectionMark) and a title strip with the title, sheet number, source line and notes; a drawing or its labels leaving the frame, overlapping another drawing or the title strip, or strip text that does not fit, is refused by name, never moved, scaled or cropped"
+        "compose_view_sheet: caller-placed retained drawings (SheetView: a drawing's svg_paper_marks at its own paper size, placed at a top-left in mm) on a caller-sized paper in a style's frame margin and type sizes, each titled with its subtitle and scale label, a section's cut line with arrows and label on the plan it crosses (SheetSectionMark) and a title strip with the title, sheet number, source line and notes; a drawing or its labels leaving the frame, overlapping another drawing or the title strip, or strip text that does not fit, is refused by name, never moved, scaled or cropped",
+        "a view sheet's layout before it is composed: each placed drawing's default title, subtitle and scale label from its own frame (view_labels), a vertical section's plane as a line in plan (section_line) and its cut line where it crosses a placed plan, in that plan's paper mm (section_mark; SheetLayoutError DRAWING_SECTION_MARK_OUTSIDE when it does not), and the paper scene from the sheet recipe and the views' retained marks (view_sheet_scene); it reads no model or project"
       ],
       "does_not_own": [
         "source design objects, dimensions, parameter dependencies or confirmation decisions",
@@ -8147,10 +8150,16 @@
         "compose_view_sheet",
         "SheetView",
         "SheetSectionMark",
-        "initialize_drawing_runtime"
+        "initialize_drawing_runtime",
+        "view_labels",
+        "section_line",
+        "section_mark",
+        "view_sheet_scene",
+        "SheetLayoutError"
       ],
       "depends_on": [
-        "monkeycad.execution"
+        "monkeycad.execution",
+        "monkeydiagram.projection.views"
       ],
       "used_by": [
         "packages/monkeydiagram/tests/test_drawing_output.py",
@@ -8168,11 +8177,13 @@
       "status": "canonical",
       "files": [
         "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
-        "packages/monkeydiagram/src/monkeydiagram/rendering/paper.py"
+        "packages/monkeydiagram/src/monkeydiagram/rendering/paper.py",
+        "packages/monkeydiagram/src/monkeydiagram/documentation/sheet_layout.py"
       ],
       "tests": [
         "packages/monkeydiagram/tests/test_drawing_styles.py",
-        "packages/monkeydiagram/tests/test_drawing_output.py"
+        "packages/monkeydiagram/tests/test_drawing_output.py",
+        "packages/monkeydiagram/tests/test_sheet_layout.py"
       ],
       "notes": "CREATE justified in docs/design/drawing-standard.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework. #517 retired the Drawing Standard v0.1 validator (documentation/drawings.py) and its two JSON files: no production reader (topology audit Q13). The sheet styles and the paper scene remain."
     },
