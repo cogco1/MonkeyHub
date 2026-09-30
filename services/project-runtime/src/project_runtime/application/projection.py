@@ -42,7 +42,7 @@ from archflow.state.developed_design import (
     DevelopedDesignState,
 )
 from archflow.state.design_portfolio import DesignStage
-from archflow.state.operational_state import DependencyEdge
+from archflow.state.dependencies import DependencyEdge
 from archflow.state.spatial import DesignComponent
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.state_record import (

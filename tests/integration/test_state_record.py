@@ -13,7 +13,8 @@ from dataclasses import replace
 from pathlib import Path
 
 from archflow.project.repository import FilesystemProjectRepository
-from archflow.state.operational_state import DependencyEffect, DesignObligation, ObligationStatus
+from archflow.state.dependencies import DependencyEffect
+from archflow.state.operational_state import DesignObligation, ObligationStatus
 from archflow.project.refs import ProjectVersionRef, RunRef
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.state_record import (
@@ -165,6 +166,22 @@ class StateRecordTests(unittest.TestCase):
         self.assertEqual(scalar.base_state_digest, record.state_digest)
         with self.assertRaisesRegex(StateRecordError, "protected"):
             combine_component_changes(record, (wall, columns), protected=("parameter:column_diameter",))
+
+    def test_every_later_change_is_checked_against_each_earlier_one(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        wall = apply_state_record_operator(record, self._wall_edit(record))
+        columns = apply_state_record_operator(record, StateRecordOperator(
+            kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest,
+            base_state_digest=record.state_digest, target_ref="parameter:column_diameter",
+            key="column_diameter", value=0.8))
+        roof = apply_state_record_operator(record, compile_component_edit(record, entities=(
+            Entity("level-roof", "Level@1", {"role": "roof", "elevation": 10}, basis_refs=("reading:plan",)),)))
+        result = apply_state_record_operator(record, combine_component_changes(record, (wall, columns, roof)))
+        self.assertEqual(result.entity("wall-new"), wall.entity("wall-new"))
+        self.assertEqual(result.parameter("column_diameter").value, 0.8)
+        self.assertEqual(result.entity("level-roof"), roof.entity("level-roof"))
+        with self.assertRaisesRegex(StateRecordError, "overlap or depend"):
+            combine_component_changes(record, (wall, columns, columns))
 
     def test_combination_refuses_shared_objects_and_declared_dependencies(self) -> None:
         record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))

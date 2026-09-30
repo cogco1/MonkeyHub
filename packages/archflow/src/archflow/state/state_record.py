@@ -37,7 +37,8 @@ from archflow.state.derivation import (
     expression_names,
     substitute,
 )
-from archflow.state.operational_state import DependencyEdge, DependencyEffect, DesignObligation
+from archflow.state.dependencies import DependencyEdge, DependencyEffect, downstream_closure, downstream_closures
+from archflow.state.operational_state import DesignObligation
 from archflow.relations.contracts import ArchitecturalRelationKind
 from archflow.semantics.conditions import CONDITION_IDS
 from archflow.semantics.facets import FACET_KEYS, FREE_TEXT_MAX, FREE_TEXT_MIN, allowed_facet_values, suggest_facet_key
@@ -577,23 +578,7 @@ class StateRecord:
 
         if not changed_ref_groups:
             return ()
-        adjacency: dict[str, set[str]] = {}
-        for edge in self.dependency_edges():
-            if edge.effect not in (DependencyEffect.INVALIDATES, DependencyEffect.REQUIRES_REVALIDATION):
-                continue  # BLOCKS and SUPPORTS_ONLY do not propagate a change downstream
-            adjacency.setdefault(edge.upstream_ref, set()).add(edge.downstream_ref)
-        results: list[tuple[str, ...]] = []
-        for changed_refs in changed_ref_groups:
-            seen = set(changed_refs)
-            queue = sorted(changed_refs)
-            while queue:
-                current = queue.pop(0)
-                for downstream in sorted(adjacency.get(current, ())):
-                    if downstream not in seen:
-                        seen.add(downstream)
-                        queue.append(downstream)
-            results.append(tuple(sorted(seen)))
-        return tuple(results)
+        return downstream_closures(self.dependency_edges(), changed_ref_groups)
 
     # ---- identity the geometry compiler checks (P102)
     def bound_to(self, run: RunRef) -> "StateRecord":
@@ -1326,16 +1311,6 @@ def combine_component_changes(
     closures: list[set[str]] = []
     write_sets: list[set[str]] = []
     edges = tuple(edge for state in (record, *candidates) for edge in state.dependency_edges())
-
-    def reached(changed: set[str], effects: tuple[DependencyEffect, ...]) -> set[str]:
-        result = set(changed)
-        while True:
-            expanded = result | {edge.downstream_ref for edge in edges
-                                 if edge.effect in effects and edge.upstream_ref in result}
-            if expanded == result:
-                return result
-            result = expanded
-
     edits: dict[str, dict[str, Any]] = {"entities": {}, "parameters": {}, "relations": {}}
     removals: dict[str, set[str]] = {name: set() for name in edits}
     for candidate in candidates:
@@ -1344,8 +1319,8 @@ def combine_component_changes(
             if getattr(candidate, field_name) != getattr(record, field_name):
                 raise StateRecordError(f"combine cannot normalize changes to {field_name} as component edits")
         changed = set(changed_refs(record, candidate))
-        closure = reached(changed, (DependencyEffect.INVALIDATES, DependencyEffect.REQUIRES_REVALIDATION))
-        writes = reached(changed, (DependencyEffect.INVALIDATES,))
+        closure = set(downstream_closure(edges, changed))
+        writes = set(downstream_closure(edges, changed, effects=(DependencyEffect.INVALIDATES,)))
         for previous, reached, written in zip(changed_sets, closures, write_sets):
             conflicts = (changed & reached) | (previous & closure) | (written & writes)
             if conflicts:

@@ -16,9 +16,12 @@ from archflow.state.commitments import (
     CommitmentTransitionError,
     transition_commitment,
 )
-from archflow.state.operational_state import (
+from archflow.state.dependencies import (
     DependencyEffect,
     DependencyEdge,
+    downstream_closure,
+)
+from archflow.state.operational_state import (
     DesignObligation,
     FactValue,
     ObligationStatus,
@@ -927,30 +930,14 @@ def _dependency_closure(
     direct_invalidations: tuple[str, ...],
     dependencies: tuple[DependencyEdge, ...],
 ) -> tuple[str, ...]:
-    adjacency: dict[str, set[str]] = {}
-    for edge in dependencies:
-        if edge.effect not in {
-            DependencyEffect.INVALIDATES,
-            DependencyEffect.REQUIRES_REVALIDATION,
-        }:
-            continue
-        adjacency.setdefault(edge.upstream_ref, set()).add(
-            edge.downstream_ref
+    closure = downstream_closure(dependencies, direct_invalidations)
+    # The seeds (the operator's invalidations) are bounded and unique already,
+    # so only what the walk adds downstream can pass the bound.
+    if len(closure) > _MAX_ITEMS:
+        raise DecisionCompilationError(
+            "dependency closure exceeds bounded item count"
         )
-    visited = set(direct_invalidations)
-    queue = list(sorted(direct_invalidations))
-    while queue:
-        current = queue.pop(0)
-        for downstream in sorted(adjacency.get(current, ())):
-            if downstream in visited:
-                continue
-            visited.add(downstream)
-            if len(visited) > _MAX_ITEMS:
-                raise DecisionCompilationError(
-                    "dependency closure exceeds bounded item count"
-                )
-            queue.append(downstream)
-    return tuple(sorted(visited))
+    return closure
 
 
 _MISSING_VALUE = object()

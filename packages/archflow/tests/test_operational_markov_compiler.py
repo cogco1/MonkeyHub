@@ -8,7 +8,8 @@ from pathlib import Path
 from archflow.project.refs import BranchRef, ProjectVersionRef, RunRef
 from archflow.state.commitments import Commitment, CommitmentKind, CommitmentStatus, CommitmentStrength, CriterionRef, RevisionPolicy, transition_commitment
 from archflow.state.decision_operator import ConditionComparator, DecisionCompilationError, DecisionOperator, DecisionOperatorMigrationRequired, LegacyDecisionOperatorV1, StateCondition, compile_decision_operator, load_decision_operator_record
-from archflow.state.operational_state import DependencyEffect, DependencyEdge, DesignObligation, FactEpistemicStatus, LegacyOperationalMarkovStateV2, ObligationCondition, ObligationStatus, OperationalMarkovState, OperationalStateMigrationRequired, ParameterBinding, StateDomain, StateFact, StateLock, load_operational_state_record
+from archflow.state.dependencies import DependencyEffect, DependencyEdge
+from archflow.state.operational_state import DesignObligation, FactEpistemicStatus, LegacyOperationalMarkovStateV2, ObligationCondition, ObligationStatus, OperationalMarkovState, OperationalStateMigrationRequired, ParameterBinding, StateDomain, StateFact, StateLock, load_operational_state_record
 
 
 def _branch(
@@ -976,6 +977,12 @@ class OperationalMarkovCompilerTests(unittest.TestCase):
             / "archflow"
             / "state"
             / "decision_operator.py"
+        ).read_text(encoding="utf-8") + (
+            Path(__file__).parents[1]
+            / "src"
+            / "archflow"
+            / "state"
+            / "dependencies.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("mkdir(", sources)
         self.assertNotIn("write_text(", sources)

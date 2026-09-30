@@ -19,6 +19,7 @@ from archflow.project.refs import (
     RunRef,
 )
 from archflow.state.commitments import Commitment
+from archflow.state.dependencies import DependencyEdge, DependencyEffect
 from archflow.contracts.canonical import canonical_json
 from archflow.contracts.fields import (
     enum_member,
@@ -69,15 +70,6 @@ class FactEpistemicStatus(StrEnum):
     HYPOTHESIS = "hypothesis"
     DISPUTED = "disputed"
     UNKNOWN = "unknown"
-
-
-class DependencyEffect(StrEnum):
-    """What may propagate along one named dependency."""
-
-    INVALIDATES = "invalidates"
-    REQUIRES_REVALIDATION = "requires_revalidation"
-    BLOCKS = "blocks"
-    SUPPORTS_ONLY = "supports_only"
 
 
 class OperationalStateMigrationRequired(ValueError):
@@ -402,99 +394,6 @@ class DesignObligation:
             blocked_by=string_tuple(
                 payload["blocked_by"],
                 "obligation blocked_by",
-            ),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class DependencyEdge:
-    upstream_ref: str
-    downstream_ref: str
-    relation: str
-    source_ref: str
-    effect: DependencyEffect = DependencyEffect.SUPPORTS_ONLY
-
-    def __post_init__(self) -> None:
-        require_logical_ref(self.upstream_ref, "dependency upstream_ref")
-        require_logical_ref(self.downstream_ref, "dependency downstream_ref")
-        if self.upstream_ref == self.downstream_ref:
-            raise ValueError("dependency cannot be a self edge")
-        _text(self.relation, "dependency relation")
-        require_logical_ref(self.source_ref, "dependency source_ref")
-        if not isinstance(self.effect, DependencyEffect):
-            raise TypeError(
-                "dependency effect must be a DependencyEffect"
-            )
-        if (
-            self.effect
-            in {
-                DependencyEffect.INVALIDATES,
-                DependencyEffect.REQUIRES_REVALIDATION,
-            }
-            and self.downstream_ref.startswith(
-                ("obligation:", "commitment:")
-            )
-        ):
-            raise ValueError(
-                "normative refs require blocking or support-only edges"
-            )
-        if (
-            self.effect is DependencyEffect.BLOCKS
-            and (
-                not self.upstream_ref.startswith("obligation:")
-                or not self.downstream_ref.startswith("obligation:")
-            )
-        ):
-            raise ValueError(
-                "blocking dependency must connect obligation refs"
-            )
-
-    @property
-    def identity(self) -> tuple[str, str, str, str]:
-        return (
-            self.upstream_ref,
-            self.downstream_ref,
-            self.relation,
-            self.effect.value,
-        )
-
-    @property
-    def ref(self) -> str:
-        digest = hashlib.sha256(
-            canonical_json(self.identity).encode("utf-8")
-        ).hexdigest()
-        return f"dependency:{digest}"
-
-    def to_dict(self) -> dict[str, str]:
-        return {
-            "upstream_ref": self.upstream_ref,
-            "downstream_ref": self.downstream_ref,
-            "relation": self.relation,
-            "source_ref": self.source_ref,
-            "effect": self.effect.value,
-        }
-
-    @classmethod
-    def from_dict(cls, value: object) -> DependencyEdge:
-        payload = _mapping(value, "dependency edge")
-        expected = {
-            "upstream_ref",
-            "downstream_ref",
-            "relation",
-            "source_ref",
-            "effect",
-        }
-        if set(payload) != expected:
-            raise ValueError("dependency edge schema drifted")
-        return cls(
-            upstream_ref=payload["upstream_ref"],
-            downstream_ref=payload["downstream_ref"],
-            relation=payload["relation"],
-            source_ref=payload["source_ref"],
-            effect=enum_member(
-                payload["effect"],
-                DependencyEffect,
-                "dependency effect",
             ),
         )
 
