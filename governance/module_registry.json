@@ -7180,7 +7180,7 @@
     },
     {
       "module_id": "monkeymonitor",
-      "owner_path": "monkeymonitor/usage.py",
+      "owner_path": "packages/monkeymonitor/src/monkeymonitor/usage.py",
       "purpose": "Engineering usage, trace, exact decimal token pricing and bounded algorithm recommendations for Hub/Studio observations and explicit Codex session files; MonkeyHub owns the visible Usage page.",
       "owns": [
         "Portable TokenUsage and UsageEvent diagnostic values, with unknown counters preserved",
@@ -7247,7 +7247,7 @@
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
         "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
-        "monkeymonitor/__main__.py",
+        "packages/monkeymonitor/src/monkeymonitor/__main__.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
         "apps/monkeyhub/web/src/MonitorPage.tsx"
       ],
@@ -7270,11 +7270,11 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/monkeymonitor/test_core.py",
-        "tests/monkeymonitor/test_trace.py",
+        "packages/monkeymonitor/tests/test_core.py",
+        "packages/monkeymonitor/tests/test_trace.py",
         "tests/monkeymonitor/test_design_loop.py",
         "apps/monkeyhub/api/tests/test_chat_trace.py",
-        "tests/monkeymonitor/test_server.py",
+        "packages/monkeymonitor/tests/test_server.py",
         "apps/archflow-studio/api/tests/test_monitoring.py",
         "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
         "apps/archflow-studio/api/tests/test_intent_budget.py",
@@ -7282,15 +7282,15 @@
       ],
       "notes": "CREATE explicitly requested by user. Existing ports.model owns provider receipt transport; neither it nor architectural workflow/evaluation owners owns cross-application token accounting, rates and engineering budget advice. Independent Python package and loopback API/CLI; MonkeyHub owns the single product UI. No separate architectural authority.",
       "files": [
-        "monkeymonitor/__init__.py",
-        "monkeymonitor/usage.py",
-        "monkeymonitor/pricing.py",
-        "monkeymonitor/algorithms.py",
-        "monkeymonitor/codex.py",
-        "monkeymonitor/store.py",
-        "monkeymonitor/server.py",
-        "monkeymonitor/trace.py",
-        "monkeymonitor/__main__.py"
+        "packages/monkeymonitor/src/monkeymonitor/__init__.py",
+        "packages/monkeymonitor/src/monkeymonitor/usage.py",
+        "packages/monkeymonitor/src/monkeymonitor/pricing.py",
+        "packages/monkeymonitor/src/monkeymonitor/algorithms.py",
+        "packages/monkeymonitor/src/monkeymonitor/codex.py",
+        "packages/monkeymonitor/src/monkeymonitor/store.py",
+        "packages/monkeymonitor/src/monkeymonitor/server.py",
+        "packages/monkeymonitor/src/monkeymonitor/trace.py",
+        "packages/monkeymonitor/src/monkeymonitor/__main__.py"
       ]
     },
     {

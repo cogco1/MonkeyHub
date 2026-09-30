@@ -145,7 +145,7 @@ class PackageAdapterTests(unittest.TestCase):
         self.node = self.root / "node.exe"
         self.node.write_bytes(b"selected Node runtime")
         for directory in (
-            "monkeymonitor", "monkeycontrol",
+            "monkeycontrol",
             "apps/archflow-studio/api/archflow_studio_api",
             "apps/monkeyhub/api", "apps/monkeyhub/installer/third-party",
             "apps/monkeyfab/src/monkeyfab", "apps/monkeyfab/tests",
@@ -164,6 +164,7 @@ class PackageAdapterTests(unittest.TestCase):
             "packages/monkeydiagram/src/monkeydiagram/__init__.py", "packages/monkeydiagram/tests/test_svg.py",
             "packages/archflow/src/archflow/__init__.py", "packages/archflow/tests/test_project_repository.py",
             "packages/monkeyarch/src/monkeyarch/__init__.py",
+            "packages/monkeymonitor/src/monkeymonitor/__init__.py", "packages/monkeymonitor/tests/test_core.py",
         ):
             target = self.source / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -228,6 +229,8 @@ class PackageAdapterTests(unittest.TestCase):
         self.assertIn("packages/archflow/src/archflow", builder.SOURCE_PATHS)
         self.assertEqual((self.bundle / "monkeyarch/__init__.py").read_text(), "fixture")
         self.assertIn("packages/monkeyarch/src/monkeyarch", builder.SOURCE_PATHS)
+        self.assertEqual((self.bundle / "monkeymonitor/__init__.py").read_text(), "fixture")
+        self.assertIn("packages/monkeymonitor/src/monkeymonitor", builder.SOURCE_PATHS)
         self.assertFalse((self.bundle / "packages").exists())
         # The embedded runtime's requirements are read from the kernel's own manifest.
         self.assertIn("packages/archflow/pyproject.toml", builder.SOURCE_PATHS)

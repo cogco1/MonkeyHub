@@ -43,6 +43,7 @@ jobs:
             packages/archflow/pyproject.toml
             packages/monkeyarch/pyproject.toml
             packages/monkeydiagram/pyproject.toml
+            packages/monkeymonitor/pyproject.toml
             apps/monkeyfab/pyproject.toml
             apps/archflow-studio/api/requirements.txt
 
@@ -69,6 +70,7 @@ jobs:
           -e "packages/archflow[cad-occt]"
           -e packages/monkeyarch
           -e packages/monkeydiagram
+          -e packages/monkeymonitor
           -e "apps/monkeyfab[send,test]"
           -r apps/archflow-studio/api/requirements.txt
           -r apps/monkeyhub/api/requirements.txt
@@ -87,6 +89,9 @@ jobs:
 
       - name: MonkeyDiagram package tests
         run: python -m pytest packages/monkeydiagram/tests -q
+
+      - name: MonkeyMonitor package tests
+        run: python -m pytest packages/monkeymonitor/tests -q
 
       - name: Fab geometry, CLI and upload boundaries
         run: python -m pytest apps/monkeyfab/tests -q
@@ -120,6 +125,7 @@ jobs:
             packages/archflow/pyproject.toml
             packages/monkeyarch/pyproject.toml
             packages/monkeydiagram/pyproject.toml
+            packages/monkeymonitor/pyproject.toml
             apps/archflow-studio/api/requirements.txt
 
       - name: Set up Node
@@ -134,6 +140,7 @@ jobs:
       - name: Install API dependencies
         run: >-
           python -m pip install -e . -e packages/archflow -e packages/monkeyarch -e packages/monkeydiagram
+          -e packages/monkeymonitor
           -r apps/archflow-studio/api/requirements.txt
           -r apps/monkeyhub/api/requirements.txt
 
@@ -249,6 +256,7 @@ jobs:
             packages/archflow/pyproject.toml
             packages/monkeyarch/pyproject.toml
             packages/monkeydiagram/pyproject.toml
+            packages/monkeymonitor/pyproject.toml
             apps/archflow-studio/api/requirements.txt
 
       - name: Set up Node
@@ -261,7 +269,7 @@ jobs:
             apps/monkeyhub/web/tools/openapi-ts/package-lock.json
 
       - name: Install API and test dependencies
-        run: python -m pip install -e . -e "packages/archflow[cad-inspection]" -e packages/monkeyarch -e packages/monkeydiagram -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
+        run: python -m pip install -e . -e "packages/archflow[cad-inspection]" -e packages/monkeyarch -e packages/monkeydiagram -e packages/monkeymonitor -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 
       - name: Desktop update activation checks
         if: runner.os == 'Windows'
@@ -380,6 +388,7 @@ jobs:
             packages/archflow/pyproject.toml
             packages/monkeyarch/pyproject.toml
             packages/monkeydiagram/pyproject.toml
+            packages/monkeymonitor/pyproject.toml
             apps/archflow-studio/api/requirements.txt
 
       # A pull request is compared with where it left its base branch; a push
@@ -398,7 +407,7 @@ jobs:
           git worktree add "$RUNNER_TEMP/base" "$base"
 
       - name: Install API and test dependencies
-        run: python -m pip install -e . -e "packages/archflow[cad-inspection]" -e packages/monkeyarch -e packages/monkeydiagram -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
+        run: python -m pip install -e . -e "packages/archflow[cad-inspection]" -e packages/monkeyarch -e packages/monkeydiagram -e packages/monkeymonitor -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 
       # The base code builds the project: the check promises that an existing
       # project reads the same, and a candidate that deliberately changes what

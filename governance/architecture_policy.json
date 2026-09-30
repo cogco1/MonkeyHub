@@ -5,7 +5,7 @@
     "packages/archflow",
     "packages/monkeyarch",
     "packages/monkeydiagram",
-    "monkeymonitor",
+    "packages/monkeymonitor",
     "monkeycontrol",
     "tools",
     "apps/archflow-studio/api",
@@ -24,7 +24,8 @@
     "apps/monkeyfab/src",
     "packages/monkeydiagram/src",
     "packages/archflow/src",
-    "packages/monkeyarch/src"
+    "packages/monkeyarch/src",
+    "packages/monkeymonitor/src"
   ],
   "repository_root_entries": [
     "apps",
@@ -53,7 +54,6 @@
     "pyproject.toml"
   ],
   "legacy_root_packages": [
-    "monkeymonitor",
     "monkeycontrol"
   ],
   "shared_write_scope": [
@@ -63,6 +63,7 @@
     "apps/archflow-studio/api/tests/",
     "packages/monkeydiagram/tests/",
     "packages/archflow/tests/",
+    "packages/monkeymonitor/tests/",
     "docs/PROTOCOL.md",
     "governance/architecture_policy.json",
     "docs/SYSTEM_MAP.md",
@@ -268,7 +269,7 @@
       "reason": "writes only input/runner/seats.json when the caller explicitly saves the authored seat pack; retaining replaced bytes belongs to the caller through project.repository"
     },
     {
-      "path": "monkeymonitor/store.py",
+      "path": "packages/monkeymonitor/src/monkeymonitor/store.py",
       "function": "append",
       "operations": [
         "open_write",
@@ -279,7 +280,7 @@
       "reason": "Append and rotate bounded metadata-only usage journals under the explicit noncanonical diagnostics directory; project documents are never written."
     },
     {
-      "path": "monkeymonitor/store.py",
+      "path": "packages/monkeymonitor/src/monkeymonitor/store.py",
       "function": "_locked",
       "operations": [
         "mkdir",
@@ -751,6 +752,15 @@
       "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
     },
     {
+      "source": "packages/monkeymonitor/tests",
+      "targets": [
+        "tests",
+        "labs",
+        "archive"
+      ],
+      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+    },
+    {
       "source": "packages/archflow/src/archflow/contracts",
       "targets": [
         "archflow.adapters",
@@ -862,7 +872,7 @@
       "reason": "Geometry compilation returns a domain value and has no project writer."
     },
     {
-      "source": "monkeymonitor",
+      "source": "packages/monkeymonitor/src/monkeymonitor",
       "targets": [
         "archflow",
         "monkeyarch",
