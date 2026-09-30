@@ -25,7 +25,7 @@ from archflow.project.record_kinds import stage_geometry_program
 from archflow.project.refs import BranchRef, RunRef, record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyarch.runtime.project_runner import ProjectRunnerError
-from tests.test_cad_execution import (
+from tests.integration.test_cad_execution import (
     _FakeWorker,
     _binding,
     _cleanup_result,
@@ -35,8 +35,8 @@ from tests.test_cad_execution import (
     _write_host_witness,
     _write_success_marker,
 )
-from tests.test_occt_execution import _box, _loft, _no_process, _program_of, _radial_array, _single_operation_program
-from tests.test_project_runner import _ExportProject, _options, _prism_row, _record
+from tests.integration.test_occt_execution import _box, _loft, _no_process, _program_of, _radial_array, _single_operation_program
+from tests.integration.test_project_runner import _ExportProject, _options, _prism_row, _record
 
 
 NEEDS_OCCT = unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")

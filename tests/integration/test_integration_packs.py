@@ -24,8 +24,8 @@ from archflow.adapters.integration_packs import (
 )
 from archflow.adapters.local_cad_discovery import Discovery, Installation, SoftwareDiscoveryRegistry
 from archflow.adapters.model_formats import ConversionError, Mesh, Scene
-from tests.test_blender_cad import _request as _blender_request
-from tests.test_cad_backend_contract import _controlled_rhino, _request as _rhino_request
+from tests.integration.test_blender_cad import _request as _blender_request
+from tests.integration.test_cad_backend_contract import _controlled_rhino, _request as _rhino_request
 
 
 class _Discovery:

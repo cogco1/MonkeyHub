@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services/project-runtime/src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "services/project-runtime/src"))
 
 from fastapi.testclient import TestClient
 
@@ -25,8 +25,8 @@ from project_runtime.application.candidate import run_operator
 from project_runtime.application.projection import project_state
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from tests import test_window_relational_update as window
-from tests.test_project_runner import _no_rhino
+from tests.integration import test_window_relational_update as window
+from tests.integration.test_project_runner import _no_rhino
 
 # Load API fixtures by their full package so they do not shadow kernel tests.
 support = import_module("services.project-runtime.tests.support")

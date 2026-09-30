@@ -25,7 +25,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tools.archcheck import (
     REGISTRY_SCHEMA, ArchitecturePolicyError, _index_tree, check_changed_scopes, check_imports,
@@ -136,7 +136,7 @@ def _write(root: Path, relative: str, text: str) -> None:
 
 class WorkflowBoundaryTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.policy = load_policy(Path(__file__).resolve().parents[1] / POLICY_PATH)
+        self.policy = load_policy(Path(__file__).resolve().parents[2] / POLICY_PATH)
 
     def test_core_and_peer_workflow_reverse_imports_are_refused(self) -> None:
         for source, target in (
@@ -184,7 +184,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
 
 class UnclaimedPolicyTests(unittest.TestCase):
     def test_the_policy_states_what_a_commit_without_a_claim_may_write(self) -> None:
-        policy = load_policy(Path(__file__).resolve().parents[1] / POLICY_PATH)
+        policy = load_policy(Path(__file__).resolve().parents[2] / POLICY_PATH)
         without = {key: value for key, value in policy.items() if key != "unclaimed_write_scope"}
         with self.assertRaisesRegex(ArchitecturePolicyError, "unclaimed_write_scope"):
             validate_policy(without)

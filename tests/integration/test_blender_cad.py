@@ -25,10 +25,10 @@ from archflow.state.geometry_program import (
     GeometryOperation, GeometryOperationKind, GeometryParameter,
     GeometryParameterKind, LengthUnit,
 )
-from tests.test_cad_execution import _binding
-from tests.test_cad_backend_contract import _taller_plinth
-from tests.test_occt_execution import _box, _loft, _program_of
-from tests.test_project_runner import _ExportProject, _options, _prism_row, _record
+from tests.integration.test_cad_execution import _binding
+from tests.integration.test_cad_backend_contract import _taller_plinth
+from tests.integration.test_occt_execution import _box, _loft, _program_of
+from tests.integration.test_project_runner import _ExportProject, _options, _prism_row, _record
 
 
 BLENDER_EXECUTABLE = os.environ.get("ARCHFLOW_BLENDER_EXECUTABLE")

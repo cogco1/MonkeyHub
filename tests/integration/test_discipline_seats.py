@@ -40,7 +40,7 @@ from archflow.state.geometry_program import (
     InterfaceDatumKind,
     LengthUnit,
 )
-from tests.support import (
+from tests.integration.support import (
     COMMITMENT,
     ProducerFixture,
     ScriptedProvider,

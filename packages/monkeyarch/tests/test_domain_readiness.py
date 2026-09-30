@@ -46,7 +46,7 @@ def _record(*groups: tuple[Entity, ...]) -> StateRecord:
 
 
 class DomainRegistryTests(unittest.TestCase):
-    """``DOMAINS``, in the style of ``tests/test_facets.py``'s registry tests."""
+    """``DOMAINS``, in the style of ``tests/integration/test_facets.py``'s registry tests."""
 
     def test_registry_has_exactly_structure_and_envelope(self) -> None:
         self.assertEqual(set(DOMAINS), {"structure", "envelope"})

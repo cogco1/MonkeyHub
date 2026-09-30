@@ -33,8 +33,8 @@ from monkeyarch.capabilities.reference_resolver import ReferenceContext
 from monkeyarch.compilers.geometry import compile_geometry_program
 from archflow.state.geometry_program import GeometryOperationKind, ProjectGridAxis, ProjectGrids, ProjectLevel, ProjectLevels, SemanticBinding
 from archflow.state.state_record import project_grids_of, project_levels_of
-from tests.support import ProducerFixture, authored_record
-from tests.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
+from tests.integration.support import ProducerFixture, authored_record
+from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
 
 BASIS = ("reading:plate",)
 PN = "level-piano-nobile"
@@ -266,7 +266,7 @@ class SemanticWallContractTests(unittest.TestCase):
 class PlanarSurfaceProducerTests(unittest.TestCase):
     def test_a_bound_elevation_edit_moves_the_surface_and_keeps_the_base(self) -> None:
         from archflow.state.state_record import Parameter, StateRecordEditKind, StateRecordOperator, apply_state_record_operator
-        from tests.support import shared_bound_state
+        from tests.integration.support import shared_bound_state
 
         record = authored_record()
         surface = replace(next(e for e in record.entities if e.entity_id == "wall-south"), fields={
@@ -723,7 +723,7 @@ class PrismElevationTests(unittest.TestCase):
 
     def test_parameter_edits_keep_panel_elevation_and_thickness_independent(self) -> None:
         from archflow.state.state_record import Parameter, StateRecordEditKind, StateRecordOperator, apply_state_record_operator
-        from tests.support import shared_bound_state
+        from tests.integration.support import shared_bound_state
 
         record = authored_record()
         panel = replace(next(e for e in record.entities if e.entity_id == "wall-south"), fields={
@@ -751,7 +751,7 @@ class PrismElevationTests(unittest.TestCase):
 class PlanarSurfaceProposalTests(ProducerFixture):
     async def test_surface_passes_the_real_proposal_contract_and_datum_compiler(self) -> None:
         from monkeyarch.capabilities.geometry_proposal import proposal_authoring_output
-        from tests.support import ScriptedProvider
+        from tests.integration.support import ScriptedProvider
 
         context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=_levels()), published={}, frame_id="world")
         row = ElementRow("surface", "building", "planar-surface", {"base": {"level": PN}},
@@ -1281,7 +1281,7 @@ class BoundRowTests(unittest.TestCase):
 class BoundProfileContractTests(unittest.TestCase):
     def _record(self, producer):
         from archflow.state.state_record import Parameter
-        from tests.support import shared_bound_state
+        from tests.integration.support import shared_bound_state
 
         record = authored_record()
         profile = [[0, 0], ["@width", 0], ["@width", "@half_width"], [0, "@half_width"]]
@@ -1346,7 +1346,7 @@ class StatedRowsThroughTheProposalTests(ProducerFixture):
 
     def _accepted(self):
         from monkeyarch.capabilities.geometry_proposal import proposal_authoring_output
-        from tests.support import ScriptedProvider
+        from tests.integration.support import ScriptedProvider
 
         context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=_levels()), published={}, frame_id="world")
         produced = produce_rows((_wedge_row(), _shell_row()), context)

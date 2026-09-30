@@ -1603,8 +1603,8 @@ class OcctExportTests(unittest.TestCase):
     def test_failed_step_reports_elapsed_without_claiming_delivered_objects(self) -> None:
         from unittest.mock import patch
         from archflow.adapters import cad_execution
-        from tests.test_cad_execution import _binding
-        from tests.test_occt_execution import _box, _program_of
+        from tests.integration.test_cad_execution import _binding
+        from tests.integration.test_occt_execution import _box, _program_of
 
         program = _program_of(_box("box", [0, 0, 0], [1, 1, 1]))
         spans = []
@@ -2021,8 +2021,8 @@ class IncrementalSourceRunTests(unittest.TestCase):
         from unittest.mock import patch
         from archflow.adapters import occt_backend
         from archflow.adapters.cad_execution import execute_occt_export
-        from tests.test_cad_execution import _binding
-        from tests.test_occt_execution import _array, _box, _program_of
+        from tests.integration.test_cad_execution import _binding
+        from tests.integration.test_occt_execution import _array, _box, _program_of
 
         seed = _box("seed", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
         fixed = _array("fixed", seed, count=2, step=[0.0, 3.0, 0.0])

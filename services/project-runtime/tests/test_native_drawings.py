@@ -243,7 +243,7 @@ class NativeDrawingTests(unittest.TestCase):
         except ConversionError as exc:
             self.skipTest(str(exc))
         # Reuse the adapter's native SDK fixture builder, not private design data.
-        spec = importlib.util.spec_from_file_location("skp_test_fixture", Path(__file__).resolve().parents[3] / "tests/test_sketchup_reader.py")
+        spec = importlib.util.spec_from_file_location("skp_test_fixture", Path(__file__).resolve().parents[3] / "packages/archflow/tests/test_sketchup_reader.py")
         helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(helper)
         path = self.root / "source.skp"

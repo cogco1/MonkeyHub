@@ -12,7 +12,7 @@ from monkeyarch.compilers.geometry import (
 from archflow.state.spatial import NEUTRAL_SEMANTIC_KIND, ComponentMaturity, DesignComponent, SpatialProposalError, compile_component_transition
 from archflow.state.spatial import ConstraintResponseStatus, MassingVolume, SchematicOption, SiteBounds, SpatialConstraintResponse, SpatialGridBasis, SpatialLevel, SpatialOptionProposal, SpatialZone
 from archflow.state.geometry_program import SemanticBinding
-from tests.test_geometry_compiler import COMMITMENT, _proposal, _state
+from tests.integration.test_geometry_compiler import COMMITMENT, _proposal, _state
 
 
 # The option these tests deepen, as ArchFlow's own suite builds it
@@ -189,7 +189,7 @@ class SemanticGeometryTreeTests(unittest.TestCase):
     def test_removed_projection_and_p026_bypass_have_no_production_route(
         self,
     ) -> None:
-        root = Path(__file__).resolve().parents[1] / "packages" / "archflow" / "src" / "archflow"
+        root = Path(__file__).resolve().parents[2] / "packages" / "archflow" / "src" / "archflow"
         paths = tuple(root.rglob("*.py"))
         # A moved kernel would leave nothing to read and the scan would pass.
         self.assertIn(root / "__init__.py", paths)

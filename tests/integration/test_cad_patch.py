@@ -19,9 +19,9 @@ from archflow.state.geometry_program import delivered_object_ids
 from monkeyarch.capabilities.element_producers import ProductionContext, produce_rows
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 from monkeyarch.compilers.geometry import compile_geometry_program
-from tests.test_cad_execution import _binding
-from tests.test_element_producers import _grids, _levels, _rows
-from tests.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
+from tests.integration.test_cad_execution import _binding
+from tests.integration.test_element_producers import _grids, _levels, _rows
+from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
 
 
 def _compile(rows, *, array_seed: str | None = None):
@@ -61,7 +61,7 @@ class PatchSelectionTests(unittest.TestCase):
             import rhino3dm as r
         except ImportError:
             self.skipTest("rhino3dm is not installed")
-        from tests.test_cad_program import binding, op, program
+        from tests.integration.test_cad_program import binding, op, program
 
         names = tuple(f"object-{i:02}" for i in range(25))
         build = program(*(op(f"solid-{i}", "solid", [name], bindings=(f"binding-{i}",), origin=[0, 0, 0], size=[1, 1, 1]) for i, name in enumerate(names)),

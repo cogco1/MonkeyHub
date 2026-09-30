@@ -60,7 +60,7 @@ from archflow.state.state_record import (
     StateRecord,
     developed_design_view,
 )
-from tests.support import authored_record
+from tests.integration.support import authored_record
 from archflow.state.stage_workflow import (
     CompositeStageClosureReceipt,
     DesignPhase,
@@ -174,7 +174,7 @@ class OwnerLoadingTests(unittest.TestCase):
             "print(declared_pointers('ThreeDmInspectionSummary@4'));"
             "print(derived_fields('OcctExecutionReceipt@1'))"
         )
-        root = Path(__file__).resolve().parents[1]
+        root = Path(__file__).resolve().parents[2]
         finished = subprocess.run(
             [sys.executable, "-c", probe], capture_output=True, text=True, cwd=str(root),
             env={**os.environ, "PYTHONPATH": os.pathsep.join(source_roots.roots(root))}, timeout=120,
@@ -336,7 +336,7 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
         ``archflow.project.issue`` and ``DrawingProjectionReceipt@1`` by
         ``monkeydiagram`` - so those three are the literal each of those
         writers emits, copied from it. The round-trip test in
-        ``tests/test_project_format_migration.py`` writes every one of these
+        ``tests/integration/test_project_format_migration.py`` writes every one of these
         schemas into a real project and migrates it; the same three are
         literals there too, for the same reason.
         """

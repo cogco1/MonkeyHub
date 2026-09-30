@@ -37,7 +37,7 @@ class CreateProjectTests(unittest.TestCase):
     def test_cli_creates_and_reopens_empty_external_project(self) -> None:
         self.root = Path(self.temp.name) / "工作 space" / "project-new"
         result = subprocess.run(
-            [sys.executable, "-X", "utf8", str(Path(__file__).resolve().parents[1] / "tools/create_project.py"),
+            [sys.executable, "-X", "utf8", str(Path(__file__).resolve().parents[2] / "tools/create_project.py"),
              "--project", str(self.root)],
             cwd=self.temp.name, capture_output=True, text=True, encoding="utf-8",
         )
@@ -153,7 +153,7 @@ class CreateProjectTests(unittest.TestCase):
         self.assertFalse(restored_root.exists())
 
     def test_project_archive_preserves_board_documents_and_original_source_bytes(self) -> None:
-        studio_api = Path(__file__).resolve().parents[1] / "services/project-runtime/src"
+        studio_api = Path(__file__).resolve().parents[2] / "services/project-runtime/src"
         with patch.object(sys, "path", [str(studio_api), *sys.path]):
             from PIL import Image
             from project_runtime.application.artifacts import document_bytes, list_documents, save_document

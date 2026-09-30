@@ -1092,7 +1092,7 @@ class RecessTests(ConstructionTestCase):
         """The successor applied and checked, its program compiled as the runner does, then built with OCCT."""
 
         from archflow.adapters import occt_backend
-        from tests.test_occt_execution import _compile as compile_program
+        from tests.integration.test_occt_execution import _compile as compile_program
 
         successor = _apply(record, result)
         program = compile_program(successor)

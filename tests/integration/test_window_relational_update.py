@@ -33,7 +33,7 @@ from archflow.state.state_record import (
 )
 from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
 from monkeyarch.runtime import project_runner
-from tests import test_project_runner as runner_support
+from tests.integration import test_project_runner as runner_support
 
 
 HOST = "wall-south"

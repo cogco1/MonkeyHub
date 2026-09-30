@@ -13,9 +13,9 @@ from monkeyarch.capabilities.element_producers import ElementProducerError, Elem
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 from monkeyarch.capabilities.wall_solver import WallSolverError, subtract_rectangular_cutouts
 from monkeyarch.compilers.geometry import compile_geometry_program
-from tests.test_element_producers import BASIS, PN, _grids, _levels, _op_params
-from tests.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
-from tests import test_project_runner as runner_support
+from tests.integration.test_element_producers import BASIS, PN, _grids, _levels, _op_params
+from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
+from tests.integration import test_project_runner as runner_support
 
 
 def _cut(cutout_id="window", span0=0.5, span1=1.5, bottom=1.0, top=2.0):

@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from tools import source_roots
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 
 
 class SourceRootsTests(unittest.TestCase):

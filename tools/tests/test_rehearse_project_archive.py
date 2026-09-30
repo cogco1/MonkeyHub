@@ -36,7 +36,7 @@ from tools.rehearse_project_archive import (
     verify_restored,
 )
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 STUDIO_API = REPO / "services/project-runtime/src"
 STUDIO_SUPPORT = REPO / "services/project-runtime/tests/support.py"
 DOCUMENT_BYTES = b"the original registered source bytes"

@@ -63,9 +63,9 @@ from archflow.state.geometry_program import (
     LengthUnit,
 )
 from archflow.state.state_record import StateRecord, project_grids_of, project_levels_of
-from tests.support import EVIDENCE, RECORD_PAYLOAD, authored_record, shared_bound_state
-from tests.test_cad_execution import _binding as _synthetic_binding, _program as _synthetic_program
-from tests.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
+from tests.integration.support import EVIDENCE, RECORD_PAYLOAD, authored_record, shared_bound_state
+from tests.integration.test_cad_execution import _binding as _synthetic_binding, _program as _synthetic_program
+from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
 from tools import source_roots
 
 OCCT_AVAILABLE = occt_backend.occt_available()
@@ -1371,7 +1371,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
             self.assertEqual((by_name[PANE_ID]["material_name"], by_name[PANE_ID]["material_transparency"]), ("glazing", 0.0))
 
 
-WEB_ROOT = Path(__file__).resolve().parents[1] / "apps" / "monkeyhub" / "web"
+WEB_ROOT = Path(__file__).resolve().parents[2] / "apps" / "monkeyhub" / "web"
 LOADER_TEST = WEB_ROOT / "test" / "rhino3dmMaterials.test.ts"
 WEB_DEPENDENCIES = (
     WEB_ROOT / "node_modules" / "three" / "examples" / "jsm" / "loaders" / "3DMLoader.js",
@@ -1408,13 +1408,15 @@ class StudioLoaderBridgeTests(unittest.TestCase):
     """
 
     def test_the_current_preview_reaches_the_studio_loader_with_its_materials_and_hidden_aperture(self) -> None:
+        # The web test is part of this checkout: a path that no longer reaches it
+        # fails here instead of skipping below as missing dependencies.
+        self.assertTrue(LOADER_TEST.is_file(), LOADER_TEST)
         node = _node_executable()
         if node is None:
             self.skipTest("Node is not installed (not on PATH, not under the standard install root)")
         missing = [str(path.relative_to(WEB_ROOT)) for path in WEB_DEPENDENCIES if not path.is_file()]
         if missing:
             self.skipTest(f"the Studio web dependencies are not installed under {WEB_ROOT}: {missing}")
-        self.assertTrue(LOADER_TEST.is_file(), LOADER_TEST)
 
         program = _compile(_window_record())
         binding = _persisted_binding(program, "stage-occt-window-loader")
@@ -2547,9 +2549,9 @@ class ImportBoundaryTests(unittest.TestCase):
             [PYTHON, "-c", "import sys, archflow.adapters.cad_execution; print(sorted(m for m in sys.modules if m in ('OCP', 'rhino3dm')))"],
             capture_output=True,
             text=True,
-            cwd=str(Path(__file__).resolve().parents[1]),
+            cwd=str(Path(__file__).resolve().parents[2]),
             # The fresh process imports this checkout's owner, not an installed one.
-            env={**os.environ, "PYTHONPATH": os.pathsep.join(source_roots.roots(Path(__file__).resolve().parents[1]))},
+            env={**os.environ, "PYTHONPATH": os.pathsep.join(source_roots.roots(Path(__file__).resolve().parents[2]))},
             timeout=120,
             check=False,
         )

@@ -1,5 +1,5 @@
 // Independent readback using the frontend's existing Three.js GLTFLoader.
-// node tests/model_export_glb_reader.mjs <three-package-dir> <generated.glb>
+// node packages/archflow/tests/model_export_glb_reader.mjs <three-package-dir> <generated.glb>
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';

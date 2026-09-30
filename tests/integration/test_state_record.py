@@ -819,7 +819,7 @@ class StateRecordTests(unittest.TestCase):
 
     def test_massing_entities_rebuild_the_spatial_option_exactly(self) -> None:
         from monkeyarch.runtime.project_runner import SchematicPack, bootstrap_developed_state
-        from tests.test_project_runner import EVIDENCE, _component
+        from tests.integration.test_project_runner import EVIDENCE, _component
         pack = SchematicPack.from_dict({
             "schema": "SchematicPack@1", "project_id": "demo", "option_id": "declared-option", "label": "demo declared schematic", "typology": "test block with a portico",
             "rationale": "declared from the survey record", "evidence_refs": [EVIDENCE],
@@ -873,7 +873,7 @@ class StateRecordTests(unittest.TestCase):
         """P102 last step: the record answers the four identity questions, so the compiler takes it directly."""
 
         from monkeyarch.compilers.geometry import compile_geometry_program
-        from tests.test_geometry_compiler import COMMITMENT, _proposal, _state
+        from tests.integration.test_geometry_compiler import COMMITMENT, _proposal, _state
 
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})

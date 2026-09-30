@@ -1,7 +1,7 @@
 """P089: the geometry compiler over the spine's own design state.
 
 The state is the projection of an authored ``StateRecord@1``
-(``tests/support.py``), which is what ``runtime.project_runner`` hands the
+(``tests/integration/support.py``), which is what ``runtime.project_runner`` hands the
 compiler. The frozen digests below are that state's, computed once.
 """
 from __future__ import annotations
@@ -38,7 +38,7 @@ from archflow.state.geometry_program import (
     ObjectRevisionPrecondition,
     SemanticBinding,
 )
-from tests.support import COMMITMENT, EVIDENCE, shared_bound_state
+from tests.integration.support import COMMITMENT, EVIDENCE, shared_bound_state
 
 
 def _state(*, width: float = 6.0) -> DevelopedDesignState:

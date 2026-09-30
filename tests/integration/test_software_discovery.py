@@ -190,7 +190,7 @@ class SoftwareDiscoveryTests(unittest.TestCase):
 
     def test_blender_backend_uses_shared_selection_before_its_worker(self):
         from archflow.adapters import blender_cad
-        from tests.test_blender_cad import _request
+        from tests.integration.test_blender_cad import _request
 
         selected = "configured-blender"
         command = str(self.root / "selected" / "blender.exe")

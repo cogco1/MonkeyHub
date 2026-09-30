@@ -67,8 +67,8 @@ from archflow.state.spatial import (
     SpatialOptionProposal,
 )
 from archflow.state.state_record import RECORD_BINDING_PHASE, developed_design_view
-from tests.support import authored_record
-from tests.test_state_record import _record as state_record_fixture
+from tests.integration.support import authored_record
+from tests.integration.test_state_record import _record as state_record_fixture
 from archflow.state.stage_workflow import (
     CompositeStageClosureReceipt,
     DesignPhase,
@@ -83,7 +83,7 @@ from tools.create_project import _scan_legacy_version_references, main
 # load that tier the way the command line does.
 load_workflow_owners()
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 class ProjectFormatPlannerTests(unittest.TestCase):

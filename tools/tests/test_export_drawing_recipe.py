@@ -21,7 +21,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services/project-runtime/src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "services/project-runtime/src"))
 
 from fastapi.testclient import TestClient
 

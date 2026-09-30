@@ -798,7 +798,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
         jsonschema.Draft7Validator(schema).validate(self.sbom())
 
 
-WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/desktop.yml"
+WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/desktop.yml"
 NORMALIZE_STEP = "Normalize release version across package evidence"
 
 

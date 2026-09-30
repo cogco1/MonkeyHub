@@ -3,7 +3,7 @@
 A window's four bars are consumed by one ``boolean_union``; the assembly's
 FRAME member names that fused frame (or its array), never a bar. A door
 keeps its separate jambs and head. These are the program-level facts the
-OCCT execution tests (``tests/test_occt_execution.py``) realize as solids.
+OCCT execution tests (``tests/integration/test_occt_execution.py``) realize as solids.
 """
 
 from __future__ import annotations
@@ -174,7 +174,7 @@ class ContractTests(unittest.TestCase):
         from archflow.adapters.occt_backend import build_program_shapes, measure_shape
         from monkeyarch.compilers.geometry import compile_geometry_program
         from archflow.state.geometry_program import InterfaceDatum, InterfaceDatumKind, LengthUnit
-        from tests.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
+        from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
 
         for leaf_count in (1, 2):
             for count in (1, 3):
