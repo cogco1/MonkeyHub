@@ -25,21 +25,17 @@ from archflow.state.state_record import (
     project_grids_of,
     project_levels_of,
 )
-from monkeyarch.capabilities.element_producers import (
+from monkeyarch.authoring.element_producers import (
     ProductionContext,
     element_rows_of,
     produce_rows,
     validate_element_contract,
 )
-from monkeyarch.capabilities.reference_resolver import ReferenceContext
-from monkeyarch.construction import (
-    ELEMENT_SUFFIX,
-    ConstructionError,
-    compile_construction_script,
-    geometry_view,
-    vocabulary,
-)
-from monkeyarch.construction.vocabulary import layer_rule_violations
+from monkeyarch.domain.reference_resolver import ReferenceContext
+from monkeyarch.authoring.construction.identity import ELEMENT_SUFFIX
+from monkeyarch.authoring.construction.lowering import compile_construction_script, geometry_view
+from monkeyarch.authoring.construction.script import ConstructionError
+from monkeyarch.authoring.construction.vocabulary import layer_rule_violations, vocabulary
 
 EVIDENCE = "input:monkeyarch-modeling-setup"
 PARAMETERS = (
@@ -597,7 +593,7 @@ class IdentityTests(ConstructionTestCase):
     def test_construction_made_geometry_is_a_component_whose_one_element_is_its_body(self) -> None:
         # The one test of what a script made (#419 C7 round 2): lowering reuses such a component, and a keep
         # on the component a shape is placed under does not reach it.
-        from monkeyarch.construction import made_by_construction
+        from monkeyarch.authoring.construction.identity import made_by_construction
 
         self.assertTrue(made_by_construction("mass", ["mass" + ELEMENT_SUFFIX]))
         for component, elements in (("pair", ["pair-a", "pair-b"]), ("single", ["single-line"]), ("model", []),

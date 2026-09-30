@@ -81,16 +81,16 @@ Local improvements can be tried without waiting for the formal-issue workflow.
 StateRecord@1                     packages/archflow/src/archflow/state/state_record.py      the design, content-addressed
   │ developed_design_view          the bound projection (run, base) — binding identity
   ▼
-element producers                 packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py
+element producers                 packages/monkeyarch/src/monkeyarch/authoring/element_producers.py
   │ reference_resolver             levels, grids, datums, derivations resolve here
   ▼
 GeometryProgramProposal           packages/archflow/src/archflow/state/geometry_program.py
-  │ compile_geometry_program       packages/monkeyarch/src/monkeyarch/compilers/geometry.py — the one compiler
+  │ compile_geometry_program       packages/monkeyarch/src/monkeyarch/compilation/geometry.py — the one compiler
   ▼
 CAD                               packages/monkeycad/src/monkeycad/cad_program.py → cad_execution.py → cad_patch.py
   │ three_dm_inspector             readback is evidence, never intent
   ▼
-relation checks                   packages/monkeyarch/src/monkeyarch/capabilities/relation_checks.py — plain domain values
+relation checks                   packages/monkeyarch/src/monkeyarch/domain/relation_checks.py — plain domain values
   ▼
 stage workflow                    packages/archflow/src/archflow/state/stage_workflow.py + StageExecutionGuard (project_runner)
   ▼
@@ -134,10 +134,10 @@ maturity stages that use them:
 | L5 Backend lowering and certification | producers, OCCT, exact B-rep, readback | E Deliver and certify |
 
 - **The construction script is the agent's geometry contract.** An agent makes and changes
-  geometry with one bounded script (`packages/monkeyarch/src/monkeyarch/construction`; `POST /api/proposals/construction`,
+  geometry with one bounded script (`packages/monkeyarch/src/monkeyarch/authoring/construction`; `POST /api/proposals/construction`,
   vocabulary at `GET /api/construction`) and reads the model back in the same words at
   `GET /api/construction/model`. Producers are internal lowering targets the runtime chooses (a
-  script's shapes in `packages/monkeyarch/src/monkeyarch/construction/lowering.py` as `prism`, `planar-surface`, `curve` or
+  script's shapes in `packages/monkeyarch/src/monkeyarch/authoring/construction/lowering.py` as `prism`, `planar-surface`, `curve` or
   `loft`; `wall` once a block hosts a door or window), never agent vocabulary; the Hub refuses an
   agent `semanticEdit` that writes geometry rows or meaning fields and names the route that does.
   The Studio web client keeps its own drawing routes.
@@ -153,7 +153,7 @@ maturity stages that use them:
   `hosted-opening` for `architectural.role = wall`, which realises a block as a wall in place under
   the same ids.
 - **Domains ask for missing facets and never guess.** `GET /api/domains/{domain}/readiness`
-  (`packages/monkeyarch/src/monkeyarch/capabilities/domain_readiness.py`) answers what a domain will read or which facets
+  (`packages/monkeyarch/src/monkeyarch/domain/domain_readiness.py`) answers what a domain will read or which facets
   it still needs and why; no domain infers meaning from shape or producer.
 
 The contract is [the construction API](../design/construction-api.md); the L5 half (voids and their
@@ -169,10 +169,10 @@ this edit affects. They use the existing record, not three competing project sto
 | --- | --- | --- |
 | Understand an architectural request | Studio `application/intent.py`, `application/intent_agent.py` and target/action resolvers | Scalar edits and typed component edits both reach the candidate path. Interpretation still crosses overlapping routing and target-resolution logic; source retrieval and inspection-driven repair are not yet an integrated agent loop. |
 | Express the project and change it | `state/state_record.py`: entities, parameters, relations, obligations and exact-base operators | `EDIT_COMPONENTS` adds atomic entity, parameter and relation edits and explicit removals alongside existing scalar, massing, program and reindex consumers. Reuse these operations; a new architectural action needs only its specific missing capability, not a second state model. |
-| Resolve dependencies | `StateRecord.dependency_edges/closure`, `capabilities/reference_resolver.py` and producer ordering | Traversing declared edges cannot discover a missing architectural dependency or decide which endpoint should govern a revision. |
-| Produce an assembly | `capabilities/element_producers.py`, with existing wall/opening solvers and geometry compiler | Stair and window producers remain reusable. Wall authoring with an arched opening now produces a real candidate in the project's side-support task. Successful solids do not establish passage alignment: the observed obstruction at the existing side entrance still needs correction. |
-| Check the result | `capabilities/relation_checks.py`, CAD readback and `validation/engine.py` | Declared relations are checked, but omitted requirements can remain unseen. Support-height agreement is not contact-area or structural-capacity analysis. Studio validation still receives no retained project requirements, so a violated one can stay unseen; no Issue schedules that input yet. |
-| Continue, inspect and retain | Studio binding/candidate/viewer, `runtime/project_runner.py`, P036 | Explicit candidate continuation is implemented. Program and massing APIs now accept a selected source run; clients must pass it to continue that candidate, while omission preserves the default base. Continuation does not prove architectural correctness. |
+| Resolve dependencies | `StateRecord.dependency_edges/closure`, `domain/reference_resolver.py` and producer ordering | Traversing declared edges cannot discover a missing architectural dependency or decide which endpoint should govern a revision. |
+| Produce an assembly | `authoring/element_producers.py`, with existing wall/opening solvers and geometry compiler | Stair and window producers remain reusable. Wall authoring with an arched opening now produces a real candidate in the project's side-support task. Successful solids do not establish passage alignment: the observed obstruction at the existing side entrance still needs correction. |
+| Check the result | `domain/relation_checks.py`, CAD readback and `validation/engine.py` | Declared relations are checked, but omitted requirements can remain unseen. Support-height agreement is not contact-area or structural-capacity analysis. Studio validation still receives no retained project requirements, so a violated one can stay unseen; no Issue schedules that input yet. |
+| Continue, inspect and retain | Studio binding/candidate/viewer, `application/project_runner.py`, P036 | Explicit candidate continuation is implemented. Program and massing APIs now accept a selected source run; clients must pass it to continue that candidate, while omission preserves the default base. Continuation does not prove architectural correctness. |
 
 These are existing ownership boundaries, not new modules to create. Public APIs and
 callers remain in [the system map](system-map.md). Source/runtime placement and extension

@@ -18,7 +18,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
-from monkeyarch.capabilities.declaration import DeclarationQuadrant
 from archflow.contracts.authority import no_authority
 from archflow.project.refs import require_identifier
 from archflow.state.stage_workflow import DesignPhase
@@ -41,6 +40,16 @@ _RECORD_AUTHORITY = (
 
 class SeatError(ValueError):
     """Typed failure of the seat contracts."""
+
+
+class DeclarationQuadrant(StrEnum):
+    """The quadrants a seat may act in; ``SeatSpec@1`` and the authored seat pack carry these values."""
+
+    SITE = "site"
+    DIMENSIONS = "dimensions"
+    STRUCTURE = "structure"
+    OPENINGS = "openings"
+    DETAIL = "detail"
 
 
 def _sorted_unique(values: tuple[str, ...], field: str) -> tuple[str, ...]:

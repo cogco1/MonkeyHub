@@ -51,7 +51,7 @@ class RecordKind:
         return re.fullmatch(self.kind_pattern, kind) is not None
 
 
-# ---- the runner's kinds (packages/monkeyarch/src/monkeyarch/runtime/project_runner.py)
+# ---- the runner's kinds (packages/monkeyarch/src/monkeyarch/application/project_runner.py)
 
 STATE_RECORD = "state-record"
 PROJECT_LEVELS = "project-levels"
@@ -77,7 +77,7 @@ STAGE_GEOMETRY_PROGRAM = "<identifier>-geometry-program"
 
 DRAWING_PROJECTION_RECEIPT = "drawing-projection-receipt"
 
-# ---- the geometry proposal producer's kinds (packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py)
+# ---- the geometry proposal producer's kinds (packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py)
 
 GEOMETRY_PROPOSAL_ROUND = "geometry-proposal-round-NN"
 GEOMETRY_PROPOSAL_COMPLETION = "geometry-proposal-completion-NN"

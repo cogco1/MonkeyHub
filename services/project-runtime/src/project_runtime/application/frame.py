@@ -21,8 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
-from monkeyarch.capabilities.element_reindex import axis_lines_of
-from monkeyarch.capabilities.reference_resolver import (
+from monkeyarch.authoring.element_reindex import axis_lines_of
+from monkeyarch.domain.reference_resolver import (
     AxisPoint,
     GridIntersection,
     GridRef,

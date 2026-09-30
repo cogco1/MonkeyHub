@@ -39,8 +39,8 @@ from typing import Any, Callable
 
 from archflow.project.refs import require_identifier
 from archflow.state.state_record import StateRecord
-from monkeyarch.construction.identity import ELEMENT_SUFFIX, Naming, identify
-from monkeyarch.construction.shapes import (
+from monkeyarch.authoring.construction.identity import ELEMENT_SUFFIX, Naming, identify
+from monkeyarch.authoring.construction.shapes import (
     MAX_PATH_POINTS,
     MIN_LENGTH,
     NO_LEVEL,
@@ -77,7 +77,7 @@ from monkeyarch.construction.shapes import (
     shown,
     side,
 )
-from monkeyarch.construction.vocabulary import BUILTINS, LIMITS, MATH, REQUIRED, VERBS, Verb, verb
+from monkeyarch.authoring.construction.vocabulary import BUILTINS, LIMITS, MATH, REQUIRED, VERBS, Verb, verb
 
 MAX_NESTING = LIMITS["nesting"]
 MAX_ELEMENTS = LIMITS["listElements"]

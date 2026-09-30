@@ -1,7 +1,7 @@
 """Construction first (#419, spec §3.2-§3.5): scripts, facets and the model as the Studio serves them.
 
 An agent authors geometry with one construction script. ``construction_proposal``
-compiles it against the exact record (``monkeyarch.construction``) under the
+compiles it against the exact record (``monkeyarch.authoring.construction``) under the
 project's modelling root and hands the rows it lowered to the one component-edit
 path every other design edit takes; how each shape is realised was chosen by the
 compiler, never by the caller. A refusal names the script line that caused it:
@@ -33,11 +33,11 @@ from typing import Any, Mapping, NamedTuple, Sequence
 
 from archflow.semantics.facets import FACET_KEYS, suggest_facet_key
 from archflow.state.state_record import Entity, StateRecord, apply_state_record_operator, component_facets
-from monkeyarch.capabilities.element_producers import ElementProducerError, wall_along_line, wall_fields_from_block
-from monkeyarch.capabilities.opening_solver import DoorType, WindowType
-from monkeyarch.construction import (
-    ConstructionError, ConstructionResult, compile_construction_script, geometry_view, made_by_construction,
-)
+from monkeyarch.authoring.element_producers import ElementProducerError, wall_along_line, wall_fields_from_block
+from monkeyarch.domain.opening_solver import DoorType, WindowType
+from monkeyarch.authoring.construction.script import ConstructionError
+from monkeyarch.authoring.construction.lowering import ConstructionResult, compile_construction_script, geometry_view
+from monkeyarch.authoring.construction.identity import made_by_construction
 
 from .seats import SeatsError, load_seat_pack, seats_of
 from ..errors import StudioError

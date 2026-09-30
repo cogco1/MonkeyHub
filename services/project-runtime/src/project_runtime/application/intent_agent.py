@@ -48,7 +48,7 @@ from archflow.ports.model import (
 )
 from archflow.semantics.facets import FACETS, FREE_TEXT_MAX, FREE_TEXT_MIN
 from archflow.state.state_record import component_facets
-from monkeyarch.construction import vocabulary
+from monkeyarch.authoring.construction.vocabulary import vocabulary
 
 from ..settings import INTENT_PROVIDER_ENV, SettingsError, StudioSettings
 from ..errors import StudioError
@@ -111,7 +111,7 @@ VERSION_PROBE_TIMEOUT_S = 30.0
 # meaning is facets, controls are parameters or one scalar sentence. Nothing
 # here names how the runtime realises a shape, classifies geometry while it is
 # made, or carries a record row: the layer rule
-# (``monkeyarch.construction.vocabulary.LAYER_RULE_TOKENS``) holds for this
+# (``monkeyarch.authoring.construction.vocabulary.LAYER_RULE_TOKENS``) holds for this
 # schema, with ``wall`` present only as the facet value it is. ``keep`` is what
 # the architect said to keep unchanged, in the record's keep refs.
 ANSWER_KEYS: tuple[str, ...] = (
@@ -120,7 +120,7 @@ ANSWER_KEYS: tuple[str, ...] = (
 
 # An in-app script's length. A design answer has a 5 000-token output budget
 # (``MAX_OUTPUT_TOKENS``), which the language's own limit
-# (``monkeyarch.construction.vocabulary.LIMITS["characters"]``, what
+# (``monkeyarch.authoring.construction.vocabulary.LIMITS["characters"]``, what
 # ``POST /api/proposals/construction`` takes) would not fit; the prompt says
 # this number.
 SCRIPT_CHARACTERS = 12_000

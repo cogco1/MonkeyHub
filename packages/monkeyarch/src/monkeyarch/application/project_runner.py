@@ -64,7 +64,7 @@ from monkeycad.cad_backend import (
     CadExecutionError, CadExecutionRequest, CadExecutionSource, CadProgramBinding,
     cad_backend_ids, get_cad_backend,
 )
-from monkeyarch.capabilities.discipline_seats import (
+from monkeyarch.domain.discipline_seats import (
     SeatSpec,
     check_seat_datums,
     compile_handover,
@@ -73,16 +73,16 @@ from monkeyarch.capabilities.discipline_seats import (
     project_seat_context,
     schedule_seats,
 )
-from monkeyarch.capabilities.geometry_proposal import (
+from monkeyarch.application.geometry_proposal import (
     GeometryProposalPolicy,
     GeometryProposalProviderIdentity,
     GeometryProposalStatus,
     produce_geometry_program_proposal,
     proposal_authoring_output,
 )
-from monkeyarch.capabilities.element_producers import ElementProducerError, ElementRow, ProducedElement, ProducedRelation, ProductionContext, element_rows_of, produce_rows
-from monkeyarch.capabilities.reference_resolver import HostLine, ReferenceContext
-from monkeyarch.capabilities.relation_checks import RelationCheck, RelationCheckReport, check_relations
+from monkeyarch.authoring.element_producers import ElementProducerError, ElementRow, ProducedElement, ProducedRelation, ProductionContext, element_rows_of, produce_rows
+from monkeyarch.domain.reference_resolver import HostLine, ReferenceContext
+from monkeyarch.domain.relation_checks import RelationCheck, RelationCheckReport, check_relations
 from archflow.contracts.authority import no_authority
 from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.ports.model import ModelInvocationReceipt, ModelInvocationStatus
@@ -367,14 +367,20 @@ def _source_seats(repository, run: RunRef, ref: ProjectRecordRef | None) -> dict
 
 
 def _producer_code() -> str | None:
-    """The implementations whose retained producer outputs may be reused."""
+    """The implementations whose retained producer outputs may be reused.
+
+    Every module whose source defines what a producer emits or accepts is
+    listed, so a change to any of them invalidates reuse. Code that leaves
+    ``element_producers`` for another module brings that module here.
+    """
     import inspect
-    from monkeyarch.capabilities import element_producers, reference_resolver, opening_solver, wall_solver
+    from monkeyarch.authoring import element_producers, producer_signatures
+    from monkeyarch.domain import reference_resolver, opening_solver, wall_solver
 
     try:
         return canonical_digest({
             "modules": {module.__name__: inspect.getsource(module) for module in
-                        (element_producers, reference_resolver, opening_solver, wall_solver)},
+                        (element_producers, producer_signatures, reference_resolver, opening_solver, wall_solver)},
             "producers": {name: inspect.getsource(producer) for name, producer in element_producers.PRODUCERS.items()},
         })
     except (OSError, TypeError):

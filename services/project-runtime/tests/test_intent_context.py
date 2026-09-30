@@ -179,12 +179,12 @@ class IntentContextTests(unittest.TestCase):
         # Inject a missing advertised contract independently of which producers
         # the owner supports today; the retained record still names its producer.
         # The owner's signatures are read privately: the sheet a model reads carries none.
-        from monkeyarch.capabilities import element_producers
+        from monkeyarch.authoring import producer_signatures as signatures
 
         record, sheet = fixture()
         self.assertNotIn("producerSignatures", sheet)
-        advertised = {key: value for key, value in element_producers.producer_signatures().items() if key != "prism"}
-        with patch.object(element_producers, "producer_signatures", return_value=advertised):
+        advertised = {key: value for key, value in signatures.producer_signatures().items() if key != "prism"}
+        with patch.object(signatures, "producer_signatures", return_value=advertised):
             context = compile_context("set this window width to 1.2 and height to 1.5", sheet, record=record)
         self.assertEqual(context.tier, "design")
         self.assertEqual(context.escalation, ("component_signature_unavailable",))
@@ -200,7 +200,7 @@ class IntentContextTests(unittest.TestCase):
                     if item.entity_id in {"window-23", "window-type"} else item
                     for item in record.entities))
                 sheet = sheet_of(record, Selection("facade", "window-23"))
-                from monkeyarch.capabilities.element_producers import producer_signatures
+                from monkeyarch.authoring.producer_signatures import producer_signatures
                 properties = producer_signatures()[producer]["parameters"]["properties"]
                 self.assertNotIn("width", properties)
                 if producer == "loft":
@@ -463,7 +463,7 @@ class ModelContextTests(unittest.TestCase):
         self.assertNotIn("relationships", public)
 
     def test_design_path_reads_the_model_in_construction_terms(self):
-        from monkeyarch.construction import vocabulary
+        from monkeyarch.authoring.construction.vocabulary import vocabulary
         from project_runtime.application.intent_agent import _design_facts
 
         record, sheet = fixture()

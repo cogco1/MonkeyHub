@@ -24,7 +24,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import stage_geometry_program
 from archflow.project.refs import BranchRef, RunRef, record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyarch.runtime.project_runner import ProjectRunnerError
+from monkeyarch.application.project_runner import ProjectRunnerError
 from tests.integration.test_cad_execution import (
     _FakeWorker,
     _binding,

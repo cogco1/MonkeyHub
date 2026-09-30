@@ -12,7 +12,7 @@ import json
 import unittest
 from dataclasses import replace
 
-from monkeyarch.capabilities.geometry_proposal import (
+from monkeyarch.application.geometry_proposal import (
     GeometryProposalPolicy,
     GeometryProposalProductionError,
     GeometryProposalStatus,

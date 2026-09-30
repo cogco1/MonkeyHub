@@ -43,7 +43,7 @@ from archflow.contracts.canonical import canonical_json_bytes
 from archflow.state.state_record import StateRecord, component_facets
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from monkeyarch.construction.vocabulary import layer_rule_violations
+from monkeyarch.authoring.construction.vocabulary import layer_rule_violations
 
 from .support import PROJECT_ID, RECORD_PAYLOAD, make_empty_project, write_runner_record
 from .test_construction_routes import _exported

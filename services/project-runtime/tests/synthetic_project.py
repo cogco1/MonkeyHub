@@ -44,7 +44,7 @@ from project_runtime.application.candidate import run_operator
 from project_runtime.application.projection import project_state
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from monkeyarch.runtime import project_runner
+from monkeyarch.application import project_runner
 
 from . import support
 

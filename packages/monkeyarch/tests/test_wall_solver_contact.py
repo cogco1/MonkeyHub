@@ -8,7 +8,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 from archflow.state.geometry_program import GeometryOperationKind, delivered_object_ids
-from monkeyarch.capabilities.wall_solver import (
+from monkeyarch.domain.wall_solver import (
     CONTACT_TOLERANCE_M, OpeningKind, OpeningRequest, WallElement, WallSolverError, _overlaps, solve_wall,
 )
 

@@ -47,10 +47,10 @@ from monkeycad.cad_execution import (
 from monkeycad import cad_program
 from monkeycad.cad_program import CadTranslationError
 from monkeycad.three_dm_inspector import inspect_three_dm
-from monkeyarch.capabilities.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
-from monkeyarch.capabilities.reference_resolver import ReferenceContext
+from monkeyarch.authoring.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
+from monkeyarch.domain.reference_resolver import ReferenceContext
 from archflow.state.geometry_program import CompiledGeometryObject, CompiledGeometryProgram
-from monkeyarch.compilers.geometry import compile_geometry_program
+from monkeyarch.compilation.geometry import compile_geometry_program
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import stage_geometry_program
 from archflow.project.refs import BranchRef
@@ -550,7 +550,8 @@ class NativeLoftHeightExecutionTests(unittest.TestCase):
 
     def test_a_parameterized_multi_section_loft_remains_one_solid_after_a_height_edit(self) -> None:
         from archflow.state.state_record import Parameter, StateRecordEditKind, StateRecordOperator, apply_state_record_operator
-        from monkeyarch.capabilities.element_producers import _check_signature_value, producer_signatures, validate_element_contract
+        from monkeyarch.authoring.element_producers import _check_signature_value, validate_element_contract
+        from monkeyarch.authoring.producer_signatures import producer_signatures
 
         for loft_type in ("straight", "normal"):
             record = self._record([_ring(1.0, 0.0), _ring(0.6, 1.5), _ring(0.8, 3.0)])

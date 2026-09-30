@@ -25,10 +25,10 @@ from monkeycad.cad_execution import (
     RhinoCadProgramBinding,
     execute_occt_export,
 )
-from monkeyarch.capabilities.element_producers import ElementRow, ProductionContext, produce_rows, production_order
-from monkeyarch.capabilities.reference_resolver import ReferenceContext
+from monkeyarch.authoring.element_producers import ElementRow, ProductionContext, produce_rows, production_order
+from monkeyarch.domain.reference_resolver import ReferenceContext
 from archflow.state.geometry_program import CompiledGeometryProgram
-from monkeyarch.compilers.geometry import compile_geometry_program
+from monkeyarch.compilation.geometry import compile_geometry_program
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import stage_geometry_program
 from archflow.project.refs import BranchRef

@@ -17,9 +17,8 @@ from dataclasses import replace
 from types import SimpleNamespace
 from pathlib import Path
 
-from monkeyarch.capabilities.declaration import DeclarationQuadrant
-from monkeyarch.capabilities.discipline_seats import SeatSpec
-from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity
+from monkeyarch.domain.discipline_seats import DeclarationQuadrant, SeatSpec
+from monkeyarch.application.geometry_proposal import GeometryProposalProviderIdentity
 from archflow.state.geometry_program import load_compiled_geometry_program
 from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
 from archflow.project.containers import published
@@ -33,7 +32,7 @@ from archflow.project.record_kinds import (
     STAGE_EXIT_BINDING,
     STAGE_RUN_ENVELOPE,
 )
-from monkeyarch.runtime.project_runner import (
+from monkeyarch.application.project_runner import (
     RECORDED_PROPOSAL_IDENTITY,
     Produced,
     ProjectRunnerError,
@@ -1469,7 +1468,7 @@ class OcctExportTests(unittest.TestCase):
 
     def test_native_loft_height_fix_rebuilds_an_old_program_cache_then_reuses_the_correct_export(self) -> None:
         from unittest.mock import patch
-        from monkeyarch.capabilities import element_producers
+        from monkeyarch.authoring import element_producers
 
         loft = _prism_row()
         profiles = [[[x, height, z] for x, z in ((0.0, -1.5), (1.0, -1.5), (1.0, -0.5), (0.0, -0.5))] for height in (0.4, 1.4)]
@@ -1901,7 +1900,7 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
     def test_cold_read_failure_or_step_changed_after_export_leaves_the_current_required_check_unchecked(self) -> None:
         from unittest.mock import patch
         from monkeycad import cad_execution
-        from monkeyarch.runtime import project_runner
+        from monkeyarch.application import project_runner
 
         for failure in ("cold-read", "changed-bytes"):
             with self.subTest(failure=failure):
@@ -2071,7 +2070,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
     def test_same_seat_change_reuses_the_frozen_building_before_production_and_cad(self) -> None:
         from copy import deepcopy
         from unittest.mock import patch
-        from monkeyarch.runtime import project_runner
+        from monkeyarch.application import project_runner
 
         record = _record(elements=("wall-south",), extra_entities=(_prism_row(),))
         project = _ExportProject(self, record)
@@ -2117,7 +2116,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
 
     def test_unchanged_seat_is_reused_across_a_new_run_binding(self) -> None:
         from unittest.mock import patch
-        from monkeyarch.runtime import project_runner
+        from monkeyarch.application import project_runner
 
         record = _record(elements=("wall-south",), extra_entities=(_prism_row(),))
         project = _ExportProject(self, record)
@@ -2146,7 +2145,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
 
     def test_changed_support_datum_rebuilds_its_consumer_and_rechecks_the_boundary(self) -> None:
         from unittest.mock import patch
-        from monkeyarch.runtime import project_runner
+        from monkeyarch.application import project_runner
 
         cabinet = _prism_row(element_id="cabinet")
         cabinet = replace(cabinet, fields={**cabinet.fields, "references": {"base": {"datum": "columns-plinth-top"}}})
@@ -2167,7 +2166,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
 
     def test_legacy_source_without_element_results_runs_producers_without_claiming_they_were_reused(self) -> None:
         from unittest.mock import patch
-        from monkeyarch.runtime import project_runner
+        from monkeyarch.application import project_runner
 
         record = _record(elements=("wall-south",), extra_entities=(_prism_row(),))
         project = _ExportProject(self, record)
@@ -2268,7 +2267,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
 
 class CadBackendSelectionTests(unittest.TestCase):
     def test_export_workspace_keeps_existing_combined_stage_and_seat_names(self) -> None:
-        from monkeyarch.runtime.project_runner import _export_workspace
+        from monkeyarch.application.project_runner import _export_workspace
 
         with tempfile.TemporaryDirectory() as temporary:
             stage_and_seat = "s" * 60 + "-" + "t" * 60
@@ -2281,7 +2280,7 @@ class CadBackendSelectionTests(unittest.TestCase):
 
     def test_export_never_uses_an_implicit_or_relative_working_directory(self) -> None:
         from contextlib import chdir
-        from monkeyarch.runtime.project_runner import _export_workspace
+        from monkeyarch.application.project_runner import _export_workspace
 
         with tempfile.TemporaryDirectory() as temporary, chdir(temporary):
             workspace = Path(temporary) / "cad-stage-seat"

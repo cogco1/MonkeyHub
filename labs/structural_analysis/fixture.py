@@ -12,10 +12,10 @@ from archflow.state.state_record import (
     Entity, Lineage, Parameter, StateRecord, apply_state_record_operator,
     compile_component_edit,
 )
-from monkeyarch.capabilities.element_producers import (
+from monkeyarch.authoring.element_producers import (
     ProductionContext, element_rows_of, produce_rows,
 )
-from monkeyarch.capabilities.reference_resolver import ReferenceContext
+from monkeyarch.domain.reference_resolver import ReferenceContext
 
 SOURCE = "fixture:gh-125-synthetic-assumptions"
 MEMBERS = ("column-0", "column-1", "column-2", "beam-0", "beam-1")
