@@ -23,11 +23,11 @@
 ## 2. 哪些 UI 可以复用？
 
 - [ChatShell.tsx](../apps/monkeyhub/web/src/ChatShell.tsx)：37–40 行只有 Arch、Board、Fab、Monitor；当前没有独立 Drawing 导航。641、697、962 行等工具路由也只有 arch/board 分支。V0 应在同一 Hub/ProjectRuntimeProvider 下增加 Drawing 页面选择，不增加应用进程、launcher 或 retired Diagram 服务。
-- [DocumentCanvas.tsx](../apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.tsx)：449 行比较 `ModelSource` 三元组；532 行恢复 style/scale；712 行生成新图；保留页面缩放、文档选择、准确 revision、来源展示、异步 scope 检查与批注保存。由 [Stage.tsx](../apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx) 2064 行挂载。复用这些交互；Drawing 专用控件只显示 view/scale/样式/尺寸/重建，Board 继续承担 review tools。
+- [DocumentCanvas.tsx](../apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx)：449 行比较 `ModelSource` 三元组；532 行恢复 style/scale；712 行生成新图；保留页面缩放、文档选择、准确 revision、来源展示、异步 scope 检查与批注保存。由 [Stage.tsx](../apps/monkeyhub/web/src/features/stage/Stage.tsx) 2064 行挂载。复用这些交互；Drawing 专用控件只显示 view/scale/样式/尺寸/重建，Board 继续承担 review tools。
 - 当前 `generateSheet()` 传 `modelSource`，但未传已有 `sourceStageRef` prop；首片须完整传递已有 Stage 字段，不能从“最新”或文件名反推。
-- [client.ts](../apps/monkeyhub/web/workspaces/src/api/client.ts)：210 行已有 `elevation/drawingStyles/drawingSheet`，423 行已有页面批注读写；沿同一客户端扩展。
-- [boardScene.ts](../apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardScene.ts)：`PageSource = runId + assetSha256 + revisionRef + pageIndex`，`pageKey()` 使用全部四项。[boardNavigation.ts](../apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardNavigation.ts) 保留 Board 视口和选中项；继续用这一准确页面交接。
-- [boardFeedback.ts](../apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardFeedback.ts) `prepareBoardDesignRequest()` → [App.tsx](../apps/monkeyhub/web/workspaces/src/app/App.tsx) 1582 行 `propose()` / 1673 行 `compileIntent()`：已有批注转设计请求、来源核验和候选路径。复用，不另造 Drawing 建模执行器。
+- [client.ts](../apps/monkeyhub/web/src/api/project-runtime/client.ts)：210 行已有 `elevation/drawingStyles/drawingSheet`，423 行已有页面批注读写；沿同一客户端扩展。
+- [boardScene.ts](../apps/monkeyhub/web/src/workspaces/monkeyboard/boardScene.ts)：`PageSource = runId + assetSha256 + revisionRef + pageIndex`，`pageKey()` 使用全部四项。[boardNavigation.ts](../apps/monkeyhub/web/src/workspaces/monkeyboard/boardNavigation.ts) 保留 Board 视口和选中项；继续用这一准确页面交接。
+- [boardFeedback.ts](../apps/monkeyhub/web/src/workspaces/monkeyboard/boardFeedback.ts) `prepareBoardDesignRequest()` → [App.tsx](../apps/monkeyhub/web/src/app/App.tsx) 1582 行 `propose()` / 1673 行 `compileIntent()`：已有批注转设计请求、来源核验和候选路径。复用，不另造 Drawing 建模执行器。
 
 现有 UI 的“文档模型与当前编辑模型不同”仅是 source mismatch，不是 dependency-based outdated。浏览历史不能自动切换设计基底。当前页面工具也没有可编辑的模型尺规；不能以现有 ruler renderer 当作尺寸产品已完成。
 
@@ -175,7 +175,7 @@ Publish #66：跨 Drawing/Render/Board/文字/图片的页面组合、PPTX/PDF/r
 | section 笔宽、even-odd hatch、尺寸线/文字、SVG→PNG 一致 | `adapters.drawing_svg`：`monkeydiagram/drawing_svg.py`；必要时延伸 `documentation/styles.py` 与 `drawing_output.py` 的已有纸面绘制原语 | `tests/test_drawing_svg.py`、`tests/test_drawing_output.py`；`tests/test_occt_execution.py::OcctDrawingTests`：洞不填、开壳、独立切块、深度遮挡、单位 |
 | 单视 plan 接口、来源/对象核验、read set/status、重建 | `studio.artifacts`：`application/drawings.py`、`routes/drawings.py`、`transport/drawings.py`；`application/artifacts.py` 仅扩充已注册 revision 读回 | `apps/archflow-studio/api/tests/test_drawings.py`：保留旧图、精确 Stage、same-pixel revision、缺少完整 STEP；新增 outdated/rebuild/断锚/非相关输入 |
 | 一个矩形洞尺寸的 semantic feature | 当前 producer/reference/墙洞 owner：`monkeyarch/capabilities/element_producers.py`、`reference_resolver.py`、`wall_solver.py`，仅在无法直接消费既有纯结果处延伸；应用层组装，Drawing 不跨 workflow import | `tests/test_element_producers.py`、`tests/test_derivations_and_references.py`、`tests/test_wall_explicit_point_reference.py`、`tests/test_wall_solver_contact.py`；新增准确洞 id/参数/feature 对应及删除后拒绝 |
-| 独立 Drawing 页面与准确来源交接 | `hub.shell` / 既有工作区：`apps/monkeyhub/web/src/ChatShell.tsx`；workspaces `app/ProjectWorkspace.tsx`、`app/App.tsx`、`features/stage/Stage.tsx`、`workspaces/monkeydiagram/DocumentCanvas.tsx`、`api/client.ts` 及受影响现有 types/routes | `workspaces/test/drawingStyles.browser.mjs`、`documentModelSource.browser.mjs`、`documentAnnotations.test.ts`、`boardDocumentOpen.browser.mjs`；新增 Drawing 打开/关闭、迟到响应、表示操作无 design 请求、独立导航 |
+| 独立 Drawing 页面与准确来源交接 | `hub.shell` / 既有工作区：`apps/monkeyhub/web/src/ChatShell.tsx`；同一 `src/` 下的 `app/ProjectWorkspace.tsx`、`app/App.tsx`、`features/stage/Stage.tsx`、`workspaces/monkeydiagram/DocumentCanvas.tsx`、`api/project-runtime/client.ts` 及受影响现有 types/routes | `test/drawingStyles.browser.mjs`、`documentModelSource.browser.mjs`、`documentAnnotations.test.ts`、`boardDocumentOpen.browser.mjs`；新增 Drawing 打开/关闭、迟到响应、表示操作无 design 请求、独立导航 |
 | 改设计尺寸 | 复用现有 `POST /api/proposals`、candidate 和 Stage acceptance；除实际缺口外不改通用 proposal 引擎 | `apps/archflow-studio/api/tests/test_proposals.py`、`test_intents.py`：exact base、单位、参数更新、derived/locked/keep；新增从 Drawing 参数尺寸进入同一路径 |
 
 代码实施时只因 public API、owner 契约或列出的 tests 发生实际变化才更新 `governance/module_registry.json`；相关剩余验收记在对应的 GitHub Issue，不新造治理机制。需要公开 API 时同步现有 DTO/client/OpenAPI/MCP 对应项；不改并行任务的 ContextPack/Study 公共基础。

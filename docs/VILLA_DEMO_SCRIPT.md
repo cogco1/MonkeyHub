@@ -58,7 +58,7 @@ Web：
 ```powershell
 Set-Location -LiteralPath "$SourceRoot\apps\monkeyhub\web"
 $env:ARCHFLOW_STUDIO_API_URL = 'http://127.0.0.1:8001'
-& 'C:\Program Files\nodejs\npx.cmd' vite --config workspaces/test/vite.config.ts --host 127.0.0.1 --port 5175 --strictPort
+& 'C:\Program Files\nodejs\npx.cmd' vite --config test/vite.config.ts --host 127.0.0.1 --port 5175 --strictPort
 ```
 
 以上命令已由用户手动执行，不要重复启动。录制期间保持两个终端打开；演示结束后可分别 Ctrl+C 退出。

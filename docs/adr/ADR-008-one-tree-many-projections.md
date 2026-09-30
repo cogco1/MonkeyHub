@@ -133,7 +133,7 @@ decision tree comes from two derived stores. Either store can be deleted at any 
   panel opens with a replay as it did on its own stream and no surface takes them for news. Frames the Hub relays are never dropped against the snapshot's sequence:
   the snapshot does not hold them. A Hub page therefore holds one event stream, whatever it shows; the per-page
   proxy of the worker stream (`/api/runtime/projects/{id}/studio/api/events`) is retired and answers 404.
-- Each open project has one client store (`workspaces/src/api/projectStore.ts`) at the ChatShell level, shared by
+- Each open project has one client store (`src/api/project-runtime/projectStore.ts`) at the ChatShell level, shared by
   its surfaces and released by count: `{epoch, revision, byId}`, one request in flight, `wanted = max(wanted,
   hint.revision)`, a delta applied only onto its `from`, answers that are not newer dropped, another epoch reset.
   It pulls on every connection of the Hub stream (reconnects included) once its snapshot arrives - the Hub

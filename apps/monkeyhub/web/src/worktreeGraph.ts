@@ -8,7 +8,7 @@
  */
 
 import type { ChatSummary, OperationRecord } from "./api/generated";
-import type { WorktreeGraphDto, WorktreeLineDto } from "../workspaces/src/api/generated";
+import type { WorktreeGraphDto, WorktreeLineDto } from "./api/project-runtime/generated";
 
 export interface ProjectStatus {
   headLabel: string | null;

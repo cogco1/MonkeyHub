@@ -308,7 +308,7 @@ class ImportNameTests(unittest.TestCase):
             ("apps/archflow-studio/api/archflow_studio_api/main.py", "archflow_studio_api.main"),
             ("monkeyarch/construction/__init__.py", "monkeyarch.construction"),
             ("tools/archcheck.py", "tools.archcheck"),
-            ("apps/monkeyhub/web/workspaces/scripts/dump-openapi.py", None),
+            ("apps/monkeyhub/web/scripts/dump-openapi.py", None),
             ("apps/monkeyhub/desktop/", None),
         ):
             with self.subTest(path=path):
