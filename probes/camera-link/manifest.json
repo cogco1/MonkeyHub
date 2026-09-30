@@ -61,6 +61,36 @@
       "sha256": "0bede04bc6920b907ca0be085ec3cc1226700a0058de9d9c138f27bd94cc4d73"
     },
     {
+      "path": "chat-architecture.log",
+      "bytes": 39,
+      "sha256": "ec9b3399fc2554a3966af17f22f1154ee52742ce4d4024256b3d28fbda575cdd"
+    },
+    {
+      "path": "chat-build.log",
+      "bytes": 20847,
+      "sha256": "889b857ccace77797e3ce911a826979189d5212b9b8b67866437a6b29e84c7a8"
+    },
+    {
+      "path": "chat-settings-after.json",
+      "bytes": 92,
+      "sha256": "e9fa82b3540c70107b814869f89ece717d7f4466f8485b42e82b7b7e43a7d334"
+    },
+    {
+      "path": "chat-settings-before.json",
+      "bytes": 93,
+      "sha256": "2022c63b33d0eb309381aa2fa1ed850b65a9d543cfae6238557b309ba9570ba4"
+    },
+    {
+      "path": "chat-settings-retest.log",
+      "bytes": 2109,
+      "sha256": "90aa5f1c50159666495924df25503219fc3ed40adf63b848891616b9cbe489a1"
+    },
+    {
+      "path": "chat-unit.log",
+      "bytes": 4748,
+      "sha256": "306e2fd8df8cd1a4b58fbe167acf787d2344220bd74d3c78989c733b2c4eca30"
+    },
+    {
       "path": "cold-diagnostic.log",
       "bytes": 416,
       "sha256": "7572a414b6517a494cbe5f89b99bcdc320c4b70897293a308c789ea8e7671f1a"
@@ -86,9 +116,24 @@
       "sha256": "6695b416329cc6390fa8ab5d7eb22fcf38cf8e3ba5bbb0969d4c6520c709c7b5"
     },
     {
+      "path": "failure-chat-harness-language.log",
+      "bytes": 4665,
+      "sha256": "03840f1d230adff29e3b0ceb72f677c36163d7d572458faac84a0e404092cffe"
+    },
+    {
+      "path": "failure-chat-settings.log",
+      "bytes": 4981,
+      "sha256": "46f2d43c9d691d71f2731c002dca70a719e351a3b03f06bc3fc0632401008c70"
+    },
+    {
       "path": "failure-ci-candidate.log",
       "bytes": 162212,
       "sha256": "6d4197b33769d09e48151ab898da67dfc796fc453939d6c31825ec84e3177c23"
+    },
+    {
+      "path": "failure-ci-external-chat.log",
+      "bytes": 161114,
+      "sha256": "76ccc83850d6703b77ce4c15c5f06fe1b31aeada84647815aaa711d7c8f91d61"
     },
     {
       "path": "failure-cold-hub.log",
@@ -162,8 +207,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 12297,
-      "sha256": "dc927a14e58a694fe2e280bbdfef39db6e6a1a47806b0c35b723b0ccbc9f25ec"
+      "bytes": 13939,
+      "sha256": "5eb65176c4d9be1da1844f8bf9674b1decf186ed61826ea65c60f296e3e17035"
     },
     {
       "path": "typecheck-retest.log",

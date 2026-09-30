@@ -234,6 +234,7 @@
         "tools/archcheck.py",
         "CONTRIBUTING.md",
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
         "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
         "apps/monkeyhub/desktop/tests/test_runtime.py",

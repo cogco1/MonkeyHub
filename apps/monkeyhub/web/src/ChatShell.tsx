@@ -756,7 +756,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     return () => window.clearInterval(timer);
   }, [providers]);
   useEffect(() => {
-    setChat(null); setError(null);
+    // Launch settings can replace refresh after a deep-linked chat has loaded.
+    // Keep that exact chat's read-only/archived state while rereading it.
+    setChat(current => current?.id === chatId ? current : null); setError(null);
     // Reopening a chat shows its turns folded and lands at its latest message.
     setExpandedTurns(new Set()); openingChat.current = chatId; followLatest.current = true; jumping.current = false;
     setLatest({ away: false, unseen: 0 });

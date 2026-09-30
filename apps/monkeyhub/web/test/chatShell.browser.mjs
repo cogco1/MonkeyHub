@@ -16,6 +16,7 @@ const toolLoads = [];
 const streams = new Set();
 let runtimeSequence = 0, runtimeReads = 0, allowRuntimeEvents = true;
 let confirmedStageForChat = null;
+let appSettingsReadGate = Promise.resolve(), externalDetailReadGate = Promise.resolve();
 const preparedPatch = { targetVersion: "fixture-next-desktop", targetRevision: "e".repeat(40), changedBytes: 1048576, changedFiles: 3, removedFiles: 1, reusedFiles: 21 };
 let updateStatus = { currentVersion: "fixture-current-desktop", currentRevision: "d".repeat(40), mode: "local", state: "idle", prepared: null, canApply: false, message: null, error: null,
   channel: "unsigned-prerelease", autoUpdate: true, nextLaunch: false, check: { state: "never", checkedAt: null, latestVersion: null, detail: null, releaseUrl: null } };
@@ -282,7 +283,7 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     if (url.pathname === "/api/rates") return json({ rates: [] });
     return json({ paths: ["D:\\fixture\\usage.jsonl"] });
   }
-  if (url.pathname === "/api/settings/apps") { if (method === "PUT") settings = data(); return json(settings); }
+  if (url.pathname === "/api/settings/apps") { if (method === "PUT") settings = data(); else await appSettingsReadGate; return json(settings); }
   if (url.pathname === "/api/credentials") return json(["gemini", "coding-plan"].map((id) => ({ id, configured: false, source: null, variable: null, saved: false, storeAvailable: true })));
   if (url.pathname === "/api/settings/user") {
     if (method === "PUT") { const body = data(); if (settingsWriteGate) await settingsWriteGate; preferences = body; }
@@ -446,6 +447,7 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   }
   const match = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)(?:\/(messages|stop|model|archive|fail))?$/);
   if (match) {
+    if (method === "GET" && match[1] === "external-214") await externalDetailReadGate;
     const session = sessions.find((item) => item.id === match[1]);
     if (!session) return json({ code: "CHAT_NOT_FOUND", detail: "This conversation is no longer available." }, 404);
     if (match[2] === "messages") {
@@ -2626,8 +2628,22 @@ try {
   uploadedAttachments.set("external-svg", { sessionId: externalSession.id, name: "diagram.svg", mimeType: "image/svg+xml", data: Buffer.from("<svg></svg>").toString("base64") });
   sessions.unshift(externalSession);
   const beforeExternalTurns = writes.filter(([, name]) => /\/(messages|stop|model)$/.test(name)).length;
+  // Let the deep-linked read-only chat arrive before launch settings, then
+  // hold its next read. Settings must not temporarily turn it into a composer.
+  let releaseAppSettings, releaseExternalDetail;
+  appSettingsReadGate = new Promise(resolve => { releaseAppSettings = resolve; });
   await page.goto(`${origin}/?chatId=${externalSession.id}`);
   await page.locator(".chat-header h1").filter({ hasText: "Exterior review" }).waitFor();
+  await page.locator(".chat-external-notice").waitFor();
+  externalDetailReadGate = new Promise(resolve => { releaseExternalDetail = resolve; });
+  const externalReread = page.waitForRequest(request => new URL(request.url()).pathname === `/api/chat/sessions/${externalSession.id}`);
+  releaseAppSettings();
+  await externalReread;
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const externalDuringSettings = await page.evaluate(() => ({inputs:document.querySelectorAll('#chat-input').length,notice:!!document.querySelector('.chat-external-notice')}));
+  timeline.push({event:'external-chat-settings-read',...externalDuringSettings});
+  releaseExternalDetail();
+  assert.deepEqual(externalDuringSettings, {inputs:0,notice:true}, 'late launch settings retain the loaded external conversation while its reread is pending');
   await page.locator(".chat-external-notice").getByText("External conversation", { exact: true }).waitFor();
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B",
     "a deep link takes its project from the selected chat, not stale local preferences");

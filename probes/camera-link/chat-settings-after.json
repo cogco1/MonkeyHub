@@ -1,0 +1,7 @@
+[
+  {
+    "event": "external-chat-settings-read",
+    "inputs": 0,
+    "notice": true
+  }
+]
