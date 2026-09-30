@@ -286,8 +286,6 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
                      # The security-reporting route travels with the distributed bundle,
                      # not only with a checkout of the public repository.
                      "governance/module_registry.json", "SECURITY.md",
-                     "apps/shared-web/src/appearance.js", "apps/shared-web/src/i18n.js",
-                     "apps/shared-web/src/browserTranslator.js", "apps/shared-web/src/base.css",
                      "tools/create_project.py", "tools/run_project.py"):
         target = bundle / relative
         target.parent.mkdir(parents=True, exist_ok=True)
