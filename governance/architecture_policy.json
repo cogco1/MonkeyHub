@@ -635,7 +635,7 @@
       "reason": "Exclusively writes the Blender transport plan into the explicit speculative workspace; a dedicated worker saves the .blend there and a fresh process reads it. Only the existing runner persists the native receipt through P036."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/main.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/app/main.py",
       "function": "_runtime_lease",
       "operations": [
         "mkdir",
@@ -678,7 +678,7 @@
       "reason": "Writes only transport plan and subprocess logs beside OCCT bytes in the supplied speculative workspace. Existing runner retains projection receipts through P036."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/main.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/updates/routes.py",
       "function": "prepare_update",
       "operations": [
         "open_write"

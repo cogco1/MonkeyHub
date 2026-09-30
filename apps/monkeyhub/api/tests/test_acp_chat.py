@@ -16,7 +16,7 @@ from test_acp_session import FAKE_AGENT, PNG_IMAGE
 from fastapi.testclient import TestClient
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyhub_api.chat import providers, store as chat, turn_context
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, ChatDesignContext
 
 
@@ -220,7 +220,7 @@ class AcpChatTests(unittest.TestCase):
         self.assertEqual(before, {str(p): p.read_bytes() for p in self.project.rglob("*") if p.is_file()})
 
     def test_http_permission_requires_current_project_option_and_single_decision(self):
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             session = self.create()
@@ -306,7 +306,7 @@ class AcpChatTests(unittest.TestCase):
         self.store = self.open_store()
         restored = self.store.get(session.id)
         self.assertEqual(restored.messages[0].attachments, metadata)
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             other = self.create()
@@ -379,7 +379,7 @@ class AcpChatTests(unittest.TestCase):
                                               initial_state={"project_id": "other-project", "version": 0})
         before = {str(p): p.read_bytes() for root in (self.project, other_project)
                   for p in root.rglob("*") if p.is_file()}
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             session = self.create()

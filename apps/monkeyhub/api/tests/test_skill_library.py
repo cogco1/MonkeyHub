@@ -29,7 +29,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.main import create_app as create_studio
 from project_runtime.settings import StudioSettings
 from monkeyhub_api.chat import preparation, providers, skill_plugins, store as chat, transport
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest
 from monkeyhub_api.settings.models import ApplicationSettingsDto
 from monkeyhub_api.settings.store import save_application_settings

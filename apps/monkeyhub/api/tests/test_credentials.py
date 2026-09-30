@@ -30,7 +30,7 @@ from monkeyhub_api.chat import providers  # noqa: E402
 from monkeyhub_api.settings import credentials  # noqa: E402
 from monkeyhub_api.runtime.applications import Applications  # noqa: E402
 from monkeyhub_api.chat.store import ChatStore  # noqa: E402
-from monkeyhub_api.main import HubSettings, create_app  # noqa: E402
+from monkeyhub_api.app.composition import HubSettings, create_app  # noqa: E402
 from monkeyhub_api.models import HubFailure  # noqa: E402
 from monkeyhub_api.settings.models import ApplicationSettingsDto  # noqa: E402
 

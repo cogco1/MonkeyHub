@@ -39,7 +39,7 @@ from project_runtime.application.render_contract import RenderCapability, Render
 from project_runtime.main import create_app as studio_app
 from project_runtime.settings import StudioSettings
 from monkeyhub_api.chat import guides, mcp_server, media, preparation, store as chat, studio_tool, tool_calls, transport, turn_context
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, ChatPresentationBindRequest, HubFailure
 
 from test_chat import FAKE_CLI, _tools_of, wait_for
@@ -270,7 +270,7 @@ class RenderContextTests(unittest.TestCase):
                                    renderContext={"source": _page(self.source), "references": pages})
         self.assertEqual([row.assetSha256 for row in accepted.renderContext.references], [row["assetSha256"] for row in pages])
         # The Hub route answers the same refusal as a request error, before anything runs.
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         session = self.create()
         with patch.object(app.state.applications, "start"), TestClient(app, base_url=self.store.hub_url) as client:

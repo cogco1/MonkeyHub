@@ -31,7 +31,7 @@ source_roots.put_first(ROOT)
 
 from fastapi.testclient import TestClient
 from apps.monkeyhub.installer.patch import REQUIRED_FILES, create_patch
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import HubFailure
 from monkeyhub_api.updates import desktop_updates, feed
 from monkeyhub_api.updates.desktop_updates import DesktopUpdates, recover_failed_start
@@ -329,7 +329,7 @@ class DesktopUpdateTests(unittest.TestCase):
         self.assertEqual(client.post(url, content=data).status_code, 422)
         self.assertEqual(client.post(url, content=data, headers={"origin": "https://outside.invalid"}).status_code, 403)
         headers = {"X-MonkeyHub-Local-Patch": "1", "Content-Type": "application/octet-stream"}
-        with patch("monkeyhub_api.main.MAX_PATCH_BYTES", 1):
+        with patch("monkeyhub_api.updates.routes.MAX_PATCH_BYTES", 1):
             self.assertEqual(client.post(url, content=data, headers=headers).status_code, 413)
         self.assertEqual(client.post(url, content=b"", headers=headers).status_code, 422)
         response = client.post(url, content=data, headers=headers)

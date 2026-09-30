@@ -18,7 +18,7 @@ import test_chat
 from test_chat import wait_for
 from monkeyhub_api.chat import store as chat, tool_calls, transport
 from monkeyhub_api.chat.turn_trace import HubTurnObserver
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeymonitor.store import BUSY_NOTICE, UsageLog
 from monkeymonitor.trace import build_traces
 
@@ -332,7 +332,7 @@ class CliTraceTests(unittest.TestCase):
 
     def test_held_journal_neither_delays_nor_repeats_a_real_hub_turn(self):
         holder = self.hold_journal()
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             created = client.post("/api/chat/sessions", json={"projectDir": str(self.project), "provider": "codex"})

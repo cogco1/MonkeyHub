@@ -226,7 +226,7 @@ at handshake ([project-runtime-api.md §1](../protocols/project-runtime-api.md))
 ## 6. How it is reached
 
 In production only through the Hub's forwarding path
-`/api/runtime/projects/{runtime_id}/studio/{path}` (`monkeyhub_api/main.py`, `runtime/manager.py`
+`/api/runtime/projects/{runtime_id}/studio/{path}` (`monkeyhub_api/runtime/routes.py`, `runtime/manager.py`
 `forward`): path allowlist (`/api/...` and `/openapi.json` only), project id checked in query
 and body (`PROJECT_MISMATCH`), `Idempotency-Key` admission for mutations — every request that is
 not `GET`, `HEAD` or `OPTIONS`, except `/api/events/*`, `POST /api/state/closure` and

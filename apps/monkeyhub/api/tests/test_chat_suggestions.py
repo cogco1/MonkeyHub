@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyhub_api.chat import guides, store as chat
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import (
     ChatCreateRequest, ChatMessage, ChatPostRequest, ChatPresentationRequest,
     ChatProvider, ChatSuggestion, ChatSuggestionEstimate, HubFailure,
@@ -64,7 +64,7 @@ class ChatSuggestionTests(unittest.TestCase):
         return store
 
     def new_client(self, store):
-        with patch("monkeyhub_api.main.ChatStore", return_value=store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=store):
             client = TestClient(create_app(HubSettings(runtime_root=self.runtime)),
                                 base_url="http://127.0.0.1:8790", client=("127.0.0.1", 42000))
         self.addCleanup(client.close)

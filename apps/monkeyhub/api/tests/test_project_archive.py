@@ -27,7 +27,7 @@ from archflow.project.repository import (
 )
 from archflow.state.state_record import StateRecord
 from monkeyhub_api import project_archive
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.settings.models import ApplicationSettingsDto
 from monkeyhub_api.settings.store import save_application_settings
 

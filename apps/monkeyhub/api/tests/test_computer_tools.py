@@ -29,7 +29,7 @@ from monkeycontrol.trace import ResolvedTarget, WindowInfo, build_receipt
 from monkeyhub_api.chat import activity, mcp_server, providers, tool_calls, transport
 from monkeyhub_api.chat.turn_trace import HubTurnObserver
 from monkeyhub_api.computer_tools import POLICY_PATH, ComputerService, read_policy, tool_definitions
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import HubFailure
 from monkeymonitor.store import UsageLog
 

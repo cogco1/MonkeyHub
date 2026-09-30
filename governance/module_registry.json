@@ -5959,7 +5959,8 @@
         "services/project-runtime/tests/test_health.py",
         "services/project-runtime/tests/test_settings.py",
         "services/project-runtime/tests/test_errors.py",
-        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
         "apps/monkeyhub/launch-hub.ps1"
       ],
@@ -7400,7 +7401,7 @@
     },
     {
       "module_id": "hub.shell",
-      "owner_path": "apps/monkeyhub/api/monkeyhub_api/main.py",
+      "owner_path": "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
       "status": "canonical",
       "purpose": "Own project runtime attachments, managed workers, idempotent Studio request admission and recovery observations, alongside existing project-bound CLI conversations and local tools; P036 retains all design authority.",
       "owns": [
@@ -7619,7 +7620,9 @@
       "files": [
         "apps/monkeyhub/api/monkeyhub_api/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
-        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/app/__init__.py",
+        "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
+        "apps/monkeyhub/api/monkeyhub_api/app/main.py",
         "apps/monkeyhub/api/monkeyhub_api/models.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/models.py",
@@ -7646,6 +7649,7 @@
         "apps/monkeyhub/api/monkeyhub_api/chat/judgments.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/visual_review.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/turn_trace.py",
         "apps/monkeyhub/api/monkeyhub_api/computer_tools.py",
@@ -7657,6 +7661,7 @@
         "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/worker_http.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/models.py",
         "apps/monkeyhub/desktop/",
         "apps/monkeyhub/assets/",
@@ -7697,6 +7702,7 @@
         "apps/monkeyhub/api/monkeyhub_api/updates/desktop_updates.py",
         "apps/monkeyhub/api/monkeyhub_api/updates/feed.py",
         "apps/monkeyhub/api/monkeyhub_api/updates/models.py",
+        "apps/monkeyhub/api/monkeyhub_api/updates/routes.py",
         "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx",
         "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
         "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingCanvas.css",

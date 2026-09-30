@@ -32,7 +32,7 @@ from monkeyhub_api.chat import (
     activity, guides, judgments, mcp_server, preparation, providers, skill_plugins, store as chat, studio_tool,
     tool_calls, transport, turn_context, visual_review,
 )
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import (
     AppStatus, ChatCreateRequest, ChatDesignContext, ChatMessage, ChatPostRequest, HubFailure,
 )
@@ -359,7 +359,7 @@ class ChatTests(unittest.TestCase):
 
     def test_attachment_only_message_download_and_reopen(self):
         original = {p.relative_to(self.project): p.read_bytes() for p in self.project.rglob("*") if p.is_file()}
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             session = self.create()
@@ -415,7 +415,7 @@ class ChatTests(unittest.TestCase):
         text_file, binary_file = self.store.get(session.id).messages[0].attachments
         before = {p.relative_to(self.root): p.read_bytes() for root in (self.project, self.other, self.runtime)
                   for p in root.rglob("*") if p.is_file()}
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start") as start, TestClient(app, base_url=self.store.hub_url) as client:
             start.reset_mock()
@@ -544,7 +544,7 @@ class ChatTests(unittest.TestCase):
                                   for p in root.rglob("*") if p.is_file()})
 
     def test_invalid_attachments_never_write_a_message_or_file(self):
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             session = self.create()
@@ -805,7 +805,7 @@ class ChatTests(unittest.TestCase):
         saved = {path: path.read_bytes() for path in (self.runtime / "chats").glob("*.json")}
         self.store.shutdown()
         self.store = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=self.commands)
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             response = client.get("/api/chat/usage-sources")
@@ -825,7 +825,7 @@ class ChatTests(unittest.TestCase):
         finished = self.finished(session)
         saved_path = self.runtime / "chats" / f"{session.id}.json"
         saved = json.loads(saved_path.read_text(encoding="utf-8"))
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             path = f"/api/chat/sessions/{session.id}"
@@ -849,7 +849,7 @@ class ChatTests(unittest.TestCase):
         self.store = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=self.commands)
         self.assertTrue(self.store.get(session.id).archived)
         self.assertEqual([row.id for row in self.store.list(archived=True)], [session.id])
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             restored = client.put(path + "/archive", json={"archived": False})
@@ -1028,7 +1028,7 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(self.finished(session).status, "idle")
 
     def test_http_roundtrip_invalid_project_and_old_settings(self):
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             response = client.post("/api/chat/sessions", json={"projectDir": str(self.project), "provider": "codex"})

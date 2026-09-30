@@ -126,7 +126,8 @@ import uvicorn
 from tools.dev import source_roots
 source_roots.put_first(Path(sys.argv[2]))
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyhub_api.main import create_app, HubSettings, HubServer
+from monkeyhub_api.app.composition import create_app, HubSettings
+from monkeyhub_api.app.main import HubServer
 from monkeyhub_api.settings.models import ApplicationSettingsDto, UserSettingsDto
 from monkeyhub_api.settings.store import save_application_settings, save_user_settings
 from fastapi.staticfiles import StaticFiles

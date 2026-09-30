@@ -17,7 +17,8 @@ import uvicorn
 
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, http_json, wait_for
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyhub_api.main import HubServer, HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
+from monkeyhub_api.app.main import HubServer
 from monkeyhub_api.runtime.worker_http import _WorkerEvents
 
 

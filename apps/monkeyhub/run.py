@@ -144,8 +144,8 @@ def _progress_chat_store():
 
 def _hub_main():
     """Compose the progress projection at the Hub entry without a second store."""
-    from monkeyhub_api import main as hub_main
-    hub_main.ChatStore = _progress_chat_store()
+    from monkeyhub_api.app import composition, main as hub_main
+    composition.ChatStore = _progress_chat_store()
     return hub_main.main
 
 

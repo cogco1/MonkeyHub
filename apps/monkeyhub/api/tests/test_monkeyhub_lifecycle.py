@@ -38,7 +38,8 @@ from fastapi.testclient import TestClient
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.settings import StudioSettings
 from monkeyhub_api.chat import transport
-from monkeyhub_api.main import HubSettings, complete_interrupted_connection_teardown, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
+from monkeyhub_api.app.main import complete_interrupted_connection_teardown
 from monkeyhub_api.settings.models import ApplicationSettingsDto
 from monkeyhub_api.settings.store import save_application_settings
 

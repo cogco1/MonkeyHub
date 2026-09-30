@@ -12,5 +12,6 @@ session, ``skill_plugins`` hands the library project's skills to Claude, and
 ``preparation``, through ``transport``, within what ``studio_tool`` allows;
 ``judgments`` binds the Agent's judgments to the user's own words,
 ``visual_review`` holds the Agent's allowance of looks, and ``guides`` are the
-words the Agent is given about these tools.
+words the Agent is given about these tools. ``routes`` serves the chat part of
+the Hub API.
 """

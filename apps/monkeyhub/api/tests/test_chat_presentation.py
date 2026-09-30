@@ -35,7 +35,7 @@ from project_runtime.binding import ProjectBinding
 from project_runtime.settings import StudioSettings
 from monkeyhub_api.chat import guides, mcp_server
 from monkeyhub_api.chat.store import ChatStore
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatDocumentRef, ChatPostRequest, ChatProvider
 
 
@@ -108,7 +108,7 @@ class ChatPresentationTests(unittest.TestCase):
         return store
 
     def new_client(self, store, host="127.0.0.1"):
-        with patch("monkeyhub_api.main.ChatStore", return_value=store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         # No lifespan is needed: these operations must not start a runtime or provider.
         client = TestClient(app, base_url="http://127.0.0.1:8790", client=(host, 42000))
@@ -150,7 +150,7 @@ class ChatPresentationTests(unittest.TestCase):
         listener = socket.socket()
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime, port=port))
         server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port,
                                                lifespan="off", log_level="error", ws="none"))

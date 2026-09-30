@@ -5,5 +5,6 @@
 projects, observes them, forwards their requests and relays their events,
 ``operations`` admits each forwarded mutation and keeps its recovery journal,
 ``worker_http`` is the Hub's HTTP to a worker, one request or its event
-stream, and ``models`` holds the runtime snapshot and event DTOs.
+stream, ``models`` holds the runtime snapshot and event DTOs, and ``routes``
+serves ``/api/apps``, ``/api/project/modeling`` and ``/api/runtime``.
 """
