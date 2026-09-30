@@ -51,9 +51,9 @@ The Hub runs the existing services and owns only the child processes it starts. 
 
 The chat paperclip accepts files; files can also be dropped or pasted into the composer. Send text, attachments, or both. A message accepts up to 8 files, 20 MiB each and 40 MiB in total. Sent files stay with the conversation and can be downloaded after reopening or archiving it. PNG, JPEG, WebP and GIF use the native model image input. The connected `attachment_read` tool reads this chat's files without opening the Windows sandbox to the runtime directory: text in chunks, PDF text one page at a time, and other binary files as base64 chunks. Empty PDF text does not establish that a scanned page or drawing was visually inspected. Attachments are reference files in the Hub runtime, not imports into a building project.
 
-The package keeps the repository layout and includes one prebuilt Hub web directory. The installer supplies an embedded Python with the API, CAD and PDF dependencies already installed. No Git or npm command is needed to run that package.
+The package keeps the layout its installed updater expects, each Python package at its root and Fab at apps/monkeyfab wherever the repository keeps them, and includes one prebuilt Hub web directory. The installer supplies an embedded Python with the API, CAD and PDF dependencies already installed. No Git or npm command is needed to run that package.
 
-Every build includes `apps/monkeyfab` and its preparation/send dependencies in the same runtime. One Hub source commit in `build-info.json` identifies every included application, for both desktop and browser entrypoints.
+Every build includes MonkeyFab (`packages/monkeyfab`, shipped at `apps/monkeyfab`) and its preparation/send dependencies in the same runtime. One Hub source commit in `build-info.json` identifies every included application, for both desktop and browser entrypoints.
 
 The root OPEN_MONKEYHUB.cmd calls this entry:
 
@@ -85,7 +85,7 @@ Each new Codex chat keeps one adapter process between turns. Hub saves its opaqu
 
 In a checkout, run.py puts the Python source roots that governance/architecture_policy.json lists first on its import path, so a worktree runs its own code without PYTHONPATH or an editable install; the installed package's embedded Python, which ignores PYTHONPATH, reads the same roots from its python313._pth. Its fixed --service studio and --service monitor forms call the existing service entry points; child processes use the same sys.executable.
 
-For source development, run `python -m pip install -e "apps/monkeyfab[send]"` from this repository using the Python environment that starts Hub. Fab code lives in [apps/monkeyfab](../monkeyfab/README.md); Hub always calls that checkout’s CLI, and complete desktop/browser packages include it by default. No second repository or source ref is needed.
+For source development, run `python -m pip install -e "packages/monkeyfab[send]"` from this repository using the Python environment that starts Hub. Fab code lives in [packages/monkeyfab](../../packages/monkeyfab/README.md); Hub always calls that checkout’s CLI, and complete desktop/browser packages include it by default. No second repository or source ref is needed.
 
 An API-only development run may omit --hub-web-dir. To connect a separate local web development server, pass --web-origin http://127.0.0.1:5175 (substitute its actual port). The packaged web and API use one origin. The Project Runtime serves APIs only; no second frontend build is required.
 

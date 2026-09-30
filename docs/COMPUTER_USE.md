@@ -11,7 +11,7 @@ screenshots and recordings under one diagnostics directory its caller supplies, 
 nothing else, ever. It never writes a P036 record, never opens a project, and never
 becomes an alternative way to change a design. A model that wants to change a building
 still goes through the Studio APIs the chat tools already expose. Code:
-`monkeycontrol/` (registry module `monkeycontrol`), composed by the Hub in
+`packages/monkeycontrol/` (registry module `monkeycontrol`), composed by the Hub in
 `apps/monkeyhub/api/monkeyhub_api/computer_tools.py` (`hub.shell`).
 
 ## One action in, one receipt out
@@ -154,8 +154,8 @@ nothing in the product writes it for you.
 
 The desktop is reached through two long-lived PowerShell workers spoken to in JSON lines:
 
-- `monkeycontrol/hosts/execution_host.ps1` — **MTA**, holds UI Automation and `SendInput`.
-- `monkeycontrol/hosts/presentation_host.ps1` — **STA**, holds the WPF overlay and screen
+- `packages/monkeycontrol/src/monkeycontrol/hosts/execution_host.ps1` — **MTA**, holds UI Automation and `SendInput`.
+- `packages/monkeycontrol/src/monkeycontrol/hosts/presentation_host.ps1` — **STA**, holds the WPF overlay and screen
   capture. The overlay window is click-through, never activated, and excluded from
   capture, so it can never change what the next click reaches and does not appear in a
   frame. The last of those is Windows' to grant, not ours: where
@@ -212,7 +212,7 @@ and `focus_guard`. `${TEMP}` in a path, a command or typed text is replaced with
 machine's temporary directory, so a demo script names no user folder. The CLI prints one
 line per action and exits **0** when every action succeeded, **1** when one did not,
 **2** when the action or script is invalid, **3** when the runtime refused the request
-itself. `monkeycontrol/demos/notepad_explorer.json` is a worked example.
+itself. `packages/monkeycontrol/src/monkeycontrol/demos/notepad_explorer.json` is a worked example.
 
 ## Through MonkeyHub
 

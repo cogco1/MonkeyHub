@@ -746,7 +746,7 @@ evidence keeps it unknown.
 The Hub shows it without per-run data entry. Missing child endings remain
 `incomplete` with unknown duration after a root ends. The journal's bounded
 write-lock correction and its source comparison are documented in
-[MonkeyMonitor](../monkeymonitor/README.md#turntrace). Neither telemetry repair
+[MonkeyMonitor](../packages/monkeymonitor/src/monkeymonitor/README.md#turntrace). Neither telemetry repair
 nor session rebuilding establishes a general latency improvement. The Hub's
 trace-comparison UI and the larger #32 benchmark set remain separate acceptance.
 

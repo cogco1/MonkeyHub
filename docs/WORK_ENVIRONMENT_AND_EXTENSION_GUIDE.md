@@ -198,7 +198,7 @@ facets 解锁的能力才可使用，例如 `architectural.role = wall` 之后�
 ```text
 Git 源码仓 / worktree
   packages/archflow/         公共项目底座、建筑事实和技术接口（src/ 布局，自带 pyproject.toml 与本包测试）
-  monkeyarch/                三维建模算法与运行编排
+  packages/monkeyarch/       三维建模算法与运行编排（src/ 布局，自带 pyproject.toml）
   packages/monkeydiagram/    图纸投影与表达（src/ 布局，自带 pyproject.toml 与本包测试）
   apps/archflow-studio/api/  项目运行时；API-only，历史目录名保留
   governance/                owner、依赖与架构防火墙
@@ -543,12 +543,12 @@ Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-na
 | --- | --- | --- |
 | **ArchFlow** | 共享项目底座、建筑事实、技术契约与正式发布 | `packages/archflow/` |
 | **MonkeyHub** | 唯一对外应用入口；启动、工作区切换、服务管理与共享设置，Agent 接入也沿此入口 | `apps/monkeyhub/`；`OPEN_MONKEYHUB.cmd` |
-| **MonkeyArch** | 三维建模、模型候选与续改 | `monkeyarch/`；Hub `appId: monkeyarch` |
+| **MonkeyArch** | 三维建模、模型候选与续改 | `packages/monkeyarch/`；Hub `appId: monkeyarch` |
 | **MonkeyDiagram** | 图纸、图解、平立剖表达与单页批注 | `packages/monkeydiagram/`；Hub rail「工具」组的「图纸」（与渲染、制作、用量并列）；Board 双击已登记图页进入精确页面编辑 |
 | **MonkeyBoard** | 图版排布、方案比较、会议展示与画布批注；含「排版」模式（排版与导出，即 Publish 界面） | Hub `appId: monkeyboard`；同页项目工作区；左上角「画板 \| 排版」切换两种模式 |
 | **Design tree（状态树）** | 项目的设计历史：当前线上的阶段与已选方案连成主干，未选方案为短枝，进行中的 Agent 任务在起点处占位；查看不移动“当前”，从这里继续与接受为下一阶段分开 | Hub rail 第一组的第三项（建模、画板、状态树，2026-09-25 决定）；项目工作区 `view=tree`；项目工作区顶部的阶段标签也打开它 |
-| **MonkeyMonitor** | 用量、费用、耗时与计算过程查看 | `monkeymonitor/`；Hub `appId: monkeymonitor` |
-| **MonkeyFab** | 制作与打印准备；当前支持分件及已切片文件发送 | 同仓 `apps/monkeyfab/` CLI；Hub `appId: monkeyfab`、`?view=fab` |
+| **MonkeyMonitor** | 用量、费用、耗时与计算过程查看 | `packages/monkeymonitor/`；Hub `appId: monkeymonitor` |
+| **MonkeyFab** | 制作与打印准备；当前支持分件及已切片文件发送 | 同仓 `packages/monkeyfab/` CLI；Hub `appId: monkeyfab`、`?view=fab` |
 
 **Studio** 是项目运行时保留的服务、协议和 Python 包标识，源码在
 `apps/archflow-studio/api/`。产品入口和唯一生产前端均为 MonkeyHub；建模、画板直接在

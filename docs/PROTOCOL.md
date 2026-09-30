@@ -1143,7 +1143,7 @@ candidate workers. They are diagnostic association only and grant no project act
 The acknowledgement reports whether logging succeeded; diagnostics cannot retry a
 business request. Model-request round trips and nested service intervals are not
 pure inference time, and only an explicit client interaction root supplies total
-elapsed time. See [MonkeyMonitor timing](../monkeymonitor/README.md#时间口径).
+elapsed time. See [MonkeyMonitor timing](../packages/monkeymonitor/src/monkeymonitor/README.md#时间口径).
 OCCT exports an exact STEP and a mesh 3DM preview from the same program. Clients load only the
 3DM in the viewer and offer the STEP as a download; two files sharing a receipt are one export.
 The list is sorted and reflects the running configuration,

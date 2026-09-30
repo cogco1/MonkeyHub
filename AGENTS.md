@@ -37,10 +37,10 @@ its currently implemented limits are described in `docs/ARCHITECTURE.md`.
 
 ## Framework versus project data
 
-- `packages/archflow/` contains shared project, fact and technical contracts. `monkeyarch/`
+- `packages/archflow/` contains shared project, fact and technical contracts. `packages/monkeyarch/`
   owns 3D modeling algorithms; `packages/monkeydiagram/` owns drawing algorithms.
-  `apps/monkeyfab/` owns print preparation and upload-only CLI behavior, bundled from the same Hub commit.
-  `monkeymonitor/` owns independent engineering usage, pricing and budget advice;
+  `packages/monkeyfab/` owns print preparation and upload-only CLI behavior, bundled from the same Hub commit.
+  `packages/monkeymonitor/` owns independent engineering usage, pricing and budget advice;
   its explicitly configured diagnostic logs are not project state. MonkeyHub
   composes the project workspaces. Core code imports neither workflow, and the
   workflows do not import one another; see `docs/REPO_LAYOUT.md`.

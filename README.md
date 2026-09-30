@@ -175,7 +175,7 @@ Rhino). See the [Project Runtime guide](apps/archflow-studio/README.md) for inte
 
 ## Project data
 
-`packages/archflow/` contains shared contracts and project mechanisms; `monkeyarch/` and
+`packages/archflow/` contains shared contracts and project mechanisms; `packages/monkeyarch/` and
 `packages/monkeydiagram/` hold the workflow algorithms. `apps/monkeyhub/web/` composes the single application interface; `apps/archflow-studio/api/` serves project APIs. Active building projects live in an explicitly configured
 external project root. Promoted regression evidence belongs in `probes/`.
 Both use the same project layout and persistence owner.

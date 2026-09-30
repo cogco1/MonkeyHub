@@ -6,7 +6,7 @@ MonkeyHub 同仓的模型加工准备模块，完成 **等比例缩放 → 按�
 
 ## 安装和使用
 
-桌面版和网页版的完整包已默认包含本模块与依赖。源码开发需要 Python 3.12 或更新版本，在 Hub 仓库的 `apps/monkeyfab/` 目录运行：
+桌面版和网页版的完整包已默认包含本模块与依赖。源码开发需要 Python 3.12 或更新版本，在 Hub 仓库的 `packages/monkeyfab/` 目录运行：
 
 ```powershell
 python -m venv .venv
@@ -14,7 +14,7 @@ python -m venv .venv
 .\.venv\Scripts\monkeyfab.exe profiles
 ```
 
-在 Hub 根目录也可运行 `python -m pip install -e "apps/monkeyfab[send,test]"`。独立 CLI 保留，源码与完整安装包统一使用 Hub 的提交版本，不再单独克隆 Fab。
+在 Hub 根目录也可运行 `python -m pip install -e "packages/monkeyfab[send,test]"`。独立 CLI 保留，源码与完整安装包统一使用 Hub 的提交版本，不再单独克隆 Fab。
 
 假设原模型坐标单位为米，目标为 1:100：
 
@@ -92,7 +92,7 @@ monkeyfab prepare demo.stl --input-unit m --scale 1:100 --printer h2d --output h
 
 ## Hub 接入与源码归属
 
-Fab 在 `apps/monkeyfab/` 维护加工算法、CLI、打印参数与行为检查；Hub 的 `?view=fab` 页面通过现有 `/api/fab/profiles`、`prepare` 和 `send` 接口调用同一份 CLI，无需独立服务。桌面和网页包从同一个 Hub 提交构建，默认包含 Fab 及其 `send` 依赖。
+Fab 在 `packages/monkeyfab/` 维护加工算法、CLI、打印参数与行为检查（完整包内位于 `apps/monkeyfab/`）；Hub 的 `?view=fab` 页面通过现有 `/api/fab/profiles`、`prepare` 和 `send` 接口调用同一份 CLI，无需独立服务。桌面和网页包从同一个 Hub 提交构建，默认包含 Fab 及其 `send` 依赖。
 
 此次合仓导入原 MonkeyFab 提交 `6128f99c8fbcc5db41539a225386a6495fa6c5ab` 的现有实现，保留模块边界。现有 CAD、出图与 Hub HTTP owner 不承担制造算法；`monkeyfab` 在 Hub 的 module registry 中登记已有职责，不引入第二套实现。
 

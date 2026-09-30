@@ -4,7 +4,7 @@
 使用者无需安装 Python、Node.js 或运行 npm。包内 `source-version.txt` 是 ArchFlow／Hub 的完整源码提交。
 内置运行时来自 [Python 官方 Windows embeddable package](https://www.python.org/ftp/python/3.13.15/python-3.13.15-embed-amd64.zip)，
 构建器核对固定 SHA-256；包内 `build-info.json` 保存来源与版本。MonkeyFab 源码位于同仓的
-`apps/monkeyfab/`，默认随桌面与网页包交付，共用同一套内置 Python 和同一个 Hub 源码提交。
+`packages/monkeyfab/`，默认随桌面与网页包交付（包内位于 `apps/monkeyfab/`），共用同一套内置 Python 和同一个 Hub 源码提交。
 
 ## 第一次安装
 
@@ -141,7 +141,7 @@ python tools/package_monkeyapps.py --patch-from '<完整旧版本目录>' --patc
 python tools/package_monkeyapps.py --source-ref <三条线集成后的完整提交> --staging-dir 'D:\ExampleRuntime\temp\package' --output-dir 'D:\ExampleRuntime\packages'
 ```
 
-构建器从同一个 Hub 提交收集 `apps/monkeyfab/`，默认安装其基础与 `send` 依赖，
+构建器从同一个 Hub 提交收集 `packages/monkeyfab/`，放在包内 `apps/monkeyfab/`，默认安装其基础与 `send` 依赖，
 不再接受外部 Fab 仓库或第二个版本参数。Fab 行为检查随 Hub CI 运行。
 `--staging-dir`、`--output-dir` 和缓存必须在源码工作区之外；配置开发根目录后可直接复用默认路径。
 每次构建使用独立子目录，已有候选 ZIP 不会覆盖。打包前会实际导入包内 API、PDF、图像和 CAD 库，
