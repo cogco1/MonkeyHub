@@ -248,9 +248,9 @@ substitute for these observations or turn a Studio candidate into an issued vers
 Search-policy/OCBA work remains deferred for the algorithm team; do not restore the
 archived controller or build a new one as a prerequisite for this revision.
 
-Document roles stay small: VISION explains the purpose, this file explains the
-implemented shape and development order, the module registry owns contracts, the
-work registry tracks live assignments. Private research and application drafts are
+Document roles stay small: [the vision](../product/vision.md) explains the purpose,
+this file explains the implemented shape and development order, the module registry
+owns contracts, the work registry tracks live assignments. Private research and application drafts are
 kept outside the public source tree.
 An idea here becomes implementation work only with a concrete task and write scope.
 

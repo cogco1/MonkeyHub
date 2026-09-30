@@ -5,8 +5,8 @@ it moves the mouse, presses keys and closes a window on whatever machine it
 runs on. It touches one application it started itself and refuses to send a
 closing chord unless that application is the one in the foreground.
 
-    MONKEYCONTROL_DESKTOP_TESTS=1 python -m unittest \
-        tests.monkeycontrol.test_desktop_windows -v
+    MONKEYCONTROL_DESKTOP_TESTS=1 python -m pytest \
+        packages/monkeycontrol/tests/test_desktop_windows.py -v
 """
 
 from __future__ import annotations
