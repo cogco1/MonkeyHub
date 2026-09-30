@@ -54,7 +54,6 @@
     "conftest.py",
     "pyproject.toml"
   ],
-  "legacy_root_packages": [],
   "shared_write_scope": [
     "governance/module_registry.json",
     "governance/work_registry.json",

@@ -10,9 +10,9 @@ every push to `main` (issue #376).
 
 It runs on one invented project and compares a **base** code root with a **candidate** code root.
 
-In CI the **base** code builds that project (`build_synthetic_project` from the base checkout, with the base
-first on `PYTHONPATH` in whichever layout it has; the step refuses to run if `archflow` or the base's runtime
-package loads from anywhere else).
+In CI the **base** code builds that project (`build_synthetic_project` from the base checkout, with the base's
+root, `packages/archflow/src` and `services/project-runtime/src` first on `PYTHONPATH`; the step refuses to run
+if `archflow` or `project_runtime` loads from anywhere else).
 The promise is about existing projects: whatever the base wrote, the candidate must answer the same. A candidate
 that deliberately changes what new runs record (#402 binds a record without massing by a new digest) writes data
 the base cannot read, so building the project with the candidate would fail such a change for the wrong reason
@@ -40,11 +40,10 @@ of conditional reads (phase 0a). The check asks nothing of a base that predates 
 
 **Timings** are reported for every route. A route fails only when the candidate's cold read takes more than twice as long as the base's and is also more than 200 ms slower. Shared CI runners are too noisy for a tighter gate.
 
-**Isolation.** Each side runs in its own interpreter with its kernel source, `<code-root>` and its runtime
-source first on `sys.path`. The runtime is `project_runtime` in `<code-root>/services/project-runtime/src`;
-a base from before #491 still has it as `archflow_studio_api` in `<code-root>/apps/archflow-studio/api`,
-and the tool reads either layout until every base has the new one. A side stops if `archflow` or its
-runtime loads from anywhere else. The tool itself imports nothing from either root.
+**Isolation.** Each side runs in its own interpreter with its kernel source (`<code-root>/packages/archflow/src`),
+`<code-root>` and its runtime source (`<code-root>/services/project-runtime/src`) first on `sys.path`. A side
+stops if `archflow` or `project_runtime` loads from anywhere else. The tool itself imports nothing from either root.
+Both code roots need that layout, which every commit has had since #491.
 
 The check does **not** show that a projection is architecturally right. It shows only that the candidate
 answers exactly as the base does on this project. A route that both sides get wrong in the same way passes.

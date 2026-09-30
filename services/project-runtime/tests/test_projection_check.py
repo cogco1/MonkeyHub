@@ -132,51 +132,32 @@ class VerdictTests(unittest.TestCase):
         self.assertIsNone(projection_check.first_difference(root / "a", root / "a"))
 
 
-class LayoutTests(unittest.TestCase):
-    """A base from before #489 keeps archflow at its root, and one from before #491 keeps its
-    runtime under its old name in apps/; the check reads either layout."""
+class BindingTests(unittest.TestCase):
+    """Each side imports archflow and the Project Runtime from its own code root."""
 
-    def test_each_side_imports_archflow_from_where_it_keeps_it(self) -> None:
+    def test_a_side_binds_the_kernel_and_runtime_it_keeps_and_nothing_else(self) -> None:
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root, True)
-        old, new = root / "old", root / "new"
-        for kernel in (old / "archflow", new / "packages" / "archflow" / "src" / "archflow"):
-            kernel.mkdir(parents=True)
-            (kernel / "__init__.py").write_text("", encoding="utf-8")
-        self.assertEqual(projection_check._kernel_source(old), old)
-        self.assertEqual(projection_check._kernel_source(new), new / "packages" / "archflow" / "src")
-        self.assertEqual(projection_check._kernel_source(REPOSITORY), REPOSITORY / "packages" / "archflow" / "src")
-
-    def test_each_side_binds_the_runtime_it_keeps_and_nothing_else(self) -> None:
-        root = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, root, True)
-        before, after = root / "before-491", root / "from-491"
-        sides = {
-            before: (before / "apps" / "archflow-studio" / "api", "archflow_studio_api"),
-            after: (after / "services" / "project-runtime" / "src", "project_runtime"),
-        }
-        for code_root, (source, package) in sides.items():
-            for module in (code_root / "packages" / "archflow" / "src" / "archflow", source / package):
-                module.mkdir(parents=True)
-                (module / "__init__.py").write_text("", encoding="utf-8")
-            self.assertEqual(projection_check._runtime_source(code_root), (source, package))
-        self.assertEqual(projection_check._runtime_source(REPOSITORY),
-                         (REPOSITORY / "services" / "project-runtime" / "src", "project_runtime"))
-        # _bind rewrites sys.path and imports, so each side binds in an interpreter of its own,
-        # as the worker does; each answers its own package name, found under its own root.
+        code_root = root / "side"
+        for module in (code_root / "packages" / "archflow" / "src" / "archflow",
+                       code_root / "services" / "project-runtime" / "src" / "project_runtime"):
+            module.mkdir(parents=True)
+            (module / "__init__.py").write_text("", encoding="utf-8")
+        # _bind rewrites sys.path and imports, so the side binds in an interpreter of its own,
+        # as the worker does, and both packages are found under its root.
         tool = REPOSITORY / "tools" / "benchmarks" / "projection_check.py"
         script = ("import importlib.util, sys; from pathlib import Path; "
                   "spec = importlib.util.spec_from_file_location('projection_check', sys.argv[1]); "
                   "tool = importlib.util.module_from_spec(spec); spec.loader.exec_module(tool); "
-                  "package = tool._bind(Path(sys.argv[2])); "
-                  "print(package, Path(sys.modules[package].__file__).resolve().relative_to(Path(sys.argv[2]).resolve()).as_posix())")
+                  "tool._bind(Path(sys.argv[2])); "
+                  "print(*(Path(sys.modules[name].__file__).resolve().relative_to(Path(sys.argv[2]).resolve()).as_posix() "
+                  "for name in ('archflow', 'project_runtime')))")
         environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
-        for code_root, (source, package) in sides.items():
-            with self.subTest(side=code_root.name):
-                bound = subprocess.run([sys.executable, "-c", script, str(tool), str(code_root)], cwd=str(root),
-                                       env=environment, capture_output=True, text=True, timeout=60)
-                self.assertEqual(bound.returncode, 0, bound.stderr)
-                self.assertEqual(bound.stdout.split(), [package, (source / package / "__init__.py").relative_to(code_root).as_posix()])
+        bound = subprocess.run([sys.executable, "-c", script, str(tool), str(code_root)], cwd=str(root),
+                               env=environment, capture_output=True, text=True, timeout=60)
+        self.assertEqual(bound.returncode, 0, bound.stderr)
+        self.assertEqual(bound.stdout.split(), ["packages/archflow/src/archflow/__init__.py",
+                                                "services/project-runtime/src/project_runtime/__init__.py"])
 
 
 class EndToEndTests(unittest.TestCase):

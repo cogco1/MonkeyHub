@@ -422,28 +422,22 @@ jobs:
 
       # The base code builds the project: the check promises that an existing
       # project reads the same, and a candidate that deliberately changes what
-      # new runs record (GH-429, #402) writes data the base cannot read. A base
-      # keeps archflow at its root before #489 and in packages/archflow/src from
-      # it on, and its runtime as archflow_studio_api in apps/archflow-studio/api
-      # before #491 and as project_runtime in services/project-runtime/src from it
-      # on. Every one of those roots is on the path, and the step runs in the
-      # runtime directory the base has, until every base has the new layouts.
+      # new runs record (GH-429, #402) writes data the base cannot read. The
+      # step runs in the base's runtime directory, whose tests package holds the
+      # generator, with the base's archflow and runtime sources on the path. The
+      # base's root is on it too: importing project_runtime puts the base's
+      # source roots first, and a root not yet on the path would go ahead of the
+      # step's directory and shadow that tests package with the root's.
       - name: Generate the synthetic project with the base
         shell: bash
-        working-directory: ${{ runner.temp }}/base
+        working-directory: ${{ runner.temp }}/base/services/project-runtime
         env:
-          PYTHONPATH: ${{ runner.temp }}/base${{ runner.os == 'Windows' && ';' || ':' }}${{ runner.temp }}/base/packages/archflow/src${{ runner.os == 'Windows' && ';' || ':' }}${{ runner.temp }}/base/apps/archflow-studio/api${{ runner.os == 'Windows' && ';' || ':' }}${{ runner.temp }}/base/services/project-runtime/src
+          PYTHONPATH: ${{ runner.temp }}/base${{ runner.os == 'Windows' && ';' || ':' }}${{ runner.temp }}/base/packages/archflow/src${{ runner.os == 'Windows' && ';' || ':' }}${{ runner.temp }}/base/services/project-runtime/src
         run: |
-          if [ -d services/project-runtime ]; then
-            cd services/project-runtime && runtime=project_runtime
-          else
-            cd apps/archflow-studio/api && runtime=archflow_studio_api
-          fi
-          python - "$runtime" <<'PY'
-          import importlib, os, pathlib, sys, archflow
-          runtime = importlib.import_module(sys.argv[1])
+          python - <<'PY'
+          import os, pathlib, archflow, project_runtime
           base = pathlib.Path(os.environ['RUNNER_TEMP'], 'base').resolve()
-          assert all(pathlib.Path(m.__file__).resolve().is_relative_to(base) for m in (archflow, runtime)), 'the base code must build the project'
+          assert all(pathlib.Path(m.__file__).resolve().is_relative_to(base) for m in (archflow, project_runtime)), 'the base code must build the project'
           from tests.synthetic_project import build_synthetic_project
           print(build_synthetic_project(pathlib.Path(os.environ['RUNNER_TEMP']) / 'projects'))
           PY

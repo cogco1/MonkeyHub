@@ -51,7 +51,7 @@ class RecordKind:
         return re.fullmatch(self.kind_pattern, kind) is not None
 
 
-# ---- the runner's kinds (archflow/runtime/project_runner.py)
+# ---- the runner's kinds (packages/monkeyarch/src/monkeyarch/runtime/project_runner.py)
 
 STATE_RECORD = "state-record"
 PROJECT_LEVELS = "project-levels"
@@ -73,11 +73,11 @@ RUNNER_RUN_FAILURE = "runner-run-failure"
 RUNNER_RUN_RECEIPT = "runner-run-receipt"
 STAGE_GEOMETRY_PROGRAM = "<identifier>-geometry-program"
 
-# ---- the drawing consumer's kind (archflow/runtime/drawing_elevation.py)
+# ---- the drawing consumer's kind (packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py)
 
 DRAWING_PROJECTION_RECEIPT = "drawing-projection-receipt"
 
-# ---- the geometry proposal producer's kinds (archflow/capabilities)
+# ---- the geometry proposal producer's kinds (packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py)
 
 GEOMETRY_PROPOSAL_ROUND = "geometry-proposal-round-NN"
 GEOMETRY_PROPOSAL_COMPLETION = "geometry-proposal-completion-NN"
@@ -141,7 +141,7 @@ COMPONENT_TEMPLATE = "component-template"
 CATALOG_CONFRONTATION = "catalog-confrontation"
 COMPONENT_CATALOG = "component-catalog"
 
-# ---- the issue's kind (archflow/project/issue.py)
+# ---- the issue's kind (packages/archflow/src/archflow/project/issue.py)
 
 PROMOTION_DECISION = "promotion-decision"
 

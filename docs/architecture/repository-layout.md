@@ -1,12 +1,12 @@
 # MonkeyHub 仓库：职责、目录与拓扑
 
-本文定义共享核心、建模、出图、Monitor、Control 和 Fab 模块的职责，说明当前目录，以及仓库拓扑重构
-（milestone “Topology refactor round 1”）完成后的目标目录。当前 owner、路径和公开接口以
+本文定义共享核心、建模、出图、Monitor、Control 和 Fab 模块的职责，说明当前目录与拓扑，并记录仓库拓扑重构
+第一轮（milestone “Topology refactor round 1”）如何落地。当前 owner、路径和公开接口以
 [module registry](../../governance/module_registry.json) 为准；目录分离不表示所有规划能力已经实现。
 协作规则见 [AGENTS](../../AGENTS.md) 与 [CONTRIBUTING](../../CONTRIBUTING.md)。
 
-第 1–5 节描述 `main` 上的现状，第 6 节是第一轮完成后的目标，第 7 节是落地它的 Issue 与顺序。
-每次搬迁在同一个 PR 里更新本文对应的部分。
+第 1–6 节描述 `main` 上的现状，第 7 节记录已经完成的第一轮：规则、旧路径到新路径的映射与顺序。
+改动目录的 PR 在同一个 PR 里更新本文对应的部分。
 
 ## 1. 明确的能力范围
 
@@ -26,7 +26,7 @@ MonkeyArch 和 MonkeyDiagram 是平行工作流。ArchFlow 提供它们共同依
 建模与出图执行已迁入 `packages/monkeyarch/` 和 `packages/monkeydiagram/`。`packages/archflow/` 保留共同的建筑事实、
 项目契约和技术适配。仅因代码可复用，不把某个工作流的业务算法放进公共核心。
 
-## 2. 当前源码目录（第一轮之前）
+## 2. 当前源码目录
 
 下列 Python 模块随同一 Hub 发行版本安装；Fab 保留独立 CLI，设计 Web 工作区在同一个 Hub 前端内装配。
 MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一服务，Runtime 通过可选用量适配器记录诊断。
@@ -41,7 +41,7 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 │     ├─ semantics/              建筑实体、角色与条件词汇
 │     ├─ ports/                  已有外部调用接口
 │     └─ adapters/               两条工作流实际共用的技术适配（含 CAD/OCCT 执行）
-├─ packages/monkeyarch/          3D producer、solver、编译及运行编排：src/monkeyarch/、pyproject.toml
+├─ packages/monkeyarch/          3D producer、solver、编译及运行编排：src/monkeyarch/、pyproject.toml、本包 tests/
 ├─ packages/monkeydiagram/       图纸投影编排、SVG 与 PNG 表达：src/monkeydiagram/、pyproject.toml、本包 tests/
 ├─ packages/monkeymonitor/       用量、计价、算法建议接口及诊断 CLI/API：src/monkeymonitor/、pyproject.toml、本包 tests/
 ├─ packages/monkeycontrol/       桌面自动化动作契约与执行：src/monkeycontrol/、pyproject.toml、本包 tests/
@@ -70,9 +70,6 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 一个源码仓、同一发行版本可以包含多块代码。独立工作流首先要求职责、目录和依赖清楚；
 是否拆成独立部署或安装包，由真实使用需要决定，不与目录划分捆绑。
 `services/project-runtime/` 是 Hub 按项目启动的服务，只提供 API，不含前端。
-
-现状的问题：测试分散在多个根下。
-第 6、7 节给出目标和顺序。
 
 ## 3. 文件归属
 
@@ -133,15 +130,16 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
 退役前核对真实调用、公开契约和保留数据。普通旧代码可由 Git 找回；私人原件和唯一临时材料先确认交接，
 不根据“零 import”自动删除，不要求每次修复另建归档台账。
 
-## 6. 目标拓扑（第一轮完成后）
+## 6. 拓扑
 
+第一轮之后仓库根目录只有下面这些条目，policy 的 `repository_root_entries` 列的正是它们（6.3）。
 `apps/` 只放产品，`services/` 放由 Hub 启动的服务，`packages/` 放库。
 
 ```text
 <source-root>/
 ├─ apps/monkeyhub/                  产品：api/ web/ desktop/ installer/ assets/ run.py launch-hub.ps1
 │  └─ web/                          单一源根：src/ test/ scripts/ tools/ assets/
-├─ services/project-runtime/        src/project_runtime/  tests/  README.md  requirements.txt
+├─ services/project-runtime/        src/project_runtime/  tests/  README.md  requirements.txt  pyproject.toml
 ├─ packages/
 │  ├─ archflow/                     src/archflow/{contracts,project,state,semantics,validation,submission,ports,relations,adapters}
 │  ├─ monkeyarch/                   src/monkeyarch/（第一轮保持原内部结构）
@@ -150,30 +148,31 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
 │  └─ web-shared/                   src/（Hub web 用相对路径引用）
 ├─ labs/                            包名保持 snake_case
 ├─ probes/                          不改名
-├─ tests/                           只留跨 owner 的测试，如 integration/、packaging/
-├─ tools/{dev,project,governance,release,benchmarks}/   模块名保持 snake_case
+├─ tests/                           只留跨 owner 的测试：integration/、packaging/
+├─ tools/{dev,project,governance,release,benchmarks}/   模块名保持 snake_case；测 tools 的在 tools/tests/
 ├─ scripts/dev/
 ├─ docs/{architecture,product,protocols,development,design,research,audits,decisions,prototypes}/ 与 README.md
-└─ governance/                      三个 JSON 保持原名
+├─ governance/                      三个 JSON 保持原名
+├─ .github/  .claude/  .codex/      CI 工作流与 PR 模板；Claude、Codex 的仓库配置
+└─ 根文件                           AGENTS.md  CLA.md  CONTRIBUTING.md  LICENSE  LICENSING.md  OPEN_MONKEYHUB.cmd
+                                    README.md  SECURITY.md  conftest.py  pyproject.toml  .gitignore
 ```
 
 - 每个 Python 包是 `packages/<包名>/`，含 `src/<包名>/`、自己的 `pyproject.toml` 和只测本包的 `tests/`。
-  包的导入名不变：仍是 `archflow`、`monkeyarch`、`monkeydiagram`、`monkeymonitor`、`monkeycontrol`、`monkeyfab`。
-  Runtime 改名为 `project_runtime`（原 `archflow_studio_api`）；tools 分组后导入路径变为 `tools.<组>.<模块>`。
-- `src/` 布局的导入方式按场景区分（#488，已随 MonkeyDiagram 落地）：安装包把 `packages/<包名>/src/<包名>` 复制到包根
-  （`tools/release/package_monkeyapps.py` 的 `BUNDLED_PACKAGES`），`python313._pth` 不变（Runtime 按仓库相对路径
-  `services/project-runtime/src/project_runtime` 放入安装包，`._pth` 为它改了一行 `..\..\services\project-runtime\src`；
-  MonkeyFab 在安装包内仍是已安装更新器要求的 `apps/monkeyfab/`，Hub 按检出或安装包各自的位置调用它）；
+  包的导入名没变：仍是 `archflow`、`monkeyarch`、`monkeydiagram`、`monkeymonitor`、`monkeycontrol`、`monkeyfab`。
+  Runtime 的包名是 `project_runtime`（#491 之前是 `archflow_studio_api`）；tools 的导入路径是 `tools.<组>.<模块>`。
+- `src/` 布局的导入方式按场景区分（#488）：安装包里的位置见 6.2；
   CI 逐包 `pip install -e`（Runtime 的依赖仍由 `services/project-runtime/requirements.txt` 安装，它的 `pyproject.toml`
   从同一文件读依赖），根 `pyproject.toml` 只剩开发与测试配置；本地开发按检出读取 policy 的 `python_source_roots`，把本检出的源码根放到
   `sys.path` 最前：根 `conftest.py`、`tests/__init__.py`、导入领域包的 tools、Hub 的测试以及测试与浏览器测试另起的
   Python 进程调用 `tools/dev/source_roots.py`（只测一个包的子进程直接用本包的 `src`），`apps/monkeyhub/run.py`、MCP 启动与
   Runtime 包在能导入任何东西之前自己读同一张表；Runtime 的测试包先把服务的 `src` 放上 `sys.path`，再导入 Runtime 包。不在共享解释器上做
   editable install，否则几十个 worktree 会互相串用代码。安装包不带 policy，生产入口在那里不改 `sys.path`，只由 `._pth` 决定。
-- 根 `tests/` 只保留跨 owner 的测试；只属于一个包或服务的测试随它搬走，基准驱动去 `tools/benchmarks/`。
-- `docs/` 根目录只剩 `README.md` 索引；其余文档按类别放进子目录，ADR 改为 `docs/decisions/NNN-*.md`。
+- 根 `tests/` 只保留跨 owner 的测试；只属于一个包或服务的测试在它自己的 `tests/`，测 tools 的在 `tools/tests/`，
+  基准驱动在 `tools/benchmarks/`。
+- `docs/` 根目录只有 `README.md` 索引；其余文档在类别子目录里，决定记录是 `docs/decisions/NNN-*.md`。
 
-第二轮做内部拆分，在第一轮之后每项另开 Issue、单独 PR，范围在开工前确认。候选项有：CAD 从
+第二轮做内部拆分，每项另开 Issue、单独 PR，范围在开工前确认。候选项有：CAD 从
 `packages/archflow/src/archflow/adapters/` 抽成 `packages/monkeycad/`（第一轮的 Step 0，#485，先把 CAD 的版本声明移进内核）、
 MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 owner、`hub.shell` 分组、模块 ID 规范化。
 第一轮不改模块 ID：R1-9（#495）分组后 `tools.*` 仍是原 ID（如 `tools.archcheck`），只更新 `owner_path` 等路径，随 ID 规范化一起调整。
@@ -190,20 +189,52 @@ MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 
 以下只搬不改：P036、StateRecord、Stage／candidate／HEAD、协议与 API 路径、settings 文件的位置与格式、
 已有用户数据。看起来像旧名、但已写入数据或线上接口的名字也保留：`studio-*` 记录类型和 run id、
 `archflow-studio.*` localStorage 键、`service: "archflow-studio-api"`、`studioPort`、`/studio/`、
-`ARCHFLOW_STUDIO_*`。全局替换只针对两个字面值：`archflow_studio_api` 和 `apps/archflow-studio/api`。
+`ARCHFLOW_STUDIO_*`。Runtime 改名（R1-5）只替换了 `archflow_studio_api` 和 `apps/archflow-studio/api` 两个字面值。
 
-## 7. 第一轮：只搬迁
+### 6.2 安装包里的位置
 
-每条 lane 都遵守：
+安装包（`tools/release/package_monkeyapps.py`）里有两处 Python 源码有意不放在仓库路径：
+
+| 仓库 | 安装包内 | 为什么 |
+| --- | --- | --- |
+| `packages/<包名>/src/<包名>/`：archflow、monkeyarch、monkeydiagram、monkeymonitor、monkeycontrol | 包根 `<包名>/`（`BUNDLED_PACKAGES`） | 内置解释器的 `python313._pth` 用 `..\..` 找到它们。第一轮只搬仓库、不动安装包布局，所以这些搬迁既没改 `._pth`，也没改已安装版本里这些文件的位置 |
+| `packages/monkeyfab/` | `apps/monkeyfab/`（`FAB_BUNDLE`） | 已安装更新器的 `REQUIRED_FILES`（`apps/monkeyhub/installer/patch.py`）和 `install.ps1` 的必需文件列出 `apps/monkeyfab/src/monkeyfab/__main__.py` 与 `apps/monkeyfab/pyproject.toml`，已装版本拒收缺了它们的安装包；`._pth` 也列出 `..\..\apps\monkeyfab\src`。Hub 在检出里用 `packages/monkeyfab/src`，在安装包里用 `apps/monkeyfab/src`（`monkeyhub_api/fabrication.py` 的 `FAB_SOURCES`） |
+
+Project Runtime 自 #491 起按仓库路径 `services/project-runtime/src/project_runtime` 进入安装包：`._pth` 为它加了
+`..\..\services\project-runtime\src`，随补丁送达，已安装更新器不检查 Runtime 的路径。Hub 的 `api/`、`installer/`、
+`assets/` 与随带的 `tools/project/{create_project,run_project}.py`、`tools/dev/source_roots.py` 也在仓库路径。
+让五个包回到仓库路径，要像 #491 那样改 `._pth` 并随补丁发出；MonkeyFab 则要先让已安装的更新器不再要求
+`apps/monkeyfab/`。两者都不属于第一轮。
+
+### 6.3 archcheck 如何守住布局
+
+`governance/architecture_policy.json` 里的这些键描述布局，改目录的 PR 随之修改，archcheck 把遗漏报成 finding：
+
+| 键 | 含义与改目录时要做的事 |
+| --- | --- |
+| `repository_root_entries` | 根目录的完整清单：第 6 节的目录加上根文件。`ROOT_ENTRY` 按 `git ls-files` 检查，被 git 忽略的本地文件不算；清单外的条目都是 finding，搬回根目录的包也一样 |
+| `python_source_roots` | 模块导入名从哪一级目录开始算，当前是 `.`、`services/project-runtime/src`、`apps/monkeyhub/api`、`packages/monkeyfab/src`、`packages/monkeydiagram/src`、`packages/archflow/src`、`packages/monkeyarch/src`、`packages/monkeymonitor/src`、`packages/monkeycontrol/src`。这是唯一的清单：本地开发的各入口按检出读它（第 6 节）。新的 src 布局包加上自己的 `packages/<包名>/src`；含受检 Python 的 `src` 目录不在表里时报 `POLICY_PATH_MISSING` |
+| `checked_source_roots`、`forbidden_layer_imports` 的 `source` | `packages/` 下的包：检查根写包根 `packages/<包名>`，包的层规则 `source` 写 `packages/<包名>/src/<包名>`，`packages/<包名>/tests` 另有一条不导入根 `tests`、`labs`、`archive` 的规则，也和根 `tests/` 一样列入 `shared_write_scope`。Runtime 是服务：检查根和层规则的 `source` 都写服务根 `services/project-runtime`，包与它的 `tests/` 同受一条规则约束，`services/project-runtime/tests/` 列入 `shared_write_scope`。路径不存在、检查根下没有 Python 源码、或层规则匹配不到任何受检文件时报 `POLICY_PATH_MISSING`；`allowed_write_sites` 与 `allowed_authority_symbols` 的文件缺失时 archcheck 直接以错误退出 |
+
+module registry 里的路径同样必须存在：`owner_path`（`REGISTRY_OWNER_MISSING`）、`tests`（`REGISTRY_TEST_MISSING`），
+以及 `files`、`used_by`（路径或模块 id）、`spine`、interface 实现文件和 capability 测试（`REGISTRY_PATH_MISSING`）。
+registry 路径不写通配符。
+
+docs 树自 R1-8 起按 `git ls-files` 检查，被 git 忽略的本地笔记不算：根目录只有 `README.md`（`DOCS_ROOT`）；文档名是小写 kebab-case 的 Markdown，决定记录是 `NNN-kebab.md`，目录名是 kebab-case，文件名不以日期开头（kebab 正则本身接受 `2026-09-28-x.md`，所以日期另有一条规则），非 Markdown 文件只在 `docs/prototypes/`（`DOC_NAME`）。
+
+## 7. 第一轮记录：只搬迁
+
+第一轮（#484–#496）已全部落地。每条 lane 都遵守了：
 
 - import、路径和链接随文件在同一个 PR 里改到新位置；不留兼容 shim、别名包、转发存根或占位文档。
 - registry、policy、CI、打包器和全部引用方与对应搬迁在同一个 PR 里落地；配置的路径缺失时 archcheck 报错，不跳过。
-- 安装包内部布局第一轮不变：打包器把新源码路径映射回原位置，已安装更新器的 `REQUIRED_FILES` 和 `updates.rs` 不改。
+- 已安装更新器的 `REQUIRED_FILES` 和 `updates.rs` 不改：打包器把搬走的五个包映射回包根、把 MonkeyFab 映射回
+  `apps/monkeyfab/`；Runtime、Hub 图标和随带的 tools 在安装包里也换到了仓库路径（6.2）。
 - 在途 PR 冻结到拓扑落地，之后按新路径重放。
 
 ### 7.1 目录级迁移映射
 
-| 当前 | 目标 | Issue |
+| 原位置 | 现位置 | Issue |
 | --- | --- | --- |
 | `archflow_studio_api` 中 Hub 设置的持久化，以及 `routes/settings.py`、`transport/settings.py` | `apps/monkeyhub/api/monkeyhub_api/settings/`；Runtime 自己的 `GET/PUT /api/settings/user` 与 `user-settings` 能力退役 | #486（已落地） |
 | `apps/shared-web/` | `packages/web-shared/` | #487（已落地） |
@@ -217,7 +248,7 @@ MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 
 | `apps/monkeyhub/web/workspaces/src/`、`workspaces/test/` | `apps/monkeyhub/web/src/`、`web/test/`，按子树平移，不改文件名；会与 Hub 自己的文件同名的放进各自目录：`api/` → `src/api/project-runtime/`，`styles.css` → `src/app/styles.css` | #492（已落地） |
 | `apps/monkeyhub/web/workspaces/{scripts,tools,assets}/` | `apps/monkeyhub/web/{scripts,tools,assets}/`；Runtime 的 OpenAPI schema 生成到 `web/.generated/project-runtime/` | #492（已落地） |
 | 根 `tests/` 中只测一个包、且不借用其他测试 helper 的文件（含 `tests/monkeycontrol/`） | `packages/<包名>/tests/`，随该包搬迁 | #488–#490（已落地） |
-| 根 `tests/` 中其余测试 | 只属于一个 owner 的去该 owner 的 `tests/`；互相借用 helper 的一组整体进 `tests/integration/`；测 tools 的进 `tools/tests/`；打包测试进 `tests/packaging/`；基准驱动与数据随 #495 进 `tools/benchmarks/` | #493 |
+| 根 `tests/` 中其余测试 | 只属于一个 owner 的去该 owner 的 `tests/`；互相借用 helper 的一组整体进 `tests/integration/`；测 tools 的进 `tools/tests/`；打包测试进 `tests/packaging/`；基准驱动与数据随 #495 进 `tools/benchmarks/` | #493（已落地） |
 | `docs/` 根目录的大写与日期前缀文件、`docs/testing/` | `docs/{architecture,product,protocols,development,design,research,audits}/`，小写 kebab 文件名；新增 `docs/README.md` | #494（已落地） |
 | `docs/adr/ADR-NNN-*.md`、`docs/CANONICAL_SPINE.md` | `docs/decisions/NNN-*.md`；`CANONICAL_SPINE` 并入 `001` | #494（已落地） |
 | `docs/REPO_LAYOUT.md`（本文） | `docs/architecture/repository-layout.md`；policy 的 `unclaimed_write_scope` 与 archcheck 的 `ROOT_ENTRY` 提示同步 | #494（已落地） |
@@ -245,28 +276,8 @@ MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 
 | R1-7 | #493 | 测试随 owner：单一 owner 的测试进该 owner 的 `tests/`，测 tools 的进 `tools/tests/`，互借 helper 的一组整体进 `tests/integration/`，打包测试进 `tests/packaging/`。已落地 | R1-4、R1-5：测试要进的包和服务目录已存在 |
 | R1-8 | #494 | docs 分类与命名，打开 docs 检查。已落地 | R1-2 至 R1-5，免得指向代码的链接改两遍 |
 | R1-9 | #495 | tools 按用途分组：`tools/{dev,project,governance,release,benchmarks}/`，`tests/monkeymonitor/` 的基准驱动进 `tools/benchmarks/`。已落地 | R1-5 |
-| R1-10 | #496 | 去掉 `legacy_root_packages` 棘轮，确认没有遗留目录和引用，发布第一轮报告 | 以上全部 |
+| R1-10 | #496 | 去掉 `legacy_root_packages` 棘轮，`repository_root_entries` 成为根目录的完整清单；去掉 CI projection 检查为 R1-3 至 R1-5 的 PR 同时认旧布局而加的逻辑；扫清仍指向旧路径的当前引用，发布第一轮报告。已落地 | 以上全部 |
 
-archflow 搬迁（R1-3）和 Runtime 改名（R1-5）这两个 PR 里，CI 的 projection-parity 检查用 base 的旧布局和候选的新布局
-同时运行，需要临时识别两种布局：R1-3 起 `tools/benchmarks/projection_check.py` 的 `_kernel_source` 与 verify.yml 生成 base
-项目的那一步都认 archflow 在代码根或在 `packages/archflow/src`，R1-5 起两处也认 Runtime 在 `apps/archflow-studio/api`
-（`archflow_studio_api`）或在 `services/project-runtime/src`（`project_runtime`，`_runtime_source`）；所有 base 都是
-新布局之后，下一个 PR 删除这段逻辑。
 每次搬迁的完成标准是新位置能独立测试、宿主经明确入口调用、原使用流程仍可运行，不是新目录已经出现。
 
-### 7.3 archcheck 如何守住布局
-
-`governance/architecture_policy.json` 里的这些键随搬迁修改，archcheck 把遗漏报成 finding：
-
-| 键 | 含义与每次搬迁要做的事 |
-| --- | --- |
-| `repository_root_entries` | 根目录允许的条目：第 6 节的目标目录加上现有根文件。`ROOT_ENTRY` 按 `git ls-files` 检查，被 git 忽略的本地文件不算 |
-| `legacy_root_packages` | 旧根包的棘轮（#490 之后为空）。每次搬迁删掉自己那一项；包已离开根目录而这里还列着，同样报 `ROOT_ENTRY`。R1-10 删除这个键 |
-| `python_source_roots` | 模块导入名从哪一级目录开始算，当前是 `.`、`services/project-runtime/src`、`apps/monkeyhub/api`、`packages/monkeyfab/src`、`packages/monkeydiagram/src`、`packages/archflow/src`、`packages/monkeyarch/src`、`packages/monkeymonitor/src`、`packages/monkeycontrol/src`。这是唯一的清单：本地开发的各入口按检出读它（第 6 节）。src 布局的搬迁加上自己的 `packages/<包名>/src`，R1-4 用 `packages/monkeyfab/src` 替换了 `apps/monkeyfab/src`，R1-5 用 `services/project-runtime/src` 替换了 `apps/archflow-studio/api`；含受检 Python 的 `src` 目录不在表里时报 `POLICY_PATH_MISSING` |
-| `checked_source_roots`、`forbidden_layer_imports` 的 `source` | 搬到 `packages/` 的包：检查根写包根 `packages/<包名>`，包的层规则 `source` 写 `packages/<包名>/src/<包名>`，`packages/<包名>/tests` 另有一条不导入根 `tests`、`labs`、`archive` 的规则，也和根 `tests/` 一样列入 `shared_write_scope`。Runtime 是服务：检查根和层规则的 `source` 都写服务根 `services/project-runtime`，包与它的 `tests/` 同受一条规则约束（与原来的 api 目录相同），`services/project-runtime/tests/` 列入 `shared_write_scope`。路径不存在、检查根下没有 Python 源码、或层规则匹配不到任何受检文件时报 `POLICY_PATH_MISSING`；`allowed_write_sites` 与 `allowed_authority_symbols` 的文件缺失时 archcheck 直接以错误退出 |
-
-module registry 里的路径同样必须存在：`owner_path`（`REGISTRY_OWNER_MISSING`）、`tests`（`REGISTRY_TEST_MISSING`），
-以及 `files`、`used_by`（路径或模块 id）、`spine`、interface 实现文件和 capability 测试（`REGISTRY_PATH_MISSING`）。
-registry 路径不写通配符。
-
-docs 树自 R1-8 起按 `git ls-files` 检查，被 git 忽略的本地笔记不算：根目录只有 `README.md`（`DOCS_ROOT`）；文档名是小写 kebab-case 的 Markdown，决定记录是 `NNN-kebab.md`，目录名是 kebab-case，文件名不以日期开头（kebab 正则本身接受 `2026-09-28-x.md`，所以日期另有一条规则），非 Markdown 文件只在 `docs/prototypes/`（`DOC_NAME`）。
+第一轮没有留下兼容层：没有 shim、别名包、转发存根或占位文档，也没有按旧布局运行的代码路径。旧路径只作为历史出现：7.1 的映射、注明日期或基线的决定记录、设计、审计与探针文字、钉在具体提交上的永久链接、archcheck 为 #358 之前的提交保留的 `LEGACY_*` 读法、按 sha 核对的检索语料、在旧提交上运行旧布局的跨版本记忆测试，以及 6.2 所列安装包里的位置。`tools/tests` 在临时仓库里搭的合成目录树不指向本仓库，其中不少沿用搬迁前的根布局。

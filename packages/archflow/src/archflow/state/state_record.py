@@ -499,7 +499,7 @@ class StateRecord:
                     if item not in allowed:
                         raise StateRecordError(f"component {component.entity_id}: {field_name} names {item!r}, which is not registered; nearest: {', '.join(suggest_semantic(item)) or 'none close'}")
             # Facets are the component's only L3 meaning (spec §3.4): namespaced
-            # key/value strings validated against archflow/semantics/facets.py.
+            # key/value strings validated against archflow.semantics.facets.
             # Absence is "no facets yet", not invalid, same as semantic_kind (#400).
             facets = component.fields.get("facets")
             if facets is not None:
