@@ -1,4 +1,23 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-484",
+      "status": "active",
+      "branch": "codex/484-archcheck-guardrails",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-484-archcheck-guardrails",
+      "base_ref": "17ac51d57162cf2eca3f37f4336f32d748656aa2",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "tools.archcheck"
+      ],
+      "write_scope": [
+        "tools/archcheck.py",
+        "docs/REPO_LAYOUT.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
