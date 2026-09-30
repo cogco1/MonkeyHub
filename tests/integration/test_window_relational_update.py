@@ -31,7 +31,7 @@ from archflow.state.state_record import (
     evaluate_parameters,
     resolve_element_bindings,
 )
-from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
+from archflow.state.geometry_program import load_compiled_geometry_program
 from monkeyarch.runtime import project_runner
 from tests.integration import test_project_runner as runner_support
 

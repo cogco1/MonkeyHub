@@ -1043,10 +1043,9 @@
         "the strict provider request and response contracts (the authoring output topology and its function contracts)",
         "the function-contract check itself: parameters against the table for the operation's kind, statements only by shape - an operation's statements are never listed as missing or extra",
         "the bounded round loop, its policy knobs (round cap, bookkeeping completion, progress budget, partial acceptance, stall escalation) and its resume seam",
-        "decoding a provider's full or edit-shaped answer into a typed GeometryProgramProposal without inventing geometry",
+        "decoding a provider's full or edit-shaped answer into a typed GeometryProgramProposal without inventing geometry, through state.geometry_program's body and item decoders",
         "semantic coverage validation of a proposal against the state, commitments, seat scope and required component bindings",
         "the lineage / round / proposal / deferral / escalation records and their persistence through the repository",
-        "reloading one exact compiled program from its retained record",
         "the planar_surface function contract: one explicit POINTS3 boundary, optional datum-relative base_offset and no input objects",
         "the retained CURVE function contract accepts optional datum-relative base_offset beside points and basis; the existing polyline representation serves drawn curves",
         "the extrusion and loft function contracts' optional retain_for_inspection, and the loft's optional hidden_for_inspection"
@@ -1056,7 +1055,8 @@
         "the request and receipt contracts it invokes a provider with - ports.model",
         "accepting a stage or writing canonical state - it holds no hard-gate or canonical-write authority",
         "producing geometry from records itself - capabilities.element_producers (the runner feeds it an authored proposal)",
-        "any CAD translation or execution - archflow.adapters"
+        "any CAD translation or execution - archflow.adapters",
+        "reading retained CompiledGeometryProgram and GeometryProgramProposal records - state.geometry_program"
       ],
       "inputs": [
         "StateRecord or DevelopedDesignState",
@@ -1078,7 +1078,6 @@
         "produce_geometry_program_proposal",
         "resume_geometry_program_proposal",
         "load_geometry_proposal_lineage",
-        "load_compiled_geometry_program",
         "proposal_authoring_output",
         "proposal_edit_authoring_output",
         "GeometryProposalPolicy",
@@ -3773,7 +3772,7 @@
     {
       "module_id": "state.geometry_program",
       "owner_path": "packages/archflow/src/archflow/state/geometry_program.py",
-      "purpose": "The typed, platform-neutral geometry program (operations, frames, assemblies, assets, datums) and the published project levels and grids.",
+      "purpose": "The typed, platform-neutral geometry program (operations, frames, assemblies, assets, datums), the published project levels and grids, and the reader of the program's retained records.",
       "owns": [
         "the generic operation and parameter vocabularies (GeometryOperationKind, GeometryParameterKind, GeometryOperation, GeometryParameter)",
         "GeometryOperation.statements: the declared, non-geometric facts an operation carries to the export as archflow:<key> user strings - identifier keys, text values, deterministic order",
@@ -3786,6 +3785,8 @@
         "the program proposal record and its digest (GeometryProgramProposal)",
         "project levels and grid axes as published datums (ProjectLevel, ProjectLevels, ProjectGridAxis, ProjectGrids, verify_project_datums)",
         "compiled geometry program/object values, asset substitution receipts and their retained serialization shared by the MonkeyArch compiler and ArchFlow CAD adapters",
+        "reading retained CompiledGeometryProgram@2/@3 and GeometryProgramProposal@2 records back exactly, refusing a compiled program that is not the canonical rendering of what it rebuilds (load_compiled_geometry_program, load_geometry_program_proposal)",
+        "decoding a proposal body and each of its item lists for one named state, raise-first or collecting every failure (decode_proposal_body, decode_proposal_items)",
         "PLANAR_SURFACE: one explicitly closed planar polygon without thickness; operation construction rejects open, non-planar, self-intersecting and degenerate boundaries",
         "which objects a program delivers (delivered_object_ids): outputs nothing consumes, except unretained curves, and outputs whose operation states retain_for_inspection"
       ],
@@ -3801,7 +3802,8 @@
         "operation and parameter declarations",
         "level/axis declarations",
         "state digest",
-        "logical refs"
+        "logical refs",
+        "retained CompiledGeometryProgram@2/@3 and GeometryProgramProposal@2 records"
       ],
       "outputs": [
         "GeometryOperation",
@@ -3809,7 +3811,8 @@
         "GeometryProgramProposal",
         "InterfaceDatum",
         "ProjectLevels",
-        "ProjectGrids"
+        "ProjectGrids",
+        "CompiledGeometryProgram and GeometryProgramProposal reloaded from their retained records"
       ],
       "public_api": [
         "GeometryProgramProposal",
@@ -3846,7 +3849,11 @@
         "CompiledGeometryObject",
         "AssetSubstitutionReceipt",
         "GeometryCompilationError",
-        "delivered_object_ids"
+        "delivered_object_ids",
+        "load_compiled_geometry_program",
+        "load_geometry_program_proposal",
+        "decode_proposal_body",
+        "decode_proposal_items"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3864,7 +3871,11 @@
         "packages/monkeyarch/src/monkeyarch/capabilities/reference_resolver.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py",
         "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py"
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "services/project-runtime/src/project_runtime/application/drawing_plans.py",
+        "services/project-runtime/src/project_runtime/application/artifacts.py",
+        "services/project-runtime/src/project_runtime/application/candidate.py",
+        "tools/project/verify_state_record.py"
       ],
       "invariants": [
         "the operation vocabulary is generic: no project, style or external-tool routing authority",
@@ -3875,7 +3886,8 @@
         "a proposal names the design-state digest it was produced from",
         "never writes the filesystem",
         "an operation may name no semantic binding; allowing it changes no retained serialization",
-        "a hosted assembly may cite no interface; one that cites any serializes exactly as before"
+        "a hosted assembly may cite no interface; one that cites any serializes exactly as before",
+        "a retained record reloads exactly or raises GeometryProgramError; a @2 compiled program reloads with empty datum fields"
       ],
       "status": "canonical",
       "tests": [
@@ -3886,7 +3898,7 @@
         "tests/integration/test_occt_execution.py",
         "tests/integration/test_wall_realization.py"
       ],
-      "notes": "Defines its own digest_value/require_sha256 instead of using contracts.canonical, a second digest implementation on the spine; at 1564 lines it is the largest contract module."
+      "notes": "The values and the reader of their retained records (#513) are one contract; every digest comes from contracts.canonical."
     },
     {
       "module_id": "state.model",
@@ -4510,7 +4522,7 @@
         "adapters.three_dm_inspector",
         "archflow.project.refs",
         "archflow.project.repository",
-        "capabilities.geometry_proposal",
+        "state.geometry_program",
         "project.layout",
         "project.ports",
         "project.record_kinds",
@@ -5086,6 +5098,7 @@
         "project.repository",
         "runtime.project_runner",
         "state.developed_design",
+        "state.geometry_program",
         "state.operational_state",
         "state.record",
         "state.stage_workflow",
@@ -6524,6 +6537,7 @@
         "project.refs",
         "project.repository",
         "runtime.project_runner",
+        "state.geometry_program",
         "state.operational_state",
         "state.record",
         "state.stage_workflow",

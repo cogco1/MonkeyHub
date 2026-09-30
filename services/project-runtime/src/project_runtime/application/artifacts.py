@@ -1634,7 +1634,7 @@ def export_rhino_work_model(
     )
     from archflow.adapters.cad_program import CadTranslationError
     from archflow.project.refs import BranchRef
-    from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
+    from archflow.state.geometry_program import load_compiled_geometry_program
 
     with _work_model_lock:
         listing = list_artifacts(binding, run_id=run_id)

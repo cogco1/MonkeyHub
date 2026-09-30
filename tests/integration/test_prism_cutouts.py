@@ -134,7 +134,7 @@ class PrismCutoutRunTests(unittest.TestCase):
     _run = runner_support.IncrementalSourceRunTests.run_source
 
     def test_saved_source_can_remove_and_restore_a_panel_while_reusing_its_neighbour(self):
-        from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
+        from archflow.state.geometry_program import load_compiled_geometry_program
 
         for patcher in runner_support._no_rhino():
             patcher.start()
