@@ -26,7 +26,8 @@
         "labs/checkpoint_critique/provider.py",
         "docs/architecture/project-runtime.md",
         "docs/design/hub-interaction.md",
-        "docs/development/nightly-release.md"
+        "docs/development/nightly-release.md",
+        "docs/architecture/repository-layout.md"
       ],
       "depends_on": []
     }
