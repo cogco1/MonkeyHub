@@ -39,7 +39,8 @@
         "labs/candidate_evaluation/retained_fixture.py",
         "tools/governance/archcheck.py",
         "docs/architecture/project-runtime.md",
-        "docs/architecture/repository-layout.md"
+        "docs/architecture/repository-layout.md",
+        "services/project-runtime/README.md"
       ],
       "depends_on": []
     }
