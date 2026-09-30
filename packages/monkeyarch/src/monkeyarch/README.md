@@ -6,6 +6,23 @@ The workflow consumes shared ArchFlow facts, geometry values and P036 project po
 
 Owners and public contracts: [system map](../../../../docs/architecture/system-map.md). File responsibilities: [repository layout](../../../../docs/architecture/repository-layout.md).
 
+## Layers
+
+The package is layered by whole file (#516), and imports run one way: `application` may import
+the other three layers, `authoring` may import `domain`, and `domain` and `compilation` import no
+other layer. Only `application` retains records, calls a model or runs CAD; the architecture
+policy's `forbidden_layer_imports` holds each of these rules.
+
+| Layer | Modules | What it does |
+| --- | --- | --- |
+| `domain/` | `wall_solver`, `opening_solver`, `reference_resolver`, `relation_checks`, `massing_metrics`, `domain_readiness`, `discipline_seats` | Plain values from a State Record: walls and the voids they host, the doors and windows that fill them, references resolved to plan points and datums, declared relations measured against realized bounds, massing measures, what a technical domain may read, and the seats that divide authoring |
+| `authoring/` | `element_producers`, `producer_signatures`, `element_reindex`, `construction/` | Element@1 rows produced into geometry operations, datums and relations; the authoring contracts the producers advertise; Element@1 drafts recovered from an exported model; the agent's bounded construction script and its lowering to rows |
+| `compilation/` | `geometry` | The one compiler: a neutral proposal bound to an exact state, its operations ordered and its objects digested, or an explicit rejection |
+| `application/` | `project_runner`, `geometry_proposal` | `run_project` binds a record to a run, projects the developed-design view, runs the seats through the producers and the compiler, checks relations, exports through `monkeycad`, writes the stage closure and exit binding, and retains everything through P036; `geometry_proposal` holds the bounded rounds a provider answers |
+
+The runner writes; it never decides what the design is. The shared project repository remains the only
+persistent writer, and drawing execution belongs to `monkeydiagram`, coordinated by the application host.
+
 ## Window width and lintel relations
 
 Use the existing `StateRecord.Parameter` expressions and an Element's explicit

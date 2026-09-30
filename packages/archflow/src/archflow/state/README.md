@@ -1,6 +1,6 @@
 # state
 
-State: the record and its projections. `StateRecord@1` (content identity), the developed design view (binding identity), geometry programs, the stage workflow and its ladder, the design portfolio, commitments and operational state, the dependency edges and their one closure, the program sheet and shared compiled geometry values. Massing calculations live in `monkeyarch.capabilities.massing_metrics`.
+State: the record and its projections. `StateRecord@1` (content identity), the developed design view (binding identity), geometry programs, the stage workflow and its ladder, the design portfolio, commitments and operational state, the dependency edges and their one closure, the program sheet and shared compiled geometry values. Massing calculations live in `monkeyarch.domain.massing_metrics`.
 
 Modules and owners: `docs/architecture/system-map.md` (rendered from `governance/module_registry.json`; one owner per capability). This README says what the package is for; it does not repeat the map.
 

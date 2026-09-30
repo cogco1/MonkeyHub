@@ -31,10 +31,10 @@ created: 2026-09-28
 | --- | --- |
 | `GP` | `packages/archflow/src/archflow/state/geometry_program.py` |
 | `SR` | `packages/archflow/src/archflow/state/state_record.py` |
-| `COMP` | `packages/monkeyarch/src/monkeyarch/compilers/geometry.py` |
-| `PROP` | `packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py` |
-| `PROD` | `packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py` |
-| `WALL` | `packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py` |
+| `COMP` | `packages/monkeyarch/src/monkeyarch/compilation/geometry.py` |
+| `PROP` | `packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py` |
+| `PROD` | `packages/monkeyarch/src/monkeyarch/authoring/element_producers.py` |
+| `WALL` | `packages/monkeyarch/src/monkeyarch/domain/wall_solver.py` |
 | `CADP` | `packages/monkeycad/src/monkeycad/cad_program.py` |
 | `CADX` | `packages/monkeycad/src/monkeycad/cad_execution.py` |
 | `OCCT` | `packages/monkeycad/src/monkeycad/occt_backend.py` |
@@ -283,7 +283,7 @@ Additional tests:
 
 ## 7. Write scope
 
-The lane claims these paths (`governance/work_registry.json`): `GP`, `SR`, `COMP`, `PROP`, `PROD`, `WALL`, `packages/monkeyarch/src/monkeyarch/capabilities/opening_solver.py`, `CADP`, `packages/monkeycad/src/monkeycad/cad_patch.py`, `CADX`, `OCCT`, `ELEV`, and in `services/project-runtime/src/project_runtime/application/`, `drawing_plans.py` and `drawings.py`. Tests fall under the shared scope.
+The lane claims these paths (`governance/work_registry.json`): `GP`, `SR`, `COMP`, `PROP`, `PROD`, `WALL`, `packages/monkeyarch/src/monkeyarch/domain/opening_solver.py`, `CADP`, `packages/monkeycad/src/monkeycad/cad_patch.py`, `CADX`, `OCCT`, `ELEV`, and in `services/project-runtime/src/project_runtime/application/`, `drawing_plans.py` and `drawings.py`. Tests fall under the shared scope.
 
 Open pull requests touch some of the same files in other functions:
 - #420 (GH-402): `COMP`, `PROP` and `SR`;
