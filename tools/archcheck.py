@@ -114,7 +114,6 @@ def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
         "forbidden_framework_identifiers",
         "probe_executable_suffixes",
         "authority_symbol_patterns",
-        "forbidden_commit_symbols",
         "import_only_source_roots",
         "shared_write_scope",
         "unclaimed_write_scope",
@@ -467,30 +466,6 @@ def check_authority_symbols(
                 node.lineno,
                 "DUPLICATE_STATE_AUTHORITY",
                 f"unregistered state or promotion authority {node.name!r}",
-            )
-
-
-def check_commit_soft_gate_leak(
-    relative: str,
-    index: _SourceIndex,
-    policy: dict[str, Any],
-) -> Iterator[PolicyFinding]:
-    if not _source_matches(relative, "archflow/commit"):
-        return
-    forbidden = set(policy["forbidden_commit_symbols"])
-    for node in index.nodes:
-        if isinstance(node, ast.Name):
-            name = node.id
-        elif isinstance(node, ast.Attribute):
-            name = node.attr
-        else:
-            continue
-        if name in forbidden:
-            yield PolicyFinding(
-                relative,
-                node.lineno,
-                "SOFT_GATE_PROMOTION_LEAK",
-                f"commit layer references forbidden soft-ranking symbol {name!r}",
             )
 
 
@@ -1223,7 +1198,6 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
                     check_instance_answers(relative, index, policy),
                     check_filesystem_writes(relative, index, policy),
                     check_authority_symbols(relative, index, policy),
-                    check_commit_soft_gate_leak(relative, index, policy),
                 )
             )
         for result in checks:

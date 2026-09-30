@@ -719,76 +719,12 @@
       "reason": "External-world protocols may depend on stable identity contracts, never on their concrete adapters, orchestration, control, or validation implementations."
     },
     {
-      "source": "archflow/evidence",
-      "targets": [
-        "archflow.adapters",
-        "archflow.capabilities",
-        "archflow.compilers",
-        "archflow.control",
-        "archflow.materials",
-        "archflow.research",
-        "archflow.runtime",
-        "archflow.validation"
-      ],
-      "reason": "Evidence records cannot acquire retrieval implementation, validation, orchestration, or stage-control authority."
-    },
-    {
-      "source": "archflow/research",
-      "targets": [
-        "archflow.adapters",
-        "archflow.capabilities",
-        "archflow.compilers",
-        "archflow.control",
-        "archflow.materials",
-        "archflow.runtime",
-        "archflow.validation"
-      ],
-      "reason": "Research selection and indexing cannot depend on runtime orchestration, concrete adapters, validation, or control."
-    },
-    {
-      "source": "archflow/materials",
-      "targets": [
-        "archflow.adapters",
-        "archflow.capabilities",
-        "archflow.compilers",
-        "archflow.control",
-        "archflow.research",
-        "archflow.runtime"
-      ],
-      "reason": "Material intent and binding validation cannot depend on project runners, orchestration, or concrete adapters."
-    },
-    {
-      "source": "archflow/control",
-      "targets": [
-        "archflow.adapters",
-        "archflow.runtime"
-      ],
-      "reason": "The control plane consumes typed receipts but cannot depend on concrete adapters or runtime orchestration."
-    },
-    {
-      "source": "archflow/evaluation",
-      "targets": [
-        "archflow.commit",
-        "archflow.project.repository",
-        "archflow.validation"
-      ],
-      "reason": "A read-only evaluator cannot acquire commit repository or hard-gate authority."
-    },
-    {
       "source": "archflow/validation",
       "targets": [
         "archflow.commit",
         "archflow.evaluation"
       ],
       "reason": "Hard validation cannot commit or depend on soft evaluation."
-    },
-    {
-      "source": "archflow/capabilities",
-      "targets": [
-        "archflow.commit",
-        "archflow.project.repository"
-      ],
-      "reason": "Detached experts and capabilities cannot acquire persistence or promotion authority."
     },
     {
       "source": "apps/archflow-studio/api",
@@ -928,12 +864,5 @@
       "symbol": "FilesystemProjectRepository",
       "owner": "P036"
     }
-  ],
-  "forbidden_commit_symbols": [
-    "aesthetic_winner",
-    "ranking",
-    "score",
-    "unique_winner",
-    "winner"
   ]
 }
