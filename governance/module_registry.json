@@ -6195,8 +6195,8 @@
       "purpose": "Policy-as-code architecture boundary checks over the source roots, driven by governance/architecture_policy.json.",
       "owns": [
         "loading and validating ArchFlowArchitecturePolicy@1",
-        "the checked-file set for the configured roots and the single AST index per file",
-        "the checks: forbidden imports including archive reverse imports, instance-answer literals, filesystem writes outside allowed functions, forbidden framework identifiers, probe-boundary executables, registry owner/test/public-symbol truth and duplicate owned function bodies",
+        "the checked-file set for the configured roots, without bytecode caches, installed environments or vendored third-party trees, and the single AST index per file",
+        "the checks: forbidden imports including archive reverse imports, instance-answer literals, filesystem writes outside allowed functions, forbidden framework identifiers, probe-boundary executables, configured policy paths that do not exist, the top-level entries Git tracks against the root allowlist and its legacy-package ratchet, registry owner/test/public-symbol truth, every other path the registry names, registry dependencies matched by import names that begin at the policy's python_source_roots, and duplicate owned function bodies",
         "the Finding shape and the JSON/text report and exit code",
         "Validating the live work registry (ArchFlowDevelopmentRegistry@3): GitHub Issue claims only, claimed directly or through lanes, with checkout, base, contributor, paths and dependencies; reporting competing live path and checkout claims; checking each commit against the claim it names in its own registry, and reading commits made before #358 by their card-era rules"
       ],
@@ -6207,7 +6207,7 @@
         "running tests or type checks"
       ],
       "inputs": [
-        "repository root",
+        "repository root, a Git checkout whose index lists the top-level entries",
         "governance/architecture_policy.json",
         "governance/work_registry.json",
         "optional Git base revision and committed policy/registry history"
@@ -6233,6 +6233,8 @@
       "invariants": [
         "no archflow import: the checker parses source and never executes it",
         "a policy that cannot be interpreted deterministically fails ArchitecturePolicyError rather than passing vacuously",
+        "a path the policy configures - checked source root, Python source root, layer-rule source, write site or authority symbol - must exist; a missing one is reported, never skipped as a rule that guards nothing",
+        "the repository root is read from Git's index, so ignored local files never decide it; a legacy root package still listed after it has moved is itself a finding, so the ratchet only shrinks",
         "the file set is stable and de-duplicated, so findings are reproducible",
         "write-scope rules do not apply retroactively before their introduction; later missing or invalid policy cannot disable the check",
         "a changed commit uses the live claim it names in its own registry; only the commit closing that claim may use its first parent's live scope; later scope edits do not change earlier results",
@@ -6244,7 +6246,8 @@
       "status": "canonical",
       "tests": [
         "tests/test_archcheck_scopes.py",
-        "tests/test_archcheck_github_claims.py"
+        "tests/test_archcheck_github_claims.py",
+        "tests/test_archcheck_paths.py"
       ],
       "notes": "Architecture checks parse source without importing application code; scope behavior is verified with disposable Git repositories."
     },

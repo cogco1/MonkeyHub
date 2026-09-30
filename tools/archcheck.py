@@ -1,9 +1,11 @@
 """Fast policy-as-code checks for ArchFlow V4 architecture boundaries.
 
 Two modes. Without arguments it checks the tree: layer imports, filesystem
-write ownership, state authorities, the probe boundary, the module registry,
-and the live work registry -- GitHub Issue claims only, no two of them holding
-the same path or checkout.
+write ownership, state authorities, the probe boundary, the entries Git tracks
+at the repository root, the module registry and every path it names, and the
+live work registry -- GitHub Issue claims only, no two of them holding the
+same path or checkout. A path the policy configures must exist: a rule whose
+path is gone is reported, never skipped.
 
 With ``--changed <base>`` it checks one branch instead, using each commit's
 policy and work registry from Git. Once the scope rule exists in a parent, a
@@ -21,6 +23,7 @@ import argparse
 import ast
 import json
 import ntpath
+import os
 import re
 import subprocess
 import sys
@@ -94,6 +97,18 @@ def _require_string_list(policy: dict[str, Any], field: str) -> list[str]:
     return value
 
 
+def _repository_path(value: str, *, root_allowed: bool = False) -> bool:
+    """Is this a literal repository-relative path written with forward slashes?"""
+
+    if root_allowed and value == ".":
+        return True
+    return not (
+        value.startswith("/")
+        or any(character in value for character in "\\:*?[]{}")
+        or any(part in ("", ".", "..") for part in value.rstrip("/").split("/"))
+    )
+
+
 def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
     if policy.get("schema") != POLICY_SCHEMA:
         raise ArchitecturePolicyError("unsupported architecture policy schema")
@@ -110,6 +125,8 @@ def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
             raise ArchitecturePolicyError(f"{field} must be non-empty text")
     for field in (
         "checked_source_roots",
+        "python_source_roots",
+        "repository_root_entries",
         "forbidden_instance_literals",
         "forbidden_framework_identifiers",
         "probe_executable_suffixes",
@@ -119,6 +136,36 @@ def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
         "unclaimed_write_scope",
     ):
         _require_string_list(policy, field)
+    if "legacy_root_packages" in policy:
+        _require_string_list(policy, "legacy_root_packages")
+    python_roots = policy["python_source_roots"]
+    if len(python_roots) != len(set(python_roots)):
+        raise ArchitecturePolicyError(
+            "python_source_roots must not contain duplicates"
+        )
+    for python_root in python_roots:
+        if not _repository_path(python_root, root_allowed=True):
+            raise ArchitecturePolicyError(
+                f"python_source_roots entry {python_root!r} must be a repository-relative directory"
+            )
+    root_entries = policy["repository_root_entries"]
+    legacy_packages = policy.get("legacy_root_packages", [])
+    for field, names in (
+        ("repository_root_entries", root_entries),
+        ("legacy_root_packages", legacy_packages),
+    ):
+        if len(names) != len(set(names)):
+            raise ArchitecturePolicyError(f"{field} must not contain duplicates")
+        for name in names:
+            if "/" in name or not _repository_path(name):
+                raise ArchitecturePolicyError(
+                    f"{field} entry {name!r} must be one top-level name"
+                )
+    if set(root_entries) & set(legacy_packages):
+        raise ArchitecturePolicyError(
+            "legacy_root_packages must not repeat repository_root_entries: "
+            "the ratchet only shrinks"
+        )
     checked_roots = policy["checked_source_roots"]
     if len(checked_roots) != len(set(checked_roots)):
         raise ArchitecturePolicyError(
@@ -213,19 +260,34 @@ def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
                 )
 
 
+# Directories under a source root that hold no source of this repository:
+# bytecode caches, installed environments and vendored third-party trees, such
+# as apps/monkeyhub/installer/third-party. A checkout may keep some of them
+# untracked (node_modules, a virtualenv), so walking them would also make a
+# local run disagree with CI about code nobody here wrote.
+NOT_SOURCE_DIRECTORIES = frozenset({
+    "__pycache__", ".venv", "node_modules", "site-packages", "third-party", "venv",
+})
+
+
+def _not_source_directory(name: str) -> bool:
+    return name in NOT_SOURCE_DIRECTORIES or name.endswith(".egg-info")
+
+
 def _python_files(root: Path, relative_root: str) -> tuple[Path, ...]:
-    source = root / relative_root
-    if not source.is_dir():
-        return ()
+    """The Python files under one source root; a missing root has none.
+
+    A missing root is not an error here: ``check_policy_paths`` reports it.
+    """
+
+    found: list[Path] = []
+    for directory, subdirectories, files in os.walk(root / relative_root):
+        subdirectories[:] = [
+            name for name in subdirectories if not _not_source_directory(name)
+        ]
+        found.extend(Path(directory, name) for name in files if name.endswith(".py"))
     return tuple(
-        sorted(
-            (
-                path
-                for path in source.rglob("*.py")
-                if "__pycache__" not in path.parts
-            ),
-            key=lambda path: path.relative_to(root).as_posix(),
-        )
+        sorted(found, key=lambda path: path.relative_to(root).as_posix())
     )
 
 
@@ -290,6 +352,64 @@ def _is_import_only(relative: str, policy: dict[str, Any]) -> bool:
         _source_matches(relative, root)
         for root in policy["import_only_source_roots"]
     )
+
+
+def _in_tests(relative: str) -> bool:
+    """Is this repository-relative file part of a test suite?
+
+    Judged on the path inside the repository only, so a checkout that happens
+    to live under some ``tests`` directory is not taken for a suite.
+    """
+
+    return relative.startswith("tests/") or "/tests/" in relative
+
+
+def check_policy_paths(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
+    """A configured path must exist; a rule on a missing path guards nothing.
+
+    A checked source root that is gone, or holds no Python source, is walked as
+    an empty set, and a layer rule whose source matches no checked file never
+    fires: both would pass forever after a move that forgot the policy. The
+    Python source roots name where module import names begin. Write sites and
+    authority symbols are held to the same rule by ``validate_policy``.
+    """
+
+    checked = tuple(
+        path.relative_to(root).as_posix()
+        for path in _checked_python_files(root, policy)
+    )
+    def directory_state(relative: str) -> str | None:
+        target = root / relative
+        if not target.exists():
+            return "does not exist"
+        return None if target.is_dir() else "is not a directory"
+
+    for source_root in policy["checked_source_roots"]:
+        state = directory_state(source_root)
+        if state is None and not any(_source_matches(relative, source_root) for relative in checked):
+            state = "holds no Python source"
+        if state is not None:
+            yield PolicyFinding(
+                ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
+                f"checked_source_roots entry {source_root!r} {state}; nothing under it is checked",
+            )
+    for python_root in policy["python_source_roots"]:
+        state = directory_state(python_root)
+        if state is not None:
+            yield PolicyFinding(
+                ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
+                f"python_source_roots entry {python_root!r} {state}; no module import name begins there",
+            )
+    for index, rule in enumerate(policy["forbidden_layer_imports"]):
+        source = rule["source"]
+        if any(_source_matches(relative, source) for relative in checked):
+            continue
+        exists = (root / source).is_dir() or (root / f"{source.rstrip('/')}.py").is_file()
+        state = "matches no checked Python file" if exists else "does not exist"
+        yield PolicyFinding(
+            ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
+            f"forbidden_layer_imports[{index}] source {source!r} {state}; the rule guards nothing",
+        )
 
 
 def check_imports(
@@ -504,6 +624,38 @@ def check_probe_boundary(root: Path, policy: dict[str, Any]) -> Iterator[PolicyF
         )
 
 
+def check_repository_root(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
+    """The repository root holds only the entries docs/REPO_LAYOUT.md names.
+
+    Read from Git's index, not the filesystem: a checkout also holds ignored
+    caches, build output and private notes that belong to no layout. The root
+    packages that predate ``packages/`` are a ratchet, not an allowance: each
+    move removes its entry from ``legacy_root_packages``, and an entry left
+    there after its package has moved is reported as well, so the root cannot
+    take the package back.
+    """
+
+    allowed = set(policy["repository_root_entries"])
+    legacy = set(policy.get("legacy_root_packages", ()))
+    entries = {
+        path.split("/", 1)[0]
+        for path in _git(root, "ls-files", "-z").split("\0")
+        if path
+    }
+    for entry in sorted(entries - allowed - legacy):
+        yield PolicyFinding(
+            entry, 1, "ROOT_ENTRY",
+            f"{entry!r} is not a repository root entry; put it under an existing "
+            "top-level directory (docs/REPO_LAYOUT.md) or add it to repository_root_entries",
+        )
+    for entry in sorted(legacy - entries):
+        yield PolicyFinding(
+            ARCHITECTURE_POLICY, 1, "ROOT_ENTRY",
+            f"legacy_root_packages still lists {entry!r}, which Git no longer tracks at the "
+            "root; remove it so the ratchet only shrinks",
+        )
+
+
 def _normalized_body(src: str, node: ast.FunctionDef) -> str:
     seg = ast.get_source_segment(src, node) or ""
     seg = re.sub(r'"""[\s\S]*?"""', "", seg)
@@ -512,13 +664,76 @@ def _normalized_body(src: str, node: ast.FunctionDef) -> str:
     return re.sub(r"def \w+", "def F", seg)
 
 
+def _module_name(relative: str, python_source_roots: Iterable[str]) -> str | None:
+    """The import name of one repository-relative Python file, or None.
+
+    The name begins below the longest Python source root holding the file, so
+    a package under ``packages/<name>/src`` is named as it is imported rather
+    than after the directories around it; a package's ``__init__.py`` is the
+    package itself.
+    """
+
+    parts = _scope_parts(relative)
+    if not parts or not parts[-1].endswith(".py"):
+        return None
+    roots = [
+        prefix
+        for prefix in map(_scope_parts, python_source_roots)
+        if parts[: len(prefix)] == prefix
+    ]
+    if not roots:
+        return None
+    names = [*parts[len(max(roots, key=len)):-1], parts[-1][:-3]]
+    if names[-1] == "__init__":
+        names.pop()
+    if not names or not all(name.isidentifier() for name in names):
+        return None
+    return ".".join(names)
+
+
+def _registry_path_fields(data: dict[str, Any]) -> Iterator[tuple[str, object, str]]:
+    """Every path the module registry names, besides owner_path and a module's tests.
+
+    Yields ``(where, value, kind)``: a ``file`` must be a file, a ``path`` a
+    file or a directory, and a ``reference`` a path or a registered module id.
+    ``owner_path`` and module tests keep their own findings in
+    ``check_registry``; prose fields are not read for paths.
+    """
+
+    for entry in data.get("modules", ()):
+        module_id = entry.get("module_id", "?")
+        for value in entry.get("files") or ():
+            yield f"{module_id} files", value, "path"
+        for value in entry.get("used_by") or ():
+            yield f"{module_id} used_by", value, "reference"
+    spine = data.get("spine") or {}
+    if "spec" in spine:
+        yield "spine.spec", spine["spec"], "file"
+    for value in spine.get("entry_points") or ():
+        yield "spine.entry_points", value, "file"
+    for interface in data.get("interfaces") or ():
+        for implementation in interface.get("implementations") or ():
+            if "implementation_file" in implementation:
+                yield (
+                    f"interface {interface.get('interface_id', '?')} implementation_file",
+                    implementation["implementation_file"],
+                    "file",
+                )
+    for capability in data.get("capabilities") or ():
+        for value in capability.get("tests") or ():
+            yield f"capability {capability.get('capability_id', '?')} tests", value, "file"
+
+
 def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
     """The module registry must tell the truth, and a capability has one owner.
 
     Owner paths exist; every public_api symbol is defined in its owner; listed
-    tests exist; every string in ``owns`` appears in exactly one entry; and no
-    spine module outside an owner defines a function whose normalised body
-    equals one of the owner's functions (a copied helper is a duplicate owner).
+    tests exist; every other path the registry names exists; every string in
+    ``owns`` appears in exactly one entry; and no spine module outside an owner
+    defines a function whose normalised body equals one of the owner's
+    functions (a copied helper is a duplicate owner). A module's imports are
+    matched to owners by import name, which begins at the policy's
+    ``python_source_roots``.
     """
 
     registry_path = root / "governance" / "module_registry.json"
@@ -530,6 +745,12 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
     owners: dict[str, str] = {}
     ids: set[str] = set()
     owner_bodies: dict[str, tuple[str, str]] = {}
+    # An owner is known by the name it is imported with, not by its path.
+    owner_by_module: dict[str, str] = {}
+    for other in entries:
+        name = _module_name(other.get("owner_path", ""), policy["python_source_roots"])
+        if name is not None:
+            owner_by_module[name] = other.get("module_id", "?")
     for entry in entries:
         module_id = entry.get("module_id", "?")
         if module_id in ids:
@@ -569,7 +790,6 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
             if symbol.isidentifier() and symbol not in defined:
                 yield PolicyFinding(rel_registry, 1, "REGISTRY_SYMBOL_MISSING", f"{module_id}: public_api symbol {symbol} is not defined in {entry['owner_path']} or its files")
         # Dependencies cover shared core and both workflow packages.
-        owner_by_module = {e2["owner_path"][:-3].replace("/", "."): e2["module_id"] for e2 in entries if e2.get("owner_path", "").endswith(".py")}
         actual: set[str] = set()
         for path in span:
             if path.suffix != ".py" or not path.is_file():
@@ -593,10 +813,25 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
             yield PolicyFinding(rel_registry, 1, "REGISTRY_DEPENDS_ON_DRIFT", f"{module_id} imports {', '.join(undeclared)} but depends_on does not say so")
         if not entry.get("tests") and not entry.get("untested_reason"):
             yield PolicyFinding(rel_registry, 1, "REGISTRY_UNTESTED_OWNER", f"{module_id} lists no test and gives no untested_reason")
-    owner_paths = {root / f for e in entries for f in (e.get("files") or [e.get("owner_path", "")])}
+    for where, value, kind in _registry_path_fields(data):
+        if kind == "reference" and isinstance(value, str) and "/" not in value:
+            if value not in ids:
+                yield PolicyFinding(rel_registry, 1, "REGISTRY_PATH_MISSING", f"{where}: {value!r} is neither a repository path nor a module id")
+            continue
+        if not isinstance(value, str) or not _repository_path(value):
+            yield PolicyFinding(rel_registry, 1, "REGISTRY_PATH_MISSING", f"{where}: {value!r} is not a literal repository-relative path")
+        elif not (root / value).exists():
+            yield PolicyFinding(rel_registry, 1, "REGISTRY_PATH_MISSING", f"{where}: {value} does not exist")
+        elif kind == "file" and not (root / value).is_file():
+            yield PolicyFinding(rel_registry, 1, "REGISTRY_PATH_MISSING", f"{where}: {value} is not a file")
+    owner_paths = {
+        "/".join(_scope_parts(f))
+        for e in entries
+        for f in (e.get("files") or [e.get("owner_path", "")])
+    }
     for path in _checked_python_files(root, policy):
         relative_path = path.relative_to(root).as_posix()
-        if path in owner_paths or "/tests/" in path.as_posix() or path.name == "__init__.py":
+        if relative_path in owner_paths or _in_tests(relative_path) or path.name == "__init__.py":
             continue
         if _is_import_only(relative_path, policy):
             continue
@@ -1176,8 +1411,16 @@ def check_changed_scopes(
 
 
 def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
+    """Check the tree under ``root``, which must be a Git checkout.
+
+    The root entries are read from Git's index (``check_repository_root``);
+    everything else is read from the files on disk.
+    """
+
     validate_policy(policy, root)
     findings: list[PolicyFinding] = list(check_probe_boundary(root, policy))
+    findings.extend(check_policy_paths(root, policy))
+    findings.extend(check_repository_root(root, policy))
     findings.extend(check_registry(root, policy))
     findings.extend(check_scopes(root, policy, load_work_registry(root)))
     for path in _checked_python_files(root, policy):
@@ -1191,8 +1434,7 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
         checks: list[Iterable[PolicyFinding]] = [
             check_imports(relative, index, policy)
         ]
-        in_tests = "/tests/" in relative or relative.startswith("tests/")
-        if not in_tests and not _is_import_only(relative, policy) and any(_source_matches(relative, root_prefix) for root_prefix in policy["checked_source_roots"]):
+        if not _in_tests(relative) and not _is_import_only(relative, policy) and any(_source_matches(relative, root_prefix) for root_prefix in policy["checked_source_roots"]):
             checks.extend(
                 (
                     check_instance_answers(relative, index, policy),
