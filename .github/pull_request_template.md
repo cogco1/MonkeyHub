@@ -5,7 +5,7 @@
 - 分支 / worktree：<本任务的独立分支和检出>
 - Base ref：<本次实际基线提交；若因上游合入而更新，写该依赖>
 - Contributor / reviewer / handoff：<实际责任人、审查人和交接顺序；未指定则明说>
-- 依赖与 active overlap：<`python tools/devctl.py work` 的结果；无重叠写无，有则说明缩窄或 blocked/depends_on 顺序>
+- 依赖与 active overlap：<`python tools/governance/devctl.py work` 的结果；无重叠写无，有则说明缩窄或 blocked/depends_on 顺序>
 
 <!--
 GitHub Issue 是唯一的 task identity，PR 是实现/review 单元。
@@ -36,8 +36,8 @@ work_registry 只登记当前 source-edit claim（scope / 并发 / handoff），
 按本次影响选择检查，只勾实际完成项；未跑或不适用的写明原因。纯文档检查链接、命令和 scoped diff，不要求跑业务套件。
 
 - [ ] 受影响行为测试：<命令与结果>
-- [ ] `python tools/archcheck.py` — 当前文件树的静态边界
-- [ ] `python tools/archcheck.py --changed <PR-base>` — 已提交源码范围
+- [ ] `python tools/governance/archcheck.py` — 当前文件树的静态边界
+- [ ] `python tools/governance/archcheck.py --changed <PR-base>` — 已提交源码范围
 - [ ] API／DTO 改动：<相关路由检查与 `api:check` 结果>
 - [ ] Web 改动：<交互检查、typecheck／build 结果>
 - [ ] 文档或手动核验：<实际检查内容与结果>

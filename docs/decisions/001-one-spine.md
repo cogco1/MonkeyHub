@@ -45,8 +45,8 @@ StateRecord@1  (archflow/state/state_record.py)
   → P036 repository (archflow/project/repository.py), one HEAD, compare-and-swap
 ```
 
-Entry points: `tools/run_project.py`, `tools/verify_state_record.py`,
-`tools/freeze_project_stage_workflow.py`, `tools/open_stage_run.py`,
+Entry points: `tools/project/run_project.py`, `tools/project/verify_state_record.py`,
+`tools/project/freeze_project_stage_workflow.py`, `tools/project/open_stage_run.py`,
 [`apps/archflow-studio/api`](https://github.com/cogco1/MonkeyHub/tree/c6c97d4a2ad765e5b37d87dbc29d7cb756f97a45/apps/archflow-studio/api) (and `web/`).
 Shared foundations: `archflow/project/refs.py`, `archflow/contracts/{canonical,fields}.py`,
 `archflow/validation/{model,engine}.py` (`validate_submission`, `Finding`,
@@ -69,7 +69,7 @@ code with no lane, no probe and no spine consumer; Git keeps it.
 
 | Lane | Entry points today | Verdict | Consequence |
 |---|---|---|---|
-| Record-driven (P089/P102/P103/P108) | `tools/run_project.py`, Studio API | KEEP | the spine |
+| Record-driven (P089/P102/P103/P108) | `tools/project/run_project.py`, Studio API | KEEP | the spine |
 | Agent-driven portfolio (P053) | `python -m archflow.runtime run-project` → `production_runtime`, `production_compiler`, `design_development`, `design_portfolio`, `semantic_spatial_authoring` | ARCHIVE as `archive/portfolio/` | live-model authoring re-enters through the Studio intent path (typed intent → record → runner); `provider_runtime`, `responsibility` and `adapters/model_provider` followed the lane on 2026-09-03, having no spine caller |
 | Pantheon (P058/P064/P065/P069) | [`tools/run_pantheon_reconstruction.py`](https://github.com/cogco1/MonkeyHub/blob/c6c97d4a2ad765e5b37d87dbc29d7cb756f97a45/tools/run_pantheon_reconstruction.py), `pantheon_relation_control.py`, `build_pantheon_progress_snapshot.py`, [`tools/projects/pantheon`](https://github.com/cogco1/MonkeyHub/tree/c6c97d4a2ad765e5b37d87dbc29d7cb756f97a45/tools/projects/pantheon), `monument_common` | ARCHIVE as `archive/monuments/` | P069 and P066 close as superseded; monuments come back only as State Records (P105/P106 are the door) |
 | Parthenon | `tools/run_parthenon_*.py`, `parthenon_stage4_*.py`, `refine_parthenon_stage4_visual_regions.py`, `run_parthenon_stage4_visual_rag.py`, `state_tree_viewer.py` | ARCHIVE as `archive/monuments/` | untyped op dicts, direct rhino3dm and the Z-up frame leave the tree with it |

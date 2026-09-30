@@ -319,7 +319,7 @@ Every clause is read from facts the harness already retains. The server checks C
 
 ### 4.5 Implementation slices
 
-Owners were checked with `python tools/devctl.py module studio.intent` (and `studio.candidate`, `studio.binding`, `project.record_kinds`, `hub.shell`).
+Owners were checked with `python tools/governance/devctl.py module studio.intent` (and `studio.candidate`, `studio.binding`, `project.record_kinds`, `hub.shell`).
 
 | Slice | Owner | Files | Tests / acceptance |
 | --- | --- | --- | --- |

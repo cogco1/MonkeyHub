@@ -34,10 +34,10 @@ covers installation, project creation and Studio's explicit project binding.
 Tests bootstrap their own disposable projects through the same repository under `tempfile`.
 
 From the source root, using the installed Python environment, create an external
-project through the production [CLI](../../../../../tools/create_project.py):
+project through the production [CLI](../../../../../tools/project/create_project.py):
 
 ```powershell
-python tools/create_project.py --project D:/ArchFlowRuntime/workspace/projects/my-project
+python tools/project/create_project.py --project D:/ArchFlowRuntime/workspace/projects/my-project
 ```
 
 The final directory name is the project id. The target must be outside the source
@@ -51,7 +51,7 @@ For a new project with caller-authored inputs, use this invocation **instead of*
 the empty initialization:
 
 ```powershell
-python tools/create_project.py --project D:/ArchFlowRuntime/workspace/projects/my-project `
+python tools/project/create_project.py --project D:/ArchFlowRuntime/workspace/projects/my-project `
     --state-record D:/design-inputs/state-record.json `
     --seats-file D:/design-inputs/seats.json
 ```

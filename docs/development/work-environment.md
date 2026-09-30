@@ -94,16 +94,16 @@ SKP 使用本机 SketchUp C API 独立读取，不打开 SketchUp：原 SKP 与�
 | 当前需要 | 固定入口 | 接着读取什么 |
 | --- | --- | --- |
 | 了解 ArchFlow 做什么 | README 的概述与当前状态 | 涉及架构决定时才读 `docs/architecture/overview.md` 的对应部分 |
-| 开始或接续一项工作 | 对应的 GitHub Issue，再运行 `python tools/devctl.py work` | Issue 记录需求、验收与讨论；`work` 列出登记中的 `GH-<issue>`／`GH-<issue>/<lane>` claim：谁在改哪些路径、基线与交接 |
-| 按目标查已有操作 | `python tools/devctl.py capability <目标或能力-id>` | 读取匹配项的范围与入口；绑定项目内使用 `GET /api/capabilities?goal=...`，再描述具体来源和目标。首项为已有对象的数值修改；已支持和缺少的部分见返回的 `works`／`missing` |
-| 查建模、图纸、项目或应用的代码归属 | `python tools/devctl.py module <关键词>` | 用返回的精确 module id 再查契约；按 `--section`、`--offset` 补齐被省略的相关项 |
+| 开始或接续一项工作 | 对应的 GitHub Issue，再运行 `python tools/governance/devctl.py work` | Issue 记录需求、验收与讨论；`work` 列出登记中的 `GH-<issue>`／`GH-<issue>/<lane>` claim：谁在改哪些路径、基线与交接 |
+| 按目标查已有操作 | `python tools/governance/devctl.py capability <目标或能力-id>` | 读取匹配项的范围与入口；绑定项目内使用 `GET /api/capabilities?goal=...`，再描述具体来源和目标。首项为已有对象的数值修改；已支持和缺少的部分见返回的 `works`／`missing` |
+| 查建模、图纸、项目或应用的代码归属 | `python tools/governance/devctl.py module <关键词>` | 用返回的精确 module id 再查契约；按 `--section`、`--offset` 补齐被省略的相关项 |
 | 修改已有实现 | owner 的 `source_paths`、`public_api`、`tests` | 目标实现及真实调用方；只有存在具体疑问时才在相关包中 `rg` |
-| 创建或复用源码 worktree | `python tools/workspace.py create --branch codex/<task>` | 从一次配置的开发根取得目录；已有任务继续使用其原检出，详见下方“开发目录只配置一次” |
-| 查看打包目录或构建候选包 | `python tools/package_monkeyapps.py --show-paths` | 共用开发根配置；确认来源后用 `--source-ref <ref>` 构建，仍需打包工具所需的 Node/npm |
+| 创建或复用源码 worktree | `python tools/dev/workspace.py create --branch codex/<task>` | 从一次配置的开发根取得目录；已有任务继续使用其原检出，详见下方“开发目录只配置一次” |
+| 查看打包目录或构建候选包 | `python tools/release/package_monkeyapps.py --show-paths` | 共用开发根配置；确认来源后用 `--source-ref <ref>` 构建，仍需打包工具所需的 Node/npm |
 | 查共享工具箱 Skill | `hgs skills list <关键词> --path <toolbox-root>/skills` | `hgs skills show <id> --path <toolbox-root>/skills`，再按需读取示例或调用入口 |
-| 创建新的设计项目 | `python tools/create_project.py --project <外部项目目录>` | 第 8.3 节；已有项目直接打开完整目录，不重新初始化 |
+| 创建新的设计项目 | `python tools/project/create_project.py --project <外部项目目录>` | 第 8.3 节；已有项目直接打开完整目录，不重新初始化 |
 | 运行或配置 Studio | 第 8 节与 Studio README | 对应配置、启动命令和 API；模型内容通过既有项目读取入口取得 |
-| 查看打包目录或构建候选包 | `python tools/package_monkeyapps.py --show-paths` | 复用第 1.1 节的一次目录配置；源码仍取明确的 Git 版本 |
+| 查看打包目录或构建候选包 | `python tools/release/package_monkeyapps.py --show-paths` | 复用第 1.1 节的一次目录配置；源码仍取明确的 Git 版本 |
 
 两张能力表承担不同用途：ArchFlow 的 `governance/module_registry.json` 登记软件 owner 及已有能力的目标、范围与入口；
 共享工具箱的 `skills/*/skill.yaml` 登记工作流与入口，`generated/skills/index.md` 是它的生成视图。
@@ -223,7 +223,7 @@ Git 源码仓 / worktree
 验收回执和恢复所需数据不能借 `temp` 绕过项目存储。
 
 项目目录名与 `project.json` 的 `project_id` 一致。首次建立使用
-[`tools/create_project.py`](../../tools/create_project.py)，不手工拼装 `HEAD` 或运行记录。
+[`tools/project/create_project.py`](../../tools/project/create_project.py)，不手工拼装 `HEAD` 或运行记录。
 当前创建命令写入项目标识、版本 0 的 `HEAD`、初始化事件与快照，以及
 `input/runner/state-record.json`；指定分工输入时再写入 `input/runner/seats.json`。
 它同时准备 `objects/sha256/`、`runs/`、`exports/` 等区域，但不会生成 run 或模型。
@@ -248,19 +248,19 @@ Studio 网页端仍读取 `/api/state` 和 `/api/state/frame`，用自己的绘�
 
 #### 开发目录只配置一次
 
-[`tools/workspace.py`](../../tools/workspace.py) 和 [`tools/package_monkeyapps.py`](../../tools/package_monkeyapps.py)
+[`tools/dev/workspace.py`](../../tools/dev/workspace.py) 和 [`tools/release/package_monkeyapps.py`](../../tools/release/package_monkeyapps.py)
 共用个人 Git 设置 `archflow.package.workspace-root`；沿用原有键名，避免多一份工作区配置。
 首次安装或明确更换根目录时配置一次。下面的绝对路径只是示例，按本机实际位置替换：
 
 ```powershell
-python tools/workspace.py configure --root D:/MonkeyHubRuntime
+python tools/dev/workspace.py configure --root D:/MonkeyHubRuntime
 ```
 
 之后从已有源码检出运行固定入口：
 
 ```powershell
-python tools/workspace.py paths
-python tools/workspace.py create --branch codex/window-edit
+python tools/dev/workspace.py paths
+python tools/dev/workspace.py create --branch codex/window-edit
 ```
 
 新分支默认从调用源码的已提交 `HEAD` 建立；约定其他基线时追加 `--base <ref>`。
@@ -282,8 +282,8 @@ python tools/workspace.py create --branch codex/window-edit
 进入任务 worktree 后，打包会使用相同任务名和根目录：
 
 ```powershell
-python tools/package_monkeyapps.py --show-paths
-python tools/package_monkeyapps.py --source-ref HEAD
+python tools/release/package_monkeyapps.py --show-paths
+python tools/release/package_monkeyapps.py --source-ref HEAD
 ```
 
 任务目录跨次执行复用，每次构建仍在该任务暂存目录下创建独立候选。
@@ -313,13 +313,13 @@ python tools/package_monkeyapps.py --source-ref HEAD
 新增或修改功能前，按这个顺序读取：
 
 1. [`AGENTS.md`](../../AGENTS.md)：项目级硬边界。
-2. `python tools/devctl.py module <关键词>`，再用精确 module id 读取 owner、公开契约、源码和测试路径。
+2. `python tools/governance/devctl.py module <关键词>`，再用精确 module id 读取 owner、公开契约、源码和测试路径。
    需要补充架构背景时读 [`architecture/overview.md`](../architecture/overview.md) 或 [`architecture/system-map.md`](../architecture/system-map.md) 的对应部分。
    拟议能力不当作已实现；不把整张地图作为每次任务的前置输入。
 3. 目标实现与真实调用方；只在这些信息不能解答具体问题时扩大搜索。
 4. 只有需要理解旧合并决定时读 [`decisions/001-one-spine.md`](../decisions/001-one-spine.md)。它是历史决策，
    其中迁移顺序不可重跑，历史统计不是实时状态；实时 owner 仍以 registry 和代码为准。
-5. 当前任务只看对应的 GitHub Issue；谁在改哪些路径用 `python tools/devctl.py work` 查看。
+5. 当前任务只看对应的 GitHub Issue；谁在改哪些路径用 `python tools/governance/devctl.py work` 查看。
 6. 涉及客户端时再读 [`protocols/project-runtime-api.md`](../protocols/project-runtime-api.md) 与
    [`services/project-runtime/README.md`](../../services/project-runtime/README.md)。
 
@@ -587,7 +587,7 @@ Stage 引用，也不表示正式 issue；设计 Branch 与 Git 源码分支是�
 
 ### 第 2 步：找到归口，选择扩展位置
 
-1. 用 `python tools/devctl.py module <关键词>` 找相关 owner，再用精确 module id 查询公开 API、职责边界和源码路径，读取真实调用方。
+1. 用 `python tools/governance/devctl.py module <关键词>` 找相关 owner，再用精确 module id 查询公开 API、职责边界和源码路径，读取真实调用方。
 2. 已有能力直接复用；新的独立分析、出图算法可放在自己的领域目录或外部包，通过函数、CLI、API 或 adapter 接入。
 3. 只有确实新增状态语义、编译操作、持久接口或校核边界时，才扩展对应 core owner。应用功能不必逐层修改 core，也不必塞进已有大文件。
 4. 新增软件归口时说明已有 owner 为什么不适合；归口、公开契约或列出的测试改变时，同一改动更新 registry。替换原型时删除被替代的生产路径，保留必要的历史数据读取。
@@ -723,7 +723,7 @@ python -c "import sys; print(sys.executable)"
 ### 8.3 创建外部项目
 
 仓库不随 clone 分发正式模型项目。使用生产命令
-[`tools/create_project.py`](../../tools/create_project.py) 创建自己的 P036 项目；该命令不导入测试夹具。
+[`tools/project/create_project.py`](../../tools/project/create_project.py) 创建自己的 P036 项目；该命令不导入测试夹具。
 先选择源码仓外的目标目录，目录名就是项目 ID：
 
 ```powershell
@@ -734,7 +734,7 @@ $ProjectDir = Join-Path $RuntimeRoot 'workspace\projects\my-project'
 只需建立连接和检查项目状态时，创建空项目：
 
 ```powershell
-& $Python tools/create_project.py --project $ProjectDir
+& $Python tools/project/create_project.py --project $ProjectDir
 ```
 
 命令建立版本 0 和空的 `StateRecord@1`，不创建 run、模型或分工。它可以绑定 Studio 并查看空状态；
@@ -744,7 +744,7 @@ Program 和建模候选需要相应的完整设计输入与执行分工，PDF �
 已有自己编写或获准使用的设计输入时，**以这条命令代替上面的空项目创建**，将示例输入路径换成自己的：
 
 ```powershell
-& $Python tools/create_project.py --project $ProjectDir `
+& $Python tools/project/create_project.py --project $ProjectDir `
     --state-record 'D:\design-inputs\state-record.json' `
     --seats-file 'D:\design-inputs\seats.json'
 ```
@@ -759,7 +759,7 @@ Program 和建模候选需要相应的完整设计输入与执行分工，PDF �
 
 项目要换机器、换用户或留一份离线备份时，用项目归档，不要手工复制目录：一个归档就是一份
 `ProjectArchiveManifest@1` 加它点名的保留字节，导出与还原在 MonkeyHub 的项目卡片上各有一个对话框，
-命令行是 `tools/create_project.py --export-archive/--restore-archive`；凭据、进程与运行时状态、缓存、
+命令行是 `tools/project/create_project.py --export-archive/--restore-archive`；凭据、进程与运行时状态、缓存、
 可重建预览和无界日志不随归档走，还原出来的项目也不需要源机器的 Hub 运行时目录、聊天或配置。
 搬家是否真的成功，用 `scripts/dev/run-archive-rehearsal.ps1` 完整演练一遍：导出、还原到空目录、
 在还原副本上启动一个项目运行时、按正常读取器逐项比对身份，并从还原后的精确 base 跑一个不接受的候选。
@@ -888,7 +888,7 @@ $result = Invoke-RestMethod "$api/state?run=$($accepted.candidateId)"
 
 ```powershell
 Set-Location $SourceRoot
-& $Python tools/archcheck.py
+& $Python tools/governance/archcheck.py
 Set-Location "$SourceRoot\services\project-runtime"
 & $Python -m unittest tests.test_health tests.test_protocol tests.test_candidate
 Set-Location "$SourceRoot\apps\monkeyhub\web"
@@ -900,7 +900,7 @@ npm.cmd run build  # 包含 typecheck
 之后按真实改动选择检查：纯文档查命令、链接和 diff；内核改动跑 registry 所列的受影响测试与
 `archcheck`；API/DTO 改动检查相应路由与 `api:check`，Web 改动检查交互与 build。
 这套首次接入检查不覆盖所有功能，任务涉及其他模块时仍要补跑该模块相关检查。
-只有 module registry 或语义表真的改变时，才用 `python tools/devctl.py render-map` 更新生成地图。
+只有 module registry 或语义表真的改变时，才用 `python tools/governance/devctl.py render-map` 更新生成地图。
 
 ### 8.7 从一个小修改到审查与集成
 

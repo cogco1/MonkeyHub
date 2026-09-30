@@ -190,7 +190,7 @@ Publish #66：跨 Drawing/Render/Board/文字/图片的页面组合、PPTX/PDF/r
 6. 修改绑定设计尺寸产生现有 proposal/candidate；无参数绑定的测量不可伪驱动。旧图基底、keep 与锁得到相同保护。
 7. Board 评阅仍绑定旧准确页；新 revision 不继承旧的审核结论。
 
-实施完成需运行受影响测试、前端相应类型检查/浏览器回归、`python tools/archcheck.py`，并用真实房间平面操作核验。测试通过不代替产品视觉/空间验收。
+实施完成需运行受影响测试、前端相应类型检查/浏览器回归、`python tools/governance/archcheck.py`，并用真实房间平面操作核验。测试通过不代替产品视觉/空间验收。
 
 ## 本次只读验证与外部核验
 

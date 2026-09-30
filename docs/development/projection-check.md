@@ -1,6 +1,6 @@
 # Projection check
 
-`tools/projection_check.py` checks that a change to how the decision tree is
+`tools/benchmarks/projection_check.py` checks that a change to how the decision tree is
 projected (ADR-008, [`docs/decisions/008-one-tree-many-projections.md`](../decisions/008-one-tree-many-projections.md))
 leaves every answer the same. It needs nothing from the owner's machine. It runs as the `projection` job
 of `.github/workflows/verify.yml` on `ubuntu-latest` and `windows-latest` for every pull request and
@@ -78,7 +78,7 @@ git worktree add ../base origin/main
 cd services/project-runtime
 python -c "import pathlib; from tests.synthetic_project import build_synthetic_project; print(build_synthetic_project(pathlib.Path('../../../projects')))"
 cd ../..
-python tools/projection_check.py --base ../base --candidate . --project ../projects/synthetic-bench \
+python tools/benchmarks/projection_check.py --base ../base --candidate . --project ../projects/synthetic-bench \
     --out ../projection/result.json --summary ../projection/summary.md
 ```
 

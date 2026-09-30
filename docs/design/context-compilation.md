@@ -10,9 +10,9 @@ design context. All provider requests must fit the application text budget befor
 they can be sent. The existing deterministic compiler still makes no model call.
 
 Development lookup and runtime requests have separate costs. Use
-`python tools/devctl.py module studio.intent` to find an owner's responsibilities,
+`python tools/governance/devctl.py module studio.intent` to find an owner's responsibilities,
 interfaces, dependencies, source paths and tests without reading the full registry.
-`python tools/devctl.py module wall` searches ownership when a module id is not known.
+`python tools/governance/devctl.py module wall` searches ownership when a module id is not known.
 These development commands do not affect student API requests.
 
 ## Browser tasks
@@ -180,13 +180,13 @@ prompts, source text, provider responses or credentials.
 From the repository root, using a Python environment with the Studio dependencies:
 
 ```powershell
-python tools/benchmark_intent_context.py --siblings 0 100 1000 --tokenizer heuristic
+python tools/benchmarks/benchmark_intent_context.py --siblings 0 100 1000 --tokenizer heuristic
 ```
 
 For a locally installed `tiktoken` with an existing `o200k_base` cache:
 
 ```powershell
-python tools/benchmark_intent_context.py --siblings 0 100 1000 --tokenizer o200k_base
+python tools/benchmarks/benchmark_intent_context.py --siblings 0 100 1000 --tokenizer o200k_base
 ```
 
 `--tokenizer auto` uses that local encoding when available, otherwise the named
@@ -358,8 +358,8 @@ dev temp root:
 
 ```powershell
 $stagePython = 'D:/MONKEYHUB_DEV/temp/gh185-stage-handoff/venv/Scripts/python.exe'
-& $stagePython tests/monkeymonitor/run_stage_handoff_benchmark.py --prepare-only --model gpt-6-astra --output D:/MONKEYHUB_DEV/temp/gh185-stage-handoff/stage-comparison-3
-& $stagePython tests/monkeymonitor/run_stage_handoff_benchmark.py --model gpt-6-astra --timeout 360 --output D:/MONKEYHUB_DEV/temp/gh185-stage-handoff/stage-comparison-3
+& $stagePython tools/benchmarks/run_stage_handoff_benchmark.py --prepare-only --model gpt-6-astra --output D:/MONKEYHUB_DEV/temp/gh185-stage-handoff/stage-comparison-3
+& $stagePython tools/benchmarks/run_stage_handoff_benchmark.py --model gpt-6-astra --timeout 360 --output D:/MONKEYHUB_DEV/temp/gh185-stage-handoff/stage-comparison-3
 ```
 
 `--prepare-only` is an optional preflight: it builds and verifies the
@@ -490,8 +490,8 @@ its old session versus starting a new provider session from the same project
 state. Use an explicit model returned by the installed provider's model list:
 
 ```powershell
-python tests/monkeymonitor/run_turn_benchmark.py --session-pair --prepare-only --scenario incremental-edit --model <model-id> --output <absolute-nonproject-directory>
-python tests/monkeymonitor/run_turn_benchmark.py --session-pair --scenario incremental-edit --model <model-id> --output <same-directory> --timeout 300
+python tools/benchmarks/run_turn_benchmark.py --session-pair --prepare-only --scenario incremental-edit --model <model-id> --output <absolute-nonproject-directory>
+python tools/benchmarks/run_turn_benchmark.py --session-pair --scenario incremental-edit --model <model-id> --output <same-directory> --timeout 300
 ```
 
 `--prepare-only` makes one P036 fixture archive, restores two copies through the
@@ -599,7 +599,7 @@ native provider-history token length remains unknown. Re-extract these retained
 reports without a model or service:
 
 ```powershell
-python tests/monkeymonitor/run_turn_benchmark.py --summarize --scenario assembly-edit --output D:/MONKEYHUB_DEV/temp/context-bench-32/assembly-pair-1
+python tools/benchmarks/run_turn_benchmark.py --summarize --scenario assembly-edit --output D:/MONKEYHUB_DEV/temp/context-bench-32/assembly-pair-1
 ```
 
 The primer is only one prior turn: 28.806/30.179 s for cornice continue/project,
@@ -662,8 +662,8 @@ The opt-in experiment uses a small synthetic courtyard, the real installed
 provider, the normal Hub MCP interface, OCCT and the existing Monitor journal:
 
 ```powershell
-python tests/monkeymonitor/run_design_loop.py --model <installed-model-id> --output <new-absolute-nonproject-directory>
-python tests/monkeymonitor/run_design_loop.py --summarize --output <same-directory>
+python tools/benchmarks/run_design_loop.py --model <installed-model-id> --output <new-absolute-nonproject-directory>
+python tools/benchmarks/run_design_loop.py --summarize --output <same-directory>
 ```
 
 It batches three masses into one candidate, lowers the east wing, sets back the
@@ -855,7 +855,7 @@ framework is needed for this missing field.
 
 ### Paired observations, 2026-09-20
 
-The unchanged `tests/monkeymonitor/run_turn_benchmark.py` ran the fixed numeric
+The unchanged `tools/benchmarks/run_turn_benchmark.py` ran the fixed numeric
 and two-object assembly edits through Hub, MCP and OCCT. Each scenario has two
 baseline/revised pairs, with eight fresh `gpt-6-astra` sessions and byte-identical
 inputs restored from one synthetic project archive. Pair checks confirm the
@@ -1131,7 +1131,7 @@ one fixture archive and restore it once per arm through the existing ports:
 
 ```python
 from pathlib import Path
-from tests.monkeymonitor import run_turn_benchmark as b
+from tools.benchmarks import run_turn_benchmark as b
 root = Path(r"<absolute-unused-nonproject-directory>")
 fixture = b.project_fixture()
 seed, _ = fixture.make_project(root / "seed")
@@ -1149,7 +1149,7 @@ each process with a monotonic timer if comparing setup/check/teardown too;
 retain its exit code, stderr and failed attempts. Never overwrite a used arm.
 
 ```text
-python tests/monkeymonitor/run_turn_benchmark.py --scenario incremental-edit --model gpt-6-astra --context-pack --no-preview --timeout 240 --retained-root <absolute-arm-directory> --output <absolute-arm-directory>
+python tools/benchmarks/run_turn_benchmark.py --scenario incremental-edit --model gpt-6-astra --context-pack --no-preview --timeout 240 --retained-root <absolute-arm-directory> --output <absolute-arm-directory>
 ```
 
 Validation of the experimental source: 85 existing Hub chat and benchmark

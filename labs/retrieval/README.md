@@ -125,7 +125,7 @@ python -m venv "$env:TEMP/gh122-repro"
 & "$env:TEMP/gh122-repro/Scripts/python.exe" -m pip install -r labs/retrieval/requirements.txt
 & "$env:TEMP/gh122-repro/Scripts/python.exe" -m labs.retrieval.benchmark --cache-dir "$env:TEMP/gh122-models" --output "$env:TEMP/gh122-result.json"
 python -m pytest labs/retrieval/test_retrieval.py -q
-python tools/archcheck.py
+python tools/governance/archcheck.py
 ```
 
 `--lexical-only` needs no model libraries. A real missing-model dependency records

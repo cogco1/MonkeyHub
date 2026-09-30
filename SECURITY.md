@@ -23,7 +23,7 @@ a build dependency is not proof that its code appears in the compiled output.
 From a source checkout, verify the downloaded release directory with:
 
 ```powershell
-python tools/package_monkeyapps.py --verify '<candidate>.zip.release-manifest.json'
+python tools/release/package_monkeyapps.py --verify '<candidate>.zip.release-manifest.json'
 ```
 
 The command checks listed file sizes and hashes, unlisted files with the same

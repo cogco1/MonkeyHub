@@ -131,9 +131,9 @@ MonkeyHub is the single application entry; MonkeyArch is its modeling workspace.
 For a first session, follow section 0 of [the Hub entry guide](docs/development/work-environment.md#0-monkeyhub-统一入口).
 Reuse its source/project locations and bounded lookup sequence; do not load every linked document or search the whole tree to orient yourself.
 
-For a new source worktree, use `python tools/workspace.py create --branch codex/<task>`.
-It reads the saved development root shared with `tools/package_monkeyapps.py`; use
-`python tools/workspace.py paths` to inspect it and `configure --root <absolute-directory>`
+For a new source worktree, use `python tools/dev/workspace.py create --branch codex/<task>`.
+It reads the saved development root shared with `tools/release/package_monkeyapps.py`; use
+`python tools/dev/workspace.py paths` to inspect it and `configure --root <absolute-directory>`
 only for first setup or an explicit root change. Reuse the assigned checkout for ongoing
 work. Do not invent dated directories at drive roots for worktrees or package staging.
 The CLI preserves existing worktrees and design projects; project writes still use P036.
@@ -143,7 +143,7 @@ registry (`governance/module_registry.json`, rendered as `docs/architecture/syst
 capability has exactly one owner there. `docs/decisions/001-one-spine.md` records the earlier
 consolidation decision, not a migration to rerun. Before writing code:
 
-1. Find the owner with `python tools/devctl.py module <id-or-keywords>` (for example,
+1. Find the owner with `python tools/governance/devctl.py module <id-or-keywords>` (for example,
    `module wall`), then query the exact module id. It returns the registered contract,
    dependencies, source paths and tests without dumping the whole registry or system map.
 2. Read what that module `owns`, `does_not_own`, and its contract (`inputs`, `outputs`,
@@ -156,7 +156,7 @@ consolidation decision, not a migration to rerun. Before writing code:
    declared in the registry with its implementations listed.
 5. Update the registry in the same change only when ownership, the public contract or
    its listed tests actually change. An internal fix needs no ceremonial registry edit.
-6. Implement and run the affected behavior tests and `python tools/archcheck.py`.
+6. Implement and run the affected behavior tests and `python tools/governance/archcheck.py`.
    For documentation-only changes, check links, generated maps and the scoped diff;
    do not run the application suite. Broader checks need an affected boundary or failure.
 
@@ -166,7 +166,7 @@ the spine.
 ## Speed
 
 - An implementation session runs only the tests its change affects, plus
-  `python tools/archcheck.py`. The full regression is CI's job.
+  `python tools/governance/archcheck.py`. The full regression is CI's job.
 - The master session reviews key behaviour. It spot-checks real projects locally only
   for performance-sensitive changes; the synthetic check that runs in CI is described
   in `docs/development/projection-check.md`.

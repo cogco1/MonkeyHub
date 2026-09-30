@@ -3,7 +3,7 @@
 `labs/<名字>/` 用于验证算法、试用库和尚未确定产品入口的原型。本地探索不必先注册为生产模块；要提交到共享仓库时，沿用覆盖这项工作的 GitHub Issue（没有合适的才新开），并为这些路径登记 claim。实验测试留在自己的 lab，不自动加入产品测试套件。
 
 lab 可以 `import archflow.*`；`packages/archflow/`、`tools/`、`apps/`、`tests/` 不反向 `import labs`。
-`tools/archcheck.py` 用和 archive 同一套 `forbidden_layer_imports` 机制拦这条,越界报 `LAYER_AUTHORITY_VIOLATION`。
+`tools/governance/archcheck.py` 用和 archive 同一套 `forbidden_layer_imports` 机制拦这条,越界报 `LAYER_AUTHORITY_VIOLATION`。
 policy 的 `import_only_source_roots` 使 lab 只接受 import 静态检查，跳过生产代码的写入点、重复权威等检查；项目持久数据仍使用已有项目存储接口，外部系统操作仍按实际授权执行。
 
 **接入实际功能时，在同一改动中完成：**

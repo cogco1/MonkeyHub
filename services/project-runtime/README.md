@@ -481,7 +481,7 @@ project moved under you" in the transcript.
 From the repo root:
 
 ```powershell
-py -3.12 tools/archcheck.py
+py -3.12 tools/governance/archcheck.py
 py -3.12 -m unittest discover -s services/project-runtime/tests -t services/project-runtime -v
 py -3.12 -m unittest discover -s tests
 ```

@@ -106,7 +106,7 @@ implemented behavior; remaining work and its acceptance are tracked in
   It connects the source checkout, external project, capability registries and existing commands.
 - [Vision](docs/product/vision.md) — long-term research, technology and product direction.
 - [GitHub Issues](https://github.com/cogco1/MonkeyHub/issues) — current work with its requirements
-  and acceptance; `python tools/devctl.py work` shows who is editing which paths.
+  and acceptance; `python tools/governance/devctl.py work` shows who is editing which paths.
 - [System map](docs/architecture/system-map.md) — current capability owners and public APIs.
 - [Architecture](docs/architecture/overview.md) — implemented responsibilities, concrete
   gaps, and the next architectural revision to develop.
@@ -152,7 +152,7 @@ an independent clone, Python 3.12 in an external virtual environment, Node.js 24
 and the locked web dependencies. Create an external project with the production command:
 
 ```powershell
-python tools/create_project.py --project 'D:\ArchFlowRuntime\workspace\projects\my-project'
+python tools/project/create_project.py --project 'D:\ArchFlowRuntime\workspace\projects\my-project'
 ```
 
 This creates an empty project container. For candidate editing, provide the project's

@@ -16,7 +16,7 @@ cargo build --locked --release
 ```
 
 `target/release/MonkeyHub.exe` is the native host. It is **not a standalone
-application bundle**. `tools/package_monkeyapps.py` owns the distribution tree,
+application bundle**. `tools/release/package_monkeyapps.py` owns the distribution tree,
 Python dependencies, the MonkeyHub frontend build (`apps/monkeyhub/web/dist/`) and
 package validation.
 The package places this EXE at its root alongside `source-version.txt`,
@@ -27,8 +27,8 @@ revision. `MonkeyHub.exe --version` prints its version and source revision as
 JSON without opening a window.
 
 From the repository root, inspect the saved packaging locations with
-`python tools/package_monkeyapps.py --show-paths`, then build the optional
-desktop candidate with `python tools/package_monkeyapps.py --source-ref HEAD --desktop`.
+`python tools/release/package_monkeyapps.py --show-paths`, then build the optional
+desktop candidate with `python tools/release/package_monkeyapps.py --source-ref HEAD --desktop`.
 This uses the existing external staging/cache/output roots and adds the EXE to
 that same bundle; the browser entry remains included. Double-click the bundled
 `MonkeyHub.exe`. A checkout build still needs the explicit options below.

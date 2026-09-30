@@ -22,7 +22,7 @@ needed after setup. Other Blender versions require a fresh acceptance run.
 For an existing bound project/run/workflow, use the existing runner CLI:
 
 ```powershell
-python tools/run_project.py --project <project-root> --run <existing-run> --workflow-ref <project-uri> --stage-envelope-ref <project-uri> --export --cad-backend occt --blender-projection "<absolute-path-to-blender-executable>"
+python tools/project/run_project.py --project <project-root> --run <existing-run> --workflow-ref <project-uri> --stage-envelope-ref <project-uri> --export --cad-backend occt --blender-projection "<absolute-path-to-blender-executable>"
 ```
 
 Python callers supply `RunOptions(blender_projection={"blender_executable": ...,
@@ -100,7 +100,7 @@ $env:ARCHFLOW_BLENDER_EXECUTABLE = '<absolute-path-to-blender-executable>'
 $env:ARCHFLOW_PROJECTION_DEMO_ROOT = '<absolute-path-to-new-output-directory>'
 python -m unittest tests.integration.test_blender_projection_runner -v
 python -m unittest tests.integration.test_blender_projection tests.integration.test_blender_cad -v
-python tools/archcheck.py
+python tools/governance/archcheck.py
 ```
 
 Choose an unused demo output directory. With no demo-root variable the test uses

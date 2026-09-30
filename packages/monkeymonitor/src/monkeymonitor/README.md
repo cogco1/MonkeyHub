@@ -130,10 +130,10 @@ Hub 管理的 Monitor 启动参数包含：
 
 ## 基准与测试
 
-真实任务基准配置仍位于 `tests/monkeymonitor/benchmarks.json`，可运行：
+真实任务基准配置位于 `tools/benchmarks/benchmarks.json`，可运行：
 
 ```powershell
-python tests/monkeymonitor/run_turn_benchmark.py --scenario simple-create --output C:\explicit\benchmark-output
+python tools/benchmarks/run_turn_benchmark.py --scenario simple-create --output C:\explicit\benchmark-output
 ```
 
 它创建可丢弃的测试 Hub/Studio/OCCT 项目并把 trace 留在明确输出目录。provider 响应时间是测量值，不设固定秒数 CI 门槛。
@@ -141,7 +141,7 @@ python tests/monkeymonitor/run_turn_benchmark.py --scenario simple-create --outp
 核心检查：
 
 ```powershell
-python -m unittest tests.monkeymonitor.test_core tests.monkeymonitor.test_trace tests.monkeymonitor.test_turntrace_contract tests.monkeymonitor.test_server
+python -m pytest packages/monkeymonitor/tests -q
 cd apps/monkeyhub/web
 npm test
 npm run build

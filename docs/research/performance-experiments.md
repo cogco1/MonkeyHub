@@ -33,7 +33,7 @@ OCBA 处理另一层资源问题：已有一组候选时，如何把有限的重
 | T5 证据选择压力题 | 复用 revision-v2 的 10 条 held-out 问题 | 完整上游、传播闭包、条件与对应图片保留；单列 lintel/screen/seal 等关键遗漏 |
 | T6 连续事件分流 | 复用 6 类事件、14 个检查点的 dev/holdout 固定输入 | 必须唤醒的变化无漏报；旧来源拒绝；视觉判断不能被语义分类代替 |
 
-T1–T3 来自 [benchmarks.json](../../tests/monkeymonitor/benchmarks.json)，T4 来自 [Stage runner](../../tests/monkeymonitor/run_stage_handoff_benchmark.py)，T5/T6 继续使用已有 lab。题目的明确尺寸服务于可比较的机制测量，不代表真实设计任务都应由使用者输入坐标。
+T1–T3 来自 [benchmarks.json](../../tools/benchmarks/benchmarks.json)，T4 来自 [Stage runner](../../tools/benchmarks/run_stage_handoff_benchmark.py)，T5/T6 继续使用已有 lab。题目的明确尺寸服务于可比较的机制测量，不代表真实设计任务都应由使用者输入坐标。
 
 “可用候选”必须同时满足：生成完成、正确来源读回、预定几何和保留检查通过、界面打开同一候选且可选择对象。聊天回复、提交成功或一个旧模型首次可见均不算完成。终点是可继续修改的未接受候选，不自动接受 Stage 或发行项目。T5、T6 只能报告正确证据或正确处置，不能产生“到可用候选”的成绩。
 
@@ -126,16 +126,16 @@ provider 未报告内部请求数或重试时，不能把 Agent 活动片段数�
 
 ```powershell
 # 只做离线上下文测量，不调用模型，不写设计项目。
-python tools/benchmark_intent_context.py --siblings 0 100 1000 --tokenizer heuristic
+python tools/benchmarks/benchmark_intent_context.py --siblings 0 100 1000 --tokenizer heuristic
 
 # Stage 夹具与确定性预检；路径须替换为已配置实验根中的全新目录。
-python tests/monkeymonitor/run_stage_handoff_benchmark.py --output <new-external-experiment-root> --prepare-only
+python tools/benchmarks/run_stage_handoff_benchmark.py --output <new-external-experiment-root> --prepare-only
 
 # 读取当前路径可用的参数；help 不启动付费试验。
-python tests/monkeymonitor/run_turn_benchmark.py --help
+python tools/benchmarks/run_turn_benchmark.py --help
 ```
 
-实际执行前在既有 runner 中固定模型和顺序，输出到已有配置的外部实验根；私有建筑和用户活动项目不作为输出目录。[turn runner](../../tests/monkeymonitor/run_turn_benchmark.py) 已有单任务、隔离预览和会话配对；[Stage runner](../../tests/monkeymonitor/run_stage_handoff_benchmark.py) 已有 AB/BA、准备与汇总；[revision runner](../../labs/spatial_observation/revision_benchmark.py) 和 [event runner](../../labs/event_gating/benchmark.py) 已有本方案后两类比较所需原始结果。
+实际执行前在既有 runner 中固定模型和顺序，输出到已有配置的外部实验根；私有建筑和用户活动项目不作为输出目录。[turn runner](../../tools/benchmarks/run_turn_benchmark.py) 已有单任务、隔离预览和会话配对；[Stage runner](../../tools/benchmarks/run_stage_handoff_benchmark.py) 已有 AB/BA、准备与汇总；[revision runner](../../labs/spatial_observation/revision_benchmark.py) 和 [event runner](../../labs/event_gating/benchmark.py) 已有本方案后两类比较所需原始结果。
 
 E1 的明确分步／有界等待提示条件、所有实验的随机区组调度，以及“可交互”的统一终点属于拟实施的窄测试改动，当前 runner 没有通用 `--arm` 或 `--cache` 开关。本方案不虚构这些命令；实施时只补现有 runner 的配置与聚合，不增加生产路径、日志库或新项目存储。
 

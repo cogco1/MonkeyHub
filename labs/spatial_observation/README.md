@@ -45,7 +45,7 @@ public synthetic code from `fixture.py`.
 
 ```console
 python -m pytest labs/spatial_observation -q
-python tools/archcheck.py
+python tools/governance/archcheck.py
 python -m labs.spatial_observation.benchmark --output <external-new-diagnostic-root> --claude <existing-claude-executable> --repetitions 3
 ```
 
