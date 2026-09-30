@@ -8,7 +8,7 @@ refuse every project that ever promoted a candidate.
 
 So this module names the owners, once, and importing it loads them all. Every
 reader of the table imports this rather than trusting an incidental import.
-Adding an owner means adding it here; :mod:`tests.test_version_refs` checks the
+Adding an owner means adding it here; :mod:`tests.integration.test_version_refs` checks the
 table against the record-kind registry, so an owner that is written but not
 loaded is a test failure rather than a migration that quietly refuses.
 
@@ -85,7 +85,7 @@ for _schema, _fields in _BORROWED_DECLARATIONS.items():
 # ``archflow.adapters.three_dm_inspector``, and said plainly: the core does not
 # import them, and a core-only migration still has to restate every CAD record
 # a project retains. What the records serialise is still the adapters' to say,
-# so a change there is a change here; :mod:`tests.test_version_refs` builds the
+# so a change there is a change here; :mod:`tests.integration.test_version_refs` builds the
 # binding and the inspection summary with their own writers and checks each
 # declaration against what they write.
 #

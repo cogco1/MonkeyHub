@@ -48,7 +48,7 @@ From the repository root, with Python 3.12 and no additional dependencies for
 the original massing/synthetic benchmark:
 
 ```sh
-python -m unittest labs.candidate_evaluation.test_evaluator tests.test_massing_metrics
+python -m unittest labs.candidate_evaluation.test_evaluator tests.integration.test_massing_metrics
 python -m labs.candidate_evaluation.benchmark
 ```
 
@@ -273,7 +273,7 @@ an experiment preference, not a replacement for the objective vector or a
 daylight/structure/composition evaluator.
 
 ```sh
-python -m unittest labs.candidate_evaluation.test_evaluator labs.candidate_evaluation.test_retained labs.candidate_evaluation.test_allocation labs.candidate_evaluation.test_sampling tests.test_massing_metrics
+python -m unittest labs.candidate_evaluation.test_evaluator labs.candidate_evaluation.test_retained labs.candidate_evaluation.test_allocation labs.candidate_evaluation.test_sampling tests.integration.test_massing_metrics
 python -m labs.candidate_evaluation.allocation_benchmark --output <new-external-directory> --repetitions 200 --budgets 100 300 900 --workers 4
 python -m labs.candidate_evaluation.plot_benchmark <same-external-directory>
 ```

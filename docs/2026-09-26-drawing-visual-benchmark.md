@@ -317,7 +317,7 @@ The full run is one tool invocation over a spec of real cut plans. It makes at m
 
 ## Checks run
 
-- `tests/test_benchmark_visual_observation.py` (22 tests, no runtime and no provider):
+- `tools/tests/test_benchmark_visual_observation.py` (22 tests, no runtime and no provider):
   - the arm order and spec refusals;
   - each exact check against a synthetic page, including lines on either side of vertical;
   - recipe deviations; the repair's levers, escalation and bounds; known facts within the route's bounds;
