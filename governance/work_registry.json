@@ -1,46 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-518",
-      "status": "active",
-      "branch": "codex/integration-512-518-520",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-512-518-520",
-      "base_ref": "008514fd9f85207c2ee4995303b5c05cc67bbb10",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "studio.shell",
-        "studio.binding",
-        "studio.candidate",
-        "studio.intent",
-        "studio.artifacts",
-        "studio.board",
-        "studio.render",
-        "studio.publication",
-        "studio.study",
-        "studio.options",
-        "studio.construction",
-        "studio.program",
-        "studio.memory",
-        "studio.skills",
-        "studio.validation",
-        "studio.domains",
-        "hub.shell",
-        "tools.archcheck"
-      ],
-      "write_scope": [
-        "docs/architecture/repository-layout.md",
-        "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/application/candidate.py",
-        "services/project-runtime/src/project_runtime/application/drawing_plans.py",
-        "services/project-runtime/src/project_runtime/application/frame.py",
-        "services/project-runtime/src/project_runtime/application/projection.py",
-        "services/project-runtime/src/project_runtime/application/validation.py",
-        "tools/governance/archcheck.py"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
