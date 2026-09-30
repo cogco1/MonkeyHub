@@ -1,4 +1,66 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-518",
+      "status": "active",
+      "branch": "codex/518-runtime-layering",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-518-runtime-layering",
+      "base_ref": "6556fbed2995d793dc9a70f0e1663eb7e4852e24",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "studio.shell",
+        "studio.binding",
+        "studio.candidate",
+        "studio.intent",
+        "studio.artifacts",
+        "studio.board",
+        "studio.render",
+        "studio.publication",
+        "studio.study",
+        "studio.options",
+        "studio.construction",
+        "studio.program",
+        "studio.memory",
+        "studio.skills",
+        "studio.validation",
+        "studio.domains",
+        "hub.shell",
+        "tools.archcheck"
+      ],
+      "write_scope": [
+        "services/project-runtime/src/project_runtime/",
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime_models.py",
+        "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/monkeyhub/api/tests/test_chat_presentation.py",
+        "apps/monkeyhub/api/tests/test_project_runtime.py",
+        "apps/monkeyhub/api/tests/test_runtime_operations.py",
+        "apps/monkeyhub/web/src/features/designTree/useDesignTree.ts",
+        "apps/monkeyhub/web/src/workspaces/render/README.md",
+        "apps/monkeyhub/web/test/conditionalReads.test.ts",
+        "apps/monkeyhub/web/test/modelPreviews.browser.mjs",
+        "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+        "apps/monkeyhub/web/test/renderWorkspace.browser.mjs",
+        "tools/governance/archcheck.py",
+        "tools/benchmarks/benchmark_intent_context.py",
+        "tools/benchmarks/benchmark_visual_observation.py",
+        "tools/benchmarks/projection_check.py",
+        "tools/benchmarks/run_design_loop.py",
+        "tools/project/export_drawing_recipe.py",
+        "labs/candidate_evaluation/retained_fixture.py",
+        "docs/architecture/project-runtime.md",
+        "docs/architecture/repository-layout.md",
+        "docs/development/work-environment.md",
+        "docs/audits/drawing-v0.md",
+        "docs/design/candidate-graph.md",
+        "docs/design/design-history.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
