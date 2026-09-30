@@ -189,7 +189,9 @@ MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 
 以下只搬不改：P036、StateRecord、Stage／candidate／HEAD、协议与 API 路径、settings 文件的位置与格式、
 已有用户数据。看起来像旧名、但已写入数据或线上接口的名字也保留：`studio-*` 记录类型和 run id、
 `archflow-studio.*` localStorage 键、`service: "archflow-studio-api"`、`studioPort`、`/studio/`、
-`ARCHFLOW_STUDIO_*`。Runtime 改名（R1-5）只替换了 `archflow_studio_api` 和 `apps/archflow-studio/api` 两个字面值。
+`ARCHFLOW_STUDIO_*`，以及手动启动的 Runtime 在系统临时目录下的缓存根 `archflow-studio-cache`：
+那里的投影缓存按项目文件夹跨运行复用，只在自己的根里回收，改名会把已有缓存留成无人清理的孤儿。
+Runtime 改名（R1-5）只替换了 `archflow_studio_api` 和 `apps/archflow-studio/api` 两个字面值。
 
 ### 6.2 安装包里的位置
 
