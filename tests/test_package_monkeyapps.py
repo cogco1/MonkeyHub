@@ -221,6 +221,7 @@ class PackageAdapterTests(unittest.TestCase):
         # Read from the interpreter's directory, it is where collect_application puts project_runtime.
         self.assertEqual((python / entry.replace("\\", "/")).resolve(),
                          (self.root / "bundle/services/project-runtime/src").resolve())
+        self.assertEqual(run.call_count, 2)  # pip download, then pip install, both of the runtime's requirements
         for call in run.call_args_list:
             self.assertIn(str(self.source / "services/project-runtime/requirements.txt"), call.args[0])
 
