@@ -150,7 +150,7 @@
       "reason": "The durable project repository is the sole project-document filesystem writer."
     },
     {
-      "path": "packages/monkeycad/src/monkeycad/cad_execution.py",
+      "path": "packages/monkeycad/src/monkeycad/backends/rhino/export.py",
       "function": "prepare_rhino_three_dm_export",
       "operations": [
         "open_write"
@@ -160,7 +160,7 @@
       "reason": "Exclusively creates a deterministic Rhino script inside the explicitly supplied non-symlink speculative workspace; saved 3DM output remains non-canonical."
     },
     {
-      "path": "packages/monkeycad/src/monkeycad/cad_execution.py",
+      "path": "packages/monkeycad/src/monkeycad/backends/rhino/step_import.py",
       "function": "work_model_workspace",
       "operations": [
         "mkdir"
@@ -628,7 +628,7 @@
       "reason": "Creates the external --update-output and --update-work directories main() validated outside the source checkout, and writes one new MonkeyHub-<version>-update-index.json beside the patches create_patch wrote there."
     },
     {
-      "path": "packages/monkeycad/src/monkeycad/blender_cad.py",
+      "path": "packages/monkeycad/src/monkeycad/backends/blender/backend.py",
       "function": "execute",
       "operations": [
         "open_write"
@@ -671,7 +671,7 @@
       "reason": "Existing frontend SDK generation writes only disposable OpenAPI schema inputs under .generated/ (the Hub's, and the project runtime's in project-runtime/); never project data."
     },
     {
-      "path": "packages/monkeycad/src/monkeycad/blender_projection.py",
+      "path": "packages/monkeycad/src/monkeycad/backends/blender/projection.py",
       "function": "execute_blender_projection",
       "operations": [
         "write_text"
@@ -1136,6 +1136,7 @@
     {
       "source": "packages/monkeycontrol/src/monkeycontrol",
       "targets": [
+        "monkeycad",
         "monkeyarch",
         "monkeydiagram",
         "monkeymonitor",
@@ -1147,7 +1148,7 @@
         "tests",
         "labs"
       ],
-      "reason": "Desktop automation receives plain action values and writes only receipts under a caller-supplied diagnostics directory; the spine, both workflows and the Hub never become its dependencies."
+      "reason": "Desktop automation receives plain action values and writes only receipts under a caller-supplied diagnostics directory; the spine, both workflows, CAD and the Hub never become its dependencies."
     },
     {
       "source": "packages",
