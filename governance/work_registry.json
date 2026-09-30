@@ -75,6 +75,7 @@
         "labs/structural_analysis/fixture.py",
         "apps/monkeyhub/api/tests/test_chat.py",
         "docs/architecture/overview.md",
+        "docs/architecture/repository-layout.md",
         "docs/audits/drawing-v0.md",
         "docs/design/construction-api.md",
         "docs/design/construction-lowering.md",
