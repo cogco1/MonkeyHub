@@ -4,7 +4,7 @@
 >
 > MonkeyHub is under active development. APIs, project formats, installation paths and behaviors may change without backward-compatibility guarantees. The current software is a research/development system, **not a construction-, engineering-, permit-, code-compliance-, or safety-certified product**. Independently verify geometry, quantities, analysis results, fabrication output and any decision that can affect people, property or built work. Do not place secrets, credentials, confidential project data or personal information in public issues, discussions, logs or example files.
 
-New teammate or agent? Start with the [团队与 Agent 接入清单](docs/TEAM_ONBOARDING.md):
+New teammate or agent? Start with the [团队与 Agent 接入清单](docs/development/team-onboarding.md):
 which repository to use, the first runnable task, setup commands, and the current release boundary.
 
 **Less work serving the tools. More room to develop architectural ideas.**
@@ -67,7 +67,7 @@ interfaces each contribute to that aim; none substitutes for the others.
 
 The project is now released under **GNU AGPL v3.0 only (`AGPL-3.0-only`)**. See [License and contributions](#license-and-contributions) below for the practical boundary.
 
-The [vision](docs/VISION.md) develops this direction in Chinese, with a concise
+The [vision](docs/product/vision.md) develops this direction in Chinese, with a concise
 English statement and sources for the existing-tool comparison.
 
 ## Where the current system stands
@@ -79,7 +79,7 @@ The current implementation has three established code owners composed in the sam
 - **MonkeyDiagram** owns drawing projection and presentation; its page editor opens from Board for document viewing and annotation.
 
 Product names and design-history terms follow the
-[team naming conventions](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#产品名称与版本用语),
+[team naming conventions](docs/development/work-environment.md#产品名称与版本用语),
 including MonkeyHub, MonkeyBoard, MonkeyMonitor, MonkeyFab and Stage / Branch /
 Candidate. MonkeyHub is the top-level product/system; ArchFlow remains the underlying mechanism.
 
@@ -91,35 +91,35 @@ a candidate and formally issuing a project version remain separate actions.
 **MonkeyControl** drives this machine's desktop — for a recorded demonstration of a method,
 or an application MonkeyHub has no API for — with semantic targets, verified steps and
 inspectable receipts. It stays off until a local policy file enables it and names the
-applications it may touch, and it writes no project state: see [computer use](docs/COMPUTER_USE.md).
+applications it may touch, and it writes no project state: see [computer use](docs/protocols/computer-use.md).
 
 The current implementation does not establish complete architectural reasoning.
 Declared relationships can be checked and propagated, but their completeness and
 design adequacy still need architectural judgment and real project trials. See the
-[architecture](docs/ARCHITECTURE.md) and [repository layout](docs/REPO_LAYOUT.md) for
+[architecture](docs/architecture/overview.md) and [repository layout](docs/architecture/repository-layout.md) for
 implemented behavior; remaining work and its acceptance are tracked in
 [GitHub Issues](https://github.com/cogco1/MonkeyHub/issues).
 
 ## Start here
 
-- **One application entry:** open MonkeyHub. For agent access and source work, follow the [Hub entry and bounded lookup sequence](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口).
+- **One application entry:** open MonkeyHub. For agent access and source work, follow the [Hub entry and bounded lookup sequence](docs/development/work-environment.md#0-monkeyhub-统一入口).
   It connects the source checkout, external project, capability registries and existing commands.
-- [Vision](docs/VISION.md) — long-term research, technology and product direction.
+- [Vision](docs/product/vision.md) — long-term research, technology and product direction.
 - [GitHub Issues](https://github.com/cogco1/MonkeyHub/issues) — current work with its requirements
   and acceptance; `python tools/devctl.py work` shows who is editing which paths.
-- [System map](docs/SYSTEM_MAP.md) — current capability owners and public APIs.
-- [Architecture](docs/ARCHITECTURE.md) — implemented responsibilities, concrete
+- [System map](docs/architecture/system-map.md) — current capability owners and public APIs.
+- [Architecture](docs/architecture/overview.md) — implemented responsibilities, concrete
   gaps, and the next architectural revision to develop.
-- [Consolidation history](docs/CANONICAL_SPINE.md) — why the current spine was
+- [Consolidation history](docs/decisions/001-one-spine.md) — why the current spine was
   retained; not a migration plan to execute again.
-- [Work environment](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md) — source,
+- [Work environment](docs/development/work-environment.md) — source,
   runtime and project-data locations; extending an existing capability.
 - [Project Runtime guide](services/project-runtime/README.md) — setup, model interaction,
   candidate execution, and validation.
-- [API protocol](docs/PROTOCOL.md) — client/server contracts and versioning.
+- [API protocol](docs/protocols/project-runtime-api.md) — client/server contracts and versioning.
 - [Project document boundary](packages/archflow/src/archflow/project/README.md) — project identity,
   storage layout, references, and persistence.
-- [Repository layout](docs/REPO_LAYOUT.md) — what lives in the repository, the
+- [Repository layout](docs/architecture/repository-layout.md) — what lives in the repository, the
   external workspace (building projects and their evidence) and the external archive.
 
 ## Team development on GitHub
@@ -135,7 +135,7 @@ Take one GitHub Issue in the relevant repository, work on a short branch, open a
 pull request, and have another member review the change and its Actions checks
 before integration. Each member has an independent clone and runtime. Shared
 code does not mean sharing one live project directory or another member's credentials.
-See the [team setup and review path](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md).
+See the [team setup and review path](docs/development/work-environment.md).
 
 New contributors must also read and agree to the [`CLA.md`](CLA.md) before a contribution is merged. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the working process.
 
@@ -145,7 +145,7 @@ For the Windows candidate installation without a system Python or Node.js,
 see the [MonkeyHub installation guide](apps/monkeyhub/installer/README.md).
 The source-development setup below remains available for contributors.
 
-Follow section 8 of the [team setup guide](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md):
+Follow section 8 of the [team setup guide](docs/development/work-environment.md):
 an independent clone, Python 3.12 in an external virtual environment, Node.js 24,
 and the locked web dependencies. Create an external project with the production command:
 

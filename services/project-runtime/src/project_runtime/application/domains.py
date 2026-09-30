@@ -2,7 +2,7 @@
 
 Two thin reads over ``monkeyarch.capabilities.domain_readiness``, the honest
 entry gate every technical domain calls before it runs (spec
-docs/2026-09-28-construction-api.md §3.6). ``domains_index`` needs no bound
+docs/design/construction-api.md §3.6). ``domains_index`` needs no bound
 project at all — it is the registry's own description of what each domain
 reads and needs. ``domain_readiness`` resolves the project's projection the
 same way ``GET /api/state?run=`` does (``application.projection.project_state``)

@@ -2,8 +2,8 @@
 
 本文定义共享核心、建模、出图、Monitor、Control 和 Fab 模块的职责，说明当前目录，以及仓库拓扑重构
 （milestone “Topology refactor round 1”）完成后的目标目录。当前 owner、路径和公开接口以
-[module registry](../governance/module_registry.json) 为准；目录分离不表示所有规划能力已经实现。
-协作规则见 [AGENTS](../AGENTS.md) 与 [CONTRIBUTING](../CONTRIBUTING.md)。
+[module registry](../../governance/module_registry.json) 为准；目录分离不表示所有规划能力已经实现。
+协作规则见 [AGENTS](../../AGENTS.md) 与 [CONTRIBUTING](../../CONTRIBUTING.md)。
 
 第 1–5 节描述 `main` 上的现状，第 6 节是第一轮完成后的目标，第 7 节是落地它的 Issue 与顺序。
 每次搬迁在同一个 PR 里更新本文对应的部分。
@@ -16,7 +16,7 @@
 | **MonkeyArch** | 3D 建模与空间修改：任务解释、构件与空间构造、模型候选、几何编译、关系检查、模型检查与续改 | 图纸字形、笔迹、二维图形、版面及图纸集组织 |
 | **MonkeyDiagram** | 图纸与图解：平立剖、家具与节点表达、PDF／图片批注、二维内容编辑、文字尺寸、视图与图形表达、排版及导出 | 隐式改变模型空间或构件；建立第二套项目保存与发布权威 |
 | **MonkeyMonitor** | 跨应用用量、费用估算、调用耗时与通用算法预算建议；保留 CLI/API，用量页面由 MonkeyHub 承载 | 建筑评价、执行候选、设计接受、正式发布及项目资产存储 |
-| **MonkeyControl** | 与模型无关的桌面自动化：按语义定位 Windows 界面目标、执行并核验声明的结果，回执只写入调用方指定的诊断目录（[COMPUTER_USE](COMPUTER_USE.md)） | 设计状态与项目持久化 |
+| **MonkeyControl** | 与模型无关的桌面自动化：按语义定位 Windows 界面目标、执行并核验声明的结果，回执只写入调用方指定的诊断目录（[computer use](../protocols/computer-use.md)） | 设计状态与项目持久化 |
 | **MonkeyFab** | 闭合网格的等比缩放、打印空间内封闭拆件、装配清单，以及已切片任务上传；界面由 Hub 承载 | 建筑状态修改、项目持久化、切片和自动启动打印 |
 
 MonkeyArch 和 MonkeyDiagram 是平行工作流。ArchFlow 提供它们共同依赖的底座。
@@ -125,7 +125,7 @@ MonkeyHub Usage 页   → monkeymonitor ← Project Runtime 元数据适配器
 | 应用图标、字体、模板资源 | 实际运行需要的资源随相应应用或工作区提交；项目生成的图纸不是应用资源。 |
 | 第三方许可与上游说明 | `apps/monkeyhub/installer/third-party/`，随安装包分发；archcheck 不把其中的文件当作本仓源码。 |
 | 构建、日志、缓存、临时检查输出 | 配置的外部 runtime/cache/temp 或现有忽略目录；没有完成交接的源码和唯一回归不能作为可丢缓存删除。 |
-| MonkeyMonitor 用量日志 | 显式指定的外部诊断目录内 `usage.jsonl`；不含提示词或项目内容，不成为 P036 资产或新的项目权威。详见 [运行与算法方案](../packages/monkeymonitor/src/monkeymonitor/README.md)。 |
+| MonkeyMonitor 用量日志 | 显式指定的外部诊断目录内 `usage.jsonl`；不含提示词或项目内容，不成为 P036 资产或新的项目权威。详见 [运行与算法方案](../../packages/monkeymonitor/src/monkeymonitor/README.md)。 |
 | 软件 release | 准确 Git 提交对应的源码／构建包及发行说明；软件版本独立于协议版本、记录 schema 和项目 HEAD。 |
 
 GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，架构方案解释边界与取舍；完成的 claim 从 registry 删除，结果保留在 Issue、PR 与 Git。

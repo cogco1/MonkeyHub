@@ -6,9 +6,9 @@ migrated from umbrella issue #119 (opened 2026-09-15), which closes when PR #470
 #122, #268) now mean this document.
 
 - Cross-issue research sequencing, commitments and checkpoints:
-  [Research roadmap 2026–2027](ROADMAP_2026_2027.md).
+  [Research roadmap 2026–2027](research-plan.md).
 - Live status, priority and dates: the GitHub Project, see
-  [Project tracking](../PROJECT_TRACKING.md).
+  [Project tracking](../development/project-tracking.md).
 - Concrete work stays in independently closable, benchmark-driven issues.
 
 ## Purpose
@@ -251,7 +251,7 @@ with direct write access do not.
   the future physical evidence source for #123 and #124. OCBA/search stayed out of that
   first slice until the evidence path was real.
 - **2026-09-19 · unified experiment roadmap.** Cross-issue planning moved to #176, now
-  [ROADMAP_2026_2027.md](ROADMAP_2026_2027.md); it complements this charter. Near-term
+  [research-plan.md](research-plan.md); it complements this charter. Near-term
   sequence: shared records / #123 evaluator → #124 allocator adapter + #125 validated FEA
   evidence, with #32 supplying exact-state context and real trace/cost measurements. Reuse
   the external OCBA support rather than reimplementing the algorithm from scratch.
@@ -269,12 +269,12 @@ with direct write access do not.
   [OCBA discussion](ocba-discussion.md). #121 remains open and on hold.
 - **2026-09-29 · allocation follow-up.** The algorithm/statistics discussion was recorded in
   #268 rather than a new allocator issue; see the roadmap's
-  [near-term allocation work](ROADMAP_2026_2027.md#near-term-allocation-work-added-2026-09-29-from-268).
+  [near-term allocation work](research-plan.md#near-term-allocation-work-added-2026-09-29-from-268).
 
 ## Related documents
 
-- [Research roadmap 2026–2027](ROADMAP_2026_2027.md)
-- [Project tracking and roadmap policy](../PROJECT_TRACKING.md)
+- [Research roadmap 2026–2027](research-plan.md)
+- [Project tracking and roadmap policy](../development/project-tracking.md)
 - [OCBA discussion](ocba-discussion.md) and the
   [candidate evaluation lab](../../labs/candidate_evaluation/README.md)
 - [Study evidence method](study-evidence-method.md) (#73)

@@ -115,7 +115,7 @@ legacy Blender modeling backend.
 This is a real geometry/runtime test of an architectural fixture, not an actual
 client building acceptance. Existing seat partitioning produces separate wall
 and column scenes. Screenshots and the exact run hashes are in
-[the published probe](../probes/blender-projection-v1/README.md).
+[the published probe](../../probes/blender-projection-v1/README.md).
 
 Current limits: no Hub UI button, installed package, multi-seat scene composition,
 incremental Blender sync, external assets, animation, bidirectional edit UI or

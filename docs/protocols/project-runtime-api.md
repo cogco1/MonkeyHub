@@ -361,7 +361,7 @@ One chain, and each arrow is a route.
    something carries it back. An agent reads the same `stateDigest` for the same source from
    `GET /api/construction/model[?run=]`, the model in construction terms, and sends it back with its
    construction script (`POST /api/proposals/construction`;
-   [the construction contract](2026-09-28-construction-api.md#32-the-agent-contract-after-this-change)).
+   [the construction contract](../design/construction-api.md#32-the-agent-contract-after-this-change)).
 2. **Propose.** `POST /api/proposals` (a sentence already in the grammar) or `POST /api/intents`
    (any words; the server resolves what they are about, its agent compiles them into the grammar
    and the grammar types them). Either way the answer is the *record's* proposal: a typed
@@ -1143,7 +1143,7 @@ candidate workers. They are diagnostic association only and grant no project act
 The acknowledgement reports whether logging succeeded; diagnostics cannot retry a
 business request. Model-request round trips and nested service intervals are not
 pure inference time, and only an explicit client interaction root supplies total
-elapsed time. See [MonkeyMonitor timing](../packages/monkeymonitor/src/monkeymonitor/README.md#时间口径).
+elapsed time. See [MonkeyMonitor timing](../../packages/monkeymonitor/src/monkeymonitor/README.md#turntrace).
 OCCT exports an exact STEP and a mesh 3DM preview from the same program. Clients load only the
 3DM in the viewer and offer the STEP as a download; two files sharing a receipt are one export.
 The list is sorted and reflects the running configuration,
@@ -1341,7 +1341,7 @@ showing conversations opens it and calls `preventDefault()`; unanswered within 3
 ### Runtime lifecycle
 
 The runtime's process contract — what the Hub supplies, what it owns, identity, isolation and
-the direct development start — is [PROJECT_RUNTIME.md](PROJECT_RUNTIME.md); this section is its
+the direct development start — is [project-runtime.md](../architecture/project-runtime.md); this section is its
 wire protocol on the Hub side. The runtime is API-only. One Hub frontend renders Arch and Board
 in place; Diagram opens a registered Board page, not a separate application. `AppStatus.url`
 for Arch/Board points to `/?runtimeId=...&view=arch|board`; `apiUrl` names the actual verified
@@ -1686,7 +1686,7 @@ window's element tree; `POST /api/computer/actions` `{action, mode?}` runs one
 `ComputerAction@1` and answers the `ComputerActionReceipt@1` it earned; `POST
 /api/computer/recordings` `{command: "start"|"stop", name?}` starts or ends the one recording
 a runtime may have running. The contract of both documents, the refusal codes and the trace
-layout are [COMPUTER_USE.md](COMPUTER_USE.md).
+layout are [computer-use.md](computer-use.md).
 
 A receipt is a `200` body whatever it says, including `status: "refused"` and `status:
 "failed"`: the caller reads the refusal rather than being told the request failed. Only two
@@ -1736,7 +1736,7 @@ add unsupplied historical citations or sign the user's preferences. Changed
 applicability can retain, revise or reject a prior without rewriting the source.
 All Study operations leave StateRecord, DesignStage and canonical HEAD unchanged.
 Method limits and the public synthetic experiment are described in
-[the Study method note](research/study-evidence-method.md).
+[the Study method note](../research/study-evidence-method.md).
 
 ## Conversational model conversion
 
@@ -1761,7 +1761,7 @@ The current provider supports bounded 3DM/GLB triangle-mesh interchange and
 validated same-format delivery. It does not reconstruct exact CAD solids or
 transfer materials, textures or hierarchy. SKP/DWG routes report no configured
 executor; discovery of installed software does not enable conversion.
-See [the complete conversion limits](MODEL_CONVERSION.md).
+See [the complete conversion limits](model-conversion.md).
 
 
 ## Render image attempts
@@ -1909,4 +1909,4 @@ the optional SketchUp live extension is absent. Explicit Python qualification
 uses the existing CAD/SDK/projection executors and their saved-output checks.
 `ready` and `checkedAt` describe the last qualification in this Hub session,
 not an authorization or guarantee for a later execution. See
-[Integration packs](INTEGRATION_PACKS.md) for the contract and Revit design case.
+[Integration packs](integration-packs.md) for the contract and Revit design case.

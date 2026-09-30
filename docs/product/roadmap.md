@@ -7,7 +7,7 @@ mean this document.
 - It records product direction, rules and acceptance; concrete execution stays in bounded,
   independently closable issues.
 - Live status, priority and dates: the GitHub Project, see
-  [Project tracking](../PROJECT_TRACKING.md).
+  [Project tracking](../development/project-tracking.md).
 
 ## Product decision
 
@@ -83,7 +83,7 @@ Owners (snapshot 2026-09-29):
 - Listed as related in #254: #13 (CAD backend / Rhino boundary) and #14 / #136 (local
   interaction performance). #13 and #14 closed on 2026-09-15; #136 is open.
 
-Measured ingest baseline and its limits: [EXTERNAL_MODEL_INGEST_BASELINE.md](../EXTERNAL_MODEL_INGEST_BASELINE.md).
+Measured ingest baseline and its limits: [external-model-ingest.md](../audits/external-model-ingest.md).
 
 Not yet proven as of the 2026-09-23T23:22 comment: #261 does not prove native modification,
 Stage admission, cold-reopen verification, exact downstream invalidation or end-to-end
@@ -173,7 +173,7 @@ these are two orthogonal axes:
   chain.
 
 Reconciling this policy with main's representation status
-([2026-09-26-representation-state.md](../2026-09-26-representation-state.md), which derives
+([representation-state.md](../design/representation-state.md), which derives
 `current` / `outdated` / `frozen` / `unavailable`, and where a `frozen` page is read but never
 compared) is owned by #223.
 

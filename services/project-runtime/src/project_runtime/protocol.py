@@ -3,7 +3,7 @@
 The Studio has been one program in two halves so far, and the halves knew each
 other by having been started together. A remote server and a second client
 cannot know each other that way, so the boundary between them gets a name, a
-version and one route that states both. ``docs/PROTOCOL.md`` is the written
+version and one route that states both. ``docs/protocols/project-runtime-api.md`` is the written
 form of what this module names.
 
 Three constants and one function, and nothing else belongs here:

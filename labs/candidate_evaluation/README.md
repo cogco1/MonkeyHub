@@ -3,9 +3,9 @@
 This callable research slice measures declared massing candidates, reports failed
 and unavailable checks, and compares complete deterministic objective vectors. It
 implements the deterministic/statistical slice of [#123](https://github.com/cogco1/MonkeyHub/issues/123) within
-the boundaries of the [algorithm team charter](../../docs/research/ALGORITHM_TEAM.md)
+the boundaries of the [algorithm team charter](../../docs/research/algorithm-team.md)
 (formerly [#119](https://github.com/cogco1/MonkeyHub/issues/119)) and the
-[research roadmap](../../docs/research/ROADMAP_2026_2027.md) (formerly
+[research roadmap](../../docs/research/research-plan.md) (formerly
 [#176](https://github.com/cogco1/MonkeyHub/issues/176)). It is not a product API or
 an architectural preference model. The independent sequential allocation
 experiment for [#124](https://github.com/cogco1/MonkeyHub/issues/124) consumes the

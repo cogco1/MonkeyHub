@@ -1,3 +1,7 @@
+---
+created: 2026-09-25
+---
+
 # Candidate Graph interaction: where are my five schemes?
 
 **Issue:** [#284](https://github.com/cogco1/MonkeyHub/issues/284), sections A–D and F · **Date:** 2026-09-25 · **Base:** `cc9397fa`
@@ -9,7 +13,7 @@ Terms used below:
 | Term | Meaning here |
 |---|---|
 | **Stage** | Accepted, immutable checkpoint on the spine (`S0`, `S1`, …). |
-| **Study** | One request for alternatives, such as "Entrance Study · 5 options". It starts from one point, but its results need not share one exact base (§11, slice 1). The registered term is **Exploration**, backed by WorkingCopy ([naming table](WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#产品名称与版本用语), [plan §1](STAGE_BRANCH_CANDIDATE_PLAN.md)). See Q1. |
+| **Study** | One request for alternatives, such as "Entrance Study · 5 options". It starts from one point, but its results need not share one exact base (§11, slice 1). The registered term is **Exploration**, backed by WorkingCopy ([naming table](../development/work-environment.md#产品名称与版本用语), [plan §1](design-history.md)). See Q1. |
 | **Candidate** | A completed result that has been admitted (#294). Runs, repair attempts, failed jobs and results rejected before admission are never nodes. |
 | **Current** | The user-facing name for the Working Head (#277): the point the next edit starts from (修改起点). |
 | **Line** | A lineage. A new line starts only when someone continues from an older point. The naming table calls this a Branch. |
@@ -49,7 +53,7 @@ Paths: `ChatShell` = `apps/monkeyhub/web/src/ChatShell.tsx`; `Stage`, `VersionsS
 **Answers to the issue's six questions:**
 
 1. **Where does the user look right after asking for five schemes?** First at the chat turn they just sent, then at the viewport that opened by itself. Both show at most one scheme. The other four are unlabelled chat buttons or rows inside a closed popover.
-2. **Where can a project-level control live without becoming another app?** In project chrome above the surface: one project bar shared by Arch, Diagram and Tools. The rail won't work, because its entries are surfaces and tools (#295). The Modeling footer won't either, because it is Arch-only. The [2026-09-24 proposal §5](2026-09-24-monkeyhub-interaction-proposal.md) already planned this bar as its "unified top bar". The Stage chip would sit in the bar's context slot.
+2. **Where can a project-level control live without becoming another app?** In project chrome above the surface: one project bar shared by Arch, Diagram and Tools. The rail won't work, because its entries are surfaces and tools (#295). The Modeling footer won't either, because it is Arch-only. The [2026-09-24 proposal §5](hub-interaction.md) already planned this bar as its "unified top bar". The Stage chip would sit in the bar's context slot.
 3. **What stays visible while Modeling, Drawing or Render changes?** The project, the Stage, the position (Current, "Viewing X · read-only", or "Comparing N"), the attention counts (new and running), and the Design Tree drawer if it is open.
 4. **What survives narrow screens?** The rail, and whichever header is on top. The chip therefore renders in the header of the visible project area and shrinks to `S2 ▾ ●3`.
 5. **What should a result card make discoverable?** The Study: its name, its base Stage, "N of M ready" with thumbnails and running placeholders, plus "Compare N" and "Show in Design Tree". It shouldn't be one card per run.
@@ -65,7 +69,7 @@ All links were fetched on 2026-09-25. Autodesk Fusion was dropped because its ve
 - *Makes easy:* safe side exploration. Restore is non-destructive (it adds checkpoints), and merging archives the branch.
 - *Confusing:* lineage (the modal) and time (the sidebar) are two unrelated views, and there is no single graph. Merged and manually archived branches share one tab but follow different restore rules. Review is all-or-nothing.
 - *Borrow:* an Active/Archived filter, restore that adds a checkpoint, and a name and description on each acceptance.
-- *Don't borrow:* splitting lineage and history into two surfaces, merge and conflict UI (architects choose a scheme; they don't merge schemes), and auto-archiving siblings on merge. Unchosen Candidates stay as retained alternatives ([plan §3](STAGE_BRANCH_CANDIDATE_PLAN.md)).
+- *Don't borrow:* splitting lineage and history into two surfaces, merge and conflict UI (architects choose a scheme; they don't merge schemes), and auto-archiving siblings on merge. Unchosen Candidates stay as retained alternatives ([plan §3](design-history.md)).
 
 **Onshape: versions, branches, merge, compare**
 ([versions and history](https://cad.onshape.com/help/Content/Document/versions_and_history.htm), [versions primer](https://cad.onshape.com/help/Content/Primer/versions.htm), [merge](https://cad.onshape.com/help/Content/merge.htm), [restore](https://cad.onshape.com/help/Content/restore.htm), [compare](https://cad.onshape.com/help/Content/Document/compare.htm))
@@ -250,29 +254,29 @@ Continue never accepts, and Accept is offered only on Current. Accepting a Candi
 
 ## 9. Prototype
 
-The prototype is at [`prototypes/candidate-graph/`](prototypes/candidate-graph/README.md). It is static and dev-only: fixture data, admitted Candidates only, no API calls. Open `index.html` directly; each state also opens by URL hash (`#state=1` … `#state=6`). It uses the hybrid entry: a project-bar Stage/Current chip opens a Design Tree drawer beside the workspace, and the Agent's Study card leads to the same drawer. `capture.mjs` re-renders every screenshot and checks each state. It also walks the chain through the UI (result card → Compare → Continue → Accept as next Stage) and reports console errors or network requests.
+The prototype is at [`prototypes/candidate-graph/`](../prototypes/candidate-graph/README.md). It is static and dev-only: fixture data, admitted Candidates only, no API calls. Open `index.html` directly; each state also opens by URL hash (`#state=1` … `#state=6`). It uses the hybrid entry: a project-bar Stage/Current chip opens a Design Tree drawer beside the workspace, and the Agent's Study card leads to the same drawer. `capture.mjs` re-renders every screenshot and checks each state. It also walks the chain through the UI (result card → Compare → Continue → Accept as next Stage) and reports console errors or network requests.
 
 | # | State | Screenshot |
 |---|---|---|
-| 1 | Normal project, tree closed | [01-closed.png](prototypes/candidate-graph/screenshots/01-closed.png) |
-| 2 | Tree open with the Stage spine and 5 Candidates | [02-tree-open.png](prototypes/candidate-graph/screenshots/02-tree-open.png) |
-| 3 | Compare mode | [03-compare.png](prototypes/candidate-graph/screenshots/03-compare.png) |
-| 4 | Old Stage selected, read-only | [04-old-stage-readonly.png](prototypes/candidate-graph/screenshots/04-old-stage-readonly.png) |
-| 5 | One Candidate continued into the current line | [05-continued.png](prototypes/candidate-graph/screenshots/05-continued.png) |
-| 6 | Running Agent worktree under a Study | [06-running.png](prototypes/candidate-graph/screenshots/06-running.png) |
-| — | 390 px sheet; dark theme | [07-narrow.png](prototypes/candidate-graph/screenshots/07-narrow.png), [08-dark-tree-open.png](prototypes/candidate-graph/screenshots/08-dark-tree-open.png) |
-| — | Growth tree: fit with a selected option; close to Current; zoomed out | [09-growth-tree.png](prototypes/candidate-graph/screenshots/09-growth-tree.png), [10-growth-tree-close.png](prototypes/candidate-graph/screenshots/10-growth-tree-close.png), [11-growth-tree-overview.png](prototypes/candidate-graph/screenshots/11-growth-tree-overview.png) |
-| — | Compact list rows | [12-list-compact.png](prototypes/candidate-graph/screenshots/12-list-compact.png) |
+| 1 | Normal project, tree closed | [01-closed.png](../prototypes/candidate-graph/screenshots/01-closed.png) |
+| 2 | Tree open with the Stage spine and 5 Candidates | [02-tree-open.png](../prototypes/candidate-graph/screenshots/02-tree-open.png) |
+| 3 | Compare mode | [03-compare.png](../prototypes/candidate-graph/screenshots/03-compare.png) |
+| 4 | Old Stage selected, read-only | [04-old-stage-readonly.png](../prototypes/candidate-graph/screenshots/04-old-stage-readonly.png) |
+| 5 | One Candidate continued into the current line | [05-continued.png](../prototypes/candidate-graph/screenshots/05-continued.png) |
+| 6 | Running Agent worktree under a Study | [06-running.png](../prototypes/candidate-graph/screenshots/06-running.png) |
+| — | 390 px sheet; dark theme | [07-narrow.png](../prototypes/candidate-graph/screenshots/07-narrow.png), [08-dark-tree-open.png](../prototypes/candidate-graph/screenshots/08-dark-tree-open.png) |
+| — | Growth tree: fit with a selected option; close to Current; zoomed out | [09-growth-tree.png](../prototypes/candidate-graph/screenshots/09-growth-tree.png), [10-growth-tree-close.png](../prototypes/candidate-graph/screenshots/10-growth-tree-close.png), [11-growth-tree-overview.png](../prototypes/candidate-graph/screenshots/11-growth-tree-overview.png) |
+| — | Compact list rows | [12-list-compact.png](../prototypes/candidate-graph/screenshots/12-list-compact.png) |
 
-![State 2: the Design Tree open beside the workspace, with the Stage spine and the Massing Study's five admitted Candidates](prototypes/candidate-graph/screenshots/02-tree-open.png)
+![State 2: the Design Tree open beside the workspace, with the Stage spine and the Massing Study's five admitted Candidates](../prototypes/candidate-graph/screenshots/02-tree-open.png)
 
-![State 5: Entrance A continued into the current line; Accept as next Stage is now offered as a separate step](prototypes/candidate-graph/screenshots/05-continued.png)
+![State 5: Entrance A continued into the current line; Accept as next Stage is now offered as a separate step](../prototypes/candidate-graph/screenshots/05-continued.png)
 
 **Growth tree.** After reviewing the screenshots, Kaiwen described the design history as one branch that keeps getting longer: at each Stage he chooses one scheme and deepens it, so the chosen option is the trunk and keeps growing, while the options not taken stay short dead-end twigs. Continuing later from an old twig starts a new branch there, and the abandoned future stays visible but muted. The Design Tree header therefore has a `List | Growth tree` toggle (`#view=tree`). The growth tree borrows only the line grammar of a bracket diagram (solid for the chosen path, dashed for the rest), not its converging topology. The Working Head's lineage is one continuous stroke from left to right, and twigs alternate above and below it at each decision point, N − 1 per Study. Because a tree has E = V − 1 edges and every side subtree keeps its own x-range, the drawing never needs a crossing; `capture.mjs` checks this. The canvas copies MonkeyBoard's navigation: wheel zoom at the cursor, drag, Space or middle-mouse pan, a `− 100% +` bar with Fit, and the same grid.
 
 **Density.** Kaiwen also found the information density too high. The canvas shows only five element kinds (trunk, Stage milestones, option twigs, the Current tip with Accept, and running or queued placeholders) and uses semantic zoom. Zoomed out, it shows only the trunk, Stage labels and counts; the middle level adds thumbnails and short names; close up adds a one-line summary and status. Author, time and runs appear only in the side card of a selected node. The list rows were cut back the same way: thumbnail, letter, name and a status dot, with details on the selected row. Screenshots 01–08 show the compact list.
 
-![Growth tree at Fit: the Working Head's lineage as one trunk, options not taken as twigs above and below, and the selected option's side card](prototypes/candidate-graph/screenshots/09-growth-tree.png)
+![Growth tree at Fit: the Working Head's lineage as one trunk, options not taken as twigs above and below, and the selected option's side card](../prototypes/candidate-graph/screenshots/09-growth-tree.png)
 
 The prototype differs from this note in two small ways:
 
@@ -298,7 +302,7 @@ This research supports the hybrid. When reviewing the screenshots, check that:
 - **Q2.** What should the position word be: Current / 当前, or 修改起点 (the 09-24 proposal's term)? Other proposed copy: 设计树, 从这里继续, 接受为 S3, 比较 5 个方案, 正在查看 S0 · 只读, 回到当前.
 - **Q3.** Admission policy (#294). An explicit "give me five options" request should admit closed-loop results automatically. If admission needs a click, nothing new shows up and W1 fails, unless the Study gets a "5 finished · review to admit" state. #294 needs to decide.
 - **Q4.** Should the drawer cover the conversation (recommended) or push the viewport?
-- **Q5.** Auto-open: open only the Study's first ready Candidate, view-only, and let later completions update counts without switching the view ([plan §2 point 5](STAGE_BRANCH_CANDIDATE_PLAN.md)).
+- **Q5.** Auto-open: open only the Study's first ready Candidate, view-only, and let later completions update counts without switching the view ([plan §2 point 5](design-history.md)).
 
 **Risks**
 
@@ -326,7 +330,7 @@ The smallest real slices, after review:
    - the branch-name form (`VersionsStrip:135-140`);
    - raw branch IDs in Drawing's source picker (`DrawingCanvas.tsx:287`).
 
-   Update [plan §7](STAGE_BRANCH_CANDIDATE_PLAN.md), which still names VersionsStrip as the only version entry.
+   Update [plan §7](design-history.md), which still names VersionsStrip as the only version entry.
 5. **Chat.** Show one Study card per request instead of a button per run (`ChatShell:909-910`). Auto-open only the first ready Candidate, view-only, instead of jumping to every newest result (`ChatShell:838-851`).
 6. **Project bar.** One bar shared by Arch, Diagram and Tools (the 09-24 proposal §5). Coordinate with #295, which moves Drawing to Tools and has to untangle the `diagram` label key the Drawing entry now uses (`ChatShell:45`). Add a "Locate in Design Tree" action to Drawing's source label (`DrawingCanvas.tsx:292-304`).
 7. **Compare.** An N-up viewer with linked cameras, using the ReviewContext from #271 once it exists.

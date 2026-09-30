@@ -65,14 +65,14 @@
     "packages/monkeymonitor/tests/",
     "packages/monkeycontrol/tests/",
     "packages/monkeyfab/tests/",
-    "docs/PROTOCOL.md",
+    "docs/protocols/project-runtime-api.md",
     "governance/architecture_policy.json",
-    "docs/SYSTEM_MAP.md",
-    "docs/SEMANTIC_REGISTRY.md"
+    "docs/architecture/system-map.md",
+    "docs/architecture/semantic-registry.md"
   ],
   "unclaimed_write_scope": [
-    "docs/adr/",
-    "docs/REPO_LAYOUT.md",
+    "docs/decisions/",
+    "docs/architecture/repository-layout.md",
     "CONTRIBUTING.md"
   ],
   "probe_root": "probes",

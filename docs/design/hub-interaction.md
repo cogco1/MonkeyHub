@@ -1,8 +1,12 @@
+---
+created: 2026-09-24
+---
+
 # MonkeyHub Hub 级交互方案（2026-09-24）
 
 > 工作项：GH-234，lane `interaction-proposal`；由 root task `codex/234-ui-round` 集成。
 >
-> 依据：[UI 现状与功能逻辑审查](2026-09-24-monkeyhub-ui-reality-audit.md)（下称「审计」，编号 F / H / W 与第 9 节）；另一次独立界面走查（2026-09-24，在隔离运行的 Hub 上逐个打开各工作区，未发送消息、未调用模型）；[#272](https://github.com/cogco1/MonkeyHub/issues/272)、[#254](https://github.com/cogco1/MonkeyHub/issues/254)；[产品名称与版本用语](WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#产品名称与版本用语)。
+> 依据：[UI 现状与功能逻辑审查](../audits/monkeyhub-ui-reality.md)（下称「审计」，编号 F / H / W 与第 9 节）；另一次独立界面走查（2026-09-24，在隔离运行的 Hub 上逐个打开各工作区，未发送消息、未调用模型）；[#272](https://github.com/cogco1/MonkeyHub/issues/272)、[#254](https://github.com/cogco1/MonkeyHub/issues/254)；[产品名称与版本用语](../development/work-environment.md#产品名称与版本用语)。
 >
 > 本文件只给方案和交付切片，不改产品代码。行号以 GH-234 集成分支（`codex/234-ui-round`）为准。
 
@@ -45,7 +49,7 @@
 | 【缺能力】 | 需要后端或 runtime 新增能力 |
 | 【不采用】 | 明确不做，并说明原因 |
 
-用语遵守[产品名称与版本用语](WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#产品名称与版本用语)，并针对审计 F7、F13 的用语漂移收敛：
+用语遵守[产品名称与版本用语](../development/work-environment.md#产品名称与版本用语)，并针对审计 F7、F13 的用语漂移收敛：
 
 | 中文 | English | 说明 |
 |---|---|---|
@@ -68,7 +72,7 @@
 | 项目 | Hub 选择 | 所有工作区跟随；切项目时其他项目的工作区保持挂载 |
 | 修改起点 + 未同步修改 | MonkeyArch 会话（`useSession`）与工作草稿 | 唯一参照。顶部条、设计历史、对话目标标签、各工作区来源状态都相对它说明 |
 | 查看中的模型 | MonkeyArch 视口 | 只影响显示；按 Q1，修改前必须显式继续 |
-| 设计上下文 | 工作区回传给 Hub（[ChatShell.tsx:517](../apps/monkeyhub/web/src/ChatShell.tsx#L517)） | 已随每条对话消息发送，只是界面上看不到 → 显示为目标标签【已有但隐藏】 |
+| 设计上下文 | 工作区回传给 Hub（[ChatShell.tsx:517](../../apps/monkeyhub/web/src/ChatShell.tsx#L517)） | 已随每条对话消息发送，只是界面上看不到 → 显示为目标标签【已有但隐藏】 |
 | 产出物来源 | 各产出物记录自己的 `modelSource` / Stage | 相对修改起点显示 跟随 / 已过期 / 已固定 |
 
 ### 3.1 Agent 结果：自动显示，一键继续（按 Q2）
@@ -77,7 +81,7 @@
 - 顶部条与结果卡片都给「从此版本继续」；点一下，修改起点移到该结果【已有但隐藏】（现有继续动作只在底栏和设计历史里）。
 - 你在看历史或有未同步修改时，不切走视口，只在结果卡片上提示「Agent 有新结果」【仅 UI】。
 - 重启后仍从你自己的修改起点开始（Q2）；未继续的结果留在设计历史的「其他 Candidate」里（Q3）。
-- 现状对照：从 Hub 对话打开的结果只作查看（[App.tsx:2019](../apps/monkeyhub/web/src/app/App.tsx#L2019)），而 MonkeyArch 自己发起的结果会被自动预览设为基准（审计 F1 补充）。两条入口统一为本节规则。
+- 现状对照：从 Hub 对话打开的结果只作查看（[App.tsx:2019](../../apps/monkeyhub/web/src/app/App.tsx#L2019)），而 MonkeyArch 自己发起的结果会被自动预览设为基准（审计 F1 补充）。两条入口统一为本节规则。
 - 【不采用】Candidate 自动成为修改起点（与 Q2 冲突）；把第一笔编辑当作继续（Q1 已否决）。
 
 ## 4. 入口与离开
@@ -89,8 +93,8 @@
 | Hub 对话 | 始终在中间列 | 项目；设计上下文（已发送但不可见） | 不离开 | F6 两个对话；工具调用行即主文本 | 结果卡片与过程折叠（6.1）；Q4 建议单一对话（6.1） |
 | MonkeyArch · 建模 | rail「建模」；结果卡片「在建模中查看」 | 修改起点；查看中的模型 | 切走后保持挂载，相机与选择保留 | 底栏两行状态；设计历史覆盖视口 | 顶部条与设计历史抽屉（第 5 节） |
 | MonkeyBoard · 画板 | rail「工作面」组「画板」；左上角「画板 \| 排版」切换两种模式 | 页面及其 `modelSource` | 双击页进入图页编辑；返回画板恢复视角 | 页面不检查是否过期（审计 9.2c） | 过期提示与发反馈前选择（6.3） |
-| MonkeyDiagram 图页编辑 | 画板里双击页 | 该页的 run / asset / revision / page | 「返回画板」 | 打开时 rail 仍高亮画板（审计 §3）；刷新丢失；切到建模即关闭（[ProjectWorkspace.tsx:73](../apps/monkeyhub/web/src/app/ProjectWorkspace.tsx#L73)） | 顶部条显示「画板 › 页名」；页状态写进地址（B3）【仅 UI】 |
-| MonkeyDiagram · 图纸（工具） | rail「工具」组「图纸」，与渲染、制作、用量并列（#295、#300） | 同一项目、Project Runtime 与修改起点；出图来源 | 保持挂载；再按「图纸」回到打开前的工作区，从对话直接打开时收起面板 | 只列已接受的 Stage，而后端也接受精确的保留模型（[drawings.py:40](../services/project-runtime/src/project_runtime/application/drawings.py#L40)）；与图页编辑共用一名（审计 §3） | 默认从修改起点出图（6.2） |
+| MonkeyDiagram 图页编辑 | 画板里双击页 | 该页的 run / asset / revision / page | 「返回画板」 | 打开时 rail 仍高亮画板（审计 §3）；刷新丢失；切到建模即关闭（[ProjectWorkspace.tsx:73](../../apps/monkeyhub/web/src/app/ProjectWorkspace.tsx#L73)） | 顶部条显示「画板 › 页名」；页状态写进地址（B3）【仅 UI】 |
+| MonkeyDiagram · 图纸（工具） | rail「工具」组「图纸」，与渲染、制作、用量并列（#295、#300） | 同一项目、Project Runtime 与修改起点；出图来源 | 保持挂载；再按「图纸」回到打开前的工作区，从对话直接打开时收起面板 | 只列已接受的 Stage，而后端也接受精确的保留模型（[drawings.py:40](../../services/project-runtime/src/project_runtime/application/drawings.py#L40)）；与图页编辑共用一名（审计 §3） | 默认从修改起点出图（6.2） |
 | 渲染 | rail「工具」组「渲染」；建模里的相机 | Modeling 当前视图（#273 已可抓取为冻结输入） | 结果自动进画板 | 引擎未配置时不指向设置（审计 9.1）；「发送到 Board」与自动接收重复（9.4） | 顶部条来源状态；空态链接设置（B3） |
 | 排版（画板的模式） | 画板左上角「画板 \| 排版」；画板「放入汇报」；`view=publish` 链接照旧 | 所选图片及其来源状态 | — | 在默认面板宽度下过窄（审计 9.4-3）；过期只在属性里显示 | 顶部条汇总过期数与「全部更新」 |
 | 用量（MonkeyMonitor） | rail「用量」（工具组） | 应带当前项目，目前默认全部 | 返回之前的工具 | 从项目进入不筛选该项目（#234 审计 B 项） | 从项目进入时默认筛选该项目（B3） |
@@ -143,7 +147,7 @@
 
 ### 6.1 Hub 对话 → Agent 改模型
 
-- **过程折叠**【仅 UI】：一轮里的工具调用合并为「过程 · N 步」，默认折叠，展开后用人话；原始请求行（如 `studio_request · GET /api/candidates/…`，[ChatShell.tsx:878](../apps/monkeyhub/web/src/ChatShell.tsx#L878)）只在开发者模式显示。
+- **过程折叠**【仅 UI】：一轮里的工具调用合并为「过程 · N 步」，默认折叠，展开后用人话；原始请求行（如 `studio_request · GET /api/candidates/…`，[ChatShell.tsx:878](../../apps/monkeyhub/web/src/ChatShell.tsx#L878)）只在开发者模式显示。
 - **结果卡片**【仅 UI】：缩略图、「模型已更新」、对象数、相对 Stage 的位置、「在建模中查看」「从此版本继续」。关系检查如实显示：零关系时写「没有可检查的关系」，不写「✓ held」（审计 F8）。
 - **目标标签**【已有但隐藏】：输入框上方显示这条消息会改哪个模型，如「修改：修改起点 · S1 之后第 3 次修改」。查看其他模型时，标签变为二选一：「改修改起点」或「从此版本继续后再改」（Q1）。
 - **新话题**【仅 UI】：「从项目状态继续（不使用旧对话上下文）」改名为「新话题」，放进 + 菜单。
@@ -167,7 +171,7 @@ Agent：已把主入口移到南立面中段，加了 3 m 深的雨棚；东侧�
 
 ### 6.2 模型 → 图纸
 
-- **默认从修改起点出图**【仅 UI】：后端已接受精确的保留模型（[drawings.py:40](../services/project-runtime/src/project_runtime/application/drawings.py#L40)），只列 Stage 的限制只在界面里（审计 9.2a）。从 Stage 出图收进「更多」。
+- **默认从修改起点出图**【仅 UI】：后端已接受精确的保留模型（[drawings.py:40](../../services/project-runtime/src/project_runtime/application/drawings.py#L40)），只列 Stage 的限制只在界面里（审计 9.2a）。从 Stage 出图收进「更多」。
 - **列表三态**【仅 UI】：每张图显示 跟随 / 已过期 / 已固定；已过期给「更新到修改起点」；重建时保留尺寸并报告断开的锚点（现有能力，审计 9.2a）。
 - **图纸命名**【仅 UI】：新建图纸可命名，选择器显示来源（Stage 或修改起点）和时间，不再都叫 `floor-plan.png`（审计 9.4-2）。
 - **未保存的修订**【仅 UI】：切换修订前确认；在别的工作区完成的保存要反映到界面（审计 9.2a、9.2d）。
@@ -183,7 +187,7 @@ Agent：已把主入口移到南立面中段，加了 3 m 深的雨棚；东侧�
 
 - **过期页提示**【仅 UI】：比较页面的 `modelSource` 与修改起点，在页顶提示「此页来自 S1，修改起点已领先 2 次修改」。
 - **原位更新页面**【缺能力】：重建的图纸存成新文档，不是旧文档的后继（审计 9.2c），画板只能把它当新页。原位更新需要后继关系，归 #244 / #254。
-- **发反馈前的明确选择**【仅 UI】：页面来源不是修改起点时，发送前弹出选择，取代现在静默切换修改起点（[App.tsx:2076](../apps/monkeyhub/web/src/app/App.tsx#L2076)）：「先更新这张图」或「从 S1 修改并发送」，并说明修改起点上的修改会留在设计历史里。取消时什么都不切换，标记保留。
+- **发反馈前的明确选择**【仅 UI】：页面来源不是修改起点时，发送前弹出选择，取代现在静默切换修改起点（[App.tsx:2076](../../apps/monkeyhub/web/src/app/App.tsx#L2076)）：「先更新这张图」或「从 S1 修改并发送」，并说明修改起点上的修改会留在设计历史里。取消时什么都不切换，标记保留。
 - **页卡用 Stage 和时间**显示关联模型，不显示原始来源【仅 UI】。
 - 【不采用】把反馈直接施加到修改起点：需要 Agent 把旧图上的标记映射到新模型，属于后端 / Agent 语义，#272 之后再议。
 
@@ -200,7 +204,7 @@ Agent：已把主入口移到南立面中段，加了 3 m 深的雨棚；东侧�
 
 | 字段 | 来源 | 处理 |
 |---|---|---|
-| 摘要（Agent 结果） | Hub 对话记录中带 `candidateId` 的消息及其前一条用户消息（[chat.py:1871](../apps/monkeyhub/api/monkeyhub_api/chat.py#L1871)） | Hub 向工作区传「Candidate → 摘要」映射【仅 UI】 |
+| 摘要（Agent 结果） | Hub 对话记录中带 `candidateId` 的消息及其前一条用户消息（[chat.py:1871](../../apps/monkeyhub/api/monkeyhub_api/chat.py#L1871)） | Hub 向工作区传「Candidate → 摘要」映射【仅 UI】 |
 | 摘要（手动修改） | 工作草稿的命令列表 | 汇总为「推拉 ×2」一类【仅 UI】 |
 | 时间 | Stage：`acceptance.occurredAt`；草稿：`updatedAt`；Agent 结果：对话消息时间 | Candidate 本身没有时间戳；无对话记录的只显示先后顺序 |
 | 作者 | Candidate = Agent；草稿 = 你；Stage = `acceptance.actorId` | 已有 |
@@ -233,7 +237,7 @@ Agent：已把主入口移到南立面中段，加了 3 m 深的雨棚；东侧�
 **顺序与协调：**
 
 - A1 先行；A2、A4 随后可并行；A2 与 A3 都改 Stage.tsx，先 A2 后 A3；A5 在 A4 之后；A6、A7 在 A2 之后；B1 宜先于 A2 合入（都改语言目录）。
-- 标为「重叠」的切片，开工前需等 GH-66 释放对应文件，或与其负责人协调缩窄；否则新 lane 标为 blocked，并在 `depends_on` 写 GH-66（[CONTRIBUTING.md](../CONTRIBUTING.md)「登记与查看并行任务」）。
+- 标为「重叠」的切片，开工前需等 GH-66 释放对应文件，或与其负责人协调缩窄；否则新 lane 标为 blocked，并在 `depends_on` 写 GH-66（[CONTRIBUTING.md](../../CONTRIBUTING.md)「登记与查看并行任务」）。
 - #272 的 resolver 落地后，A5、A6 的判定改为调用 runtime；Q4 决定后另开切片。
 
 ## 9. 不采用

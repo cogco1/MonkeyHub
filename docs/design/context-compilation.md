@@ -48,9 +48,9 @@ Request + explicit selection + exact StateRecord
 ```
 
 The implementation extends `studio.intent` in
-[`intent_context.py`](../services/project-runtime/src/project_runtime/application/intent_context.py),
-[`intent_requests.py`](../services/project-runtime/src/project_runtime/application/intent_requests.py)
-and [`intent_agent.py`](../services/project-runtime/src/project_runtime/application/intent_agent.py).
+[`intent_context.py`](../../services/project-runtime/src/project_runtime/application/intent_context.py),
+[`intent_requests.py`](../../services/project-runtime/src/project_runtime/application/intent_requests.py)
+and [`intent_agent.py`](../../services/project-runtime/src/project_runtime/application/intent_agent.py).
 There is no model router or second project store.
 
 | Tier | Current trigger and output | Anthropic output limit |
@@ -148,7 +148,7 @@ remain intact; the rejected request is not sent and creates no model receipt or
 usage. If a supplement exceeds the budget, earlier actual attempts retain their
 own usage and no further call occurs.
 
-[`intent_budget.py`](../services/project-runtime/src/project_runtime/application/intent_budget.py)
+[`intent_budget.py`](../../services/project-runtime/src/project_runtime/application/intent_budget.py)
 uses the explicitly named `heuristic_utf8_bytes_div4` estimate by default and
 accepts an injected text tokenizer. Runtime enforcement currently uses the default
 heuristic. It counts the application's compiled rules, response schema, serialized
@@ -746,7 +746,7 @@ evidence keeps it unknown.
 The Hub shows it without per-run data entry. Missing child endings remain
 `incomplete` with unknown duration after a root ends. The journal's bounded
 write-lock correction and its source comparison are documented in
-[MonkeyMonitor](../packages/monkeymonitor/src/monkeymonitor/README.md#turntrace). Neither telemetry repair
+[MonkeyMonitor](../../packages/monkeymonitor/src/monkeymonitor/README.md#turntrace). Neither telemetry repair
 nor session rebuilding establishes a general latency improvement. The Hub's
 trace-comparison UI and the larger #32 benchmark set remain separate acceptance.
 
@@ -969,7 +969,7 @@ No model was called for this comparison; it establishes payload reduction on
 this fixture, not token savings, architectural quality or end-to-end latency.
 
 This implements one precise evidence consumer for #122. The independent
-[retrieval development comparison](../labs/retrieval/RESULTS.md) now measures four
+[retrieval development comparison](../../labs/retrieval/RESULTS.md) now measures four
 methods, metadata filtering and companion budgets; human-reviewed held-out queries,
 broader precedents and downstream generation remain open. The paired #32 experiment
 below tested separate tool guidance and found no supported efficiency improvement;

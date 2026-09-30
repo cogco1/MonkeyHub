@@ -1,3 +1,7 @@
+---
+created: 2026-09-24
+---
+
 # MonkeyHub UI 现状与功能逻辑审查（2026-09-24）
 
 **基线：** `origin/main` `04e719617d6aa20507b5c1846de3059b5c57a451`
@@ -140,7 +144,7 @@ MonkeyArch 的布局：
   - 底栏：“Next edit starts from ‹基准›”（`WS/features/stage/Stage.tsx:1144-1160`）。
   - Arch 输入框：“Viewing only… before making changes”（`App.tsx:3060-3061`）。
   - 参数锁要求先继续（`2583-2590`）。
-  - Board 草图与 Hub 聊天使用编辑基准（`2478-2488`；`docs/PROTOCOL.md:923`）。
+  - Board 草图与 Hub 聊天使用编辑基准（`2478-2488`；`docs/protocols/project-runtime-api.md:923`）。
 - **另一面：** 有浏览器测试明确期望“打开的候选可直接编辑”（`candidatePreview.browser.mjs:474`）。
 - **场景：** Hub 在右侧打开 agent 的候选，你推拉一个面并 Sync。新基准就包含了 agent 的改动，而屏幕一直写着下一次编辑从 S1 开始。
 - **处置：** 用户已决定（Q1）：先显式点“从这个版本继续”，再修改。已在 lane `view-base` 修复（`c00c78f8`、`112031b9`）：
@@ -187,7 +191,7 @@ MonkeyArch 的布局：
 
 ### F7 “认可方向”不存在；“接受”的用语纠缠；没有拒绝【静态】
 - **认可路由没人用：**
-  - `PROTOCOL.md:483-490` 定义的认可路由 `POST /api/proposals/{id}/decision` 没有客户端调用；生成的 SDK 里有（`sdk.gen.ts:728-732`）。
+  - `docs/protocols/project-runtime-api.md:483-490` 定义的认可路由 `POST /api/proposals/{id}/decision` 没有客户端调用；生成的 SDK 里有（`sdk.gen.ts:728-732`）。
   - 该路由依赖进程内存里的提案和 job（`API/routes/proposals.py:409, 523-541`），运行时重启后就无法使用。
 - **Hub 项目卡：** 每个候选下都写着“Candidate — not endorsed, not issued”，这句话恒为真（`ChatShell.tsx:1026-1030`）。
 - **接受有四种叫法：**“接受为下一 Stage”“确认下一 Stage”“确认当前模型为 S0”“当前提交”（`VersionsStrip.tsx:105, 125, 131, 159`）。
@@ -197,7 +201,7 @@ MonkeyArch 的布局：
 - **实际：**
   - 零关系时 held 与 fullyChecked 都为真（`relation_checks.py:63-73`；`project_runner.py:1122-1123`；`candidate.py:955-959`）。
   - 普通模式的结论卡显示“Geometry ✓ / Dependencies ✓ held / nothing confessed”（`VerdictCard.tsx:32-48, 110-165`）。
-  - 服务端的保留说明只在开发者模式显示（`VerdictCard.tsx:181`），违反 `PROTOCOL.md:626-636, 771-775`。
+  - 服务端的保留说明只在开发者模式显示（`VerdictCard.tsx:181`），违反 `docs/protocols/project-runtime-api.md:626-636, 771-775`。
   - 这个就绪状态是接受 Stage 的门槛（`design_history.py:751-763`）。
 - **相关工作：** 与 P110 相关。
 
@@ -210,12 +214,12 @@ MonkeyArch 的布局：
   - Hub 每 15 分钟对过期且未被引用的候选执行 `rmtree`（`HUBAPI/runtime.py:46, 813-841, 885-890`）。
   - 在 Hub 聊天里被提到的候选受保护。
   - UI 没有 Exploration、拒绝或归档入口（`client.ts:262-270`）。
-- **与文档冲突：** ADR-007:11 写着“old runs — nobody deletes”；`STAGE_BRANCH_CANDIDATE_PLAN.md:97, 116` 写着保留未选中的候选。
+- **与文档冲突：** ADR-007:11 写着“old runs — nobody deletes”；`docs/design/design-history.md:97, 116` 写着保留未选中的候选。
 
 ### F11 查看历史就会改变编辑基准；跨 Stage 继续失败【静态 / 待确认】
 - **查看即改基准：**
   - 点 Stage 就会把它设为编辑基准（`VersionsStrip.tsx:128-131` → `App.tsx:2070-2072`）。
-  - 方案规定检出旧 Stage 是只读的（`STAGE_BRANCH_CANDIDATE_PLAN.md:137`）。
+  - 方案规定检出旧 Stage 是只读的（`docs/design/design-history.md:137`）。
 - **跨 Stage 继续被拒【待确认】：** 切换时会带上已保存位置的 Stage，服务端以 409 `DESIGN_STAGE_MISMATCH` 拒绝（`useSession.ts:117-118`；`projection.py:244-254`）。
 - **历史不刷新：** 设计历史不随后台事件刷新，于是 Accept 以 `DESIGN_BRANCH_STALE` 失败（`App.tsx:487-489, 1043-1052`）。
 

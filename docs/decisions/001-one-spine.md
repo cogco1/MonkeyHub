@@ -14,11 +14,11 @@ returns only as a fold onto the spine ([§2.2 of the record below](#22-concepts)
 
 **Status:** historical consolidation decision, made 2026-09-03 with the repository owner. It was
 its own document, `CANONICAL_SPINE.md`, until #494 folded it into this decision. The record-driven
-production spine is now described in [the architecture overview](../ARCHITECTURE.md). The survey,
+production spine is now described in [the architecture overview](../architecture/overview.md). The survey,
 verdicts and execution order below record the migration plan at that time; they are not instructions
 to rerun it. Paths are those of the `pre-spine` tag (`c6c97d4a`), before the packages moved under
 `packages/`; a path that has gone since links to that tag. Current ownership is in
-[the system map](../SYSTEM_MAP.md); remaining work is in the GitHub Issues.
+[the system map](../architecture/system-map.md); remaining work is in the GitHub Issues.
 
 The repository grew five production spines, each with its own vocabulary for the same ideas
 (state, components, geometry emission, relations, levels, validation results, stage exit,
@@ -152,7 +152,7 @@ or when anything under `archflow/`, `tools/`, `apps/` or `tests/` imports `archi
 suite is held to the same boundary as the spine: a test that needs an archived lane's code is
 that lane's test and lives in `archive/tests/`, which may import the spine and never the other
 way round (`tests/test_spine_suite_is_the_spines.py` proves it from inside the suite). The
-registry is the map; `docs/ARCHITECTURE.md` is rewritten to describe the one spine and nothing
+registry is the map; [`docs/ARCHITECTURE.md`](https://github.com/cogco1/MonkeyHub/blob/c6c97d4a2ad765e5b37d87dbc29d7cb756f97a45/docs/ARCHITECTURE.md) is rewritten to describe the one spine and nothing
 else.
 
 ### 5. Order of execution
@@ -166,6 +166,6 @@ else.
 4. Land the folds in §2.2 one concept per commit, each with the parallel deleted in the same
    commit.
 5. Write `governance/module_registry.json`, add the three `archcheck` rules, rewrite
-   `docs/ARCHITECTURE.md`, close and open the cards in §2.3.
+   [`docs/ARCHITECTURE.md`](https://github.com/cogco1/MonkeyHub/blob/c6c97d4a2ad765e5b37d87dbc29d7cb756f97a45/docs/ARCHITECTURE.md), close and open the cards in §2.3.
 
 Every step commits with explicit paths; nothing is pushed without the repository owner's word.

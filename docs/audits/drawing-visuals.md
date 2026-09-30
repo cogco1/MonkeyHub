@@ -1,3 +1,7 @@
+---
+created: 2026-09-26
+---
+
 # Drawing consumer of visual observation: the A–D benchmark (2026-09-26)
 
 **Issue:** [#303](https://github.com/cogco1/MonkeyHub/issues/303), lane `GH-303/drawing-benchmark` (slice 303-S3).
@@ -52,7 +56,7 @@ The owner's comment on #303 fixes the Drawing consumer's order and asks for four
 | D.recheck | re-check | one `after_repair` look at the repaired page, naming the addressed findings; the loop's second and last look |
 
 - A page's exact checks always run before anything looks at it. On the path to D (B, C, D) the stages come in the owner's order; a test asserts it.
-- C runs only when B's page passes the source-binding check (`status: current`, nothing unresolved). A cut plan is reviewed only while it is current ([visual observation §7](2026-09-25-visual-observation.md)).
+- C runs only when B's page passes the source-binding check (`status: current`, nothing unresolved). A cut plan is reviewed only while it is current ([visual observation §7](visual-observation.md)).
 - D repairs only when an actionable finding has a typed lever. It re-checks only after a repair: the allowance (`spatial_formal`, two looks) would refuse an `after_repair` look without one.
 
 ## 2. Arms
@@ -215,7 +219,7 @@ Remaining corrections for A and B are lower bounds (no look). Wall clock is cumu
 
 - Every answer was valid against the schema on the first attempt. The runtime's Monitor recorded each look as a `visual_observation` span (scope `visual-review:drawing`) with its `model_request` row and the same tokens.
 - Each saved frame is byte-identical to what its look was sent: the SHA-256 of a one-page 1600 px export equals the answer's `frameSha256`.
-- The input is nearly constant (18.7–19.7 k tokens) whatever the image size (3–25 kB). This matches the V0 measurement that about 17.3 k of each look is the Codex CLI's fixed agent prompt ([visual observation §6.2](2026-09-25-visual-observation.md)).
+- The input is nearly constant (18.7–19.7 k tokens) whatever the image size (3–25 kB). This matches the V0 measurement that about 17.3 k of each look is the Codex CLI's fixed agent prompt ([visual observation §6.2](visual-observation.md)).
 
 ### 5.5 What the looks said (paraphrased)
 

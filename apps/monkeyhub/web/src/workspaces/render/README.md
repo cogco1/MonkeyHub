@@ -17,11 +17,11 @@ The following completed PR #235 sources stay at their original fixed commit for
 the Physical integration in #218/#40. They are not copied as unused production
 code or advertised as connected executors in this AI slice:
 
-- `apps/monkeyhub/web/workspaces/src/workspaces/render/NativePreview.tsx`
-- `apps/monkeyhub/web/workspaces/src/workspaces/render/LookDevelopment.tsx`
-- `apps/monkeyhub/web/workspaces/src/workspaces/render/nativeRender.ts`
-- `apps/monkeyhub/web/workspaces/src/workspaces/render/renderCamera.ts`
-- `apps/monkeyhub/web/workspaces/src/workspaces/render/visualization.ts`
+- [`apps/monkeyhub/web/workspaces/src/workspaces/render/NativePreview.tsx`](https://github.com/cogco1/MonkeyHub/blob/6f39e67116a2716c2dac70bb4ee3cf1b369afd9d/apps/monkeyhub/web/workspaces/src/workspaces/render/NativePreview.tsx)
+- [`apps/monkeyhub/web/workspaces/src/workspaces/render/LookDevelopment.tsx`](https://github.com/cogco1/MonkeyHub/blob/6f39e67116a2716c2dac70bb4ee3cf1b369afd9d/apps/monkeyhub/web/workspaces/src/workspaces/render/LookDevelopment.tsx)
+- [`apps/monkeyhub/web/workspaces/src/workspaces/render/nativeRender.ts`](https://github.com/cogco1/MonkeyHub/blob/6f39e67116a2716c2dac70bb4ee3cf1b369afd9d/apps/monkeyhub/web/workspaces/src/workspaces/render/nativeRender.ts)
+- [`apps/monkeyhub/web/workspaces/src/workspaces/render/renderCamera.ts`](https://github.com/cogco1/MonkeyHub/blob/6f39e67116a2716c2dac70bb4ee3cf1b369afd9d/apps/monkeyhub/web/workspaces/src/workspaces/render/renderCamera.ts)
+- [`apps/monkeyhub/web/workspaces/src/workspaces/render/visualization.ts`](https://github.com/cogco1/MonkeyHub/blob/6f39e67116a2716c2dac70bb4ee3cf1b369afd9d/apps/monkeyhub/web/workspaces/src/workspaces/render/visualization.ts)
 
 `RenderWorkspace` owns the AI/Physical mode choice. A future Physical consumer
 can lazily mount its preview and look development there and provide actual
@@ -74,7 +74,7 @@ and look-development implementation into its Physical mode.
 - **Runtime:** `studio.render` owns attempts and history in the existing project
   Runtime. `application/render_contract.py` defines the image-provider seam;
   `routes/rendering.py` and `transport/rendering.py` define its HTTP contract.
-  See [Render protocol](../../../../../../docs/PROTOCOL.md#render-image-attempts)
+  See [Render protocol](../../../../../../docs/protocols/project-runtime-api.md#render-image-attempts)
   for configuration, source binding and recovery behavior.
 - **Persistence:** reuse P036 and `studio.artifacts.save_document`. Keep source,
   editable representation choices and output artifacts distinct. A render does

@@ -8,11 +8,11 @@ it. This document is that runtime's contract: what the Hub gives it, what it own
 must not own, how it is identified and reached, and how a developer starts one alone.
 
 Code: `services/project-runtime/src/project_runtime`, with its tests in `services/project-runtime/tests`;
-registry module `studio.shell` (module ids do not follow product names, [REPO_LAYOUT §3](REPO_LAYOUT.md)).
+registry module `studio.shell` (module ids do not follow product names, [repository layout §3](repository-layout.md#3-文件归属)).
 The service id `studio`, the server name `monkeyarch-api` and the forwarding path segment
 `/studio/` are process and wire names kept for compatibility; they name this runtime and
 nothing else (§9). The workspace modules render directly inside the Hub frontend;
-the wire protocol of the Hub side is [PROTOCOL.md, "MonkeyHub project runtime"](PROTOCOL.md#monkeyhub-project-runtime).
+the wire protocol of the Hub side is [project-runtime-api.md, "MonkeyHub project runtime"](../protocols/project-runtime-api.md#monkeyhub-project-runtime).
 
 ## 1. One process per open project
 
@@ -91,7 +91,7 @@ Also: the CAD/OCCT/Rhino execution and inspection adapters (`packages/archflow/s
 `ARCHFLOW_STUDIO_CAD_EXPORT`; the evaluator/generator jobs; and every retained-record write
 through `archflow.project.repository`. In production the runtime is the only writer of a
 project. The Hub's runtime records and admission journal are observations, not a second
-project repository (PROTOCOL.md, "MonkeyHub project runtime").
+project repository ([project-runtime-api.md, "MonkeyHub project runtime"](../protocols/project-runtime-api.md#monkeyhub-project-runtime)).
 
 ### The skill library (#252)
 
@@ -148,7 +148,7 @@ manifest lists are declared for a reader and enforced by nothing. Codex chats ge
 Codex has native skills, and the pinned ACP adapter loads `<additional directory>/.agents/skills`, but the
 Hub's ACP session passes no additional directory, and one would also become a writable sandbox root.
 
-Owner module names above are those in `governance/module_registry.json` (`docs/SYSTEM_MAP.md`
+Owner module names above are those in `governance/module_registry.json` (`docs/architecture/system-map.md`
 renders them); where a concern has several owners the registry is authoritative.
 
 ### Program / Massing consumers after the #138 UI retirement
@@ -213,7 +213,7 @@ client ends its wait. A write by another program is read on the 30 s idle fallba
 when the project's read token moved since the last read, including the one at open.
 `GET /api/protocol` (`protocol.py`) answers `archflow/<major>` and the
 capability list computed from the settings; the client refuses a foreign or mismatched server
-at handshake (PROTOCOL.md §1).
+at handshake ([project-runtime-api.md §1](../protocols/project-runtime-api.md)).
 
 ## 6. How it is reached
 
@@ -248,7 +248,7 @@ with `CANDIDATE_NOT_THIS_CHATS` unless this Hub admitted that run for the same c
 
 - One process, one project, one port. A crash affects one project; `recover` restarts it on
   the same port after inspecting retained outcomes and replays no mutation; `close` drains it.
-  Other projects continue (PROTOCOL.md, "MonkeyHub project runtime").
+  Other projects continue ([project-runtime-api.md, "MonkeyHub project runtime"](../protocols/project-runtime-api.md#monkeyhub-project-runtime)).
 - The Hub keeps no copy of canonical state, candidates or documents; its projection is rebuilt
   from this runtime's read routes and the project's retained receipts.
 - Nothing in this package holds cross-project state: every request is answered against the
@@ -275,7 +275,7 @@ development instance, and MonkeyHub remains the only production launcher.
 ## 9. Change rules
 
 - Routes and wire shapes are stable. Removing or renaming a stable field or path is a protocol
-  major change (PROTOCOL.md).
+  major change ([project-runtime-api.md](../protocols/project-runtime-api.md)).
 - New project-scoped orchestration goes into this package's `application/` owners; domain value
   logic goes to the owning package under `packages/`; new product behaviour goes to the Hub;
   workspace modules live under its frontend.

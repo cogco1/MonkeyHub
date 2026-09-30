@@ -13,4 +13,4 @@ policy 的 `import_only_source_roots` 使 lab 只接受 import 静态检查，�
 3. 经已有函数、CLI、API 或 adapter 接线，由现有应用流程保存和展示结果；补上与实际行为相称的测试。只有新增状态语义、编译操作、持久接口或校核边界时，才扩展对应 core owner。
 4. 将被产品使用的原型迁出 `labs/`，同时删除被替代的副本或旧生产入口，不保留两条生产路径。
 
-活跃项目的数据、模型和导出物留在外部项目根；明确晋升的回归输入与证据按 [`AGENTS.md`](../AGENTS.md) 的 probe 约定处理。扩展分工和接入示例见[开发指南第 7 节](../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#7-新功能的最小搭建流程)。
+活跃项目的数据、模型和导出物留在外部项目根；明确晋升的回归输入与证据按 [`AGENTS.md`](../AGENTS.md) 的 probe 约定处理。扩展分工和接入示例见[开发指南第 7 节](../docs/development/work-environment.md#7-新功能的最小搭建流程)。

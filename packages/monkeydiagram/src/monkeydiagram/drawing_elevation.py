@@ -1,6 +1,6 @@
 """Model-axis elevations and cut plans from retained STEP or registered 3DM through P036.
 
-The A0 drawing slice of ``docs/DRAWING_MODULE_ARCHITECTURE_PLAN.md``, as far
+The A0 drawing slice of ``docs/design/drawing-system.md``, as far
 as it is real: a source run's exact STEP (certified by its retained
 ``OcctExecutionReceipt@1``) or registered 3DM is cold-read. Native 3DM retains
 object GUID paths and explicit exact/faceted/approximate geometry quality;

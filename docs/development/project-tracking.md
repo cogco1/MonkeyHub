@@ -21,12 +21,12 @@ team/project exists" is not a valid issue close condition.
 
 Rules:
 
-- The Issue stays the only task identity ([CONTRIBUTING.md](../CONTRIBUTING.md)). Priority,
+- The Issue stays the only task identity ([CONTRIBUTING.md](../../CONTRIBUTING.md)). Priority,
   Status, Initiative and dates are Project fields on its item, not issue text or labels.
-- Project Status is planning state. [`governance/work_registry.json`](../governance/work_registry.json)
+- Project Status is planning state. [`governance/work_registry.json`](../../governance/work_registry.json)
   stays the only record of live source-edit claims. Neither mirrors the other.
-- Durable design decisions go to [ARCHITECTURE.md](ARCHITECTURE.md) or an ADR in
-  [adr/](adr/).
+- Durable design decisions go to the [architecture overview](../architecture/overview.md) or a decision
+  record in [decisions/](../decisions/README.md).
 - Set Start date or Target date only with evidence: a sourced external deadline, a release, or
   an owner-stated target in the issue. Otherwise leave them empty.
 - Use milestones only for real endpoints with a finite scope, such as a release or an external
@@ -56,7 +56,7 @@ Link: <https://github.com/users/cogco1/projects/1> (also listed under the reposi
 | Effort | S / M / L / XL |
 | Start date | date, only with evidence |
 | Target date | date, only with evidence |
-| Owner | the person or team driving the item — not the software module owner of [AGENTS.md](../AGENTS.md) |
+| Owner | the person or team driving the item — not the software module owner of [AGENTS.md](../../AGENTS.md) |
 
 Status meanings:
 
@@ -72,7 +72,7 @@ Status meanings:
 - **Backlog** — items in Backlog or Ready.
 - **Product Roadmap** — Initiative MVP, Rendering or Drawing, on the roadmap layout.
 - **Research** — Initiative Research, on the roadmap layout.
-- **MVP** — Initiative MVP; tracks the [MVP acceptance](product/MVP_ROADMAP.md#acceptance-end-to-end-mvp-proof).
+- **MVP** — Initiative MVP; tracks the [MVP acceptance](../product/roadmap.md#acceptance-end-to-end-mvp-proof).
 - **UI** — Area UI.
 - **Bugs** — Kind Bug.
 - **Recently Done** — Status Done, newest first.
@@ -101,9 +101,9 @@ settings in the Project itself.
 
 ## Roadmap documents
 
-- [Algorithm team charter](research/ALGORITHM_TEAM.md) — from #119.
-- [Research roadmap 2026–2027](research/ROADMAP_2026_2027.md) — from #176.
-- [MVP roadmap](product/MVP_ROADMAP.md) — from #254.
+- [Algorithm team charter](../research/algorithm-team.md) — from #119.
+- [Research roadmap 2026–2027](../research/research-plan.md) — from #176.
+- [MVP roadmap](../product/roadmap.md) — from #254.
 
 These documents state direction and principles. The Project holds live status, priority and
 dates; issues remain the execution layer.

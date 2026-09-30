@@ -8,10 +8,10 @@
 **规则分工：** `AGENTS.md` 保留少量长期规则，`CONTRIBUTING.md` 说明实际协作流程；
 module registry 管软件归口与公开契约，work registry 只管未完成任务和源码范围，policy 管可执行静态检查。
 本文是索引和操作指南。发生冲突时，软件归口以
-[`governance/module_registry.json`](../governance/module_registry.json) 为准，对外协议以
-[`PROTOCOL.md`](PROTOCOL.md) 为准，项目落盘以
-[`packages/archflow/src/archflow/project/layout.py`](../packages/archflow/src/archflow/project/layout.py) 与
-[`packages/archflow/src/archflow/project/repository.py`](../packages/archflow/src/archflow/project/repository.py) 为准。
+[`governance/module_registry.json`](../../governance/module_registry.json) 为准，对外协议以
+[`project-runtime-api.md`](../protocols/project-runtime-api.md) 为准，项目落盘以
+[`packages/archflow/src/archflow/project/layout.py`](../../packages/archflow/src/archflow/project/layout.py) 与
+[`packages/archflow/src/archflow/project/repository.py`](../../packages/archflow/src/archflow/project/repository.py) 为准。
 
 下文的实现说明以当前代码和 owner 为依据；本机启动核验与第二位成员实际试用分别报告。
 
@@ -22,10 +22,10 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 底层调用本机 Codex / Claude CLI，并以原生 session 继续对话；Coding Plan 沿用 Claude CLI
 已有的兼容端点配置。用户不再先选择“进入工作区”。项目与运行配置仍由现有 owner 保存。
 新 Codex 对话通过锁定版本的 ACP SDK 与上游适配器保持连接，旧 CLI 对话仍可续接。
-源码环境的一次依赖安装见 [Hub README](../apps/monkeyhub/README.md#python-entry-and-development)；
+源码环境的一次依赖安装见 [Hub README](../../apps/monkeyhub/README.md#python-entry-and-development)；
 权限请求直接呈现在工具活动中，停止会取消仍待回答的请求。
 Claude / Coding Plan 聊天的计算脚本和临时文件放在 Hub 提供的 `runtime/chats/<chatId>/scratch`；启动参数明确授权该目录，提示提供准确路径。不要写入 Claude 受保护的 `.claude` 配置目录；scratch 不是项目状态，设计结果仍通过连接工具和 P036 保存。
-每个项目使用独立的 Project Runtime 进程与端口（代码在 `services/project-runtime`，契约见 [docs/PROJECT_RUNTIME.md](PROJECT_RUNTIME.md)），右侧的 MonkeyArch、MonkeyDiagram、MonkeyBoard 在同一项目内共用这一个进程。
+每个项目使用独立的 Project Runtime 进程与端口（代码在 `services/project-runtime`，契约见 [docs/architecture/project-runtime.md](../architecture/project-runtime.md)），右侧的 MonkeyArch、MonkeyDiagram、MonkeyBoard 在同一项目内共用这一个进程。
 不同项目可以并行聊天与建模；切换项目不停止其他项目，也不改写默认项目配置。已打开的工具页直接切换，保留加载状态。
 候选成功读回后立即打开模型，无需等待聊天整轮结束；再次打开同一候选复用页面。
 旧对话可以归档并恢复，原消息和原生 CLI 会话保留；运行中的对话需完成或停止后归档。
@@ -79,7 +79,7 @@ SKP 使用本机 SketchUp C API 独立读取，不打开 SketchUp：原 SKP 与�
 `403 COMPUTER_USE_NOT_ENABLED` 回答并指出该路径。回执、截图、录像与可重放的标注投影都写在同一个
 `diagnostics/monkeycontrol/` 目录下，不进入任何项目目录，也不是项目状态；演示做完后把 `enabled`
 改回 `false`。动作契约、拒绝码、录像目录结构与 `python -m monkeycontrol` 命令行见
-[docs/COMPUTER_USE.md](COMPUTER_USE.md)。
+[docs/protocols/computer-use.md](../protocols/computer-use.md)。
 
 ### Agent 按任务检索
 
@@ -93,7 +93,7 @@ SKP 使用本机 SketchUp C API 独立读取，不打开 SketchUp：原 SKP 与�
 
 | 当前需要 | 固定入口 | 接着读取什么 |
 | --- | --- | --- |
-| 了解 ArchFlow 做什么 | README 的概述与当前状态 | 涉及架构决定时才读 `docs/ARCHITECTURE.md` 的对应部分 |
+| 了解 ArchFlow 做什么 | README 的概述与当前状态 | 涉及架构决定时才读 `docs/architecture/overview.md` 的对应部分 |
 | 开始或接续一项工作 | 对应的 GitHub Issue，再运行 `python tools/devctl.py work` | Issue 记录需求、验收与讨论；`work` 列出登记中的 `GH-<issue>`／`GH-<issue>/<lane>` claim：谁在改哪些路径、基线与交接 |
 | 按目标查已有操作 | `python tools/devctl.py capability <目标或能力-id>` | 读取匹配项的范围与入口；绑定项目内使用 `GET /api/capabilities?goal=...`，再描述具体来源和目标。首项为已有对象的数值修改；已支持和缺少的部分见返回的 `works`／`missing` |
 | 查建模、图纸、项目或应用的代码归属 | `python tools/devctl.py module <关键词>` | 用返回的精确 module id 再查契约；按 `--section`、`--offset` 补齐被省略的相关项 |
@@ -144,11 +144,11 @@ CAD 导出共用 `cad_workspace_path`，默认进入 `runs/<run-id>/workspaces/c
 脚本做出的形体不带含义：含义之后用 `POST /api/proposals/facets` 以 facets 加到同一几何 id 上，只改该构件，几何与依赖不变。
 facets 解锁的能力才可使用，例如 `architectural.role = wall` 之后的门窗入口 `POST /api/proposals/hosted-opening`；
 某个领域需要的含义用 `GET /api/domains/{domain}/readiness` 询问（`GET /api/domains` 列出各领域），它只列出缺少的 facets，不根据形状猜测。
-完整的 Agent 契约见[构造 API 规格 §3.2](2026-09-28-construction-api.md#32-the-agent-contract-after-this-change)。
+完整的 Agent 契约见[构造 API 规格 §3.2](../design/construction-api.md#32-the-agent-contract-after-this-change)。
 候选读回直接返回保留 inspection 的对象包围盒、单位和坐标系；首次候选没有上一 run 时不请求比较，inspection 缺失会明确说明。包围盒和技术检查不代替视觉检查或空间意图验收。
 标高、移动、推拉和删除都在脚本中完成（`level(id)`、`top(obj)`、`set_base`、`set_height`、`move`、`pushpull`、`delete`）。
 `POST /api/proposals/sketch`、`/transform`、`/push-pull`、`/elevation`、`/delete` 和 `GET /api/state` 仍服务 Studio 网页端的直接绘制与编辑，
-包括保留下部、压低上部的 `kind: compress-above` 批量降高（见 [PROTOCOL](PROTOCOL.md)）；它们不向聊天 Agent 开放，Agent 调用时 Hub 拒绝并指明构造路径。
+包括保留下部、压低上部的 `kind: compress-above` 批量降高（见[协议](../protocols/project-runtime-api.md)）；它们不向聊天 Agent 开放，Agent 调用时 Hub 拒绝并指明构造路径。
 
 实际看图使用 `visual_review`。原生聊天默认 `delivery: frames`，由 Runtime 按准确来源渲染，
 把原生图像交给当前聊天模型检查，不要求另配视觉 provider；只有明确选择 `delivery: observation`
@@ -178,7 +178,7 @@ facets 解锁的能力才可使用，例如 `architectural.role = wall` 之后�
 “调整想法”只补入草稿，“暂时跳过”不执行。明确且可直接完成的请求无需先弹卡片。
 卡片的依据、拟用工具、估算来源和将发送的请求默认折叠；外部来源对话只展示，继续工作仍回原来源。
 刷新不会重复执行，换轮次后的旧卡片需要重新确认。完整字段与边界见
-[对话建议协议](PROTOCOL.md#conversational-suggestions)。这条链复用 ChatStore，不建立另一套聊天、
+[对话建议协议](../protocols/project-runtime-api.md#conversational-suggestions)。这条链复用 ChatStore，不建立另一套聊天、
 工具商店或预算系统。设计树和全局用量保留各自的主入口，项目资料卡与 Help 中重复的导航已移除。
 
 **与 Codex 的接入方式比较：** Codex 在启动时按固定位置发现
@@ -214,7 +214,7 @@ Git 源码仓 / worktree
 
 活跃项目与 `probes/` 使用同一种 P036 项目格式；它们只因是否被明确提升进 Git 而不同，
 不得为外部项目再建第二个数据库或写入器。通用说明见
-[`packages/archflow/src/archflow/project/README.md`](../packages/archflow/src/archflow/project/README.md)。项目的选择属于 MonkeyHub：Hub 的应用设置（`<runtime root>/config/applications.json`）为每个 Studio
+[`packages/archflow/src/archflow/project/README.md`](../../packages/archflow/src/archflow/project/README.md)。项目的选择属于 MonkeyHub：Hub 的应用设置（`<runtime root>/config/applications.json`）为每个 Studio
 实例指定单个 `project_dir`、CAD 后端与参考 run，启动 Studio 子进程时注入环境变量；Studio 自身没有
 与之并行的持久配置。开发时直接启动用 `scripts/dev/run-project-runtime.ps1 -ProjectDir <项目目录>`，
 项目目录必须显式给出。开发工具通过下述一次配置取得工作区、缓存与临时目录。
@@ -223,7 +223,7 @@ Git 源码仓 / worktree
 验收回执和恢复所需数据不能借 `temp` 绕过项目存储。
 
 项目目录名与 `project.json` 的 `project_id` 一致。首次建立使用
-[`tools/create_project.py`](../tools/create_project.py)，不手工拼装 `HEAD` 或运行记录。
+[`tools/create_project.py`](../../tools/create_project.py)，不手工拼装 `HEAD` 或运行记录。
 当前创建命令写入项目标识、版本 0 的 `HEAD`、初始化事件与快照，以及
 `input/runner/state-record.json`；指定分工输入时再写入 `input/runner/seats.json`。
 它同时准备 `objects/sha256/`、`runs/`、`exports/` 等区域，但不会生成 run 或模型。
@@ -243,12 +243,12 @@ Studio 网页端仍读取 `/api/state` 和 `/api/state/frame`，用自己的绘�
 导出文件和记录，通过既有 P036 入口保留到绑定项目；外部原文件路径不代替项目内的工件引用。
 
 长期源码按 **ArchFlow 公共底座、MonkeyArch 建模业务、MonkeyDiagram 图纸业务** 分清目录与依赖。
-当前代码所在位置与目标归属的具体映射只维护在 [REPO_LAYOUT.md](REPO_LAYOUT.md)；
+当前代码所在位置与目标归属的具体映射只维护在 [repository-layout.md](../architecture/repository-layout.md)；
 迁移随真实调用链进行，不在安装时复制三套代码，也不让每位成员自行决定目录结构。
 
 #### 开发目录只配置一次
 
-[`tools/workspace.py`](../tools/workspace.py) 和 [`tools/package_monkeyapps.py`](../tools/package_monkeyapps.py)
+[`tools/workspace.py`](../../tools/workspace.py) 和 [`tools/package_monkeyapps.py`](../../tools/package_monkeyapps.py)
 共用个人 Git 设置 `archflow.package.workspace-root`；沿用原有键名，避免多一份工作区配置。
 首次安装或明确更换根目录时配置一次。下面的绝对路径只是示例，按本机实际位置替换：
 
@@ -312,16 +312,16 @@ python tools/package_monkeyapps.py --source-ref HEAD
 
 新增或修改功能前，按这个顺序读取：
 
-1. [`AGENTS.md`](../AGENTS.md)：项目级硬边界。
+1. [`AGENTS.md`](../../AGENTS.md)：项目级硬边界。
 2. `python tools/devctl.py module <关键词>`，再用精确 module id 读取 owner、公开契约、源码和测试路径。
-   需要补充架构背景时读 [`ARCHITECTURE.md`](ARCHITECTURE.md) 或 [`SYSTEM_MAP.md`](SYSTEM_MAP.md) 的对应部分。
+   需要补充架构背景时读 [`architecture/overview.md`](../architecture/overview.md) 或 [`architecture/system-map.md`](../architecture/system-map.md) 的对应部分。
    拟议能力不当作已实现；不把整张地图作为每次任务的前置输入。
 3. 目标实现与真实调用方；只在这些信息不能解答具体问题时扩大搜索。
-4. 只有需要理解旧合并决定时读 [`CANONICAL_SPINE.md`](CANONICAL_SPINE.md)。它是历史决策，
+4. 只有需要理解旧合并决定时读 [`decisions/001-one-spine.md`](../decisions/001-one-spine.md)。它是历史决策，
    其中迁移顺序不可重跑，历史统计不是实时状态；实时 owner 仍以 registry 和代码为准。
 5. 当前任务只看对应的 GitHub Issue；谁在改哪些路径用 `python tools/devctl.py work` 查看。
-6. 涉及客户端时再读 [`PROTOCOL.md`](PROTOCOL.md) 与
-   [`services/project-runtime/README.md`](../services/project-runtime/README.md)。
+6. 涉及客户端时再读 [`protocols/project-runtime-api.md`](../protocols/project-runtime-api.md) 与
+   [`services/project-runtime/README.md`](../../services/project-runtime/README.md)。
 
 先复用已有能力。模块 owner 表示软件职责，可以包含多个实现文件，不是个人或必须塞满的单个文件。
 新增独立领域能力可以有自己的目录或外部包，经已有接口接入；同一职责已有实现时不再复制第二套。
@@ -373,7 +373,7 @@ work registry 只登记进行中的源码 claim；模块的 `canonical` 标签�
 ### 3.1 record、receipt、ref 和物理文件
 
 - **record** 是项目保留的结构化事实。`put_json` 只接收
-  [`project.record_kinds`](../packages/archflow/src/archflow/project/record_kinds.py) 已登记的 kind，并返回
+  [`project.record_kinds`](../../packages/archflow/src/archflow/project/record_kinds.py) 已登记的 kind，并返回
   `ProjectRecordRef`。
 - **receipt** 只证明一次跨边界行为，例如持久化写入、外部调用、CAD 导出、验收决定或 issue；
   receipt 保留时通常也是 `records/` 中的一种 record。确定性内存转换不自造 receipt。
@@ -459,7 +459,7 @@ ArchFlow kernel + 项目存储
 显式绑定的 <project-root>
 ```
 
-浏览器层只有 MonkeyHub：Board 和 Arch 直接渲染，Diagram 是 Board 内的图页编辑器；本节的 API 边界与三层权责不变，进程契约见 [docs/PROJECT_RUNTIME.md](PROJECT_RUNTIME.md)。
+浏览器层只有 MonkeyHub：Board 和 Arch 直接渲染，Diagram 是 Board 内的图页编辑器；本节的 API 边界与三层权责不变，进程契约见 [docs/architecture/project-runtime.md](../architecture/project-runtime.md)。
 
 ### 浏览器 `web/`
 
@@ -511,7 +511,7 @@ HEAD                   Published（唯一已发布位置）
 ```
 
 唯一 canonical 路径是
-[`project.issue.issue_run`](../packages/archflow/src/archflow/project/issue.py)：先完整校验 run，再调用项目存储模块的
+[`project.issue.issue_run`](../../packages/archflow/src/archflow/project/issue.py)：先完整校验 run，再调用项目存储模块的
 `prepare_transition`，最后对 `HEAD` 做 `compare_and_swap`。直接写 `HEAD`、`canonical/`，或因为“测试
 都过了”就把一个 run 当作当前设计，均不成立。
 
@@ -568,7 +568,7 @@ MonkeyMonitor 诊断服务仍独立运行，Usage 与 MonkeyFab 页面由 Hub �
 （MonkeyArch 未同步的模型草稿保持不变）。图纸能力仍归 `packages/monkeydiagram/`，Board 不再复制一套编辑器。
 
 设计历史统一使用以下用语，详细动作与存储约定见
-[Stage / Branch / Candidate 方案](STAGE_BRANCH_CANDIDATE_PLAN.md)：
+[Stage / Branch / Candidate 方案](../design/design-history.md)：
 
 | 用语 | 含义 | 显示示例 |
 | --- | --- | --- |
@@ -579,7 +579,7 @@ MonkeyMonitor 诊断服务仍独立运行，Usage 与 MonkeyFab 页面由 Hub �
 
 普通 A/B 备选称为 Candidate；一次柜体修改或多个 Agent 并行生成不自动创建 Branch。
 任务中的尝试、修正和被否定的结果仍作为运行保留，可恢复、可诊断，但不进入方案组；
-新建 Exploration 已停止（#294 Q4），协议见 [PROTOCOL §5.5](PROTOCOL.md#55-candidate-admission)。
+新建 Exploration 已停止（#294 Q4），协议见 [协议 §5.5](../protocols/project-runtime-api.md#55-candidate-admission)。
 接受候选后才得到下一 Stage；从历史 Stage 另开一条持续演化路线时才创建 Branch。
 `S0/S1` 是显示编号，不替代唯一
 Stage 引用，也不表示正式 issue；设计 Branch 与 Git 源码分支是不同的历史。
@@ -606,7 +606,7 @@ OpenAI 的公开 [Codex App Server 工程文章](https://openai.com/index/unlock
 ArchFlow 继续复用现有 FastAPI/OpenAPI 与生成客户端，外部模块从真实消费者的参数、结果契约接入，不把预留协议当作插件加载器。
 
 - 新的对外行为先决定是否属于 protocol feature；若是，在
-  `project_runtime/protocol.py` 暴露 capability，并同步 `PROTOCOL.md` 的 route/status/error。
+  `project_runtime/protocol.py` 暴露 capability，并同步 `docs/protocols/project-runtime-api.md` 的 route/status/error。
 - wire shape 只写在 `project_runtime/transport/` 的 Pydantic DTO；业务值留在 application/kernel 的普通
   domain type。
 - route 只接收调用所需身份和内容，不接收客户端指定的服务器路径。
@@ -669,7 +669,7 @@ npm run api:check
 
 每个任务使用短分支，例如 `codex/first-setup-fix`；完成后发 PR 到 `main`，在 PR 的 Checks 看 Actions，
 由另一人核对修改与运行结果，再由集成人合并。普通讨论、分工和审查都留在 GitHub，现有模块所有权仍查
-`SYSTEM_MAP.md` 和 registry，不另建一份模块表。成员各自运行，真实项目数据和密钥留在约定的项目目录。
+`docs/architecture/system-map.md` 和 registry，不另建一份模块表。成员各自运行，真实项目数据和密钥留在约定的项目目录。
 
 ### 8.2 获取代码并在本机运行
 
@@ -723,7 +723,7 @@ python -c "import sys; print(sys.executable)"
 ### 8.3 创建外部项目
 
 仓库不随 clone 分发正式模型项目。使用生产命令
-[`tools/create_project.py`](../tools/create_project.py) 创建自己的 P036 项目；该命令不导入测试夹具。
+[`tools/create_project.py`](../../tools/create_project.py) 创建自己的 P036 项目；该命令不导入测试夹具。
 先选择源码仓外的目标目录，目录名就是项目 ID：
 
 ```powershell
@@ -764,14 +764,14 @@ Program 和建模候选需要相应的完整设计输入与执行分工，PDF �
 搬家是否真的成功，用 `scripts/dev/run-archive-rehearsal.ps1` 完整演练一遍：导出、还原到空目录、
 在还原副本上启动一个项目运行时、按正常读取器逐项比对身份，并从还原后的精确 base 跑一个不接受的候选。
 两个对话框、两条路由、命令行开关、演练脚本与驱动，以及“什么会走、什么不会走”的完整说明，见
-[Hub 说明的 “Project archive: export, restore, rehearsal”](../apps/monkeyhub/README.md#project-archive-export-restore-rehearsal)。
+[Hub 说明的 “Project archive: export, restore, rehearsal”](../../apps/monkeyhub/README.md#project-archive-export-restore-rehearsal)。
 
 ### 8.4 启动前后端
 
 #### 通过 MonkeyHub 启动
 
 生产入口只有 MonkeyHub：安装包的桌面窗口，或源码根目录的 `OPEN_MONKEYHUB.cmd`。源码开发用
-`apps/monkeyhub/launch-hub.ps1`（见 [Hub 说明](../apps/monkeyhub/README.md)）：
+`apps/monkeyhub/launch-hub.ps1`（见 [Hub 说明](../../apps/monkeyhub/README.md)）：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SourceRoot\apps\monkeyhub\launch-hub.ps1" -Python $Python -RuntimeRoot "$RuntimeRoot\hub" -HubWebDir "$SourceRoot\apps\monkeyhub\web\dist"
@@ -880,7 +880,7 @@ $result = Invoke-RestMethod "$api/state?run=$($accepted.candidateId)"
 
 ### 8.6 GitHub Actions 与本机相关检查
 
-既有 [verify.yml](../.github/workflows/verify.yml) 包含架构、PR 提交范围、内核/API、Web 和 Ubuntu/Windows 首次接入检查。
+既有 [verify.yml](../../.github/workflows/verify.yml) 包含架构、PR 提交范围、内核/API、Web 和 Ubuntu/Windows 首次接入检查。
 每次交付查看对应提交或 PR 的实际 Checks；以往的检查结果不代表当前提交已经通过。
 `archcheck` 的当前静态边界检查与 `--changed` 的历史提交范围检查分别执行，不能互相替代。
 

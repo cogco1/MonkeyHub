@@ -65,4 +65,4 @@ ArchFlow 探索人与 AI 共同工作的建筑设计基础设施。它从真实�
 
 ArchFlow explores infrastructure for people and AI to work on architectural design together. It starts with the repeated explanation, manual transfer and repair that tools leave to architects, and asks how removing that work can make ideas easier to develop, inspect and revise. MonkeyArch is the current environment for testing these methods. Its value is established through what people can do with it, not the number of mechanisms behind it.
 
-实现与评价边界见 [ARCHITECTURE.md](ARCHITECTURE.md)，下一项开发见 [GitHub Issues](https://github.com/cogco1/MonkeyHub/issues)。
+实现与评价边界见 [architecture/overview.md](../architecture/overview.md)，下一项开发见 [GitHub Issues](https://github.com/cogco1/MonkeyHub/issues)。

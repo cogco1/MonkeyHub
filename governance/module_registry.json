@@ -1,7 +1,7 @@
 {
   "schema": "ArchFlowModuleRegistry@1",
   "spine": {
-    "spec": "docs/CANONICAL_SPINE.md",
+    "spec": "docs/decisions/001-one-spine.md",
     "entry_points": [
       "tools/run_project.py",
       "tools/verify_state_record.py",
@@ -635,7 +635,7 @@
         "packages/monkeydiagram/tests/test_drawing_svg.py",
         "packages/monkeydiagram/tests/test_drawing_elevation.py"
       ],
-      "notes": "CREATE 2026-09-07 (A0 of docs/DRAWING_MODULE_ARCHITECTURE_PLAN.md): no owner serialised drawings; the PDF/DXF paper canvas in a teammate's worktree is a different output and stays out. Pillow renders the PNG (already installed with the Studio); no browser, image model or re-projection."
+      "notes": "CREATE 2026-09-07 (A0 of docs/design/drawing-system.md): no owner serialised drawings; the PDF/DXF paper canvas in a teammate's worktree is a different output and stays out. Pillow renders the PNG (already installed with the Studio); no browser, image model or re-projection."
     },
     {
       "module_id": "adapters.mesh_views",
@@ -3339,7 +3339,7 @@
       "tests": [
         "tests/test_facets.py"
       ],
-      "notes": "Facets live on Component@1.fields.facets (spec docs/2026-09-28-construction-api.md §3.4); GH-419 Task C2."
+      "notes": "Facets live on Component@1.fields.facets (spec docs/design/construction-api.md §3.4); GH-419 Task C2."
     },
     {
       "module_id": "semantics.registry",
@@ -5862,7 +5862,7 @@
     {
       "module_id": "studio.shell",
       "owner_path": "services/project-runtime/src/project_runtime/main.py",
-      "purpose": "The Project Runtime: assemble the project-scoped FastAPI boundary MonkeyHub starts once per open project and read its configuration only from the environment the Hub resolved (contract: docs/PROJECT_RUNTIME.md).",
+      "purpose": "The Project Runtime: assemble the project-scoped FastAPI boundary MonkeyHub starts once per open project and read its configuration only from the environment the Hub resolved (contract: docs/architecture/project-runtime.md).",
       "owns": [
         "create_app and the uvicorn entry point, and the lifespan that lets a running candidate finish",
         "StudioSettings and every environment variable the process reads (project dir, cad_export occt/rhino/off with legacy rhino_export read-in, workers, powershell, reference run, mode, bind host, token, origins)",
@@ -5996,7 +5996,7 @@
         "services/project-runtime/tests/test_study_model.py",
         "services/project-runtime/tests/test_conditional_reads.py"
       ],
-      "notes": "Project Runtime contract: docs/PROJECT_RUNTIME.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/monkeyhub/web/src/api/project-runtime/connection.ts is the client boundary. User preferences and the Hub's application settings - their files, DTOs and routes - belong to hub.shell, as do browser appearance, language catalogs and workspace composition; this process serves APIs only.",
+      "notes": "Project Runtime contract: docs/architecture/project-runtime.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. transport/* carries wire shapes, so a DTO change is a shell change. docs/protocols/project-runtime-api.md records protocol.py; apps/monkeyhub/web/src/api/project-runtime/connection.ts is the client boundary. User preferences and the Hub's application settings - their files, DTOs and routes - belong to hub.shell, as do browser appearance, language catalogs and workspace composition; this process serves APIs only.",
       "files": [
         "services/project-runtime/src/project_runtime/main.py",
         "services/project-runtime/src/project_runtime/settings.py",
@@ -6237,7 +6237,7 @@
       "purpose": "Read governance registries through bounded module, capability and live-work lookups, and render the generated system and semantic maps.",
       "owns": [
         "loading the live work registry (ArchFlowDevelopmentRegistry@3, GitHub Issue claims only) for the work lookup",
-        "rendering docs/SYSTEM_MAP.md and docs/SEMANTIC_REGISTRY.md, including the stage-ladder table generated from PHASE_LADDER",
+        "rendering docs/architecture/system-map.md and docs/architecture/semantic-registry.md, including the stage-ladder table generated from PHASE_LADDER",
         "Exact-id or ranked keyword module lookup with paged contract sections, dependencies, registered source paths and tests; ambiguous queries return bounded candidates",
         "Capability lookup over the same registry: exact id or goal words in either language, paged entry sections, and the sentence a no-hit answers with",
         "Read-only work lookup by exact claim, GH-<issue> or GH-<issue>/<lane>, showing the Issue link, branch/worktree/base/contributor/modules/paths/dependencies/handoff/blocked reason and findings from tools.archcheck"
@@ -6256,8 +6256,8 @@
         "optional exact claim id (GH-<issue> or GH-<issue>/<lane>) and governance/architecture_policy.json"
       ],
       "outputs": [
-        "docs/SYSTEM_MAP.md",
-        "docs/SEMANTIC_REGISTRY.md",
+        "docs/architecture/system-map.md",
+        "docs/architecture/semantic-registry.md",
         "exit code",
         "Bounded plain-text or JSON module lookup on stdout, including omitted-section counts",
         "Bounded plain-text or JSON capability lookup on stdout; no match reports the size of the index rather than a verdict",
@@ -7107,7 +7107,7 @@
         "project.version_ref_owners"
       ],
       "used_by": [
-        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
+        "docs/development/work-environment.md"
       ],
       "invariants": [
         "all project writes go through the existing repository initializer",
@@ -8041,7 +8041,7 @@
         "packages/monkeydiagram/tests/test_drawing_styles.py",
         "packages/monkeydiagram/tests/test_drawing_output.py"
       ],
-      "notes": "CREATE justified in docs/DRAWING_STANDARD_V0.1.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework."
+      "notes": "CREATE justified in docs/design/drawing-standard.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework."
     },
     {
       "module_id": "monkeyfab",
@@ -8337,7 +8337,7 @@
         "tests/test_construction_lowering.py",
         "tests/test_wall_realization.py"
       ],
-      "notes": "Spec docs/2026-09-28-construction-api.md section 3.1. The interpreter's verbs and the vocabulary are one table (script.IMPLEMENTED_VERBS is checked against vocabulary.VERBS at import).",
+      "notes": "Spec docs/design/construction-api.md section 3.1. The interpreter's verbs and the vocabulary are one table (script.IMPLEMENTED_VERBS is checked against vocabulary.VERBS at import).",
       "files": [
         "packages/monkeyarch/src/monkeyarch/construction/__init__.py",
         "packages/monkeyarch/src/monkeyarch/construction/script.py",
@@ -8399,7 +8399,7 @@
       "tests": [
         "tests/test_domain_readiness.py"
       ],
-      "notes": "spec docs/2026-09-28-construction-api.md §3.6 (GH-419 Task C5). No structural or thermal engine exists behind this gate yet; it is the readiness question every future domain tool will call first."
+      "notes": "spec docs/design/construction-api.md §3.6 (GH-419 Task C5). No structural or thermal engine exists behind this gate yet; it is the readiness question every future domain tool will call first."
     },
     {
       "module_id": "studio.domains",
@@ -8451,7 +8451,7 @@
       "tests": [
         "services/project-runtime/tests/test_domains.py"
       ],
-      "notes": "spec docs/2026-09-28-construction-api.md §3.6 (GH-419 Task C5)."
+      "notes": "spec docs/design/construction-api.md §3.6 (GH-419 Task C5)."
     }
   ]
 }

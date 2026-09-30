@@ -1,14 +1,18 @@
+---
+created: 2026-09-28
+---
+
 # Construction first: the agent authors geometry, the runtime chooses producers (#419)
 
 Status: design for cogco1/MonkeyHub#419, after the owner's two comments of 2026-09-28. It extends
-`docs/2026-09-28-construction-voids-lowering.md`, which delivered the L5 half of the issue
+`docs/design/construction-lowering.md`, which delivered the L5 half of the issue
 (construction intermediates without owners, voids as a relation, OCCT lowering).
 
 ## 1. Why Codex does well in SketchUp and Blender and is held back in the Hub
 
 ### 1.1 What works in a native modeller
 
-The public cases summarised in `docs/2026-09-28-construction-voids-lowering.md` §2.2 share six traits.
+The public cases summarised in `docs/design/construction-lowering.md` §2.2 share six traits.
 
 1. **The action is a program.** One Ruby or bpy script makes many shapes with variables, loops,
    helper functions and arithmetic. One round trip carries a whole idea.

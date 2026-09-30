@@ -118,7 +118,7 @@ justify eager startup loading or dropping source inspection.
   than 128 MiB. Large-file product behavior needs explicit validation before
   calling the whole import path usable.
 - Board/AI Render/Publish and downstream staleness are separate remaining
-  product acceptance ([MVP roadmap](product/MVP_ROADMAP.md#acceptance-end-to-end-mvp-proof),
+  product acceptance ([MVP roadmap](../product/roadmap.md#acceptance-end-to-end-mvp-proof),
   formerly #254); successful registration alone does not satisfy them.
 
 ## Repeatable synthetic-fixture profile, 2026-09-26

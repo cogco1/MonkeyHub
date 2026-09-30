@@ -1,16 +1,16 @@
 # ArchFlow V4 architecture
 
 This document separates the implemented spine from the next architectural capability
-to develop. [VISION.md](VISION.md) defines the direction; GitHub Issues track the
+to develop. [The vision](../product/vision.md) defines the direction; GitHub Issues track the
 work. The goal is usable architectural work that people can understand,
 revise and hand over, not more editable objects or more infrastructure layers.
 
-One production spine. Who owns what is in [SYSTEM_MAP.md](SYSTEM_MAP.md) (generated from
+One production spine. Who owns what is in [the system map](system-map.md) (generated from
 `governance/module_registry.json`); why it is one spine is in
-[CANONICAL_SPINE.md](CANONICAL_SPINE.md); the decisions a later session would be tempted to
-reverse are in [adr/](adr/README.md). Who is editing which paths now is `python tools/devctl.py work`. What the
+[decision 001](../decisions/001-one-spine.md); the decisions a later session would be tempted to
+reverse are in [decisions/](../decisions/README.md). Who is editing which paths now is `python tools/devctl.py work`. What the
 Studio serves on the wire, and what a second client or a remote server may rely on, is
-[PROTOCOL.md](PROTOCOL.md) — the open ArchFlow protocol, version 2.
+[project-runtime-api.md](../protocols/project-runtime-api.md) — the open ArchFlow protocol, version 2.
 
 ## Parallel user workflows: MonkeyArch and MonkeyDiagram
 
@@ -31,7 +31,7 @@ separates `packages/archflow/`, `packages/monkeyarch/` and `packages/monkeydiagr
 and a shared application host. Modeling algorithms and drawing execution live in their
 respective packages. Shared geometry values remain in `archflow.state.geometry_program`
 so CAD adapters do not import the modeling compiler. The dependency direction and
-current file map are defined in [REPO_LAYOUT.md](REPO_LAYOUT.md).
+current file map are defined in [repository-layout.md](repository-layout.md).
 
 The UI direction is two peer workspace entries. MonkeyDiagram can begin with an
 existing document or diagram, or reference a specific model version from MonkeyArch.
@@ -44,7 +44,7 @@ is implemented. The current document canvas and markup are usable code; the mode
 elevation owner and the project-specific drawing consumer also exist. Peer workspace
 navigation uses the existing model/document switch; the explicit redraw-from-new-model
 action remains to be integrated.
-See [the MonkeyDiagram plan](DRAWING_MODULE_ARCHITECTURE_PLAN.md) for that work.
+See [the MonkeyDiagram plan](../design/drawing-system.md) for that work.
 
 ## Four areas of architectural work
 
@@ -105,7 +105,7 @@ an accepted `DesignStage@1` pins one complete materialized model and StateRecord
 `design/branches.json` holds each sustained history line's fork and head refs.
 Generate and preview leave candidates; explicit acceptance advances the design
 branch by exact Stage compare-and-swap. Formal issue alone advances canonical
-`HEAD`. [The Stage plan](STAGE_BRANCH_CANDIDATE_PLAN.md) records this convergence
+`HEAD`. [The Stage plan](../design/design-history.md) records this convergence
 and its remaining product validation.
 
 Entry points: `tools/run_project.py` (a run of one project), `tools/verify_state_record.py`
@@ -156,8 +156,8 @@ maturity stages that use them:
   (`packages/monkeyarch/src/monkeyarch/capabilities/domain_readiness.py`) answers what a domain will read or which facets
   it still needs and why; no domain infers meaning from shape or producer.
 
-The contract is [the construction API](2026-09-28-construction-api.md); the L5 half (voids and their
-lowering) is [the voids lowering](2026-09-28-construction-voids-lowering.md).
+The contract is [the construction API](../design/construction-api.md); the L5 half (voids and their
+lowering) is [the voids lowering](../design/construction-lowering.md).
 
 ## Architectural revision: responsibilities and actual gaps
 
@@ -175,8 +175,8 @@ this edit affects. They use the existing record, not three competing project sto
 | Continue, inspect and retain | Studio binding/candidate/viewer, `runtime/project_runner.py`, P036 | Explicit candidate continuation is implemented. Program and massing APIs now accept a selected source run; clients must pass it to continue that candidate, while omission preserves the default base. Continuation does not prove architectural correctness. |
 
 These are existing ownership boundaries, not new modules to create. Public APIs and
-callers remain in [SYSTEM_MAP.md](SYSTEM_MAP.md). Source/runtime placement and extension
-steps remain in the [work-environment guide](WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md).
+callers remain in [the system map](system-map.md). Source/runtime placement and extension
+steps remain in the [work-environment guide](../development/work-environment.md).
 
 The next capability is a complete revision loop under actual project conditions:
 
@@ -232,7 +232,7 @@ the architect changes that decision; ask about a real conflict, not an internal 
 3. **Consolidate demonstrated reuse and bottlenecks.** Extract shared code when real
    consumers need it and remove the superseded production path together. Missing
    geometry vocabulary is added to the existing producers when a task needs it. The delivered OCCT export supports the bounded
-   solid/loft/boolean slice described in the [Studio README](../services/project-runtime/README.md);
+   solid/loft/boolean slice described in the [Studio README](../../services/project-runtime/README.md);
    whole-stair/window production and synthetic candidate continuation are implemented.
    Explicitly uncapped polyline lofts preserve the drum and dome as open surfaces.
    The current short demo defers complex passage and ornament details so that a
@@ -271,5 +271,5 @@ An idea here becomes implementation work only with a concrete task and write sco
 The retired agent-portfolio lane, monument tools, design controller, sandbox/voxel
 lane, research experiments and v3 diagnostic are retained in a local archive outside
 the public checkout. A public clone does not include that archive or its tests.
-`CANONICAL_SPINE.md` records the historical consolidation layout, not the current
+[Decision 001](../decisions/001-one-spine.md) records the historical consolidation layout, not the current
 checkout layout. Retained data under `probes/` and the external workspace never moved.

@@ -6,7 +6,7 @@
 线宽、可见性、标注与更新，同时不复制模型、不把截图冒充图纸、不绕过 P036。
 
 本文只规划一条新能力链。现有所有权仍以
-[`governance/module_registry.json`](../governance/module_registry.json) 为准；进入实现前才为这条能力
+[`governance/module_registry.json`](../../governance/module_registry.json) 为准；进入实现前才为这条能力
 登记唯一 owner，不能先并排建立多个 renderer 或 sheet system。
 
 ## 工作流边界：MonkeyArch 与 MonkeyDiagram
@@ -496,7 +496,7 @@ SHA-256 为 `c0c05d49feeb1c6699f3841a5de4997e45ce83a26516fef79931137c09b9b5c3`�
 
 ### 2026-09-07：A0 一张模型轴立面已闭环（实际入口与边界）
 
-已实现的入口，三层各一个 owner（见 `docs/SYSTEM_MAP.md`）：
+已实现的入口，三层各一个 owner（见 `docs/architecture/system-map.md`）：
 
 - `adapters.cad_execution.project_occt_lines(entries, *, object_ids, origin, right, up, linear_deflection,
   depth_range=None)`：`read_step` 冷读的具名 shape → `OcctDrawingPolyline(object_id, kind, points)` 元组。

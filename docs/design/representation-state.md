@@ -1,3 +1,7 @@
+---
+created: 2026-09-26
+---
+
 # Representation and production state: evidence and answer (2026-09-26)
 
 **Issue:** [#223](https://github.com/cogco1/MonkeyHub/issues/223), lane `GH-223/representation-status`.

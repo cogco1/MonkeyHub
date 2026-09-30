@@ -50,7 +50,7 @@ browser user's computer. Executable presence and directory version hints never
 establish compatibility, entitlement, session readiness or conversion support.
 Only the mesh provider currently declares implemented routes. Native absence,
 incompatibility or missing automation all return 当前没有配置可用的执行器.
-See [vendor investigation and Kevin's local experiments](MODEL_PROVIDER_RESEARCH.md).
+See [vendor investigation and Kevin's local experiments](../research/model-providers.md).
 
 Reports retain actual provider/version/mode/host, candidate availability reasons,
 source/target, intermediate formats, units/layer/material/structure/geometry
@@ -113,8 +113,8 @@ routes do not establish complete SketchUp, Rhino or DWG round-trip fidelity.
 
 Generated fixtures include an offset triangle, millimeter 3DM, and curved 3DM
 without a render mesh (expected refusal). Python unittest coverage is in
-`tests/test_model_formats.py`, the Runtime's `tests/test_model_exports.py`, and
-Hub's `tests/test_model_export_chat.py`. The native rhino3dm reader reopens 3DM;
+`tests/test_model_formats.py`, the Runtime's `services/project-runtime/tests/test_model_exports.py`,
+and the Hub's `apps/monkeyhub/api/tests/test_model_export_chat.py`. The native rhino3dm reader reopens 3DM;
 the optional `tests/model_export_glb_reader.mjs` reopens the generated triangle
 with the frontend's independent Three.js GLTFLoader and asserts mesh/triangle
 counts and Y-up meter bounds. Invoke it with the installed Three.js package

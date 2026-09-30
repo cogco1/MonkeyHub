@@ -1,7 +1,7 @@
 """L4 domain readiness: a domain reads only the semantics it needs.
 
 ``monkeyarch.capabilities.domain_readiness`` is the honest entry gate every
-technical domain calls before it runs (spec docs/2026-09-28-construction-api.md
+technical domain calls before it runs (spec docs/design/construction-api.md
 §3.6): it never infers ``architectural.role``, ``structural.role``,
 ``architectural.enclosure`` or ``material.name`` from an entity's shape,
 producer or name, and it says exactly what is missing and why when it cannot

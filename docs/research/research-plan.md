@@ -5,10 +5,10 @@ This document holds the cross-issue research plan that lived in issue #176 (open
 mean this document. It records the research thesis, commitments, shared experiment rules and
 the dated checkpoint history.
 
-- Team boundaries stay in the [algorithm team charter](ALGORITHM_TEAM.md); this roadmap
+- Team boundaries stay in the [algorithm team charter](algorithm-team.md); this roadmap
   complements it and does not replace it.
 - Live status, priority and dates: the GitHub Project, see
-  [Project tracking](../PROJECT_TRACKING.md).
+  [Project tracking](../development/project-tracking.md).
 - Implementation stays in the existing issues. The plan does not assign people, change
   assignees, or authorize experiments to rewrite core in parallel, and it is not a pipeline
   that every experiment must run through.
@@ -540,8 +540,8 @@ Kaiwen.
 
 ## Related documents
 
-- [Algorithm team charter](ALGORITHM_TEAM.md)
-- [Project tracking and roadmap policy](../PROJECT_TRACKING.md)
+- [Algorithm team charter](algorithm-team.md)
+- [Project tracking and roadmap policy](../development/project-tracking.md)
 - [OCBA discussion](ocba-discussion.md) — what the allocation experiments allocate, their
   results and the proposed FEA interface.
 - [Study evidence method](study-evidence-method.md) — #73 method note.

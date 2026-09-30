@@ -7,14 +7,14 @@ ArchFlow 源码接入默认从 GitHub `main` 开始，记录实际提交和对�
 ## 先看这一屏
 
 **应用统一从 MonkeyHub 进入。** 启动、项目选择和 Agent 接入沿同一流程；代码开发使用现有查询命令。
-首次会话按 [Hub 入口与定向检索顺序](WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口)执行，
+首次会话按 [Hub 入口与定向检索顺序](work-environment.md#0-monkeyhub-统一入口)执行，
 不需要先读完整工具箱或模块地图。MonkeyArch 是 Hub 的建模工作区，不是另一个总入口。
 
 | 你要做什么 | 从哪里进入 | 第一个结果 |
 | --- | --- | --- |
-| 直接使用 MonkeyHub 整合包 | [Windows 候选包安装说明](../apps/monkeyhub/installer/README.md) | 完整解压后运行 `INSTALL_MONKEYHUB.cmd`，打开 Hub；无需自行安装 Python 或 Node.js |
-| 使用或改进研究工具、Skills、实验记录、图表与报告 | [共享工具箱](https://github.com/cogco1/huaguoshan-digital-infrastructure)，先读其 `AGENTS.md`、`README.md`、`docs/CLI.md` | 在自己的 Runtime 生成一次合成演示，找到报告、图表和来源 run |
-| 使用或改进 MonkeyArch 界面、模型修改与候选执行 | [MonkeyHub](https://github.com/cogco1/MonkeyHub)，先读 [AGENTS.md](../AGENTS.md)，再按本文运行 | API/Web 连通，一次合成候选修改读回为 `2.2` |
+| 直接使用 MonkeyHub 整合包 | [Windows 候选包安装说明](../../apps/monkeyhub/installer/README.md) | 完整解压后运行 `INSTALL_MONKEYHUB.cmd`，打开 Hub；无需自行安装 Python 或 Node.js |
+| 使用或改进研究工具、Skills、实验记录、图表与报告 | [共享工具箱](https://github.com/cogco1/huaguoshan-digital-infrastructure)，先读其 [`AGENTS.md`](https://github.com/cogco1/huaguoshan-digital-infrastructure/blob/main/AGENTS.md)、[`README.md`](https://github.com/cogco1/huaguoshan-digital-infrastructure/blob/main/README.md)、[`docs/CLI.md`](https://github.com/cogco1/huaguoshan-digital-infrastructure/blob/main/docs/CLI.md) | 在自己的 Runtime 生成一次合成演示，找到报告、图表和来源 run |
+| 使用或改进 MonkeyArch 界面、模型修改与候选执行 | [MonkeyHub](https://github.com/cogco1/MonkeyHub)，先读 [AGENTS.md](../../AGENTS.md)，再按本文运行 | API/Web 连通，一次合成候选修改读回为 `2.2` |
 | 修改某个已有能力 | ArchFlow 用 `python tools/devctl.py module <关键词>` 找 owner；工具箱用 `hgs skills list/show` 查具体契约 | 找到负责模块、真实调用方和相关测试，约定一个小修改 |
 | 查看真实建筑、继续设计 | 由项目负责人提供可共享的完整项目副本和选定 run | 在自己的副本看见指定模型，再进行一次已约定的修改 |
 
@@ -26,7 +26,7 @@ ArchFlow 源码接入默认从 GitHub `main` 开始，记录实际提交和对�
 ## 今天按什么顺序收口
 
 - [ ] **主线负责人：给出接入版本。** 给出所选仓库的准确提交、任务和审查人。不要让新成员猜维护者本机的未提交版本。
-- [ ] **主线负责人：核对所选版本的检查结果。** ArchFlow 的 [远端工作流](../.github/workflows/verify.yml) 已包含架构检查、核心与 Studio API 测试、Web 检查及 Windows/Linux 首次接入检查；以该提交实际 Actions 结果为准。
+- [ ] **主线负责人：核对所选版本的检查结果。** ArchFlow 的 [远端工作流](../../.github/workflows/verify.yml) 已包含架构检查、核心与 Studio API 测试、Web 检查及 Windows/Linux 首次接入检查；以该提交实际 Actions 结果为准。
 - [ ] **新成员与她的 Agent：独立复现。** 从 GitHub 获取代码，在自己的环境完成所选仓库的最小回路。
 - [ ] **双方：交接一个真实小任务。** 依据复现中实际遇到的问题，先开或选定一个 GitHub Issue；需要源码并发协调时再在 registry 登记 `GH-<issue>` lane，明确基线、窄路径、责任人与审查/交接对象，再使用独立 worktree 和短分支。第二人复跑或审查后才算完成交接；未指定的人选如实标明。
 
@@ -67,7 +67,7 @@ python tools/devctl.py work
 python tools/devctl.py module compiled-cad-execution
 ```
 
-上例查询 CAD 任务；按自己的任务更换模块，用 `work GH-<issue>/<lane>` 查看具体 lane。`work` 只列登记中的 GitHub Issue claim 与 lane；任务本身以 Issue 为准。用返回的精确 module id 再查契约与真实调用方，确认本 lane 的路径及当前重叠，再从记录的基线创建或复用自己的 worktree。字段、状态和交接方式见[协作流程](../CONTRIBUTING.md#登记与查看并行任务)。共享契约不够时，先让现有 owner 的上游 PR 合入 `main`，再更新依赖分支；不复制接口、不吸收另一人的 WIP，也不要求每天 rebase。
+上例查询 CAD 任务；按自己的任务更换模块，用 `work GH-<issue>/<lane>` 查看具体 lane。`work` 只列登记中的 GitHub Issue claim 与 lane；任务本身以 Issue 为准。用返回的精确 module id 再查契约与真实调用方，确认本 lane 的路径及当前重叠，再从记录的基线创建或复用自己的 worktree。字段、状态和交接方式见[协作流程](../../CONTRIBUTING.md#登记与查看并行任务)。共享契约不够时，先让现有 owner 的上游 PR 合入 `main`，再更新依赖分支；不复制接口、不吸收另一人的 WIP，也不要求每天 rebase。
 
 ## 3. 先跑工具箱
 
@@ -225,13 +225,13 @@ npm.cmd run build
 | 图表、报告、来源与归档 | 工具箱 `src/hgr/projections.py`，相关 `skills/<id>/` | 合成演示；只有改动涉及恢复/重建时再跑 benchmark |
 | MonkeyArch 交互 | ArchFlow `apps/monkeyhub/web/src/`，先查对应 feature | 交互测试、类型与构建；DTO 变化另查生成客户端 |
 | API 用例与项目绑定 | ArchFlow `services/project-runtime/src/project_runtime/` | 对应路由与用例测试，保留项目及候选绑定 |
-| 几何、依赖、验证或项目存储 | ArchFlow [SYSTEM_MAP.md](SYSTEM_MAP.md) 的现有模块 | registry 中该模块的测试与 `tools/archcheck.py` |
+| 几何、依赖、验证或项目存储 | ArchFlow [system-map.md](../architecture/system-map.md) 的现有模块 | registry 中该模块的测试与 `tools/archcheck.py` |
 
 新增 Skill 优先扩展真实已有条目，不复制两仓实现。研究问题和结论由成员提出；真实项目改动由项目任务确定。本清单不会自动派发新的模型算法、Skill 包或存储机制。
 
 ### Blender 同事的首次复跑与接手
 
-当前源码已实现 Blender 的首个场景保存与冷读回闭环。先读 [Issue #13](https://github.com/cogco1/MonkeyHub/issues/13) 和[Blender 执行指南](../packages/archflow/src/archflow/adapters/README.md#blender-scene-execution)，用 `python tools/devctl.py module compiled-cad-execution` 查现有 owner，再查询精确的 `adapters.cad_execution`。公共契约 [#15](https://github.com/cogco1/MonkeyHub/pull/15)、协作工具 [#17](https://github.com/cogco1/MonkeyHub/pull/17) 和 Blender [#18](https://github.com/cogco1/MonkeyHub/pull/18) 已按顺序合入；复跑应取同时包含三者的约定 `main` 提交，记录实际 SHA、lane 和独立 worktree。旧 Phase 1 基线 `681fc9f1` 不含 Blender 实现，不能用它验收 Blender。
+当前源码已实现 Blender 的首个场景保存与冷读回闭环。先读 [Issue #13](https://github.com/cogco1/MonkeyHub/issues/13) 和[Blender 执行指南](../../packages/archflow/src/archflow/adapters/README.md#blender-scene-execution)，用 `python tools/devctl.py module compiled-cad-execution` 查现有 owner，再查询精确的 `adapters.cad_execution`。公共契约 [#15](https://github.com/cogco1/MonkeyHub/pull/15)、协作工具 [#17](https://github.com/cogco1/MonkeyHub/pull/17) 和 Blender [#18](https://github.com/cogco1/MonkeyHub/pull/18) 已按顺序合入；复跑应取同时包含三者的约定 `main` 提交，记录实际 SHA、lane 和独立 worktree。旧 Phase 1 基线 `681fc9f1` 不含 Blender 实现，不能用它验收 Blender。
 
 支持正尺寸 box `SOLID`、简单平面多边形的直线 `EXTRUSION`，包含 `base_level` / `base_offset` 和不落在截面平面内的拉伸向量。其他操作在启动 Blender 前明确返回不支持。输出是保留 ArchFlow 对象/语义身份的 mesh `.blend`；原生读回证据经现有项目接口保存，项目 `HEAD` 不因候选执行改变。它尚不提供全量功能等价或 Hub 模型显示。
 
@@ -244,7 +244,7 @@ python -m unittest tests.test_blender_cad tests.test_cad_backend_contract -v
 
 测试使用临时 workspace/project，通过两个独立后台进程先保存、再打开检查。未设置该变量时，真实宿主用例会 skip，不能将其写成通过。已有精确输出可由 runner 复用；有 source 时保留来源文件并按当前程序完整重建，不承诺增量 patch 或 `.blend` 字节重现。
 
-PR #18 已在 Blender 4.3.2 完成 15 项测试，包括真实保存/冷读、重启复用和候选修改；其公共 CAD、runner、record kinds 与 CLI 的另外 112 项检查通过。Rhino 独立执行按[真实宿主验收命令](../packages/archflow/src/archflow/adapters/README.md#rhino-host-acceptance)显式启用，默认 skip 不算验收。#13 已于 2026-09-15 关闭：第二个账号从 fresh clone 在真实 Blender 4.3.0 上复跑通过（由 agent 执行），关闭时未要求真人交接。
+PR #18 已在 Blender 4.3.2 完成 15 项测试，包括真实保存/冷读、重启复用和候选修改；其公共 CAD、runner、record kinds 与 CLI 的另外 112 项检查通过。Rhino 独立执行按[真实宿主验收命令](../../packages/archflow/src/archflow/adapters/README.md#rhino-host-acceptance)显式启用，默认 skip 不算验收。#13 已于 2026-09-15 关闭：第二个账号从 fresh clone 在真实 Blender 4.3.0 上复跑通过（由 agent 执行），关闭时未要求真人交接。
 
 接手时先读 #13 与已合入的 #15、#17、#18，再运行 `python tools/devctl.py work` 确认有无登记中的 Blender lane；原 Blender lane 已关闭。用 `python -m unittest tests.test_devctl_work tests.test_archcheck_scopes -v` 可复跑三条独立模拟 lane、故意生产路径重叠与明确先后交接。测试演练不代替真人接手：新成员应在自己的 worktree 复现选定任务，将版本、结果和遇到的问题交给约定 reviewer。开发继续沿公共 CAD 契约；缺少共享契约时先提交上游 PR，再更新依赖分支，Blender lane 不修改 Hub/App Server 实现。
 
@@ -252,7 +252,7 @@ PR #18 已在 Blender 4.3.2 完成 15 项测试，包括真实保存/冷读、�
 
 ```text
 请先读取这份 GitHub 接入清单，帮我完成首次接入（代码版本仍按负责人指定）：
-https://github.com/cogco1/ARCHFLOW_V4/blob/main/docs/TEAM_ONBOARDING.md
+https://github.com/cogco1/MonkeyHub/blob/main/docs/development/team-onboarding.md
 先读两个目标仓库的 AGENTS.md、这份清单和所选仓库 README，报告：
 当前能访问的仓库与提交、我今天先跑哪个入口、成功时应看到什么。
 不要从旧会话或维护者个人路径猜环境，也不要把本地开发功能当作 GitHub 已发布功能。

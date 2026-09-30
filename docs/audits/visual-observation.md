@@ -1,3 +1,7 @@
+---
+created: 2026-09-25
+---
+
 # Visual observation: audit, V0 contract and benchmark (2026-09-25)
 
 **Issue:** [#303](https://github.com/cogco1/MonkeyHub/issues/303), lane `GH-303/visual-observation`.
@@ -66,7 +70,7 @@
 - `studio_request GET /api/drawings/model-view` is allow-listed (`_READ`, `HUBAPI/chat.py:2018`). So is `POST /api/board/export` for one page (`_read_drawing_page`, `:2092-2107`; `_page_image` bounds, `:2071-2089`). The reply becomes a native MCP `image` block (`:2940-2949`).
 - The prompt asks the Agent to "distinguish geometry readback from visual inspection" (`:1654-1655`) and to "inspect relevant views when available" (`:2846`). The tool description names the observe route (`:2865-2866`).
 - The Agent decides when to look. Each image stays in its conversation, and no structured finding comes out.
-- The #294 completion contract relies on exactly this. Its C6 (preserve rules stated in words) and C8 (the evaluator or visual inspection) are only the actor's claim today (`docs/2026-09-25-candidate-admission-audit.md` §4.3).
+- The #294 completion contract relies on exactly this. Its C6 (preserve rules stated in words) and C8 (the evaluator or visual inspection) are only the actor's claim today (`docs/audits/candidate-admission.md` §4.3).
 
 ### 1.3 Deterministic readback available before vision
 
@@ -88,7 +92,7 @@
   - The Hub ignores `turn.completed` usage (`HUBAPI/chat.py:1940`).
 - **Visual review.** Before this lane there was no phase, request kind or image count for it. A model-view read was a generic `tool` call, and a Board page read counted as a `mutation` because it is a POST (`HUBAPI/chat_trace.py:127-131`). The detail vocabulary is closed (`MM/usage.py:18-28`).
 - **Prior evidence.**
-  - [The #195 pilot](../probes/spatial-observation-v1/README.md) showed that exact facts come from structured state. There the line-PNG arm abstained on 76 of 81 exact-fact questions.
+  - [The #195 pilot](../../probes/spatial-observation-v1/README.md) showed that exact facts come from structured state. There the line-PNG arm abstained on 76 of 81 exact-fact questions.
   - The pilot left "visual semantics, composition, material and spatial sense" unmeasured. That is the gap this benchmark addresses.
 
 ## 2. Placement decision

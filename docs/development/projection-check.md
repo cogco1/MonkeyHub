@@ -1,7 +1,7 @@
 # Projection check
 
 `tools/projection_check.py` checks that a change to how the decision tree is
-projected (ADR-008, [`docs/adr/ADR-008-one-tree-many-projections.md`](../adr/ADR-008-one-tree-many-projections.md))
+projected (ADR-008, [`docs/decisions/008-one-tree-many-projections.md`](../decisions/008-one-tree-many-projections.md))
 leaves every answer the same. It needs nothing from the owner's machine. It runs as the `projection` job
 of `.github/workflows/verify.yml` on `ubuntu-latest` and `windows-latest` for every pull request and
 every push to `main` (issue #376).

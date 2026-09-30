@@ -1,3 +1,7 @@
+---
+created: 2026-09-28
+---
+
 # Construction voids and backend lowering (2026-09-28)
 
 **Issue:** [#419](https://github.com/cogco1/MonkeyHub/issues/419), lane `GH-419/construction-voids`.

@@ -5,7 +5,7 @@ name: Nightly release promotion
 #   - every night at 03:00 Beijing (19:00 UTC), and on manual dispatch;
 #   - right after a pull request labelled `release` merges into main.
 # Only a fast-forward of release-candidate to a main commit whose own
-# `ArchFlow Verify` run succeeded is ever pushed. See docs/testing/nightly-release.md.
+# `ArchFlow Verify` run succeeded is ever pushed. See docs/development/nightly-release.md.
 
 on:
   schedule:

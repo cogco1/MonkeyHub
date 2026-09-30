@@ -1,9 +1,13 @@
+---
+created: 2026-09-25
+---
+
 # MonkeyHub UI/UX review (2026-09-25)
 
 **Issue:** [#234](https://github.com/cogco1/MonkeyHub/issues/234), lane `ux-review` · **Base:** `origin/main` `e183a69a` · **Nature:** review only. No product code, record or API change.
 **Asked:** “我建议你看一遍整体UI/UX方案，看看有什么优化点”.
 
-**Method.** I read the shell (`ChatShell.tsx`, `ChatShell.css`, `main.tsx`), MonkeyArch (`App.tsx`, `features/stage/*`), Drawing, Render, Publish, Board and both catalogs. I also read the [09-24 audit](2026-09-24-monkeyhub-ui-reality-audit.md), the [09-24 proposal](2026-09-24-monkeyhub-interaction-proposal.md), the [#284 note](2026-09-25-candidate-graph-interaction.md) and its [prototype](prototypes/candidate-graph/README.md), the [#294 audit](2026-09-25-candidate-admission-audit.md) (§5 decisions) and #300.
+**Method.** I read the shell (`ChatShell.tsx`, `ChatShell.css`, `main.tsx`), MonkeyArch (`App.tsx`, `features/stage/*`), Drawing, Render, Publish, Board and both catalogs. I also read the [09-24 audit](monkeyhub-ui-reality.md), the [09-24 proposal](../design/hub-interaction.md), the [#284 note](../design/candidate-graph.md) and its [prototype](../prototypes/candidate-graph/README.md), the [#294 audit](candidate-admission.md) (§5 decisions) and #300.
 
 I ran three browser tests on the built UI with synthetic fixtures:
 - `test/chatShell.browser.mjs`: 30 screenshots.
@@ -173,7 +177,7 @@ The owner asked for the review's open questions to be settled on the recommendat
 | R13 | Board names 白板, 画布 and 图墙; the Drawing title “Drawing · 图纸”; 放入汇报 | `ZH:55`; `Board.tsx:22, 1143`; `DrawingCanvas.tsx:29` | Glossary names | #280 |
 | R14 | “MonkeyArch” brand on every loading screen; `GET /api/project` in the boot status | `LoadingOverlay.tsx:57-61`; `App.tsx:3317-3318` | Surface name | #282 |
 | R15 | Design Tree “List \| Growth tree” toggle (the prototype defaults to list) | `docs/prototypes/candidate-graph/README.md:29`; #284 note §9 | The growth canvas as the one view, plus a keyboard outline for screen readers and ≤ 500 px | #284 |
-| R16 | Unmerged branch `codex/234-ui-daily-use-plan` (`docs/UI_DAILY_USE_PLAN.md`, `140016a3`); it coins 工作版本, which proposal §2 rejects | Remote branch | The 09-24 proposal and this review | Owner closes it |
+| R16 | Unmerged branch `codex/234-ui-daily-use-plan` ([`docs/UI_DAILY_USE_PLAN.md`](https://github.com/cogco1/MonkeyHub/blob/140016a3886f5d9334718b77ef9dec5d5c79946a/docs/UI_DAILY_USE_PLAN.md), `140016a3`); it coins 工作版本, which proposal §2 rejects | Remote branch | The 09-24 proposal and this review | Owner closes it |
 
 ## 4. Suggested order
 
