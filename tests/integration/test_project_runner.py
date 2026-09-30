@@ -1409,8 +1409,11 @@ class _ExportProject:
 
 
 try:
-    from monkeycad import occt_backend as _occt_backend
-    _OCCT = _occt_backend.occt_available()
+    from monkeycad.backends.occt import build as _occt_build
+    from monkeycad.backends.occt.kernel import occt_available
+    from monkeycad.backends.occt.measure import measure_shape
+    from monkeycad.backends.occt.step import read_step
+    _OCCT = occt_available()
 except Exception:  # the backend is optional; the tests below say so
     _OCCT = False
 NEEDS_OCCT = unittest.skipUnless(_OCCT, "cadquery-ocp is not installed")
@@ -1456,7 +1459,7 @@ class OcctExportTests(unittest.TestCase):
                 # the files are the bytes the receipt certifies, and the STEP reads back as the seat's objects
                 self.assertEqual(_sha256_of(project.workspace(seat_id) / f"{stem}.step"), retained["exact_artifact"]["sha256"])
                 self.assertEqual(_sha256_of(project.workspace(seat_id) / f"{stem}.preview.3dm"), retained["preview_artifact"]["sha256"])
-                entries = _occt_backend.read_step(project.workspace(seat_id) / f"{stem}.step", length_unit="meter")
+                entries = read_step(project.workspace(seat_id) / f"{stem}.step", length_unit="meter")
                 self.assertEqual(sorted(e.name for e in entries), sorted(retained["physical_object_ids"]))
                 inspection = project.repository.load_json(record_ref_from_uri(cad["inspection_ref"], "demo"))
                 self.assertEqual(inspection["schema"], "ThreeDmInspectionSummary@4")
@@ -1489,7 +1492,7 @@ class OcctExportTests(unittest.TestCase):
         old_seat = next(seat for seat in before["seat_results"] if seat["seat_id"] == "seat-structure")
         old_path = Path(old_seat["cad"]["model"])
         old_sha = _sha256_of(old_path)
-        old_body = _occt_backend.measure_shape(next(entry.shape for entry in _occt_backend.read_step(old_path, length_unit="meter") if entry.name == "obj-columns-plinth"))
+        old_body = measure_shape(next(entry.shape for entry in read_step(old_path, length_unit="meter") if entry.name == "obj-columns-plinth"))
         self.assertAlmostEqual(old_body.bbox_min[2], 3.5, places=6)
         self.assertEqual(before["closure_status"], "SATISFIED")
 
@@ -1501,7 +1504,7 @@ class OcctExportTests(unittest.TestCase):
         self.assertNotEqual(old_seat["program_digest"], new_seat["program_digest"])
         self.assertNotEqual(old_seat["cad"]["execution_ref"], new_seat["cad"]["execution_ref"])
         self.assertEqual(new_seat["cad"]["path"], "occt")
-        new_body = _occt_backend.measure_shape(next(entry.shape for entry in _occt_backend.read_step(Path(new_seat["cad"]["model"]), length_unit="meter") if entry.name == "obj-columns-plinth"))
+        new_body = measure_shape(next(entry.shape for entry in read_step(Path(new_seat["cad"]["model"]), length_unit="meter") if entry.name == "obj-columns-plinth"))
         self.assertEqual((new_body.valid, new_body.closed, new_body.solid_count), (True, True, 1))
         self.assertAlmostEqual(new_body.bbox_min[2], 3.9, places=6)
         self.assertAlmostEqual(new_body.bbox_max[2], 4.9, places=6)
@@ -2019,7 +2022,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
 
     def test_shared_missing_intermediate_does_not_rebuild_an_unchanged_final_object(self) -> None:
         from unittest.mock import patch
-        from monkeycad import occt_backend
+        from monkeycad.backends.occt import build as occt_build
         from monkeycad.cad_execution import execute_occt_export
         from tests.integration.test_cad_execution import _binding
         from tests.integration.test_occt_execution import _array, _box, _program_of
@@ -2033,7 +2036,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
             first = execute_occt_export(before, binding=_binding(before), speculative_workspace=workspace,
                                         artifact_stem="base", preview=False)
             self.assertTrue(first.readback_verified, first.failures)
-            with patch.object(occt_backend, "_build_operation", wraps=occt_backend._build_operation) as build:
+            with patch.object(occt_build, "_build_operation", wraps=occt_build._build_operation) as build:
                 second = execute_occt_export(after, binding=_binding(after), speculative_workspace=workspace,
                     artifact_stem="candidate", preview=False, prior_program=before,
                     prior_step=workspace / first.exact_artifact["relative_path"],
@@ -2087,7 +2090,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
             raise RuntimeError("observer cannot alter producer reuse")
 
         with patch.object(project_runner, "produce_rows", wraps=project_runner.produce_rows) as produce, patch.object(
-            _occt_backend, "_build_operation", wraps=_occt_backend._build_operation
+            _occt_build, "_build_operation", wraps=_occt_build._build_operation
         ) as build:
             second = self.run_source(project, self.taller(record), "run-2", first, operation_observer=broken_observer)
         self.assertTrue(second["seat_execution_complete"], second["seat_results"])
@@ -2162,8 +2165,8 @@ class IncrementalSourceRunTests(unittest.TestCase):
         checks = self.checks(project.repository, second)
         self.assertEqual(checks["cabinet-on-plinth"]["status"], "held")
         path = Path(second["seat_results"][0]["cad"]["model"])
-        cabinet_shape = next(entry.shape for entry in _occt_backend.read_step(path, length_unit="meter") if entry.name == "obj-cabinet")
-        self.assertAlmostEqual(_occt_backend.measure_shape(cabinet_shape).bbox_min[2], 4.3, places=6)
+        cabinet_shape = next(entry.shape for entry in read_step(path, length_unit="meter") if entry.name == "obj-cabinet")
+        self.assertAlmostEqual(measure_shape(cabinet_shape).bbox_min[2], 4.3, places=6)
 
     def test_legacy_source_without_element_results_runs_producers_without_claiming_they_were_reused(self) -> None:
         from unittest.mock import patch

@@ -10,7 +10,9 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt import build as occt_build
+from monkeycad.backends.occt.measure import measure_shape
+from monkeycad.backends.occt.step import read_step
 from monkeycad.cad_execution import CadProgramBinding, execute_occt_export
 from monkeycad.patch import select_patch_operations
 from archflow.state.geometry_program import expected_object_bounds
@@ -113,8 +115,8 @@ def _program(repository, receipt):
 
 def _measured(receipt):
     path = Path(receipt["seat_results"][0]["cad"]["model"])
-    return {item.name: occt_backend.measure_shape(item.shape)
-            for item in occt_backend.read_step(path, length_unit="meter")}
+    return {item.name: measure_shape(item.shape)
+            for item in read_step(path, length_unit="meter")}
 
 
 class WindowSourceParameterTests(unittest.TestCase):
@@ -184,7 +186,7 @@ class WindowRelationalCadTests(unittest.TestCase):
         restored = _load_record(project.repository, first)
         successor = apply_state_record_operator(restored, _width_edit(restored, 1.6))
         with patch.object(project_runner, "produce_rows", wraps=project_runner.produce_rows) as produce, patch.object(
-            occt_backend, "_build_operation", wraps=occt_backend._build_operation
+            occt_build, "_build_operation", wraps=occt_build._build_operation
         ) as build:
             second = self._run(project, successor, "run-2", first, required_checks=checks)
         self.assertTrue(second["seat_execution_complete"], second["seat_results"])

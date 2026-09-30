@@ -26,7 +26,8 @@ import math
 from typing import Any, Mapping, Sequence
 
 from monkeycad.cad_execution import StepEntry
-from monkeycad.occt_backend import OcctBackendError, tessellate_shape
+from monkeycad.backends.occt.errors import OcctBackendError
+from monkeycad.backends.occt.preview import _clean, tessellate_shape
 
 RENDERER_NAME = "mesh-lines"
 #: Adjacent triangles meeting at more than this angle draw their shared edge.
@@ -132,20 +133,6 @@ def triangulate(entries: Sequence[StepEntry], object_ids: Sequence[str], *, line
             continue
         meshes.append(ObjectMesh(entry.name, tuple(vertices), tuple(triangles)))
     return tuple(meshes), tuple(skipped)
-
-
-def _clean(shape) -> None:
-    """Forget a triangulation the shape already holds.
-
-    OCCT keeps a finer mesh when asked for a coarser one, so a model loaded
-    once and drawn at 1024 px and then 512 px would draw the 512 px picture
-    from the finer mesh. Cleaning first makes the bytes depend on the size
-    alone, not on what was drawn before.
-    """
-
-    from OCP.BRepTools import BRepTools
-
-    BRepTools.Clean_s(shape)
 
 
 def _welded(np, vertices, triangles, tolerance):

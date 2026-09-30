@@ -16,7 +16,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
 from archflow.project.refs import record_ref_from_uri
 from monkeydiagram.drawing_elevation import read_model_axis_elevation
 from project_runtime.main import create_app
@@ -33,7 +33,7 @@ from .test_documents import image_bytes
 from .test_working_copies import register_model
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class DrawingTests(CandidateTestCase):
     def setUp(self) -> None:
         super().setUp()
@@ -692,7 +692,7 @@ class DrawingTests(CandidateTestCase):
                 self.assertEqual(reopened.get("/api/documents", params={"runId": self.model["runId"]}).json()["documents"], docs)
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class DrawingProjectionTests(CandidateTestCase):
     """Issued drawings are projections (#368): one drawing per content and recipe, retained byte for byte."""
 

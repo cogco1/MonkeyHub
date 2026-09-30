@@ -44,7 +44,7 @@ from typing import Any, Mapping, Sequence
 from xml.etree import ElementTree
 from xml.sax.saxutils import quoteattr
 
-from monkeycad.occt_backend import OcctDrawingPolyline, OcctDrawingRegion
+from monkeycad.backends.occt.projection import OcctDrawingPolyline, OcctDrawingRegion
 
 SVG_MEDIA_TYPE = "image/svg+xml"
 PNG_MEDIA_TYPE = "image/png"

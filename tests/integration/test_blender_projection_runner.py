@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from monkeycad import cad_backend, cad_execution as cad
-from monkeycad.occt_backend import occt_available
+from monkeycad.backends.occt.kernel import occt_available
 BLENDER = os.environ.get("ARCHFLOW_BLENDER_EXECUTABLE")
 
 @unittest.skipUnless(occt_available(), "cadquery-ocp is optional")

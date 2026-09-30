@@ -11,10 +11,11 @@ import subprocess
 from dataclasses import dataclass
 
 import monkeycad.cad_execution as cad
-import monkeycad.occt_backend as occt_backend
 from monkeycad.discovery import resolve_blender_executable
 from monkeycad.backends.blender.backend import _run_worker, _near, _face_loops
 from monkeycad.backends.blender.worker import READBACK_PREFIX, UNIT_SETTINGS
+from monkeycad.backends.occt.preview import tessellate_shape
+from monkeycad.backends.occt.step import read_step
 from monkeycad.cad_backend import CadExecutionRequest, CadExecutionResult, OcctBackend
 from monkeycad.cad_program import _rgb
 from archflow.contracts.canonical import canonical_json
@@ -66,7 +67,7 @@ def _source(request, result):
 def _plan(request, result, presentation):
     source = _source(request, result)
     path = request.speculative_workspace / source.relative_path
-    entries = occt_backend.read_step(path, length_unit=request.program.proposal.length_unit.value)
+    entries = read_step(path, length_unit=request.program.proposal.length_unit.value)
     semantics = result.expected_semantics["objects"]
     if len(entries) != len(semantics) or {entry.name for entry in entries} != set(semantics):
         raise cad.CadExecutionError("STEP source has missing/duplicate/unexpected object IDs")
@@ -74,7 +75,7 @@ def _plan(request, result, presentation):
     # Deflection in source units: 1 mm. STEP reader already supplies Z-up.
     scale = UNIT_SETTINGS[request.program.proposal.length_unit.value][1]
     for entry in sorted(entries, key=lambda item: item.name):
-        vertices, triangles = occt_backend.tessellate_shape(entry.shape, linear_deflection=0.001 / scale)
+        vertices, triangles = tessellate_shape(entry.shape, linear_deflection=0.001 / scale)
         semantic = semantics[entry.name]
         material = semantic["user_text"].get("archflow:material")
         color = _rgb((request.material_colors or {}).get(material, (180, 190, 200)), "projection material")

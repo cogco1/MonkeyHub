@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from monkeycad.occt_backend import occt_available
+from monkeycad.backends.occt.kernel import occt_available
 from archflow.semantics.roles import ROLE_IDS
 from labs.spatial_observation.fixture import Fixture, SourceMismatch, VIEWS, cad_to_hub, hub_to_cad
 from monkeydiagram.drawing_elevation import DrawingElevationError

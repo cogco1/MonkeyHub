@@ -28,7 +28,15 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from monkeycad import cad_execution, occt_backend
+from monkeycad import cad_execution
+from monkeycad.backends.occt.build import SUPPORTED_OPERATION_KINDS, build_program_shapes
+from monkeycad.backends.occt.errors import OcctBackendError, OcctBuildError, OcctCapabilityError
+from monkeycad.backends.occt.kernel import _gp_point, _occt, occt_available
+from monkeycad.backends.occt.measure import ShapeMeasure, classify_program_point, measure_shape
+from monkeycad.backends.occt.preview import PreviewObject, tessellate_shape, write_preview_three_dm
+from monkeycad.backends.occt.projection import OcctDrawingPolyline
+from monkeycad.backends.occt.step import StepEntry, StepObject, read_step, write_step
+from monkeycad.backends.occt import build as occt_build, preview as occt_preview, step as occt_step
 from monkeycad.cad_execution import (
     CadCapabilityError,
     CadExecutionError,
@@ -68,7 +76,7 @@ from tests.integration.test_cad_execution import _binding as _synthetic_binding,
 from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
 from tools.dev import source_roots
 
-OCCT_AVAILABLE = occt_backend.occt_available()
+OCCT_AVAILABLE = occt_available()
 NEEDS_OCCT = unittest.skipUnless(
     OCCT_AVAILABLE, "cadquery-ocp is not installed: python -m pip install -e 'packages/monkeycad[occt]'"
 )
@@ -185,11 +193,11 @@ class OcctDrawingTests(unittest.TestCase):
         hole = BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1, 5, 5.5), gp_Dir(1, 0, 0)), 0.4, 4).Shape()
         panel = BRepAlgoAPI_Cut(panel, hole).Shape()
         cover = BRepPrimAPI_MakeBox(gp_Pnt(0.5, 4.5, 5.0), 0.5, 1, 1).Shape()
-        occt_backend.write_step(self.path, (
-            occt_backend.StepObject("panel", panel, "panels"),
-            occt_backend.StepObject("cover", cover, "panels"),
+        write_step(self.path, (
+            StepObject("panel", panel, "panels"),
+            StepObject("cover", cover, "panels"),
         ), length_unit="meter")
-        self.entries = occt_backend.read_step(self.path, length_unit="meter")
+        self.entries = read_step(self.path, length_unit="meter")
         # Looking along +X from x = 0: right is -Y, up is +Z, right x up = -X faces the viewer.
         self.frame = dict(origin=(0, 3, 4), right=(0, -1, 0), up=(0, 0, 1), linear_deflection=0.0001)
 
@@ -235,7 +243,7 @@ class OcctDrawingTests(unittest.TestCase):
         rotation.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), math.pi / 4)
         diamond = BRepBuilderAPI_Transform(BRepPrimAPI_MakeBox(gp_Pnt(-1, -1, 0), 2, 2, 2).Shape(), rotation, True).Shape()
         screen = BRepPrimAPI_MakeBox(gp_Pnt(-3, -3, 0), 6, 1, 3).Shape()
-        entries = (occt_backend.StepEntry("diamond", (), None, diamond), occt_backend.StepEntry("screen", (), None, screen))
+        entries = (StepEntry("diamond", (), None, diamond), StepEntry("screen", (), None, screen))
         # From y = -5 looking along +Y: the screen sits at depth 2..3, the diamond's centre at depth 5, its tips at 5 +- sqrt(2).
         frame = dict(origin=(0, -5, 0), right=(1, 0, 0), up=(0, 0, 1), linear_deflection=0.0001)
         ids = ("diamond", "screen")
@@ -285,7 +293,7 @@ class OcctDrawingTests(unittest.TestCase):
                 self.assertEqual(region.object_id, "panel")
                 self.assertEqual(len(region.loops), 2)
                 self.assertTrue(all(loop[0] == loop[-1] for loop in region.loops))
-                curves = [occt_backend.OcctDrawingPolyline("panel", "section", loop)
+                curves = [OcctDrawingPolyline("panel", "section", loop)
                           for loop in region.loops if len(loop) > 5]
                 self.assert_circle(curves, center=center)
                 self.assertTrue(self.region_contains(region, material))
@@ -340,9 +348,9 @@ class OcctDrawingTests(unittest.TestCase):
         block = BRepPrimAPI_MakeBox(gp_Pnt(0, 0, 0), 4, 2, 4).Shape()
         notch = BRepPrimAPI_MakeBox(gp_Pnt(1, -1, 1), 2, 4, 4).Shape()
         fork = BRepAlgoAPI_Cut(block, notch).Shape()
-        occt_backend.write_step(self.path, (occt_backend.StepObject("fork", fork, "panels"),),
+        write_step(self.path, (StepObject("fork", fork, "panels"),),
                                 length_unit="meter")
-        entries = occt_backend.read_step(self.path, length_unit="meter")
+        entries = read_step(self.path, length_unit="meter")
         (region,) = section_occt_regions(entries, object_ids=("fork",), origin=(0, 0, 2),
                                         right=(1, 0, 0), up=(0, 1, 0), linear_deflection=0.0001)
         self.assertEqual(len(region.loops), 2)
@@ -360,7 +368,7 @@ class OcctDrawingTests(unittest.TestCase):
         shell = TopoDS_Shell()
         builder.MakeShell(shell)
         builder.Add(shell, BRepPrimAPI_MakeCylinder(1, 3).Face())
-        entries = (occt_backend.StepEntry("skin", (), None, shell),)
+        entries = (StepEntry("skin", (), None, shell),)
         frame = dict(origin=(0, 0, 1), right=(1, 0, 0), up=(0, 1, 0), linear_deflection=0.0001)
         self.assertTrue(section_occt_lines(entries, object_ids=("skin",), **frame))
         self.assertEqual(section_occt_regions(entries, object_ids=("skin",), **frame), ())
@@ -376,7 +384,7 @@ class OcctDrawingTests(unittest.TestCase):
         builder.MakeCompound(compound)
         for start in (0, 1):
             builder.Add(compound, BRepPrimAPI_MakeBox(gp_Pnt(start, 0, 0), 2, 2, 2).Shape())
-        entries = (occt_backend.StepEntry("pair", (), None, compound),)
+        entries = (StepEntry("pair", (), None, compound),)
         regions = section_occt_regions(entries, object_ids=("pair",), origin=(0, 0, 1),
                                        right=(1, 0, 0), up=(0, 1, 0), linear_deflection=0.0001)
         self.assertEqual(len(regions), 2)
@@ -384,7 +392,7 @@ class OcctDrawingTests(unittest.TestCase):
         self.assertTrue(all(self.region_contains(region, (1.5, 1)) for region in regions))
 
     def test_drawing_coordinates_and_deflection_use_the_step_read_unit(self) -> None:
-        millimeters = occt_backend.read_step(self.path, length_unit="millimeter")
+        millimeters = read_step(self.path, length_unit="millimeter")
         frame = dict(origin=(3000, 3000, 4000), right=(0, -1, 0), up=(0, 0, 1), linear_deflection=0.1)
         for operation in (project_occt_lines, section_occt_lines):
             with self.subTest(operation=operation.__name__):
@@ -392,7 +400,7 @@ class OcctDrawingTests(unittest.TestCase):
                 self.assert_circle(lines, center=(-2000, 1500), radius=400, deflection=0.1)
                 self.assertEqual(min(x for line in lines for x, _ in line.points), -4000.0)
         (region,) = section_occt_regions(millimeters, object_ids=("panel",), **frame)
-        curves = [occt_backend.OcctDrawingPolyline("panel", "section", loop)
+        curves = [OcctDrawingPolyline("panel", "section", loop)
                   for loop in region.loops if len(loop) > 5]
         self.assert_circle(curves, center=(-2000, 1500), radius=400, deflection=0.1)
         self.assertEqual(min(x for loop in region.loops for x, _ in loop), -4000.0)
@@ -415,13 +423,13 @@ class OcctDrawingTests(unittest.TestCase):
                 (self.entries, ("panel",), {**self.frame, "origin": (float("nan"), 0, 0)}),
                 (self.entries, ("panel",), {**self.frame, "linear_deflection": 0}),
             ):
-                with self.subTest(operation=operation.__name__, ids=ids, frame=frame), self.assertRaises(occt_backend.OcctBackendError):
+                with self.subTest(operation=operation.__name__, ids=ids, frame=frame), self.assertRaises(OcctBackendError):
                     operation(entries, object_ids=ids, **frame)
         # The depth range belongs to the projection, which is the entry point
         # that takes one; a section is cut at a plane and has no slab.
         for frame in ({**self.frame, "depth_range": (2, 1)},
                       {**self.frame, "depth_range": (0, float("inf"))}):
-            with self.subTest(frame=frame), self.assertRaises(occt_backend.OcctBackendError):
+            with self.subTest(frame=frame), self.assertRaises(OcctBackendError):
                 project_occt_lines(self.entries, object_ids=("panel",), **frame)
 
 
@@ -456,7 +464,7 @@ class OpenLoftExecutionTests(unittest.TestCase):
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
             entry = entries["obj-drum-east"]
             self.assertEqual(entry.layers, ("archflow::building",))
-            measure = occt_backend.measure_shape(entry.shape)
+            measure = measure_shape(entry.shape)
             self.assertEqual((measure.valid, measure.solid_count, measure.closed, measure.face_count, measure.free_edge_count), (True, 0, False, 8, 16))
             self.assertIsNone(measure.volume)
             _assert_bbox(self, measure, (-1.0, -1.0, 0.0), (1.0, 1.0, 1.0), places=6)
@@ -491,7 +499,7 @@ class OpenLoftExecutionTests(unittest.TestCase):
                 (solid_receipt, "obj-stair-east", "open_surface", {"cad_execution.step_not_open_surface"}),
             ):
                 with self.subTest(declared=declared):
-                    entries = occt_backend.read_step(workspace / receipt.exact_artifact["relative_path"], length_unit="meter")
+                    entries = read_step(workspace / receipt.exact_artifact["relative_path"], length_unit="meter")
                     readback, failures = _verify_step_readback(
                         entries, physical=(object_id,), semantics=receipt.expected_semantics, expected_bounds=receipt.expected_bounds,
                         expected_counts={object_id: 1}, expected_deliveries={object_id: declared}, layer_colors={}, tolerance=0.003,
@@ -527,7 +535,7 @@ class NativeLoftHeightExecutionTests(unittest.TestCase):
                 receipt, _ = _execute(program, _persisted_binding(program, "stage-native-height"), workspace, "native-height@occt")
                 self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
                 entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
-                body = occt_backend.measure_shape(entries["obj-drum-east"].shape)
+                body = measure_shape(entries["obj-drum-east"].shape)
                 self.assertEqual((body.valid, body.closed, body.solid_count), (True, True, 1))
                 _assert_bbox(self, body, (-1.0, -1.0, self.DATUM + bottom), (1.0, 1.0, self.DATUM + bottom + 1.0), places=6)
                 self.assertTrue(receipt.readback_verified)
@@ -542,11 +550,11 @@ class NativeLoftHeightExecutionTests(unittest.TestCase):
             receipt, _ = _execute(program, _persisted_binding(program, "stage-native-circle-height"), workspace, "circle-height@occt")
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
-            body = occt_backend.measure_shape(entries["obj-drum-east"].shape)
+            body = measure_shape(entries["obj-drum-east"].shape)
             self.assertEqual((body.valid, body.closed, body.solid_count), (True, True, 1))
             _assert_bbox(self, body, (-radius, -0.1, self.DATUM + center - radius), (radius, 0.1, self.DATUM + center + radius), places=6)
             self.assertAlmostEqual((body.bbox_min[2] + body.bbox_max[2]) / 2.0, self.DATUM + center, places=8)
-            self.assertEqual(occt_backend.classify_program_point(entries["obj-drum-east"].shape, (0.0, self.DATUM + center, 0.0)), "inside")
+            self.assertEqual(classify_program_point(entries["obj-drum-east"].shape, (0.0, self.DATUM + center, 0.0)), "inside")
 
     def test_a_parameterized_multi_section_loft_remains_one_solid_after_a_height_edit(self) -> None:
         from archflow.state.state_record import Parameter, StateRecordEditKind, StateRecordOperator, apply_state_record_operator
@@ -577,10 +585,10 @@ class NativeLoftHeightExecutionTests(unittest.TestCase):
                     entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
                     self.assertEqual(list(entries), ["obj-drum-east"])
                     shape = entries["obj-drum-east"].shape
-                    body = occt_backend.measure_shape(shape)
+                    body = measure_shape(shape)
                     self.assertEqual((body.valid, body.closed, body.solid_count), (True, True, 1))
                     _assert_bbox(self, body, (-1.0, -1.0, self.DATUM), (1.0, 1.0, self.DATUM + height), places=6)
-                    self.assertEqual(occt_backend.classify_program_point(shape, (0.0, self.DATUM + height / 2, 0.0)), "inside")
+                    self.assertEqual(classify_program_point(shape, (0.0, self.DATUM + height / 2, 0.0)), "inside")
                     self.assertEqual(inspect_three_dm(workspace / receipt.preview_artifact["relative_path"]).top_level_object_count, 1)
                     self.assertEqual(next(e for e in current.entities if e.entity_id == element.entity_id).fields["params"], params)
 
@@ -601,7 +609,7 @@ class NativeLoftHeightExecutionTests(unittest.TestCase):
             entity = next(e for e in record.entities if e.entity_id == "drum-east")
             entity = replace(entity, fields={**entity.fields, "params": {**entity.fields["params"], "loft_type": loft_type}})
             record = replace(record, entities=tuple(entity if e.entity_id == entity.entity_id else e for e in record.entities))
-            expected = occt_backend.build_program_shapes(_compile(record)).objects["obj-drum-east"].shape
+            expected = build_program_shapes(_compile(record)).objects["obj-drum-east"].shape
             factors = [-2, 0.5, 1.5] if loft_type == "straight" else [-2, 2, 2]
             actions = (
                 ({"kind": "move", "translation": [2, 3, 4]}, [[1, 0, 0, 2], [0, 1, 0, 4], [0, 0, 1, 3]]),
@@ -624,7 +632,7 @@ class NativeLoftHeightExecutionTests(unittest.TestCase):
                     entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
                     self.assertEqual(list(entries), ["obj-drum-east"])
                     actual = entries["obj-drum-east"].shape
-                    measured = occt_backend.measure_shape(actual)
+                    measured = measure_shape(actual)
                     self.assertEqual((measured.valid, measured.closed, measured.solid_count), (True, True, 1))
                     transform = gp_GTrsf()
                     for i, values in enumerate(matrix, 1):
@@ -701,15 +709,15 @@ def _execute(program, binding, workspace: Path, stem: str, **options) -> tuple[O
         return receipt, time.perf_counter() - started
 
 
-def _entries_by_name(step: Path) -> dict[str, occt_backend.StepEntry]:
-    entries = occt_backend.read_step(step, length_unit="meter")
+def _entries_by_name(step: Path) -> dict[str, StepEntry]:
+    entries = read_step(step, length_unit="meter")
     names = [entry.name for entry in entries]
     if len(set(names)) != len(names):
         raise AssertionError(f"duplicate names in STEP: {names}")
     return {entry.name: entry for entry in entries}
 
 
-def _assert_bbox(case: unittest.TestCase, measure: occt_backend.ShapeMeasure, low, high, places: int = 5) -> None:
+def _assert_bbox(case: unittest.TestCase, measure: ShapeMeasure, low, high, places: int = 5) -> None:
     for actual, expected in zip(measure.bbox_min, low):
         case.assertAlmostEqual(actual, expected, places=places)
     for actual, expected in zip(measure.bbox_max, high):
@@ -771,10 +779,10 @@ class CurveExecutionTests(unittest.TestCase):
     def test_saved_step_with_the_same_bounds_endpoints_and_length_but_another_path_is_refused(self):
         program = self.program([[0, 0], [3, 0], [3, 4]])
         wrong = self.program([[0, 0], [0, 4], [3, 4]])
-        shape = occt_backend.build_program_shapes(wrong).objects["obj-path"].shape
+        shape = build_program_shapes(wrong).objects["obj-path"].shape
 
         def altered_write(path, objects, **options):
-            occt_backend.write_step(path, [replace(item, shape=shape) for item in objects], **options)
+            write_step(path, [replace(item, shape=shape) for item in objects], **options)
 
         with tempfile.TemporaryDirectory() as tmp, patch.object(cad_execution, "write_step", side_effect=altered_write):
             receipt, _ = _execute(program, _persisted_binding(program, "stage-curve"), Path(tmp).resolve(), "changed")
@@ -837,7 +845,7 @@ class PlanarSurfaceExecutionTests(unittest.TestCase):
                 self.assertEqual(receipt.exact_artifact["deliveries"], {"obj-ceiling": "open_surface"})
                 self.assertEqual(receipt.expected_bounds["obj-ceiling"], {"min": [0.0, 0.0, elevation], "max": [3.0, 2.0, elevation]})
                 entry = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])["obj-ceiling"]
-                measure = occt_backend.measure_shape(entry.shape)
+                measure = measure_shape(entry.shape)
                 self.assertEqual((measure.valid, measure.solid_count, measure.closed, measure.face_count, measure.free_edge_count), (True, 0, False, 1, 6))
                 self.assertIsNone(measure.volume)
                 _assert_bbox(self, measure, (0, 0, elevation), (3, 2, elevation), places=6)
@@ -877,7 +885,7 @@ class PrismElevationExecutionTests(unittest.TestCase):
                 receipt, _ = _execute(program, _persisted_binding(program, "stage-panel"), workspace, "panel")
                 self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
                 entry = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])["obj-panel"]
-                measure = occt_backend.measure_shape(entry.shape)
+                measure = measure_shape(entry.shape)
                 self.assertTrue(measure.closed)
                 self.assertEqual(measure.solid_count, 1)
                 self.assertAlmostEqual(measure.volume, 6 * height, places=6)
@@ -934,7 +942,7 @@ class StairLoftExecutionTests(unittest.TestCase):
             self.assertEqual(list(entries), ["obj-stair-east"])
             entry = entries["obj-stair-east"]
             self.assertEqual(entry.layers, ("archflow::building",))
-            measure = occt_backend.measure_shape(entry.shape)
+            measure = measure_shape(entry.shape)
             self.assertTrue(measure.valid)
             self.assertEqual(measure.solid_count, 1)
             self.assertTrue(measure.closed)
@@ -950,7 +958,7 @@ class StairLoftExecutionTests(unittest.TestCase):
                 (0.45, 0.3, 0.59): "inside", (0.45, 0.3, 0.61): "outside",
             }
             for point, expected in probes.items():
-                self.assertEqual(occt_backend.classify_program_point(entry.shape, point), expected, point)
+                self.assertEqual(classify_program_point(entry.shape, point), expected, point)
 
             # the receipt's own cold-read agrees with the analytic predictor and the file
             row = receipt.readback["obj-stair-east"]
@@ -1000,15 +1008,15 @@ class WallOpeningBooleanTests(unittest.TestCase):
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
             cut = entries["obj-wall-south"].shape
-            self.assertAlmostEqual(occt_backend.measure_shape(cut).volume,
+            self.assertAlmostEqual(measure_shape(cut).volume,
                                    6.0 * 0.3 * 2.97 - math.pi * 1.2 ** 2 * 0.3, places=6)
             for index, centre in enumerate((1.7, 4.3)):
-                aperture = occt_backend.measure_shape(entries[f"obj-wall-south-aperture-arch-{index}"].shape)
+                aperture = measure_shape(entries[f"obj-wall-south-aperture-arch-{index}"].shape)
                 self.assertAlmostEqual(aperture.volume, math.pi * 1.2 ** 2 * 0.3 / 2, places=6)
                 _assert_bbox(self, aperture, (centre - 1.2, -0.3, 1.7), (centre + 1.2, 0.0, 2.9))
-                self.assertEqual(occt_backend.classify_program_point(cut, (centre, 2.0, -0.15)), "outside")
-                self.assertEqual(occt_backend.classify_program_point(cut, (centre, 1.6, -0.15)), "inside")
-            self.assertEqual(occt_backend.classify_program_point(cut, (3.0, 2.0, -0.15)), "inside")
+                self.assertEqual(classify_program_point(cut, (centre, 2.0, -0.15)), "outside")
+                self.assertEqual(classify_program_point(cut, (centre, 1.6, -0.15)), "inside")
+            self.assertEqual(classify_program_point(cut, (3.0, 2.0, -0.15)), "inside")
 
     def test_semicircular_arch_is_an_exact_through_opening_with_solid_shoulders(self) -> None:
         payload = json.loads(json.dumps(RECORD_PAYLOAD))
@@ -1028,8 +1036,8 @@ class WallOpeningBooleanTests(unittest.TestCase):
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
             shape = entries["obj-wall-south"].shape
             aperture_shape = entries["obj-wall-south-aperture-arch"].shape
-            cut = occt_backend.measure_shape(shape)
-            aperture = occt_backend.measure_shape(aperture_shape)
+            cut = measure_shape(shape)
+            aperture = measure_shape(aperture_shape)
             area = 2.4 * 1.5 + math.pi * 1.2 ** 2 / 2.0
             self.assertEqual((cut.valid, cut.closed, cut.solid_count), (True, True, 1))
             self.assertEqual((aperture.valid, aperture.closed, aperture.solid_count), (True, True, 1))
@@ -1044,8 +1052,8 @@ class WallOpeningBooleanTests(unittest.TestCase):
                                      (1.81, 1.5, "outside"), (4.19, 1.5, "outside"),
                                      (4.21, 1.5, "inside")):
                     point = (x, y, depth)
-                    self.assertEqual(occt_backend.classify_program_point(shape, point), result, point)
-                    self.assertEqual(occt_backend.classify_program_point(aperture_shape, point),
+                    self.assertEqual(classify_program_point(shape, point), result, point)
+                    self.assertEqual(classify_program_point(aperture_shape, point),
                                      "inside" if result == "outside" else "outside", point)
             # The reveal survives STEP as a cylinder, without faceted loft approximation.
             from OCP.BRepAdaptor import BRepAdaptor_Surface
@@ -1079,11 +1087,11 @@ class WallOpeningBooleanTests(unittest.TestCase):
             entries = _entries_by_name(step)
             self.assertEqual(sorted(entries), list(expected_ids))
 
-            plinth = occt_backend.measure_shape(entries["obj-plinth"].shape)
+            plinth = measure_shape(entries["obj-plinth"].shape)
             self.assertEqual((plinth.valid, plinth.solid_count, plinth.closed, plinth.face_count), (True, 1, True, 6))
             self.assertAlmostEqual(plinth.volume, 6.0 * 1.2 * 0.6, places=6)
 
-            cut = occt_backend.measure_shape(entries["obj-wall-south"].shape)
+            cut = measure_shape(entries["obj-wall-south"].shape)
             self.assertEqual((cut.valid, cut.solid_count, cut.closed), (True, 1, True))
             self.assertEqual(cut.face_count, 10)                                       # the box's six faces and the opening's four reveals
             self.assertAlmostEqual(cut.volume, 6.0 * 0.3 * 2.97 - 1.2 * 0.3 * 1.5, places=6)
@@ -1098,9 +1106,9 @@ class WallOpeningBooleanTests(unittest.TestCase):
                 (2.3, 2.2, plan_z): "inside", (2.5, 2.2, plan_z): "outside",
             }
             for point, expected in probes.items():
-                self.assertEqual(occt_backend.classify_program_point(entries["obj-wall-south"].shape, point), expected, point)
+                self.assertEqual(classify_program_point(entries["obj-wall-south"].shape, point), expected, point)
 
-            aperture = occt_backend.measure_shape(entries["obj-wall-south-aperture-window-south"].shape)
+            aperture = measure_shape(entries["obj-wall-south-aperture-window-south"].shape)
             self.assertEqual((aperture.valid, aperture.solid_count, aperture.closed), (True, 1, True))
             self.assertAlmostEqual(aperture.volume, 1.2 * 0.3 * 1.5, places=6)         # the void clipped to the wall's thickness
 
@@ -1177,7 +1185,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
             self.assertFalse(any(name.endswith(("-bottom", "-left", "-right", "-top")) for name in receipt.physical_object_ids))
 
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
-            frame = occt_backend.measure_shape(entries[FRAME_ID].shape)
+            frame = measure_shape(entries[FRAME_ID].shape)
             self.assertEqual((frame.valid, frame.solid_count, frame.closed), (True, 1, True))
             self.assertEqual(frame.face_count, 10)                                   # front, back, four outer and four reveal faces
             self.assertAlmostEqual(frame.volume, FRAME_VOLUME, places=6)
@@ -1190,18 +1198,18 @@ class WindowFrameExecutionTests(unittest.TestCase):
                 (2.445, 1.545, plan_z): "inside",                                    # a corner, where two bars overlapped: one body
             }
             for point, expected in probes.items():
-                self.assertEqual(occt_backend.classify_program_point(entries[FRAME_ID].shape, point), expected, point)
+                self.assertEqual(classify_program_point(entries[FRAME_ID].shape, point), expected, point)
 
-            pane = occt_backend.measure_shape(entries[PANE_ID].shape)
+            pane = measure_shape(entries[PANE_ID].shape)
             self.assertEqual((pane.valid, pane.solid_count, pane.closed, pane.face_count), (True, 1, True, 6))
             self.assertAlmostEqual(pane.volume, PANE_VOLUME, places=6)
             _assert_bbox(self, pane, (2.49, -0.035, 0.6 + 0.99), (3.51, -0.01, 0.6 + 2.31))
-            self.assertEqual(occt_backend.classify_program_point(entries[PANE_ID].shape, (3.0, 2.25, -0.0225)), "inside")
-            self.assertEqual(occt_backend.classify_program_point(entries[FRAME_ID].shape, (3.0, 2.25, -0.0225)), "outside")
+            self.assertEqual(classify_program_point(entries[PANE_ID].shape, (3.0, 2.25, -0.0225)), "inside")
+            self.assertEqual(classify_program_point(entries[FRAME_ID].shape, (3.0, 2.25, -0.0225)), "outside")
 
-            cut = occt_backend.measure_shape(entries["obj-wall-south"].shape)
+            cut = measure_shape(entries["obj-wall-south"].shape)
             self.assertAlmostEqual(cut.volume, 6.0 * 0.3 * 2.97 - 1.2 * 0.3 * 1.5, places=6)
-            self.assertEqual(occt_backend.classify_program_point(entries["obj-wall-south"].shape, (3.0, 2.25, -0.15)), "outside")
+            self.assertEqual(classify_program_point(entries["obj-wall-south"].shape, (3.0, 2.25, -0.15)), "outside")
 
             # the receipt's cold read agrees, and the analytic predictor already knew the union's bounds
             self.assertAlmostEqual(receipt.readback[FRAME_ID]["volume"], FRAME_VOLUME, places=6)
@@ -1256,11 +1264,11 @@ class WindowFrameExecutionTests(unittest.TestCase):
             self.assertEqual(receipt.expected_bounds[frame_array], {"min": [0.6, -0.08, 1.5], "max": [5.4, 0.1, 3.0]})
 
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
-            frames = occt_backend.measure_shape(entries[frame_array].shape)
+            frames = measure_shape(entries[frame_array].shape)
             self.assertEqual((frames.valid, frames.solid_count, frames.closed, frames.face_count), (True, 3, True, 30))
             self.assertAlmostEqual(frames.volume, 3 * FRAME_VOLUME, places=6)
             _assert_bbox(self, frames, (0.6, -0.08, 1.5), (5.4, 0.1, 3.0))
-            panes = occt_backend.measure_shape(entries[pane_array].shape)
+            panes = measure_shape(entries[pane_array].shape)
             self.assertEqual((panes.valid, panes.solid_count, panes.closed, panes.face_count), (True, 3, True, 18))
             self.assertAlmostEqual(panes.volume, 3 * PANE_VOLUME, places=6)
             _assert_bbox(self, panes, (0.69, -0.035, 1.59), (5.31, -0.01, 2.91))
@@ -1270,18 +1278,18 @@ class WindowFrameExecutionTests(unittest.TestCase):
             # each copy stands where its aperture is: a rail inside, the aperture centre outside, the pane inside
             frame_shape, pane_shape, wall_shape = entries[frame_array].shape, entries[pane_array].shape, entries["obj-wall-south"].shape
             for centre in centres:
-                self.assertEqual(occt_backend.classify_program_point(frame_shape, (centre, 1.545, 0.01)), "inside", centre)
-                self.assertEqual(occt_backend.classify_program_point(frame_shape, (centre - 0.555, 2.25, 0.01)), "inside", centre)
-                self.assertEqual(occt_backend.classify_program_point(frame_shape, (centre, 2.25, 0.01)), "outside", centre)
-                self.assertEqual(occt_backend.classify_program_point(pane_shape, (centre, 2.25, -0.0225)), "inside", centre)
-                self.assertEqual(occt_backend.classify_program_point(wall_shape, (centre, 2.25, -0.15)), "outside", centre)  # the opening is empty
+                self.assertEqual(classify_program_point(frame_shape, (centre, 1.545, 0.01)), "inside", centre)
+                self.assertEqual(classify_program_point(frame_shape, (centre - 0.555, 2.25, 0.01)), "inside", centre)
+                self.assertEqual(classify_program_point(frame_shape, (centre, 2.25, 0.01)), "outside", centre)
+                self.assertEqual(classify_program_point(pane_shape, (centre, 2.25, -0.0225)), "inside", centre)
+                self.assertEqual(classify_program_point(wall_shape, (centre, 2.25, -0.15)), "outside", centre)  # the opening is empty
             for between in (2.1, 3.9):                                                   # the pier between two windows
-                self.assertEqual(occt_backend.classify_program_point(wall_shape, (between, 2.25, -0.15)), "inside", between)
-                self.assertEqual(occt_backend.classify_program_point(frame_shape, (between, 2.25, 0.01)), "outside", between)
-            cut = occt_backend.measure_shape(wall_shape)
+                self.assertEqual(classify_program_point(wall_shape, (between, 2.25, -0.15)), "inside", between)
+                self.assertEqual(classify_program_point(frame_shape, (between, 2.25, 0.01)), "outside", between)
+            cut = measure_shape(wall_shape)
             self.assertAlmostEqual(cut.volume, 6.0 * 0.3 * 2.97 - 3 * (1.2 * 0.3 * 1.5), places=6)
             for aperture, centre in zip(apertures, centres):
-                measure = occt_backend.measure_shape(entries[aperture].shape)
+                measure = measure_shape(entries[aperture].shape)
                 self.assertAlmostEqual(measure.volume, 1.2 * 0.3 * 1.5, places=6)
                 self.assertAlmostEqual((measure.bbox_min[0] + measure.bbox_max[0]) / 2.0, centre, places=6)
 
@@ -1326,7 +1334,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
     def test_a_preview_whose_material_binding_is_lost_fails_the_readback(self) -> None:
         program = _compile(_window_record())
         binding = _persisted_binding(program, "stage-occt-window-unbound")
-        original = occt_backend.write_preview_three_dm
+        original = write_preview_three_dm
 
         def forgetting_materials(path, objects, **options):
             return original(path, tuple(replace(item, material=None) for item in objects), **options)
@@ -1347,7 +1355,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
 
         program = _compile(_window_record())
         binding = _persisted_binding(program, "stage-occt-window-opaque-glass")
-        original = occt_backend.write_preview_three_dm
+        original = write_preview_three_dm
 
         def opaque_glass(path, objects, **options):
             tampered = tuple(
@@ -1454,7 +1462,7 @@ class SolidBoxRoundTripTests(unittest.TestCase):
             receipt, _ = _execute(program, _synthetic_binding(program), workspace, "body@occt")
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
-            body = occt_backend.measure_shape(entries["body-object"].shape)
+            body = measure_shape(entries["body-object"].shape)
             self.assertAlmostEqual(body.volume, 24.0, places=9)
             _assert_bbox(self, body, (0.0, 0.0, 0.0), (2.0, 4.0, 3.0), places=9)          # program (2, 3, 4) written as (x, z, y)
             self.assertEqual(entries["body-object"].color, (
@@ -1638,14 +1646,14 @@ class DifferenceLoweringTests(unittest.TestCase):
         return self._slab([[1.0, 0.1, 1.0], [3.0, 0.1, 1.0], [3.0, 0.1, 3.0], [1.0, 0.1, 3.0]], [0.0, 0.5, 0.0])
 
     def _symmetric_volume(self, first, second) -> float:
-        occ = occt_backend._occt()
+        occ = _occt()
         common = occ.BRepAlgoAPI.BRepAlgoAPI_Common(first, second)
         common.Build()
-        shared = occt_backend.measure_shape(common.Shape()).volume or 0.0
-        return occt_backend.measure_shape(first).volume + occt_backend.measure_shape(second).volume - 2.0 * shared
+        shared = measure_shape(common.Shape()).volume or 0.0
+        return measure_shape(first).volume + measure_shape(second).volume - 2.0 * shared
 
     def _both(self, program, name):
-        built = {strategy: occt_backend.build_program_shapes(program, difference_strategy=strategy)
+        built = {strategy: build_program_shapes(program, difference_strategy=strategy)
                  for strategy in ("boolean", "profile_with_holes")}
         return built, {strategy: build.objects[name].shape for strategy, build in built.items()}
 
@@ -1653,7 +1661,7 @@ class DifferenceLoweringTests(unittest.TestCase):
         built, shapes = self._both(self._through(), "slab-object")
         self.assertEqual(dict(built["boolean"].lowering), {})
         self.assertEqual(dict(built["profile_with_holes"].lowering), {"slab": "profile_with_holes"})
-        boolean, profile = (occt_backend.measure_shape(shapes[s]) for s in ("boolean", "profile_with_holes"))
+        boolean, profile = (measure_shape(shapes[s]) for s in ("boolean", "profile_with_holes"))
         self.assertTrue(profile.valid and profile.closed)
         self.assertEqual(profile.solid_count, 1)
         self.assertAlmostEqual(boolean.volume, (SLAB_AREA - 4.0) * 0.3, places=9)
@@ -1663,15 +1671,15 @@ class DifferenceLoweringTests(unittest.TestCase):
         self.assertAlmostEqual(self._symmetric_volume(shapes["boolean"], shapes["profile_with_holes"]), 0.0, places=9)
 
     def test_auto_picks_the_profile_for_a_through_void_and_a_boolean_for_a_niche(self) -> None:
-        self.assertEqual(dict(occt_backend.build_program_shapes(self._through()).lowering), {"slab": "profile_with_holes"})
-        niche = occt_backend.build_program_shapes(self._niche())
+        self.assertEqual(dict(build_program_shapes(self._through()).lowering), {"slab": "profile_with_holes"})
+        niche = build_program_shapes(self._niche())
         self.assertEqual(dict(niche.lowering), {})
-        self.assertAlmostEqual(occt_backend.measure_shape(niche.objects["slab-object"].shape).volume,
+        self.assertAlmostEqual(measure_shape(niche.objects["slab-object"].shape).volume,
                                SLAB_AREA * 0.3 - 4.0 * 0.2, places=9)
 
     def test_forcing_the_profile_where_it_does_not_apply_is_refused_by_operation(self) -> None:
-        with self.assertRaisesRegex(occt_backend.OcctCapabilityError, "slab .*does not pass through"):
-            occt_backend.build_program_shapes(self._niche(), difference_strategy="profile_with_holes")
+        with self.assertRaisesRegex(OcctCapabilityError, "slab .*does not pass through"):
+            build_program_shapes(self._niche(), difference_strategy="profile_with_holes")
 
     def test_a_tilted_host_pierced_along_its_extrusion_is_the_same_either_way(self) -> None:
         panel = _prism("panel-body", [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [4.0, 3.0, 0.0], [0.0, 3.0, 0.0]], [0.0, 0.0, 0.3])
@@ -1679,7 +1687,7 @@ class DifferenceLoweringTests(unittest.TestCase):
         program = _program_of(panel, hole, _difference("panel", panel, hole))
         built, shapes = self._both(program, "panel-object")
         self.assertEqual(dict(built["profile_with_holes"].lowering), {"panel": "profile_with_holes"})
-        self.assertAlmostEqual(occt_backend.measure_shape(shapes["profile_with_holes"]).volume, 4.0 * 3.0 * 0.3 - 0.3, places=9)
+        self.assertAlmostEqual(measure_shape(shapes["profile_with_holes"]).volume, 4.0 * 3.0 * 0.3 - 0.3, places=9)
         self.assertAlmostEqual(self._symmetric_volume(shapes["boolean"], shapes["profile_with_holes"]), 0.0, places=9)
 
     def test_the_export_certifies_both_and_records_only_the_profile(self) -> None:
@@ -1729,8 +1737,8 @@ class DifferenceLoweringTests(unittest.TestCase):
         # its true error at this shallow a lean is negligible: correctly
         # accepted, matching the cut almost exactly.
         program = leaning(9e-8)
-        boolean = occt_backend.build_program_shapes(program, difference_strategy="boolean")
-        auto = occt_backend.build_program_shapes(program)
+        boolean = build_program_shapes(program, difference_strategy="boolean")
+        auto = build_program_shapes(program)
         self.assertEqual(dict(auto.lowering), {"big": "profile_with_holes"})
         self.assertAlmostEqual(
             self._symmetric_volume(boolean.objects["big-object"].shape, auto.objects["big-object"].shape),
@@ -1738,7 +1746,7 @@ class DifferenceLoweringTests(unittest.TestCase):
         )
         # A lean that genuinely displaces the far side of the base's own
         # thickness beyond tolerance is still refused, falling back to a cut.
-        self.assertEqual(dict(occt_backend.build_program_shapes(leaning(1e-5)).lowering), {})
+        self.assertEqual(dict(build_program_shapes(leaning(1e-5)).lowering), {})
 
     def test_a_tilted_void_profile_builds_and_matches_the_cut(self) -> None:
         # #419 IMPORTANT 1 regression: a void profile tilted a hair off
@@ -1758,12 +1766,12 @@ class DifferenceLoweringTests(unittest.TestCase):
         ]
         void = _prism("void", void_profile, [0.0, 0.5, 0.0])
         program = _program_of(base, void, _difference("big", base, void))
-        boolean = occt_backend.build_program_shapes(program, difference_strategy="boolean")
-        auto = occt_backend.build_program_shapes(program)
+        boolean = build_program_shapes(program, difference_strategy="boolean")
+        auto = build_program_shapes(program)
         boolean_shape = boolean.objects["big-object"].shape
         auto_shape = auto.objects["big-object"].shape
-        self.assertTrue(occt_backend.measure_shape(boolean_shape).valid)
-        self.assertTrue(occt_backend.measure_shape(auto_shape).valid)
+        self.assertTrue(measure_shape(boolean_shape).valid)
+        self.assertTrue(measure_shape(auto_shape).valid)
         self.assertAlmostEqual(self._symmetric_volume(boolean_shape, auto_shape), 0.0, places=6)
 
     def test_two_voids_a_hair_apart_do_not_lower(self) -> None:
@@ -1779,7 +1787,7 @@ class DifferenceLoweringTests(unittest.TestCase):
             [0.0, 0.5, 0.0],
         )
         program = _program_of(slab, left, right, _difference("slab", slab, left, right))
-        self.assertEqual(dict(occt_backend.build_program_shapes(program).lowering), {})
+        self.assertEqual(dict(build_program_shapes(program).lowering), {})
 
     def test_a_void_in_the_l_slabs_concavity_does_not_lower(self) -> None:
         # Inside the L slab's bounding box but outside its actual outline
@@ -1788,7 +1796,7 @@ class DifferenceLoweringTests(unittest.TestCase):
         slab = _prism("slab-body", L_SLAB, [0.0, 0.3, 0.0])
         void = _prism("void", [[5.0, -0.1, 5.0], [9.0, -0.1, 5.0], [9.0, -0.1, 7.0], [5.0, -0.1, 7.0]], [0.0, 0.5, 0.0])
         program = _program_of(slab, void, _difference("slab", slab, void))
-        self.assertEqual(dict(occt_backend.build_program_shapes(program).lowering), {})
+        self.assertEqual(dict(build_program_shapes(program).lowering), {})
 
     def test_two_separate_through_voids_both_lower(self) -> None:
         slab = _prism("slab-body", L_SLAB, [0.0, 0.3, 0.0])
@@ -1823,7 +1831,7 @@ class DifferenceLoweringTests(unittest.TestCase):
         h = 2e-7
         sliver = _prism("void", [[10.0, -0.1, 10.0], [30.0, -0.1, 10.0], [20.0, -0.1, 10.0 + h]], [0.0, 0.5, 0.0])
         program = _program_of(base, sliver, _difference("big", base, sliver))
-        self.assertEqual(dict(occt_backend.build_program_shapes(program).lowering), {})
+        self.assertEqual(dict(build_program_shapes(program).lowering), {})
 
     def test_a_real_tiny_hole_still_lowers(self) -> None:
         # #419 regression for the fix's own no-area check: a genuine 0.2 mm
@@ -1855,13 +1863,13 @@ class OcctOperationObservationTests(unittest.TestCase):
         left = _array("left", seed, count=2, step=[2.0, 0.0, 0.0])
         right = _array("right", seed, count=2, step=[0.0, 0.0, 2.0])
         initial_events = []
-        prior = occt_backend.build_program_shapes(_program_of(seed, left, right), operation_observer=initial_events.append)
+        prior = build_program_shapes(_program_of(seed, left, right), operation_observer=initial_events.append)
         self.assertEqual(initial_events[0]["details"]["cache_status"], "miss")
         changed_right = _array("right", seed, count=3, step=[0.0, 0.0, 2.0])
         program = _program_of(seed, left, changed_right)
         events = []
-        with _no_process(), patch.object(occt_backend, "_build_operation", wraps=occt_backend._build_operation) as executed:
-            build = occt_backend.build_program_shapes(
+        with _no_process(), patch.object(occt_build, "_build_operation", wraps=occt_build._build_operation) as executed:
+            build = build_program_shapes(
                 program,
                 reusable_shapes={"left-object": prior.objects["left-object"].shape},
                 operation_observer=events.append,
@@ -1872,7 +1880,7 @@ class OcctOperationObservationTests(unittest.TestCase):
         self.assertEqual(build.recomputed_object_ids, ("right-object", "seed-object"))
         self.assertEqual(build.reused_object_ids, ("left-object",))
         self.assertIs(build.objects["left-object"].shape, prior.objects["left-object"].shape)
-        self.assertAlmostEqual(occt_backend.measure_shape(build.objects["right-object"].shape).volume, 3.0)
+        self.assertAlmostEqual(measure_shape(build.objects["right-object"].shape).volume, 3.0)
         self.assertEqual(len(events), 1)
         event = events[0]
         self.assertEqual((event["phase"], event["status"], event["parent_event_id"]),
@@ -1888,8 +1896,8 @@ class OcctOperationObservationTests(unittest.TestCase):
         self.assertIs(type(event["duration_ms"]), int)
         self.assertGreaterEqual(event["duration_ms"], 0)
         events.clear()
-        with patch.object(occt_backend, "_build_operation", side_effect=AssertionError("fully reused shapes must not rebuild")):
-            reused = occt_backend.build_program_shapes(
+        with patch.object(occt_build, "_build_operation", side_effect=AssertionError("fully reused shapes must not rebuild")):
+            reused = build_program_shapes(
                 program, reusable_shapes={key: build.objects[key].shape for key in build.physical_object_ids},
                 operation_observer=events.append,
             )
@@ -1909,12 +1917,12 @@ class OcctOperationObservationTests(unittest.TestCase):
                     raise observer_failure("observer unavailable")
 
                 with _no_process():
-                    build = occt_backend.build_program_shapes(program, operation_observer=broken_observer)
-                self.assertAlmostEqual(occt_backend.measure_shape(build.objects["body-object"].shape).volume, 6.0)
-                for failure in (occt_backend.OcctBuildError("kernel failed"), asyncio.CancelledError("kernel cancelled")):
-                    with patch.object(occt_backend, "_build_operation", side_effect=failure):
+                    build = build_program_shapes(program, operation_observer=broken_observer)
+                self.assertAlmostEqual(measure_shape(build.objects["body-object"].shape).volume, 6.0)
+                for failure in (OcctBuildError("kernel failed"), asyncio.CancelledError("kernel cancelled")):
+                    with patch.object(occt_build, "_build_operation", side_effect=failure):
                         with self.assertRaises(type(failure)) as caught:
-                            occt_backend.build_program_shapes(program, operation_observer=broken_observer)
+                            build_program_shapes(program, operation_observer=broken_observer)
                     self.assertIs(caught.exception, failure)
                 self.assertEqual([event["status"] for event in events], ["succeeded", "failed", "failed"])
                 for event in events:
@@ -1926,8 +1934,8 @@ class OcctOperationObservationTests(unittest.TestCase):
             _box("left", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
             _box("right", [2.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
         )
-        build = occt_backend.build_program_shapes(program)
-        objects = tuple(occt_backend.PreviewObject(
+        build = build_program_shapes(program)
+        objects = tuple(PreviewObject(
             object_id=name, shape=build.objects[name].shape, layer="body", user_text={},
         ) for name in build.physical_object_ids)
         return objects, dict(
@@ -1941,8 +1949,8 @@ class OcctOperationObservationTests(unittest.TestCase):
         events = []
         with tempfile.TemporaryDirectory() as tmp, _no_process():
             preview = Path(tmp) / "observed.preview.3dm"
-            with patch.object(occt_backend.time, "perf_counter", side_effect=[100.0, 100.125, 105.0, 105.25, 110.0, 110.5]):
-                counts = occt_backend.write_preview_three_dm(
+            with patch.object(occt_preview.time, "perf_counter", side_effect=[100.0, 100.125, 105.0, 105.25, 110.0, 110.5]):
+                counts = write_preview_three_dm(
                     preview, objects, **options,
                     operation_observer=events.append, observation_parent_id="export-operation",
                 )
@@ -1974,10 +1982,10 @@ class OcctOperationObservationTests(unittest.TestCase):
 
                 with tempfile.TemporaryDirectory() as tmp, _no_process():
                     preview = Path(tmp) / "observed.preview.3dm"
-                    occt_backend.write_preview_three_dm(preview, objects, **options, operation_observer=broken_observer)
+                    write_preview_three_dm(preview, objects, **options, operation_observer=broken_observer)
                     self.assertEqual(inspect_three_dm(preview).object_count, 2)
-                    with self.assertRaisesRegex(occt_backend.OcctBuildError, "preview .3dm write failed"):
-                        occt_backend.write_preview_three_dm(
+                    with self.assertRaisesRegex(OcctBuildError, "preview .3dm write failed"):
+                        write_preview_three_dm(
                             Path(tmp) / "missing" / "refused.preview.3dm", objects, **options,
                             operation_observer=broken_observer,
                         )
@@ -1988,8 +1996,8 @@ class OcctOperationObservationTests(unittest.TestCase):
 
     def test_tessellation_failure_preserves_exception_and_reports_only_attempted_work(self) -> None:
         objects, options = self._preview_inputs()
-        first_mesh = occt_backend.tessellate_shape(objects[0].shape, linear_deflection=0.01)
-        failure = occt_backend.OcctBuildError("tessellation failed")
+        first_mesh = tessellate_shape(objects[0].shape, linear_deflection=0.01)
+        failure = OcctBuildError("tessellation failed")
         events = []
 
         def broken_observer(event):
@@ -1998,9 +2006,9 @@ class OcctOperationObservationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp, _no_process():
             preview = Path(tmp) / "refused.preview.3dm"
-            with patch.object(occt_backend, "tessellate_shape", side_effect=[first_mesh, failure]):
-                with self.assertRaises(occt_backend.OcctBuildError) as caught:
-                    occt_backend.write_preview_three_dm(preview, objects, **options, operation_observer=broken_observer)
+            with patch.object(occt_preview, "tessellate_shape", side_effect=[first_mesh, failure]):
+                with self.assertRaises(OcctBuildError) as caught:
+                    write_preview_three_dm(preview, objects, **options, operation_observer=broken_observer)
             self.assertFalse(preview.exists())
         self.assertIs(caught.exception, failure)
         self.assertEqual(len(events), 1)
@@ -2032,13 +2040,13 @@ class RevolveExecutionTests(unittest.TestCase):
                 receipt, _ = _execute(program, _synthetic_binding(program), workspace, "revolve@occt")
                 self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
                 shape = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])["revolve-object"].shape
-                measure = occt_backend.measure_shape(shape)
+                measure = measure_shape(shape)
                 self.assertEqual((measure.valid, measure.closed, measure.solid_count), (True, True, 1))
                 r0, r1 = (max(radius, 0.01) for radius in radii)
                 length = math.sqrt(sum(value * value for value in endpoint))
                 self.assertAlmostEqual(measure.volume, math.pi * length * (r0 * r0 + r0 * r1 + r1 * r1) / 3.0, places=7)
                 midpoint = (endpoint[0] / 2, 2.1 + endpoint[1] / 2, endpoint[2] / 2)
-                self.assertEqual(occt_backend.classify_program_point(shape, midpoint), "inside")
+                self.assertEqual(classify_program_point(shape, midpoint), "inside")
 
 
 @NEEDS_OCCT
@@ -2065,14 +2073,14 @@ class JointIntersectionTests(unittest.TestCase):
             # the saved solid, cold-read from disk
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
             self.assertEqual(list(entries), ["meet-object"])
-            meet = occt_backend.measure_shape(entries["meet-object"].shape)
+            meet = measure_shape(entries["meet-object"].shape)
             self.assertEqual((meet.valid, meet.solid_count, meet.closed, meet.face_count), (True, 1, True, 6))
             self.assertAlmostEqual(meet.volume, 1.0, places=9)
             _assert_bbox(self, meet, (1.0, 0.0, 0.0), (2.0, 1.0, 1.0), places=9)
             # inside the common slab; outside where only two of the three inputs overlap
             probes = {(1.5, 0.5, 0.5): "inside", (0.5, 0.5, 0.5): "outside", (2.5, 0.5, 0.5): "outside"}
             for point, expected in probes.items():
-                self.assertEqual(occt_backend.classify_program_point(entries["meet-object"].shape, point), expected, point)
+                self.assertEqual(classify_program_point(entries["meet-object"].shape, point), expected, point)
             self.assertAlmostEqual(receipt.readback["meet-object"]["volume"], 1.0, places=9)
 
     def test_two_boxes_still_meet_as_before(self) -> None:
@@ -2122,7 +2130,7 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
             workspace = Path(tmp).resolve()
             receipt, _ = _execute(program, _synthetic_binding(program), workspace, "pairs@occt", preview=False)
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
-            entries = occt_backend.read_step(workspace / receipt.exact_artifact["relative_path"], length_unit="meter")
+            entries = read_step(workspace / receipt.exact_artifact["relative_path"], length_unit="meter")
             measured = measure_occt_solid_pairs(entries, object_pairs=pairs, length_unit="meter")
         self.assertEqual(set(measured), set(pairs))
         for pair, status, distance, volume in zip(pairs, ("separated", "contact", "penetrating"), (1.0, 0.0, 0.0), (0.0, 0.0, 0.25)):
@@ -2136,12 +2144,12 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
         from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
         from OCP.gp import gp_Pnt
 
-        objects = tuple(occt_backend.StepObject(name, BRepPrimAPI_MakeBox(gp_Pnt(x, 0.0, 0.0), 1000.0, 1000.0, 1000.0).Shape(), "test")
+        objects = tuple(StepObject(name, BRepPrimAPI_MakeBox(gp_Pnt(x, 0.0, 0.0), 1000.0, 1000.0, 1000.0).Shape(), "test")
                         for name, x in (("body", 0.0), ("separated", 2000.0), ("penetrating", 750.0)))
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "millimeter-pairs.step"
-            occt_backend.write_step(path, objects, length_unit="millimeter")
-            entries = occt_backend.read_step(path, length_unit="millimeter")
+            write_step(path, objects, length_unit="millimeter")
+            entries = read_step(path, length_unit="millimeter")
             measured = measure_occt_solid_pairs(entries, object_pairs=(("body", "separated"), ("body", "penetrating")), length_unit="millimeter")
         self.assertEqual(measured[("body", "separated")]["status"], "separated")
         self.assertAlmostEqual(measured[("body", "separated")]["distance_m"], 1.0, places=8)
@@ -2159,7 +2167,7 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
             receipt, _ = _execute(program, _persisted_binding(program, "stage-solid-pair-window"), workspace, "window-pair@occt", preview=False)
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
-            frame, pane = (occt_backend.measure_shape(entries[name].shape) for name in pair)
+            frame, pane = (measure_shape(entries[name].shape) for name in pair)
             for axis in range(3):
                 self.assertGreater(min(frame.bbox_max[axis], pane.bbox_max[axis]) - max(frame.bbox_min[axis], pane.bbox_min[axis]), 0.0)
             self.assertTrue(set(frame_op.input_object_ids).isdisjoint(entries))
@@ -2210,7 +2218,7 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
             workspace = Path(tmp).resolve()
             receipt, _ = _execute(program, _synthetic_binding(program), workspace, "surface-pair@occt", preview=False)
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
-            entries = occt_backend.read_step(workspace / receipt.exact_artifact["relative_path"], length_unit="meter")
+            entries = read_step(workspace / receipt.exact_artifact["relative_path"], length_unit="meter")
             measured = measure_occt_solid_pairs(entries, object_pairs=(pair,), length_unit="meter")
         self.assertEqual(measured[pair]["status"], "unchecked", measured[pair])
         self.assertIsNone(measured[pair]["distance_m"])
@@ -2251,19 +2259,19 @@ class StepUnitInterleavingTests(unittest.TestCase):
 
     @staticmethod
     def _box(extents: tuple[float, float, float]):
-        occ = occt_backend._occt()
+        occ = _occt()
         return occ.BRepPrimAPI.BRepPrimAPI_MakeBox(occ.gp.gp_Pnt(0.0, 0.0, 0.0), occ.gp.gp_Pnt(*extents)).Shape()
 
     def _write(self, path: Path, extents, unit: str):
-        return lambda: occt_backend.write_step(path, [occt_backend.StepObject("body", self._box(extents), "archflow::building")], length_unit=unit)
+        return lambda: write_step(path, [StepObject("body", self._box(extents), "archflow::building")], length_unit=unit)
 
     def _read(self, path: Path, unit: str):
-        return lambda: occt_backend.read_step(path, length_unit=unit)
+        return lambda: read_step(path, length_unit=unit)
 
     def _interleave(self, primary, intruder, *, pause_after_unit: str) -> dict[str, object]:
         """Run ``primary`` until it has just set ``pause_after_unit``; start ``intruder``; give it the grace period; resume."""
 
-        original = occt_backend._step_units
+        original = occt_step._step_units
         paused, resume = threading.Event(), threading.Event()
 
         def pausing(occ, unit):
@@ -2280,7 +2288,7 @@ class StepUnitInterleavingTests(unittest.TestCase):
             except BaseException as exc:  # reported by the test, never swallowed
                 outcomes[name] = exc
 
-        with patch.object(occt_backend, "_step_units", pausing):
+        with patch.object(occt_step, "_step_units", pausing):
             first = threading.Thread(target=run, args=("primary", primary), name="primary")
             first.start()
             self.assertTrue(paused.wait(30), "the primary operation never set its unit")
@@ -2300,8 +2308,8 @@ class StepUnitInterleavingTests(unittest.TestCase):
         text = self.meter_path.read_text()
         self.assertIn(METRE_UNIT_ENTITY, text)
         self.assertNotIn("INCH", text, "the metre file was written under the inch export's unit")
-        (entry,) = occt_backend.read_step(self.meter_path, length_unit="meter")
-        measure = occt_backend.measure_shape(entry.shape)
+        (entry,) = read_step(self.meter_path, length_unit="meter")
+        measure = measure_shape(entry.shape)
         self.assertEqual((entry.name, measure.valid, measure.solid_count, measure.closed), ("body", True, 1, True))
         _assert_bbox(self, measure, (0.0, 0.0, 0.0), METER_BOX, places=9)
         self.assertAlmostEqual(measure.volume, 24.0, places=9)
@@ -2309,8 +2317,8 @@ class StepUnitInterleavingTests(unittest.TestCase):
     def _assert_inch_file(self) -> None:
         text = self.inch_path.read_text()
         self.assertIn(INCH_UNIT_ENTITY, text)
-        (entry,) = occt_backend.read_step(self.inch_path, length_unit="inch")
-        measure = occt_backend.measure_shape(entry.shape)
+        (entry,) = read_step(self.inch_path, length_unit="inch")
+        measure = measure_shape(entry.shape)
         self.assertEqual((entry.name, measure.valid, measure.solid_count, measure.closed), ("body", True, 1, True))
         _assert_bbox(self, measure, (0.0, 0.0, 0.0), INCH_BOX, places=9)
         self.assertAlmostEqual(measure.volume, 6000.0, places=9)
@@ -2324,8 +2332,8 @@ class StepUnitInterleavingTests(unittest.TestCase):
         self._assert_meter_file()
         self._assert_inch_file()
         # the reported corruption, stated so a regression is recognised by its numbers
-        (entry,) = occt_backend.read_step(self.meter_path, length_unit="meter")
-        self.assertNotAlmostEqual(occt_backend.measure_shape(entry.shape).bbox_max[0], METER_BOX[0] * INCH_IN_METERS, places=6)
+        (entry,) = read_step(self.meter_path, length_unit="meter")
+        self.assertNotAlmostEqual(measure_shape(entry.shape).bbox_max[0], METER_BOX[0] * INCH_IN_METERS, places=6)
 
     def test_an_inch_readback_during_a_paused_metre_readback_scales_neither_file(self) -> None:
         self._write(self.meter_path, METER_BOX, "meter")()
@@ -2337,8 +2345,8 @@ class StepUnitInterleavingTests(unittest.TestCase):
         )
         (meter_entry,) = outcomes["primary"]
         (inch_entry,) = outcomes["intruder"]
-        _assert_bbox(self, occt_backend.measure_shape(meter_entry.shape), (0.0, 0.0, 0.0), METER_BOX, places=9)
-        _assert_bbox(self, occt_backend.measure_shape(inch_entry.shape), (0.0, 0.0, 0.0), INCH_BOX, places=9)
+        _assert_bbox(self, measure_shape(meter_entry.shape), (0.0, 0.0, 0.0), METER_BOX, places=9)
+        _assert_bbox(self, measure_shape(inch_entry.shape), (0.0, 0.0, 0.0), INCH_BOX, places=9)
 
     def test_an_inch_readback_during_a_paused_metre_export_does_not_reunit_the_export(self) -> None:
         self._write(self.inch_path, INCH_BOX, "inch")()
@@ -2348,7 +2356,7 @@ class StepUnitInterleavingTests(unittest.TestCase):
             pause_after_unit="meter",
         )
         (inch_entry,) = outcomes["intruder"]
-        _assert_bbox(self, occt_backend.measure_shape(inch_entry.shape), (0.0, 0.0, 0.0), INCH_BOX, places=9)
+        _assert_bbox(self, measure_shape(inch_entry.shape), (0.0, 0.0, 0.0), INCH_BOX, places=9)
         self._assert_meter_file()
 
     def test_a_metre_readback_during_a_paused_inch_export_keeps_the_inch_file_in_inches(self) -> None:
@@ -2359,7 +2367,7 @@ class StepUnitInterleavingTests(unittest.TestCase):
             pause_after_unit="inch",
         )
         (meter_entry,) = outcomes["intruder"]
-        _assert_bbox(self, occt_backend.measure_shape(meter_entry.shape), (0.0, 0.0, 0.0), METER_BOX, places=9)
+        _assert_bbox(self, measure_shape(meter_entry.shape), (0.0, 0.0, 0.0), METER_BOX, places=9)
         self._assert_inch_file()
 
 
@@ -2379,39 +2387,39 @@ class StepVisibilityTests(unittest.TestCase):
 
     @staticmethod
     def _box(x: float):
-        occ = occt_backend._occt()
+        occ = _occt()
         return occ.BRepPrimAPI.BRepPrimAPI_MakeBox(occ.gp.gp_Pnt(x, 0.0, 0.0), occ.gp.gp_Pnt(x + 1.0, 2.0, 3.0)).Shape()
 
     def _invisibilities(self) -> int:
         return len(re.findall(r"= INVISIBILITY\(", self.path.read_text(encoding="latin-1")))
 
     def test_a_hidden_object_is_written_invisible_and_reads_back_so_with_its_shape(self) -> None:
-        occt_backend.write_step(self.path, (
-            occt_backend.StepObject("mass", self._box(0.0), "archflow::mass", (10, 20, 30)),
-            occt_backend.StepObject("cutter", self._box(2.0), "archflow::cutter", (40, 50, 60), visible=False),
+        write_step(self.path, (
+            StepObject("mass", self._box(0.0), "archflow::mass", (10, 20, 30)),
+            StepObject("cutter", self._box(2.0), "archflow::cutter", (40, 50, 60), visible=False),
         ), length_unit="meter")
         self.assertEqual(self._invisibilities(), 1)
         entries = _entries_by_name(self.path)
         self.assertEqual({name: entry.visible for name, entry in entries.items()}, {"mass": True, "cutter": False})
         cutter = entries["cutter"]
         self.assertEqual((cutter.layers, cutter.color), (("archflow::cutter",), (40, 50, 60)))
-        measure = occt_backend.measure_shape(cutter.shape)
+        measure = measure_shape(cutter.shape)
         self.assertEqual((measure.valid, measure.solid_count, measure.closed), (True, 1, True))
         self.assertAlmostEqual(measure.volume, 6.0, places=9)
         _assert_bbox(self, measure, (2.0, 0.0, 0.0), (3.0, 2.0, 3.0), places=9)
 
     def test_a_hidden_compound_reads_back_invisible_from_its_members(self) -> None:
-        occ = occt_backend._occt()
+        occ = _occt()
         builder, compound = occ.BRep.BRep_Builder(), occ.TopoDS.TopoDS_Compound()
         builder.MakeCompound(compound)
         for x in (0.0, 2.0):
             builder.Add(compound, self._box(x))
-        occt_backend.write_step(self.path, (occt_backend.StepObject("copies", compound, "archflow::copies",
+        write_step(self.path, (StepObject("copies", compound, "archflow::copies",
                                                                     visible=False),), length_unit="meter")
         self.assertEqual(self._invisibilities(), 1)
-        (entry,) = occt_backend.read_step(self.path, length_unit="meter")
+        (entry,) = read_step(self.path, length_unit="meter")
         self.assertEqual((entry.name, entry.visible, entry.layers), ("copies", False, ("archflow::copies",)))
-        measure = occt_backend.measure_shape(entry.shape)
+        measure = measure_shape(entry.shape)
         self.assertEqual((measure.valid, measure.solid_count), (True, 2))
         self.assertAlmostEqual(measure.volume, 12.0, places=9)
 
@@ -2447,13 +2455,13 @@ class CapabilityBoundaryTests(unittest.TestCase):
             self.assertEqual(receipt.expected_bounds["row-object"], {"min": [0.0, 0.0, 0.0], "max": [5.0, 4.0, 3.0]})
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
             self.assertEqual(list(entries), ["row-object"])
-            row = occt_backend.measure_shape(entries["row-object"].shape)
+            row = measure_shape(entries["row-object"].shape)
             self.assertEqual((row.valid, row.solid_count, row.closed, row.face_count), (True, 2, True, 12))
             self.assertAlmostEqual(row.volume, 48.0, places=9)
             _assert_bbox(self, row, (0.0, 0.0, 0.0), (5.0, 4.0, 3.0), places=9)          # program x-step 3 stays x in CAD
             probes = {(1.0, 1.0, 1.0): "inside", (2.5, 1.0, 1.0): "outside", (4.0, 1.0, 1.0): "inside", (6.0, 1.0, 1.0): "outside"}
             for point, expected in probes.items():
-                self.assertEqual(occt_backend.classify_program_point(entries["row-object"].shape, point), expected, point)
+                self.assertEqual(classify_program_point(entries["row-object"].shape, point), expected, point)
             self.assertEqual(entries["row-object"].layers, ("archflow::body-component",))
             self.assertEqual(receipt.readback["row-object"]["solid_count"], 2)
 
@@ -2465,11 +2473,11 @@ class CapabilityBoundaryTests(unittest.TestCase):
             receipt, _ = _execute(program, _synthetic_binding(program), workspace, "stack@occt")
             self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
             entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
-            stack = occt_backend.measure_shape(entries["stack-object"].shape)
+            stack = measure_shape(entries["stack-object"].shape)
             self.assertEqual(stack.solid_count, 3)
             _assert_bbox(self, stack, (0.0, 0.0, 0.0), (1.0, 1.0, 5.0), places=9)          # CAD z is program y-up
             for height, expected in ((0.5, "inside"), (1.5, "outside"), (2.5, "inside"), (4.5, "inside"), (5.5, "outside")):
-                self.assertEqual(occt_backend.classify_program_point(entries["stack-object"].shape, (0.5, height, 0.5)), expected, height)
+                self.assertEqual(classify_program_point(entries["stack-object"].shape, (0.5, height, 0.5)), expected, height)
 
     def test_coincident_copies_are_refused(self) -> None:
         seed = _box("seed", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
@@ -2543,10 +2551,17 @@ class CapabilityBoundaryTests(unittest.TestCase):
 
 class ImportBoundaryTests(unittest.TestCase):
     def test_the_execution_owner_imports_without_loading_occt_or_rhino3dm(self) -> None:
-        """Ordinary create/save/reopen paths import the owner; they must not pay for a kernel."""
+        """Ordinary create/save/reopen paths import the owner; they must not pay for a kernel.
+
+        Every module of the package is imported - ``monkeycad``, ``monkeycad.backends`` and each
+        module of the OCCT backend among them - and none of them may load either binding.
+        """
 
         completed = subprocess.run(
-            [PYTHON, "-c", "import sys, monkeycad.cad_execution; print(sorted(m for m in sys.modules if m in ('OCP', 'rhino3dm')))"],
+            [PYTHON, "-c", "import importlib, pkgutil, sys, monkeycad; "
+                           "names = sorted(m.name for m in pkgutil.walk_packages(monkeycad.__path__, 'monkeycad.')); "
+                           "[importlib.import_module(name) for name in names]; "
+                           "print(sorted(m for m in sys.modules if m in ('OCP', 'rhino3dm'))); print(' '.join(names))"],
             capture_output=True,
             text=True,
             cwd=str(Path(__file__).resolve().parents[2]),
@@ -2556,15 +2571,19 @@ class ImportBoundaryTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout.strip(), "[]")
+        loaded, imported = completed.stdout.splitlines()
+        self.assertEqual(loaded, "[]")
+        occt = {f"monkeycad.backends.occt.{name}" for name in (
+            "errors", "kernel", "boolean", "build", "measure", "step", "native_models", "projection", "section", "preview")}
+        self.assertLessEqual({"monkeycad.backends", "monkeycad.backends.occt", *occt}, set(imported.split()))
 
     def test_the_backend_names_what_it_does_not_realize(self) -> None:
         self.assertEqual(
-            occt_backend.SUPPORTED_OPERATION_KINDS,
+            SUPPORTED_OPERATION_KINDS,
             {"solid", "curve", "revolve", "extrusion", "planar_surface", "loft", "boolean_union", "boolean_difference", "boolean_intersection", "array"},
         )
         for unsupported in ("radial_array", "transform", "sweep", "asset_instance"):
-            self.assertNotIn(unsupported, occt_backend.SUPPORTED_OPERATION_KINDS)
+            self.assertNotIn(unsupported, SUPPORTED_OPERATION_KINDS)
 
 
 @NEEDS_OCCT
@@ -2668,14 +2687,14 @@ class LongExportPathTests(unittest.TestCase):
         import rhino3dm
 
         workspace = self.deep_workspace()
-        occ = occt_backend._occt()
+        occ = _occt()
         box = occ.BRepPrimAPI.BRepPrimAPI_MakeBox(
-            occt_backend._gp_point(occ, (0.0, 0.0, 0.0)), occt_backend._gp_point(occ, (2.0, 3.0, 1.0))
+            _gp_point(occ, (0.0, 0.0, 0.0)), _gp_point(occ, (2.0, 3.0, 1.0))
         ).Shape()
         step = workspace / "studio-candidate-seat-portico@longpath-source.step"
-        occt_backend.write_step(
+        write_step(
             cad_execution.long_path(step),
-            [occt_backend.StepObject(object_id="obj-block", shape=box, layer="archflow")],
+            [StepObject(object_id="obj-block", shape=box, layer="archflow")],
             length_unit="meter",
         )
         objects = split_step_objects(step, destination=workspace, length_unit="meter")
@@ -2730,7 +2749,7 @@ class StepWorkModelImportTests(unittest.TestCase):
             source = _entries_by_name(step)
             self.assertEqual([item.object_id for item in objects], sorted(source))
             for item in objects:
-                measured = occt_backend.measure_shape(source[item.object_id].shape)
+                measured = measure_shape(source[item.object_id].shape)
                 self.assertEqual(
                     (item.solid_count, item.face_count, item.closed),
                     (measured.solid_count, measured.face_count, measured.closed),
@@ -2757,15 +2776,15 @@ class StepWorkModelImportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp).resolve()
             program, step = self._exported(workspace, "work-refuse")
-            shapes = [entry.shape for entry in occt_backend.read_step(step, length_unit="meter")][:2]
+            shapes = [entry.shape for entry in read_step(step, length_unit="meter")][:2]
             destination = workspace / "import"
             destination.mkdir()
 
             # Two shapes under one name cannot say which object each is.
             repeated = workspace / "repeated.step"
-            occt_backend.write_step(
+            write_step(
                 repeated,
-                [occt_backend.StepObject(object_id="obj-same", shape=shape, layer="archflow") for shape in shapes],
+                [StepObject(object_id="obj-same", shape=shape, layer="archflow") for shape in shapes],
                 length_unit="meter",
             )
             with self.assertRaises(CadExecutionError) as repeated_refusal:
@@ -2777,9 +2796,9 @@ class StepWorkModelImportTests(unittest.TestCase):
             # of this program's objects, and the plan says so instead of
             # pairing it with whatever object happens to be left.
             foreign = workspace / "foreign.step"
-            occt_backend.write_step(
+            write_step(
                 foreign,
-                [occt_backend.StepObject(object_id="", shape=shapes[0], layer="archflow")],
+                [StepObject(object_id="", shape=shapes[0], layer="archflow")],
                 length_unit="meter",
             )
             stray = split_step_objects(foreign, destination=destination, length_unit="meter")
@@ -3006,13 +3025,13 @@ class WorkModelReadbackTests(unittest.TestCase):
     def _source(self, workspace: Path):
         """One exported box, split into the file an import would read."""
 
-        occ = occt_backend._occt()
+        occ = _occt()
         box = occ.BRepPrimAPI.BRepPrimAPI_MakeBox(
-            occt_backend._gp_point(occ, (0.0, 0.0, 0.0)), occt_backend._gp_point(occ, (2.0, 3.0, 1.0))
+            _gp_point(occ, (0.0, 0.0, 0.0)), _gp_point(occ, (2.0, 3.0, 1.0))
         ).Shape()
         step = workspace / "one.step"
-        occt_backend.write_step(
-            step, [occt_backend.StepObject(object_id="obj-block", shape=box, layer="archflow")],
+        write_step(
+            step, [StepObject(object_id="obj-block", shape=box, layer="archflow")],
             length_unit="meter",
         )
         objects = split_step_objects(step, destination=workspace, length_unit="meter")
@@ -3055,7 +3074,7 @@ class WorkModelReadbackTests(unittest.TestCase):
             source, shape = self._source(workspace)
 
             mesh_file = workspace / "mesh.3dm"
-            vertices, triangles = occt_backend.tessellate_shape(shape, linear_deflection=0.05)
+            vertices, triangles = tessellate_shape(shape, linear_deflection=0.05)
             mesh = rhino3dm.Mesh()
             for x, y, z in vertices:
                 mesh.Vertices.Add(x, y, z)

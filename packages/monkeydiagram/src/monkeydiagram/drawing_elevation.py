@@ -68,7 +68,7 @@ from monkeycad.cad_execution import (
     section_occt_regions,
     read_step,
 )
-from monkeycad.occt_backend import OcctSectionPerspective, project_occt_section_perspective
+from monkeycad.backends.occt.section import OcctSectionPerspective, project_occt_section_perspective
 from monkeydiagram.drawing_svg import (
     PNG_MEDIA_TYPE,
     SVG_MEDIA_TYPE,
@@ -543,7 +543,8 @@ def read_elevation_source(repository: FilesystemProjectRepository, source: Eleva
 
 
 def _read_native_source(repository, source):
-    from monkeycad.occt_backend import read_three_dm, measure_shape
+    from monkeycad.backends.occt.measure import measure_shape
+    from monkeycad.backends.occt.native_models import read_three_dm
 
     project_id = repository.load_manifest().project_id
     run = repository.load_run(source.run_id)

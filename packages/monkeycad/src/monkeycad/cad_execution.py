@@ -36,34 +36,22 @@ from monkeycad.cad_program import (
     translate_step_import_to_rhino_python,
     translate_to_rhino_python,
 )
-from monkeycad.occt_backend import (
-    _observe_operation as _observe_occt_operation,
-    _polyline_geometry,
+from monkeycad.backends.occt.boolean import DIFFERENCE_STRATEGIES
+from monkeycad.backends.occt.build import (
     CLOSED_SOLID,
     CURVE,
-    DIFFERENCE_STRATEGIES,
     OPEN_SURFACE,
-    OcctBackendError,
-    OcctCapabilityError,
-    OcctDrawingPolyline,
-    OcctDrawingRegion,
-    OcctUnavailableError,
-    PreviewMaterial,
-    PreviewObject,
-    StepEntry,
-    StepObject,
-    backend_identity,
+    _polyline_geometry,
     build_program_shapes,
     declared_delivery,
-    measure_shape,
-    measure_occt_solid_pairs,
-    project_occt_lines,
-    read_step,
-    section_occt_lines,
-    section_occt_regions,
-    write_preview_three_dm,
-    write_step,
 )
+from monkeycad.backends.occt.errors import OcctBackendError, OcctCapabilityError, OcctUnavailableError
+from monkeycad.backends.occt.kernel import _observe_operation as _observe_occt_operation, backend_identity
+from monkeycad.backends.occt.measure import measure_occt_solid_pairs, measure_shape
+from monkeycad.backends.occt.preview import PreviewMaterial, PreviewObject, write_preview_three_dm
+from monkeycad.backends.occt.projection import OcctDrawingPolyline, OcctDrawingRegion, project_occt_lines
+from monkeycad.backends.occt.section import section_occt_lines, section_occt_regions
+from monkeycad.backends.occt.step import StepEntry, StepObject, read_step, write_step
 from monkeycad.formats.three_dm_inspector import (
     ThreeDmInspection,
     ThreeDmInspectionError,

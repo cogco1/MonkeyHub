@@ -40,7 +40,10 @@ from project_runtime.settings import (
     StudioSettings,
 )
 
-from monkeycad import cad_execution, occt_backend
+from monkeycad import cad_execution
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.backends.occt.measure import ShapeMeasure, classify_program_point, measure_shape
+from monkeycad.backends.occt.step import StepEntry, read_step
 from monkeycad.cad_execution import CadCapabilityError
 from monkeycad.formats.three_dm_inspector import inspect_three_dm
 from archflow.state.geometry_program import load_compiled_geometry_program
@@ -61,7 +64,7 @@ from .support import (
 )
 
 NEEDS_OCCT = unittest.skipUnless(
-    occt_backend.occt_available(), "cadquery-ocp is not installed"
+    occt_available(), "cadquery-ocp is not installed"
 )
 JOB_DEADLINE = 180.0
 TERMINAL = ("succeeded", "failed")
@@ -174,20 +177,20 @@ class OcctCandidateTestCase(unittest.TestCase):
         self.assertIn(artifact["fileName"], response.headers["content-disposition"])
         return response.content
 
-    def step_entries(self, data: bytes) -> dict[str, occt_backend.StepEntry]:
+    def step_entries(self, data: bytes) -> dict[str, StepEntry]:
         """The named shapes of a STEP file, cold-read by the real OCCT reader, for measuring and point probes."""
 
         path = self.root / f"readback-{hashlib.sha256(data).hexdigest()[:8]}.step"
         path.write_bytes(data)
-        entries = occt_backend.read_step(path, length_unit="meter")
+        entries = read_step(path, length_unit="meter")
         names = [entry.name for entry in entries]
         self.assertEqual(len(set(names)), len(names), f"duplicate names in STEP: {names}")
         return {entry.name: entry for entry in entries}
 
-    def step_shapes(self, data: bytes) -> dict[str, occt_backend.ShapeMeasure]:
+    def step_shapes(self, data: bytes) -> dict[str, ShapeMeasure]:
         """The named solids of a STEP file, re-read by the real OCCT reader."""
 
-        return {name: occt_backend.measure_shape(entry.shape) for name, entry in self.step_entries(data).items()}
+        return {name: measure_shape(entry.shape) for name, entry in self.step_entries(data).items()}
 
     @staticmethod
     def split(artifacts: list[dict]) -> tuple[dict, dict]:
@@ -965,12 +968,12 @@ class WholeAssemblyCandidateTests(OcctCandidateTestCase):
 
     # ---- the geometry, probed on the cold-read STEP solids (program frame: x, up, plan z)
 
-    def assert_flight(self, entries: dict[str, occt_backend.StepEntry], width: float) -> None:
+    def assert_flight(self, entries: dict[str, StepEntry], width: float) -> None:
         """One closed stepped solid, ``width`` across the line, ten treads up to the fixed upper level."""
 
         flight = entries[FLIGHT_OBJECT]
         half = width / 2.0
-        measure = occt_backend.measure_shape(flight.shape)
+        measure = measure_shape(flight.shape)
         self.assertTrue(measure.valid)
         self.assertEqual((measure.solid_count, measure.closed), (1, True))
         self.assertEqual(measure.face_count, 2 + 2 * COUNT + 2)              # floor, treads, risers, back, two sides
@@ -991,35 +994,35 @@ class WholeAssemblyCandidateTests(OcctCandidateTestCase):
             (0.0, 0.1, -0.01): "outside", (0.0, 1.7, COUNT * GOING + 0.01): "outside",  # nothing beyond either end
         })
         for point, expected in probes.items():
-            self.assertEqual(occt_backend.classify_program_point(flight.shape, point), expected, point)
+            self.assertEqual(classify_program_point(flight.shape, point), expected, point)
 
-    def assert_landing(self, entries: dict[str, occt_backend.StepEntry]) -> None:
+    def assert_landing(self, entries: dict[str, StepEntry]) -> None:
         """The landing's top is the upper level and its near edge is the flight's far edge; the two do not overlap."""
 
         landing, flight = entries[LANDING_OBJECT], entries[FLIGHT_OBJECT]
-        measure = occt_backend.measure_shape(landing.shape)
+        measure = measure_shape(landing.shape)
         self.assertTrue(measure.valid and measure.closed and measure.solid_count == 1)
         self.assertAlmostEqual(measure.volume, 1.5 * 1.2 * LANDING_THICKNESS, places=6)
         end = COUNT * GOING
         for actual, expected in zip(measure.bbox_min + measure.bbox_max,
                                     (-0.75, end, UPPER_ELEVATION - LANDING_THICKNESS, 0.75, end + 1.2, UPPER_ELEVATION)):
             self.assertAlmostEqual(actual, expected, places=5)
-        self.assertAlmostEqual(measure.bbox_max[2], occt_backend.measure_shape(flight.shape).bbox_max[2], places=6)
-        self.assertAlmostEqual(measure.bbox_min[1], occt_backend.measure_shape(flight.shape).bbox_max[1], places=6)
+        self.assertAlmostEqual(measure.bbox_max[2], measure_shape(flight.shape).bbox_max[2], places=6)
+        self.assertAlmostEqual(measure.bbox_min[1], measure_shape(flight.shape).bbox_max[1], places=6)
         for point, expected in {
             (0.0, 1.7, end + 0.6): "inside", (0.0, UPPER_ELEVATION + 0.05, end + 0.6): "outside",
             (0.0, UPPER_ELEVATION - LANDING_THICKNESS - 0.05, end + 0.6): "outside",
             (0.0, 1.7, end - 0.05): "outside", (0.0, 1.7, end + 0.05): "inside",
         }.items():
-            self.assertEqual(occt_backend.classify_program_point(landing.shape, point), expected, point)
+            self.assertEqual(classify_program_point(landing.shape, point), expected, point)
         # either side of the shared edge: the flight, then the landing, never both
-        self.assertEqual(occt_backend.classify_program_point(flight.shape, (0.0, 1.7, end - 0.05)), "inside")
-        self.assertEqual(occt_backend.classify_program_point(flight.shape, (0.0, 1.7, end + 0.05)), "outside")
+        self.assertEqual(classify_program_point(flight.shape, (0.0, 1.7, end - 0.05)), "inside")
+        self.assertEqual(classify_program_point(flight.shape, (0.0, 1.7, end + 0.05)), "outside")
 
-    def assert_window(self, entries: dict[str, occt_backend.StepEntry], width: float) -> None:
+    def assert_window(self, entries: dict[str, StepEntry], width: float) -> None:
         """The wall's hole is ``width`` wide along the wall, and the pane in it is ``width`` less two frame widths."""
 
-        cut = occt_backend.measure_shape(entries[WALL_CUT].shape)
+        cut = measure_shape(entries[WALL_CUT].shape)
         self.assertTrue(cut.valid and cut.closed and cut.solid_count == 1)
         # The wall body lies on the +x side of its line (normal = (dz, -dx) of a +z line): check that before any position.
         self.assertAlmostEqual(cut.bbox_min[0], WALL_X, places=6, msg="the wall's thickness is not on the +x side of its line")
@@ -1037,16 +1040,16 @@ class WholeAssemblyCandidateTests(OcctCandidateTestCase):
             (mid_x, SILL - 0.05, WINDOW_ALONG): "inside", (mid_x, HEAD + 0.05, WINDOW_ALONG): "inside",
             (mid_x, 1.65, 0.5): "inside",
         }.items():
-            self.assertEqual(occt_backend.classify_program_point(entries[WALL_CUT].shape, point), expected, point)
+            self.assertEqual(classify_program_point(entries[WALL_CUT].shape, point), expected, point)
 
-        aperture = occt_backend.measure_shape(entries[APERTURE].shape)
+        aperture = measure_shape(entries[APERTURE].shape)
         self.assertTrue(aperture.valid and aperture.closed and aperture.solid_count == 1)
         self.assertAlmostEqual(aperture.volume, width * WALL_THICKNESS * (HEAD - SILL), places=6)
         for actual, expected in zip(aperture.bbox_min + aperture.bbox_max, (WALL_X, z0, SILL, WALL_X + WALL_THICKNESS, z1, HEAD)):
             self.assertAlmostEqual(actual, expected, places=5)
         self.assertAlmostEqual(aperture.bbox_max[1] - aperture.bbox_min[1], width, places=6)
 
-        frame = occt_backend.measure_shape(entries[FRAME].shape)
+        frame = measure_shape(entries[FRAME].shape)
         self.assertTrue(frame.valid and frame.closed and frame.solid_count == 1)
         self.assertEqual(frame.face_count, 10)
         net = width - 2 * FRAME_WIDTH
@@ -1062,9 +1065,9 @@ class WholeAssemblyCandidateTests(OcctCandidateTestCase):
             (frame_x, 1.65, z0 + FRAME_WIDTH / 2.0): "inside", (frame_x, 1.65, z1 - FRAME_WIDTH / 2.0): "inside",  # stiles
             (frame_x, 1.65, z0 + FRAME_WIDTH + 0.01): "outside",
         }.items():
-            self.assertEqual(occt_backend.classify_program_point(entries[FRAME].shape, point), expected, point)
+            self.assertEqual(classify_program_point(entries[FRAME].shape, point), expected, point)
 
-        pane = occt_backend.measure_shape(entries[PANE].shape)
+        pane = measure_shape(entries[PANE].shape)
         self.assertTrue(pane.valid and pane.closed and pane.solid_count == 1)
         self.assertEqual(pane.face_count, 6)
         self.assertAlmostEqual(pane.bbox_max[1] - pane.bbox_min[1], net, places=6)   # the glass net width
@@ -1073,12 +1076,12 @@ class WholeAssemblyCandidateTests(OcctCandidateTestCase):
         for actual, expected in zip(pane.bbox_min + pane.bbox_max, (px0, z0 + FRAME_WIDTH, SILL + FRAME_WIDTH, px1, z1 - FRAME_WIDTH, HEAD - FRAME_WIDTH)):
             self.assertAlmostEqual(actual, expected, places=5)
         glass_point = ((px0 + px1) / 2.0, 1.65, WINDOW_ALONG)
-        self.assertEqual(occt_backend.classify_program_point(entries[PANE].shape, glass_point), "inside")
-        self.assertEqual(occt_backend.classify_program_point(entries[FRAME].shape, glass_point), "outside")
-        self.assertEqual(occt_backend.classify_program_point(entries[WALL_CUT].shape, glass_point), "outside")
-        self.assertEqual(occt_backend.classify_program_point(entries[PANE].shape, (frame_x, 1.65, WINDOW_ALONG)), "outside")
+        self.assertEqual(classify_program_point(entries[PANE].shape, glass_point), "inside")
+        self.assertEqual(classify_program_point(entries[FRAME].shape, glass_point), "outside")
+        self.assertEqual(classify_program_point(entries[WALL_CUT].shape, glass_point), "outside")
+        self.assertEqual(classify_program_point(entries[PANE].shape, (frame_x, 1.65, WINDOW_ALONG)), "outside")
 
-    def assert_relations(self, run_id: str, entries: dict[str, occt_backend.StepEntry]) -> None:
+    def assert_relations(self, run_id: str, entries: dict[str, StepEntry]) -> None:
         """The declared clearance and the producers' own support relations, measured, against the STEP solids."""
 
         checks = self.relation_checks_of(run_id)
@@ -1096,8 +1099,8 @@ class WholeAssemblyCandidateTests(OcctCandidateTestCase):
         # report is the same one the cold-read solids show between the flight
         # and the nearest of the wall's own objects (the frame's projection).
         wall_objects = (WALL_CUT, APERTURE, FRAME, PANE)
-        nearest = min(occt_backend.measure_shape(entries[name].shape).bbox_min[0] for name in wall_objects)
-        flight_edge = occt_backend.measure_shape(entries[FLIGHT_OBJECT].shape).bbox_max[0]
+        nearest = min(measure_shape(entries[name].shape).bbox_min[0] for name in wall_objects)
+        flight_edge = measure_shape(entries[FLIGHT_OBJECT].shape).bbox_max[0]
         self.assertAlmostEqual(measured["gap"], nearest - flight_edge, places=5)
         self.assertTrue(CLEARANCE_INTERVAL[0] <= measured["gap"] <= CLEARANCE_INTERVAL[1], measured)
         # The landing stands on the fixed upper level with its declared embed;

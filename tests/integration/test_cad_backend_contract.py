@@ -18,7 +18,10 @@ from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from unittest.mock import patch
 
-from monkeycad import cad_backend, cad_execution, occt_backend
+from monkeycad import cad_backend, cad_execution
+from monkeycad.backends.occt.errors import OcctBackendError
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.backends.occt.step import read_step
 from monkeycad.cad_execution import CadExecutionError, CadProgramBinding, RhinoCadProgramBinding
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import stage_geometry_program
@@ -39,7 +42,7 @@ from tests.integration.test_occt_execution import _box, _loft, _no_process, _pro
 from tests.integration.test_project_runner import _ExportProject, _options, _prism_row, _record
 
 
-NEEDS_OCCT = unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+NEEDS_OCCT = unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 NEEDS_RHINO = unittest.skipUnless(
     os.environ.get("ARCHFLOW_RHINO_ACCEPTANCE") == "1",
     "set ARCHFLOW_RHINO_ACCEPTANCE=1 to run isolated real Rhino acceptance",
@@ -245,7 +248,7 @@ class CadBackendConformanceTests(unittest.TestCase):
                 self.assertEqual(repository.read_head(), head_before)
                 if backend_id == "occt":
                     step = next(workspace / a.relative_path for a in result.artifacts if a.relative_path.endswith(".step"))
-                    entries = occt_backend.read_step(step, length_unit=program.proposal.length_unit.value)
+                    entries = read_step(step, length_unit=program.proposal.length_unit.value)
                     self.assertEqual([entry.name for entry in entries], ["body-object"])
                     self.assertEqual(entries[0].layers, (result.expected_semantics["objects"]["body-object"]["layer"],))
                 else:
@@ -345,7 +348,7 @@ class CadBackendConformanceTests(unittest.TestCase):
     def test_occt_does_not_turn_a_failed_cold_read_into_a_verified_result(self):
         with tempfile.TemporaryDirectory() as temporary, _no_process():
             request = _request(Path(temporary))
-            with patch.object(cad_execution, "read_step", side_effect=occt_backend.OcctBackendError("controlled cold-read failure")):
+            with patch.object(cad_execution, "read_step", side_effect=OcctBackendError("controlled cold-read failure")):
                 result = cad_backend.get_cad_backend("occt").execute(request)
             self.assertEqual(result.status, "failed")
             self.assertFalse(result.readback_verified)

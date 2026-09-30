@@ -17,7 +17,9 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.backends.occt.measure import classify_program_point, measure_shape
+from monkeycad.backends.occt.step import StepEntry, read_step
 from monkeycad.cad_execution import (
     CadExecutionStatus,
     CadProgramBinding,
@@ -37,7 +39,7 @@ from tests.integration.support import shared_bound_state
 from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
 
 NEEDS_OCCT = unittest.skipUnless(
-    occt_backend.occt_available(), "cadquery-ocp is not installed: python -m pip install -e 'packages/monkeycad[occt]'"
+    occt_available(), "cadquery-ocp is not installed: python -m pip install -e 'packages/monkeycad[occt]'"
 )
 
 BASIS = ("reading:plate",)
@@ -114,7 +116,7 @@ def _refuse_process(*args, **kwargs):
     raise AssertionError(f"the OCCT executor must not start a process: {args[:1]}")
 
 
-def _export(program: CompiledGeometryProgram, stage_id: str, stem: str) -> tuple[OcctExecutionReceipt, dict[str, occt_backend.StepEntry], float]:
+def _export(program: CompiledGeometryProgram, stage_id: str, stem: str) -> tuple[OcctExecutionReceipt, dict[str, StepEntry], float]:
     """Execute into a temporary speculative workspace; return the receipt, the cold-read STEP entries and the wall-clock seconds."""
 
     binding = _persisted_binding(program, stage_id)
@@ -130,7 +132,7 @@ def _export(program: CompiledGeometryProgram, stage_id: str, stem: str) -> tuple
         preview = workspace / receipt.preview_artifact["relative_path"]
         if sorted(p.name for p in workspace.iterdir()) != sorted([step.name, preview.name]):
             raise AssertionError(sorted(p.name for p in workspace.iterdir()))
-        entries = occt_backend.read_step(step, length_unit="meter")
+        entries = read_step(step, length_unit="meter")
     names = [entry.name for entry in entries]
     if len(set(names)) != len(names):
         raise AssertionError(f"duplicate names in STEP: {names}")
@@ -177,7 +179,7 @@ class WholeStairExecutionTests(unittest.TestCase):
 
         flight = entries["obj-stair-east"]
         self.assertEqual(flight.layers, ("archflow::building",))
-        measure = occt_backend.measure_shape(flight.shape)
+        measure = measure_shape(flight.shape)
         self.assertTrue(measure.valid)
         self.assertEqual((measure.solid_count, measure.closed), (1, True))
         self.assertEqual(measure.face_count, 2 + 2 * COUNT + 2)                     # floor, three treads, three risers, the back, two side caps
@@ -196,7 +198,7 @@ class WholeStairExecutionTests(unittest.TestCase):
             (-0.01, 0.1, 0.0): "outside", (0.91, 0.3, 0.0): "outside",
         }
         for point, expected in probes.items():
-            self.assertEqual(occt_backend.classify_program_point(flight.shape, point), expected, point)
+            self.assertEqual(classify_program_point(flight.shape, point), expected, point)
         # the receipt's own cold read agrees with the analytic predictor, which is the true hull of the stepped solid
         row = receipt.readback["obj-stair-east"]
         self.assertEqual((row["solid_count"], row["closed"], row["valid"]), (1, True, True))
@@ -205,12 +207,12 @@ class WholeStairExecutionTests(unittest.TestCase):
             self.assertAlmostEqual(actual, expected, places=9)
 
         # the published top is the whole solid's top: the landing bound to it starts exactly where the flight ends
-        seated = occt_backend.measure_shape(entries["obj-landing"].shape)
+        seated = measure_shape(entries["obj-landing"].shape)
         self.assertAlmostEqual(seated.bbox_min[2], HEIGHT, places=6)
         self.assertAlmostEqual(seated.bbox_max[2], HEIGHT + 0.15, places=6)
         self.assertAlmostEqual(seated.bbox_min[0], RUN, places=6)
-        self.assertEqual(occt_backend.classify_program_point(entries["obj-landing"].shape, (RUN + 0.5, HEIGHT + 0.05, 0.0)), "inside")
-        self.assertEqual(occt_backend.classify_program_point(flight.shape, (RUN + 0.5, HEIGHT + 0.05, 0.0)), "outside")
+        self.assertEqual(classify_program_point(entries["obj-landing"].shape, (RUN + 0.5, HEIGHT + 0.05, 0.0)), "inside")
+        self.assertEqual(classify_program_point(flight.shape, (RUN + 0.5, HEIGHT + 0.05, 0.0)), "outside")
 
     def test_an_oblique_reversed_flight_on_a_base_offset_lands_on_its_references(self) -> None:
         # from SKEW@0.9 = (2.54, -0.28) back to SKEW@0.0 = (2.0, -1.0): the run descends the axis, so the flight climbs
@@ -225,7 +227,7 @@ class WholeStairExecutionTests(unittest.TestCase):
 
         self.assertLess(elapsed, 30.0)
         self.assertEqual(list(entries), ["obj-stair-east"])
-        measure = occt_backend.measure_shape(entries["obj-stair-east"].shape)
+        measure = measure_shape(entries["obj-stair-east"].shape)
         self.assertTrue(measure.valid)
         self.assertEqual((measure.solid_count, measure.closed, measure.face_count), (1, True, 10))
         self.assertAlmostEqual(measure.volume, VOLUME, places=6)
@@ -246,14 +248,14 @@ class WholeStairExecutionTests(unittest.TestCase):
         # the lowest tread is at the `from` end, the highest at the `to` end; nothing below the base offset
         for k in range(COUNT):
             centre = (k + 0.5) * GOING
-            self.assertEqual(occt_backend.classify_program_point(entries["obj-stair-east"].shape, at(centre, offset + k * RISE + 0.1)), "inside", k)
-            self.assertEqual(occt_backend.classify_program_point(entries["obj-stair-east"].shape, at(centre, offset + (k + 1) * RISE + 0.1)), "outside", k)
-            self.assertEqual(occt_backend.classify_program_point(entries["obj-stair-east"].shape, at(centre, offset - 0.1)), "outside", k)
-        self.assertEqual(occt_backend.classify_program_point(entries["obj-stair-east"].shape, at(0.45, offset + 0.3, 0.59)), "inside")
-        self.assertEqual(occt_backend.classify_program_point(entries["obj-stair-east"].shape, at(0.45, offset + 0.3, 0.61)), "outside")
-        self.assertEqual(occt_backend.classify_program_point(entries["obj-stair-east"].shape, at(0.45, offset + 0.3, -0.61)), "outside")
-        self.assertEqual(occt_backend.classify_program_point(entries["obj-stair-east"].shape, at(-0.01, offset + 0.1)), "outside")
-        self.assertEqual(occt_backend.classify_program_point(entries["obj-stair-east"].shape, at(RUN + 0.01, offset + 0.5)), "outside")
+            self.assertEqual(classify_program_point(entries["obj-stair-east"].shape, at(centre, offset + k * RISE + 0.1)), "inside", k)
+            self.assertEqual(classify_program_point(entries["obj-stair-east"].shape, at(centre, offset + (k + 1) * RISE + 0.1)), "outside", k)
+            self.assertEqual(classify_program_point(entries["obj-stair-east"].shape, at(centre, offset - 0.1)), "outside", k)
+        self.assertEqual(classify_program_point(entries["obj-stair-east"].shape, at(0.45, offset + 0.3, 0.59)), "inside")
+        self.assertEqual(classify_program_point(entries["obj-stair-east"].shape, at(0.45, offset + 0.3, 0.61)), "outside")
+        self.assertEqual(classify_program_point(entries["obj-stair-east"].shape, at(0.45, offset + 0.3, -0.61)), "outside")
+        self.assertEqual(classify_program_point(entries["obj-stair-east"].shape, at(-0.01, offset + 0.1)), "outside")
+        self.assertEqual(classify_program_point(entries["obj-stair-east"].shape, at(RUN + 0.01, offset + 0.5)), "outside")
 
 
 if __name__ == "__main__":

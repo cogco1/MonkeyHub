@@ -14,7 +14,7 @@ from xml.etree import ElementTree
 
 from fastapi.testclient import TestClient
 
-from monkeycad.occt_backend import occt_available
+from monkeycad.backends.occt.kernel import occt_available
 from archflow.project.refs import record_ref_from_uri
 from project_runtime.binding import bound_project
 from project_runtime.application.drawings import generate_section_perspective

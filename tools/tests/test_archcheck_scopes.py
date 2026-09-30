@@ -145,7 +145,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
             ("packages/monkeycad/src/monkeycad/example.py", "monkeyarch.runtime.project_runner"),
             ("packages/monkeycad/src/monkeycad/example.py", "project_runtime.binding"),
             ("packages/archflow/src/archflow/project/example.py", "monkeycad.cad_backend"),
-            ("packages/monkeyarch/src/monkeyarch/construction/example.py", "monkeycad.occt_backend"),
+            ("packages/monkeyarch/src/monkeyarch/construction/example.py", "monkeycad.backends.occt.kernel"),
             ("packages/monkeyarch/src/monkeyarch/example.py", "monkeydiagram.drawing_svg"),
             ("packages/monkeydiagram/src/monkeydiagram/example.py", "monkeyarch.compilers.geometry"),
         ):
@@ -172,7 +172,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
                                                    _index_tree(ast.parse(f"import {target}")), self.policy))
                     self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
         findings = tuple(check_imports("packages/monkeydiagram/tests/test_example.py", _index_tree(ast.parse(
-            "from monkeydiagram.drawing_svg import drawing_svg\nfrom monkeycad import occt_backend"
+            "from monkeydiagram.drawing_svg import drawing_svg\nfrom monkeycad.backends.occt import kernel"
         )), self.policy))
         self.assertEqual((), findings)
 

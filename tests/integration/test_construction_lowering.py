@@ -1091,15 +1091,17 @@ class RecessTests(ConstructionTestCase):
     def volumes(self, record: StateRecord, result) -> dict[str, float] | None:
         """The successor applied and checked, its program compiled as the runner does, then built with OCCT."""
 
-        from monkeycad import occt_backend
+        from monkeycad.backends.occt.build import build_program_shapes
+        from monkeycad.backends.occt.kernel import occt_available
+        from monkeycad.backends.occt.measure import measure_shape
         from tests.integration.test_occt_execution import _compile as compile_program
 
         successor = _apply(record, result)
         program = compile_program(successor)
-        if not occt_backend.occt_available():  # pragma: no cover - the OCCT build is the evidence when it is installed
+        if not occt_available():  # pragma: no cover - the OCCT build is the evidence when it is installed
             return None
-        build = occt_backend.build_program_shapes(program)
-        return {object_id: occt_backend.measure_shape(build.objects[object_id].shape).volume
+        build = build_program_shapes(program)
+        return {object_id: measure_shape(build.objects[object_id].shape).volume
                 for object_id in build.physical_object_ids}
 
     def test_a_cutter_standing_on_its_host_is_produced_and_removed(self) -> None:

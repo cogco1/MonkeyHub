@@ -12,7 +12,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
 from archflow.project.record_kinds import CANDIDATE_REVIEW, DESIGN_STAGE, STUDIO_CANDIDATE_DELTA
 from archflow.project.refs import record_ref_from_uri
 from archflow.state.state_record import StateRecordEditKind, StateRecordOperator
@@ -456,7 +456,7 @@ class DesignHistoryTests(DesignHistoryFixture):
         self.assertEqual(refused.json()["code"], "CANDIDATE_DELTA_MISSING")
         self.assertEqual(self.history()["stages"], [stage])
 
-    @unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+    @unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
     def test_native_part_cannot_bootstrap_a_complete_multiseat_stage(self) -> None:
         record = deepcopy(RECORD_PAYLOAD)
         wing = deepcopy(record["entities"][1])
@@ -497,7 +497,7 @@ class DesignHistoryTests(DesignHistoryFixture):
         self.assertEqual(self.history()["stages"], [])
         self.assertEqual(self.repository.read_head(), self.initial_head)
 
-    @unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+    @unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
     def test_composed_candidate_uses_the_stage_runner_after_newer_receipt_is_retained(self) -> None:
         self.client.close()
         self.settings = StudioSettings(project_dir=self.root / PROJECT_ID, cad_export="occt")
