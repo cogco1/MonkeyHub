@@ -139,7 +139,7 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
 <source-root>/
 ├─ apps/monkeyhub/                  产品：api/ web/ desktop/ installer/ assets/ run.py launch-hub.ps1
 │  └─ web/                          单一源根：src/ test/ scripts/ tools/ assets/
-├─ services/project-runtime/        src/project_runtime/  tests/  README.md  requirements.txt  pyproject.toml
+├─ services/project-runtime/        src/project_runtime/{api/{routes,dto},application,render_adapters}  tests/  README.md  requirements.txt  pyproject.toml
 ├─ packages/
 │  ├─ archflow/                     src/archflow/{contracts,project,state,semantics,validation,submission,ports,relations,adapters}
 │  ├─ monkeyarch/                   src/monkeyarch/（第一轮保持原内部结构）
@@ -214,7 +214,7 @@ Project Runtime 自 #491 起按仓库路径 `services/project-runtime/src/projec
 | --- | --- |
 | `repository_root_entries` | 根目录的完整清单：第 6 节的目录加上根文件。`ROOT_ENTRY` 按 `git ls-files` 检查，被 git 忽略的本地文件不算；清单外的条目都是 finding，搬回根目录的包也一样 |
 | `python_source_roots` | 模块导入名从哪一级目录开始算，当前是 `.`、`services/project-runtime/src`、`apps/monkeyhub/api`、`packages/monkeyfab/src`、`packages/monkeydiagram/src`、`packages/archflow/src`、`packages/monkeyarch/src`、`packages/monkeymonitor/src`、`packages/monkeycontrol/src`。这是唯一的清单：本地开发的各入口按检出读它（第 6 节）。新的 src 布局包加上自己的 `packages/<包名>/src`；含受检 Python 的 `src` 目录不在表里时报 `POLICY_PATH_MISSING` |
-| `checked_source_roots`、`forbidden_layer_imports` 的 `source` | `packages/` 下的包：检查根写包根 `packages/<包名>`，包的层规则 `source` 写 `packages/<包名>/src/<包名>`，`packages/<包名>/tests` 另有一条不导入根 `tests`、`labs`、`archive` 的规则，也和根 `tests/` 一样列入 `shared_write_scope`。Runtime 是服务：检查根和层规则的 `source` 都写服务根 `services/project-runtime`，包与它的 `tests/` 同受一条规则约束，`services/project-runtime/tests/` 列入 `shared_write_scope`。路径不存在、检查根下没有 Python 源码、或层规则匹配不到任何受检文件时报 `POLICY_PATH_MISSING`；`allowed_write_sites` 与 `allowed_authority_symbols` 的文件缺失时 archcheck 直接以错误退出 |
+| `checked_source_roots`、`forbidden_layer_imports` 的 `source` | `packages/` 下的包：检查根写包根 `packages/<包名>`，包的层规则 `source` 写 `packages/<包名>/src/<包名>`，`packages/<包名>/tests` 另有一条不导入根 `tests`、`labs`、`archive` 的规则，也和根 `tests/` 一样列入 `shared_write_scope`。Runtime 是服务：检查根和层规则的 `source` 都写服务根 `services/project-runtime`，包与它的 `tests/` 同受一条规则约束，`services/project-runtime/tests/` 列入 `shared_write_scope`；包内分层（#518）的规则写到层目录，如 `services/project-runtime/src/project_runtime/application` 不导入 `project_runtime.api.routes`。`source` 为 `packages` 的一条规则让每个包和包自己的测试都不导入 `project_runtime`。相对导入先按所在文件的导入名解析成完整模块名再比对，`from x import y` 按 `x` 和 `x.y` 两个名字比对。路径不存在、检查根下没有 Python 源码、或层规则匹配不到任何受检文件时报 `POLICY_PATH_MISSING`；`allowed_write_sites` 与 `allowed_authority_symbols` 的文件缺失时 archcheck 直接以错误退出 |
 
 module registry 里的路径同样必须存在：`owner_path`（`REGISTRY_OWNER_MISSING`）、`tests`（`REGISTRY_TEST_MISSING`），
 以及 `files`、`used_by`（路径或模块 id）、`spine`、interface 实现文件和 capability 测试（`REGISTRY_PATH_MISSING`）。

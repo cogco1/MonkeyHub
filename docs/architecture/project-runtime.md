@@ -9,6 +9,14 @@ must not own, how it is identified and reached, and how a developer starts one a
 
 Code: `services/project-runtime/src/project_runtime`, with its tests in `services/project-runtime/tests`;
 registry module `studio.shell` (module ids do not follow product names, [repository layout §3](repository-layout.md#3-文件归属)).
+Inside the package (#518), `api/` is the HTTP layer: `routes/`, which `main.create_app` mounts, the wire
+shapes in `dto/` and the conditional-read middleware `conditional.py`. `application/` holds the
+project-scoped use cases and their composition. The package root holds the process (`main`,
+`settings`, `protocol`, `ports`, `errors`) and the infrastructure the layers share (`authentication`,
+`binding`, `index`, `jobs`, `events`, `monitoring`, `synchronization`, `status`); `render_adapters/`
+is the one external image-provider adapter. `api` imports `application` and never the reverse:
+archcheck refuses an application import of a route or of the middleware, and the six DTO
+imports left in `application/` move out with #519.
 The service id `studio`, the server name `monkeyarch-api` and the forwarding path segment
 `/studio/` are process and wire names kept for compatibility; they name this runtime and
 nothing else (§9). The workspace modules render directly inside the Hub frontend;
@@ -64,7 +72,7 @@ The runtime serves API routes only. HTML and workspace assets are served by Monk
 
 ## 3. What it owns
 
-Every project-scoped responsibility the product needs, behind `/api` (`routes/__init__.py`):
+Every project-scoped responsibility the product needs, behind `/api` (`api/routes/__init__.py`):
 
 | Concern | Routes | Owner module(s) |
 | --- | --- | --- |
@@ -85,7 +93,7 @@ Every project-scoped responsibility the product needs, behind `/api` (`routes/__
 | Shared-project role | `/api/sync/*` | `studio.binding` |
 
 The two remaining route files answer about the process, not about the project:
-`routes/health.py` and `routes/protocol.py` are its identity (§5). Both belong to `studio.shell`.
+`api/routes/health.py` and `api/routes/protocol.py` are its identity (§5). Both belong to `studio.shell`.
 
 Also: the CAD/OCCT/Rhino execution and inspection adapters (`packages/archflow/src/archflow/adapters`), selected by
 `ARCHFLOW_STUDIO_CAD_EXPORT`; the evaluator/generator jobs; and every retained-record write
@@ -197,7 +205,7 @@ are unchanged. No new panel replaces the old panels.
 
 ## 5. Identity and health
 
-`GET /api/health` (`routes/health.py`) answers `managedInstanceId`, `processId`,
+`GET /api/health` (`api/routes/health.py`) answers `managedInstanceId`, `processId`,
 `parentProcessId`, `sourceRevision`, `serverVersion` and `projectBound`. The Hub accepts a
 worker only when all of them match its own launch (`workers.py`, health verification), and
 then requires `GET /api/project` to name the exact `projectId` and a normcase-equal

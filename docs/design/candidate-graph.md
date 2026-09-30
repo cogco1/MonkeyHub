@@ -38,7 +38,7 @@ The tree is rebuilt from retained project facts. It never comes from chat histor
 
 ## 2. Current UI audit
 
-Paths: `ChatShell` = `apps/monkeyhub/web/src/ChatShell.tsx`; `Stage`, `VersionsStrip` = `apps/monkeyhub/web/src/features/stage/`; `App` = `…/src/app/App.tsx`; `runtime.py` = `services/project-runtime/src/project_runtime/application/runtime.py`.
+Paths: `ChatShell` = `apps/monkeyhub/web/src/ChatShell.tsx`; `Stage`, `VersionsStrip` = `apps/monkeyhub/web/src/features/stage/`; `App` = `…/src/app/App.tsx`; `runtime.py` = `services/project-runtime/src/project_runtime/status.py`.
 
 | Place | What the user learns there today | Gap for #284 |
 |---|---|---|
