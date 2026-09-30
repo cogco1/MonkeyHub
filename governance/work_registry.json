@@ -58,6 +58,7 @@
         "tools/benchmarks/massing_check.py",
         "tools/release/package_monkeyapps.py",
         "docs/architecture/overview.md",
+        "docs/architecture/repository-layout.md",
         "docs/audits/drawing-v0.md",
         "docs/design/construction-lowering.md",
         "docs/design/design-history.md"

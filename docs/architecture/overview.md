@@ -87,7 +87,7 @@ element producers                 packages/monkeyarch/src/monkeyarch/capabilitie
 GeometryProgramProposal           packages/archflow/src/archflow/state/geometry_program.py
   │ compile_geometry_program       packages/monkeyarch/src/monkeyarch/compilers/geometry.py — the one compiler
   ▼
-CAD                               packages/monkeycad/src/monkeycad/cad_program.py → cad_execution.py → cad_patch.py
+CAD                               packages/monkeycad/src/monkeycad/execution.py → backends/{occt,rhino,blender}/ → patch.py
   │ three_dm_inspector             readback is evidence, never intent
   ▼
 relation checks                   packages/monkeyarch/src/monkeyarch/capabilities/relation_checks.py — plain domain values

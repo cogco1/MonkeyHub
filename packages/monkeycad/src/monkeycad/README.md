@@ -1,10 +1,10 @@
 # monkeycad
 
-MonkeyCAD runs ArchFlow geometry programs in CAD kernels and hosts and reads model files: Rhino, OCCT and Blender behind one execution interface. It covers CAD program text (`cad_program`), execution and export identity (`cad_backend`, `cad_execution`, with `occt_backend` also projecting named STEP shapes into visible/hidden polylines), incremental patches (`cad_patch`), 3dm readback and model formats (`three_dm_inspector`, `model_formats`, `model_providers`, `sketchup_reader`), Blender mesh scene save/readback and projection (`blender_cad`, `blender_projection`), and integration packs over local software discovery (`integration_packs`, `local_cad_discovery`). It depends on the ArchFlow kernel only: the workflows, the Runtime and the Hub call it, and it calls none of them. Drawing SVG/PNG expression belongs to `monkeydiagram.drawing_svg`. Rhino is never the source of truth (ADR-002).
+MonkeyCAD runs ArchFlow geometry programs in CAD kernels and hosts and reads model files: Rhino, OCCT and Blender behind one execution interface. It covers the backend-neutral execution interface, binding and export identity (`execution`, with the backend table in `registry`), the object semantics every saved model must carry (`program`) and incremental patches (`patch`); the backends in `backends/`: `occt` (which also projects named STEP shapes into visible/hidden polylines and cut sections), `rhino` (which translates the program into a script) and `blender` (mesh scene save/readback and projection); 3dm readback and model formats in `formats/` (`three_dm_inspector`, `meshes`, `conversion`, `sketchup_reader`, `three_dm_compose`); and integration packs over local software discovery (`integration_packs`, `discovery`). It depends on the ArchFlow kernel only: the workflows, the Runtime and the Hub call it, and it calls none of them. Drawing SVG/PNG expression belongs to `monkeydiagram.drawing_svg`. Rhino is never the source of truth (ADR-002).
 
 Modules and owners: `docs/architecture/system-map.md` (rendered from `governance/module_registry.json`; one owner per capability). This README says what the package is for; it does not repeat the map.
 
-Current owners: monkeycad.execution, monkeycad.occt, monkeycad.rhino, monkeycad.blender, monkeycad.formats, monkeycad.integrations. Until #515 splits it, `cad_execution.py` holds parts of the first four.
+Current owners: monkeycad.execution, monkeycad.occt, monkeycad.rhino, monkeycad.blender, monkeycad.formats, monkeycad.integrations.
 
 ## Install
 
@@ -18,17 +18,18 @@ python -m pip install -e packages/archflow -e 'packages/monkeycad[occt]'
 - `inspection`: rhino3dm alone, for headless `.3dm` reading.
 - `blender`: Pillow, which checks the Blender projection's PNG.
 
-The other backends use software on the machine, found by `local_cad_discovery` and never installed from here: Rhino 8 with PowerShell on Windows (COM), a Blender executable, and a local SketchUp installation for `SketchUpAPI.dll`. `blender_worker.py` runs inside Blender's own Python; `blender_cad.py` starts it by file name, so the two stay side by side.
+The other backends use software on the machine, found by `discovery` and never installed from here: Rhino 8 with PowerShell on Windows (COM), a Blender executable, and a local SketchUp installation for `SketchUpAPI.dll`. `backends/blender/worker.py` runs inside Blender's own Python; `backends/blender/backend.py` starts it by file name, so the two stay side by side.
 
 ## Compiled CAD execution
 
-New callers use `monkeycad.cad_backend`. `CadProgramBinding` is the
+New callers use `monkeycad.registry` and `monkeycad.execution`. `CadProgramBinding` is the
 public neutral binding; `RhinoCadProgramBinding` remains the same class under
 its historical import name. Its on-disk `RhinoCadProgramBinding@1` shape stays
 unchanged, as do `RhinoCadExecutionReceipt@4` and `OcctExecutionReceipt@1`.
 
 ```python
-from monkeycad.cad_backend import CadExecutionRequest, get_cad_backend
+from monkeycad.execution import CadExecutionRequest
+from monkeycad.registry import get_cad_backend
 
 backend = get_cad_backend("occt")
 request = CadExecutionRequest(
@@ -66,8 +67,9 @@ hooks. Blender options and its supported geometry are listed below.
 and unsupported geometry are explicit failures; no backend selects a
 different executor. Invalid binding/workspace requests raise before execution.
 
-Add a backend at the single `CAD_BACKEND_REGISTRY` table and declare the same
-implementation under `compiled-cad-execution` in `module_registry.json`.
+Add a backend in `backends/` and at the single `CAD_BACKEND_REGISTRY` table in
+`monkeycad.registry`, and declare the same implementation under
+`compiled-cad-execution` in `module_registry.json`.
 Implement `execute(request)` and the native `read_receipt(request, payload)`
 reader, plus `backend_id`, `record_kind`, option validation and `patch_rebuild`
 (`False` unless it supports the existing patch/full-rebuild policy). The runner
@@ -118,7 +120,8 @@ With an existing compiled `program`, exact `binding` and absolute caller-owned
 `workspace`, execute a scene as follows. The artifact stem must be unused.
 
 ```python
-from monkeycad.cad_backend import CadExecutionRequest, get_cad_backend
+from monkeycad.execution import CadExecutionRequest
+from monkeycad.registry import get_cad_backend
 
 backend = get_cad_backend("blender")
 request = CadExecutionRequest(

@@ -127,7 +127,7 @@ Stage 记录是模型状态快照。后续生成图纸、增加图纸修订或�
 2. **重建与复核分开。** `StateRecord.dependency_edges` 已有 `INVALIDATES` 和 `REQUIRES_REVALIDATION`。前者确定需重新生产的内容，后者确定需重新检查的内容；不把全部依赖闭包等同于重建集合。未声明依赖无法由版本系统自动证明完整，新增构件仍须检查其真实边界条件。
 3. **执行前决定复用。** 当前新 candidate 先完整跑 native seats/rows，再做 composed-model 差异合成。修改现有 runner，在生产和 CAD 执行前决定哪些源程序、形体和 datum 可复用；关系检查看到复用与变化部分的完整输入。
 4. **分两步完成增量。** 先做未变 seat 的源 run 复用，再处理变化 seat 内的受影响对象。只做到 seat 级，不能宣称同一 seat 内的建筑主体已免重算。首个橱柜验收必须覆盖建筑与橱柜处于同一 seat 的情况。
-5. **比较几何内容，保留真实绑定。** 现有 `cad_patch.structural_digests` 已排除部分 run/evidence 噪声；在该 owner 内结合实际输入、解析 bounds、单位、坐标系、后端和会影响几何的版本条件判断可复用性。包含 proposal 绑定的完整 `program_digest` 不能直接成为跨 run 几何内容键。旧 receipt 保留原 run，新执行通过源引用说明复用，不能改写旧回执。
+5. **比较几何内容，保留真实绑定。** 现有 `monkeycad.patch.structural_digests` 已排除部分 run/evidence 噪声；在该 owner 内结合实际输入、解析 bounds、单位、坐标系、后端和会影响几何的版本条件判断可复用性。包含 proposal 绑定的完整 `program_digest` 不能直接成为跨 run 几何内容键。旧 receipt 保留原 run，新执行通过源引用说明复用，不能改写旧回执。
 6. **保留必要中间计算。** 当前 patch 闭包会把被读取对象的 producer 也纳入重建。只有验证过的源 shape / 中间输入已可读取时才跳过；缺少必要中间形体则补算相应派生，不直接砍掉闭包。重新装配完整 STEP/3DM 可以发生，不能把装配导出次数当作几何重新生成次数。
 
 同基底的独立修改若要同时采用，先把两份 delta 合成一个 Candidate，检查对象、参数及依赖冲突，复核修改边界，再预览和接受。普通橱柜 A/B 是替代选择，不自动相加；没有必要为了它们实现通用 branch merge。真正分支合并等出现实际用户需求时再沿同一 owner 扩展。
@@ -166,7 +166,7 @@ Checkout 旧 Stage 只读。若从当前 head 做局部墙体修改，保留完�
 | `state.stage_workflow` / freeze、open CLI / Studio harness | **保留执行与正式流程用途，收紧命名边界** | 现有 stage 是预声明阶段/phase/LOD guard，freeze CLI 冻结的是 workflow 定义，并非用户模型快照。用户 Stage 不接到此 CLI。harness 退出须先有保全 exact-base、closure 与读回的实际替代调用；不列为本轮前置重写 |
 | `project.refs.BranchRef` / RUN_BRANCH | **保留执行绑定** | 不用 run 内 epoch 充当用户历史；设计 Branch 的持久指针由 P036 项目级端口提供 |
 | P036 repository / issue / artifact refs | **保留并作最小扩展** | 一个持久化 authority；新增设计引用 CAS，正式 canonical HEAD 与 issue 验证保持独立 |
-| jobs / runner / cad_patch / cad_execution | **局部替换旧行为** | 退掉 shared protected 一律互斥、所有 successor 必跑全量、只有当前 run 才可复用、每个 seat 必须新 donor 的限制；保留首次全量生成、必要依赖生产、有效验证和旧数据读取 |
+| jobs / runner / monkeycad.patch / monkeycad.execution | **局部替换旧行为** | 退掉 shared protected 一律互斥、所有 successor 必跑全量、只有当前 run 才可复用、每个 seat 必须新 donor 的限制；保留首次全量生成、必要依赖生产、有效验证和旧数据读取 |
 | App / 对话卡片 / VersionsStrip | **合并状态与结果入口** | 退掉卡片挂载驱动完成回收、validation 回调门控模型显示、文件列表冒充提交历史、按 3dm 数量统计版本；卡片仅展示常驻状态 |
 | Stage / DocumentCanvas / QuestionCard / ComponentTree | **局部收拢** | 退掉首次 document run 锁定、documents[0] 充当当前图纸、图纸提交强制聊天、对象树和候选全量首屏展开；复用已有画布和批注草稿保存 |
 
@@ -209,7 +209,7 @@ Checkout 旧 Stage 只读。若从当前 head 做局部墙体修改，保留完�
 
 - [portfolio](../../packages/archflow/src/archflow/state/design_portfolio.py)：现有 lineage owner 及旧 SchematicOption/run 绑定限制；[StateRecord](../../packages/archflow/src/archflow/state/state_record.py)：operator、依赖和仍被 compiler 使用的 developed-design 投影。
 - [WorkingCopy / episodes](../../services/project-runtime/src/project_runtime/application/episodes.py)：common base、scope、A/B 和保存选择；[candidate](../../services/project-runtime/src/project_runtime/application/candidate.py)：先完整 native 执行、后 composed 合成。
-- [jobs](../../services/project-runtime/src/project_runtime/jobs.py)、[proposals](../../services/project-runtime/src/project_runtime/application/proposals.py)、[runner](../../packages/monkeyarch/src/monkeyarch/runtime/project_runner.py)、[cad_patch](../../packages/monkeycad/src/monkeycad/cad_patch.py)：并发冲突、复用与增量执行边界。
+- [jobs](../../services/project-runtime/src/project_runtime/jobs.py)、[proposals](../../services/project-runtime/src/project_runtime/application/proposals.py)、[runner](../../packages/monkeyarch/src/monkeyarch/runtime/project_runner.py)、[monkeycad.patch](../../packages/monkeycad/src/monkeycad/patch.py)：并发冲突、复用与增量执行边界。
 - [project ports](../../packages/archflow/src/archflow/project/ports.py)、[repository](../../packages/archflow/src/archflow/project/repository.py)、[layout](../../packages/archflow/src/archflow/project/layout.py)、[issue](../../packages/archflow/src/archflow/project/issue.py)：现有持久化范围、原子发布和本方案需要补充的设计 branch 引用。
 - [App](../../apps/monkeyhub/web/src/app/App.tsx)、[VersionsStrip](../../apps/monkeyhub/web/src/features/stage/VersionsStrip.tsx)、[Stage](../../apps/monkeyhub/web/src/features/stage/Stage.tsx)、[DocumentCanvas](../../apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx)：当前视图、来源和显示生命周期。
 - [drawing_elevation](../../packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py)、[既有出图方案](drawing-system.md)、[system map](../architecture/system-map.md)：已实现立面消费者和其他能力边界。
