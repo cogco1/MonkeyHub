@@ -17,7 +17,7 @@ const [assets, retainedSvg] = JSON.parse(execFileSync(process.env.PYTHON ?? "pyt
   "from pathlib import Path",
   "from tools.dev import source_roots",
   "source_roots.put_first(Path.cwd())",
-  "from monkeycad.occt_backend import OcctDrawingPolyline as Line, OcctDrawingRegion as Region",
+  "from monkeycad.backends.occt.projection import OcctDrawingPolyline as Line, OcctDrawingRegion as Region",
   "from monkeydiagram.rendering.svg import dressing_assets, drawing_svg",
   "wall = ((1, 1), (9, 1), (9, 5), (1, 5), (1, 1))",
   "svg = drawing_svg([Line('obj-wall', 'section', wall), Line('obj-table', 'visible', ((7, 4), (8.5, 4), (8.5, 3), (7, 3), (7, 4)))],"

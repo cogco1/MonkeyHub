@@ -19,7 +19,7 @@ from monkeydiagram.rendering.svg import (
     svg_objects,
     svg_paper_marks,
 )
-from monkeycad.occt_backend import OcctDrawingPolyline, OcctDrawingRegion
+from monkeycad.backends.occt.projection import OcctDrawingPolyline, OcctDrawingRegion
 
 SVG = "{http://www.w3.org/2000/svg}"
 

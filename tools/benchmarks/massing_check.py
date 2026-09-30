@@ -35,14 +35,15 @@ BOUNDS_TOLERANCE = 0.005
 def check_massing(step_path: Path, *, hidden_names: Iterable[str] = (), length_unit: str = "meter") -> dict:
     """Measure the study's visible solids in ``step_path`` against the task."""
 
-    from monkeycad import occt_backend
+    from monkeycad.backends.occt.measure import classify_point, measure_shape
+    from monkeycad.backends.occt.step import read_step
 
     hidden = set(hidden_names)
     solids = []
-    for entry in occt_backend.read_step(Path(step_path), length_unit=length_unit):
+    for entry in read_step(Path(step_path), length_unit=length_unit):
         if entry.name in hidden:
             continue
-        measure = occt_backend.measure_shape(entry.shape)
+        measure = measure_shape(entry.shape)
         if measure.bbox_min is None or measure.bbox_min[0] < REGION_MIN_X:
             continue
         solids.append((entry, measure))
@@ -53,7 +54,7 @@ def check_massing(step_path: Path, *, hidden_names: Iterable[str] = (), length_u
     high = [max(measure.bbox_max[axis] for _, measure in solids) for axis in range(3)]
 
     def classify(point):
-        return [occt_backend.classify_point(entry.shape, point) for entry, _ in solids]
+        return [classify_point(entry.shape, point) for entry, _ in solids]
 
     inside = {str(point): "inside" in classify(point) for point in INSIDE}
     outside = {str(point): all(state == "outside" for state in classify(point)) for point in OUTSIDE}

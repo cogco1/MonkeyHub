@@ -2,8 +2,8 @@
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
-from .local_cad_discovery import Discovery, discover_local_cad
-from .model_formats import ConversionError, FORMATS, VERSION, ThreeDM, encode_mesh, validate_mesh
+from ..discovery import Discovery, discover_local_cad
+from .meshes import ConversionError, FORMATS, VERSION, ThreeDM, encode_mesh, validate_mesh
 
 NO_EXECUTOR = "当前没有配置可用的执行器"
 ExecutionMode = Literal["local desktop", "headless", "cloud", "SDK"]

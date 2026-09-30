@@ -56,7 +56,7 @@ from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 
-from monkeycad.occt_backend import OcctDrawingPolyline
+from monkeycad.backends.occt.projection import OcctDrawingPolyline
 from monkeydiagram.rendering.svg import clean_drawing
 
 from project_runtime.application.decisions import RECIPE_KEYS

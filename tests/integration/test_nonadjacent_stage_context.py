@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "services/project-r
 
 from fastapi.testclient import TestClient
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import (
@@ -38,7 +38,7 @@ runner_state_digest = support.runner_state_digest
 write_runner_seats = support.write_runner_seats
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class NonAdjacentStageContextTests(CandidateTestCase):
     def setUp(self):
         super().setUp()

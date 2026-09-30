@@ -163,7 +163,7 @@ class PackageAdapterTests(unittest.TestCase):
             "packages/monkeycontrol/src/monkeycontrol/hosts/execution_host.ps1",
             "packages/monkeydiagram/src/monkeydiagram/__init__.py", "packages/monkeydiagram/tests/test_svg.py",
             "packages/archflow/src/archflow/__init__.py", "packages/archflow/tests/test_project_repository.py",
-            "packages/monkeycad/src/monkeycad/__init__.py", "packages/monkeycad/src/monkeycad/blender_worker.py",
+            "packages/monkeycad/src/monkeycad/__init__.py", "packages/monkeycad/src/monkeycad/backends/blender/worker.py",
             "packages/monkeycad/tests/test_model_formats.py",
             "packages/monkeyarch/src/monkeyarch/__init__.py",
             "packages/monkeymonitor/src/monkeymonitor/__init__.py", "packages/monkeymonitor/tests/test_core.py",
@@ -259,9 +259,9 @@ class PackageAdapterTests(unittest.TestCase):
         self.assertIn("packages/monkeydiagram/src/monkeydiagram", builder.SOURCE_PATHS)
         self.assertEqual((self.bundle / "archflow/__init__.py").read_text(), "fixture")
         self.assertIn("packages/archflow/src/archflow", builder.SOURCE_PATHS)
-        # Blender starts its worker by file name from beside blender_cad.py, so it ships in the package.
+        # Blender starts its worker by file name from beside backends/blender/backend.py, so it ships in the package.
         self.assertEqual((self.bundle / "monkeycad/__init__.py").read_text(), "fixture")
-        self.assertEqual((self.bundle / "monkeycad/blender_worker.py").read_text(), "fixture")
+        self.assertEqual((self.bundle / "monkeycad/backends/blender/worker.py").read_text(), "fixture")
         self.assertIn("packages/monkeycad/src/monkeycad", builder.SOURCE_PATHS)
         self.assertEqual((self.bundle / "monkeyarch/__init__.py").read_text(), "fixture")
         self.assertIn("packages/monkeyarch/src/monkeyarch", builder.SOURCE_PATHS)

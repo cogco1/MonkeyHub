@@ -11,10 +11,11 @@ from OCP.IFSelect import IFSelect_RetDone
 from OCP.Interface import Interface_Static
 from OCP.STEPControl import STEPControl_Controller, STEPControl_StepModelType, STEPControl_Writer
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.backends.occt.step import read_step
 from tools.benchmarks.massing_check import EXPECTED_VOLUME, check_massing
 
-NEEDS_OCCT = unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+NEEDS_OCCT = unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 
 GROUND_CORNER = (20.0, 0.0, 0.0)
 GROUND_SIZE = (12.0, 8.0, 3.2)
@@ -34,7 +35,7 @@ def _write_step(path, shapes):
     """Write ``shapes`` the way a plain, generic OCP script would - not the Hub's own ``write_step``.
 
     OCCT's STEP statics assume millimetre internals (see this repo's
-    ``occt_backend`` module docstring): the plain ``STEPControl_Writer``
+    ``monkeycad.backends.occt.step`` module docstring): the plain ``STEPControl_Writer``
     rescales by the *difference* between ``xstep.cascade.unit`` (the unit the
     in-memory shape is already in) and ``write.step.unit`` (the unit the file
     declares). Setting only the commonly-documented ``write.step.unit`` and
@@ -120,7 +121,7 @@ class MassingCheckTests(unittest.TestCase):
             # the study's own bounds and volume - a stand-in for leftover cutter/helper geometry.
             helper = _box((25.0, 20.0, 0.0), (1.0, 1.0, 1.0))
             _write_step(path, (*_study_shapes(), helper))
-            helper_name = occt_backend.read_step(path, length_unit="meter")[-1].name
+            helper_name = read_step(path, length_unit="meter")[-1].name
 
             polluted = check_massing(path)
             self.assertFalse(polluted["ok"], polluted)

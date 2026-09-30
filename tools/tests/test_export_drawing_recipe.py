@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "services/project-r
 
 from fastapi.testclient import TestClient
 
-from monkeycad.occt_backend import occt_available
+from monkeycad.backends.occt.kernel import occt_available
 from archflow.project.repository import FilesystemProjectRepository, ProjectHeadLocked
 from project_runtime.binding import bound_project
 from project_runtime.application.decisions import recipe_export

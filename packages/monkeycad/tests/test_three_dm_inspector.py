@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from monkeycad.three_dm_inspector import (
+from monkeycad.formats.three_dm_inspector import (
     ThreeDmInspection,
     ThreeDmInspectionError,
     ThreeDmInspectionErrorCode,
@@ -68,7 +68,7 @@ class ThreeDmInspectorTests(unittest.TestCase):
                     sys.executable,
                     "-c",
                     "import json,sys; from pathlib import Path; "
-                    "from monkeycad.three_dm_inspector import inspect_three_dm_index; "
+                    "from monkeycad.formats.three_dm_inspector import inspect_three_dm_index; "
                     "print(json.dumps(inspect_three_dm_index(Path(sys.argv[1]).read_bytes())))",
                     str(source),
                 ],
@@ -116,13 +116,13 @@ class ThreeDmInspectorTests(unittest.TestCase):
             source = Path(temporary_directory) / "block.3dm"
             self._write_model(source)
             with patch(
-                "monkeycad.three_dm_inspector._objects",
+                "monkeycad.formats.three_dm_inspector._objects",
                 side_effect=AssertionError("full object inspection is not an index"),
             ), patch(
-                "monkeycad.three_dm_inspector._encoded_geometry_sha256",
+                "monkeycad.formats.three_dm_inspector._encoded_geometry_sha256",
                 side_effect=AssertionError("an index must not encode geometry"),
             ), patch(
-                "monkeycad.three_dm_inspector._aggregate_bbox",
+                "monkeycad.formats.three_dm_inspector._aggregate_bbox",
                 side_effect=AssertionError("an index must not inspect bounds"),
             ):
                 result = inspect_three_dm_index(source.read_bytes())
@@ -161,7 +161,7 @@ class ThreeDmInspectorTests(unittest.TestCase):
             Settings=SimpleNamespace(ModelUnitSystem=rhino3dm.UnitSystem.Meters),
             ArchiveVersion=80,
         )
-        with patch("monkeycad.three_dm_inspector._decode_model", return_value=model):
+        with patch("monkeycad.formats.three_dm_inspector._decode_model", return_value=model):
             result = inspect_three_dm_index(b"mock native snapshot")
         self.assertEqual(result["objects"][0]["type"], "Brep")
         self.assertNotIn("is_valid", result["objects"][0])
@@ -232,7 +232,7 @@ class ThreeDmInspectorTests(unittest.TestCase):
             source = Path(temporary_directory) / "model.3dm"
             source.write_bytes(b"file bytes are read before dependency loading")
             with patch(
-                "monkeycad.three_dm_inspector.importlib.import_module",
+                "monkeycad.formats.three_dm_inspector.importlib.import_module",
                 side_effect=ModuleNotFoundError("rhino3dm"),
             ):
                 with self.assertRaises(ThreeDmInspectionError) as raised:

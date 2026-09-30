@@ -36,13 +36,10 @@ from io import BytesIO
 from pathlib import PurePosixPath
 from typing import Any, Callable, Mapping
 
-from monkeycad.cad_execution import (
-    OcctBackendError,
-    backend_identity,
-    project_occt_lines,
-    section_occt_lines,
-    section_occt_regions,
-)
+from monkeycad.backends.occt.errors import OcctBackendError
+from monkeycad.backends.occt.kernel import backend_identity
+from monkeycad.backends.occt.projection import project_occt_lines
+from monkeycad.backends.occt.section import section_occt_lines, section_occt_regions
 from monkeydiagram.projection.views import (
     ELEVATION_KIND,
     SECTION_PERSPECTIVE_KIND,

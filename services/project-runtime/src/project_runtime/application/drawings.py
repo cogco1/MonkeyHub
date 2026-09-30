@@ -27,8 +27,8 @@ from time import perf_counter
 from typing import Any, Mapping
 from uuid import uuid4
 
-from monkeycad.cad_execution import project_occt_lines
-from monkeycad.occt_backend import OcctBackendError
+from monkeycad.backends.occt.projection import project_occt_lines
+from monkeycad.backends.occt.errors import OcctBackendError
 from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STUDIO_SOURCE_DOCUMENT
@@ -277,8 +277,10 @@ def _source_files(*modules: str) -> dict[str, str]:
 
 
 _OCCT_DRAWING = ("monkeydiagram.sources", "monkeydiagram.projection.views", "monkeydiagram.drawing_runs",
-                 "monkeydiagram.rendering.svg", "monkeycad.cad_execution",
-                 "monkeycad.occt_backend")
+                 "monkeydiagram.rendering.svg", "monkeycad.backends.occt.kernel", "monkeycad.backends.occt.step",
+                 "monkeycad.backends.occt.native_models", "monkeycad.backends.occt.measure",
+                 "monkeycad.backends.occt.projection", "monkeycad.backends.occt.section",
+                 "monkeycad.backends.occt.preview")
 
 
 def drawing_pipeline(kind: str) -> dict[str, Any]:
@@ -291,12 +293,12 @@ def drawing_pipeline(kind: str) -> dict[str, Any]:
     """
 
     if kind in (ELEVATION, SECTION_PERSPECTIVE):
-        from monkeycad.occt_backend import backend_identity
+        from monkeycad.backends.occt.kernel import backend_identity
 
         return {"kind": kind, "code": _source_files(*_OCCT_DRAWING), "backend": backend_identity(),
                 "libraries": {name: _library_version(name) for name in ("Pillow", "numpy", "rhino3dm")}}
     if kind == SHEET:
-        from monkeycad.occt_backend import backend_identity
+        from monkeycad.backends.occt.kernel import backend_identity
 
         return {"kind": kind, "code": {**_source_files(*_OCCT_DRAWING, "monkeydiagram.rendering.paper",
                                                          "monkeydiagram.documentation.styles",
@@ -355,7 +357,7 @@ def _through_projections(projections: ProjectionQueue | None, kind: str, model_s
         recipe_of_view = recipe(verified)
         files, facts, hit = projections.on_demand(on_demand_spec(kind, _source_of(model_source), recipe_of_view), files)
         if hit:
-            from monkeycad.occt_backend import backend_identity
+            from monkeycad.backends.occt.kernel import backend_identity
             from monkeydiagram.rendering.svg import svg_objects
 
             facts = {**facts, "backend": backend_identity(),

@@ -507,5 +507,5 @@ def validate_mesh(data, source, target, output):
 
 def convert(data, source, target, *, providers=None):
     """Existing public entry, now routed through configured runtime providers."""
-    from .model_providers import ConversionCoordinator
+    from .conversion import ConversionCoordinator
     return ConversionCoordinator(providers).convert(data, source, target)

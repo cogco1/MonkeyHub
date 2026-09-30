@@ -144,15 +144,16 @@ class WorkflowBoundaryTests(unittest.TestCase):
             ("packages/monkeycad/src/monkeycad/example.py", "monkeydiagram.rendering.svg"),
             ("packages/monkeycad/src/monkeycad/example.py", "monkeyarch.application.project_runner"),
             ("packages/monkeycad/src/monkeycad/example.py", "project_runtime.binding"),
-            ("packages/archflow/src/archflow/project/example.py", "monkeycad.cad_backend"),
-            ("packages/monkeyarch/src/monkeyarch/authoring/construction/example.py", "monkeycad.occt_backend"),
+            ("packages/archflow/src/archflow/project/example.py", "monkeycad.registry"),
+            ("packages/monkeyarch/src/monkeyarch/authoring/construction/example.py", "monkeycad.backends.occt.kernel"),
+            ("packages/monkeycontrol/src/monkeycontrol/example.py", "monkeycad.registry"),
             ("packages/monkeyarch/src/monkeyarch/example.py", "monkeydiagram.rendering.svg"),
             ("packages/monkeydiagram/src/monkeydiagram/example.py", "monkeyarch.compilation.geometry"),
             # MonkeyArch imports neither the Hub nor the Runtime, and its layers depend one way (#516).
             ("packages/monkeyarch/src/monkeyarch/example.py", "monkeyhub_api.app.main"),
             ("packages/monkeyarch/src/monkeyarch/domain/example.py", "archflow.project.repository"),
             ("packages/monkeyarch/src/monkeyarch/authoring/example.py", "archflow.project.ports"),
-            ("packages/monkeyarch/src/monkeyarch/compilation/example.py", "monkeycad.cad_backend"),
+            ("packages/monkeyarch/src/monkeyarch/compilation/example.py", "monkeycad.registry"),
             ("packages/monkeyarch/src/monkeyarch/domain/example.py", "monkeyarch.authoring.element_producers"),
             ("packages/monkeyarch/src/monkeyarch/domain/example.py", "monkeyarch.application.project_runner"),
             ("packages/monkeyarch/src/monkeyarch/authoring/example.py", "monkeyarch.application.geometry_proposal"),
@@ -177,7 +178,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
              "from monkeyarch.compilation.geometry import compile_geometry_program\n"
              "from monkeyarch.domain.discipline_seats import SeatSpec\n"
              "from archflow.project.ports import PersistenceDestination\n"
-             "from monkeycad.cad_backend import get_cad_backend"),
+             "from monkeycad.registry import get_cad_backend"),
             ("packages/monkeyarch/src/monkeyarch/authoring/example.py",
              "from monkeyarch.domain.reference_resolver import ReferenceContext"),
         ):
@@ -195,7 +196,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
                                                    _index_tree(ast.parse(f"import {target}")), self.policy))
                     self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
         findings = tuple(check_imports("packages/monkeydiagram/tests/test_example.py", _index_tree(ast.parse(
-            "from monkeydiagram.rendering.svg import drawing_svg\nfrom monkeycad import occt_backend"
+            "from monkeydiagram.rendering.svg import drawing_svg\nfrom monkeycad.backends.occt import kernel"
         )), self.policy))
         self.assertEqual((), findings)
 

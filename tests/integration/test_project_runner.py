@@ -1368,7 +1368,7 @@ def _no_rhino():
     import subprocess
     from unittest.mock import patch
 
-    return (patch.multiple("monkeycad.cad_execution", prepare_rhino_three_dm_export=_refuse_rhino, execute_rhino_three_dm_export=_refuse_rhino),
+    return (patch.multiple("monkeycad.backends.rhino.export", prepare_rhino_three_dm_export=_refuse_rhino, execute_rhino_three_dm_export=_refuse_rhino),
             patch.multiple(subprocess, Popen=_refuse_rhino, run=_refuse_rhino))
 
 
@@ -1408,8 +1408,11 @@ class _ExportProject:
 
 
 try:
-    from monkeycad import occt_backend as _occt_backend
-    _OCCT = _occt_backend.occt_available()
+    from monkeycad.backends.occt import build as _occt_build
+    from monkeycad.backends.occt.kernel import occt_available
+    from monkeycad.backends.occt.measure import measure_shape
+    from monkeycad.backends.occt.step import read_step
+    _OCCT = occt_available()
 except Exception:  # the backend is optional; the tests below say so
     _OCCT = False
 NEEDS_OCCT = unittest.skipUnless(_OCCT, "cadquery-ocp is not installed")
@@ -1455,7 +1458,7 @@ class OcctExportTests(unittest.TestCase):
                 # the files are the bytes the receipt certifies, and the STEP reads back as the seat's objects
                 self.assertEqual(_sha256_of(project.workspace(seat_id) / f"{stem}.step"), retained["exact_artifact"]["sha256"])
                 self.assertEqual(_sha256_of(project.workspace(seat_id) / f"{stem}.preview.3dm"), retained["preview_artifact"]["sha256"])
-                entries = _occt_backend.read_step(project.workspace(seat_id) / f"{stem}.step", length_unit="meter")
+                entries = read_step(project.workspace(seat_id) / f"{stem}.step", length_unit="meter")
                 self.assertEqual(sorted(e.name for e in entries), sorted(retained["physical_object_ids"]))
                 inspection = project.repository.load_json(record_ref_from_uri(cad["inspection_ref"], "demo"))
                 self.assertEqual(inspection["schema"], "ThreeDmInspectionSummary@4")
@@ -1488,7 +1491,7 @@ class OcctExportTests(unittest.TestCase):
         old_seat = next(seat for seat in before["seat_results"] if seat["seat_id"] == "seat-structure")
         old_path = Path(old_seat["cad"]["model"])
         old_sha = _sha256_of(old_path)
-        old_body = _occt_backend.measure_shape(next(entry.shape for entry in _occt_backend.read_step(old_path, length_unit="meter") if entry.name == "obj-columns-plinth"))
+        old_body = measure_shape(next(entry.shape for entry in read_step(old_path, length_unit="meter") if entry.name == "obj-columns-plinth"))
         self.assertAlmostEqual(old_body.bbox_min[2], 3.5, places=6)
         self.assertEqual(before["closure_status"], "SATISFIED")
 
@@ -1500,7 +1503,7 @@ class OcctExportTests(unittest.TestCase):
         self.assertNotEqual(old_seat["program_digest"], new_seat["program_digest"])
         self.assertNotEqual(old_seat["cad"]["execution_ref"], new_seat["cad"]["execution_ref"])
         self.assertEqual(new_seat["cad"]["path"], "occt")
-        new_body = _occt_backend.measure_shape(next(entry.shape for entry in _occt_backend.read_step(Path(new_seat["cad"]["model"]), length_unit="meter") if entry.name == "obj-columns-plinth"))
+        new_body = measure_shape(next(entry.shape for entry in read_step(Path(new_seat["cad"]["model"]), length_unit="meter") if entry.name == "obj-columns-plinth"))
         self.assertEqual((new_body.valid, new_body.closed, new_body.solid_count), (True, True, 1))
         self.assertAlmostEqual(new_body.bbox_min[2], 3.9, places=6)
         self.assertAlmostEqual(new_body.bbox_max[2], 4.9, places=6)
@@ -1601,16 +1604,17 @@ class OcctExportTests(unittest.TestCase):
 
     def test_failed_step_reports_elapsed_without_claiming_delivered_objects(self) -> None:
         from unittest.mock import patch
-        from monkeycad import cad_execution
+        from monkeycad.backends.occt import export as occt_export
+        from monkeycad.backends.occt.errors import OcctBackendError
         from tests.integration.test_cad_execution import _binding
         from tests.integration.test_occt_execution import _box, _program_of
 
         program = _program_of(_box("box", [0, 0, 0], [1, 1, 1]))
         spans = []
         with tempfile.TemporaryDirectory() as temporary, patch.object(
-            cad_execution, "write_step", side_effect=cad_execution.OcctBackendError("write unavailable")
+            occt_export, "write_step", side_effect=OcctBackendError("write unavailable")
         ):
-            receipt = cad_execution.execute_occt_export(program, binding=_binding(program),
+            receipt = occt_export.execute_occt_export(program, binding=_binding(program),
                 speculative_workspace=Path(temporary).resolve(), artifact_stem="failed", preview=False,
                 operation_observer=spans.append, observation_parent_id="export")
         self.assertEqual(receipt.status.value, "failed")
@@ -1735,10 +1739,10 @@ class OcctExportTests(unittest.TestCase):
         """
 
         from unittest.mock import patch
-        from monkeycad import cad_execution
-        from monkeycad.cad_execution import CadCapabilityError
+        from monkeycad.backends.occt import export as occt_export
+        from monkeycad.execution import CadCapabilityError
 
-        real = cad_execution.execute_occt_export
+        real = occt_export.execute_occt_export
 
         def refuse_the_structure_seat(program, *, binding, **kwargs):
             if binding.stage_id.endswith("seat-structure"):
@@ -1746,7 +1750,7 @@ class OcctExportTests(unittest.TestCase):
             return real(program, binding=binding, **kwargs)
 
         project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)))
-        with patch.object(cad_execution, "execute_occt_export", side_effect=refuse_the_structure_seat):
+        with patch.object(occt_export, "execute_occt_export", side_effect=refuse_the_structure_seat):
             receipt = project.run_once()
         seats = {s["seat_id"]: s for s in receipt["seat_results"]}
         self.assertEqual(seats["seat-structure"]["status"], "export_failed")
@@ -1853,17 +1857,18 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
 
     def test_a_failed_seat_export_does_not_turn_its_predicted_bounds_into_a_solid_check(self) -> None:
         from unittest.mock import patch
-        from monkeycad import cad_execution
+        from monkeycad.backends.occt import export as occt_export
+        from monkeycad.execution import CadCapabilityError
 
-        real = cad_execution.execute_occt_export
+        real = occt_export.execute_occt_export
 
         def refuse_structure(program, *, binding, **kwargs):
             if binding.stage_id.endswith("seat-structure"):
-                raise cad_execution.CadCapabilityError("the test structure export is unavailable", op_id="columns-plinth", kind="extrude")
+                raise CadCapabilityError("the test structure export is unavailable", op_id="columns-plinth", kind="extrude")
             return real(program, binding=binding, **kwargs)
 
         project = _ExportProject(self, self._pair_record())
-        with patch.object(cad_execution, "execute_occt_export", side_effect=refuse_structure):
+        with patch.object(occt_export, "execute_occt_export", side_effect=refuse_structure):
             receipt = self._run_required(project)
         report, check, closure = self._solid_report(project, receipt)
         self.assertEqual(check["status"], "unchecked", check)
@@ -1877,12 +1882,12 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
 
     def test_cached_exports_are_cold_read_again_and_the_solid_result_is_retained_once(self) -> None:
         from unittest.mock import patch
-        from monkeycad import cad_execution
+        from monkeycad.backends.occt import step as occt_step
 
         project = _ExportProject(self, self._pair_record())
         first = self._run_required(project)
         first_report, _, _ = self._solid_report(project, first)
-        with patch.object(cad_execution, "read_step", wraps=cad_execution.read_step) as cold_read:
+        with patch.object(occt_step, "read_step", wraps=occt_step.read_step) as cold_read:
             second = self._run_required(project)
         report, check, _ = self._solid_report(project, second)
         first_cad = {seat["seat_id"]: seat["cad"] for seat in first["seat_results"]}
@@ -1899,7 +1904,8 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
 
     def test_cold_read_failure_or_step_changed_after_export_leaves_the_current_required_check_unchecked(self) -> None:
         from unittest.mock import patch
-        from monkeycad import cad_execution
+        from monkeycad.backends.occt import step as occt_step
+        from monkeycad.backends.occt.errors import OcctBackendError
         from monkeyarch.application import project_runner
 
         for failure in ("cold-read", "changed-bytes"):
@@ -1907,7 +1913,7 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
                 project = _ExportProject(self, self._pair_record())
                 self.assertEqual(self._run_required(project)["closure_status"], "SATISFIED")
                 if failure == "cold-read":
-                    with patch.object(cad_execution, "read_step", side_effect=cad_execution.OcctBackendError("test final STEP cold read failed")):
+                    with patch.object(occt_step, "read_step", side_effect=OcctBackendError("test final STEP cold read failed")):
                         receipt = self._run_required(project)
                 else:
                     real_export = project_runner._export
@@ -1930,7 +1936,8 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
                 self.assertEqual(closure["findings"], [{"code": "missing_check", "requirement_id": "solid_nonpenetration", "receipt_id": self.RELATION_ID, "refs": []}])
 
     def test_real_separated_objects_cannot_certify_a_relation_to_a_different_entity(self) -> None:
-        from monkeycad.cad_execution import measure_occt_solid_pairs, read_step
+        from monkeycad.backends.occt.measure import measure_occt_solid_pairs
+        from monkeycad.backends.occt.step import read_step
 
         pair = (self.PAIR[0], "obj-third-plinth")
         record = self._pair_record(13.0, pair=pair)
@@ -1952,7 +1959,8 @@ class FinalSolidPairRunnerTests(unittest.TestCase):
         self.assertEqual(closure["findings"], [{"code": "missing_check", "requirement_id": "solid_nonpenetration", "receipt_id": self.RELATION_ID, "refs": []}])
 
     def test_a_same_host_relation_cannot_include_another_hosts_final_object(self) -> None:
-        from monkeycad.cad_execution import measure_occt_solid_pairs, read_step
+        from monkeycad.backends.occt.measure import measure_occt_solid_pairs
+        from monkeycad.backends.occt.step import read_step
 
         record = self._pair_record(13.0)
         relations = tuple(replace(relation, object=relation.subject) if relation.relation_id == self.RELATION_ID else relation for relation in record.relations)
@@ -2018,8 +2026,8 @@ class IncrementalSourceRunTests(unittest.TestCase):
 
     def test_shared_missing_intermediate_does_not_rebuild_an_unchanged_final_object(self) -> None:
         from unittest.mock import patch
-        from monkeycad import occt_backend
-        from monkeycad.cad_execution import execute_occt_export
+        from monkeycad.backends.occt import build as occt_build
+        from monkeycad.backends.occt.export import execute_occt_export
         from tests.integration.test_cad_execution import _binding
         from tests.integration.test_occt_execution import _array, _box, _program_of
 
@@ -2032,7 +2040,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
             first = execute_occt_export(before, binding=_binding(before), speculative_workspace=workspace,
                                         artifact_stem="base", preview=False)
             self.assertTrue(first.readback_verified, first.failures)
-            with patch.object(occt_backend, "_build_operation", wraps=occt_backend._build_operation) as build:
+            with patch.object(occt_build, "_build_operation", wraps=occt_build._build_operation) as build:
                 second = execute_occt_export(after, binding=_binding(after), speculative_workspace=workspace,
                     artifact_stem="candidate", preview=False, prior_program=before,
                     prior_step=workspace / first.exact_artifact["relative_path"],
@@ -2086,7 +2094,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
             raise RuntimeError("observer cannot alter producer reuse")
 
         with patch.object(project_runner, "produce_rows", wraps=project_runner.produce_rows) as produce, patch.object(
-            _occt_backend, "_build_operation", wraps=_occt_backend._build_operation
+            _occt_build, "_build_operation", wraps=_occt_build._build_operation
         ) as build:
             second = self.run_source(project, self.taller(record), "run-2", first, operation_observer=broken_observer)
         self.assertTrue(second["seat_execution_complete"], second["seat_results"])
@@ -2161,8 +2169,8 @@ class IncrementalSourceRunTests(unittest.TestCase):
         checks = self.checks(project.repository, second)
         self.assertEqual(checks["cabinet-on-plinth"]["status"], "held")
         path = Path(second["seat_results"][0]["cad"]["model"])
-        cabinet_shape = next(entry.shape for entry in _occt_backend.read_step(path, length_unit="meter") if entry.name == "obj-cabinet")
-        self.assertAlmostEqual(_occt_backend.measure_shape(cabinet_shape).bbox_min[2], 4.3, places=6)
+        cabinet_shape = next(entry.shape for entry in read_step(path, length_unit="meter") if entry.name == "obj-cabinet")
+        self.assertAlmostEqual(measure_shape(cabinet_shape).bbox_min[2], 4.3, places=6)
 
     def test_legacy_source_without_element_results_runs_producers_without_claiming_they_were_reused(self) -> None:
         from unittest.mock import patch
@@ -2331,8 +2339,8 @@ class CadBackendSelectionTests(unittest.TestCase):
             raise RhinoReached("prepare_rhino_three_dm_export was called")
 
         project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)), cad_backend="rhino")
-        with patch("monkeycad.cad_execution.prepare_rhino_three_dm_export", side_effect=reached), \
-             patch("monkeycad.cad_execution.execute_occt_export", side_effect=AssertionError("OCCT must not run for the rhino backend")):
+        with patch("monkeycad.backends.rhino.export.prepare_rhino_three_dm_export", side_effect=reached), \
+             patch("monkeycad.backends.occt.export.execute_occt_export", side_effect=AssertionError("OCCT must not run for the rhino backend")):
             with self.assertRaises(RhinoReached):
                 project.run_once()
         self.assertEqual(project.files("seat-structure"), [])

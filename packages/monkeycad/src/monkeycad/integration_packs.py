@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
 
-from .local_cad_discovery import SoftwareDiscoveryRegistry
+from .discovery import SoftwareDiscoveryRegistry
 
 
 BridgeKind = Literal["background-cli", "desktop-host", "local-extension",
@@ -102,7 +102,7 @@ PACKS = (
             PackCapability("model.execute", "blender-worker", "compiled-cad-execution:blender",
                            ("execute-in-speculative-workspace",), ("Windows", "Darwin", "Linux")),
             PackCapability("visualization.project", "blender-worker",
-                           "monkeycad.blender_projection.execute_blender_projection",
+                           "monkeycad.backends.blender.projection.execute_blender_projection",
                            ("read-verified-model", "execute-in-speculative-workspace"),
                            ("Windows", "Darwin", "Linux")),
         ),
@@ -118,7 +118,7 @@ PACKS = (
         ),
         (
             PackCapability("source.read", "sketchup-sdk-reader",
-                           "monkeycad.sketchup_reader.read_skp", ("read-source",), ("Windows",)),
+                           "monkeycad.formats.sketchup_reader.read_skp", ("read-source",), ("Windows",)),
             PackCapability("viewport.observe", "sketchup-live-extension", None,
                            ("observe-enabled-application",), ("Windows", "Darwin")),
             PackCapability("viewport.capture", "sketchup-live-extension", None,
@@ -218,7 +218,7 @@ class IntegrationPackManager:
 
     def backend(self, pack_id):
         """Resolve the existing registry entry; never copy or replace a backend."""
-        from .cad_backend import get_cad_backend
+        from .registry import get_cad_backend
         pack = self._pack(pack_id)
         if pack.cad_backend is None:
             raise IntegrationUnavailable("unsupported", "This pack has no compiled CAD backend")
@@ -253,7 +253,7 @@ class IntegrationPackManager:
 
     def qualify_sketchup_read(self, data, *, sdk_path=None):
         """Explicit native SDK read; its existing API/version checks still apply."""
-        from .sketchup_reader import read_skp
+        from .formats.sketchup_reader import read_skp
         snapshot = self._require("sketchup", "source.read")
         try:
             scene = read_skp(data, sdk_path=sdk_path)
@@ -267,7 +267,7 @@ class IntegrationPackManager:
 
     def qualify_blender_projection(self, request, source, **kwargs):
         """Delegate the existing source-bound projection and artifact validator."""
-        from .blender_projection import execute_blender_projection, verify_projection_artifacts
+        from .backends.blender.projection import execute_blender_projection, verify_projection_artifacts
         snapshot = self._require("blender", "visualization.project")
         try:
             receipt = execute_blender_projection(request, source, **kwargs)
