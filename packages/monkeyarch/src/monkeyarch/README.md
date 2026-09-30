@@ -44,13 +44,13 @@ it does not determine actual bearing faces, structural capacity or compliance.
 Include the kind in the stage envelope's `required_checks` when it must prevent
 stage exit; registering the check alone does not make it mandatory.
 
-The runnable [window example](../../../../tests/integration/test_window_relational_update.py) exercises
+The runnable [window example](../../tests/test_window_relational_update.py) exercises
 1200 to 1600 mm through P036 reload, the real producers and OCCT, preserves an
 unrelated element in the same seat, and distinguishes a failed 150 mm bearing
 condition from successful CAD execution:
 
 ```sh
-python -m unittest tests.integration.test_window_relational_update
+python -m pytest packages/monkeyarch/tests/test_window_relational_update.py
 python -m pytest packages/monkeyarch/tests/test_lintel_bearing.py
 ```
 

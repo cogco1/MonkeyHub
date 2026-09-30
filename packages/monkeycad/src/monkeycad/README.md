@@ -75,7 +75,8 @@ reader, plus `backend_id`, `record_kind`, option validation and `patch_rebuild`
 (`False` unless it supports the existing patch/full-rebuild policy). The runner
 dispatch algorithm stays unchanged. A new retained record kind, if needed,
 must use the existing P036 kind contract; backend code receives no repository.
-Common tests live in `tests/integration/test_cad_backend_contract.py`; backend-specific
+Common tests live in `packages/monkeyarch/tests/test_cad_backend_contract.py`, which also runs
+each backend under MonkeyArch's runner; backend-specific
 geometry and host checks remain in the existing CAD suites.
 
 ## Rhino host acceptance
@@ -86,7 +87,7 @@ on a licensed Windows host with PowerShell:
 
 ```powershell
 $env:ARCHFLOW_RHINO_ACCEPTANCE = '1'
-python -m unittest tests.integration.test_cad_backend_contract -v
+python -m pytest packages/monkeyarch/tests/test_cad_backend_contract.py -v
 Remove-Item Env:ARCHFLOW_RHINO_ACCEPTANCE
 ```
 
@@ -163,7 +164,7 @@ start Blender when `ARCHFLOW_BLENDER_EXECUTABLE` is explicitly set:
 
 ```powershell
 $env:ARCHFLOW_BLENDER_EXECUTABLE = (Get-Command blender -CommandType Application).Source
-python -m unittest tests.integration.test_blender_cad tests.integration.test_cad_backend_contract -v
+python -m pytest packages/monkeyarch/tests/test_blender_cad.py packages/monkeyarch/tests/test_cad_backend_contract.py -v
 ```
 
 If Blender is not on `PATH`, assign its actual executable path to that variable.

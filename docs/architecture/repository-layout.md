@@ -178,12 +178,20 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
   Runtime 包在能导入任何东西之前自己读同一张表；Runtime 的测试包先把服务的 `src` 放上 `sys.path`，再导入 Runtime 包。不在共享解释器上做
   editable install，否则几十个 worktree 会互相串用代码。安装包不带 policy，生产入口在那里不改 `sys.path`，只由 `._pth` 决定。
 - 根 `tests/` 只保留跨 owner 的测试；只属于一个包或服务的测试在它自己的 `tests/`，测 tools 的在 `tools/tests/`，
-  基准驱动在 `tools/benchmarks/`。
+  基准驱动在 `tools/benchmarks/`。一个测试导入的只有某个 owner 和这个 owner 自己可以导入的，就进这个 owner 的 `tests/`（#522）：
+  MonkeyArch 的测试可以经内核和 MonkeyCAD 执行几何，MonkeyDiagram 的测试可以用 MonkeyCAD 取截面，Runtime 的测试可以用它组合的各包。
+- 测试模块不兼当夹具库。一个测试根里共用的夹具放在按内容命名的 `*_fixture.py`（如 `packages/monkeyarch/tests/spine_fixture.py`、
+  `runner_fixture.py`），名字在共用一个 pytest 进程的测试根（根 `pyproject.toml` 的 `testpaths`）之间不重复；Runtime 的测试包用相对导入。
+  一个测试根不能导入另一个根的测试，两个根都要用的夹具各留一份，文首写明从哪里复制。
+- `tests/integration/` 只有五个跨包测试和它们共用的 `support.py`：`test_project_runner`（MonkeyArch 的 runner 加 `tools.project`
+  的阶段命令与 MonkeyMonitor 的用量行）、`test_occt_execution`（OCCT 执行 MonkeyArch 编出的程序，另有 MonkeyDiagram 出图和 Hub web
+  读取预览）、`test_version_refs`（内核的版本引用声明对照 CAD 与图纸记录的写入者）、`test_project_format_migration`（内核的格式迁移经
+  `create_project` 命令行覆盖 CAD 与图纸记录）、`test_migration_scan_cli`（`create_project` 的旧引用扫描，沿用上一项完整的格式夹具）。
 - `docs/` 根目录只有 `README.md` 索引；其余文档在类别子目录里，决定记录是 `docs/decisions/NNN-*.md`。
 
 第二轮做内部拆分，每项另开 Issue、单独 PR，范围在开工前确认。CAD 已从
 `packages/archflow/src/archflow/adapters/` 抽成 `packages/monkeycad/`（#514；第一轮的 Step 0，#485，先把 CAD 的版本声明移进了内核），并按后端与格式拆开（#515）；
-MonkeyArch 已按层整理（#516，第 4 节）；其余候选项有 Runtime 内部分层并把业务逻辑按函数归还 owner、`hub.shell` 分组、模块 ID 规范化。
+MonkeyArch 已按层整理（#516，第 4 节）；集成测试的夹具已归还各 owner（#522）；其余候选项有 Runtime 内部分层并把业务逻辑按函数归还 owner、`hub.shell` 分组、模块 ID 规范化。
 第一轮不改模块 ID：R1-9（#495）分组后 `tools.*` 仍是原 ID（如 `tools.archcheck`），只更新 `owner_path` 等路径，随 ID 规范化一起调整。
 
 ### 6.1 命名规则

@@ -48,11 +48,12 @@ From the repository root, with Python 3.12 and no additional dependencies for
 the original massing/synthetic benchmark:
 
 ```sh
-python -m unittest labs.candidate_evaluation.test_evaluator tests.integration.test_massing_metrics
+python -m unittest labs.candidate_evaluation.test_evaluator
+python -m pytest packages/monkeyarch/tests/test_massing_metrics.py -q
 python -m labs.candidate_evaluation.benchmark
 ```
 
-The second command prints JSON to stdout, including fixed inputs, all failures,
+The last command prints JSON to stdout, including fixed inputs, all failures,
 raw synthetic samples, exact content/run/base refs, evaluator configuration,
 code revision, dirty-lab flag, Python version, UTC interval and measured costs.
 It writes no files. A caller retaining this output chooses an explicit external
@@ -273,7 +274,8 @@ an experiment preference, not a replacement for the objective vector or a
 daylight/structure/composition evaluator.
 
 ```sh
-python -m unittest labs.candidate_evaluation.test_evaluator labs.candidate_evaluation.test_retained labs.candidate_evaluation.test_allocation labs.candidate_evaluation.test_sampling tests.integration.test_massing_metrics
+python -m unittest labs.candidate_evaluation.test_evaluator labs.candidate_evaluation.test_retained labs.candidate_evaluation.test_allocation labs.candidate_evaluation.test_sampling
+python -m pytest packages/monkeyarch/tests/test_massing_metrics.py -q
 python -m labs.candidate_evaluation.allocation_benchmark --output <new-external-directory> --repetitions 200 --budgets 100 300 900 --workers 4
 python -m labs.candidate_evaluation.plot_benchmark <same-external-directory>
 ```
