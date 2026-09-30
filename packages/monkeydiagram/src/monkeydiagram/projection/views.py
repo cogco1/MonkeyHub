@@ -1,7 +1,7 @@
 """Model-axis elevations, axonometrics and section perspectives of verified shapes, drawn in memory.
 
 Every selected shape takes part in one exact hidden-line solve for a frame
-stated along the model axes (``monkeycad.cad_execution.project_occt_lines``);
+stated along the model axes (``monkeycad.backends.occt.projection.project_occt_lines``);
 the visible (and, on request, hidden) polylines are cropped and serialised as
 one deterministic SVG whose every polyline names its source physical object,
 and a PNG is rendered from that SVG (``monkeydiagram.rendering.svg``).
@@ -34,14 +34,10 @@ from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 from uuid import uuid4
 
-from monkeycad.cad_execution import (
-    OcctBackendError,
-    OcctDrawingPolyline,
-    StepEntry,
-    project_occt_lines,
-    section_occt_lines,
-)
-from monkeycad.occt_backend import OcctSectionPerspective, project_occt_section_perspective
+from monkeycad.backends.occt.errors import OcctBackendError
+from monkeycad.backends.occt.projection import OcctDrawingPolyline, project_occt_lines
+from monkeycad.backends.occt.section import OcctSectionPerspective, project_occt_section_perspective, section_occt_lines
+from monkeycad.backends.occt.step import StepEntry
 from monkeydiagram.rendering.svg import (
     CleanupReport,
     DrawingSvgError,

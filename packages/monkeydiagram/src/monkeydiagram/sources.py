@@ -24,11 +24,8 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any, Mapping
 
-from monkeycad.cad_execution import (
-    OcctBackendError,
-    StepEntry,
-    read_step,
-)
+from monkeycad.backends.occt.errors import OcctBackendError
+from monkeycad.backends.occt.step import StepEntry, read_step
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, RunRef, require_identifier
 from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
 
@@ -226,7 +223,8 @@ def read_elevation_source(repository: FilesystemProjectRepository, source: Eleva
 
 
 def _read_native_source(repository, source):
-    from monkeycad.occt_backend import read_three_dm, measure_shape
+    from monkeycad.backends.occt.measure import measure_shape
+    from monkeycad.backends.occt.native_models import read_three_dm
 
     project_id = repository.load_manifest().project_id
     run = repository.load_run(source.run_id)

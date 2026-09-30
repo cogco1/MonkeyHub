@@ -14,8 +14,8 @@ from pathlib import Path
 from threading import Lock
 from uuid import NAMESPACE_URL, uuid5
 
-from .local_cad_discovery import discover_local_cad
-from .model_formats import ConversionError, Mesh, Scene
+from ..discovery import discover_local_cad
+from .meshes import ConversionError, Mesh, Scene
 
 
 _SDK_LOCK = Lock()  # SUInitialize / SUTerminate and all intervening calls are serial.

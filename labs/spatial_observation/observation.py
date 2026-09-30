@@ -10,7 +10,8 @@ import math
 import re
 from typing import Mapping, Sequence
 
-from monkeycad.occt_backend import StepEntry, measure_occt_solid_pairs, measure_shape
+from monkeycad.backends.occt.measure import measure_occt_solid_pairs, measure_shape
+from monkeycad.backends.occt.step import StepEntry
 
 
 @dataclass(frozen=True)

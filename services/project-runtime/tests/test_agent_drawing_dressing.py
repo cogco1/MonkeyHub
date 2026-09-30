@@ -18,7 +18,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi.testclient import TestClient
 
-from monkeycad.occt_backend import occt_available
+from monkeycad.backends.occt.kernel import occt_available
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 

@@ -9,8 +9,8 @@ from uuid import uuid4
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from .artifacts import artifact_bytes, list_artifacts, require_model_source, require_complete_model, ModelSource
 from .projection import project_state
-from monkeycad.model_formats import convert, FORMATS
-from monkeycad.model_providers import ConversionCoordinator, ConversionFailure
+from monkeycad.formats.meshes import convert, FORMATS
+from monkeycad.formats.conversion import ConversionCoordinator, ConversionFailure
 from ..errors import StudioError, error_sentence
 
 KIND = "studio-model-export"

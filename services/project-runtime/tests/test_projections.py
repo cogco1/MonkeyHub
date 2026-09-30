@@ -20,7 +20,7 @@ from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 from PIL import Image, PngImagePlugin
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
 from archflow.project.index import (
     ArtifactRow, CandidateRow, IndexCommit, IndexStamp, IndexUnavailable, ProjectIndex, RunRows, StageRow, TreeRows,
     add_commit_listener,
@@ -1141,7 +1141,7 @@ class RouteTests(unittest.TestCase):
         self.assertEqual((refused.status_code, refused.json()["code"]), (503, "PROJECTION_INDEX_UNAVAILABLE"))
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class RenderProcessTests(unittest.TestCase):
     """The real renderer: a low-priority process drawing one exact committed model."""
 

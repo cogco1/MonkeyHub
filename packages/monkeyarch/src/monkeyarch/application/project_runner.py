@@ -60,10 +60,8 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 from uuid import uuid4
 
-from monkeycad.cad_backend import (
-    CadExecutionError, CadExecutionRequest, CadExecutionSource, CadProgramBinding,
-    cad_backend_ids, get_cad_backend,
-)
+from monkeycad.execution import CadExecutionError, CadExecutionRequest, CadExecutionSource, CadProgramBinding
+from monkeycad.registry import cad_backend_ids, get_cad_backend
 from monkeyarch.domain.discipline_seats import (
     SeatSpec,
     check_seat_datums,
@@ -285,7 +283,7 @@ class RunOptions:
 
     def __post_init__(self) -> None:
         if self.blender_projection is not None:
-            from monkeycad.blender_projection import BlenderPresentation
+            from monkeycad.backends.blender.projection import BlenderPresentation
             if not self.export or self.cad_backend != CAD_BACKEND_OCCT:
                 raise ProjectRunnerError("Blender projection requires an enabled OCCT export")
             unknown = set(self.blender_projection) - {"blender_executable", "timeout_seconds", "presentation"}
@@ -887,7 +885,7 @@ def _execute_cad(repository, run, branch, branch_destination, program, stage_id,
             out["inspection_ref"] = repository.put_json(run=run, destination=destination, record_kind=SEAT_3DM_INSPECTION, payload=result.inspection).uri
             out["_bboxes"] = {str(r["name"]): (list(r["bbox"]["min"]), list(r["bbox"]["max"])) for r in result.inspection.get("named_object_bboxes", ())}
         if options.blender_projection is not None and result.status == "succeeded":
-            from monkeycad.blender_projection import BlenderPresentation, execute_blender_projection
+            from monkeycad.backends.blender.projection import BlenderPresentation, execute_blender_projection
             from archflow.project.record_kinds import BLENDER_PROJECTION
             configuration = dict(options.blender_projection)
             configuration["presentation"] = BlenderPresentation(**configuration.get("presentation", {}))
@@ -1348,7 +1346,9 @@ def _check_final_solid_relations(repository, run, record, relations, results, ob
     measurement to the exact STEP bytes read here.
     """
 
-    from monkeycad.cad_execution import OcctBackendError, measure_occt_solid_pairs, read_step
+    from monkeycad.backends.occt.errors import OcctBackendError
+    from monkeycad.backends.occt.measure import measure_occt_solid_pairs
+    from monkeycad.backends.occt.step import read_step
 
     pairs = tuple(sorted({tuple(pair) for relation in relations for pair in relation.parameters["object_pairs"]}))
     wanted = {name for pair in pairs for name in pair}

@@ -15,7 +15,9 @@ from pathlib import Path
 from unittest.mock import patch
 from xml.etree import ElementTree
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.errors import OcctBackendError
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.backends.occt.step import StepObject, read_step, write_step
 from monkeydiagram.projection import views
 from monkeydiagram.rendering.svg import render_svg_png, svg_objects
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -36,7 +38,7 @@ from monkeydiagram.sources import (
     inspection_witness_ids,
 )
 
-NEEDS_OCCT = unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+NEEDS_OCCT = unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 PROJECT_ID = "drawing-project"
 SOURCE_RUN = "source-run"
 STAGE = "seat-demo"
@@ -105,9 +107,9 @@ class ProjectionValueTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.temporary = tempfile.TemporaryDirectory()
         path = Path(cls.temporary.name) / STEP_NAME
-        occt_backend.write_step(path, tuple(occt_backend.StepObject(name, shape, "layer") for name, shape in _shapes().items()),
+        write_step(path, tuple(StepObject(name, shape, "layer") for name, shape in _shapes().items()),
                                 length_unit="meter")
-        cls.entries = occt_backend.read_step(path, length_unit="meter")
+        cls.entries = read_step(path, length_unit="meter")
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -182,8 +184,8 @@ class FreezeElevationTests(unittest.TestCase):
         # The CAD adapter writes the STEP into the run's speculative workspace itself; mirror that placement.
         workspace = self.repository.layout.run(SOURCE_RUN).workspaces / WORKSPACE
         workspace.mkdir()
-        occt_backend.write_step(workspace / STEP_NAME,
-                                tuple(occt_backend.StepObject(name, shape, "layer") for name, shape in _shapes().items()),
+        write_step(workspace / STEP_NAME,
+                                tuple(StepObject(name, shape, "layer") for name, shape in _shapes().items()),
                                 length_unit="meter")
         self.step_sha = hashlib.sha256((workspace / STEP_NAME).read_bytes()).hexdigest()
         self.receipt_ref = self.repository.put_json(
@@ -314,7 +316,7 @@ class FreezeElevationTests(unittest.TestCase):
         self.assertFalse((self.root / "runs" / "refused-run").exists())
 
     def test_failed_or_cancelled_projection_records_no_render_or_write_that_did_not_run(self) -> None:
-        for error in (occt_backend.OcctBackendError("projection stopped"), asyncio.CancelledError()):
+        for error in (OcctBackendError("projection stopped"), asyncio.CancelledError()):
             with self.subTest(error=type(error).__name__):
                 observations = []
                 with patch.object(views, "project_occt_lines", side_effect=error) as project:
@@ -425,7 +427,7 @@ def _room_plan_source(root, *, hidden_witnesses=False, user_text=None):
     workspace = repository.layout.run(SOURCE_RUN).workspaces / WORKSPACE
     workspace.mkdir()
     step = workspace / STEP_NAME
-    occt_backend.write_step(step, tuple(occt_backend.StepObject(name, shape, "room") for name, shape in shapes.items()),
+    write_step(step, tuple(StepObject(name, shape, "room") for name, shape in shapes.items()),
                             length_unit="meter")
     digest = hashlib.sha256(step.read_bytes()).hexdigest()
     receipt = repository.put_json(

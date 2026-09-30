@@ -16,7 +16,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from monkeycad.three_dm_inspector import inspect_three_dm
+from monkeycad.formats.three_dm_inspector import inspect_three_dm
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 

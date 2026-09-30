@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.backends.occt.section import section_occt_lines
+from monkeycad.backends.occt.step import read_step
 from archflow.project.refs import record_ref_from_uri
 from project_runtime.application.artifacts import ModelSource
 from project_runtime.binding import bound_project
@@ -29,7 +31,7 @@ INTENT = {"id": "door-width", "entityRef": "entity:door-wall", "openingId": "ent
           "placement": {"offsetMm": 8}}
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class DrawingDimensionTests(CandidateTestCase):
     def setUp(self):
         super().setUp()
@@ -207,7 +209,7 @@ class DrawingDimensionTests(CandidateTestCase):
 
     def test_missing_and_duplicate_jambs_never_rebind_to_nearest_segments(self):
         model, source = self.source()
-        lines = occt_backend.section_occt_lines(source.entries, object_ids=("obj-door-wall",),
+        lines = section_occt_lines(source.entries, object_ids=("obj-door-wall",),
             origin=self.frame.origin, right=self.frame.right, up=self.frame.up, linear_deflection=self.frame.linear_deflection)
         for replacement, expected in (((), "missing"), (lines + lines, "ambiguous"),
             (tuple(replace(line, points=tuple((x + 0.01, y) for x, y in line.points)) for line in lines), "missing")):
@@ -250,7 +252,7 @@ class DrawingDimensionTests(CandidateTestCase):
         for unit, factor in (("millimeter", 1000), ("foot", 1 / .3048), ("inch", 1 / .0254)):
             receipt = {**source.receipt, "identity": {**source.receipt["identity"], "length_unit": unit}}
             converted = replace(source, receipt=receipt, length_unit=unit,
-                                entries=occt_backend.read_step(step_path, length_unit=unit))
+                                entries=read_step(step_path, length_unit=unit))
             frame = replace(self.frame, origin=(0, 0, 1.2 * factor),
                             crop_uv=tuple(v * factor for v in self.frame.crop_uv), far_depth=1.2 * factor)
             with self.subTest(unit=unit), patch(

@@ -23,9 +23,9 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi.testclient import TestClient
 
-from monkeycad.model_formats import ThreeDM
-from monkeycad.occt_backend import occt_available
-from monkeycad.three_dm_inspector import inspect_three_dm_index
+from monkeycad.formats.meshes import ThreeDM
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.formats.three_dm_inspector import inspect_three_dm_index
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.refs import record_ref_from_uri
 from project_runtime.application.artifacts import DocumentPage, ModelSource, SourceDocument

@@ -100,7 +100,7 @@ def plan_model(revised: bool=False):
     # An imported model to draw, and the same file with one object removed: another source.
     data = (Path.cwd()/'tests/fixtures/model-source-a.3dm').read_bytes()
     if revised:
-        from monkeycad.model_formats import ThreeDM
+        from monkeycad.formats.meshes import ThreeDM
         adapter = ThreeDM(); model = adapter.read(data); model.meshes = model.meshes[1:]; data = adapter.write(model)
     return Response(data, media_type='application/octet-stream')
 @app.get('/fixture/metrics')

@@ -771,13 +771,13 @@ class RhinoWorkExportRouteTests(unittest.TestCase):
         self.assertEqual(response.json()["code"], "ARTIFACT_NOT_FOUND")
 
     def test_a_machine_with_no_rhino_says_so_and_leaves_the_step(self) -> None:
-        from monkeycad import cad_execution
+        from monkeycad.backends.rhino import export as rhino_export
 
         # An ordinary launch discovers a shell, but no Rhino. Specify both
         # discoveries so the test describes the same machine on every OS.
         with (
-            unittest.mock.patch.object(cad_execution, "discover_powershell", return_value=Path("powershell.exe")),
-            unittest.mock.patch.object(cad_execution, "discover_rhino_executables", return_value=()),
+            unittest.mock.patch.object(rhino_export, "discover_powershell", return_value=Path("powershell.exe")),
+            unittest.mock.patch.object(rhino_export, "discover_rhino_executables", return_value=()),
         ):
             response = self.export(self.step["sha256"])
 
@@ -789,9 +789,9 @@ class RhinoWorkExportRouteTests(unittest.TestCase):
         self.assertIn(self.step["sha256"], [row["sha256"] for row in listing])
 
     def test_a_machine_with_no_shell_at_all_says_that_instead(self) -> None:
-        from monkeycad import cad_execution
+        from monkeycad.backends.rhino import export as rhino_export
 
-        with unittest.mock.patch.object(cad_execution, "discover_powershell", return_value=None):
+        with unittest.mock.patch.object(rhino_export, "discover_powershell", return_value=None):
             response = self.export(self.step["sha256"])
 
         self.assertEqual(response.status_code, 409)
@@ -824,10 +824,10 @@ class RhinoWorkExportRouteTests(unittest.TestCase):
 
         client = TestClient(create_app(StudioSettings(project_dir=self.root / PROJECT_ID)))
         self.addCleanup(client.close)
-        from monkeycad import cad_execution
+        from monkeycad.backends.rhino import step_import
 
         with unittest.mock.patch.object(
-            cad_execution, "work_model_workspace", side_effect=AssertionError("nothing is exported again")
+            step_import, "work_model_workspace", side_effect=AssertionError("nothing is exported again")
         ):
             response = client.post(
                 f"/api/artifacts/{self.step['sha256']}/rhino-export", json={"runId": REFERENCE_RUN_ID},
@@ -866,9 +866,9 @@ class RhinoWorkExportRouteTests(unittest.TestCase):
 
         client = TestClient(create_app(StudioSettings(project_dir=self.root / PROJECT_ID)))
         self.addCleanup(client.close)
-        from monkeycad import cad_execution
+        from monkeycad.backends.rhino import export as rhino_export
 
-        with unittest.mock.patch.object(cad_execution, "discover_rhino_executables", return_value=()):
+        with unittest.mock.patch.object(rhino_export, "discover_rhino_executables", return_value=()):
             response = client.post(
                 f"/api/artifacts/{self.step['sha256']}/rhino-export", json={"runId": REFERENCE_RUN_ID},
             )

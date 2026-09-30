@@ -15,7 +15,7 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from monkeycad.three_dm_inspector import ThreeDmInspectionError, ThreeDmInspectionErrorCode
+from monkeycad.formats.three_dm_inspector import ThreeDmInspectionError, ThreeDmInspectionErrorCode
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT, STUDIO_WORKING_COPY
 from project_runtime.binding import record_kind

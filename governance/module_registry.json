@@ -15,33 +15,33 @@
     {
       "interface_id": "compiled-cad-execution",
       "owner": "monkeycad.execution",
-      "contract": "CadBackend.execute(CadExecutionRequest) returns CadExecutionResult for an exact CompiledGeometryProgram and public CadProgramBinding inside the caller-supplied speculative workspace. monkeycad.cad_backend.CAD_BACKEND_REGISTRY is the single execution registration point. Native receipt schemas/evidence remain intact; the runner retains them through P036.",
+      "contract": "CadBackend.execute(CadExecutionRequest) returns CadExecutionResult for an exact CompiledGeometryProgram and public CadProgramBinding inside the caller-supplied speculative workspace. monkeycad.registry.CAD_BACKEND_REGISTRY is the single execution registration point. Native receipt schemas/evidence remain intact; the runner retains them through P036.",
       "implementations": [
         {
           "backend": "occt",
           "entry_points": [
-            "monkeycad.cad_backend.OcctBackend.execute",
-            "monkeycad.cad_execution.execute_occt_export"
+            "monkeycad.backends.occt.backend.OcctBackend.execute",
+            "monkeycad.backends.occt.export.execute_occt_export"
           ],
-          "implementation_file": "packages/monkeycad/src/monkeycad/occt_backend.py",
+          "implementation_file": "packages/monkeycad/src/monkeycad/backends/occt/backend.py",
           "output": "OcctExecutionReceipt@1: exact STEP B-rep and optional mesh .3dm preview from the same model; unsupported operations fail explicitly"
         },
         {
           "backend": "rhino",
           "entry_points": [
-            "monkeycad.cad_backend.RhinoBackend.execute",
-            "monkeycad.cad_execution.prepare_rhino_three_dm_export",
-            "monkeycad.cad_execution.execute_rhino_three_dm_export"
+            "monkeycad.backends.rhino.backend.RhinoBackend.execute",
+            "monkeycad.backends.rhino.export.prepare_rhino_three_dm_export",
+            "monkeycad.backends.rhino.export.execute_rhino_three_dm_export"
           ],
-          "implementation_file": "packages/monkeycad/src/monkeycad/cad_execution.py",
+          "implementation_file": "packages/monkeycad/src/monkeycad/backends/rhino/backend.py",
           "output": "RhinoCadExecutionReceipt@4: explicit Rhino compatibility export with host supervision and saved .3dm readback"
         },
         {
           "backend": "blender",
           "entry_points": [
-            "monkeycad.blender_cad.BlenderBackend.execute"
+            "monkeycad.backends.blender.backend.BlenderBackend.execute"
           ],
-          "implementation_file": "packages/monkeycad/src/monkeycad/blender_cad.py",
+          "implementation_file": "packages/monkeycad/src/monkeycad/backends/blender/backend.py",
           "output": "BlenderExecutionReceipt@1: closed mesh .blend for solid/straight-extrusion programs, independently read in a fresh process; unsupported operations fail explicitly"
         }
       ]
@@ -220,23 +220,26 @@
   "modules": [
     {
       "module_id": "monkeycad.execution",
-      "owner_path": "packages/monkeycad/src/monkeycad/cad_execution.py",
-      "purpose": "The backend-neutral half of CAD execution: the compiled-cad-execution interface (one CadBackend protocol, its request and result values and the single registry every backend is registered in), the exact P036 binding an export carries, the status and errors every backend reports, the speculative-workspace rules every backend writes under, and the operation diff that decides what an incremental export rebuilds.",
+      "owner_path": "packages/monkeycad/src/monkeycad/execution.py",
+      "purpose": "The backend-neutral half of CAD execution: the compiled-cad-execution interface (one CadBackend protocol, its request and result values and the single registry every backend is registered in), the exact P036 binding an export carries, the status and errors every backend reports, the speculative-workspace rules every backend writes under, the object semantics every backend's saved document must carry, and the operation diff that decides what an incremental export rebuilds.",
       "owns": [
         "the neutral CadBackend protocol, CadExecutionRequest, CadExecutionSource, CadArtifact and CadExecutionResult values, and the single CAD_BACKEND_REGISTRY; native evidence and retained receipt readers stay backend-specific",
         "CadProgramBinding and backend export identities: the exact P036 record/branch/stage identity an export is bound to; RhinoCadProgramBinding remains a compatibility alias with unchanged serialization",
         "the execution status and errors every backend reports (CadExecutionStatus, CadExecutionError, CadCapabilityError)",
         "the speculative-workspace rules shared by the OCCT, Rhino and Blender backends: an existing absolute caller-supplied directory, workspace-relative portable artifact paths and their SHA-256",
+        "the layer path and layer colour tables derived from components and material assignment",
+        "the archflow:* object user text each physical object must carry (expected_object_semantics)",
+        "writing each of an operation's statements through as an archflow:<key> user string, verbatim, and the reserved identity keys a statement may not take",
         "per-object structural digests of what the CAD script actually emits",
         "the diff into changed / added / retired / kept object ids, with a reason per object",
         "closing the rebuild set over input edges (consumers of a rebuilt object, producers of a rebuilt operation's inputs)",
-        "the Rhino-side prelude that opens the prior model, deletes the retired objects and re-stamps kept objects, copying and remapping their referenced native material tables",
         "refusing a patch that cannot be expressed, so the caller rebuilds instead"
       ],
       "does_not_own": [
         "a backend's geometry, host process or file format - monkeycad.occt, monkeycad.rhino, monkeycad.blender and monkeycad.formats",
-        "translating the program into a script and the object semantics its realization carries - monkeycad.rhino",
+        "translating the program into a script - monkeycad.rhino",
         "emitting the rebuilt operations - monkeycad.rhino's operation_subset does",
+        "writing the Rhino-side patch prelude - monkeycad.rhino",
         "running or verifying the patched export - monkeycad.rhino",
         "deciding whether to patch at all - runtime.project_runner's _export chooses reuse, patch or rebuild",
         "comparing two runs' saved geometry - studio.validation's compare",
@@ -248,15 +251,13 @@
         "CadProgramBinding (RhinoCadProgramBinding compatibility alias)",
         "speculative workspace Path",
         "CadExecutionRequest with explicit artifact stem, material/layer maps, observer, optional verified source and backend option mapping; no repository handle",
-        "prior CompiledGeometryProgram",
-        "prior model Path",
-        "expected semantics"
+        "prior CompiledGeometryProgram"
       ],
       "outputs": [
         "CadExecutionResult: backend id, exact binding, status, named verified artifacts, stable object/semantic coverage, failures and unchanged backend-specific receipt payload",
         "PatchSelection",
-        "patch prelude script text",
-        "structural digest mapping"
+        "structural digest mapping",
+        "expected semantics mapping"
       ],
       "public_api": [
         "CadBackend",
@@ -267,29 +268,25 @@
         "get_cad_backend",
         "cad_backend_ids",
         "CAD_BACKEND_REGISTRY",
-        "OcctBackend",
-        "RhinoBackend",
         "CadProgramBinding",
         "RhinoCadProgramBinding",
         "CadExecutionStatus",
         "CadExecutionError",
         "CadCapabilityError",
+        "expected_object_semantics",
+        "ROOT_LAYER",
+        "CadTranslationError",
         "select_patch_operations",
-        "build_patch_prelude",
         "PatchSelection",
         "CadPatchError"
       ],
       "depends_on": [
         "project.refs",
         "state.geometry_program",
-        "contracts.canonical",
+        "monkeycad.blender",
         "monkeycad.occt",
         "monkeycad.rhino",
-        "monkeycad.blender",
-        "monkeycad.formats",
-        "monkeycad.integrations",
-        "monkeycad.cad_patch",
-        "monkeycad.local_cad_discovery"
+        "monkeycad.program"
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
@@ -300,30 +297,37 @@
         "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
         "tests/integration/test_cad_backend_contract.py",
         "tests/integration/test_cad_execution.py",
-        "tests/integration/test_cad_patch.py"
+        "tests/integration/test_cad_patch.py",
+        "tests/integration/test_cad_program.py",
+        "tests/integration/test_element_producers.py"
       ],
       "invariants": [
         "the common result preserves native success/readback evidence and validates exact binding, semantic identity, workspace containment and artifact bytes; it is not a new retained receipt or write authority",
         "an object is rebuilt only when its structural digest or its analytic bounds actually changed, beyond tolerance",
         "the rebuild set is closed over input edges - nothing consumed or produced by a rebuilt operation is left stale",
-        "an inexpressible patch fails CadPatchError, which is a signal to rebuild, never a partial document"
+        "an inexpressible patch fails CadPatchError, which is a signal to rebuild, never a partial document",
+        "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError"
       ],
       "status": "canonical",
       "tests": [
         "tests/integration/test_cad_backend_contract.py",
         "tests/integration/test_cad_patch.py",
-        "tests/integration/test_cad_execution.py"
+        "tests/integration/test_cad_execution.py",
+        "tests/integration/test_cad_program.py"
       ],
-      "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added. P103 incremental export; the only reason a run may reuse a prior .3dm. cad_execution.py still holds the neutral binding, errors and workspace helpers, the Rhino export, the OCCT export orchestration and the 3dm composition; it is listed under monkeycad.execution, monkeycad.rhino, monkeycad.occt and monkeycad.formats until #515 splits it.",
+      "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added. P103 incremental export; the only reason a run may reuse a prior .3dm. #515: execution.py holds the interface, binding, status and errors, the export provenance and bounds helpers both exporters share, and the speculative-workspace and hash helpers (they raise CadExecutionError and the interface calls them, so they are not a module of their own); registry.py the backend table; program.py the object semantics every backend's readback is checked against; patch.py the operation diff.",
       "files": [
-        "packages/monkeycad/src/monkeycad/cad_execution.py",
-        "packages/monkeycad/src/monkeycad/cad_backend.py",
-        "packages/monkeycad/src/monkeycad/cad_patch.py"
+        "packages/monkeycad/src/monkeycad/execution.py",
+        "packages/monkeycad/src/monkeycad/registry.py",
+        "packages/monkeycad/src/monkeycad/program.py",
+        "packages/monkeycad/src/monkeycad/patch.py",
+        "packages/monkeycad/src/monkeycad/__init__.py",
+        "packages/monkeycad/src/monkeycad/backends/__init__.py"
       ]
     },
     {
       "module_id": "monkeycad.occt",
-      "owner_path": "packages/monkeycad/src/monkeycad/occt_backend.py",
+      "owner_path": "packages/monkeycad/src/monkeycad/backends/occt/backend.py",
       "purpose": "The in-process OCCT backend: build a compiled program as exact B-reps, write and cold-read STEP with a mesh .3dm preview from the same model, and answer drawing and measurement queries on named shapes: hidden-line projection, plane sections, section perspectives, native 3dm decoding and solid-pair measurement.",
       "owns": [
         "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, bounded planar surface, retained polyline curve, capped or uncapped polyline loft, circular revolve, boolean and linear array operations; exact STEP write/readback and tessellated mesh and native curve .3dm preview from one model",
@@ -360,6 +364,7 @@
         "OcctSectionPerspective: visible and section polylines and cut regions in the section plane's frame, its principal point and focus, and the drawn, cut and removed object ids; no writes"
       ],
       "public_api": [
+        "OcctBackend",
         "execute_occt_export",
         "OcctCadExportIdentity",
         "OcctExecutionReceipt",
@@ -379,13 +384,19 @@
       "depends_on": [
         "state.geometry_program",
         "project.refs",
-        "contracts.canonical",
         "monkeycad.execution",
-        "monkeycad.rhino",
         "monkeycad.formats",
-        "monkeycad.integrations",
-        "monkeycad.cad_patch",
-        "monkeycad.local_cad_discovery"
+        "monkeycad.backends.occt",
+        "monkeycad.backends.occt.boolean",
+        "monkeycad.backends.occt.build",
+        "monkeycad.backends.occt.errors",
+        "monkeycad.backends.occt.kernel",
+        "monkeycad.backends.occt.measure",
+        "monkeycad.backends.occt.preview",
+        "monkeycad.backends.occt.projection",
+        "monkeycad.backends.occt.step",
+        "monkeycad.patch",
+        "monkeycad.program"
       ],
       "used_by": [
         "packages/monkeydiagram/src/monkeydiagram/sources.py",
@@ -417,22 +428,31 @@
         "tests/integration/test_cad_backend_contract.py",
         "packages/monkeycad/tests/test_occt_native_models.py"
       ],
-      "notes": "P107 in-process OCCT executor; OCP and rhino3dm are imported lazily, so importing the package loads neither. cad_execution.py still holds the neutral binding, errors and workspace helpers, the Rhino export, the OCCT export orchestration and the 3dm composition; it is listed under monkeycad.execution, monkeycad.rhino, monkeycad.occt and monkeycad.formats until #515 splits it.",
+      "notes": "P107 in-process OCCT executor; OCP and rhino3dm are imported lazily, so importing the package or any of its modules loads neither. #515 splits it by concern: kernel (the binding and the shape helpers the others share), build and boolean, measure, step, native_models, projection, section and preview, with the export orchestration in export.py and the registered OcctBackend in backend.py.",
       "files": [
-        "packages/monkeycad/src/monkeycad/occt_backend.py",
-        "packages/monkeycad/src/monkeycad/cad_execution.py"
+        "packages/monkeycad/src/monkeycad/backends/occt/__init__.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/backend.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/export.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/errors.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/kernel.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/boolean.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/build.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/measure.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/step.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/native_models.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/projection.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/section.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/preview.py"
       ]
     },
     {
       "module_id": "monkeycad.rhino",
-      "owner_path": "packages/monkeycad/src/monkeycad/cad_program.py",
-      "purpose": "The Rhino compatibility backend: translate a compiled program into one deterministic, semantics-carrying rhinoscriptsyntax script and the object semantics its realization must carry, run it in a supervised Rhino 8 COM host, read the saved .3dm back against that denominator, and export an editable work model by importing exact single-object STEP files instead of rebuilding.",
+      "owner_path": "packages/monkeycad/src/monkeycad/backends/rhino/backend.py",
+      "purpose": "The Rhino compatibility backend: translate a compiled program into one deterministic, semantics-carrying rhinoscriptsyntax script, run it in a supervised Rhino 8 COM host, read the saved .3dm back against the program's object semantics, and export an editable work model by importing exact single-object STEP files instead of rebuilding.",
       "owns": [
         "the rhinoscriptsyntax emission of the analytic operation kinds (solid, revolve, extrusion, planar_surface, loft, boolean union/difference/intersection, linear and radial array, transform, curve)",
-        "the layer path and layer colour tables derived from components and material assignment",
-        "the archflow:* object user text each physical object must carry (expected_object_semantics)",
-        "writing each of an operation's statements through as an archflow:<key> user string, verbatim, and the reserved identity keys a statement may not take",
         "the P103 partial emission of an operation subset",
+        "the Rhino-side prelude that opens the prior model, deletes the retired objects and re-stamps kept objects, copying and remapping their referenced native material tables",
         "native Rhino object material assignment from the caller-declared material and colour maps, in addition to layer display colours",
         "the STEP-import script: the same header, semantics tail and layer table as the program script, with each named object read from its own single-object STEP under a digest check, and the delivery's own retained material applied last so nothing overwrites it",
         "the immutable export plan: workspace layout, script, completion token, host witness and the full validation denominator digest",
@@ -449,6 +469,7 @@
       "does_not_own": [
         "the backend-neutral protocol, binding and registry - monkeycad.execution",
         "selecting what a patch rebuilds - monkeycad.execution",
+        "the object semantics a saved document must carry - monkeycad.execution",
         "reading the .3dm - monkeycad.formats",
         "compiling the program - compilers.geometry",
         "the analytic bounds, the placement readers and the operation kinds it may emit - state.geometry_program",
@@ -467,22 +488,21 @@
         "material_by_component",
         "material_colors",
         "operation_subset",
-        "layer_by_component"
+        "layer_by_component",
+        "PatchSelection, prior model Path and expected semantics for the patch prelude"
       ],
       "outputs": [
         "RhinoCadExportPlan",
         "RhinoCadExecutionReceipt",
         "ThreeDmInspection (embedded)",
         "CadTranslation (script, physical object ids, losses, layer colours)",
-        "expected semantics mapping"
+        "patch prelude script text"
       ],
       "public_api": [
+        "RhinoBackend",
         "translate_to_rhino_python",
-        "expected_object_semantics",
         "CadTranslation",
-        "CadTranslationError",
         "translate_step_import_to_rhino_python",
-        "ROOT_LAYER",
         "prepare_rhino_three_dm_export",
         "execute_rhino_three_dm_export",
         "verify_rhino_export_readback",
@@ -496,18 +516,26 @@
         "work_model_workspace",
         "verify_work_model_geometry",
         "discover_powershell",
-        "WORK_MODEL_EXPORT_PATH"
+        "WORK_MODEL_EXPORT_PATH",
+        "build_patch_prelude"
       ],
       "depends_on": [
         "state.geometry_program",
         "project.refs",
         "contracts.canonical",
         "monkeycad.execution",
-        "monkeycad.occt",
         "monkeycad.formats",
         "monkeycad.integrations",
-        "monkeycad.cad_patch",
-        "monkeycad.local_cad_discovery"
+        "monkeycad.occt",
+        "monkeycad.backends.occt.export",
+        "monkeycad.backends.occt.measure",
+        "monkeycad.backends.occt.step",
+        "monkeycad.backends.rhino",
+        "monkeycad.backends.rhino.script",
+        "monkeycad.backends.rhino.step_import",
+        "monkeycad.discovery",
+        "monkeycad.patch",
+        "monkeycad.program"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/artifacts.py",
@@ -521,7 +549,6 @@
         "the same program translates to the same script bytes - the emission is deterministic and self-contained",
         "coordinates pass through as the program states them; the translator performs no frame conversion",
         "every physical object is named and carries its archflow:* identity strings",
-        "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError",
         "planar_surface preserves its explicitly closed profile and datum elevation with AddPlanarSrf, without extrusion or capping",
         "a successful process exit is never sufficient - the saved file is read back independently and must match the denominator",
         "the export identity refuses any up_axis but Z-up and any unit outside millimeter/meter/inch/foot",
@@ -536,17 +563,21 @@
       "tests": [
         "tests/integration/test_cad_program.py",
         "tests/integration/test_cad_execution.py",
-        "tests/integration/test_cad_backend_contract.py"
+        "tests/integration/test_cad_backend_contract.py",
+        "tests/integration/test_cad_patch.py"
       ],
-      "notes": "The single CAD translation on the spine; P107's in-process OCCT executor would be a second executor of this program, not a second translation. The object semantics every backend's readback is checked against (expected_object_semantics, ROOT_LAYER) still live in cad_program.py with the translation. cad_execution.py still holds the neutral binding, errors and workspace helpers, the Rhino export, the OCCT export orchestration and the 3dm composition; it is listed under monkeycad.execution, monkeycad.rhino, monkeycad.occt and monkeycad.formats until #515 splits it.",
+      "notes": "The single CAD translation on the spine; P107's in-process OCCT executor would be a second executor of this program, not a second translation. #515: backends/rhino/ holds the translation, the patch prelude and the export script wrapper (script.py), the supervised export and readback (export.py), the STEP-import work model (step_import.py) and the registered RhinoBackend (backend.py); the object semantics every backend's readback is checked against are monkeycad.execution's (program.py).",
       "files": [
-        "packages/monkeycad/src/monkeycad/cad_program.py",
-        "packages/monkeycad/src/monkeycad/cad_execution.py"
+        "packages/monkeycad/src/monkeycad/backends/rhino/__init__.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/backend.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/export.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/script.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/step_import.py"
       ]
     },
     {
       "module_id": "monkeycad.blender",
-      "owner_path": "packages/monkeycad/src/monkeycad/blender_cad.py",
+      "owner_path": "packages/monkeycad/src/monkeycad/backends/blender/backend.py",
       "purpose": "The Blender backend: a closed-mesh .blend for solid and straight-extrusion programs, saved in one background Blender process and read back cold in another, and the Blender visualization of a verified OCCT STEP.",
       "owns": [
         "Blender solid and straight-extrusion meshes, explicit speculative .blend save in one background process, fresh-process geometry/semantic/binding readback, and the native retained receipt reader; no backend-specific project state",
@@ -578,12 +609,14 @@
         "project.record_kinds",
         "state.geometry_program",
         "monkeycad.execution",
-        "monkeycad.occt",
-        "monkeycad.rhino",
         "monkeycad.integrations",
-        "monkeycad.blender_worker",
-        "monkeycad.cad_backend",
-        "monkeycad.local_cad_discovery"
+        "monkeycad.occt",
+        "monkeycad.backends.blender.worker",
+        "monkeycad.backends.occt.export",
+        "monkeycad.backends.occt.preview",
+        "monkeycad.backends.occt.step",
+        "monkeycad.discovery",
+        "monkeycad.program"
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
@@ -600,16 +633,17 @@
         "tests/integration/test_blender_projection.py",
         "tests/integration/test_blender_projection_runner.py"
       ],
-      "notes": "P115 #13: Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. blender_worker.py runs in Blender's own Python and is started by file name from beside blender_cad.py, so the two stay in one directory.",
+      "notes": "P115 #13: Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. backends/blender/worker.py runs in Blender's own Python and is started by file name from beside backends/blender/backend.py, so the two stay in one directory.",
       "files": [
-        "packages/monkeycad/src/monkeycad/blender_cad.py",
-        "packages/monkeycad/src/monkeycad/blender_worker.py",
-        "packages/monkeycad/src/monkeycad/blender_projection.py"
+        "packages/monkeycad/src/monkeycad/backends/blender/__init__.py",
+        "packages/monkeycad/src/monkeycad/backends/blender/backend.py",
+        "packages/monkeycad/src/monkeycad/backends/blender/worker.py",
+        "packages/monkeycad/src/monkeycad/backends/blender/projection.py"
       ]
     },
     {
       "module_id": "monkeycad.formats",
-      "owner_path": "packages/monkeycad/src/monkeycad/three_dm_inspector.py",
+      "owner_path": "packages/monkeycad/src/monkeycad/formats/three_dm_inspector.py",
       "purpose": "Read and convert model files without a CAD host: a deterministic, JSON-compatible summary of what is actually saved in one .3dm, bounded 3DM/GLB mesh codecs and conversion providers, SketchUp reading through the local SDK, and the composition of a patched .3dm from native replacement previews.",
       "owns": [
         "the ThreeDmInspection shape and its versioned key sets (the one place the schema's required keys are declared)",
@@ -652,20 +686,16 @@
         "SUPPORTED_INSPECTION_SCHEMAS",
         "inspect_three_dm_contents",
         "inspect_three_dm_index",
-        "monkeycad.model_formats.convert",
+        "monkeycad.formats.meshes.convert",
         "read_skp",
         "patch_composed_three_dm"
       ],
       "depends_on": [
         "contracts.canonical",
-        "project.refs",
         "state.geometry_program",
         "monkeycad.execution",
-        "monkeycad.occt",
-        "monkeycad.rhino",
         "monkeycad.integrations",
-        "monkeycad.cad_patch",
-        "monkeycad.local_cad_discovery"
+        "monkeycad.patch"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/artifacts.py",
@@ -696,13 +726,14 @@
         "packages/monkeycad/tests/test_model_conversion_regressions.py",
         "packages/monkeycad/tests/test_sketchup_reader.py"
       ],
-      "notes": "The single source of the inspection key sets that viewers and readback both check against. cad_execution.py still holds the neutral binding, errors and workspace helpers, the Rhino export, the OCCT export orchestration and the 3dm composition; it is listed under monkeycad.execution, monkeycad.rhino, monkeycad.occt and monkeycad.formats until #515 splits it.",
+      "notes": "The single source of the inspection key sets that viewers and readback both check against. formats/ also holds the bounded 3DM/GLB mesh codecs (meshes.py) and their conversion providers (conversion.py), SketchUp reading (sketchup_reader.py) and the composition of a patched .3dm (three_dm_compose.py).",
       "files": [
-        "packages/monkeycad/src/monkeycad/three_dm_inspector.py",
-        "packages/monkeycad/src/monkeycad/model_formats.py",
-        "packages/monkeycad/src/monkeycad/model_providers.py",
-        "packages/monkeycad/src/monkeycad/sketchup_reader.py",
-        "packages/monkeycad/src/monkeycad/cad_execution.py"
+        "packages/monkeycad/src/monkeycad/formats/__init__.py",
+        "packages/monkeycad/src/monkeycad/formats/three_dm_inspector.py",
+        "packages/monkeycad/src/monkeycad/formats/meshes.py",
+        "packages/monkeycad/src/monkeycad/formats/conversion.py",
+        "packages/monkeycad/src/monkeycad/formats/sketchup_reader.py",
+        "packages/monkeycad/src/monkeycad/formats/three_dm_compose.py"
       ]
     },
     {
@@ -750,7 +781,7 @@
       "notes": "The Hub's /api/integrations serves these views (hub.shell).",
       "files": [
         "packages/monkeycad/src/monkeycad/integration_packs.py",
-        "packages/monkeycad/src/monkeycad/local_cad_discovery.py"
+        "packages/monkeycad/src/monkeycad/discovery.py"
       ]
     },
     {
@@ -804,7 +835,8 @@
         "dressing_assets"
       ],
       "depends_on": [
-        "monkeycad.occt"
+        "monkeycad.occt",
+        "monkeycad.backends.occt.projection"
       ],
       "used_by": [
         "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
@@ -868,8 +900,10 @@
         "mesh_pipeline"
       ],
       "depends_on": [
-        "monkeycad.execution",
-        "monkeycad.occt"
+        "monkeycad.occt",
+        "monkeycad.backends.occt.errors",
+        "monkeycad.backends.occt.preview",
+        "monkeycad.backends.occt.step"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/drawings.py",
@@ -2753,7 +2787,7 @@
         "the list of shared-core owner modules, loaded by importing this module, and the separate list of workflow-owned ones (WORKFLOW_OWNER_MODULES) that load_workflow_owners() imports on request",
         "the boundary between the two tiers: the shared core may not import a workflow package, so an entry point above both layers - tools/project/create_project.py - calls load_workflow_owners(), and a process that loads only the core tier refuses a project holding a workflow-owned identity by name instead of guessing at it",
         "RunnerRunReceipt@3's declaration, stated as borrowed: it derives nothing from the canonical base it carries, and its owner module belongs to another lane",
-        "the CAD records' declarations, stated as borrowed from their writers monkeycad.cad_execution and monkeycad.three_dm_inspector, which the core does not import although a core-only migration has to restate those records: RhinoCadProgramBinding@1 keeps its base at /base, ThreeDmInspectionSummary@4 at the value of its archflow:base_state_sha256 document user-string row, and neither they nor the six CAD receipt and export-identity kinds derive anything from it"
+        "the CAD records' declarations, stated as borrowed from their writers monkeycad.execution, its backends and monkeycad.formats.three_dm_inspector, which the core does not import although a core-only migration has to restate those records: RhinoCadProgramBinding@1 keeps its base at /base, ThreeDmInspectionSummary@4 at the value of its archflow:base_state_sha256 document user-string row, and neither they nor the six CAD receipt and export-identity kinds derive anything from it"
       ],
       "does_not_own": [
         "every declaration but the borrowed ones above (each owner module states its own)",
@@ -3086,8 +3120,6 @@
         "project.layout",
         "monkeycad.execution",
         "monkeycad.blender",
-        "monkeycad.blender_projection",
-        "monkeycad.cad_backend",
         "monkeyarch.domain.discipline_seats",
         "monkeyarch.authoring.element_producers",
         "monkeyarch.application.geometry_proposal",
@@ -3124,7 +3156,13 @@
         "state.spatial",
         "state.stage_workflow",
         "monkeyarch.authoring",
-        "monkeyarch.domain"
+        "monkeyarch.domain",
+        "monkeycad.occt",
+        "monkeycad.backends.blender.projection",
+        "monkeycad.backends.occt.errors",
+        "monkeycad.backends.occt.measure",
+        "monkeycad.backends.occt.step",
+        "monkeycad.registry"
       ],
       "used_by": [
         "tools/project/run_project.py",
@@ -3246,7 +3284,6 @@
         "DrawingCache"
       ],
       "depends_on": [
-        "monkeycad.execution",
         "monkeycad.occt",
         "adapters.drawing_svg",
         "project.ports",
@@ -3255,7 +3292,14 @@
         "project.repository",
         "project.version_refs",
         "monkeydiagram.sources",
-        "monkeydiagram.projection.views"
+        "monkeydiagram.projection.views",
+        "monkeycad.backends.occt.errors",
+        "monkeycad.backends.occt.kernel",
+        "monkeycad.backends.occt.measure",
+        "monkeycad.backends.occt.native_models",
+        "monkeycad.backends.occt.projection",
+        "monkeycad.backends.occt.section",
+        "monkeycad.backends.occt.step"
       ],
       "used_by": [
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
@@ -3945,8 +3989,6 @@
         "project.refs"
       ],
       "used_by": [
-        "packages/monkeycad/src/monkeycad/cad_execution.py",
-        "packages/monkeycad/src/monkeycad/occt_backend.py",
         "packages/archflow/src/archflow/state/state_record.py",
         "packages/monkeyarch/src/monkeyarch/domain/discipline_seats.py",
         "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
@@ -3960,10 +4002,18 @@
         "services/project-runtime/src/project_runtime/application/artifacts.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
         "tools/project/verify_state_record.py",
-        "packages/monkeycad/src/monkeycad/cad_program.py",
-        "packages/monkeycad/src/monkeycad/cad_patch.py",
         "packages/monkeyarch/src/monkeyarch/authoring/construction/shapes.py",
-        "packages/monkeyarch/src/monkeyarch/authoring/construction/lowering.py"
+        "packages/monkeyarch/src/monkeyarch/authoring/construction/lowering.py",
+        "packages/monkeycad/src/monkeycad/execution.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/export.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/export.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/step_import.py",
+        "packages/monkeycad/src/monkeycad/formats/three_dm_compose.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/build.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/boolean.py",
+        "packages/monkeycad/src/monkeycad/program.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/script.py",
+        "packages/monkeycad/src/monkeycad/patch.py"
       ],
       "invariants": [
         "the operation vocabulary is generic: no project, style or external-tool routing authority",
@@ -4614,10 +4664,6 @@
         "monkeycad.occt",
         "monkeycad.rhino",
         "monkeycad.formats",
-        "monkeycad.cad_patch",
-        "monkeycad.model_formats",
-        "monkeycad.model_providers",
-        "monkeycad.sketchup_reader",
         "archflow.project.refs",
         "archflow.project.repository",
         "state.geometry_program",
@@ -4644,7 +4690,18 @@
         "project.memo",
         "project.index",
         "adapters.mesh_views",
-        "studio.board"
+        "studio.board",
+        "monkeycad.backends.occt.errors",
+        "monkeycad.backends.occt.kernel",
+        "monkeycad.backends.occt.projection",
+        "monkeycad.backends.occt.section",
+        "monkeycad.backends.rhino.export",
+        "monkeycad.backends.rhino.step_import",
+        "monkeycad.formats.conversion",
+        "monkeycad.formats.meshes",
+        "monkeycad.formats.sketchup_reader",
+        "monkeycad.patch",
+        "monkeycad.program"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/candidate.py",
@@ -5199,9 +5256,10 @@
         "state.stage_workflow",
         "studio.artifacts",
         "studio.intent",
-        "monkeycad.execution",
         "state.design_portfolio",
-        "studio.binding"
+        "studio.binding",
+        "monkeycad.formats",
+        "monkeycad.formats.three_dm_compose"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/validation.py",
@@ -5568,7 +5626,8 @@
         "monkeyarch.authoring.construction.identity",
         "monkeyarch.authoring.producer_signatures",
         "semantics.facets",
-        "studio.memory"
+        "studio.memory",
+        "monkeycad.backends.occt.projection"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/candidate.py",
@@ -8118,7 +8177,8 @@
         "initialize_drawing_runtime"
       ],
       "depends_on": [
-        "monkeycad.execution"
+        "monkeycad.occt",
+        "monkeycad.backends.occt.projection"
       ],
       "used_by": [
         "packages/monkeydiagram/tests/test_drawing_output.py",
