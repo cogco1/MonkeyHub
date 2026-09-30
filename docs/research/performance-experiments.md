@@ -79,7 +79,7 @@ E2 首轮只选 full 与 lexical，因为当前证据没有显示引入嵌入比
 | 前端下载、安装、投影、首次可见 | 现有 browser/preview 记录中的 `model_download`、`model_install`、`model_projection`、`first_visible` | 核对 run/candidate 身份；在隔离的 headless 浏览器验收，不借用户活动页面做实验 |
 | 最终可操作与余留时间 | 原有预览浏览器验收及 `TurnTrace` 的未归因区间 | 已记录事件不等于交互可用；能选中对象才结束。缺此检查时只能报告后端候选延迟 |
 
-复用 [UsageLog/TurnTrace](../../monkeymonitor/trace.py) 的区间覆盖计算。报告端到端墙钟、互不重叠的前台阶段及未归因时间；后台任务另列。端到端不等于所有 span 的时长之和。多工具并行时，少了工具秒数也未必缩短关键路径。
+复用 [UsageLog/TurnTrace](../../packages/monkeymonitor/src/monkeymonitor/trace.py) 的区间覆盖计算。报告端到端墙钟、互不重叠的前台阶段及未归因时间；后台任务另列。端到端不等于所有 span 的时长之和。多工具并行时，少了工具秒数也未必缩短关键路径。
 
 `first_candidate_ms` 需来自本回合真实生成并成功读回的新候选；已有输入候选或后来手工读回不能倒填为首次结果。跨进程时间若不能可靠对齐，保留各自区间与外部总墙钟，不强行拼成精确瀑布图。
 

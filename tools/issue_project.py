@@ -14,7 +14,7 @@ Example::
 
 ``decided_by`` and ``note`` are printed here and are not retained: the
 ``PromotionDecision@1`` the repository demands has a frozen key set, and adding
-to it would be refused as schema drift. See ``archflow/project/issue.py``.
+to it would be refused as schema drift. See ``packages/archflow/src/archflow/project/issue.py``.
 """
 
 from __future__ import annotations

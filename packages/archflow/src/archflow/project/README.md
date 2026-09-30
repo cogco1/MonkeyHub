@@ -29,12 +29,12 @@ row is never evidence.
 caller. `FilesystemProjectRepository.initialize` creates a project at an explicit
 root. These paths do not change `project.json` identity or `HEAD` authority.
 Active projects live outside the source repository. Section 8 of the
-[work environment and onboarding guide](../../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md)
+[work environment and onboarding guide](../../../../../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md)
 covers installation, project creation and Studio's explicit project binding.
 Tests bootstrap their own disposable projects through the same repository under `tempfile`.
 
 From the source root, using the installed Python environment, create an external
-project through the production [CLI](../../tools/create_project.py):
+project through the production [CLI](../../../../../tools/create_project.py):
 
 ```powershell
 python tools/create_project.py --project D:/ArchFlowRuntime/workspace/projects/my-project

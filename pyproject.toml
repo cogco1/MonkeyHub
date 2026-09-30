@@ -1,34 +1,13 @@
-[build-system]
-requires = ["setuptools>=69"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "archflow-v4"
-version = "0.1.0"
-description = "Bounded architectural agency with controlled state promotion"
-license = { file = "LICENSE" }
-requires-python = ">=3.12"
-dependencies = []
-
-[project.optional-dependencies]
-cad-inspection = ["rhino3dm==8.32.1"]
-# P107 in-process OCCT executor (adapters.cad_execution.execute_occt_export):
-# one verified binding, cp312 win_amd64 wheel checked 2026-09-05.  It also
-# writes the mesh .3dm preview through rhino3dm.  Pillow rasterises the
-# drawing SVG preview to PNG (monkeydiagram.drawing_svg.render_svg_png).
-cad-occt = ["cadquery-ocp==7.9.3.1.1", "rhino3dm==8.32.1", "Pillow>=12.3,<13"]
-
-[tool.setuptools.packages.find]
-include = ["archflow*", "monkeyarch*", "monkeymonitor*", "monkeycontrol*"]
-exclude = ["tests*", "governance*", "docs*", "tools*"]
-
-[tool.setuptools.package-data]
-monkeymonitor = ["rates.json"]
-monkeycontrol = ["hosts/*.ps1", "demos/*.json"]
+# The repository's development and test configuration. Nothing is built from here:
+# each Python package has its own manifest, packages/<name>/pyproject.toml.
 
 [tool.archflow]
 phase = "P1"
 test_command = "python -m unittest discover -s tests -v"
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "packages/monkeydiagram/tests"]
+# A package suite has no __init__.py, so two suites holding modules of one name cannot
+# share a process. monkeycontrol's test_trace.py and test_cli.py repeat monkeymonitor's and
+# monkeyfab's names, and monkeyfab's suite needs Fab's own dependencies: both run on their
+# own, as CI runs every package suite.
+testpaths = ["tests", "packages/archflow/tests", "packages/monkeydiagram/tests", "packages/monkeymonitor/tests"]

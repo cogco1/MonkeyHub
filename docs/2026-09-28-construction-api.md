@@ -33,7 +33,7 @@ Traced in the code at base `0efe3765` (main `a1df9b2b` is the same in these plac
 | F4 | **Two ids for one thing.** `componentId` and `elementId` (they must differ), `parentComponentId` (a buildable component), `baseLevel` xor `baseDatum`. | `SketchActionDto`, `sketch_prism_proposal` |
 | F5 | **One RPC per step.** Create one box: read state → sketch → candidate → poll job → read candidate. A composition is N sketches or one batch with no variables, loops or arithmetic across items. | `routes/proposals.py`, `routes/candidates.py` |
 | F6 | **The runtime contract is the authoring contract.** `producer_signatures()` serves both validation and the agent: plan `[x, z]`, `references.base`, `top`, `rectangular_cutouts`, `openings[]` with `sill/head/along/type_id`. | `element_producers.py` |
-| F7 | **Specialised capabilities are gated by producer, not meaning.** A door exists only in the `wall` producer's `openings`; `wall` is not even a registered semantic; to get a door the agent must choose `wall` at creation, which fixes meaning at creation. | `produce_wall`, `archflow/semantics` |
+| F7 | **Specialised capabilities are gated by producer, not meaning.** A door exists only in the `wall` producer's `openings`; `wall` is not even a registered semantic; to get a door the agent must choose `wall` at creation, which fixes meaning at creation. | `produce_wall`, `packages/archflow/src/archflow/semantics` |
 | F8 | **Backend proofs leaked into authoring.** Host cuts had to be `boolean_intersection` apertures; the bounds predictor refused doors in rotated walls. Fixed by the L5 half of #419. | `geometry_proposal.py`, `cad_program.py` |
 
 F1–F7 are the "束手束脚". Each one adds a decision, a round trip or a refusal that has nothing to do
@@ -59,7 +59,7 @@ An interface belongs to the layer that owns its information. A producer name is 
 ### 3.1 L1: the construction script
 
 The agent sends one bounded **construction script**: a small Python subset, interpreted (never
-executed) by `monkeyarch/construction`. It is parsed with `ast` and walked by a whitelist interpreter.
+executed) by `packages/monkeyarch/src/monkeyarch/construction`. It is parsed with `ast` and walked by a whitelist interpreter.
 
 **World.** Metres. Y is up. A plan point is `(x, z)`; a 3D point is `(x, y, z)`. This is the Hub's
 existing convention (`plan points are [x, z], with Y up`), unchanged.
@@ -160,7 +160,7 @@ because they are part of the form, not of its meaning.
 ### 3.4 L3: facets
 
 `Component@1.fields.facets` is a map of namespaced keys to values, validated against
-`archflow/semantics/facets.py`:
+`packages/archflow/src/archflow/semantics/facets.py`:
 
 | Key | Values |
 |---|---|

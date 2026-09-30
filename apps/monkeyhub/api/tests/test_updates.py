@@ -22,9 +22,12 @@ from urllib.error import HTTPError
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[4]
-for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhub/api"):
-    if str(directory) not in sys.path:
-        sys.path.insert(0, str(directory))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from tools import source_roots  # noqa: E402 - this checkout's tools, found above
+
+# The checkout's Python source roots, as its architecture policy lists them, go first.
+source_roots.put_first(ROOT)
 
 from fastapi.testclient import TestClient
 from apps.monkeyhub.installer.patch import REQUIRED_FILES, create_patch

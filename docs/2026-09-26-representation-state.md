@@ -122,7 +122,7 @@ A render row in the graph stays the render owner's reading of the attempt's reta
 3. **Is a "Production Stage" too abstract?** For now, yes. Job status is transient and says so: a restart shows `unknown` and never replays. Retained verdicts already exist: `CandidateAdmission@1`, `DeliberationEpisode@1`, the freeze, the review ink and a formal issue (`project.issue`). The Issue's own rule applies: no schema without a real consumer across sessions.
 4. **Are scene objects representation-only, or design evidence?** Plan entourage is representation-only. It lives in the drawing recipe (`dressing`) and is anchored to an exact design object (`anchorObjectId`). A rebuild moves it with that object. If the object is deleted, it is reported `missing` and is not rebound. It never enters the State Record. A scene object can become design evidence only through an explicit design proposal in a person's words, never by being drawn. Entourage in an AI render exists only as `direction` text, which nothing retains as evidence.
 5. **How are a render material override and a design material kept apart?** Design materials are State Record fields. An AI render's material wish is `direction` text in its retained request. `BlenderPresentation` has no material override and is locked to `overview` / `preview-v1`. No render path writes design state: `studio.render` states this as an invariant, and its tests hold `HEAD` fixed. A typed render recipe waits for a real user (#253).
-6. **Do drawing, render and fabrication need a shared abstraction, or a shared contract?** A shared contract. Drawing, Render and Publish share three things: exact source binding (`runId`, `assetSha256`, `revisionRef`, `pageIndex`, `modelSource`, `sourceStageRef`); explicit page replacement (`replaces_pages`); and now one status projection. They share no representation type. Fabrication (`apps/monkeyfab`) runs outside the project Runtime and reads no representation status today.
+6. **Do drawing, render and fabrication need a shared abstraction, or a shared contract?** A shared contract. Drawing, Render and Publish share three things: exact source binding (`runId`, `assetSha256`, `revisionRef`, `pageIndex`, `modelSource`, `sourceStageRef`); explicit page replacement (`replaces_pages`); and now one status projection. They share no representation type. Fabrication (`packages/monkeyfab`) runs outside the project Runtime and reads no representation status today.
 
 The Issue's render slice has six acceptance checks:
 
@@ -142,7 +142,7 @@ The tests use fixtures only. The room fixture in `TESTS/test_drawing_plans.py::C
 Run from a checkout with the Studio API dependencies. `cadquery-ocp` is optional; without it the OCCT tests skip. Separate `PYTHONPATH` entries with `;` on Windows and `:` elsewhere.
 
 ```text
-PYTHONPATH=<repo>;<repo>/apps/archflow-studio/api;<repo>/apps/monkeyhub/api;<repo>/apps/monkeyfab/src
+PYTHONPATH=<repo>;<repo>/apps/archflow-studio/api;<repo>/apps/monkeyhub/api;<repo>/packages/monkeyfab/src
 python -m pytest -q apps/archflow-studio/api/tests/test_representation_dependencies.py -k three_exact
 python -m pytest -q apps/archflow-studio/api/tests/test_representation_dependencies.py
 ```

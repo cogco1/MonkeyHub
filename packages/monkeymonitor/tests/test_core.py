@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -856,7 +857,8 @@ for index in range(40):
     store.append(UsageEvent('child-' + str(index), 'hub', 'none', 'none', 'tool_call', 'completed',
                             '2026-09-13T00:00:00+00:00', TokenUsage(), model_call=False))
 """, str(self.directory)],
-            cwd=Path(__file__).resolve().parents[2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         for index in range(40):
             store.append(stored(f"parent-{index}"))
         _, error = writer.communicate(timeout=120)

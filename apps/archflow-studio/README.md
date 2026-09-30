@@ -31,7 +31,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-project-runt
 
 `-Port` selects the API port and `-Python` selects the interpreter. There is no HTML
 hosting option or default project. Install this directory's API requirements and
-root `.[cad-occt]` in the chosen Python environment for normal geometry export.
+`packages/archflow[cad-occt]` in the chosen Python environment for normal geometry export.
 
 The runtime reads `ARCHFLOW_STUDIO_PROJECT_DIR`, `ARCHFLOW_STUDIO_CAD_EXPORT`,
 `ARCHFLOW_STUDIO_REFERENCE_RUN` and intent configuration from its launching environment.

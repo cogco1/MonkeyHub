@@ -15,6 +15,8 @@ import subprocess
 import sys
 import unittest
 
+from tools import source_roots
+
 # Both owner tiers, loaded the way an entry point loads them. Relying on a
 # sibling test having imported an owner first is the bug this module exists to
 # prevent, so nothing here depends on import order.
@@ -175,7 +177,7 @@ class OwnerLoadingTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         finished = subprocess.run(
             [sys.executable, "-c", probe], capture_output=True, text=True, cwd=str(root),
-            env={**os.environ, "PYTHONPATH": str(root)}, timeout=120,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join(source_roots.roots(root))}, timeout=120,
         )
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertEqual(finished.stdout.splitlines(), [

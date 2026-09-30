@@ -51,9 +51,9 @@ The Hub runs the existing services and owns only the child processes it starts. 
 
 The chat paperclip accepts files; files can also be dropped or pasted into the composer. Send text, attachments, or both. A message accepts up to 8 files, 20 MiB each and 40 MiB in total. Sent files stay with the conversation and can be downloaded after reopening or archiving it. PNG, JPEG, WebP and GIF use the native model image input. The connected `attachment_read` tool reads this chat's files without opening the Windows sandbox to the runtime directory: text in chunks, PDF text one page at a time, and other binary files as base64 chunks. Empty PDF text does not establish that a scanned page or drawing was visually inspected. Attachments are reference files in the Hub runtime, not imports into a building project.
 
-The package keeps the repository layout and includes one prebuilt Hub web directory. The installer supplies an embedded Python with the API, CAD and PDF dependencies already installed. No Git or npm command is needed to run that package.
+The package keeps the layout its installed updater expects, each Python package at its root and Fab at apps/monkeyfab wherever the repository keeps them, and includes one prebuilt Hub web directory. The installer supplies an embedded Python with the API, CAD and PDF dependencies already installed. No Git or npm command is needed to run that package.
 
-Every build includes `apps/monkeyfab` and its preparation/send dependencies in the same runtime. One Hub source commit in `build-info.json` identifies every included application, for both desktop and browser entrypoints.
+Every build includes MonkeyFab (`packages/monkeyfab`, shipped at `apps/monkeyfab`) and its preparation/send dependencies in the same runtime. One Hub source commit in `build-info.json` identifies every included application, for both desktop and browser entrypoints.
 
 The root OPEN_MONKEYHUB.cmd calls this entry:
 
@@ -73,7 +73,7 @@ on an explicit project is `scripts/dev/run-project-runtime.ps1`).
 
 ## Python entry and development
 
-Use Python 3.12 or later with apps/archflow-studio/api/requirements.txt and apps/monkeyhub/api/requirements.txt. Studio's normal OCCT export additionally uses the root project's cad-occt extra. The packaged interpreter may be newer if the installer has verified its binary dependencies.
+Use Python 3.12 or later with apps/archflow-studio/api/requirements.txt and apps/monkeyhub/api/requirements.txt. Studio's normal OCCT export additionally uses the cad-occt extra of packages/archflow. The packaged interpreter may be newer if the installer has verified its binary dependencies.
 
 For new Codex chats in a source checkout, install the pinned ACP adapter once with `npm ci --prefix apps/monkeyhub`. Hub uses `agent-client-protocol==0.12.1` and `@agentclientprotocol/codex-acp==1.11.0`, passing the installed native Codex executable through `CODEX_PATH` instead of choosing the adapter's bundled Codex. The compatibility check uses Codex 0.153.4. Node must be on PATH. A missing dependency is shown as unavailable; sending a message never downloads an adapter. This source integration does not update an already installed Hub package.
 
@@ -85,7 +85,7 @@ Each new Codex chat keeps one adapter process between turns. Hub saves its opaqu
 
 In a checkout, run.py puts the Python source roots that governance/architecture_policy.json lists first on its import path, so a worktree runs its own code without PYTHONPATH or an editable install; the installed package's embedded Python, which ignores PYTHONPATH, reads the same roots from its python313._pth. Its fixed --service studio and --service monitor forms call the existing service entry points; child processes use the same sys.executable.
 
-For source development, run `python -m pip install -e "apps/monkeyfab[send]"` from this repository using the Python environment that starts Hub. Fab code lives in [apps/monkeyfab](../monkeyfab/README.md); Hub always calls that checkout’s CLI, and complete desktop/browser packages include it by default. No second repository or source ref is needed.
+For source development, run `python -m pip install -e "packages/monkeyfab[send]"` from this repository using the Python environment that starts Hub. Fab code lives in [packages/monkeyfab](../../packages/monkeyfab/README.md); Hub always calls that checkout’s CLI, and complete desktop/browser packages include it by default. No second repository or source ref is needed.
 
 An API-only development run may omit --hub-web-dir. To connect a separate local web development server, pass --web-origin http://127.0.0.1:5175 (substitute its actual port). The packaged web and API use one origin. The Project Runtime serves APIs only; no second frontend build is required.
 

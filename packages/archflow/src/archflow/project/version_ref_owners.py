@@ -67,7 +67,7 @@ def load_workflow_owners() -> tuple[str, ...]:
 
 
 # Declared here rather than by its owner, and said plainly: the runner receipt
-# is written by ``monkeyarch/runtime/project_runner.py``, which another lane
+# is written by ``packages/monkeyarch/src/monkeyarch/runtime/project_runner.py``, which another lane
 # holds open. It derives nothing from the canonical base it carries - its
 # ``state_record_digest`` is ``StateRecord.digest``, which excludes ``base``,
 # and the envelope and developed-state digests it cites are other records'

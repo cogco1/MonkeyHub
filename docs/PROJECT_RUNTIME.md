@@ -69,7 +69,7 @@ Every project-scoped responsibility the product needs, behind `/api` (`routes/__
 | Concern | Routes | Owner module(s) |
 | --- | --- | --- |
 | Project binding and preparation | `GET /api/project`, `POST /api/project/modeling`, `GET /api/projects*` | `studio.binding` |
-| Canonical state, frame, volumes, closure | `GET /api/state`, `/state/frame`, `/state/volumes`, `POST /api/state/closure` | state owners in `archflow/state`, projection in `studio.binding` |
+| Canonical state, frame, volumes, closure | `GET /api/state`, `/state/frame`, `/state/volumes`, `POST /api/state/closure` | state owners in `packages/archflow/src/archflow/state`, projection in `studio.binding` |
 | Program sheet and semantics | `GET`\|`POST /api/program`, `GET /api/semantics` | `studio.program`, `state.program_sheet`, `semantics.registry` |
 | Massing options | `POST`\|`GET /api/options`, `POST /api/options/{id}/select` | `studio.options` |
 | Proposals and picking | `POST /api/proposals*`, `POST /api/pick/resolve`, `GET /api/proposals/{id}`, decisions | `studio.intent`, geometry owners in `monkeyarch` |
@@ -87,7 +87,7 @@ Every project-scoped responsibility the product needs, behind `/api` (`routes/__
 The two remaining route files answer about the process, not about the project:
 `routes/health.py` and `routes/protocol.py` are its identity (§5). Both belong to `studio.shell`.
 
-Also: the CAD/OCCT/Rhino execution and inspection adapters (`archflow/adapters`), selected by
+Also: the CAD/OCCT/Rhino execution and inspection adapters (`packages/archflow/src/archflow/adapters`), selected by
 `ARCHFLOW_STUDIO_CAD_EXPORT`; the evaluator/generator jobs; and every retained-record write
 through `archflow.project.repository`. In production the runtime is the only writer of a
 project. The Hub's runtime records and admission journal are observations, not a second

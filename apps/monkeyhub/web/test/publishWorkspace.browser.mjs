@@ -25,6 +25,8 @@ from io import BytesIO
 from PIL import Image,ImageDraw
 from fastapi.testclient import TestClient
 import uvicorn
+from tools import source_roots
+source_roots.put_first(Path.cwd())
 from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings

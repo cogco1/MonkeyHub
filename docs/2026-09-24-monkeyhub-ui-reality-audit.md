@@ -220,7 +220,7 @@ MonkeyArch 的布局：
 - **历史不刷新：** 设计历史不随后台事件刷新，于是 Accept 以 `DESIGN_BRANCH_STALE` 失败（`App.tsx:487-489, 1043-1052`）。
 
 ### F12 命令行正式发布可能发布未接受的候选【待确认，不属于 Hub UI】
-- **证据：** `archflow/project/issue.py:142-223` 不检查 harness run；harness 不要求任何检查（`API/adapters/harness.py:74-90`）。
+- **证据：** `packages/archflow/src/archflow/project/issue.py:142-223` 不检查 harness run；harness 不要求任何检查（`API/adapters/harness.py:74-90`）。
 - **与文档冲突：** ADR-007:28-31。
 
 ### F13 用语漂移【静态】

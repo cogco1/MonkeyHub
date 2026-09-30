@@ -66,10 +66,11 @@ from archflow.state.state_record import StateRecord, project_grids_of, project_l
 from tests.support import EVIDENCE, RECORD_PAYLOAD, authored_record, shared_bound_state
 from tests.test_cad_execution import _binding as _synthetic_binding, _program as _synthetic_program
 from tests.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
+from tools import source_roots
 
 OCCT_AVAILABLE = occt_backend.occt_available()
 NEEDS_OCCT = unittest.skipUnless(
-    OCCT_AVAILABLE, "cadquery-ocp is not installed: python -m pip install -e '.[cad-occt]'"
+    OCCT_AVAILABLE, "cadquery-ocp is not installed: python -m pip install -e 'packages/archflow[cad-occt]'"
 )
 PYTHON = sys.executable
 
@@ -2547,6 +2548,8 @@ class ImportBoundaryTests(unittest.TestCase):
             capture_output=True,
             text=True,
             cwd=str(Path(__file__).resolve().parents[1]),
+            # The fresh process imports this checkout's owner, not an installed one.
+            env={**os.environ, "PYTHONPATH": os.pathsep.join(source_roots.roots(Path(__file__).resolve().parents[1]))},
             timeout=120,
             check=False,
         )

@@ -14,10 +14,19 @@ from .models import (
 )
 
 ACCESS_CODE_ENV = "MONKEYFAB_HUB_ACCESS_CODE"
+# A checkout keeps Fab in packages/monkeyfab; the desktop bundle keeps it at
+# apps/monkeyfab, the path installed updaters require (installer/patch.py).
+FAB_SOURCES = ("packages/monkeyfab/src", "apps/monkeyfab/src")
+
+
+def _source(source_root: Path) -> Path | None:
+    """Where this Hub snapshot keeps the Fab CLI, if it has one."""
+    return next((source_root / relative for relative in FAB_SOURCES
+                 if (source_root / relative / "monkeyfab/__main__.py").is_file()), None)
 
 
 def available(source_root: Path) -> bool:
-    return (source_root / "apps/monkeyfab/src/monkeyfab/__main__.py").is_file()
+    return _source(source_root) is not None
 
 
 class Fabrication:
@@ -34,7 +43,7 @@ class Fabrication:
         # Source launchers' sys.path changes do not reach a fresh interpreter.
         # Always prefer the Fab code in this Hub snapshot over another install.
         environment["PYTHONPATH"] = os.pathsep.join(filter(None, (
-            str(self.source_root / "apps/monkeyfab/src"), environment.get("PYTHONPATH"),
+            str(_source(self.source_root)), environment.get("PYTHONPATH"),
         )))
         if access_code is not None:
             environment[ACCESS_CODE_ENV] = access_code

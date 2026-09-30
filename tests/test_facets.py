@@ -1,7 +1,7 @@
 """L3 facets: meaning added to a component's stable identity without touching its geometry.
 
 ``Component@1.fields.facets`` is a map of namespaced keys to string values,
-validated against ``archflow/semantics/facets.py`` (spec
+validated against ``packages/archflow/src/archflow/semantics/facets.py`` (spec
 docs/2026-09-28-construction-api.md §3.4): an enumerated key accepts one of
 its closed set of values, a free-text key accepts 1-120 characters. An
 unknown key or an unregistered value is a ``StateRecordError`` naming the
@@ -40,7 +40,7 @@ def _facet_record(facets: object = _OMIT) -> StateRecord:
 
 
 class FacetRegistryTests(unittest.TestCase):
-    """archflow/semantics/facets.py, in the style of tests/test_semantics.py."""
+    """packages/archflow/src/archflow/semantics/facets.py, in the style of packages/archflow/tests/test_semantics.py."""
 
     def test_registry_has_exactly_the_spec_table_keys(self) -> None:
         self.assertEqual(FACET_KEYS, frozenset({

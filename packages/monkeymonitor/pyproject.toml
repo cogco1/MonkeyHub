@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "monkeymonitor"
+version = "0.1.0"
+description = "Engineering usage, pricing and bounded algorithm selection, independent of architectural state and project persistence."
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+monkeymonitor = ["rates.json"]
+
+# No [tool.pytest.ini_options]: the root one keeps pytest's rootdir at the checkout,
+# whose conftest.py puts this checkout's source roots first.

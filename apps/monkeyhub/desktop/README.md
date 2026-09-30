@@ -42,9 +42,9 @@ The default version directory has a `-desktop` suffix. Existing installation
 files and user data are retained; missing desktop or Fab files fail installation.
 Installer tests use private temporary installation and shortcut directories.
 
-Fab lives in this repository's `apps/monkeyfab/` and is included in every package,
-with preparation and `send` dependencies. No external Fab repository or version
-argument is needed. For source mode, install `apps/monkeyfab[send]` into the
+Fab lives in this repository's `packages/monkeyfab/` and is included in every package,
+at `apps/monkeyfab/`, with preparation and `send` dependencies. No external Fab repository
+or version argument is needed. For source mode, install `packages/monkeyfab[send]` into the
 `--python` environment from the repository root.
 
 For explicit source development (the MonkeyHub frontend build

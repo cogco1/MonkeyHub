@@ -3,6 +3,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -494,7 +495,10 @@ store=UsageLog(Path(sys.argv[1]),max_bytes=12000,backups=3)
 for index in range(25):
     store.append(UsageEvent(sys.argv[2]+str(index),'hub','none','none','tool_call','completed','2026-09-13T00:00:00Z',TokenUsage(),model_call=False))
 """
-            processes = [subprocess.Popen([sys.executable, "-c", script, directory, f"writer-{index}-"], stdout=subprocess.PIPE, stderr=subprocess.PIPE) for index in range(4)]
+            # Each writer imports the package this suite belongs to, not an installed one.
+            environment = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}
+            processes = [subprocess.Popen([sys.executable, "-c", script, directory, f"writer-{index}-"], env=environment,
+                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE) for index in range(4)]
             for process in processes:
                 _, error = process.communicate(timeout=30)
                 self.assertEqual(process.returncode, 0, error.decode())

@@ -1,18 +1,18 @@
 {
   "schema": "ArchFlowArchitecturePolicy@1",
-  "source_root": "archflow",
+  "source_root": "packages/archflow",
   "checked_source_roots": [
-    "archflow",
-    "monkeyarch",
+    "packages/archflow",
+    "packages/monkeyarch",
     "packages/monkeydiagram",
-    "monkeymonitor",
-    "monkeycontrol",
+    "packages/monkeymonitor",
+    "packages/monkeycontrol",
     "tools",
     "apps/archflow-studio/api",
     "tests",
     "labs",
     "apps/monkeyhub",
-    "apps/monkeyfab"
+    "packages/monkeyfab"
   ],
   "import_only_source_roots": [
     "labs"
@@ -21,8 +21,12 @@
     ".",
     "apps/archflow-studio/api",
     "apps/monkeyhub/api",
-    "apps/monkeyfab/src",
-    "packages/monkeydiagram/src"
+    "packages/monkeyfab/src",
+    "packages/monkeydiagram/src",
+    "packages/archflow/src",
+    "packages/monkeyarch/src",
+    "packages/monkeymonitor/src",
+    "packages/monkeycontrol/src"
   ],
   "repository_root_entries": [
     "apps",
@@ -50,18 +54,17 @@
     "conftest.py",
     "pyproject.toml"
   ],
-  "legacy_root_packages": [
-    "archflow",
-    "monkeyarch",
-    "monkeymonitor",
-    "monkeycontrol"
-  ],
+  "legacy_root_packages": [],
   "shared_write_scope": [
     "governance/module_registry.json",
     "governance/work_registry.json",
     "tests/",
     "apps/archflow-studio/api/tests/",
     "packages/monkeydiagram/tests/",
+    "packages/archflow/tests/",
+    "packages/monkeymonitor/tests/",
+    "packages/monkeycontrol/tests/",
+    "packages/monkeyfab/tests/",
     "docs/PROTOCOL.md",
     "governance/architecture_policy.json",
     "docs/SYSTEM_MAP.md",
@@ -130,7 +133,7 @@
       "reason": "Atomic replacement shared by the existing account preferences and Hub launch configuration in an explicitly supplied nonproject runtime; neither file contains or writes project state."
     },
     {
-      "path": "archflow/project/repository.py",
+      "path": "packages/archflow/src/archflow/project/repository.py",
       "function": "*",
       "operations": [
         "mkdir",
@@ -143,7 +146,7 @@
       "reason": "The durable project repository is the sole project-document filesystem writer."
     },
     {
-      "path": "archflow/adapters/cad_execution.py",
+      "path": "packages/archflow/src/archflow/adapters/cad_execution.py",
       "function": "prepare_rhino_three_dm_export",
       "operations": [
         "open_write"
@@ -153,7 +156,7 @@
       "reason": "Exclusively creates a deterministic Rhino script inside the explicitly supplied non-symlink speculative workspace; saved 3DM output remains non-canonical."
     },
     {
-      "path": "archflow/adapters/cad_execution.py",
+      "path": "packages/archflow/src/archflow/adapters/cad_execution.py",
       "function": "work_model_workspace",
       "operations": [
         "mkdir"
@@ -245,7 +248,7 @@
       "reason": "Writes the response schema and transient document PNGs into the same TemporaryDirectory handed to codex exec; the directory is cleaned after the call and nothing under the project is touched."
     },
     {
-      "path": "archflow/project/inputs.py",
+      "path": "packages/archflow/src/archflow/project/inputs.py",
       "function": "write_program_sheet_file",
       "operations": [
         "mkdir",
@@ -256,7 +259,7 @@
       "reason": "writes input/runner/program-sheet.json only when POST /api/program carries saveInput=true in local mode; never writes state-record.json"
     },
     {
-      "path": "archflow/project/inputs.py",
+      "path": "packages/archflow/src/archflow/project/inputs.py",
       "function": "write_seat_pack_file",
       "operations": [
         "mkdir",
@@ -267,7 +270,7 @@
       "reason": "writes only input/runner/seats.json when the caller explicitly saves the authored seat pack; retaining replaced bytes belongs to the caller through project.repository"
     },
     {
-      "path": "monkeymonitor/store.py",
+      "path": "packages/monkeymonitor/src/monkeymonitor/store.py",
       "function": "append",
       "operations": [
         "open_write",
@@ -278,7 +281,7 @@
       "reason": "Append and rotate bounded metadata-only usage journals under the explicit noncanonical diagnostics directory; project documents are never written."
     },
     {
-      "path": "monkeymonitor/store.py",
+      "path": "packages/monkeymonitor/src/monkeymonitor/store.py",
       "function": "_locked",
       "operations": [
         "mkdir",
@@ -289,7 +292,7 @@
       "reason": "Create the caller-selected diagnostics directory and shared Hub/Studio journal lock file; no project authority."
     },
     {
-      "path": "monkeycontrol/store.py",
+      "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
       "function": "_prepare",
       "operations": [
         "mkdir"
@@ -299,7 +302,7 @@
       "reason": "Create the caller-supplied desktop-automation trace directory; monkeycontrol has no default location and no project authority."
     },
     {
-      "path": "monkeycontrol/store.py",
+      "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
       "function": "append",
       "operations": [
         "open_write"
@@ -309,7 +312,7 @@
       "reason": "Append one canonical ComputerActionReceipt@1 line to the action trace inside that directory."
     },
     {
-      "path": "monkeycontrol/store.py",
+      "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
       "function": "append_json",
       "operations": [
         "open_write"
@@ -319,7 +322,7 @@
       "reason": "Append one canonical JSON line to a recording's frame index or timeline journal inside that directory."
     },
     {
-      "path": "monkeycontrol/store.py",
+      "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
       "function": "save_bytes",
       "operations": [
         "open_write",
@@ -330,7 +333,7 @@
       "reason": "Write screenshots and recording frames under a temporary name and move them into place inside that directory."
     },
     {
-      "path": "monkeycontrol/store.py",
+      "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
       "function": "write_json",
       "operations": [
         "open_write",
@@ -476,7 +479,7 @@
       "reason": "Creates the external --update-output and --update-work directories main() validated outside the source checkout, and writes one new MonkeyHub-<version>-update-index.json beside the patches create_patch wrote there."
     },
     {
-      "path": "archflow/adapters/blender_cad.py",
+      "path": "packages/archflow/src/archflow/adapters/blender_cad.py",
       "function": "execute",
       "operations": [
         "open_write"
@@ -497,7 +500,7 @@
       "reason": "Holds one OS file lock under the explicit nonproject Hub runtime root across CLI startup and managed worker drain; browser and desktop cannot concurrently rewrite the same Hub chats/config. The lock contains no project state and is released when the actual Hub exits."
     },
     {
-      "path": "apps/monkeyfab/src/monkeyfab/cli.py",
+      "path": "packages/monkeyfab/src/monkeyfab/cli.py",
       "function": "_prepare",
       "operations": [
         "mkdir",
@@ -519,7 +522,7 @@
       "reason": "Existing frontend SDK generation writes only disposable OpenAPI schema inputs under .generated/ (the Hub's, and the project runtime's in project-runtime/); never project data."
     },
     {
-      "path": "archflow/adapters/blender_projection.py",
+      "path": "packages/archflow/src/archflow/adapters/blender_projection.py",
       "function": "execute_blender_projection",
       "operations": [
         "write_text"
@@ -606,7 +609,7 @@
       "reason": "Writes a developer delta ZIP only to the explicit output outside both input bundles; inputs are read-only and only the bounded temporary ZIP is cleaned on failure."
     },
     {
-      "path": "archflow/project/index/store.py",
+      "path": "packages/archflow/src/archflow/project/index/store.py",
       "function": "__init__",
       "operations": [
         "mkdir",
@@ -617,7 +620,7 @@
       "reason": "Creates the index directory and opens index.lock, the single-writer lease, inside the caller-supplied nonproject index directory (the index subdirectory of the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
     },
     {
-      "path": "archflow/project/index/store.py",
+      "path": "packages/archflow/src/archflow/project/index/store.py",
       "function": "_quarantine",
       "operations": [
         "unlink",
@@ -628,7 +631,7 @@
       "reason": "Moves an index file SQLite cannot read, with its journal, aside before it is rebuilt once, removing the copy an earlier failure left, inside the caller-supplied nonproject index directory (the index subdirectory of the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
     },
     {
-      "path": "archflow/project/index/store.py",
+      "path": "packages/archflow/src/archflow/project/index/store.py",
       "function": "_rebuild",
       "operations": [
         "unlink"
@@ -638,7 +641,7 @@
       "reason": "Removes a stale partial build before the index is projected into a new file, inside the caller-supplied nonproject index directory (the index subdirectory of the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
     },
     {
-      "path": "archflow/project/index/store.py",
+      "path": "packages/archflow/src/archflow/project/index/store.py",
       "function": "_swap",
       "operations": [
         "unlink",
@@ -673,7 +676,7 @@
   ],
   "forbidden_layer_imports": [
     {
-      "source": "archflow",
+      "source": "packages/archflow/src/archflow",
       "targets": [
         "labs",
         "monkeymonitor",
@@ -704,7 +707,7 @@
       "reason": "The spine suite is the spine's. A lab's own checks live in that lab."
     },
     {
-      "source": "archflow",
+      "source": "packages/archflow/src/archflow",
       "targets": [
         "docs",
         "tests",
@@ -741,7 +744,43 @@
       "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
     },
     {
-      "source": "archflow/contracts",
+      "source": "packages/archflow/tests",
+      "targets": [
+        "tests",
+        "labs",
+        "archive"
+      ],
+      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+    },
+    {
+      "source": "packages/monkeymonitor/tests",
+      "targets": [
+        "tests",
+        "labs",
+        "archive"
+      ],
+      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+    },
+    {
+      "source": "packages/monkeycontrol/tests",
+      "targets": [
+        "tests",
+        "labs",
+        "archive"
+      ],
+      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+    },
+    {
+      "source": "packages/monkeyfab/tests",
+      "targets": [
+        "tests",
+        "labs",
+        "archive"
+      ],
+      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+    },
+    {
+      "source": "packages/archflow/src/archflow/contracts",
       "targets": [
         "archflow.adapters",
         "archflow.capabilities",
@@ -756,7 +795,7 @@
       "reason": "Canonical contract primitives may depend on project identity only, never on higher domain, control, runtime, or adapter layers."
     },
     {
-      "source": "archflow/ports",
+      "source": "packages/archflow/src/archflow/ports",
       "targets": [
         "archflow.adapters",
         "archflow.capabilities",
@@ -768,7 +807,7 @@
       "reason": "External-world protocols may depend on stable identity contracts, never on their concrete adapters, orchestration, control, or validation implementations."
     },
     {
-      "source": "archflow/validation",
+      "source": "packages/archflow/src/archflow/validation",
       "targets": [
         "archflow.commit",
         "archflow.evaluation"
@@ -794,7 +833,7 @@
       "reason": "The Project Runtime (archflow_studio_api) validates requests, streams events and manages task lifecycle; design state, dependencies, validation, geometry and commit are calls into archflow. Geometry mathematics, graphs, .3dm writing and state schemas live in archflow and are imported, never reimplemented beside it. Pydantic models here are transport shapes, not a second canonical state."
     },
     {
-      "source": "archflow",
+      "source": "packages/archflow/src/archflow",
       "targets": [
         "monkeyarch",
         "monkeydiagram",
@@ -805,7 +844,7 @@
       "reason": "The shared ArchFlow core provides facts, persistence and CAD contracts; it cannot depend on either workflow."
     },
     {
-      "source": "monkeyarch",
+      "source": "packages/monkeyarch/src/monkeyarch",
       "targets": [
         "monkeydiagram",
         "labs",
@@ -837,7 +876,7 @@
       "reason": "The drawing workflow consumes retained source contracts through ArchFlow; it cannot import 3D workflow internals or project-specific code."
     },
     {
-      "source": "monkeyarch/capabilities",
+      "source": "packages/monkeyarch/src/monkeyarch/capabilities",
       "targets": [
         "archflow.commit",
         "archflow.project.repository"
@@ -845,14 +884,14 @@
       "reason": "Detached modeling capabilities cannot acquire persistence or promotion authority."
     },
     {
-      "source": "monkeyarch/compilers",
+      "source": "packages/monkeyarch/src/monkeyarch/compilers",
       "targets": [
         "archflow.project.repository"
       ],
       "reason": "Geometry compilation returns a domain value and has no project writer."
     },
     {
-      "source": "monkeymonitor",
+      "source": "packages/monkeymonitor/src/monkeymonitor",
       "targets": [
         "archflow",
         "monkeyarch",
@@ -866,7 +905,7 @@
       "reason": "The independent usage and pricing tool receives plain values; project and workflow execution remain with their owners."
     },
     {
-      "source": "apps/monkeyfab/src",
+      "source": "packages/monkeyfab/src/monkeyfab",
       "targets": [
         "archflow",
         "monkeyarch",
@@ -874,6 +913,7 @@
         "monkeymonitor",
         "archflow_studio_api",
         "monkeyhub_api",
+        "labs",
         "probes",
         "archive",
         "monkeycontrol"
@@ -881,7 +921,7 @@
       "reason": "Fab owns print preparation and upload-only CLI behavior; the Hub composes applications and P036 alone owns project state."
     },
     {
-      "source": "monkeycontrol",
+      "source": "packages/monkeycontrol/src/monkeycontrol",
       "targets": [
         "monkeyarch",
         "monkeydiagram",
@@ -909,7 +949,7 @@
   ],
   "allowed_authority_symbols": [
     {
-      "path": "archflow/project/repository.py",
+      "path": "packages/archflow/src/archflow/project/repository.py",
       "symbol": "FilesystemProjectRepository",
       "owner": "P036"
     }

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -16,6 +17,8 @@ from archflow.project.repository import FilesystemProjectRepository, ProjectInte
 
 OLD = "2026-01-01T00:00:00+00:00"
 NOW = "2026-01-03T00:00:00+00:00"
+# A second process imports the kernel this suite belongs to, not an installed one.
+CHILD_ENV = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}
 
 
 class WorkingDraftRepositoryTests(unittest.TestCase):
@@ -170,7 +173,7 @@ print(r.prune_working_draft(now=sys.argv[2]),flush=True)
         with self.repo.working_draft_guard():
             self.repo.load_run(source.run_id)
             child = subprocess.Popen([sys.executable, "-u", "-c", code, str(self.repo.layout.root), NOW],
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=CHILD_ENV)
             self.addCleanup(lambda: child.kill() if child.poll() is None else None)
             self.assertEqual(child.stdout.readline().strip(), "ready")
             with self.assertRaises(subprocess.TimeoutExpired):
@@ -193,7 +196,7 @@ print('saved')
 """
         with self.repo.working_draft_guard():
             child = subprocess.Popen([sys.executable, "-u", "-c", code, str(self.repo.layout.root)],
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=CHILD_ENV)
             self.addCleanup(lambda: child.kill() if child.poll() is None else None)
             self.assertEqual(child.stdout.readline().strip(), "read")
             self.assertEqual(self.repo.prune_working_draft(now=NOW), ())

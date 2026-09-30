@@ -207,10 +207,10 @@ Checkout 旧 Stage 只读。若从当前 head 做局部墙体修改，保留完�
 
 ## 11. 本次核对的主要代码依据
 
-- [portfolio](../archflow/state/design_portfolio.py)：现有 lineage owner 及旧 SchematicOption/run 绑定限制；[StateRecord](../archflow/state/state_record.py)：operator、依赖和仍被 compiler 使用的 developed-design 投影。
+- [portfolio](../packages/archflow/src/archflow/state/design_portfolio.py)：现有 lineage owner 及旧 SchematicOption/run 绑定限制；[StateRecord](../packages/archflow/src/archflow/state/state_record.py)：operator、依赖和仍被 compiler 使用的 developed-design 投影。
 - [WorkingCopy / episodes](../apps/archflow-studio/api/archflow_studio_api/application/episodes.py)：common base、scope、A/B 和保存选择；[candidate](../apps/archflow-studio/api/archflow_studio_api/application/candidate.py)：先完整 native 执行、后 composed 合成。
-- [jobs](../apps/archflow-studio/api/archflow_studio_api/application/jobs.py)、[proposals](../apps/archflow-studio/api/archflow_studio_api/application/proposals.py)、[runner](../monkeyarch/runtime/project_runner.py)、[cad_patch](../archflow/adapters/cad_patch.py)：并发冲突、复用与增量执行边界。
-- [project ports](../archflow/project/ports.py)、[repository](../archflow/project/repository.py)、[layout](../archflow/project/layout.py)、[issue](../archflow/project/issue.py)：现有持久化范围、原子发布和本方案需要补充的设计 branch 引用。
+- [jobs](../apps/archflow-studio/api/archflow_studio_api/application/jobs.py)、[proposals](../apps/archflow-studio/api/archflow_studio_api/application/proposals.py)、[runner](../packages/monkeyarch/src/monkeyarch/runtime/project_runner.py)、[cad_patch](../packages/archflow/src/archflow/adapters/cad_patch.py)：并发冲突、复用与增量执行边界。
+- [project ports](../packages/archflow/src/archflow/project/ports.py)、[repository](../packages/archflow/src/archflow/project/repository.py)、[layout](../packages/archflow/src/archflow/project/layout.py)、[issue](../packages/archflow/src/archflow/project/issue.py)：现有持久化范围、原子发布和本方案需要补充的设计 branch 引用。
 - [App](../apps/monkeyhub/web/src/app/App.tsx)、[VersionsStrip](../apps/monkeyhub/web/src/features/stage/VersionsStrip.tsx)、[Stage](../apps/monkeyhub/web/src/features/stage/Stage.tsx)、[DocumentCanvas](../apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx)：当前视图、来源和显示生命周期。
 - [drawing_elevation](../packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py)、[既有出图方案](DRAWING_MODULE_ARCHITECTURE_PLAN.md)、[SYSTEM_MAP](SYSTEM_MAP.md)：已实现立面消费者和其他能力边界。
 

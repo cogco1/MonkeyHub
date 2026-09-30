@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from tools import source_roots
 from archflow.adapters.three_dm_inspector import (
     ThreeDmInspection,
     ThreeDmInspectionError,
@@ -72,6 +74,8 @@ class ThreeDmInspectorTests(unittest.TestCase):
                     str(source),
                 ],
                 cwd=Path(__file__).resolve().parents[1],
+                # The fresh process reads this checkout's kernel, not an installed one.
+                env={**os.environ, "PYTHONPATH": os.pathsep.join(source_roots.roots(Path(__file__).resolve().parents[1]))},
                 check=True,
                 capture_output=True,
                 text=True,

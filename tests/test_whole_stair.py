@@ -37,7 +37,7 @@ from tests.support import shared_bound_state
 from tests.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
 
 NEEDS_OCCT = unittest.skipUnless(
-    occt_backend.occt_available(), "cadquery-ocp is not installed: python -m pip install -e '.[cad-occt]'"
+    occt_backend.occt_available(), "cadquery-ocp is not installed: python -m pip install -e 'packages/archflow[cad-occt]'"
 )
 
 BASIS = ("reading:plate",)

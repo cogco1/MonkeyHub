@@ -460,7 +460,7 @@ def provider_turn(base, monitor, session_id, message, output, timeout):
 def run_arm(args, prepared):
     root, mode = args.output, args.condition
     build_revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    diff_command = ["git", "diff", "HEAD", "--", "apps", "archflow", "monkeyarch", "monkeymonitor", "tests/monkeymonitor"]
+    diff_command = ["git", "diff", "HEAD", "--", "apps", "packages/archflow", "packages/monkeyarch", "packages/monkeymonitor", "tests/monkeymonitor"]
     source_diff = subprocess.check_output(diff_command, cwd=ROOT)
     repository = harness.FilesystemProjectRepository.open(root / "projects" / PROJECT_ID)
     if (root / "started.json").exists() or harness.source_identity(repository) != prepared["source"]:

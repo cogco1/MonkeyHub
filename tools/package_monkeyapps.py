@@ -66,16 +66,23 @@ RELEASE_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*
 # Each Python package ships at the bundle root, where python313._pth's ..\.. finds it,
 # wherever the repository keeps it, so a move changes neither the ._pth nor the bundle's layout.
 BUNDLED_PACKAGES = {
-    "archflow": "archflow", "monkeyarch": "monkeyarch",
+    "archflow": "packages/archflow/src/archflow", "monkeyarch": "packages/monkeyarch/src/monkeyarch",
     "monkeydiagram": "packages/monkeydiagram/src/monkeydiagram",
-    "monkeymonitor": "monkeymonitor", "monkeycontrol": "monkeycontrol",
+    "monkeymonitor": "packages/monkeymonitor/src/monkeymonitor",
+    "monkeycontrol": "packages/monkeycontrol/src/monkeycontrol",
 }
+# The kernel's manifest names the Python requirements and the cad-occt extra the
+# embedded runtime installs (prepare_runtime).
+KERNEL_MANIFEST = "packages/archflow/pyproject.toml"
+# MonkeyFab ships at apps/monkeyfab, where python313._pth lists its src and installed
+# updaters require its files (apps/monkeyhub/installer/patch.py REQUIRED_FILES).
+FAB_BUNDLE, FAB_SOURCE = "apps/monkeyfab", "packages/monkeyfab"
 # Git, rather than the working directory, supplies these files. User runtime
 # configuration, projects, credentials, caches and local WIP never enter a ZIP.
 SOURCE_PATHS = (
-    *BUNDLED_PACKAGES.values(),
+    *BUNDLED_PACKAGES.values(), KERNEL_MANIFEST,
     "apps/archflow-studio/api",
-    "apps/monkeyhub", "apps/monkeyfab", "packages/web-shared", "OPEN_MONKEYHUB.cmd",
+    "apps/monkeyhub", FAB_SOURCE, "packages/web-shared", "OPEN_MONKEYHUB.cmd",
     "README.md", "SECURITY.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
     "tools/source_roots.py", "governance/module_registry.json",
 )
@@ -124,10 +131,10 @@ def prepare_runtime(source: Path, destination: Path, cache: Path,
     destination.mkdir(parents=True)
     with zipfile.ZipFile(fetch_runtime(cache)) as archive:
         archive.extractall(destination)
-    metadata = tomllib.loads((source / "pyproject.toml").read_text(encoding="utf-8"))
+    metadata = tomllib.loads((source / KERNEL_MANIFEST).read_text(encoding="utf-8"))
     requirements = [*metadata["project"]["dependencies"],
                     *metadata["project"]["optional-dependencies"]["cad-occt"]]
-    fab_metadata = tomllib.loads((source / "apps/monkeyfab/pyproject.toml").read_text(encoding="utf-8"))
+    fab_metadata = tomllib.loads((source / FAB_SOURCE / "pyproject.toml").read_text(encoding="utf-8"))
     requirements.extend(fab_metadata["project"]["dependencies"])
     requirements.extend(fab_metadata["project"]["optional-dependencies"]["send"])
     requirement_args = ["-r", str(source / "apps/archflow-studio/api/requirements.txt")]
@@ -240,9 +247,11 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
     for name, relative in BUNDLED_PACKAGES.items():
         shutil.copytree(source / relative, bundle / name)
     for relative in ("apps/archflow-studio/api/archflow_studio_api", "apps/monkeyhub/assets",
-                     "apps/monkeyhub/api", "apps/monkeyhub/installer", "apps/monkeyfab"):
+                     "apps/monkeyhub/api", "apps/monkeyhub/installer"):
         shutil.copytree(source / relative, bundle / relative,
                         ignore=shutil.ignore_patterns("__pycache__", "tests", "test_*", "third-party"))
+    shutil.copytree(source / FAB_SOURCE, bundle / FAB_BUNDLE,
+                    ignore=shutil.ignore_patterns("__pycache__", "tests", "test_*", "third-party"))
     # Keep upstream license text and source labels, but shorten its distribution
     # paths so the installer does not depend on Windows long-path opt-in.
     notices = source / "apps/monkeyhub/installer/third-party"

@@ -117,7 +117,7 @@ implemented behavior; remaining work and its acceptance are tracked in
 - [Project Runtime guide](apps/archflow-studio/README.md) — setup, model interaction,
   candidate execution, and validation.
 - [API protocol](docs/PROTOCOL.md) — client/server contracts and versioning.
-- [Project document boundary](archflow/project/README.md) — project identity,
+- [Project document boundary](packages/archflow/src/archflow/project/README.md) — project identity,
   storage layout, references, and persistence.
 - [Repository layout](docs/REPO_LAYOUT.md) — what lives in the repository, the
   external workspace (building projects and their evidence) and the external archive.
@@ -175,7 +175,7 @@ Rhino). See the [Project Runtime guide](apps/archflow-studio/README.md) for inte
 
 ## Project data
 
-`archflow/` contains shared contracts and project mechanisms; `monkeyarch/` and
+`packages/archflow/` contains shared contracts and project mechanisms; `packages/monkeyarch/` and
 `packages/monkeydiagram/` hold the workflow algorithms. `apps/monkeyhub/web/` composes the single application interface; `apps/archflow-studio/api/` serves project APIs. Active building projects live in an explicitly configured
 external project root. Promoted regression evidence belongs in `probes/`.
 Both use the same project layout and persistence owner.

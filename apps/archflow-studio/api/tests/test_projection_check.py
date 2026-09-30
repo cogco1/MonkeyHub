@@ -129,6 +129,21 @@ class VerdictTests(unittest.TestCase):
         self.assertIsNone(projection_check.first_difference(root / "a", root / "a"))
 
 
+class LayoutTests(unittest.TestCase):
+    """A base from before #489 keeps archflow at its root; the check reads either layout."""
+
+    def test_each_side_imports_archflow_from_where_it_keeps_it(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        old, new = root / "old", root / "new"
+        for kernel in (old / "archflow", new / "packages" / "archflow" / "src" / "archflow"):
+            kernel.mkdir(parents=True)
+            (kernel / "__init__.py").write_text("", encoding="utf-8")
+        self.assertEqual(projection_check._kernel_source(old), old)
+        self.assertEqual(projection_check._kernel_source(new), new / "packages" / "archflow" / "src")
+        self.assertEqual(projection_check._kernel_source(REPOSITORY), REPOSITORY / "packages" / "archflow" / "src")
+
+
 class EndToEndTests(unittest.TestCase):
     """One real run: this checkout against itself, on the smallest scenario."""
 

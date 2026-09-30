@@ -42,10 +42,12 @@ try {
   const fixture = spawnSync(python, ["-c", `
 import base64, json, sys
 from pathlib import Path
+from tools import source_roots
+source_roots.put_first(Path(sys.argv[2]))
 import archflow
 from tests.support import make_empty_project
 from tests.study_fixture import fixture_png, fixture_evidence, fixture_research
-assert Path(archflow.__file__).resolve() == Path(sys.argv[2], "archflow/__init__.py").resolve()
+assert Path(archflow.__file__).resolve() == Path(sys.argv[2], "packages/archflow/src/archflow/__init__.py").resolve()
 make_empty_project(Path(sys.argv[1]))
 print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(case)).decode(),
     "evidence": fixture_evidence(case)} for case in ("base", "contracted", "blocked")],

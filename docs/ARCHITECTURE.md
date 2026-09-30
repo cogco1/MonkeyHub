@@ -27,7 +27,7 @@ perspective views placed on a sheet. A proposed change drawn in 2D does not sile
 change the 3D model; applying it to the model is an explicit handoff to MonkeyArch.
 
 **ArchFlow** owns the shared project and contract foundation. The Python source now
-separates `archflow/`, `monkeyarch/` and `packages/monkeydiagram/`, with two peer Web workspaces
+separates `packages/archflow/`, `packages/monkeyarch/` and `packages/monkeydiagram/`, with two peer Web workspaces
 and a shared application host. Modeling algorithms and drawing execution live in their
 respective packages. Shared geometry values remain in `archflow.state.geometry_program`
 so CAD adapters do not import the modeling compiler. The dependency direction and
@@ -78,24 +78,24 @@ candidate work uses the existing harness and does not issue a project version.
 Local improvements can be tried without waiting for the formal-issue workflow.
 
 ```text
-StateRecord@1                     archflow/state/state_record.py      the design, content-addressed
+StateRecord@1                     packages/archflow/src/archflow/state/state_record.py      the design, content-addressed
   │ developed_design_view          the bound projection (run, base) — binding identity
   ▼
-element producers                 monkeyarch/capabilities/element_producers.py
+element producers                 packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py
   │ reference_resolver             levels, grids, datums, derivations resolve here
   ▼
-GeometryProgramProposal           archflow/state/geometry_program.py
-  │ compile_geometry_program       monkeyarch/compilers/geometry.py — the one compiler
+GeometryProgramProposal           packages/archflow/src/archflow/state/geometry_program.py
+  │ compile_geometry_program       packages/monkeyarch/src/monkeyarch/compilers/geometry.py — the one compiler
   ▼
-CAD                               archflow/adapters/cad_program.py → cad_execution.py → cad_patch.py
+CAD                               packages/archflow/src/archflow/adapters/cad_program.py → cad_execution.py → cad_patch.py
   │ three_dm_inspector             readback is evidence, never intent
   ▼
-relation checks                   monkeyarch/capabilities/relation_checks.py — plain domain values
+relation checks                   packages/monkeyarch/src/monkeyarch/capabilities/relation_checks.py — plain domain values
   ▼
-stage workflow                    archflow/state/stage_workflow.py + StageExecutionGuard (project_runner)
+stage workflow                    packages/archflow/src/archflow/state/stage_workflow.py + StageExecutionGuard (project_runner)
   ▼
-P036 repository                   archflow/project/repository.py — content-addressed records; one published design
-  │ issue                          archflow/project/issue.py — compare-and-swap from a satisfied closure (ADR-007)
+P036 repository                   packages/archflow/src/archflow/project/repository.py — content-addressed records; one published design
+  │ issue                          packages/archflow/src/archflow/project/issue.py — compare-and-swap from a satisfied closure (ADR-007)
   ▼
 the published design              the one issue a project stands at; canonical `HEAD` is its file
 ```
@@ -114,10 +114,10 @@ Its single frontend at `apps/monkeyhub/web/` renders Arch and Board directly; Di
 Board page. The API-only Project Runtime remains at `apps/archflow-studio/api/` under its
 historical package name, with one process and one client binding per open project.
 
-Shared foundations: `archflow/project/refs.py` (the four references), `archflow/contracts/`
-(canonical JSON, digests, field parsing), `archflow/validation/{model,engine}.py`
-(`validate_submission`, `Finding`, `ValidationReceipt`), `archflow/ports/model.py` (the one
-model invocation request and receipt; whoever crosses the boundary signs one).
+Shared foundations, under `packages/archflow/src/archflow/`: `project/refs.py` (the four
+references), `contracts/` (canonical JSON, digests, field parsing), `validation/{model,engine}.py`
+(`validate_submission`, `Finding`, `ValidationReceipt`), `ports/model.py` (the one model
+invocation request and receipt; whoever crosses the boundary signs one).
 
 ## Construction first: geometry now, meaning later (#419)
 
@@ -134,10 +134,10 @@ maturity stages that use them:
 | L5 Backend lowering and certification | producers, OCCT, exact B-rep, readback | E Deliver and certify |
 
 - **The construction script is the agent's geometry contract.** An agent makes and changes
-  geometry with one bounded script (`monkeyarch/construction`; `POST /api/proposals/construction`,
+  geometry with one bounded script (`packages/monkeyarch/src/monkeyarch/construction`; `POST /api/proposals/construction`,
   vocabulary at `GET /api/construction`) and reads the model back in the same words at
   `GET /api/construction/model`. Producers are internal lowering targets the runtime chooses (a
-  script's shapes in `monkeyarch/construction/lowering.py` as `prism`, `planar-surface`, `curve` or
+  script's shapes in `packages/monkeyarch/src/monkeyarch/construction/lowering.py` as `prism`, `planar-surface`, `curve` or
   `loft`; `wall` once a block hosts a door or window), never agent vocabulary; the Hub refuses an
   agent `semanticEdit` that writes geometry rows or meaning fields and names the route that does.
   The Studio web client keeps its own drawing routes.
@@ -149,11 +149,11 @@ maturity stages that use them:
   The cutter keeps its id and stays in the model, hidden; a cut whose result the predicted bounds
   cannot follow is refused at its script line.
 - **Meaning accumulates as facets.** `POST /api/proposals/facets` sets `Component@1.fields.facets`
-  (`archflow/semantics/facets.py`) and changes nothing else. Facets unlock capabilities: today
+  (`packages/archflow/src/archflow/semantics/facets.py`) and changes nothing else. Facets unlock capabilities: today
   `hosted-opening` for `architectural.role = wall`, which realises a block as a wall in place under
   the same ids.
 - **Domains ask for missing facets and never guess.** `GET /api/domains/{domain}/readiness`
-  (`monkeyarch/capabilities/domain_readiness.py`) answers what a domain will read or which facets
+  (`packages/monkeyarch/src/monkeyarch/capabilities/domain_readiness.py`) answers what a domain will read or which facets
   it still needs and why; no domain infers meaning from shape or producer.
 
 The contract is [the construction API](2026-09-28-construction-api.md); the L5 half (voids and their

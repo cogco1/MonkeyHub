@@ -13,8 +13,12 @@ from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 
 ROOT = Path(__file__).resolve().parents[4]
-for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhub/api"):
-    if str(directory) not in sys.path: sys.path.insert(0, str(directory))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from tools import source_roots  # noqa: E402 - this checkout's tools, found above
+
+# The checkout's Python source roots, as its architecture policy lists them, go first.
+source_roots.put_first(ROOT)
 from monkeyhub_api import chat
 from monkeyhub_api.models import HubFailure
 

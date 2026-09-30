@@ -38,10 +38,12 @@ try {
   const fixture = spawnSync(python, ["-c", `
 import base64, json, sys
 from pathlib import Path
+from tools import source_roots
+source_roots.put_first(Path(sys.argv[2]))
 import archflow
 from tests.support import make_empty_project
 from tests.test_documents import two_page_pdf
-assert Path(archflow.__file__).resolve() == Path(sys.argv[2], "archflow/__init__.py").resolve(), archflow.__file__
+assert Path(archflow.__file__).resolve() == Path(sys.argv[2], "packages/archflow/src/archflow/__init__.py").resolve(), archflow.__file__
 # Authored building description, no run and no retained model: the same starting
 # point the model-sync test draws on, so a local drawing here needs no export.
 make_empty_project(Path(sys.argv[1]))

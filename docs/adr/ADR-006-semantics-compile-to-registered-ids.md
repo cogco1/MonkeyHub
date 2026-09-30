@@ -1,6 +1,6 @@
 # ADR-006 — Architectural semantics compile to registered ids
 
-**Decision (2026-09-03):** a State Record's semantic fields name ids from `archflow/semantics/`
+**Decision (2026-09-03):** a State Record's semantic fields name ids from `packages/archflow/src/archflow/semantics/`
 (`role.*`, `condition.*`), or a registered alias or compound phrase that resolves to them. A
 string that resolves to nothing is refused by the record with the nearest ids named. Entity,
 role and condition are three things: a wall is an entity, weather enclosure is a role, a

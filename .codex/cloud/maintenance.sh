@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-python -m pip install -e . -e packages/monkeydiagram
+python -m pip install -e packages/archflow -e packages/monkeyarch -e packages/monkeydiagram \
+  -e packages/monkeymonitor -e packages/monkeycontrol
 
 python tools/archcheck.py
 
