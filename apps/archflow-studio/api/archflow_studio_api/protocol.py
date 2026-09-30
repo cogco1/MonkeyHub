@@ -28,7 +28,7 @@ from Rhino.
 
 from __future__ import annotations
 
-from .settings import LOCAL_MODE, SHARED_PROJECT_ROLE, StudioSettings
+from .settings import SHARED_PROJECT_ROLE, StudioSettings
 
 PROTOCOL_MAJOR = 2
 PROTOCOL_MINOR = 2
@@ -94,8 +94,6 @@ def server_capabilities(settings: StudioSettings) -> tuple[str, ...]:
         capabilities.append(CAD_EXPORT_CAPABILITY)
     if settings.rhino_lane:
         capabilities.append(RHINO_EXPORT_CAPABILITY)
-    if settings.mode == LOCAL_MODE:
-        capabilities.append("user-settings")
     if settings.monitor_dir is not None:
         capabilities.append("operation-timing")
         capabilities.append("operation-diagnostics")

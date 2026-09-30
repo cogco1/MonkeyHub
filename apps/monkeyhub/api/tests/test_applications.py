@@ -25,12 +25,12 @@ for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhu
     if str(directory) not in sys.path:
         sys.path.insert(0, str(directory))
 
-from archflow_studio_api.transport.settings import ApplicationSettingsDto
 from archflow_studio_api.application.projections import projection_queue
 from archflow_studio_api.settings import StudioSettings
 from archflow_studio_api.render_adapters.gemini import adapter_from_settings
 from monkeyhub_api.applications import Applications
 from monkeyhub_api.models import HubFailure
+from monkeyhub_api.settings.models import ApplicationSettingsDto
 
 
 class StudioChildEnvironmentTests(unittest.TestCase):

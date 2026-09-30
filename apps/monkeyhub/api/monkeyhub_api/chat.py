@@ -53,12 +53,12 @@ if __package__ in {None, ""}:
 from archflow.project.refs import ProjectRecordRef, require_identifier
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord
-from archflow_studio_api.settings import read_application_settings, read_user_settings
 
 from pydantic import Field
 
 from . import credentials
 from . import skill_plugins
+from .settings.store import read_application_settings, read_user_settings
 
 from .models import (
     ChatAttachment, ChatAttention, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,

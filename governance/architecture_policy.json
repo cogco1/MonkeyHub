@@ -116,7 +116,7 @@
       "reason": "Atomically saves only request signatures, exact project binding and recovery observations at runtime/operations/<runtimeId>.json under the caller-supplied nonproject Hub runtime root. No request body or canonical result is stored; P036 alone proves project outcomes."
     },
     {
-      "path": "apps/archflow-studio/api/archflow_studio_api/settings.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/settings/store.py",
       "function": "_save_local_settings",
       "operations": [
         "mkdir",
@@ -124,7 +124,7 @@
         "unlink"
       ],
       "kind": "user_settings",
-      "owner": "studio.shell",
+      "owner": "hub.shell",
       "reason": "Atomic replacement shared by the existing account preferences and Hub launch configuration in an explicitly supplied nonproject runtime; neither file contains or writes project state."
     },
     {

@@ -118,11 +118,11 @@ class UserPreference:
     """自动更新 is saved with the other user settings; absent means on."""
 
     def enabled(self) -> bool:
-        from archflow_studio_api.settings import read_user_settings
+        from .settings.store import read_user_settings
         return read_user_settings().auto_update is not False
 
     def set(self, enabled: bool) -> None:
-        from archflow_studio_api.settings import read_user_settings, save_user_settings
+        from .settings.store import read_user_settings, save_user_settings
         # Only "off" is written: the default stays absent, which versions
         # older than this setting can still read.
         save_user_settings(read_user_settings().model_copy(update={"auto_update": None if enabled else False}))
