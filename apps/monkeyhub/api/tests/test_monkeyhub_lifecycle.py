@@ -33,10 +33,11 @@ for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhu
 from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.settings import StudioSettings, save_application_settings
-from archflow_studio_api.transport.settings import ApplicationSettingsDto
+from archflow_studio_api.settings import StudioSettings
 from monkeyhub_api import chat as chat_tools
 from monkeyhub_api.main import HubSettings, complete_interrupted_connection_teardown, create_app
+from monkeyhub_api.settings.models import ApplicationSettingsDto
+from monkeyhub_api.settings.store import save_application_settings
 
 
 def project_fixture():

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Language } from "../../../shared-web/src/appearance.js";
-import { translateMessage } from "../../../shared-web/src/i18n.js";
+import type { Language } from "../../../../packages/web-shared/src/appearance.js";
+import { translateMessage } from "../../../../packages/web-shared/src/i18n.js";
 import { hubCopyCatalog } from "./i18n/catalogs";
 import type { UpdateStatus } from "./api/generated/types.gen";
 

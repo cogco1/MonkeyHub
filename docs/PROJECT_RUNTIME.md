@@ -84,9 +84,8 @@ Every project-scoped responsibility the product needs, behind `/api` (`routes/__
 | Skills | `POST /api/skills`, `GET /api/skills` (index, no bodies), `GET /api/skills/{skill_id}` (`?version=`) | `studio.skills` |
 | Shared-project role | `/api/sync/*` | `studio.binding` |
 
-The three remaining route files answer about the process, not about the project:
-`routes/health.py` and `routes/protocol.py` are its identity (§5), and `routes/settings.py` is
-served on the Hub's behalf (§4). All three belong to `studio.shell`.
+The two remaining route files answer about the process, not about the project:
+`routes/health.py` and `routes/protocol.py` are its identity (§5). Both belong to `studio.shell`.
 
 Also: the CAD/OCCT/Rhino execution and inspection adapters (`archflow/adapters`), selected by
 `ARCHFLOW_STUDIO_CAD_EXPORT`; the evaluator/generator jobs; and every retained-record write
@@ -182,11 +181,10 @@ are unchanged. No new panel replaces the old panels.
 
 - **Settings authority.** User preferences (`%APPDATA%\MonkeyArch\settings.json`) and
   application settings (`<runtime root>/config/applications.json`) belong to MonkeyHub: the Hub
-  edits them, and injects the resolved values at launch (§2). The code that reads and writes
-  those files lives in this package (`settings.py`) because the Hub imports it and mounts
-  `routes/settings.py`; the runtime serves `GET/PUT /api/settings/user` in local mode for that
-  reason and consults the file for nothing of its own. No second preference store may be added
-  on either side.
+  reads, edits and serves them (`apps/monkeyhub/api/monkeyhub_api/settings/`,
+  `GET/PUT /api/settings/user` and `/api/settings/apps`) and injects the resolved values at
+  launch (§2). The runtime has no settings route and no `user-settings` capability, and reads
+  neither file (#486). No second preference store may be added on either side.
 - **Product navigation, lifecycle, launchers.** Projects, chats, the tool rail, the launch
   window, the tray, shortcuts and the desktop window are `hub.shell`
   (`apps/monkeyhub/launch-hub.ps1`, `apps/monkeyhub/desktop`).

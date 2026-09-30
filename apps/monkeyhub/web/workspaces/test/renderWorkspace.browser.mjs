@@ -122,9 +122,9 @@ import sys, os, site, hashlib
 from pathlib import Path
 import uvicorn
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.settings import save_application_settings, save_user_settings
-from archflow_studio_api.transport.settings import ApplicationSettingsDto, UserSettingsDto
 from monkeyhub_api.main import create_app, HubSettings, HubServer
+from monkeyhub_api.settings.models import ApplicationSettingsDto, UserSettingsDto
+from monkeyhub_api.settings.store import save_application_settings, save_user_settings
 from fastapi.staticfiles import StaticFiles
 root, source = Path(sys.argv[1]), Path(sys.argv[2])
 port, studio_port, monitor_port = map(int, sys.argv[3:6])
@@ -166,7 +166,7 @@ import {createRoot} from 'react-dom/client';
 import {ProjectWorkspace} from '/src/app/ProjectWorkspace';
 import {UserPreferencesProvider,usePreferences} from '/test/TestProviders';
 import '/src/styles.css';
-import '/@fs/${path.resolve(repoRoot, "apps/shared-web/src/base.css").replaceAll("\\", "/")}';
+import '/@fs/${path.resolve(repoRoot, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
 function Project({id,active}){
  const [workspace,setWorkspace]=useState('render');
  const preferences=usePreferences();
@@ -191,7 +191,7 @@ import RenderWorkspace from '/src/workspaces/render/RenderWorkspace';
 import {captureRenderView} from '/src/workspaces/monkeyarch/viewer/renderView';
 import {UserPreferencesProvider} from '/test/TestProviders';
 import '/src/styles.css';
-import '/@fs/${path.resolve(repoRoot, "apps/shared-web/src/base.css").replaceAll("\\", "/")}';
+import '/@fs/${path.resolve(repoRoot, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
 const source=await fetch('/capture/fixture/model').then(response=>response.json());
 const loader=new Rhino3dmLoader(); loader.setLibraryPath('/rhino3dm/');
 const object=await loader.loadAsync('/capture/fixture/model-bytes'); loader.dispose();

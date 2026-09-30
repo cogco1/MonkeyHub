@@ -1,4 +1,4 @@
-@import "../../../shared-web/src/base.css";
+@import "../../../../packages/web-shared/src/base.css";
 *{box-sizing:border-box}
 html{scroll-padding-top:20px}
 body{margin:0;min-width:320px;background:var(--ground);color:var(--ink);font:var(--text-ui)/1.5 var(--font-ui);-webkit-font-smoothing:antialiased}

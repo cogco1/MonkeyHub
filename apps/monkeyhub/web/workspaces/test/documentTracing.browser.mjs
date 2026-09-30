@@ -104,7 +104,7 @@ print(json.dumps({"png": base64.b64encode(data.getvalue()).decode()}))
       // The production Hub supplies these shared tokens to its embedded workspace.
       transform(code, id) {
         if (id.replaceAll("\\", "/").endsWith("/test/workspace-fixture.tsx"))
-          return `import "../../../../shared-web/src/base.css";\n${code}`;
+          return `import "../../../../../packages/web-shared/src/base.css";\n${code}`;
       },
     }],
     server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null } });

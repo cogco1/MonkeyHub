@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chatSessionsApiChatSessionsGet, type ChatSummary } from "../api/generated";
 import { createClient } from "../api/generated/client";
-import type { Language } from "../../../../shared-web/src/appearance.js";
+import type { Language } from "../../../../../packages/web-shared/src/appearance.js";
 import { addNotice, attentionCopy, noticeText, remember, settle, snapshotOf, titled, transitions, type AttentionEvent, type Snapshot } from "./attention";
 import { openChat } from "./openChat";
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { AppearancePreferences } from "../../../shared-web/src/appearance.js";
+import type { AppearancePreferences } from "../../../../packages/web-shared/src/appearance.js";
 import { MenuCommand, MenuSeparator, MenuTabs, StatusLine, SurfaceBar } from "../workspaces/src/features/chrome/SurfaceChrome";
 import type { createClient } from "./api/generated/client";
 import { useRowEndSeparators } from "./surfaceBarRows";

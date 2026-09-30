@@ -96,7 +96,7 @@ function previewPng(run) {
 
 const page = (entry) => `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>html,body,#root{height:100%;margin:0}</style></head><body><div id="root"></div>
-<script type="module">import "/@fs/${slash(path.resolve(webRoot, "../../shared-web/src/base.css"))}";</script>
+<script type="module">import "/@fs/${slash(path.resolve(webRoot, "../../../packages/web-shared/src/base.css"))}";</script>
 <script type="module" src="${entry}"></script></body></html>`;
 
 // The tree's runtime reads and the two writes it may make, over the fixture's retained facts.

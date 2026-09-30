@@ -26,16 +26,14 @@ GET /api/protocol
   "serverVersion": "0.1.0",
   "mode": "local",
   "capabilities": ["artifacts", "cad-export", "candidates", "captures", "compare", "events", "gestures",
-                   "intents", "pick", "program", "projection", "proposals",
-                   "user-settings", "validation"]
+                   "intents", "pick", "program", "projection", "proposals", "validation"]
 }
 ```
 
 `protocol` is `archflow/<major>`. `server` and `serverVersion` name the implementation, never the
 protocol. `mode` is `local` or `remote` (§10.1). `capabilities` are the feature names this process
 actually serves now, sorted; `cad-export` appears when geometry export is enabled, and
-`rhino-export` only when the configured export backend is explicitly Rhino. `user-settings`
-appears only in local mode.
+`rhino-export` only when the configured export backend is explicitly Rhino.
 `/api/health`, `/api/protocol` and `/api/projects` are not capabilities — a conforming server
 always has them. The route opens no project, so a client can tell "this is not a server I speak
 to" from "this server cannot find its project": different problems, different people.
@@ -146,20 +144,9 @@ tolerate it.
 | GET | `/api/program?run=` | the program sheet: departments, spaces with target area / count / clear height / function, adjacency requirements, `totals`, `honesty[]`. `source` is `input` (the architect's own `input/runner/program-sheet.json`) or `derived` (what the record's own `Space@1` zones say); an explicit run reads only that retained record's derivation | reads work in progress + shared + published | provisional |
 | POST | `/api/program` → 202 | apply a sheet to the record **as a candidate**: a job id, the run id it will make, and the server's own `totals`. The authored record is never rewritten. `saveInput: true` also writes the architect's own sheet file — local mode only (§10.1) | **writes shared**; with `saveInput`, **writes work in progress** | provisional |
 | GET | `/api/semantics` | every registered `role.*` and `condition.*` with its meaning and aliases: the vocabulary canonical state may name (ADR-006). Opens no project | none | provisional |
-| GET | `/api/settings/user` | saved local preferences; `{}` when no file exists; local mode only | reads user settings, no project | provisional |
-| PUT | `/api/settings/user` | replace the saved local preferences; omitted/null fields clear their override; local mode only | atomically writes `%APPDATA%/MonkeyArch/settings.json`, no project | provisional |
 
-**Local user settings.** The optional fields are `language` (`en` or `zh-CN`), `theme`
-(`dark`, `light`, `system`), `fontScale` (0.9, 1, 1.1), `intentProvider` (`deterministic`,
-`codex`, `anthropic`), a nonempty `intentModel`, and positive finite `intentTimeoutS`.
-Other fields are refused. Both routes return saved fields only; nulls are omitted. PUT replaces
-the file, so a client preserves any saved fields it is not editing. A malformed file answers
-422 `USER_SETTINGS_INVALID` and can be replaced by an explicit valid PUT. Remote mode omits
-the capability and authenticated requests answer 404; the usual remote token gate still applies.
-The client restores appearance from GET. At the next local launch, saved intent fields override
-the corresponding runtime/environment defaults; clearing them restores the existing runtime
-over environment rule. Saving does not change the current compiler. The launcher ignores an
-unreadable or invalid file with a warning and never changes project, CAD or credential settings.
+The local account's preferences are not a Project Runtime resource: MonkeyHub serves them
+(["Local user settings"](#local-user-settings)).
 
 `/api/intents` is provisional because who
 signs an agent's compilation receipt is still moving; `/api/intents/context` because everything it
@@ -1142,8 +1129,7 @@ wherever a server offers it.
 `capabilities` is how a client hides what a server cannot do instead of discovering it as a 404.
 A capability name is a feature, not a route: `projection`, `pick`, `gestures`, `intents`,
 `proposals`, `candidates`, `candidate-admission` (§5.5), `captures`, `compare`, `artifacts`, `program`, `validation`, `events`, and
-`cad-export` when geometry export is enabled, `rhino-export` when Rhino is explicitly selected,
-and `user-settings` in local mode only.
+`cad-export` when geometry export is enabled, and `rhino-export` when Rhino is explicitly selected.
 
 An explicitly configured MonkeyMonitor diagnostic directory adds `operation-timing`
 and `operation-diagnostics`. The former retains `POST /api/events/model-load` for
@@ -1671,6 +1657,26 @@ project is repaired.
 A corrupt archive is refused before the restore folder is created. When verification fails with
 bytes already written, Hub deletes nothing and the detail names the folder to remove before
 retrying — whether the restore created that folder or found it empty and filled it.
+
+### Local user settings
+
+| method | path | returns | writes |
+| --- | --- | --- | --- |
+| GET | `/api/settings/user` | saved local preferences; `{}` when no file exists | nothing; opens no project |
+| PUT | `/api/settings/user` | replace the saved local preferences; omitted/null fields clear their override | atomically `%APPDATA%/MonkeyArch/settings.json`, no project |
+
+The optional fields are `language` (`en` or `zh-CN`), `theme`
+(`dark`, `light`, `system`), `fontScale` (0.9, 1, 1.1), `intentProvider` (`deterministic`,
+`codex`, `anthropic`), a nonempty `intentModel`, and positive finite `intentTimeoutS`.
+Other fields are refused. Both routes return saved fields only; nulls are omitted. PUT replaces
+the file, so a client preserves any saved fields it is not editing. A malformed file answers
+422 `USER_SETTINGS_INVALID` and can be replaced by an explicit valid PUT.
+The client restores appearance from GET. At the next local launch, saved intent fields override
+the corresponding runtime/environment defaults; clearing them restores the existing runtime
+over environment rule. Saving does not change the current compiler. The launcher ignores an
+unreadable or invalid file with a warning and never changes project, CAD or credential settings.
+The Project Runtime served the same provisional routes, and advertised `user-settings`, until
+#486; it now does neither and reads no preference file.
 
 ## MonkeyHub computer use
 

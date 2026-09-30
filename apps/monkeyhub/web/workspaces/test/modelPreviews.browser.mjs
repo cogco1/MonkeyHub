@@ -60,7 +60,7 @@ import {ModelThumbnail} from '/src/features/artifacts/ModelThumbnail';
 import {retainModelPreview} from '/src/features/artifacts/useRetainedModelPreview';
 import {UserPreferencesProvider} from '/test/TestProviders';
 import '/src/styles.css';
-import '/@fs/${path.resolve(repoRoot, "apps/shared-web/src/base.css").replaceAll("\\", "/")}';
+import '/@fs/${path.resolve(repoRoot, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
 window.captureRace = async (phase) => {
  const calls=[]; let current=phase!=='dirty';
  const source={runId:'r',stateDigest:'s',assetSha256:'a'};

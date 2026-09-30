@@ -17,6 +17,44 @@
   "import_only_source_roots": [
     "labs"
   ],
+  "python_source_roots": [
+    ".",
+    "apps/archflow-studio/api",
+    "apps/monkeyhub/api",
+    "apps/monkeyfab/src"
+  ],
+  "repository_root_entries": [
+    "apps",
+    "services",
+    "packages",
+    "labs",
+    "probes",
+    "tests",
+    "tools",
+    "scripts",
+    "docs",
+    "governance",
+    ".github",
+    ".claude",
+    ".codex",
+    ".gitignore",
+    "AGENTS.md",
+    "CLA.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "LICENSING.md",
+    "OPEN_MONKEYHUB.cmd",
+    "README.md",
+    "SECURITY.md",
+    "pyproject.toml"
+  ],
+  "legacy_root_packages": [
+    "archflow",
+    "monkeyarch",
+    "monkeydiagram",
+    "monkeymonitor",
+    "monkeycontrol"
+  ],
   "shared_write_scope": [
     "governance/module_registry.json",
     "governance/work_registry.json",
@@ -78,7 +116,7 @@
       "reason": "Atomically saves only request signatures, exact project binding and recovery observations at runtime/operations/<runtimeId>.json under the caller-supplied nonproject Hub runtime root. No request body or canonical result is stored; P036 alone proves project outcomes."
     },
     {
-      "path": "apps/archflow-studio/api/archflow_studio_api/settings.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/settings/store.py",
       "function": "_save_local_settings",
       "operations": [
         "mkdir",
@@ -86,7 +124,7 @@
         "unlink"
       ],
       "kind": "user_settings",
-      "owner": "studio.shell",
+      "owner": "hub.shell",
       "reason": "Atomic replacement shared by the existing account preferences and Hub launch configuration in an explicitly supplied nonproject runtime; neither file contains or writes project state."
     },
     {
@@ -719,76 +757,12 @@
       "reason": "External-world protocols may depend on stable identity contracts, never on their concrete adapters, orchestration, control, or validation implementations."
     },
     {
-      "source": "archflow/evidence",
-      "targets": [
-        "archflow.adapters",
-        "archflow.capabilities",
-        "archflow.compilers",
-        "archflow.control",
-        "archflow.materials",
-        "archflow.research",
-        "archflow.runtime",
-        "archflow.validation"
-      ],
-      "reason": "Evidence records cannot acquire retrieval implementation, validation, orchestration, or stage-control authority."
-    },
-    {
-      "source": "archflow/research",
-      "targets": [
-        "archflow.adapters",
-        "archflow.capabilities",
-        "archflow.compilers",
-        "archflow.control",
-        "archflow.materials",
-        "archflow.runtime",
-        "archflow.validation"
-      ],
-      "reason": "Research selection and indexing cannot depend on runtime orchestration, concrete adapters, validation, or control."
-    },
-    {
-      "source": "archflow/materials",
-      "targets": [
-        "archflow.adapters",
-        "archflow.capabilities",
-        "archflow.compilers",
-        "archflow.control",
-        "archflow.research",
-        "archflow.runtime"
-      ],
-      "reason": "Material intent and binding validation cannot depend on project runners, orchestration, or concrete adapters."
-    },
-    {
-      "source": "archflow/control",
-      "targets": [
-        "archflow.adapters",
-        "archflow.runtime"
-      ],
-      "reason": "The control plane consumes typed receipts but cannot depend on concrete adapters or runtime orchestration."
-    },
-    {
-      "source": "archflow/evaluation",
-      "targets": [
-        "archflow.commit",
-        "archflow.project.repository",
-        "archflow.validation"
-      ],
-      "reason": "A read-only evaluator cannot acquire commit repository or hard-gate authority."
-    },
-    {
       "source": "archflow/validation",
       "targets": [
         "archflow.commit",
         "archflow.evaluation"
       ],
       "reason": "Hard validation cannot commit or depend on soft evaluation."
-    },
-    {
-      "source": "archflow/capabilities",
-      "targets": [
-        "archflow.commit",
-        "archflow.project.repository"
-      ],
-      "reason": "Detached experts and capabilities cannot acquire persistence or promotion authority."
     },
     {
       "source": "apps/archflow-studio/api",
@@ -928,12 +902,5 @@
       "symbol": "FilesystemProjectRepository",
       "owner": "P036"
     }
-  ],
-  "forbidden_commit_symbols": [
-    "aesthetic_winner",
-    "ranking",
-    "score",
-    "unique_winner",
-    "winner"
   ]
 }

@@ -11,7 +11,7 @@
  */
 
 import type { ChatSummary } from "../api/generated";
-import type { Language } from "../../../../shared-web/src/appearance.js";
+import type { Language } from "../../../../../packages/web-shared/src/appearance.js";
 
 export type AttentionKind = "permission" | "finished" | "failed";
 

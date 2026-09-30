@@ -68,8 +68,7 @@ RELEASE_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*
 SOURCE_PATHS = (
     "archflow", "monkeyarch", "monkeydiagram", "monkeymonitor", "monkeycontrol",
     "apps/archflow-studio/api",
-    "apps/archflow-studio/assets",
-    "apps/monkeyhub", "apps/monkeyfab", "apps/shared-web", "OPEN_MONKEYHUB.cmd",
+    "apps/monkeyhub", "apps/monkeyfab", "packages/web-shared", "OPEN_MONKEYHUB.cmd",
     "README.md", "SECURITY.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
     "governance/module_registry.json",
 )
@@ -233,7 +232,7 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
     # package would be there and still unable to reach a desktop.
     for name in ("archflow", "monkeyarch", "monkeydiagram", "monkeymonitor", "monkeycontrol"):
         shutil.copytree(source / name, bundle / name)
-    for relative in ("apps/archflow-studio/api/archflow_studio_api", "apps/archflow-studio/assets",
+    for relative in ("apps/archflow-studio/api/archflow_studio_api", "apps/monkeyhub/assets",
                      "apps/monkeyhub/api", "apps/monkeyhub/installer", "apps/monkeyfab"):
         shutil.copytree(source / relative, bundle / relative,
                         ignore=shutil.ignore_patterns("__pycache__", "tests", "test_*", "third-party"))
@@ -286,8 +285,6 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
                      # The security-reporting route travels with the distributed bundle,
                      # not only with a checkout of the public repository.
                      "governance/module_registry.json", "SECURITY.md",
-                     "apps/shared-web/src/appearance.js", "apps/shared-web/src/i18n.js",
-                     "apps/shared-web/src/browserTranslator.js", "apps/shared-web/src/base.css",
                      "tools/create_project.py", "tools/run_project.py"):
         target = bundle / relative
         target.parent.mkdir(parents=True, exist_ok=True)

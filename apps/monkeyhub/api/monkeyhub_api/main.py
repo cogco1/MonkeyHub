@@ -30,12 +30,7 @@ from starlette.requests import Request
 import uvicorn
 from archflow.adapters.integration_packs import IntegrationPackManager
 
-from archflow_studio_api.routes.settings import router as preferences_router
-from archflow_studio_api.settings import (
-    SettingsError, read_application_settings,
-)
 from archflow_studio_api.transport.errors import StudioError
-from archflow_studio_api.transport.settings import ApplicationSettingsDto
 from archflow_studio_api.transport.project import ModelingInitializeDto, ModelingInitializeRequestDto
 
 from . import chat as chat_tools
@@ -47,6 +42,9 @@ from .computer_tools import ComputerService
 from .runtime import ProjectRuntimeManager
 from .runtime_models import (HubRuntimeDto, OperationAcknowledgeRequest, OperationRecord, ProjectRuntimeDto,
                              OpenRuntimeRequest, RuntimeProjectRequest, RuntimeEvent)
+from .settings.models import ApplicationSettingsDto
+from .settings.routes import router as preferences_router
+from .settings.store import SettingsError, read_application_settings
 from .fabrication import Fabrication
 from .updates import (
     DesktopUpdates, UpdateStatus, CompleteUpdate, RollbackUpdate, UpdateSettings, MAX_PATCH_BYTES,
@@ -233,8 +231,10 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
             return JSONResponse({"code": "CREDENTIAL_REQUEST_INVALID", "detail": "Invalid key request. Send the key as the only field."}, status_code=422)
         return await request_validation_exception_handler(request, exc)
 
+    # Recovering a project inspects its retained runs in this process
+    # (inspect_runtime), which refuses with the Project Runtime's StudioError.
     @app.exception_handler(StudioError)
-    async def handle_preferences_error(request: Request, exc: StudioError):
+    async def handle_runtime_error(request: Request, exc: StudioError):
         return JSONResponse(exc.body(), status_code=exc.status)
 
     @app.exception_handler(SettingsError)

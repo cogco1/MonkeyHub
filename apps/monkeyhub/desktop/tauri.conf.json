@@ -12,5 +12,5 @@
       "csp": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-src 'none'"
     }
   },
-  "bundle": { "active": false, "icon": ["../../archflow-studio/assets/monkeyarch.ico"] }
+  "bundle": { "active": false, "icon": ["../assets/monkeyarch.ico"] }
 }

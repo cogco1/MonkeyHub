@@ -25,11 +25,11 @@ from archflow.project.repository import (
     ProjectHeadLocked,
     ProjectIntegrityError,
 )
-from archflow_studio_api.settings import save_application_settings
 from archflow.state.state_record import StateRecord
-from archflow_studio_api.transport.settings import ApplicationSettingsDto
 from monkeyhub_api import project_archive
 from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.settings.models import ApplicationSettingsDto
+from monkeyhub_api.settings.store import save_application_settings
 
 
 def fingerprint(root: Path) -> list[tuple[str, str]]:

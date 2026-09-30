@@ -68,8 +68,6 @@ import {
   createViewportCaptureApiCapturesPost,
   readRetainedModelPreviewApiModelAssetsAssetSha256PreviewGet,
   exportBoardApiBoardExportPost,
-  getUserSettingsApiSettingsUserGet,
-  putUserSettingsApiSettingsUserPut,
   readArtifactBytesApiArtifactsSha256BytesGet,
   recordModelLoadApiEventsModelLoadPost,
   recordClientTimingApiEventsTimingPost,
@@ -152,7 +150,6 @@ import type {
   SourceDocumentRequestDto,
   TracingPaperReviewRequestDto,
   StateProjectionDto,
-  UserSettingsDto,
   ValidationDto,
   ViewportCaptureDto,
   VolumesDto,
@@ -407,13 +404,6 @@ export const createStudioClient = (connection: ServerConnection) => ({
   },
   forkBranch(body: ForkDesignBranchRequestDto): Promise<DesignBranchDto> {
     return call("POST /api/design-branches", forkCommittedDesignApiDesignBranchesPost({ client: connection.client, body }));
-  },
-  userSettings(): Promise<UserSettingsDto> {
-    return call("GET /api/settings/user", getUserSettingsApiSettingsUserGet({ client: connection.client }));
-  },
-
-  saveUserSettings(body: UserSettingsDto): Promise<UserSettingsDto> {
-    return call("PUT /api/settings/user", putUserSettingsApiSettingsUserPut({ client: connection.client, body }));
   },
 
   workingCopies(): Promise<WorkingCopyListDto> {

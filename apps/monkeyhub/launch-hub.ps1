@@ -57,8 +57,8 @@ $hubRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $hubRoot '..\..')).Path
 $RuntimeRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($RuntimeRoot)
 $logRoot = Join-Path $RuntimeRoot 'logs'
-# One icon for the whole product, drawn by apps\archflow-studio\assets\make_icon.py.
-$assetRoot = Join-Path $repoRoot 'apps\archflow-studio\assets'
+# One icon for the whole product, drawn by apps\monkeyhub\assets\make_icon.py.
+$assetRoot = Join-Path $hubRoot 'assets'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 
