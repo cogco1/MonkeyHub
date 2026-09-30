@@ -62,9 +62,11 @@
     "services/project-runtime/tests/",
     "packages/monkeydiagram/tests/",
     "packages/archflow/tests/",
+    "packages/monkeyarch/tests/",
     "packages/monkeymonitor/tests/",
     "packages/monkeycontrol/tests/",
     "packages/monkeyfab/tests/",
+    "tools/tests/",
     "docs/PROTOCOL.md",
     "governance/architecture_policy.json",
     "docs/SYSTEM_MAP.md",
@@ -745,6 +747,15 @@
     },
     {
       "source": "packages/archflow/tests",
+      "targets": [
+        "tests",
+        "labs",
+        "archive"
+      ],
+      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+    },
+    {
+      "source": "packages/monkeyarch/tests",
       "targets": [
         "tests",
         "labs",

@@ -6,8 +6,10 @@ python -m pip install -e packages/archflow -e packages/monkeyarch -e packages/mo
   -e packages/monkeymonitor -e packages/monkeycontrol
 
 python tools/archcheck.py
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests -t . -v
+python -m unittest discover -s tools/tests -v
 python -m unittest discover -s packages/archflow/tests -v
+python -m unittest discover -s packages/monkeyarch/tests -v
 python -m unittest discover -s packages/monkeydiagram/tests -v
 python -m unittest discover -s packages/monkeymonitor/tests -v
 python -m unittest discover -s packages/monkeycontrol/tests -v

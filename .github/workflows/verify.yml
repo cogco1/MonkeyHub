@@ -76,16 +76,24 @@ jobs:
           -r apps/monkeyhub/api/requirements.txt
           httpx2 pytest
 
+      # Each test root runs in its own process: the package and tools suites have
+      # no __init__.py, and several roots hold modules of one name.
       # This job installs every prerequisite its suites check for (PyMuPDF from
       # the Studio requirements), so a missing one fails instead of skipping.
       # Windows-only cases remain platform skips here.
-      - name: Unit and integration tests
+      - name: Integration and packaging tests
         env:
           ARCHFLOW_REQUIRE_FULL_ENV: "1"
         run: python -m unittest discover -s tests -t .
 
+      - name: Repository tool tests
+        run: python -m pytest tools/tests -q
+
       - name: ArchFlow package tests
         run: python -m pytest packages/archflow/tests -q
+
+      - name: MonkeyArch package tests
+        run: python -m pytest packages/monkeyarch/tests -q
 
       - name: MonkeyDiagram package tests
         run: python -m pytest packages/monkeydiagram/tests -q
