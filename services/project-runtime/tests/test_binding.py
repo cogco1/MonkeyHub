@@ -229,6 +229,47 @@ class BoundProjectTests(unittest.TestCase):
         )
 
 
+class ReadApiTests(unittest.TestCase):
+    """The binding is the Runtime's public read API: MonkeyHub opens it in process (#519)."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository, _ = make_project(self.root)
+
+    def test_an_unconfigured_binding_reads_the_project_as_its_runtime_does(self) -> None:
+        add_harness_run(self.repository)
+        binding = ProjectBinding.unconfigured(self.root / PROJECT_ID, project_id=PROJECT_ID)
+        self.addCleanup(binding.close)
+        opened = ProjectBinding.open(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
+        self.addCleanup(opened.close)
+
+        self.assertEqual((binding.project_id, binding.project_dir), (PROJECT_ID, self.root / PROJECT_ID))
+        self.assertEqual(binding.run_ids(), opened.run_ids())
+        # No configured reference run: the rule chooses, and it skips the harness.
+        self.assertIsNone(binding.settings.reference_run)
+        self.assertEqual(binding.settings.cad_export, "off")
+        self.assertEqual((binding.reference_run().source, binding.reference_run().run.run_id),
+                         ("rule", REFERENCE_RUN_ID))
+        self.assertEqual(binding.head(), self.repository.read_head())
+
+    def test_the_binding_loads_no_web_framework(self) -> None:
+        import json
+        import os
+        import subprocess
+        import sys
+
+        from project_runtime import REPOSITORY_ROOT
+
+        probe = ("import json, sys; import project_runtime.binding; "
+                 "print(json.dumps(sorted(m for m in sys.modules if m.split('.')[0] in ('fastapi', 'starlette'))))")
+        completed = subprocess.run(
+            [sys.executable, "-c", probe], cwd=REPOSITORY_ROOT, capture_output=True, text=True, check=True,
+            env={**os.environ, "PYTHONPATH": str(REPOSITORY_ROOT / "services/project-runtime/src")},
+        )
+        self.assertEqual(json.loads(completed.stdout.strip().splitlines()[-1]), [])
+
+
 class ProjectWithoutRunsTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp())

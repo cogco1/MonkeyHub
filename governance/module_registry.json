@@ -4568,6 +4568,7 @@
         "open_document_work_copy",
         "list_document_work_copies",
         "DocumentWorkCopy",
+        "WORK_COPY_WORKSPACE",
         "GET /api/drawings/model-view",
         "model_view",
         "POST /api/drawings/plans",
@@ -4788,6 +4789,7 @@
         "read_board",
         "save_board",
         "export_board_pages",
+        "BoardExportPage",
         "web: createBoardFeedback",
         "web: prepareBoardDesignRequest",
         "read_board(binding, revision_sha256=None)",
@@ -4912,6 +4914,8 @@
         "GET /api/state",
         "ProjectBinding",
         "ProjectBinding.open",
+        "ProjectBinding.unconfigured",
+        "ProcessState",
         "bound_project",
         "resolve_project",
         "binding_answer",
@@ -5048,7 +5052,8 @@
         "an answer is remembered only in memory and only under a stable ReadToken, which is read from the project's layout watch (project.watch) and never walked on a request: this process's writes change the token at once and leave it unstable until the watch has seen them, another process's once the watch sees them (about a second); closing the binding gives back its share of the watch",
         "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view",
         "the drawing context publishes every wall's <id>-top from the producer itself, in production order, so a drawn shape standing on a wall keeps its drawing controls",
-        "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)"
+        "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)",
+        "ProjectBinding and ReadToken are the Runtime's public read API: MonkeyHub opens a project in process with ProjectBinding.unconfigured (no configured reference run, nothing exported), and binding.py imports no web framework; the app-state glue beside it reads its state object structurally (ProcessState) (#519)"
       ],
       "status": "canonical",
       "tests": [
@@ -6087,7 +6092,8 @@
         "POST /api/admissions uses the existing accept grant on a local-role Runtime; a shared project service does not expose it",
         "only the exact GET paths in CONDITIONAL_READS carry an ETag, answer If-None-Match with 304 and are answered from the binding's memo, and only for a 200 read under a stable token; every other method, path and status passes through unchanged",
         "shutdown closes the bound project's binding after draining work, which stops its layout watch and lets go of the project folder",
-        "an owner package's refusal (monkeyarch.authoring.frame.FrameError, ...) carries its own wire code and sentence; OWNER_REFUSALS is the one place that gives each kind its status, and create_app answers it in the same {code, detail} body a StudioError has (#519)"
+        "an owner package's refusal (monkeyarch.authoring.frame.FrameError, ...) carries its own wire code and sentence; OWNER_REFUSALS is the one place that gives each kind its status, and create_app answers it in the same {code, detail} body a StudioError has (#519)",
+        "MonkeyHub (apps/monkeyhub/api/monkeyhub_api) imports from project_runtime only main, errors, api.dto and the declared read API - binding.ProjectBinding and ReadToken, events, status, the document and work-copy readers (application.artifacts list_documents, document_bytes, list_document_work_copies, DocumentWorkCopy, WORK_COPY_WORKSPACE) and application.boards export_board_pages with BoardExportPage - and archcheck refuses any other import (architecture_policy forbidden_layer_imports, allowed; #519)"
       ],
       "status": "canonical",
       "tests": [
@@ -6327,7 +6333,8 @@
         "a commit that names no claim may write only the policy's shared_write_scope and unclaimed_write_scope",
         "only active and review claims hold paths and checkouts; a lane is a claim of its own, and an Issue claimed through lanes carries nothing but its lanes",
         "a commit on the pre-#358 registry keeps its card-era reading, where a subject ending in a single (#n) with no other Issue reference or GH- marker names GH-n; once a parent is on the current registry a commit cannot return to the old one, so that reading cannot authorize card work again",
-        "a current commit whose subject opens with a P###, M###, R### or P000-governance id is reported as a retired claim"
+        "a current commit whose subject opens with a P###, M###, R### or P000-governance id is reported as a retired claim",
+        "a layer rule may list allowed exceptions under its targets: a module, or a member a module defines at its top level; an import is let through only when its module is allowed, or, for from x import y, every x.y it takes is; an exception that names neither a module nor a defined member is reported like a dead target (#519)"
       ],
       "status": "canonical",
       "tests": [
