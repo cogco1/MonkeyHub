@@ -142,7 +142,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
         for source, target in (
             ("packages/archflow/src/archflow/state/example.py", "monkeyarch.capabilities.element_producers"),
             ("packages/archflow/src/archflow/adapters/example.py", "monkeydiagram.drawing_svg"),
-            ("monkeyarch/example.py", "monkeydiagram.drawing_svg"),
+            ("packages/monkeyarch/src/monkeyarch/example.py", "monkeydiagram.drawing_svg"),
             ("packages/monkeydiagram/src/monkeydiagram/example.py", "monkeyarch.compilers.geometry"),
         ):
             with self.subTest(source=source, target=target):
@@ -150,7 +150,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
                 self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
 
     def test_workflows_may_consume_shared_contracts(self) -> None:
-        for source in ("monkeyarch/example.py", "packages/monkeydiagram/src/monkeydiagram/example.py"):
+        for source in ("packages/monkeyarch/src/monkeyarch/example.py", "packages/monkeydiagram/src/monkeydiagram/example.py"):
             with self.subTest(source=source):
                 findings = tuple(check_imports(source, _index_tree(ast.parse(
                     "from archflow.state.geometry_program import CompiledGeometryProgram"

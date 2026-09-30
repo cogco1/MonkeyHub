@@ -2,7 +2,7 @@
 set -euo pipefail
 
 python -m pip install --upgrade pip
-python -m pip install -e . -e packages/archflow -e packages/monkeydiagram
+python -m pip install -e . -e packages/archflow -e packages/monkeyarch -e packages/monkeydiagram
 
 python tools/archcheck.py
 python -m unittest discover -s tests -v

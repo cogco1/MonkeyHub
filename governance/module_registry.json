@@ -368,7 +368,7 @@
         "archflow.adapters.local_cad_discovery"
       ],
       "used_by": [
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tests/test_cad_execution.py",
         "tests/test_cad_patch.py",
         "tests/test_occt_execution.py",
@@ -541,7 +541,7 @@
       "used_by": [
         "packages/archflow/src/archflow/adapters/cad_execution.py",
         "packages/archflow/src/archflow/adapters/cad_patch.py",
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tools/verify_state_record.py",
         "tests/test_cad_program.py",
         "tests/test_cad_patch.py",
@@ -740,7 +740,7 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/adapters/cad_execution.py",
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tests/test_three_dm_inspector.py",
         "tests/test_cad_execution.py",
         "tests/test_occt_execution.py"
@@ -761,7 +761,7 @@
     },
     {
       "module_id": "capabilities.declaration",
-      "owner_path": "monkeyarch/capabilities/declaration.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/declaration.py",
       "purpose": "Define and gate the mandatory typed decisions a stage requires, and compile the gate-passed ones into hard commitments.",
       "owns": [
         "DeclarationQuadrant and DeclarationKind: the vocabulary a stage's decision fields are grouped and typed by",
@@ -806,7 +806,7 @@
         "state.commitments"
       ],
       "used_by": [
-        "monkeyarch/capabilities/discipline_seats.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
         "tools/run_project.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
         "tests/test_discipline_seats.py",
@@ -825,7 +825,7 @@
     },
     {
       "module_id": "capabilities.discipline_seats",
-      "owner_path": "monkeyarch/capabilities/discipline_seats.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
       "purpose": "Divide authoring across role-scoped seats: what a seat may write, what it may read, what it hands the next seat, and in which round it runs.",
       "owns": [
         "SeatSpec: the component subtrees a seat writes, its disciplines, phases, quadrants, the seats it consumes and whether it reviews",
@@ -894,7 +894,7 @@
         "state.stage_workflow"
       ],
       "used_by": [
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tools/run_project.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
         "tests/test_discipline_seats.py",
@@ -916,7 +916,7 @@
     },
     {
       "module_id": "capabilities.element_producers",
-      "owner_path": "monkeyarch/capabilities/element_producers.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py",
       "purpose": "Turn a State Record's Element@1 rows into geometry operations, datum bindings, published datums and materialized relations, reading references rather than computing coordinates.",
       "owns": [
         "the producer dispatch table PRODUCERS: column-array, capitals, beam, pediment, wall, prism, planar-surface, curve, ring, loft, dome-cap, stair, wedge, shell, declined",
@@ -998,7 +998,7 @@
         "state.record"
       ],
       "used_by": [
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tests/test_element_producers.py",
         "tests/test_cad_patch.py",
         "apps/archflow-studio/api/archflow_studio_api/application/construction.py"
@@ -1037,7 +1037,7 @@
     },
     {
       "module_id": "capabilities.geometry_proposal",
-      "owner_path": "monkeyarch/capabilities/geometry_proposal.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
       "purpose": "Author, compile and retain bounded rounds of a provider's neutral geometry proposal against one exact state, with no fallback and no acceptance authority.",
       "owns": [
         "the strict provider request and response contracts (the authoring output topology and its function contracts)",
@@ -1115,7 +1115,7 @@
         "state.stage_workflow"
       ],
       "used_by": [
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tools/run_project.py",
         "tools/verify_state_record.py",
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -1146,7 +1146,7 @@
     },
     {
       "module_id": "capabilities.opening_solver",
-      "owner_path": "monkeyarch/capabilities/opening_solver.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/opening_solver.py",
       "purpose": "Fill a wall's hosted voids with window and door types, emitting frame, glazing and leaf members as one hosted assembly per opening.",
       "owns": [
         "WindowType and DoorType: the proportions of one opening family (frame width/depth/projection, glazing or leaf thickness, offsets, leaf count and clearances)",
@@ -1193,7 +1193,7 @@
         "state.geometry_program"
       ],
       "used_by": [
-        "monkeyarch/capabilities/element_producers.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py",
         "tests/test_element_producers.py"
       ],
       "invariants": [
@@ -1215,7 +1215,7 @@
     },
     {
       "module_id": "capabilities.reference_resolver",
-      "owner_path": "monkeyarch/capabilities/reference_resolver.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/reference_resolver.py",
       "purpose": "Resolve the record's symbolic plan and elevation references against explicit project-local points, grids, levels and host lines - the one resolver every producer calls.",
       "owns": [
         "the reference vocabulary: GridRef, GridIntersection, AxisPoint, HostAlong, LevelRef, OffsetFrom, ProjectPoint",
@@ -1269,8 +1269,8 @@
         "state.geometry_program"
       ],
       "used_by": [
-        "monkeyarch/capabilities/element_producers.py",
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tests/test_derivations_and_references.py",
         "tests/test_element_producers.py",
         "tests/test_cad_patch.py"
@@ -1292,7 +1292,7 @@
     },
     {
       "module_id": "capabilities.relation_checks",
-      "owner_path": "monkeyarch/capabilities/relation_checks.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/relation_checks.py",
       "purpose": "Measure a State Record's relations against realized geometry and record held / violated / unchecked as a RelationCheckReport@1.",
       "owns": [
         "the checker table CHECKERS keyed by check_kind; measuring declared relations",
@@ -1342,7 +1342,7 @@
         "state.record"
       ],
       "used_by": [
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tests/test_relation_checks.py"
       ],
       "invariants": [
@@ -1364,7 +1364,7 @@
     },
     {
       "module_id": "capabilities.wall_solver",
-      "owner_path": "monkeyarch/capabilities/wall_solver.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py",
       "purpose": "Solve one wall from its location line, thickness, height and storey datum into a solid, a cut tool per opening, and the hosted voids openings are filled into.",
       "owns": [
         "WallElement geometry: reference line, normal, plan points and plan rectangles in wall coordinates",
@@ -1415,8 +1415,8 @@
         "state.geometry_program"
       ],
       "used_by": [
-        "monkeyarch/capabilities/element_producers.py",
-        "monkeyarch/capabilities/opening_solver.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/opening_solver.py",
         "tests/test_element_producers.py"
       ],
       "invariants": [
@@ -1436,7 +1436,7 @@
     },
     {
       "module_id": "compilers.geometry",
-      "owner_path": "monkeyarch/compilers/geometry.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
       "purpose": "The one pure compiler: bind a neutral geometry proposal to an exact state, order its operations, digest its objects, or return an explicit rejection receipt.",
       "owns": [
         "the operation dependency graph, its deterministic order and per-object digests",
@@ -1494,7 +1494,7 @@
         "state.record"
       ],
       "used_by": [
-        "monkeyarch/capabilities/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "tests/test_geometry_compiler.py",
         "tests/test_interface_datums.py",
         "tests/test_element_producers.py",
@@ -1546,9 +1546,9 @@
       "depends_on": [],
       "used_by": [
         "packages/archflow/src/archflow/state/stage_workflow.py",
-        "monkeyarch/capabilities/discipline_seats.py",
-        "monkeyarch/capabilities/geometry_proposal.py",
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tools/freeze_project_stage_workflow.py",
         "tools/verify_state_record.py"
       ],
@@ -1604,7 +1604,7 @@
         "packages/archflow/src/archflow/relations/contracts.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
         "packages/archflow/src/archflow/state/developed_design.py",
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "packages/archflow/src/archflow/ports/model.py"
       ],
       "invariants": [
@@ -1670,7 +1670,7 @@
         "packages/archflow/src/archflow/relations/contracts.py",
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/geometry_program.py",
-        "monkeyarch/capabilities/wall_solver.py"
+        "packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py"
       ],
       "invariants": [
         "a tuple field must already be sorted and unique; the validator never sorts on the caller's behalf",
@@ -1719,8 +1719,8 @@
         "project.refs"
       ],
       "used_by": [
-        "monkeyarch/capabilities/geometry_proposal.py",
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
         "apps/archflow-studio/api/tests/test_intent_agent_timeout.py"
       ],
@@ -2490,8 +2490,8 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/project/repository.py",
-        "monkeyarch/capabilities/geometry_proposal.py",
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
         "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
@@ -2558,8 +2558,8 @@
         "packages/archflow/src/archflow/project/repository.py",
         "packages/archflow/src/archflow/project/containers.py",
         "packages/archflow/src/archflow/project/issue.py",
-        "monkeyarch/runtime/project_runner.py",
-        "monkeyarch/capabilities/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -2648,7 +2648,7 @@
         "packages/archflow/src/archflow/project/ports.py",
         "packages/archflow/src/archflow/project/repository.py",
         "packages/archflow/src/archflow/relations/contracts.py",
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "packages/archflow/src/archflow/state/geometry_program.py",
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/state_record.py",
@@ -2902,7 +2902,7 @@
         "packages/archflow/src/archflow/project/inputs.py",
         "packages/archflow/src/archflow/project/issue.py",
         "packages/archflow/src/archflow/project/location.py",
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
         "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
@@ -3008,7 +3008,7 @@
     },
     {
       "module_id": "runtime.project_runner",
-      "owner_path": "monkeyarch/runtime/project_runner.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
       "purpose": "The one runtime loop: run admitted seat rounds from a single State Record, retaining every record the run produces and returning an authority-free stage-run receipt.",
       "owns": [
         "run_project: binding the record to the run, projecting the developed-design view, and the seat round loop",
@@ -3466,7 +3466,7 @@
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
         "packages/archflow/src/archflow/submission/model.py",
-        "monkeyarch/capabilities/declaration.py"
+        "packages/monkeyarch/src/monkeyarch/capabilities/declaration.py"
       ],
       "invariants": [
         "a transition never mutates history; it returns a new commitment with a predecessor link",
@@ -3583,7 +3583,7 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/state/state_record.py",
-        "monkeyarch/capabilities/reference_resolver.py"
+        "packages/monkeyarch/src/monkeyarch/capabilities/reference_resolver.py"
       ],
       "invariants": [
         "never calls Python eval; the operator and function set is closed",
@@ -3649,7 +3649,7 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/state/developed_design.py",
-        "monkeyarch/runtime/project_runner.py"
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py"
       ],
       "invariants": [
         "ordinary A/B and agent tasks do not create branches",
@@ -3713,10 +3713,10 @@
         "project.version_refs"
       ],
       "used_by": [
-        "monkeyarch/capabilities/discipline_seats.py",
-        "monkeyarch/capabilities/geometry_proposal.py",
-        "monkeyarch/compilers/geometry.py",
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
         "tools/run_project.py"
@@ -3822,14 +3822,14 @@
         "packages/archflow/src/archflow/adapters/cad_execution.py",
         "packages/archflow/src/archflow/adapters/occt_backend.py",
         "packages/archflow/src/archflow/state/state_record.py",
-        "monkeyarch/capabilities/discipline_seats.py",
-        "monkeyarch/capabilities/element_producers.py",
-        "monkeyarch/capabilities/geometry_proposal.py",
-        "monkeyarch/capabilities/opening_solver.py",
-        "monkeyarch/capabilities/reference_resolver.py",
-        "monkeyarch/capabilities/wall_solver.py",
-        "monkeyarch/compilers/geometry.py",
-        "monkeyarch/runtime/project_runner.py"
+        "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/opening_solver.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/reference_resolver.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py",
+        "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py"
       ],
       "invariants": [
         "the operation vocabulary is generic: no project, style or external-tool routing authority",
@@ -3981,8 +3981,8 @@
         "packages/archflow/src/archflow/state/stage_workflow.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
         "packages/archflow/src/archflow/state/geometry_program.py",
-        "monkeyarch/compilers/geometry.py",
-        "monkeyarch/capabilities/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "apps/archflow-studio/api/archflow_studio_api/application/intent.py"
       ],
       "invariants": [
@@ -4155,16 +4155,16 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/project/inputs.py",
-        "monkeyarch/runtime/project_runner.py",
-        "monkeyarch/compilers/geometry.py",
-        "monkeyarch/capabilities/geometry_proposal.py",
-        "monkeyarch/capabilities/relation_checks.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/relation_checks.py",
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
         "apps/archflow-studio/api/archflow_studio_api/application/options.py",
         "apps/archflow-studio/api/archflow_studio_api/application/program.py",
         "packages/archflow/src/archflow/state/program_sheet.py",
-        "monkeyarch/capabilities/element_reindex.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/element_reindex.py",
         "tools/reindex_project.py",
         "tools/verify_state_record.py"
       ],
@@ -4257,9 +4257,9 @@
         "project.version_refs"
       ],
       "used_by": [
-        "monkeyarch/runtime/project_runner.py",
-        "monkeyarch/capabilities/discipline_seats.py",
-        "monkeyarch/capabilities/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "packages/archflow/src/archflow/state/state_record.py",
         "packages/archflow/src/archflow/state/developed_design.py",
         "packages/archflow/src/archflow/state/design_portfolio.py",
@@ -4344,7 +4344,7 @@
         "project.version_refs"
       ],
       "used_by": [
-        "monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
         "tools/run_project.py",
         "tools/freeze_project_stage_workflow.py",
@@ -6664,7 +6664,7 @@
     },
     {
       "module_id": "capabilities.element_reindex",
-      "owner_path": "monkeyarch/capabilities/element_reindex.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/element_reindex.py",
       "purpose": "Recover Element@1 identity from an exported model without moving it: objects (3dm inspection) -> component/family/side -> element drafts with symbolic references where the geometry snaps to declared axes and levels, proven by re-producing the drafted rows and measuring the residual; ambiguity and source conflicts are named, never resolved by guessing.",
       "owns": [
         "reading SourceObjects off a ThreeDmInspectionSummary (named bboxes, archflow:component / archflow:producer_op strings, geometry digests)",
@@ -6703,7 +6703,7 @@
         "state.record"
       ],
       "files": [
-        "monkeyarch/capabilities/element_reindex.py"
+        "packages/monkeyarch/src/monkeyarch/capabilities/element_reindex.py"
       ],
       "tests": [
         "tests/test_element_reindex.py"
@@ -6748,7 +6748,7 @@
     },
     {
       "module_id": "state.massing_metrics",
-      "owner_path": "monkeyarch/capabilities/massing_metrics.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/massing_metrics.py",
       "purpose": "What a massing option measures - footprint, gross floor area, floor count, height, program share - and how it stands in a buildable envelope, read from the record's own Volume@1 / MassingLevel@1 entities in the kernel's voxel lattice.",
       "owns": [
         "the massing quantities and their frame (MassingMetrics, LevelFootprint, massing_metrics)",
@@ -6802,7 +6802,7 @@
       ],
       "status": "canonical",
       "files": [
-        "monkeyarch/capabilities/massing_metrics.py"
+        "packages/monkeyarch/src/monkeyarch/capabilities/massing_metrics.py"
       ],
       "tests": [
         "tests/test_massing_metrics.py"
@@ -8251,7 +8251,7 @@
     },
     {
       "module_id": "construction.script",
-      "owner_path": "monkeyarch/construction/__init__.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/construction/__init__.py",
       "purpose": "The agent-facing way to author geometry (#419, L1): one bounded construction script, interpreted and never executed, over a small generic vocabulary; what it leaves is lowered to Component@1/Element@1 rows, where producers are chosen, and a record reads back in the same construction terms.",
       "owns": [
         "the construction language: an ast allow-list interpreter whose work is bounded - characters, steps (walking a sequence or a shape's points costs steps, and a comparison what it may walk), a wall-clock deadline that lowering runs under too, loop iterations, call depth, nesting, elements per list and per script, a profile edge-pair budget, 100 000 points in all and geometry results - refusing at a line with ConstructionError (CONSTRUCTION_INVALID)",
@@ -8339,17 +8339,17 @@
       ],
       "notes": "Spec docs/2026-09-28-construction-api.md section 3.1. The interpreter's verbs and the vocabulary are one table (script.IMPLEMENTED_VERBS is checked against vocabulary.VERBS at import).",
       "files": [
-        "monkeyarch/construction/__init__.py",
-        "monkeyarch/construction/script.py",
-        "monkeyarch/construction/shapes.py",
-        "monkeyarch/construction/identity.py",
-        "monkeyarch/construction/lowering.py",
-        "monkeyarch/construction/vocabulary.py"
+        "packages/monkeyarch/src/monkeyarch/construction/__init__.py",
+        "packages/monkeyarch/src/monkeyarch/construction/script.py",
+        "packages/monkeyarch/src/monkeyarch/construction/shapes.py",
+        "packages/monkeyarch/src/monkeyarch/construction/identity.py",
+        "packages/monkeyarch/src/monkeyarch/construction/lowering.py",
+        "packages/monkeyarch/src/monkeyarch/construction/vocabulary.py"
       ]
     },
     {
       "module_id": "capabilities.domain_readiness",
-      "owner_path": "monkeyarch/capabilities/domain_readiness.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/domain_readiness.py",
       "purpose": "L4: the honest entry gate a technical domain calls before it runs - read only the semantics it needs, and answer an explicit enrichment request for what is missing instead of guessing it from shape, producer or name.",
       "owns": [
         "DomainNeeds and the DOMAINS registry: each domain's architectural.role read set and the facet keys it needs once it reads",

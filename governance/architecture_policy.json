@@ -3,7 +3,7 @@
   "source_root": "packages/archflow",
   "checked_source_roots": [
     "packages/archflow",
-    "monkeyarch",
+    "packages/monkeyarch",
     "packages/monkeydiagram",
     "monkeymonitor",
     "monkeycontrol",
@@ -23,7 +23,8 @@
     "apps/monkeyhub/api",
     "apps/monkeyfab/src",
     "packages/monkeydiagram/src",
-    "packages/archflow/src"
+    "packages/archflow/src",
+    "packages/monkeyarch/src"
   ],
   "repository_root_entries": [
     "apps",
@@ -52,7 +53,6 @@
     "pyproject.toml"
   ],
   "legacy_root_packages": [
-    "monkeyarch",
     "monkeymonitor",
     "monkeycontrol"
   ],
@@ -815,7 +815,7 @@
       "reason": "The shared ArchFlow core provides facts, persistence and CAD contracts; it cannot depend on either workflow."
     },
     {
-      "source": "monkeyarch",
+      "source": "packages/monkeyarch/src/monkeyarch",
       "targets": [
         "monkeydiagram",
         "labs",
@@ -847,7 +847,7 @@
       "reason": "The drawing workflow consumes retained source contracts through ArchFlow; it cannot import 3D workflow internals or project-specific code."
     },
     {
-      "source": "monkeyarch/capabilities",
+      "source": "packages/monkeyarch/src/monkeyarch/capabilities",
       "targets": [
         "archflow.commit",
         "archflow.project.repository"
@@ -855,7 +855,7 @@
       "reason": "Detached modeling capabilities cannot acquire persistence or promotion authority."
     },
     {
-      "source": "monkeyarch/compilers",
+      "source": "packages/monkeyarch/src/monkeyarch/compilers",
       "targets": [
         "archflow.project.repository"
       ],

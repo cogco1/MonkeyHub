@@ -66,7 +66,7 @@ RELEASE_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*
 # Each Python package ships at the bundle root, where python313._pth's ..\.. finds it,
 # wherever the repository keeps it, so a move changes neither the ._pth nor the bundle's layout.
 BUNDLED_PACKAGES = {
-    "archflow": "packages/archflow/src/archflow", "monkeyarch": "monkeyarch",
+    "archflow": "packages/archflow/src/archflow", "monkeyarch": "packages/monkeyarch/src/monkeyarch",
     "monkeydiagram": "packages/monkeydiagram/src/monkeydiagram",
     "monkeymonitor": "monkeymonitor", "monkeycontrol": "monkeycontrol",
 }

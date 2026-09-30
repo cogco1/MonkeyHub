@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "monkeyarch"
+version = "0.1.0"
+description = "3D modeling on ArchFlow: element producers, solvers, the construction script, geometry compilation and the project runner."
+requires-python = ">=3.12"
+# archflow comes from the same checkout (packages/archflow) or bundle. It is not a
+# published distribution, so naming it here would send pip to an index for it.
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# No [tool.pytest.ini_options]: the root one keeps pytest's rootdir at the checkout,
+# whose conftest.py puts this checkout's source roots first.

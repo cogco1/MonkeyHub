@@ -41,6 +41,7 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
             packages/archflow/pyproject.toml
+            packages/monkeyarch/pyproject.toml
             packages/monkeydiagram/pyproject.toml
             apps/monkeyfab/pyproject.toml
             apps/archflow-studio/api/requirements.txt
@@ -66,6 +67,7 @@ jobs:
         run: >-
           python -m pip install -e .
           -e "packages/archflow[cad-occt]"
+          -e packages/monkeyarch
           -e packages/monkeydiagram
           -e "apps/monkeyfab[send,test]"
           -r apps/archflow-studio/api/requirements.txt
@@ -116,6 +118,7 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
             packages/archflow/pyproject.toml
+            packages/monkeyarch/pyproject.toml
             packages/monkeydiagram/pyproject.toml
             apps/archflow-studio/api/requirements.txt
 
@@ -130,7 +133,7 @@ jobs:
 
       - name: Install API dependencies
         run: >-
-          python -m pip install -e . -e packages/archflow -e packages/monkeydiagram
+          python -m pip install -e . -e packages/archflow -e packages/monkeyarch -e packages/monkeydiagram
           -r apps/archflow-studio/api/requirements.txt
           -r apps/monkeyhub/api/requirements.txt
 
@@ -244,6 +247,7 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
             packages/archflow/pyproject.toml
+            packages/monkeyarch/pyproject.toml
             packages/monkeydiagram/pyproject.toml
             apps/archflow-studio/api/requirements.txt
 
@@ -257,7 +261,7 @@ jobs:
             apps/monkeyhub/web/tools/openapi-ts/package-lock.json
 
       - name: Install API and test dependencies
-        run: python -m pip install -e . -e "packages/archflow[cad-inspection]" -e packages/monkeydiagram -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
+        run: python -m pip install -e . -e "packages/archflow[cad-inspection]" -e packages/monkeyarch -e packages/monkeydiagram -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 
       - name: Desktop update activation checks
         if: runner.os == 'Windows'
@@ -374,6 +378,7 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
             packages/archflow/pyproject.toml
+            packages/monkeyarch/pyproject.toml
             packages/monkeydiagram/pyproject.toml
             apps/archflow-studio/api/requirements.txt
 
@@ -393,7 +398,7 @@ jobs:
           git worktree add "$RUNNER_TEMP/base" "$base"
 
       - name: Install API and test dependencies
-        run: python -m pip install -e . -e "packages/archflow[cad-inspection]" -e packages/monkeydiagram -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
+        run: python -m pip install -e . -e "packages/archflow[cad-inspection]" -e packages/monkeyarch -e packages/monkeydiagram -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 
       # The base code builds the project: the check promises that an existing
       # project reads the same, and a candidate that deliberately changes what
