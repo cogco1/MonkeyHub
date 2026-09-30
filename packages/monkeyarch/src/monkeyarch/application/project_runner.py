@@ -367,15 +367,20 @@ def _source_seats(repository, run: RunRef, ref: ProjectRecordRef | None) -> dict
 
 
 def _producer_code() -> str | None:
-    """The implementations whose retained producer outputs may be reused."""
+    """The implementations whose retained producer outputs may be reused.
+
+    Every module whose source defines what a producer emits or accepts is
+    listed, so a change to any of them invalidates reuse. Code that leaves
+    ``element_producers`` for another module brings that module here.
+    """
     import inspect
-    from monkeyarch.authoring import element_producers
+    from monkeyarch.authoring import element_producers, producer_signatures
     from monkeyarch.domain import reference_resolver, opening_solver, wall_solver
 
     try:
         return canonical_digest({
             "modules": {module.__name__: inspect.getsource(module) for module in
-                        (element_producers, reference_resolver, opening_solver, wall_solver)},
+                        (element_producers, producer_signatures, reference_resolver, opening_solver, wall_solver)},
             "producers": {name: inspect.getsource(producer) for name, producer in element_producers.PRODUCERS.items()},
         })
     except (OSError, TypeError):

@@ -3,7 +3,8 @@ from dataclasses import replace
 import json
 import unittest
 from jsonschema import Draft202012Validator
-from monkeyarch.authoring.element_producers import ElementProducerError, ElementRow, ProductionContext, produce_rows, producer_signatures
+from monkeyarch.authoring.element_producers import ElementProducerError, ElementRow, ProductionContext, produce_rows
+from monkeyarch.authoring.producer_signatures import producer_signatures
 from monkeyarch.domain.reference_resolver import ProjectPoint, ReferenceContext, ReferenceError, parse_reference, resolve_plan, resolve_elevation
 from archflow.state.geometry_program import ProjectLevel, ProjectLevels
 

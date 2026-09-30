@@ -22,13 +22,12 @@ from monkeyarch.authoring.element_producers import (
     element_rows_of,
     element_vertical_extent,
     edit_drawn_element,
-    parameter_unit,
     produce_rows,
     production_order,
-    producer_signatures,
     validate_element_contract,
     with_void_hosts,
 )
+from monkeyarch.authoring.producer_signatures import parameter_unit, producer_signatures
 from monkeyarch.application.geometry_proposal import GeometryProposalStatus
 from monkeyarch.domain.reference_resolver import ReferenceContext
 from monkeyarch.compilation.geometry import compile_geometry_program

@@ -36,7 +36,7 @@ from types import MappingProxyType
 from typing import Mapping, Sequence
 
 from archflow.state.state_record import StateRecord
-from monkeyarch.authoring.element_producers import parameter_unit
+from monkeyarch.authoring.producer_signatures import parameter_unit
 
 from ..errors import StudioError
 from ..binding import ProjectBinding

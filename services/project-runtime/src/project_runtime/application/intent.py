@@ -762,7 +762,8 @@ def component_edit_proposal(
     neither the transport nor the model supplies a geometry program.
     """
 
-    from monkeyarch.authoring.element_producers import producer_signatures, validate_element_contract
+    from monkeyarch.authoring.element_producers import validate_element_contract
+    from monkeyarch.authoring.producer_signatures import producer_signatures
 
     allowed = {
         "summary", "entities", "parameters", "relations", "removeEntityIds",
@@ -1279,7 +1280,7 @@ class DeterministicIntentProvider:
                     )
                 ),
             )
-        from monkeyarch.authoring.element_producers import parameter_unit
+        from monkeyarch.authoring.producer_signatures import parameter_unit
 
         declared = parameter_unit(element.producer, key)
         number = self._stated_in(parsed, declared, f"{key} on {element.element_id}")

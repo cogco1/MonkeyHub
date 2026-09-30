@@ -550,7 +550,8 @@ class NativeLoftHeightExecutionTests(unittest.TestCase):
 
     def test_a_parameterized_multi_section_loft_remains_one_solid_after_a_height_edit(self) -> None:
         from archflow.state.state_record import Parameter, StateRecordEditKind, StateRecordOperator, apply_state_record_operator
-        from monkeyarch.authoring.element_producers import _check_signature_value, producer_signatures, validate_element_contract
+        from monkeyarch.authoring.element_producers import _check_signature_value, validate_element_contract
+        from monkeyarch.authoring.producer_signatures import producer_signatures
 
         for loft_type in ("straight", "normal"):
             record = self._record([_ring(1.0, 0.0), _ring(0.6, 1.5), _ring(0.8, 3.0)])
