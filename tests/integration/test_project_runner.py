@@ -1606,7 +1606,7 @@ class OcctExportTests(unittest.TestCase):
         from unittest.mock import patch
         from monkeycad.backends.occt import export as occt_export
         from monkeycad.backends.occt.errors import OcctBackendError
-        from tests.integration.test_cad_execution import _binding
+        from tests.integration.support import _binding
         from tests.integration.test_occt_execution import _box, _program_of
 
         program = _program_of(_box("box", [0, 0, 0], [1, 1, 1]))
@@ -2028,7 +2028,7 @@ class IncrementalSourceRunTests(unittest.TestCase):
         from unittest.mock import patch
         from monkeycad.backends.occt import build as occt_build
         from monkeycad.backends.occt.export import execute_occt_export
-        from tests.integration.test_cad_execution import _binding
+        from tests.integration.support import _binding
         from tests.integration.test_occt_execution import _array, _box, _program_of
 
         seed = _box("seed", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])

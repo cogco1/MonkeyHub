@@ -72,9 +72,18 @@ from archflow.state.geometry_program import (
     LengthUnit,
 )
 from archflow.state.state_record import StateRecord, project_grids_of, project_levels_of
-from tests.integration.support import EVIDENCE, RECORD_PAYLOAD, authored_record, shared_bound_state
-from tests.integration.test_cad_execution import _binding as _synthetic_binding, _program as _synthetic_program
-from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
+from tests.integration.support import (
+    COMMITMENT,
+    EVIDENCE,
+    RECORD_PAYLOAD,
+    _binding as _synthetic_binding,
+    _only,
+    _program as _synthetic_program,
+    _proposal,
+    _state,
+    authored_record,
+    shared_bound_state,
+)
 from tools.dev import source_roots
 
 OCCT_AVAILABLE = occt_available()
