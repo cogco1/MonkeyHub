@@ -138,7 +138,7 @@ class CapabilityLookupTests(unittest.TestCase):
     def test_what_a_person_types_finds_the_entry_through_the_served_rule(self) -> None:
         """The CLI and the running service share one matcher, so both hit these."""
 
-        from archflow_studio_api.application.capability import match_capabilities
+        from project_runtime.application.capability import match_capabilities
 
         self.assertIs(devctl._matcher(), match_capabilities)
         for said in ("把这个体块高度改成4.2米，雨棚不动",

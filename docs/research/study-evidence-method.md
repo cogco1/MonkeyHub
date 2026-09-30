@@ -12,7 +12,7 @@ stated conditions**. Retain the explanation as a revisable claim. Neither matchi
 a precedent nor surviving one edit establishes why a real building was designed
 that way. A person's preference needs their own attribution.
 
-The existing [Study owner](../../apps/archflow-studio/api/archflow_studio_api/application/study.py)
+The existing [Study owner](../../services/project-runtime/src/project_runtime/application/study.py)
 already binds evidence to an exact registered page and retains revisions through
 P036. [#111](https://github.com/cogco1/MonkeyHub/pull/111) delivered archive integrity;
 [#117](https://github.com/cogco1/MonkeyHub/pull/117) delivered aspect-correct,
@@ -53,7 +53,7 @@ reasoning or that their licenses grant access to arbitrary drawings.
 
 ## Audited synthetic example
 
-[study_fixture.py](../../apps/archflow-studio/api/tests/study_fixture.py) returns
+[study_fixture.py](../../services/project-runtime/tests/study_fixture.py) returns
 PNG bytes, exact polygons, research input and an independent geometric audit. It
 writes no files or project state. Callers register bytes through the ordinary
 document API and keep test output in a temporary project. The original diagram
@@ -185,8 +185,8 @@ the two model runs.
 The provider response, request, source/revision binding, usage and duration are
 retained in the corresponding Study revisions. The reproducible opt-in test is
 `StudyLiveModelTests.test_real_codex_trace_evidence_only_reason_then_challenge_prior`
-in [test_study_model.py](../../apps/archflow-studio/api/tests/test_study_model.py).
-Run from `apps/archflow-studio/api` with the repository and API roots on
+in [test_study_model.py](../../services/project-runtime/tests/test_study_model.py).
+Run from `services/project-runtime` with the repository and `services/project-runtime/src` on
 `PYTHONPATH`, `ARCHFLOW_STUDY_LIVE=1`, and a working configured Codex executable:
 
 ```text

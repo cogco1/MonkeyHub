@@ -3,7 +3,7 @@
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-from archflow_studio_api.transport.runtime import RuntimeDto
+from project_runtime.transport.runtime import RuntimeDto
 
 from .models import ChatSummary, HubError
 

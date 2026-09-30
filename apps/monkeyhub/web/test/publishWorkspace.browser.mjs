@@ -28,8 +28,8 @@ import uvicorn
 from tools import source_roots
 source_roots.put_first(Path.cwd())
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 root, project, port=Path(sys.argv[1]),sys.argv[2],int(sys.argv[3])
 fresh=not (root/project/'project.json').exists()
 repository=FilesystemProjectRepository.initialize(root/project,project_id=project,initial_state={'project_id':project,'version':0}) if fresh else FilesystemProjectRepository.open(root/project)
@@ -70,7 +70,7 @@ createRoot(document.getElementById('root')).render(<App/>);
 async function startRuntime(id, port = null) {
   port ??= await freePort();
   const child = spawn(process.env.PYTHON ?? "python", ["-c", source, temporary, id, String(port)], { cwd: repo,
-    env: { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [repo, path.join(repo, "apps/archflow-studio/api")].join(path.delimiter) }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    env: { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [repo, path.join(repo, "services/project-runtime/src")].join(path.delimiter) }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
   const p = { child, log: "", id, port }; processes.push(p); child.stdout.on("data", (c) => p.log += c); child.stderr.on("data", (c) => p.log += c);
   origins[id] = `http://127.0.0.1:${port}`;
   await until(() => fetch(origins[id] + "/api/health").then((r) => r.ok).catch(() => false), Boolean, "Runtime ready");

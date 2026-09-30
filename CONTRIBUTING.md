@@ -101,4 +101,4 @@ python tools/devctl.py work --json
 - [`AGENTS.md`](AGENTS.md) — 少量长期规则与项目边界。
 - [`docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md`](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md) — 环境搭建与首次跑通（队友从第 8 节开始）。
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — 对外协议，客户端能依赖什么。
-- [`apps/archflow-studio/README.md`](apps/archflow-studio/README.md) — 项目运行时（Project Runtime）API，以及 MonkeyHub 前端的 `api:check`、`typecheck`、`build`。
+- [`services/project-runtime/README.md`](services/project-runtime/README.md) — 项目运行时（Project Runtime）API，以及 MonkeyHub 前端的 `api:check`、`typecheck`、`build`。

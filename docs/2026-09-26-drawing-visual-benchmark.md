@@ -10,7 +10,7 @@
 | Short | Path |
 | --- | --- |
 | `TOOL` | `tools/benchmark_visual_observation.py` |
-| `API` | `apps/archflow-studio/api/archflow_studio_api` |
+| `API` | `services/project-runtime/src/project_runtime` |
 
 ## 0. Summary
 
@@ -175,7 +175,7 @@ The first two plans produced no actionable finding, so arm D had nothing to repa
 
 ### 5.2 Runtime and provider
 
-- One project runtime from this branch (`python -m archflow_studio_api.main`) at low priority, with `ARCHFLOW_STUDIO_CAD_EXPORT=occt`, `ARCHFLOW_STUDIO_INTENT_PROVIDER=codex` and `ARCHFLOW_STUDIO_INTENT_TIMEOUT_S=300`. Monitor rows were kept locally.
+- One project runtime from this branch (`python -m project_runtime.main`) at low priority, with `ARCHFLOW_STUDIO_CAD_EXPORT=occt`, `ARCHFLOW_STUDIO_INTENT_PROVIDER=codex` and `ARCHFLOW_STUDIO_INTENT_TIMEOUT_S=300`. Monitor rows were kept locally.
 - Provider: Codex CLI 0.153.4 through the runtime's configured transport, reported as `codex-cli-default`.
 - Two tool runs (tags `smoke1` and `smoke2`), four looks in all. Before them, a dry run in process with the default deterministic provider checked every step (each look refused with `VISUAL_PROVIDER_UNAVAILABLE`, no provider call).
 - The numbers below are the final `arm_results` over the recorded state of both runs. The first run was recorded before D's second-look fields (§3.7) existed; every other number is the same as printed. The looks were told the hatch pen width too, which the tool no longer restates.
@@ -282,12 +282,12 @@ The full run is one tool invocation over a spec of real cut plans. It makes at m
 
    ```bat
    cd /d D:\MONKEYHUB_DEV\temp\drawing-benchmark\full
-   set PYTHONPATH=<repo>;<repo>\apps\archflow-studio\api
+   set PYTHONPATH=<repo>;<repo>\services\project-runtime\src
    set ARCHFLOW_STUDIO_CAD_EXPORT=occt
    set ARCHFLOW_STUDIO_INTENT_PROVIDER=codex
    set ARCHFLOW_STUDIO_INTENT_TIMEOUT_S=300
    set MONKEYMONITOR_DATA_DIR=D:\MONKEYHUB_DEV\temp\drawing-benchmark\full\monitor
-   start /b /low /wait python -m archflow_studio_api.main --project-dir D:\MONKEYHUB_DEV\temp\drawing-benchmark\full\<project id> --host 127.0.0.1 --port 8765
+   start /b /low /wait python -m project_runtime.main --project-dir D:\MONKEYHUB_DEV\temp\drawing-benchmark\full\<project id> --host 127.0.0.1 --port 8765
    ```
 
 3. **Write `drawings.json`** with one entry per real cut plan. A drawing's latest revision in `GET /api/documents` gives the values:
@@ -309,7 +309,7 @@ The full run is one tool invocation over a spec of real cut plans. It makes at m
 
    ```bat
    cd /d D:\MONKEYHUB_DEV\temp\drawing-benchmark\full
-   set PYTHONPATH=<repo>;<repo>\apps\archflow-studio\api
+   set PYTHONPATH=<repo>;<repo>\services\project-runtime\src
    start /b /low /wait python <repo>\tools\benchmark_visual_observation.py --drawing --runtime http://127.0.0.1:8765 --spec drawings.json --tag full1 > result.json 2> progress.log
    ```
 

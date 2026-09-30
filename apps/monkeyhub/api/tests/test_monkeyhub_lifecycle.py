@@ -36,7 +36,7 @@ source_roots.put_first(ROOT)
 from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.settings import StudioSettings
 from monkeyhub_api import chat as chat_tools
 from monkeyhub_api.main import HubSettings, complete_interrupted_connection_teardown, create_app
 from monkeyhub_api.settings.models import ApplicationSettingsDto
@@ -48,7 +48,7 @@ def project_fixture():
 
     name = "monkeyhub_studio_project_fixture"
     spec = importlib.util.spec_from_file_location(
-        name, ROOT / "apps/archflow-studio/api/tests/support.py",
+        name, ROOT / "services/project-runtime/tests/support.py",
     )
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module

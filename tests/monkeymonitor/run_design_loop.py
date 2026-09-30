@@ -26,10 +26,10 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tests.monkeymonitor import run_turn_benchmark as bench
-from archflow_studio_api.application.artifacts import ModelSource, list_artifacts
-from archflow_studio_api.application.binding import ProjectBinding
-from archflow_studio_api.application.drawings import _complete_source, model_view
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.artifacts import ModelSource, list_artifacts
+from project_runtime.application.binding import ProjectBinding
+from project_runtime.application.drawings import _complete_source, model_view
+from project_runtime.settings import StudioSettings
 from monkeydiagram.drawing_elevation import read_elevation_source
 from monkeymonitor.store import UsageLog
 from monkeymonitor.trace import build_traces

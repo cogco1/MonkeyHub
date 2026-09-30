@@ -7,7 +7,7 @@ one P036 project directory and owns every project-scoped computation and record 
 it. This document is that runtime's contract: what the Hub gives it, what it owns, what it
 must not own, how it is identified and reached, and how a developer starts one alone.
 
-Code: `apps/archflow-studio/api/archflow_studio_api` — the package keeps its historical name;
+Code: `services/project-runtime/src/project_runtime`, with its tests in `services/project-runtime/tests`;
 registry module `studio.shell` (module ids do not follow product names, [REPO_LAYOUT §3](REPO_LAYOUT.md)).
 The service id `studio`, the server name `monkeyarch-api` and the forwarding path segment
 `/studio/` are process and wire names kept for compatibility; they name this runtime and
@@ -52,13 +52,13 @@ these (`applications.py`, `_command`):
 | `MONKEYMONITOR_DATA_DIR` | `<runtime root>/diagnostics/monkeymonitor` |
 
 The runtime reads only that environment for its own configuration
-(`archflow_studio_api/settings.py`, `StudioSettings.from_env`). It never reads the user
+(`project_runtime/settings.py`, `StudioSettings.from_env`). It never reads the user
 preference file or the application settings file to decide how it runs; those files are the
 Hub's (§4). The full variable list the settings module understands, including the remote-mode
 and shared-project ones the Hub does not set, is documented in `settings.py`.
 
 Stdin: `stop` followed by a newline, or EOF, requests a graceful stop that lets accepted work
-finish (`workers.py`; `archflow_studio_api/main.py --managed-stdin`).
+finish (`workers.py`; `project_runtime/main.py --managed-stdin`).
 
 The runtime serves API routes only. HTML and workspace assets are served by MonkeyHub.
 
@@ -263,11 +263,11 @@ change you want to see without going through the Hub:
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-project-runtime.ps1 -ProjectDir '<a P036 project directory>' [-Port 8000] [-Python <python.exe>]
 ```
 
-or directly `python -m archflow_studio_api.main --project-dir <dir> --host 127.0.0.1 --port 8000`
-with the checkout and `apps/archflow-studio/api` on `PYTHONPATH`. Configuration is the
+or directly `python -m project_runtime.main --project-dir <dir> --host 127.0.0.1 --port 8000`
+with the checkout and `services/project-runtime/src` on `PYTHONPATH`. Configuration is the
 `ARCHFLOW_STUDIO_*` environment of that shell; there is no launch window, tray, configuration
 file or default project (#126). Fixtures: `tools/create_project.py --project <dir>` for an
-empty project; `apps/archflow-studio/api/tests/support.py` (`make_empty_project`) inside tests.
+empty project; `services/project-runtime/tests/support.py` (`make_empty_project`) inside tests.
 
 "Independently runnable" is not "independent product entry": a runtime started this way is a
 development instance, and MonkeyHub remains the only production launcher.
@@ -276,10 +276,12 @@ development instance, and MonkeyHub remains the only production launcher.
 
 - Routes and wire shapes are stable. Removing or renaming a stable field or path is a protocol
   major change (PROTOCOL.md).
-- New project-scoped behaviour goes into this package's `application/` owners; new product
-  behaviour goes to the Hub; workspace modules live under its frontend.
+- New project-scoped orchestration goes into this package's `application/` owners; domain value
+  logic goes to the owning package under `packages/`; new product behaviour goes to the Hub;
+  workspace modules live under its frontend.
 - The names `studio` (service id, worker key prefix, forwarding segment), `monkeyarch-api`
-  (protocol server name) and the `archflow_studio_api` package are retained compatibility
-  identifiers. They do not imply an application boundary and do not require a cosmetic rename.
+  (protocol server name) and `archflow-studio-api` (the `service` in `/api/health`) are retained
+  compatibility identifiers. They do not imply an application boundary and do not require a
+  cosmetic rename.
 - The runtime never grows a persistent user-settings file, a launcher, a tray or a UI of its
   own.

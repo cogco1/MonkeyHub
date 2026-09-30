@@ -21,22 +21,22 @@ import time
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps/archflow-studio/api"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services/project-runtime/src"))
 
 from fastapi.testclient import TestClient
 
 from archflow.adapters.occt_backend import occt_available
 from archflow.project.repository import FilesystemProjectRepository, ProjectHeadLocked
-from archflow_studio_api.application.binding import bound_project
-from archflow_studio_api.application.decisions import recipe_export
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.binding import bound_project
+from project_runtime.application.decisions import recipe_export
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from tools.export_drawing_recipe import ATTRIBUTION, main
 
 # Load API fixtures by their full package so they do not shadow kernel tests.
-support = import_module("apps.archflow-studio.api.tests.support")
-two_page_pdf = import_module("apps.archflow-studio.api.tests.test_documents").two_page_pdf
-room_edit = import_module("apps.archflow-studio.api.tests.test_drawing_plans").room_edit
+support = import_module("services.project-runtime.tests.support")
+two_page_pdf = import_module("services.project-runtime.tests.test_documents").two_page_pdf
+room_edit = import_module("services.project-runtime.tests.test_drawing_plans").room_edit
 
 DEFAULTS = {"cutLineMm": 0.35, "visibleLineMm": 0.18, "hatchSpacingMm": 2.0}
 

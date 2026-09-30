@@ -110,7 +110,7 @@ def authored_record(*, variant="base", scale=1.0) -> StateRecord:
 
 def _drawing_recipe(receipt, view):
     # Import the actual application recipe, not a separately maintained camera.
-    from archflow_studio_api.application.drawings import _elevation_view
+    from project_runtime.application.drawings import _elevation_view
     recipe = _elevation_view(receipt, view, hidden_lines=False, scale_denominator=1)
     u0, v0, u1, v1 = recipe.crop_uv
     # Exactly model_view's meter recipe and 150 dpi <= 1024 pixel policy.

@@ -8,7 +8,7 @@
     "packages/monkeymonitor",
     "packages/monkeycontrol",
     "tools",
-    "apps/archflow-studio/api",
+    "services/project-runtime",
     "tests",
     "labs",
     "apps/monkeyhub",
@@ -19,7 +19,7 @@
   ],
   "python_source_roots": [
     ".",
-    "apps/archflow-studio/api",
+    "services/project-runtime/src",
     "apps/monkeyhub/api",
     "packages/monkeyfab/src",
     "packages/monkeydiagram/src",
@@ -59,7 +59,7 @@
     "governance/module_registry.json",
     "governance/work_registry.json",
     "tests/",
-    "apps/archflow-studio/api/tests/",
+    "services/project-runtime/tests/",
     "packages/monkeydiagram/tests/",
     "packages/archflow/tests/",
     "packages/monkeymonitor/tests/",
@@ -227,7 +227,7 @@
       "reason": "Exclusively creates the one new DrawingRecipeExport@1 file a person names with --out: a project recipe's values, target and hold, its decision id and revision sha256, and its own sha256, nothing else of the project. It never replaces a file and never writes into a project; an import is retained by the decisions application under the project's lock."
     },
     {
-      "path": "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+      "path": "services/project-runtime/src/project_runtime/application/candidate.py",
       "function": "_run_successor",
       "operations": [
         "mkdir"
@@ -237,7 +237,7 @@
       "reason": "Creates the per-seat export workspace under the layout's run root, the same way tools/run_project.py does. It is one function so that a proposal's candidate and a selected massing option's run under the same harness; execute_candidate and execute_option_candidate both reach the workspace through it."
     },
     {
-      "path": "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
+      "path": "services/project-runtime/src/project_runtime/application/intent_agent.py",
       "function": "_invoke_once",
       "operations": [
         "write_text",
@@ -652,7 +652,7 @@
       "reason": "Removes the old file's journal and renames the newly built index into place once no reader has the old file open, inside the caller-supplied nonproject index directory (the index subdirectory of the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
     },
     {
-      "path": "apps/archflow-studio/api/archflow_studio_api/application/projections.py",
+      "path": "services/project-runtime/src/project_runtime/application/projections.py",
       "function": "put",
       "operations": [
         "mkdir",
@@ -664,7 +664,7 @@
       "reason": "The projection cache (ADR-008, #367): PNG blobs named by their own sha256 under the project's Hub cache directory, never the project folder; written to a temp file then renamed, and removed by the reachability collector after a grace window. Derived, deletable and never cited as evidence."
     },
     {
-      "path": "apps/archflow-studio/api/archflow_studio_api/application/projections.py",
+      "path": "services/project-runtime/src/project_runtime/application/projections.py",
       "function": "collect",
       "operations": [
         "unlink"
@@ -815,7 +815,7 @@
       "reason": "Hard validation cannot commit or depend on soft evaluation."
     },
     {
-      "source": "apps/archflow-studio/api",
+      "source": "services/project-runtime",
       "targets": [
         "rhino3dm",
         "numpy",
@@ -830,7 +830,7 @@
         "probes",
         "archive"
       ],
-      "reason": "The Project Runtime (archflow_studio_api) validates requests, streams events and manages task lifecycle; design state, dependencies, validation, geometry and commit are calls into archflow. Geometry mathematics, graphs, .3dm writing and state schemas live in archflow and are imported, never reimplemented beside it. Pydantic models here are transport shapes, not a second canonical state."
+      "reason": "The Project Runtime (project_runtime) validates requests, streams events and manages task lifecycle; design state, dependencies, validation, geometry and commit are calls into archflow. Geometry mathematics, graphs, .3dm writing and state schemas live in archflow and are imported, never reimplemented beside it. Pydantic models here are transport shapes, not a second canonical state."
     },
     {
       "source": "packages/archflow/src/archflow",
@@ -896,7 +896,7 @@
         "archflow",
         "monkeyarch",
         "monkeydiagram",
-        "archflow_studio_api",
+        "project_runtime",
         "probes",
         "archive",
         "monkeyfab",
@@ -911,7 +911,7 @@
         "monkeyarch",
         "monkeydiagram",
         "monkeymonitor",
-        "archflow_studio_api",
+        "project_runtime",
         "monkeyhub_api",
         "labs",
         "probes",
@@ -927,7 +927,7 @@
         "monkeydiagram",
         "monkeymonitor",
         "monkeyfab",
-        "archflow_studio_api",
+        "project_runtime",
         "monkeyhub_api",
         "probes",
         "archive",

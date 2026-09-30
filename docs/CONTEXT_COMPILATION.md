@@ -48,9 +48,9 @@ Request + explicit selection + exact StateRecord
 ```
 
 The implementation extends `studio.intent` in
-[`intent_context.py`](../apps/archflow-studio/api/archflow_studio_api/application/intent_context.py),
-[`intent_requests.py`](../apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py)
-and [`intent_agent.py`](../apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py).
+[`intent_context.py`](../services/project-runtime/src/project_runtime/application/intent_context.py),
+[`intent_requests.py`](../services/project-runtime/src/project_runtime/application/intent_requests.py)
+and [`intent_agent.py`](../services/project-runtime/src/project_runtime/application/intent_agent.py).
 There is no model router or second project store.
 
 | Tier | Current trigger and output | Anthropic output limit |
@@ -148,7 +148,7 @@ remain intact; the rejected request is not sent and creates no model receipt or
 usage. If a supplement exceeds the budget, earlier actual attempts retain their
 own usage and no further call occurs.
 
-[`intent_budget.py`](../apps/archflow-studio/api/archflow_studio_api/application/intent_budget.py)
+[`intent_budget.py`](../services/project-runtime/src/project_runtime/application/intent_budget.py)
 uses the explicitly named `heuristic_utf8_bytes_div4` estimate by default and
 accepts an injected text tokenizer. Runtime enforcement currently uses the default
 heuristic. It counts the application's compiled rules, response schema, serialized
@@ -331,7 +331,7 @@ API tests cover keep/avoid/reject strength, explicit narrowing and revocation.
 
 Reproduce with `python -m unittest tests.test_nonadjacent_stage_context -v`
 (OCCT is required; missing OCCT is an explicit skip), and
-`python -m pytest apps/archflow-studio/api/tests/test_decisions.py apps/archflow-studio/api/tests/test_intent_context.py -q`.
+`python -m pytest services/project-runtime/tests/test_decisions.py services/project-runtime/tests/test_intent_context.py -q`.
 This proves retained-state/API and real CAD behavior in a disposable fixture.
 It does not measure a new native provider session, a human design trial,
 undeclared relationships, a MEP engine, or complete building usability.
@@ -1021,7 +1021,7 @@ was not adjusted between arms.
 The unchanged `incremental-edit` prompt raises `portico-cornice` from 0.3 to
 0.5 m, keeps `entity:portico-base` at 0.6 m, preserves both footprints, support
 datum and other authored fields, and leaves the candidate unaccepted. The
-fixture is `apps/archflow-studio/api/tests/support.py`, last changed at
+fixture is `services/project-runtime/tests/support.py`, last changed at
 `786863581e4794523987253b8a91cc22ac23a28a`; this is a synthetic two-object task.
 Initial `run-001` state digest is
 `76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1`;

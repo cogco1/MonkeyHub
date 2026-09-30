@@ -71,9 +71,9 @@ def create_public_massing_fixture(project_root: Path) -> tuple[RetainedCandidate
     transforms or adding that application to the core package's dependencies.
     """
 
-    options = import_module("apps.archflow-studio.api.archflow_studio_api.application.options")
-    binding_module = import_module("apps.archflow-studio.api.archflow_studio_api.application.binding")
-    settings_module = import_module("apps.archflow-studio.api.archflow_studio_api.settings")
+    options = import_module("services.project-runtime.src.project_runtime.application.options")
+    binding_module = import_module("services.project-runtime.src.project_runtime.application.binding")
+    settings_module = import_module("services.project-runtime.src.project_runtime.settings")
     repository = FilesystemProjectRepository.initialize(
         project_root, project_id=PROJECT_ID, initial_state={"fixture": EVIDENCE},
         authored_record=public_massing_record().to_dict(),

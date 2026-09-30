@@ -301,11 +301,11 @@ class ImportNameTests(unittest.TestCase):
     """A registered owner is matched by the name it is imported with."""
 
     def test_an_import_name_begins_at_the_longest_python_source_root(self) -> None:
-        roots = [".", "apps/archflow-studio/api", "packages/archflow/src"]
+        roots = [".", "services/project-runtime/src", "packages/archflow/src"]
         for path, name in (
             ("archflow/state/state_record.py", "archflow.state.state_record"),
             ("packages/archflow/src/archflow/state/state_record.py", "archflow.state.state_record"),
-            ("apps/archflow-studio/api/archflow_studio_api/main.py", "archflow_studio_api.main"),
+            ("services/project-runtime/src/project_runtime/main.py", "project_runtime.main"),
             ("monkeyarch/construction/__init__.py", "monkeyarch.construction"),
             ("tools/archcheck.py", "tools.archcheck"),
             ("apps/monkeyhub/web/scripts/dump-openapi.py", None),

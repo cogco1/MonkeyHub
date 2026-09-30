@@ -279,7 +279,7 @@ Additional tests:
 
 ## 7. Write scope
 
-The lane claims these paths (`governance/work_registry.json`): `GP`, `SR`, `COMP`, `PROP`, `PROD`, `WALL`, `packages/monkeyarch/src/monkeyarch/capabilities/opening_solver.py`, `CADP`, `packages/archflow/src/archflow/adapters/cad_patch.py`, `CADX`, `OCCT`, `ELEV`, and in `apps/archflow-studio/api/archflow_studio_api/application/`, `drawing_plans.py` and `drawings.py`. Tests fall under the shared scope.
+The lane claims these paths (`governance/work_registry.json`): `GP`, `SR`, `COMP`, `PROP`, `PROD`, `WALL`, `packages/monkeyarch/src/monkeyarch/capabilities/opening_solver.py`, `CADP`, `packages/archflow/src/archflow/adapters/cad_patch.py`, `CADX`, `OCCT`, `ELEV`, and in `services/project-runtime/src/project_runtime/application/`, `drawing_plans.py` and `drawings.py`. Tests fall under the shared scope.
 
 Open pull requests touch some of the same files in other functions:
 - #420 (GH-402): `COMP`, `PROP` and `SR`;

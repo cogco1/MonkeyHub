@@ -16,7 +16,7 @@ import rhino3dm from "rhino3dm";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repoRoot = path.resolve(webRoot, "../../..");
-const apiRoot = path.resolve(repoRoot, "apps/archflow-studio/api");
+const apiRoot = path.resolve(repoRoot, "services/project-runtime");
 const python = process.env.PYTHON ?? "python";
 const rhino = await rhino3dm();
 const root = await mkdtemp(path.join(tmpdir(), "monkeyarch-model-sync-"));
@@ -66,8 +66,8 @@ const apiPort = await new Promise((resolve) => {
     probe.close(() => resolve(port));
   });
 });
-api = spawn(python, ["-m", "archflow_studio_api.main", "--port", String(apiPort), "--project-dir", projectDir], {
-  cwd: apiRoot,
+api = spawn(python, ["-m", "project_runtime.main", "--port", String(apiPort), "--project-dir", projectDir], {
+  cwd: path.join(apiRoot, "src"),
   env: { ...process.env, ARCHFLOW_STUDIO_CAD_EXPORT: "occt", PYTHONUTF8: "1" },
   stdio: ["ignore", "pipe", "pipe"],
 });

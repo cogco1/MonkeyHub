@@ -24,8 +24,8 @@ from uuid import uuid4
 
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, project_fixture, wait_for
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.application.binding import ProjectBinding
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.binding import ProjectBinding
+from project_runtime.settings import StudioSettings
 from monkeyhub_api import runtime as runtime_module
 from monkeyhub_api.models import ChatSummary, HubError, HubFailure
 from monkeyhub_api.runtime import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager, _WorkCopyObservation
@@ -726,7 +726,7 @@ for _ in range(5):
             self.assertIn(other["workers"][0]["state"], {"ready", "busy"})
 
     def register_model(self, client, runtime_id, run_id, state_digest):
-        model = (ROOT / "apps/archflow-studio/api/tests/fixtures/model-source-a.3dm").read_bytes()
+        model = (ROOT / "services/project-runtime/tests/fixtures/model-source-a.3dm").read_bytes()
         response = self.proxy(client, runtime_id, "/api/model-assets", "POST", json={
             "projectId": self.project_id, "runId": run_id, "stateDigest": state_digest,
             "fileName": "complete.3dm", "contentBase64": base64.b64encode(model).decode(),
@@ -821,8 +821,8 @@ for _ in range(5):
         launcher = ROOT / "apps/monkeyhub/run.py"
         fault_script.write_text(
             "import os, runpy, sys\n"
-            f"sys.path[:0] = {[str(ROOT / 'apps/archflow-studio/api'), str(ROOT)]!r}\n"
-            "from archflow_studio_api.routes import candidates\n"
+            f"sys.path[:0] = {[str(ROOT / 'services/project-runtime/src'), str(ROOT)]!r}\n"
+            "from project_runtime.routes import candidates\n"
             "def exit_before_candidate(*args, **kwargs):\n    os._exit(73)\n"
             "candidates.execute_candidate = exit_before_candidate\n"
             f"sys.argv[0] = {str(launcher)!r}\n"

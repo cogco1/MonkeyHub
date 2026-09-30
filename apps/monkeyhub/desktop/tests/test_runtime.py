@@ -361,7 +361,7 @@ class DesktopRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.assertTrue(Path(EXE).is_absolute() and Path(EXE).is_file(), EXE)
         self.assertTrue((APPLICATION_ROOT / "apps/monkeyhub/web/dist/index.html").is_file(), "Build the Hub frontend first")
-        for directory in (APPLICATION_ROOT, APPLICATION_ROOT / "apps/archflow-studio/api", APPLICATION_ROOT / "apps/monkeyhub/api"):
+        for directory in (APPLICATION_ROOT, APPLICATION_ROOT / "services/project-runtime/src", APPLICATION_ROOT / "apps/monkeyhub/api"):
             if str(directory) not in sys.path:
                 sys.path.insert(0, str(directory))
         from tools import source_roots
@@ -409,10 +409,10 @@ class DesktopRuntimeTests(unittest.TestCase):
             for key in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "CONDA_PREFIX", "NODE_PATH"):
                 self.environment.pop(key, None)
             self.assertTrue(Path(sys.executable).is_relative_to(APPLICATION_ROOT))
-            import archflow, archflow_studio_api, monkeyhub_api
-            for module in (archflow, archflow_studio_api, monkeyhub_api):
+            import archflow, project_runtime, monkeyhub_api
+            for module in (archflow, project_runtime, monkeyhub_api):
                 self.assertTrue(Path(module.__file__).is_relative_to(APPLICATION_ROOT), module.__file__)
-        spec = importlib.util.spec_from_file_location("desktop_project_fixture", ROOT / "apps/archflow-studio/api/tests/support.py")
+        spec = importlib.util.spec_from_file_location("desktop_project_fixture", ROOT / "services/project-runtime/tests/support.py")
         self.fixture = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.fixture)
         self.fixture.make_project(self.root / "projects")

@@ -14,7 +14,7 @@ another importer, model store, or rendering runtime.
 Run with the existing API test dependencies installed:
 
 ```powershell
-cd apps/archflow-studio/api
+cd services/project-runtime
 python -m tests.profile_model_ingest --model <authorized-local-model.3dm>
 ```
 

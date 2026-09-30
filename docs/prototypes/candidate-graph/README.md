@@ -163,7 +163,7 @@ change page memory only.
 
 | Prototype element | Real source today | Gap |
 | --- | --- | --- |
-| Working Head, its lineage, "Current" | #277 resolver: `WorkingHead` and `lineage_of` in `apps/archflow-studio/api/archflow_studio_api/application/working_draft.py`. Served as `head` of `GET /working-source` and of `GET /worktrees` (`WorktreeGraphDto.head.lineage`). The saved working position behind it is `/working-draft`. | None for the head itself. |
+| Working Head, its lineage, "Current" | #277 resolver: `WorkingHead` and `lineage_of` in `services/project-runtime/src/project_runtime/application/working_draft.py`. Served as `head` of `GET /working-source` and of `GET /worktrees` (`WorktreeGraphDto.head.lineage`). The saved working position behind it is `/working-draft`. | None for the head itself. |
 | Stage spine, accepted time and actor | Design history: `application/design_history.py` (`DesignStage`, `StageView`, acceptance attribution) over `archflow.state.design_portfolio`, served by `GET /design-history`. | The Stage's `parent` (the Candidate it came from) must be read from the Stage's model run lineage. |
 | Running and queued worktrees | `WorktreeGraphDto.lines` with `kind: "running"`, from the job registry in `application/runtime.py`. | A queued state per Study option. |
 | Earlier lines | `WorktreeGraphDto.lines` with `kind: "branch"`, plus retained working positions. | — |

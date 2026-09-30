@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 
 from test_monkeyhub_lifecycle import project_fixture
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from monkeyhub_api import chat
 from monkeyhub_api.models import HubFailure
 

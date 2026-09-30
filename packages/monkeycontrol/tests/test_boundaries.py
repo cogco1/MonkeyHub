@@ -12,7 +12,7 @@ FORBIDDEN = (
     "monkeyarch",
     "monkeydiagram",
     "monkeymonitor",
-    "archflow_studio_api",
+    "project_runtime",
     "monkeyhub_api",
     "tools",
     "tests",

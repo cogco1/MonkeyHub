@@ -47,9 +47,9 @@ from tools import source_roots  # noqa: E402
 source_roots.put_first(REPO)
 
 from archflow.project.repository import ProjectRepositoryError  # noqa: E402
-from archflow_studio_api.application.authentication import ActorAttribution  # noqa: E402
-from archflow_studio_api.application.binding import ProjectBinding  # noqa: E402
-from archflow_studio_api.application.decisions import (  # noqa: E402
+from project_runtime.application.authentication import ActorAttribution  # noqa: E402
+from project_runtime.application.binding import ProjectBinding  # noqa: E402
+from project_runtime.application.decisions import (  # noqa: E402
     IMPORTED_RECIPE_STRENGTH,
     DecisionRevision,
     RecipeExport,
@@ -57,8 +57,8 @@ from archflow_studio_api.application.decisions import (  # noqa: E402
     read_recipe_export,
     recipe_export,
 )
-from archflow_studio_api.settings import StudioSettings  # noqa: E402
-from archflow_studio_api.transport.errors import StudioError  # noqa: E402
+from project_runtime.settings import StudioSettings  # noqa: E402
+from project_runtime.transport.errors import StudioError  # noqa: E402
 
 # Who an import is attributed to: this tool's own boundary, local and
 # unauthenticated, stated as such - as the Studio states its local boundary -

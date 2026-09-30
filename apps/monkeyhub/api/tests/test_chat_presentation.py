@@ -30,9 +30,9 @@ from PIL import Image
 import uvicorn
 
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.application.artifacts import save_document
-from archflow_studio_api.application.binding import ProjectBinding
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.artifacts import save_document
+from project_runtime.application.binding import ProjectBinding
+from project_runtime.settings import StudioSettings
 from monkeyhub_api import chat
 from monkeyhub_api.chat import ChatStore
 from monkeyhub_api.main import HubSettings, create_app
@@ -443,8 +443,8 @@ class ChatPresentationTests(unittest.TestCase):
         # The document owner has separate registrations for the same image bytes.
         # Its retained legacy API may answer null with the first generated row;
         # the presentation must still keep the explicitly selected original identity.
-        with patch("archflow_studio_api.application.artifacts.list_documents", return_value=(generated, original)), \
-                patch("archflow_studio_api.application.artifacts.document_bytes", return_value=(generated, self.image.getvalue())) as read:
+        with patch("project_runtime.application.artifacts.list_documents", return_value=(generated, original)), \
+                patch("project_runtime.application.artifacts.document_bytes", return_value=(generated, self.image.getvalue())) as read:
             resolved, data = self.store._document(self.store._sessions[self.bound["chatId"]], reference)
             self.assertEqual((resolved.file_name, resolved.revision_ref, resolved.pages),
                              (original.file_name, None, original.pages))

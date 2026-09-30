@@ -114,7 +114,7 @@ implemented behavior; remaining work and its acceptance are tracked in
   retained; not a migration plan to execute again.
 - [Work environment](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md) — source,
   runtime and project-data locations; extending an existing capability.
-- [Project Runtime guide](apps/archflow-studio/README.md) — setup, model interaction,
+- [Project Runtime guide](services/project-runtime/README.md) — setup, model interaction,
   candidate execution, and validation.
 - [API protocol](docs/PROTOCOL.md) — client/server contracts and versioning.
 - [Project document boundary](packages/archflow/src/archflow/project/README.md) — project identity,
@@ -171,12 +171,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-project-runt
 That development start has no configuration file and no default project; the CAD backend and
 intent provider are the `ARCHFLOW_STUDIO_*` environment variables the API reads (defaults:
 OCCT export and the deterministic provider, so opening a project needs neither an API key nor
-Rhino). See the [Project Runtime guide](apps/archflow-studio/README.md) for interaction and export options.
+Rhino). See the [Project Runtime guide](services/project-runtime/README.md) for interaction and export options.
 
 ## Project data
 
 `packages/archflow/` contains shared contracts and project mechanisms; `packages/monkeyarch/` and
-`packages/monkeydiagram/` hold the workflow algorithms. `apps/monkeyhub/web/` composes the single application interface; `apps/archflow-studio/api/` serves project APIs. Active building projects live in an explicitly configured
+`packages/monkeydiagram/` hold the workflow algorithms. `apps/monkeyhub/web/` composes the single application interface; `services/project-runtime/` serves project APIs. Active building projects live in an explicitly configured
 external project root. Promoted regression evidence belongs in `probes/`.
 Both use the same project layout and persistence owner.
 

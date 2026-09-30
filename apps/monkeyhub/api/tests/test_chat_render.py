@@ -35,9 +35,9 @@ from pydantic import ValidationError
 from pypdf import PdfWriter
 
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.application.render_contract import RenderCapability, RenderOutput
-from archflow_studio_api.main import create_app as studio_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.application.render_contract import RenderCapability, RenderOutput
+from project_runtime.main import create_app as studio_app
+from project_runtime.settings import StudioSettings
 from monkeyhub_api import chat
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, ChatPresentationBindRequest, HubFailure
@@ -215,7 +215,7 @@ class RenderContextTests(unittest.TestCase):
         self.assertIn("Reference 2, «AI-Result.jpg» page 1", stale.exception.error.detail)
         self.assertNotIn(replacement["assetSha256"], stale.exception.error.detail, "the refusal does not pick the newer page")
         # Every page is registered, but the project's documents cannot be read to check for a replacement.
-        from archflow_studio_api.application import artifacts
+        from project_runtime.application import artifacts
 
         listed = artifacts.list_documents
 

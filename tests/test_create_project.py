@@ -153,13 +153,13 @@ class CreateProjectTests(unittest.TestCase):
         self.assertFalse(restored_root.exists())
 
     def test_project_archive_preserves_board_documents_and_original_source_bytes(self) -> None:
-        studio_api = Path(__file__).resolve().parents[1] / "apps/archflow-studio/api"
+        studio_api = Path(__file__).resolve().parents[1] / "services/project-runtime/src"
         with patch.object(sys, "path", [str(studio_api), *sys.path]):
             from PIL import Image
-            from archflow_studio_api.application.artifacts import document_bytes, list_documents, save_document
-            from archflow_studio_api.application.binding import ProjectBinding
-            from archflow_studio_api.application.boards import read_board, save_board
-            from archflow_studio_api.settings import StudioSettings
+            from project_runtime.application.artifacts import document_bytes, list_documents, save_document
+            from project_runtime.application.binding import ProjectBinding
+            from project_runtime.application.boards import read_board, save_board
+            from project_runtime.settings import StudioSettings
 
         self.create()
         binding = ProjectBinding.open(StudioSettings(project_dir=self.root, cad_export="off"))

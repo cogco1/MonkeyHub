@@ -1,7 +1,7 @@
 # The open ArchFlow protocol, version 2 (draft)
 
 **Status:** draft, written from the code on 2026-09-04. The one description of the wire is the
-FastAPI application (`apps/archflow-studio/api`); this document says what of it a client may
+FastAPI application (`services/project-runtime`); this document says what of it a client may
 rely on, and what version 2 has reserved but not yet built.
 
 ArchFlow is the methodology and this protocol. **MonkeyArch** is one implementation of it: the
@@ -1152,9 +1152,9 @@ not the build.
 A client must tolerate a capability it does not know — that is how a minor version adds one —
 and must not infer a capability from a successful call.
 
-The identity in `/api/health` (`service: "archflow-studio-api"`) is the running package's name,
-kept for the operators and probes that already read it. `/api/protocol` is the protocol's own
-answer, and `server` there is the implementation's product name.
+The identity in `/api/health` (`service: "archflow-studio-api"`) is the name the runtime's package
+had until #491, kept for the operators and probes that already read it. `/api/protocol` is the
+protocol's own answer, and `server` there is the implementation's product name.
 
 ### 10.4 Versioning
 

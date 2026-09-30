@@ -28,9 +28,9 @@ from tools import source_roots  # noqa: E402 - this checkout's tools, found abov
 # The checkout's Python source roots, as its architecture policy lists them, go first.
 source_roots.put_first(ROOT)
 
-from archflow_studio_api.application.projections import projection_queue
-from archflow_studio_api.settings import StudioSettings
-from archflow_studio_api.render_adapters.gemini import adapter_from_settings
+from project_runtime.application.projections import projection_queue
+from project_runtime.settings import StudioSettings
+from project_runtime.render_adapters.gemini import adapter_from_settings
 from monkeyhub_api.applications import Applications
 from monkeyhub_api.models import HubFailure
 from monkeyhub_api.settings.models import ApplicationSettingsDto

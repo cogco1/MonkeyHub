@@ -101,7 +101,7 @@ to public JSON decisions and brief evidence summaries.
 
 Use the repository's existing Hub/Runtime dependencies from
 [`apps/monkeyhub/api/requirements.txt`](../../apps/monkeyhub/api/requirements.txt)
-and [`apps/archflow-studio/api/requirements.txt`](../../apps/archflow-studio/api/requirements.txt).
+and [`services/project-runtime/requirements.txt`](../../services/project-runtime/requirements.txt).
 This run used Python 3.12.10 and jsonschema 4.26.0. Live trials also require an
 already authenticated Claude CLI; the harness does not configure credentials.
 

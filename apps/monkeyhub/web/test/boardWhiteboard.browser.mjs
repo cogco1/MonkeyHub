@@ -14,10 +14,10 @@ import { createServer } from "vite";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repoRoot = path.resolve(webRoot, "../../..");
-const apiRoot = path.resolve(repoRoot, "apps/archflow-studio/api");
+const apiRoot = path.resolve(repoRoot, "services/project-runtime");
 const python = process.env.PYTHON ?? "python";
 const pythonEnv = { ...process.env, PYTHONUTF8: "1",
-  PYTHONPATH: [repoRoot, apiRoot, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) };
+  PYTHONPATH: [repoRoot, path.join(apiRoot, "src"), process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) };
 const root = await mkdtemp(path.join(tmpdir(), "monkeyboard-whiteboard-"));
 const projectDir = path.join(root, "demo-project");
 const errors = [], requests = [], submissions = [];
@@ -65,7 +65,7 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
     const probe = createHttpServer();
     probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
   });
-  api = spawn(python, ["-m", "archflow_studio_api.main", "--port", String(apiPort), "--project-dir", projectDir], {
+  api = spawn(python, ["-m", "project_runtime.main", "--port", String(apiPort), "--project-dir", projectDir], {
     // The Hub's cache directory: Board previews are the project's cached page rasters (#368).
     cwd: apiRoot, env: { ...pythonEnv, ARCHFLOW_STUDIO_CAD_EXPORT: "off", ARCHFLOW_STUDIO_INTENT_PROVIDER: "deterministic",
       ARCHFLOW_STUDIO_CACHE_DIR: path.join(root, "cache") },

@@ -81,7 +81,7 @@ FAB_BUNDLE, FAB_SOURCE = "apps/monkeyfab", "packages/monkeyfab"
 # configuration, projects, credentials, caches and local WIP never enter a ZIP.
 SOURCE_PATHS = (
     *BUNDLED_PACKAGES.values(), KERNEL_MANIFEST,
-    "apps/archflow-studio/api",
+    "services/project-runtime",
     "apps/monkeyhub", FAB_SOURCE, "packages/web-shared", "OPEN_MONKEYHUB.cmd",
     "README.md", "SECURITY.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
     "tools/source_roots.py", "governance/module_registry.json",
@@ -137,7 +137,7 @@ def prepare_runtime(source: Path, destination: Path, cache: Path,
     fab_metadata = tomllib.loads((source / FAB_SOURCE / "pyproject.toml").read_text(encoding="utf-8"))
     requirements.extend(fab_metadata["project"]["dependencies"])
     requirements.extend(fab_metadata["project"]["optional-dependencies"]["send"])
-    requirement_args = ["-r", str(source / "apps/archflow-studio/api/requirements.txt")]
+    requirement_args = ["-r", str(source / "services/project-runtime/requirements.txt")]
     hub_requirements = source / "apps/monkeyhub/api/requirements.txt"
     if hub_requirements.is_file():
         requirement_args.extend(["-r", str(hub_requirements)])
@@ -152,9 +152,11 @@ def prepare_runtime(source: Path, destination: Path, cache: Path,
          "--target", str(site), *requirement_args, *requirements], environment=environment)
     # ._pth makes this interpreter independent of system Python/PYTHONPATH.
     # Keep import site: native wheels use their own .pth/DLL initialization.
+    # The Project Runtime ships at its repository path; its projection worker,
+    # started with -m, finds project_runtime through this list alone.
     (destination / "python313._pth").write_text(
         "python313.zip\n.\nLib\\site-packages\n..\\..\n"
-        "..\\..\\apps\\archflow-studio\\api\n..\\..\\apps\\monkeyhub\\api\n"
+        "..\\..\\services\\project-runtime\\src\n..\\..\\apps\\monkeyhub\\api\n"
         "..\\..\\apps\\monkeyfab\\src\nimport site\n",
         encoding="utf-8",
     )
@@ -246,7 +248,7 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
     # package would be there and still unable to reach a desktop.
     for name, relative in BUNDLED_PACKAGES.items():
         shutil.copytree(source / relative, bundle / name)
-    for relative in ("apps/archflow-studio/api/archflow_studio_api", "apps/monkeyhub/assets",
+    for relative in ("services/project-runtime/src/project_runtime", "apps/monkeyhub/assets",
                      "apps/monkeyhub/api", "apps/monkeyhub/installer"):
         shutil.copytree(source / relative, bundle / relative,
                         ignore=shutil.ignore_patterns("__pycache__", "tests", "test_*", "third-party"))
@@ -319,7 +321,7 @@ def smoke_runtime(bundle: Path) -> None:
     run([str(python), "-B", "-c", (
         "import sys,ssl,fastapi,uvicorn,pydantic,pypdf,rhino3dm; "
         "from PIL import Image; from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox; "
-        "import archflow,monkeyarch,monkeydiagram,monkeymonitor,monkeycontrol,archflow_studio_api; "
+        "import archflow,monkeyarch,monkeydiagram,monkeymonitor,monkeycontrol,project_runtime; "
         "assert sys.version_info[:3]==(3,13,15); "
         "assert not BRepPrimAPI_MakeBox(1,2,3).Shape().IsNull(); "
         "assert Image.new('RGB',(2,2)).size==(2,2); "

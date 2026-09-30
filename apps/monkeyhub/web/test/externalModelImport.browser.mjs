@@ -12,9 +12,9 @@ import { createServer } from "vite";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = path.resolve(webRoot, "../../..");
-const apiRoot = path.join(repoRoot, "apps/archflow-studio/api");
+const apiRoot = path.join(repoRoot, "services/project-runtime");
 const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-external-import-browser-"));
-const pythonEnv = { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [repoRoot, apiRoot].join(path.delimiter) };
+const pythonEnv = { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [repoRoot, path.join(apiRoot, "src")].join(path.delimiter) };
 const passed = [], errors = [], requests = [], resourceRequests = [], observations = [];
 let browser, page, server, child, origin, current, runtimeLog = "";
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -32,8 +32,8 @@ import sys, hashlib
 from pathlib import Path
 import uvicorn
 from tests.support import make_empty_project, PROJECT_ID
-from archflow_studio_api.main import create_app
-from archflow_studio_api.settings import StudioSettings
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 root, port = Path(sys.argv[1]), int(sys.argv[2])
 repo = make_empty_project(root)
 app = create_app(StudioSettings(project_dir=root/PROJECT_ID, cad_export='off', monitor_dir=root/'monitor'))

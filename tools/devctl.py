@@ -54,7 +54,7 @@ def _matcher():
     standard library to be borrowed this cheaply.
     """
 
-    from archflow_studio_api.application.capability import match_capabilities
+    from project_runtime.application.capability import match_capabilities
 
     return match_capabilities
 

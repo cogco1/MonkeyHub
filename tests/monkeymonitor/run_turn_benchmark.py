@@ -26,7 +26,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 
 ROOT = Path(__file__).resolve().parents[2]
-for folder in (ROOT, ROOT / "apps/monkeyhub/api", ROOT / "apps/monkeyhub/api/tests", ROOT / "apps/archflow-studio/api"):
+for folder in (ROOT, ROOT / "apps/monkeyhub/api", ROOT / "apps/monkeyhub/api/tests", ROOT / "services/project-runtime/src"):
     sys.path.insert(0, str(folder))
 
 import uvicorn

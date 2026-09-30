@@ -635,7 +635,7 @@ class AutomaticUpdateTests(unittest.TestCase):
         harness.write_text("\n".join((
             "import subprocess, sys, threading, time",
             "from pathlib import Path",
-            f"sys.path[:0] = {[str(ROOT), str(ROOT / 'apps/archflow-studio/api'), str(ROOT / 'apps/monkeyhub/api')]!r}",
+            f"sys.path[:0] = {[str(ROOT), str(ROOT / 'services/project-runtime/src'), str(ROOT / 'apps/monkeyhub/api')]!r}",
             "threading.Thread(target=sys.stdin.read, daemon=True).start()",
             "time.sleep(0.5)",
             "from monkeyhub_api import updates",

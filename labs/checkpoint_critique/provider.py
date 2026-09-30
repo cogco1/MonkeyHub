@@ -38,7 +38,7 @@ class CallResult:
 def _hub_helpers():
     # The repository keeps its two app packages outside the installed core.
     root = Path(__file__).resolve().parents[2]
-    for relative in ("apps/monkeyhub/api", "apps/archflow-studio/api"):
+    for relative in ("apps/monkeyhub/api", "services/project-runtime/src"):
         location = str(root / relative)
         if location not in sys.path:
             sys.path.insert(0, location)
