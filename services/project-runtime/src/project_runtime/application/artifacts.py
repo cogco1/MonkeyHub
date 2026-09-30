@@ -57,7 +57,7 @@ from archflow.project.record_kinds import (
     STUDIO_DOCUMENT_MODEL_SOURCE,
 )
 from monkeycad.formats.three_dm_inspector import inspect_three_dm_contents, inspect_three_dm_index, ThreeDmInspectionError
-from monkeycad.cad_program import ROOT_LAYER
+from monkeycad.program import ROOT_LAYER
 from archflow.project.index import IndexUnavailable
 from archflow.project.layout import cad_workspace_path
 from archflow.project.memo import ContentMemo, PathStamps
@@ -1626,13 +1626,16 @@ def export_rhino_work_model(
     own directory behind and never blocks the next one.
     """
 
-    from monkeycad.cad_execution import (  # imported late: the CAD package
-        WORK_MODEL_EXPORT_PATH, CadExecutionError, CadProgramBinding, StepImportSource,
+    from monkeycad.backends.rhino.export import (  # imported late: the CAD package
         discover_powershell, discover_rhino_executables, execute_rhino_three_dm_export,
-        prepare_rhino_three_dm_export, split_step_objects, verify_work_model_geometry,
+        prepare_rhino_three_dm_export,
+    )
+    from monkeycad.backends.rhino.step_import import (
+        WORK_MODEL_EXPORT_PATH, StepImportSource, split_step_objects, verify_work_model_geometry,
         work_model_workspace,
     )
-    from monkeycad.cad_program import CadTranslationError
+    from monkeycad.execution import CadExecutionError, CadProgramBinding
+    from monkeycad.program import CadTranslationError
     from archflow.project.refs import BranchRef
     from archflow.state.geometry_program import GeometryBoundsError, load_compiled_geometry_program
 

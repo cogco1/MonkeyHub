@@ -13,7 +13,8 @@ from unittest.mock import patch
 from monkeycad.backends.occt import build as occt_build
 from monkeycad.backends.occt.measure import measure_shape
 from monkeycad.backends.occt.step import read_step
-from monkeycad.cad_execution import CadProgramBinding, execute_occt_export
+from monkeycad.backends.occt.export import execute_occt_export
+from monkeycad.execution import CadProgramBinding
 from monkeycad.patch import select_patch_operations
 from archflow.state.geometry_program import expected_object_bounds
 from archflow.project.ports import PersistenceArea, PersistenceDestination

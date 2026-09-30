@@ -144,7 +144,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
             ("packages/monkeycad/src/monkeycad/example.py", "monkeydiagram.drawing_svg"),
             ("packages/monkeycad/src/monkeycad/example.py", "monkeyarch.runtime.project_runner"),
             ("packages/monkeycad/src/monkeycad/example.py", "project_runtime.binding"),
-            ("packages/archflow/src/archflow/project/example.py", "monkeycad.cad_backend"),
+            ("packages/archflow/src/archflow/project/example.py", "monkeycad.registry"),
             ("packages/monkeyarch/src/monkeyarch/construction/example.py", "monkeycad.backends.occt.kernel"),
             ("packages/monkeyarch/src/monkeyarch/example.py", "monkeydiagram.drawing_svg"),
             ("packages/monkeydiagram/src/monkeydiagram/example.py", "monkeyarch.compilers.geometry"),

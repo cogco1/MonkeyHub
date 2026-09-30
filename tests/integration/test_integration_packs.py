@@ -16,10 +16,10 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import urllib.request
 
-from monkeycad import cad_backend
+from monkeycad.registry import CAD_BACKEND_REGISTRY
 from monkeycad.backends.blender import backend as blender_backend
 from monkeycad.backends.blender.worker import READBACK_PREFIX, UNIT_SETTINGS
-from monkeycad.cad_execution import CadExecutionError
+from monkeycad.execution import CadExecutionError
 from monkeycad.integration_packs import (
     IntegrationPack, IntegrationPackManager, IntegrationUnavailable,
     PackCapability, PackComponent, PackInstallation, PackWorkflow,
@@ -170,7 +170,7 @@ class IntegrationStatusTests(unittest.TestCase):
             self.assertEqual(_pack(status, "blender")["capabilities"][0]["status"], "not-qualified")
 
     def test_future_revit_addin_contract_is_representable_without_registering_a_backend(self):
-        before = tuple(cad_backend.CAD_BACKEND_REGISTRY)
+        before = tuple(CAD_BACKEND_REGISTRY)
         pack = IntegrationPack("revit", "Revit", "1", (
             PackComponent("revit-addin", "dotnet-addin", "optional-payload", "application-extension",
                           protocol="local-http", events=("document.changed",)),
@@ -180,14 +180,14 @@ class IntegrationStatusTests(unittest.TestCase):
         manifest = pack.manifest()
         self.assertEqual(manifest["components"][0]["bridge"], "dotnet-addin")
         self.assertEqual(manifest["workflows"][0]["requires"], ["document.observe"])
-        self.assertEqual(tuple(cad_backend.CAD_BACKEND_REGISTRY), before)
+        self.assertEqual(tuple(CAD_BACKEND_REGISTRY), before)
         self.assertNotIn("revit", IntegrationPackManager(discovery=_Discovery()).packs)
 
 
 class IntegrationQualificationTests(unittest.TestCase):
     def test_blender_uses_registered_background_worker_and_qualifies_only_its_executed_capability(self):
         manager = IntegrationPackManager(discovery=_Discovery())
-        self.assertIs(manager.backend("blender"), cad_backend.CAD_BACKEND_REGISTRY["blender"])
+        self.assertIs(manager.backend("blender"), CAD_BACKEND_REGISTRY["blender"])
         pack = _pack(manager.status(), "blender")
         self.assertEqual(pack["installation"]["components"], ["blender-worker"])
         self.assertEqual(pack["manifest"]["components"][0]["installTarget"], "monkeyhub")
@@ -253,7 +253,7 @@ class IntegrationQualificationTests(unittest.TestCase):
     def test_rhino_uses_registered_backend_and_retains_existing_host_readback_requirements(self):
         # A standard Rhino 7 folder cannot rule out a separately installed COM8 host.
         manager = IntegrationPackManager(discovery=_Discovery(rhino_version="7"))
-        self.assertIs(manager.backend("rhino"), cad_backend.CAD_BACKEND_REGISTRY["rhino"])
+        self.assertIs(manager.backend("rhino"), CAD_BACKEND_REGISTRY["rhino"])
         for bad_inspection in (False, True):
             with self.subTest(bad_inspection=bad_inspection), tempfile.TemporaryDirectory() as temporary:
                 root, plans = Path(temporary), []

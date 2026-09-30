@@ -20,13 +20,8 @@ from unittest.mock import patch
 from monkeycad.backends.occt.kernel import occt_available
 from monkeycad.backends.occt.measure import classify_program_point, measure_shape
 from monkeycad.backends.occt.step import StepEntry, read_step
-from monkeycad.cad_execution import (
-    CadExecutionStatus,
-    CadProgramBinding,
-    OcctExecutionReceipt,
-    RhinoCadProgramBinding,
-    execute_occt_export,
-)
+from monkeycad.backends.occt.export import OcctExecutionReceipt, execute_occt_export
+from monkeycad.execution import CadExecutionStatus, CadProgramBinding, RhinoCadProgramBinding
 from monkeyarch.capabilities.element_producers import ElementRow, ProductionContext, produce_rows, production_order
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 from archflow.state.geometry_program import CompiledGeometryProgram

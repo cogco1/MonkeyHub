@@ -25,7 +25,7 @@ from io import BytesIO
 import math
 from typing import Any, Mapping, Sequence
 
-from monkeycad.cad_execution import StepEntry
+from monkeycad.backends.occt.step import StepEntry
 from monkeycad.backends.occt.errors import OcctBackendError
 from monkeycad.backends.occt.preview import _clean, tessellate_shape
 

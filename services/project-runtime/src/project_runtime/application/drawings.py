@@ -28,7 +28,7 @@ from time import perf_counter
 from typing import Any, Mapping
 from uuid import uuid4
 
-from monkeycad.cad_execution import project_occt_lines
+from monkeycad.backends.occt.projection import project_occt_lines
 from monkeycad.backends.occt.errors import OcctBackendError
 from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -271,10 +271,9 @@ def _source_files(*modules: str) -> dict[str, str]:
             for name in modules}
 
 
-_OCCT_DRAWING = ("monkeydiagram.drawing_elevation", "monkeydiagram.drawing_svg", "monkeycad.cad_execution",
-                 "monkeycad.backends.occt.kernel", "monkeycad.backends.occt.step", "monkeycad.backends.occt.native_models",
-                 "monkeycad.backends.occt.measure", "monkeycad.backends.occt.projection", "monkeycad.backends.occt.section",
-                 "monkeycad.backends.occt.preview")
+_OCCT_DRAWING = ("monkeydiagram.drawing_elevation", "monkeydiagram.drawing_svg", "monkeycad.backends.occt.kernel",
+                 "monkeycad.backends.occt.step", "monkeycad.backends.occt.native_models", "monkeycad.backends.occt.measure",
+                 "monkeycad.backends.occt.projection", "monkeycad.backends.occt.section", "monkeycad.backends.occt.preview")
 
 
 def drawing_pipeline(kind: str) -> dict[str, Any]:

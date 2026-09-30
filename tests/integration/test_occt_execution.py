@@ -28,33 +28,34 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from monkeycad import cad_execution
+from monkeycad.backends.occt import (
+    build as occt_build,
+    export as occt_export,
+    preview as occt_preview,
+    step as occt_step,
+)
 from monkeycad.backends.occt.build import SUPPORTED_OPERATION_KINDS, build_program_shapes
 from monkeycad.backends.occt.errors import OcctBackendError, OcctBuildError, OcctCapabilityError
+from monkeycad.backends.occt.export import OcctExecutionReceipt, execute_occt_export
 from monkeycad.backends.occt.kernel import _gp_point, _occt, occt_available
 from monkeycad.backends.occt.measure import ShapeMeasure, classify_program_point, measure_shape
 from monkeycad.backends.occt.preview import PreviewObject, tessellate_shape, write_preview_three_dm
-from monkeycad.backends.occt.projection import OcctDrawingPolyline
+from monkeycad.backends.occt.projection import OcctDrawingPolyline, project_occt_lines
+from monkeycad.backends.occt.section import section_occt_lines, section_occt_regions
 from monkeycad.backends.occt.step import StepEntry, StepObject, read_step, write_step
-from monkeycad.backends.occt import build as occt_build, preview as occt_preview, step as occt_step
-from monkeycad.cad_execution import (
+from monkeycad.backends.rhino.export import prepare_rhino_three_dm_export
+from monkeycad.backends.rhino.script import LONG_PATH_HELPER_SOURCE
+from monkeycad.backends.rhino.step_import import StepImportSource, split_step_objects, verify_work_model_geometry
+from monkeycad.execution import (
     CadCapabilityError,
     CadExecutionError,
     CadExecutionStatus,
     CadProgramBinding,
-    OcctExecutionReceipt,
     RhinoCadProgramBinding,
-    StepImportSource,
-    execute_occt_export,
-    prepare_rhino_three_dm_export,
-    project_occt_lines,
-    section_occt_lines,
-    section_occt_regions,
-    split_step_objects,
+    long_path,
 )
-from monkeycad import cad_program
-from monkeycad.cad_program import CadTranslationError
 from monkeycad.formats.three_dm_inspector import inspect_three_dm
+from monkeycad.program import CadTranslationError
 from monkeyarch.capabilities.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 from archflow.state.geometry_program import CompiledGeometryObject, CompiledGeometryProgram
@@ -485,7 +486,7 @@ class OpenLoftExecutionTests(unittest.TestCase):
     def test_a_shape_of_the_other_closure_fails_the_readback_in_either_direction(self) -> None:
         """A declared solid that reads back open, and a declared surface that reads back closed, are both refused by name."""
 
-        from monkeycad.cad_execution import _verify_step_readback
+        from monkeycad.backends.occt.export import _verify_step_readback
 
         drum, flight = _compile(_record_with(DRUM_ELEMENT)), _compile(_stair_record())
         with tempfile.TemporaryDirectory() as tmp:
@@ -756,7 +757,7 @@ class CurveExecutionTests(unittest.TestCase):
                 length = sum(math.dist(a, b) for a, b in zip(profile, profile[1:]))
                 self.assertAlmostEqual(row["curve_length"], length, places=7)
                 expected = [[10 + x, 20 + 0.8 * y, 4.7 - 0.6 * y] for x, y in profile]
-                self.assertTrue(cad_execution._curve_matches(row, expected, 1e-7))
+                self.assertTrue(occt_export._curve_matches(row, expected, 1e-7))
                 model = rhino3dm.File3dm.Read(str(workspace / receipt.preview_artifact["relative_path"]))
                 self.assertEqual(len(model.Objects), 1)
                 saved = model.Objects[0]
@@ -768,7 +769,7 @@ class CurveExecutionTests(unittest.TestCase):
                 self.assertEqual(saved.Attributes.GetUserString("archflow:component"),
                                  receipt.expected_semantics["objects"]["obj-path"]["user_text"]["archflow:component"])
                 analysis = receipt.preview_inspection["object_geometry_analysis"][0]
-                self.assertTrue(cad_execution._curve_matches(analysis, expected, 1e-7))
+                self.assertTrue(occt_export._curve_matches(analysis, expected, 1e-7))
                 self.assertEqual(receipt.preview_artifact["curve_counts"]["obj-path"]["curve_segment_count"], len(profile) - 1)
                 reused, _ = _execute(program, binding, workspace, "reused", prior_program=program,
                                      prior_step=workspace / receipt.exact_artifact["relative_path"],
@@ -784,7 +785,7 @@ class CurveExecutionTests(unittest.TestCase):
         def altered_write(path, objects, **options):
             write_step(path, [replace(item, shape=shape) for item in objects], **options)
 
-        with tempfile.TemporaryDirectory() as tmp, patch.object(cad_execution, "write_step", side_effect=altered_write):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(occt_export, "write_step", side_effect=altered_write):
             receipt, _ = _execute(program, _persisted_binding(program, "stage-curve"), Path(tmp).resolve(), "changed")
         self.assertIs(receipt.status, CadExecutionStatus.FAILED)
         self.assertIn("cad_execution.step_curve_mismatch", {row["code"] for row in receipt.failures})
@@ -806,7 +807,7 @@ class CurveExecutionTests(unittest.TestCase):
     def test_preview_requires_the_saved_curve_not_only_matching_mesh_bounds(self):
         import rhino3dm
         program = self.program([[0, 0], [3, 0], [3, 4]])
-        original_write = cad_execution.write_preview_three_dm
+        original_write = occt_export.write_preview_three_dm
 
         def altered_write(path, objects, **options):
             counts = original_write(path, objects, **options)
@@ -816,7 +817,7 @@ class CurveExecutionTests(unittest.TestCase):
             self.assertTrue(model.Write(str(path), 8))
             return counts
 
-        with tempfile.TemporaryDirectory() as tmp, patch.object(cad_execution, "write_preview_three_dm", side_effect=altered_write):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(occt_export, "write_preview_three_dm", side_effect=altered_write):
             receipt, _ = _execute(program, _persisted_binding(program, "stage-curve"), Path(tmp).resolve(), "changed")
         self.assertIs(receipt.status, CadExecutionStatus.FAILED)
         self.assertIn("cad_execution.preview_curve_mismatch", {row["code"] for row in receipt.failures})
@@ -1341,7 +1342,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp).resolve()
-            with patch("monkeycad.cad_execution.write_preview_three_dm", forgetting_materials):
+            with patch("monkeycad.backends.occt.export.write_preview_three_dm", forgetting_materials):
                 receipt, _ = _execute(program, binding, workspace, "unbound@occt")
             self.assertIs(receipt.status, CadExecutionStatus.FAILED)
             self.assertEqual(
@@ -1366,7 +1367,7 @@ class WindowFrameExecutionTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp).resolve()
-            with patch("monkeycad.cad_execution.write_preview_three_dm", opaque_glass):
+            with patch("monkeycad.backends.occt.export.write_preview_three_dm", opaque_glass):
                 receipt, _ = _execute(program, binding, workspace, "opaque-glass@occt")
             self.assertIs(receipt.status, CadExecutionStatus.FAILED)
             self.assertEqual(
@@ -2120,7 +2121,7 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
     """Measure only requested final objects from real STEP readback, including legitimate joints."""
 
     def test_cold_read_boxes_distinguish_separation_contact_and_positive_common_volume(self) -> None:
-        from monkeycad.cad_execution import measure_occt_solid_pairs
+        from monkeycad.backends.occt.measure import measure_occt_solid_pairs
 
         program = _program_of(*(_box(name, [x, 0.0, 0.0], [1.0, 1.0, 1.0]) for name, x in (
             ("body", 0.0), ("separated", 2.0), ("touching", 1.0), ("penetrating", 0.75),
@@ -2140,7 +2141,7 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
                 self.assertAlmostEqual(measured[pair]["common_volume_m3"], volume, places=8)
 
     def test_millimeter_step_reports_distance_in_meters_and_volume_in_cubic_meters(self) -> None:
-        from monkeycad.cad_execution import measure_occt_solid_pairs
+        from monkeycad.backends.occt.measure import measure_occt_solid_pairs
         from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
         from OCP.gp import gp_Pnt
 
@@ -2157,7 +2158,7 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
         self.assertAlmostEqual(measured[("body", "penetrating")]["common_volume_m3"], 0.25, places=8)
 
     def test_a_window_ring_and_pane_can_touch_inside_overlapping_bounds_without_checking_consumed_bars(self) -> None:
-        from monkeycad.cad_execution import measure_occt_solid_pairs
+        from monkeycad.backends.occt.measure import measure_occt_solid_pairs
 
         program = _compile(_window_record())
         frame_op = next(op for op in program.proposal.operations if op.op_id == "frame-wall-south-window-south")
@@ -2186,7 +2187,7 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
             self.assertIn(consumed_pair[0], requested[consumed_pair]["detail"])
 
     def test_missing_duplicate_or_null_final_objects_stay_unchecked(self) -> None:
-        from monkeycad.cad_execution import measure_occt_solid_pairs
+        from monkeycad.backends.occt.measure import measure_occt_solid_pairs
         from OCP.TopoDS import TopoDS_Shape
 
         program = _program_of(_box("body", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]), _box("other", [2.0, 0.0, 0.0], [1.0, 1.0, 1.0]))
@@ -2210,7 +2211,7 @@ class FinalSolidPairMeasurementTests(unittest.TestCase):
                     self.assertTrue(measured[pair]["detail"])
 
     def test_a_cold_read_open_surface_is_not_certified_as_nonpenetrating(self) -> None:
-        from monkeycad.cad_execution import measure_occt_solid_pairs
+        from monkeycad.backends.occt.measure import measure_occt_solid_pairs
 
         program = _program_of(_box("body", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]), _loft("surface", cap_ends=False))
         pair = ("body-object", "surface-object")
@@ -2602,18 +2603,18 @@ class LongExportPathTests(unittest.TestCase):
         """A real directory whose child paths are past the ordinary limit."""
 
         root = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, cad_execution.long_path(root), True)
+        self.addCleanup(shutil.rmtree, long_path(root), True)
         workspace = root
         while len(str(workspace)) < 230:
             workspace = workspace / "cad-studio-candidate-seat-portico"
-        cad_execution.long_path(workspace).mkdir(parents=True, exist_ok=True)
+        long_path(workspace).mkdir(parents=True, exist_ok=True)
         return workspace
 
     def script_helper(self):
         """The ``_long`` the emitted scripts actually carry, as a callable."""
 
         namespace: dict[str, object] = {"Path": Path}
-        exec(chr(10).join(cad_program.LONG_PATH_HELPER_SOURCE), namespace)
+        exec(chr(10).join(LONG_PATH_HELPER_SOURCE), namespace)
         return namespace["_long"]
 
     def test_the_emitted_helper_creates_reads_and_removes_a_long_file(self) -> None:
@@ -2656,7 +2657,7 @@ class LongExportPathTests(unittest.TestCase):
             source = workspace / item.file_name
             self.assertGreater(len(str(source)), 260, str(source))
             self.assertEqual(
-                hashlib.sha256(cad_execution.long_path(source).read_bytes()).hexdigest(), item.sha256
+                hashlib.sha256(long_path(source).read_bytes()).hexdigest(), item.sha256
             )
 
         plan = prepare_rhino_three_dm_export(
@@ -2664,14 +2665,14 @@ class LongExportPathTests(unittest.TestCase):
             artifact_name="studio-candidate-seat-portico@longpath.work.3dm",
             readback_tolerance=0.003, provenance={"export_path": "work-model"},
             step_import=StepImportSource(
-                step_path=step, step_sha256=hashlib.sha256(cad_execution.long_path(step).read_bytes()).hexdigest(),
+                step_path=step, step_sha256=hashlib.sha256(long_path(step).read_bytes()).hexdigest(),
                 objects=objects,
             ),
         )
 
         # The script exists at that depth and the supervisor can hash it back.
         self.assertGreater(len(str(plan.script_path)), 260, str(plan.script_path))
-        script = cad_execution.long_path(plan.script_path).read_text(encoding="utf-8")
+        script = long_path(plan.script_path).read_text(encoding="utf-8")
         self.assertIn("def _long(_path):", script)
         # Every file the host touches is named the way that length needs.
         for call in (
@@ -2693,14 +2694,14 @@ class LongExportPathTests(unittest.TestCase):
         ).Shape()
         step = workspace / "studio-candidate-seat-portico@longpath-source.step"
         write_step(
-            cad_execution.long_path(step),
+            long_path(step),
             [StepObject(object_id="obj-block", shape=box, layer="archflow")],
             length_unit="meter",
         )
         objects = split_step_objects(step, destination=workspace, length_unit="meter")
         source = StepImportSource(
             step_path=step,
-            step_sha256=hashlib.sha256(cad_execution.long_path(step).read_bytes()).hexdigest(),
+            step_sha256=hashlib.sha256(long_path(step).read_bytes()).hexdigest(),
             objects=objects,
         )
 
@@ -2713,10 +2714,10 @@ class LongExportPathTests(unittest.TestCase):
         model.Objects.AddBrep(rhino3dm.Brep.CreateFromBoundingBox(
             rhino3dm.BoundingBox(rhino3dm.Point3d(0, 0, 0), rhino3dm.Point3d(2, 1, 3))
         ), attributes)
-        self.assertTrue(model.Write(str(cad_execution.long_path(saved)), 7))
+        self.assertTrue(model.Write(str(long_path(saved)), 7))
 
         self.assertEqual(
-            cad_execution.verify_work_model_geometry(saved, source),
+            verify_work_model_geometry(saved, source),
             ({"object_id": "obj-block", "objects": 1, "solids": 1, "faces": 6, "closed": True},),
         )
 
@@ -2967,7 +2968,7 @@ class StepWorkModelImportTests(unittest.TestCase):
             self.assertIn('"name": "bronze-anodised"', script)
             self.assertIn('"diffuse": [120, 85, 40]', script)
             # The role default is not what this document gets.
-            self.assertNotIn(f'"name": "{cad_execution._GLAZING_FALLBACK.name}"', script)
+            self.assertNotIn(f'"name": "{occt_export._GLAZING_FALLBACK.name}"', script)
             # Every material is applied before any metadata, and this
             # delivery's own is the last one applied: assigning a material in
             # Rhino replaces the object's attributes, so a material written
@@ -3003,7 +3004,7 @@ class StepWorkModelImportTests(unittest.TestCase):
             # The glazing of the window this program builds is glass in the
             # mesh preview; the editable model carries the same material, and
             # the glass is still see-through rather than a solid pane.
-            glass = cad_execution._GLAZING_FALLBACK
+            glass = occt_export._GLAZING_FALLBACK
             self.assertGreater(glass.transparency, 0.0)
             self.assertIn('"obj-glazing-wall-south-window-south"', script)
             self.assertIn(f'"transparency": {glass.transparency}', script)
@@ -3062,7 +3063,7 @@ class WorkModelReadbackTests(unittest.TestCase):
             box = rhino3dm.BoundingBox(rhino3dm.Point3d(0, 0, 0), rhino3dm.Point3d(2, 1, 3))
             self._write(saved, rhino3dm.Brep.CreateFromBoundingBox(box))
             self.assertEqual(
-                cad_execution.verify_work_model_geometry(saved, source),
+                verify_work_model_geometry(saved, source),
                 ({"object_id": "obj-block", "objects": 1, "solids": 1, "faces": 6, "closed": True},),
             )
 
@@ -3082,7 +3083,7 @@ class WorkModelReadbackTests(unittest.TestCase):
                 mesh.Faces.AddFace(a, b, c)
             self._write(mesh_file, mesh)
             with self.assertRaises(CadExecutionError) as mesh_refusal:
-                cad_execution.verify_work_model_geometry(mesh_file, source)
+                verify_work_model_geometry(mesh_file, source)
             self.assertIn("never a mesh", str(mesh_refusal.exception))
 
             missing = workspace / "missing.3dm"
@@ -3090,7 +3091,7 @@ class WorkModelReadbackTests(unittest.TestCase):
                 rhino3dm.BoundingBox(rhino3dm.Point3d(0, 0, 0), rhino3dm.Point3d(2, 1, 3))
             ), name="obj-other")
             with self.assertRaises(CadExecutionError) as name_refusal:
-                cad_execution.verify_work_model_geometry(missing, source)
+                verify_work_model_geometry(missing, source)
             self.assertIn("no object of that name", str(name_refusal.exception))
 
             # A solid that arrived as a single surface: not the closed shape
@@ -3101,7 +3102,7 @@ class WorkModelReadbackTests(unittest.TestCase):
             )
             self._write(open_box, rhino3dm.Brep.CreateFromSurface(brep.Faces[0].UnderlyingSurface()))
             with self.assertRaises(CadExecutionError) as open_refusal:
-                cad_execution.verify_work_model_geometry(open_box, source)
+                verify_work_model_geometry(open_box, source)
             self.assertIn("closed solid", str(open_refusal.exception))
 
 

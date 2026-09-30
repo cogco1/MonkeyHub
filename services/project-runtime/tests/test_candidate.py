@@ -461,7 +461,7 @@ class CandidateRunTests(CandidateTestCase):
 
         restarted = TestClient(create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)))
         self.addCleanup(restarted.close)
-        with mock.patch("monkeycad.cad_execution.execute_occt_export", side_effect=AssertionError("A retained read must not run CAD")):
+        with mock.patch("monkeycad.backends.occt.export.execute_occt_export", side_effect=AssertionError("A retained read must not run CAD")):
             recovered = restarted.get(path)
         self.assertEqual(recovered.status_code, 200, recovered.text)
         self.assertIsNone(recovered.json()["jobId"])
@@ -1156,7 +1156,7 @@ class CandidateComponentRemovalTests(CandidateTestCase):
     def test_component_removal_disappears_from_the_real_composed_model(self) -> None:
         import base64
         from monkeycad.backends.occt.kernel import occt_available
-        from monkeycad.cad_execution import patch_composed_three_dm
+        from monkeycad.formats.three_dm_compose import patch_composed_three_dm
         from monkeycad.formats.three_dm_inspector import inspect_three_dm_contents
         from project_runtime.application.artifacts import ModelSource
         from archflow.state.geometry_program import load_compiled_geometry_program

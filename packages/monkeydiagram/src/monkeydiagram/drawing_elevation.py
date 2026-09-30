@@ -6,7 +6,7 @@ as it is real: a source run's exact STEP (certified by its retained
 object GUID paths and explicit exact/faceted/approximate geometry quality;
 it does not acquire a compiled-program or STEP receipt. Every selected shape takes part in
 one exact hidden-line solve for a frame stated along the model axes
-(``monkeycad.cad_execution.project_occt_lines``), the visible (and, on
+(``monkeycad.backends.occt.projection.project_occt_lines``), the visible (and, on
 request, hidden) polylines are cropped and serialised as one deterministic
 SVG whose every polyline names its source physical object, a PNG is
 rendered from that SVG (``monkeydiagram.drawing_svg``), and the two files plus
@@ -58,17 +58,16 @@ from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 from uuid import uuid4
 
-from monkeycad.cad_execution import (
-    OcctBackendError,
-    OcctDrawingPolyline,
-    StepEntry,
-    backend_identity,
-    project_occt_lines,
+from monkeycad.backends.occt.errors import OcctBackendError
+from monkeycad.backends.occt.kernel import backend_identity
+from monkeycad.backends.occt.projection import OcctDrawingPolyline, project_occt_lines
+from monkeycad.backends.occt.section import (
+    OcctSectionPerspective,
+    project_occt_section_perspective,
     section_occt_lines,
     section_occt_regions,
-    read_step,
 )
-from monkeycad.backends.occt.section import OcctSectionPerspective, project_occt_section_perspective
+from monkeycad.backends.occt.step import StepEntry, read_step
 from monkeydiagram.drawing_svg import (
     PNG_MEDIA_TYPE,
     SVG_MEDIA_TYPE,

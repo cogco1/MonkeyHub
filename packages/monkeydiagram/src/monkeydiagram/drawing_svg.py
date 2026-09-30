@@ -1,6 +1,6 @@
 """Deterministic SVG for drawing polylines, and a PNG rendered from that SVG.
 
-The first real drawing consumer: ``monkeycad.cad_execution`` returns plain
+The first real drawing consumer: ``monkeycad.backends.occt.projection`` returns plain
 ``OcctDrawingPolyline`` values (object id, ``visible``/``hidden``, points in
 the drawing frame); this module crops them to the view's window and
 serialises them as one SVG whose every polyline still names its source

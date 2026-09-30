@@ -11,18 +11,15 @@ patch must read back to the same denominator as a rebuild of the same
 program, and the plan carries the selection so the receipt says which path
 ran.
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Mapping
 
-from monkeycad.cad_program import expected_object_semantics
 from archflow.state.geometry_program import delivered_object_ids, expected_object_bounds
-
-_WITNESS_PREFIX = "__archflow_visible_bounds__"
 
 
 class CadPatchError(ValueError):
@@ -190,132 +187,4 @@ def select_patch_operations(program, prior_program) -> PatchSelection:
         delete_object_names=delete_names,
         kept_object_ids=kept,
         reasons=reasons,
-    )
-
-
-def build_patch_prelude(selection: PatchSelection, *, prior_model_path: Path, semantics: Mapping[str, Mapping[str, Any]]) -> str:
-    """Rhino-side prelude: carry the prior document's kept objects into a fresh one.
-
-    Referenced materials are copied with their textures and remapped; layers
-    are recreated by full path, then every instance definition the
-    prior file holds is rebuilt from its own member geometry so that block
-    families (P099 typed instances) survive the carry. Kept objects are
-    re-added by geometry and duplicated attributes, instance references
-    against their rebuilt definition, and each is re-stamped with the *new*
-    program's semantics for that name (layer, user text, visibility):
-    geometry is kept, identity is refreshed. Witness meshes and every name
-    the selection deletes are skipped. The carried *names* are compared with
-    the selection, so a stale base fails typed inside Rhino rather than
-    reading back short.
-    """
-
-    prior = str(Path(prior_model_path).resolve())
-    if any(character in prior for character in "\x00\r\n'"):
-        raise CadPatchError("prior model path contains unsafe characters")
-    delete_literal = repr(sorted(selection.delete_object_names))
-    missing = [object_id for object_id in selection.kept_object_ids if object_id not in semantics]
-    if missing:
-        raise CadPatchError(f"kept objects have no semantics in the new program: {missing}")
-    kept_semantics = {object_id: dict(semantics[object_id]) for object_id in selection.kept_object_ids}
-    semantics_literal = repr(json.dumps(kept_semantics, sort_keys=True))
-    expected_names_literal = repr(json.dumps(sorted(selection.kept_object_ids)))
-    return "\n".join(
-        (
-            "import System",
-            f"_patch_base_path = Path({prior!r})",
-            "_patch_base = Rhino.FileIO.File3dm.Read(str(_patch_base_path))",
-            "if _patch_base is None: raise Exception('patch base unreadable: ' + str(_patch_base_path))",
-            "_existing = rs.AllObjects() or []",
-            "if _existing: rs.DeleteObjects(_existing)",
-            f"_patch_delete = set({delete_literal})",
-            f"_patch_semantics = json.loads({semantics_literal})",
-            f"_patch_expected_names = set(json.loads({expected_names_literal}))",
-            f"_patch_witness_prefix = {_WITNESS_PREFIX!r}",
-            "_patch_material_indices = {_layer.RenderMaterialIndex for _layer in _patch_base.Layers if _layer.RenderMaterialIndex >= 0}",
-            "for _item in _patch_base.Objects:",
-            "    if (_item.Attributes.Name or '').startswith(_patch_witness_prefix) or _item.Attributes.Name in _patch_delete: continue",
-            "    if _item.Attributes.MaterialIndex >= 0: _patch_material_indices.add(_item.Attributes.MaterialIndex)",
-            "_patch_materials, _patch_native_materials = {}, {}",
-            "for _base_index in sorted(_patch_material_indices):",
-            "    _material = _patch_base.Materials.FindIndex(_base_index)",
-            "    if _material is None: raise Exception('patch base material missing: ' + str(_base_index))",
-            "    _new_index = Rhino.RhinoDoc.ActiveDoc.Materials.Add(_material)",
-            "    if _new_index < 0: raise Exception('patch base material could not be copied: ' + str(_base_index))",
-            "    _patch_materials[_base_index] = _new_index",
-            "    if _material.Name: _patch_native_materials[_material.Name] = _new_index",
-            "    _logical_material = _material.GetUserString('archflow:material_id') or _material.GetUserString('archflow:material')",
-            "    if _logical_material: _patch_native_materials[_logical_material] = _new_index",
-            "_patch_base_layers = {_layer.Index: _layer for _layer in _patch_base.Layers}",
-            "_patch_base_by_id = {str(_layer.Id): _layer for _layer in _patch_base.Layers}",
-            "def _patch_full_path(_layer):",
-            "    _names = [_layer.Name]",
-            "    _parent = _patch_base_by_id.get(str(_layer.ParentLayerId))",
-            "    while _parent is not None:",
-            "        _names.insert(0, _parent.Name)",
-            "        _parent = _patch_base_by_id.get(str(_parent.ParentLayerId))",
-            "    return '::'.join(_names)",
-            "_patch_layers = {}",
-            "for _base_index in sorted(_patch_base_layers):",
-            "    _base_layer = _patch_base_layers[_base_index]",
-            "    _full = _patch_full_path(_base_layer)",
-            "    rs.AddLayer(_full, (_base_layer.Color.R, _base_layer.Color.G, _base_layer.Color.B))",
-            "    _doc_index = Rhino.RhinoDoc.ActiveDoc.Layers.FindByFullPath(_full, -1)",
-            "    if _doc_index < 0: raise Exception('patch base layer could not be recreated: ' + _full)",
-            "    _patch_layers[_base_index] = _doc_index",
-            "    if _base_layer.RenderMaterialIndex >= 0:",
-            "        _doc_layer = Rhino.RhinoDoc.ActiveDoc.Layers[_doc_index]",
-            "        _doc_layer.RenderMaterialIndex = _patch_materials[_base_layer.RenderMaterialIndex]",
-            "        _doc_layer.CommitChanges()",
-            # ---- instance definitions: rebuilt from their own members, so block families survive the carry
-            "_patch_base_objects = {str(_item.Attributes.ObjectId): _item for _item in _patch_base.Objects}",
-            "_patch_definition_index = {}",
-            "_patch_definition_members = set()",
-            "for _definition in _patch_base.InstanceDefinitions:",
-            "    _member_ids = [str(_value) for _value in (_definition.GetObjectIds() or [])]",
-            "    _member_geometry, _member_attributes = [], []",
-            "    for _member_id in _member_ids:",
-            "        _member = _patch_base_objects.get(_member_id)",
-            "        if _member is None: raise Exception('instance definition member missing from the patch base: ' + _member_id)",
-            "        _patch_definition_members.add(_member_id)",
-            "        _member_attribute = _member.Attributes.Duplicate()",
-            "        _member_attribute.LayerIndex = _patch_layers[_member.Attributes.LayerIndex]",
-            "        _member_attribute.MaterialIndex = _patch_materials.get(_member.Attributes.MaterialIndex, -1)",
-            "        _member_geometry.append(_member.Geometry)",
-            "        _member_attributes.append(_member_attribute)",
-            "    if not _member_geometry: raise Exception('instance definition has no members: ' + _definition.Name)",
-            "    _new_index = Rhino.RhinoDoc.ActiveDoc.InstanceDefinitions.Add(_definition.Name, _definition.Description, Rhino.Geometry.Point3d.Origin, _member_geometry, _member_attributes)",
-            "    if _new_index < 0: raise Exception('instance definition could not be recreated: ' + _definition.Name)",
-            "    _patch_definition_index[str(_definition.Id)] = _new_index",
-            # ---- kept objects, instance references against their rebuilt definition
-            "_patch_carried = {}",
-            "_patch_kept_objects = {}",
-            "for _base_object in _patch_base.Objects:",
-            "    _base_name = _base_object.Attributes.Name or ''",
-            "    if _base_name.startswith(_patch_witness_prefix) or _base_name in _patch_delete: continue",
-            "    if str(_base_object.Attributes.ObjectId) in _patch_definition_members: continue",
-            "    _base_attributes = _base_object.Attributes.Duplicate()",
-            "    _base_attributes.LayerIndex = _patch_layers[_base_object.Attributes.LayerIndex]",
-            "    _base_attributes.MaterialIndex = _patch_materials.get(_base_object.Attributes.MaterialIndex, -1)",
-            "    _base_geometry = _base_object.Geometry",
-            "    if isinstance(_base_geometry, Rhino.Geometry.InstanceReferenceGeometry):",
-            "        _definition_key = str(_base_geometry.ParentIdefId)",
-            "        if _definition_key not in _patch_definition_index: raise Exception('instance reference has no carried definition: ' + _base_name)",
-            "        _kept_guid = Rhino.RhinoDoc.ActiveDoc.Objects.AddInstanceObject(_patch_definition_index[_definition_key], _base_geometry.Xform, _base_attributes)",
-            "    else:",
-            "        _kept_guid = Rhino.RhinoDoc.ActiveDoc.Objects.Add(_base_geometry, _base_attributes)",
-            "    if _kept_guid == System.Guid.Empty: raise Exception('patch base object could not be re-added: ' + _base_name)",
-            "    _kept_meta = _patch_semantics.get(_base_name)",
-            "    if _kept_meta is None: raise Exception('patch base object is not in the kept set: ' + _base_name)",
-            "    if _kept_meta.get('layer'): rs.ObjectLayer(_kept_guid, _kept_meta['layer'])",
-            "    for _old_key in (rs.GetUserText(_kept_guid) or []):",
-            "        rs.SetUserText(_kept_guid, _old_key, None)",
-            "    for _key in sorted(_kept_meta.get('user_text', {})):",
-            "        rs.SetUserText(_kept_guid, _key, _kept_meta['user_text'][_key])",
-            "    if _kept_meta.get('visible') is False: rs.HideObject(_kept_guid)",
-            "    else: rs.ShowObject(_kept_guid)",
-            "    _patch_carried[_base_name] = _patch_carried.get(_base_name, 0) + 1",
-            "    _patch_kept_objects.setdefault(_base_name, []).append(_kept_guid)",
-            "if set(_patch_carried) != _patch_expected_names:",
-            "    raise Exception('patch base carried the wrong object names: missing %s, extra %s' % (sorted(_patch_expected_names - set(_patch_carried)), sorted(set(_patch_carried) - _patch_expected_names)))",
-        )
     )

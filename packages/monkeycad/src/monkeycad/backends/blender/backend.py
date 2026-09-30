@@ -12,12 +12,17 @@ import os
 import subprocess
 from pathlib import Path
 
-import monkeycad.cad_execution as cad
-from monkeycad.discovery import resolve_blender_executable
 from monkeycad.backends.blender.worker import READBACK_PREFIX, UNIT_SETTINGS
-from monkeycad.cad_program import CadTranslationError, _rgb, expected_object_semantics
+from monkeycad.discovery import resolve_blender_executable
+from monkeycad.execution import (
+    CadArtifact, CadExecutionError, CadExecutionResult, _check_receipt, _options, _positive_finite,
+    _require_file_digest, _sha256_bytes, _strict_child, _strict_workspace, _unsupported,
+)
+from monkeycad.program import CadTranslationError, _rgb, expected_object_semantics
 from archflow.contracts.canonical import canonical_json
 from archflow.project.record_kinds import SEAT_BLENDER_EXECUTION
+# _require_planar_surface_profile is the kernel's own planar-profile rule, private there: an
+# extrusion profile Blender accepts is exactly one a planar_surface operation would accept.
 from archflow.state.geometry_program import (
     GeometryProgramError, _require_planar_surface_profile, expected_object_bounds, lift_to_base_level,
     operation_parameters,
@@ -239,38 +244,34 @@ class BlenderBackend:
     SCHEMA = "BlenderExecutionReceipt@1"
 
     def validate_options(self, options):
-        from monkeycad.cad_backend import _options
-
         # The legacy runner CLI supplies powershell even when a different
         # backend is selected. As with OCCT, it has no effect on execution.
         _options(options, {"blender_executable", "timeout_seconds", "powershell_executable"}, self.backend_id)
-        cad._positive_finite(options.get("timeout_seconds", 120), "timeout_seconds")
+        _positive_finite(options.get("timeout_seconds", 120), "timeout_seconds")
         executable = options.get("blender_executable")
         if executable is not None and (not isinstance(executable, (str, Path)) or not str(executable).strip()):
-            raise cad.CadExecutionError("blender_executable must be a path or command name")
+            raise CadExecutionError("blender_executable must be a path or command name")
 
     def execute(self, request):
-        from monkeycad.cad_backend import _unsupported
-
         self.validate_options(request.backend_options)
         request.binding.bind_program(request.program)
         try:
             plan, semantics = _scene_plan(request)
         except (CadTranslationError, GeometryProgramError) as exc:
             return _unsupported(request, self.backend_id, exc)
-        workspace = cad._strict_workspace(request.speculative_workspace)
+        workspace = _strict_workspace(request.speculative_workspace)
         model = workspace / f"{request.artifact_stem}.blend"
         plan_path = workspace / f"{request.artifact_stem}.blender.json"
         for path in (model, plan_path):
-            cad._strict_child(workspace, path, require_exists=False)
+            _strict_child(workspace, path, require_exists=False)
             if path.exists():
-                raise cad.CadExecutionError(f"Blender refuses to overwrite {path.name}")
+                raise CadExecutionError(f"Blender refuses to overwrite {path.name}")
         selected = request.backend_options.get("blender_executable")
         executable = resolve_blender_executable(selected)
         if executable is None:
-            raise cad.CadExecutionError("Blender executable is unavailable; set backend_options['blender_executable']")
+            raise CadExecutionError("Blender executable is unavailable; set backend_options['blender_executable']")
         if request.source is not None:
-            cad._require_file_digest(request.source.model, request.source.sha256, "source Blender artifact")
+            _require_file_digest(request.source.model, request.source.sha256, "source Blender artifact")
         with plan_path.open("x", encoding="utf-8", newline="\n") as handle:
             handle.write(canonical_json(plan))
         payload = {
@@ -283,20 +284,20 @@ class BlenderBackend:
         timeout = request.backend_options.get("timeout_seconds", 120)
         try:
             _run_worker(executable, workspace, timeout, "build", plan_path, model)
-            cad._strict_child(workspace, model, require_exists=True)
-            artifact_sha = cad._sha256_bytes(model.read_bytes())
+            _strict_child(workspace, model, require_exists=True)
+            artifact_sha = _sha256_bytes(model.read_bytes())
             output = _run_worker(executable, workspace, timeout, "inspect", model)
             rows = [line[len(READBACK_PREFIX):] for line in output.stdout.splitlines() if line.startswith(READBACK_PREFIX)]
             if len(rows) != 1:
-                raise cad.CadExecutionError("Blender cold read did not return one scene result")
+                raise CadExecutionError("Blender cold read did not return one scene result")
             readback = json.loads(rows[0])
-            cad._require_file_digest(model, artifact_sha, "Blender artifact after cold read")
+            _require_file_digest(model, artifact_sha, "Blender artifact after cold read")
             payload["readback"] = readback
             payload["model_artifact"] = {"relative_path": model.name, "sha256": artifact_sha, "format": "blend"}
             payload["failures"] = _readback_failures(request, plan, readback, payload["provenance"])
             if not payload["failures"]:
                 payload.update(status="succeeded", readback_verified=True)
-        except (cad.CadExecutionError, OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as exc:
+        except (CadExecutionError, OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as exc:
             detail = str(exc)
             if isinstance(exc, subprocess.CalledProcessError):
                 detail = (exc.stderr or exc.stdout or detail)[-2000:]
@@ -306,22 +307,20 @@ class BlenderBackend:
         return result
 
     def read_receipt(self, request, payload):
-        from monkeycad.cad_backend import CadArtifact, CadExecutionResult, _check_receipt
-
         _check_receipt(request, payload, self.SCHEMA)
         if (payload.get("backend") != self.backend_id or payload["identity"].get("up_axis") != "Z" or
                 payload["identity"].get("length_unit") != request.program.proposal.length_unit.value):
-            raise cad.CadExecutionError("retained Blender backend differs")
+            raise CadExecutionError("retained Blender backend differs")
         row = payload.get("model_artifact")
         if row and (row.get("format") != "blend" or Path(row["relative_path"]).suffix != ".blend"):
-            raise cad.CadExecutionError("retained Blender artifact must be a .blend model")
+            raise CadExecutionError("retained Blender artifact must be a .blend model")
         verified = payload.get("readback_verified") is True
         if verified:
             plan, semantics = _scene_plan(request)
             if (not payload.get("model_artifact") or not payload.get("readback") or
                     payload.get("expected_semantics") != semantics or
                     _readback_failures(request, plan, payload["readback"], payload.get("provenance", {}))):
-                raise cad.CadExecutionError("retained Blender readback differs from the requested program")
+                raise CadExecutionError("retained Blender readback differs from the requested program")
         artifacts = (CadArtifact("model", row["relative_path"], row["sha256"], row["format"], verified),) if row else ()
         return CadExecutionResult(
             self.backend_id, request.binding, payload["status"], verified, artifacts,

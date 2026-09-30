@@ -20,51 +20,20 @@ family identity the program already owns. The script reads its own
 semantics back from the document and prints them beside the measures so
 the receipt can verify the round trip against the program alone.
 
-Some forms are not recoverable from the geometry they leave behind: a
-bounding box holds the same hull for a wedge rising along its run, one
-rising across it and one rising the other way, and a hollow drum and a
-solid one share a box entirely. Those producers therefore state their own
-defining numbers on the operation, in ``GeometryOperation.statements``,
-and every object of such an operation carries each statement as user text
-beside its identity: the key verbatim under ``archflow:``, the value
-verbatim. The translator keeps no table of which producer states what and
-formats nothing — a statement is already the text it will be written as,
-so no geometry is measured or recomputed to produce a string, and an
-object whose operation states nothing carries nothing extra. What it does
-own is the identity namespace: a statement may not take a key the export
-already writes (``producer_op``, ``object_ref``, ``operation_ref``,
-``bindings``, ``component``, ``material``, ``commitments``, ``evidence``,
-``inspection_witness``), and one that tries fails ``CadTranslationError``
-rather than overwriting an object's identity.
-
-The producers on the spine state these today — keys and formats exactly:
-
-===========================  ==========================================
-``archflow:wedge_low``       metres above the row's base datum
-``archflow:wedge_high``      metres above the base datum, above ``low``
-``archflow:wedge_axis``      ``along`` | ``across``
-``archflow:wedge_sense``     ``+x`` | ``-x`` | ``+z`` | ``-z`` — the
-                             direction the top rises in, anchored to the
-                             kernel plan axes rather than to the row's
-                             reference order
-``archflow:shell_thickness`` metres of wall
-``archflow:shell_kind``      ``cylinder`` | ``dome``
-===========================  ==========================================
-
-Metres are canonical decimal text (shortest round-trip repr: ``0.5``,
-``2.0`` — no locale, no thousands separator), enumerated values their bare
-literal; the producer that states them writes them that way. An older
-export that predates the strings is not repaired here — the re-index keeps
-such a row AMBIGUOUS and names what is missing.
+What each object carries, including every operation's statements, is
+``monkeycad.program.expected_object_semantics``; this module writes it.
+The same module writes the rest of the script a Rhino export runs: the
+patch prelude that carries a prior document's kept objects into a fresh one
+(P103), and the wrapper that saves the document with its render meshes and
+writes the completion marker.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
-import re
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Sequence
+from pathlib import Path
+from typing import Any, Iterable, Mapping, Sequence
 
 from archflow.state.geometry_program import (
     ANALYTIC_OPERATION_KINDS,
@@ -73,28 +42,9 @@ from archflow.state.geometry_program import (
     operation_parameters,
     revolve_parameters,
 )
-
-ROOT_LAYER = "archflow"
-_ROOT_LAYER = ROOT_LAYER  # the historical private name, kept for existing readers
-
-# The ``archflow:*`` user-text keys the export itself writes: an object's
-# identity, its layer semantics and its inspection role. They are the one
-# namespace an operation's statements may not enter — a statement is free
-# text the run declared, and no declaration may overwrite what identifies
-# the object it travels on.
-_RESERVED_USER_TEXT: frozenset[str] = frozenset(
-    {
-        "bindings",
-        "commitments",
-        "component",
-        "evidence",
-        "inspection_witness",
-        "material",
-        "object_ref",
-        "operation_ref",
-        "producer_op",
-    }
-)
+from monkeycad.execution import _UNIT_TO_RHINO, _positive_finite
+from monkeycad.patch import CadPatchError, PatchSelection
+from monkeycad.program import CadTranslationError, _resolved_layer_colors, _rgb, expected_object_semantics
 
 
 # Windows refuses an ordinary absolute path once it passes about 260
@@ -128,215 +78,12 @@ LONG_PATH_HELPER_SOURCE: tuple[str, ...] = (
 )
 
 
-class CadTranslationError(ValueError):
-    """The program contains a construct the translator cannot express."""
-
-
 @dataclass(frozen=True, slots=True)
 class CadTranslation:
     script: str
     physical_object_ids: tuple[str, ...]
     losses: tuple[dict, ...]
     layer_colors: tuple[tuple[str, tuple[int, int, int]], ...]
-
-
-_LAYER_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _\-.]{0,63}$")
-
-
-def _component_layer(
-    components: tuple[str, ...],
-    layer_by_component: Mapping[str, str] | None,
-) -> str:
-    """The layer an object's components put it on.
-
-    Without a scheme: the historical ``archflow::<components>`` path. With a
-    caller-supplied scheme (P108 numbered categories, e.g. ``20_STRUCTURE``):
-    ``<category>::<components>`` — the category is the parent layer, the
-    component keeps its own child layer, so identity survives the renumbering.
-    The kernel never invents a category: an unmapped component stays on the
-    historical path, visibly, rather than being guessed into a bucket.
-    """
-
-    if not components:
-        return _ROOT_LAYER
-    joined = "+".join(components)
-    if layer_by_component is not None:
-        categories = sorted(
-            {
-                layer_by_component[component]
-                for component in components
-                if component in layer_by_component
-            }
-        )
-        if len(categories) == 1:
-            category = categories[0]
-            if not _LAYER_SEGMENT.match(category):
-                raise ValueError(
-                    f"layer category {category!r} is not a valid layer name"
-                )
-            return f"{category}::{joined}"
-    return f"{_ROOT_LAYER}::{joined}"
-
-
-def _layer_color(component_key: str) -> tuple[int, int, int]:
-    digest = hashlib.sha256(component_key.encode("utf-8")).digest()
-    return (
-        60 + digest[0] % 160,
-        60 + digest[1] % 160,
-        60 + digest[2] % 160,
-    )
-
-
-def _rgb(value: object, field: str) -> tuple[int, int, int]:
-    if not isinstance(value, tuple) or len(value) != 3:
-        raise CadTranslationError(f"{field} must be a three-channel tuple")
-    channels: list[int] = []
-    for channel in value:
-        if isinstance(channel, bool) or not isinstance(channel, int):
-            raise CadTranslationError(f"{field} channels must be integers")
-        if channel < 0 or channel > 255:
-            raise CadTranslationError(
-                f"{field} channels must be between 0 and 255"
-            )
-        channels.append(channel)
-    return channels[0], channels[1], channels[2]
-
-
-def _resolved_layer_colors(
-    layer_paths: set[str],
-    *,
-    material_by_component: Mapping[str, str] | None,
-    material_colors: Mapping[str, tuple[int, int, int]] | None,
-) -> tuple[tuple[str, tuple[int, int, int]], ...]:
-    """Resolve the one color table used by both the script and its contract.
-
-    The root layer has no component or material assignment, so it always uses
-    the same deterministic path-derived fallback as an explicit contract.
-    """
-
-    rows: list[tuple[str, tuple[int, int, int]]] = []
-    for layer_path in sorted({_ROOT_LAYER, *layer_paths}):
-        color = _layer_color(layer_path)
-        if layer_path != _ROOT_LAYER:
-            component = layer_path.split("::", 1)[1]
-            material = (material_by_component or {}).get(component)
-            if material is not None and material_colors is not None:
-                color = material_colors.get(material, color)
-        rows.append(
-            (
-                layer_path,
-                _rgb(color, f"layer color for {layer_path}"),
-            )
-        )
-    return tuple(rows)
-
-
-def expected_object_semantics(
-    program,
-    *,
-    material_by_component: Mapping[str, str] | None = None,
-    layer_by_component: Mapping[str, str] | None = None,
-) -> dict[str, dict]:
-    """The semantics each physical object must carry in the CAD document.
-
-    Derived from the program alone: producer op, binding ids, component
-    id, commitment and evidence refs, the per-component layer path, and
-    every one of the operation's own ``statements`` — what a saved solid
-    cannot show about itself — written through verbatim as
-    ``archflow:<key>``. A statement that names a reserved identity key
-    fails ``CadTranslationError``. Objects the program leaves unbound stay
-    on the root layer with no invented component. Families report the block
-    definitions arrays must create with their instance multiplicities.
-    """
-
-    proposal = program.proposal
-    bindings = {
-        binding.binding_id: binding
-        for binding in getattr(proposal, "semantic_bindings", ())
-    }
-    objects: dict[str, dict] = {}
-    families: dict[str, int] = {}
-    for operation in proposal.operations:
-        kind = operation.kind.value
-        parameters = operation_parameters(operation)
-        for object_id in operation.output_object_ids:
-            binding_ids = tuple(
-                sorted(getattr(operation, "semantic_binding_ids", ()) or ())
-            )
-            components = sorted(
-                {
-                    bindings[item].component_id
-                    for item in binding_ids
-                    if item in bindings
-                }
-            )
-            commitments = sorted(
-                {
-                    ref
-                    for item in binding_ids
-                    if item in bindings
-                    for ref in bindings[item].commitment_refs
-                }
-            )
-            evidence = sorted(
-                {
-                    ref
-                    for item in binding_ids
-                    if item in bindings
-                    for ref in bindings[item].evidence_refs
-                }
-            )
-            layer = _component_layer(components, layer_by_component)
-            user_text = {
-                "archflow:producer_op": operation.op_id,
-                "archflow:object_ref": f"cad-object:{object_id}",
-                "archflow:operation_ref": f"cad-operation:{operation.op_id}",
-            }
-            if binding_ids:
-                user_text["archflow:bindings"] = ",".join(binding_ids)
-            if components:
-                user_text["archflow:component"] = "+".join(components)
-                materials = sorted(
-                    {
-                        (material_by_component or {}).get(component)
-                        for component in components
-                    }
-                    - {None}
-                )
-                if materials:
-                    user_text["archflow:material"] = ",".join(materials)
-            if commitments:
-                user_text["archflow:commitments"] = ",".join(commitments)
-            if evidence:
-                user_text["archflow:evidence"] = ",".join(evidence)
-            for key, statement in sorted(operation.statements.items()):
-                if key in _RESERVED_USER_TEXT:
-                    raise CadTranslationError(
-                        f"statement {key!r} on {operation.op_id} would "
-                        "overwrite an identity string the export owns"
-                    )
-                user_text[f"archflow:{key}"] = statement
-            objects[object_id] = {
-                "name": object_id,
-                "layer": layer,
-                "user_text": user_text,
-            }
-            if bool(parameters.get("hidden_for_inspection", False)):
-                objects[object_id]["visible"] = False
-                user_text["archflow:inspection_witness"] = "hidden"
-        if kind in ("array", "radial_array"):
-            families[f"archflow-family-{operation.op_id}"] = int(
-                parameters["count"]
-            )
-    physical = set(delivered_object_ids(proposal))
-    return {
-        "objects": {
-            object_id: row
-            for object_id, row in sorted(objects.items())
-            if object_id in physical
-        },
-        "blocks": families,
-    }
 
 
 def _script_header(
@@ -948,3 +695,360 @@ def translate_to_rhino_python(
         losses=tuple(losses),
         layer_colors=layer_colors,
     )
+
+
+_WITNESS_PREFIX = "__archflow_visible_bounds__"
+
+
+def build_patch_prelude(selection: PatchSelection, *, prior_model_path: Path, semantics: Mapping[str, Mapping[str, Any]]) -> str:
+    """Rhino-side prelude: carry the prior document's kept objects into a fresh one.
+
+    Referenced materials are copied with their textures and remapped; layers
+    are recreated by full path, then every instance definition the
+    prior file holds is rebuilt from its own member geometry so that block
+    families (P099 typed instances) survive the carry. Kept objects are
+    re-added by geometry and duplicated attributes, instance references
+    against their rebuilt definition, and each is re-stamped with the *new*
+    program's semantics for that name (layer, user text, visibility):
+    geometry is kept, identity is refreshed. Witness meshes and every name
+    the selection deletes are skipped. The carried *names* are compared with
+    the selection, so a stale base fails typed inside Rhino rather than
+    reading back short.
+    """
+
+    prior = str(Path(prior_model_path).resolve())
+    if any(character in prior for character in "\x00\r\n'"):
+        raise CadPatchError("prior model path contains unsafe characters")
+    delete_literal = repr(sorted(selection.delete_object_names))
+    missing = [object_id for object_id in selection.kept_object_ids if object_id not in semantics]
+    if missing:
+        raise CadPatchError(f"kept objects have no semantics in the new program: {missing}")
+    kept_semantics = {object_id: dict(semantics[object_id]) for object_id in selection.kept_object_ids}
+    semantics_literal = repr(json.dumps(kept_semantics, sort_keys=True))
+    expected_names_literal = repr(json.dumps(sorted(selection.kept_object_ids)))
+    return "\n".join(
+        (
+            "import System",
+            f"_patch_base_path = Path({prior!r})",
+            "_patch_base = Rhino.FileIO.File3dm.Read(str(_patch_base_path))",
+            "if _patch_base is None: raise Exception('patch base unreadable: ' + str(_patch_base_path))",
+            "_existing = rs.AllObjects() or []",
+            "if _existing: rs.DeleteObjects(_existing)",
+            f"_patch_delete = set({delete_literal})",
+            f"_patch_semantics = json.loads({semantics_literal})",
+            f"_patch_expected_names = set(json.loads({expected_names_literal}))",
+            f"_patch_witness_prefix = {_WITNESS_PREFIX!r}",
+            "_patch_material_indices = {_layer.RenderMaterialIndex for _layer in _patch_base.Layers if _layer.RenderMaterialIndex >= 0}",
+            "for _item in _patch_base.Objects:",
+            "    if (_item.Attributes.Name or '').startswith(_patch_witness_prefix) or _item.Attributes.Name in _patch_delete: continue",
+            "    if _item.Attributes.MaterialIndex >= 0: _patch_material_indices.add(_item.Attributes.MaterialIndex)",
+            "_patch_materials, _patch_native_materials = {}, {}",
+            "for _base_index in sorted(_patch_material_indices):",
+            "    _material = _patch_base.Materials.FindIndex(_base_index)",
+            "    if _material is None: raise Exception('patch base material missing: ' + str(_base_index))",
+            "    _new_index = Rhino.RhinoDoc.ActiveDoc.Materials.Add(_material)",
+            "    if _new_index < 0: raise Exception('patch base material could not be copied: ' + str(_base_index))",
+            "    _patch_materials[_base_index] = _new_index",
+            "    if _material.Name: _patch_native_materials[_material.Name] = _new_index",
+            "    _logical_material = _material.GetUserString('archflow:material_id') or _material.GetUserString('archflow:material')",
+            "    if _logical_material: _patch_native_materials[_logical_material] = _new_index",
+            "_patch_base_layers = {_layer.Index: _layer for _layer in _patch_base.Layers}",
+            "_patch_base_by_id = {str(_layer.Id): _layer for _layer in _patch_base.Layers}",
+            "def _patch_full_path(_layer):",
+            "    _names = [_layer.Name]",
+            "    _parent = _patch_base_by_id.get(str(_layer.ParentLayerId))",
+            "    while _parent is not None:",
+            "        _names.insert(0, _parent.Name)",
+            "        _parent = _patch_base_by_id.get(str(_parent.ParentLayerId))",
+            "    return '::'.join(_names)",
+            "_patch_layers = {}",
+            "for _base_index in sorted(_patch_base_layers):",
+            "    _base_layer = _patch_base_layers[_base_index]",
+            "    _full = _patch_full_path(_base_layer)",
+            "    rs.AddLayer(_full, (_base_layer.Color.R, _base_layer.Color.G, _base_layer.Color.B))",
+            "    _doc_index = Rhino.RhinoDoc.ActiveDoc.Layers.FindByFullPath(_full, -1)",
+            "    if _doc_index < 0: raise Exception('patch base layer could not be recreated: ' + _full)",
+            "    _patch_layers[_base_index] = _doc_index",
+            "    if _base_layer.RenderMaterialIndex >= 0:",
+            "        _doc_layer = Rhino.RhinoDoc.ActiveDoc.Layers[_doc_index]",
+            "        _doc_layer.RenderMaterialIndex = _patch_materials[_base_layer.RenderMaterialIndex]",
+            "        _doc_layer.CommitChanges()",
+            # ---- instance definitions: rebuilt from their own members, so block families survive the carry
+            "_patch_base_objects = {str(_item.Attributes.ObjectId): _item for _item in _patch_base.Objects}",
+            "_patch_definition_index = {}",
+            "_patch_definition_members = set()",
+            "for _definition in _patch_base.InstanceDefinitions:",
+            "    _member_ids = [str(_value) for _value in (_definition.GetObjectIds() or [])]",
+            "    _member_geometry, _member_attributes = [], []",
+            "    for _member_id in _member_ids:",
+            "        _member = _patch_base_objects.get(_member_id)",
+            "        if _member is None: raise Exception('instance definition member missing from the patch base: ' + _member_id)",
+            "        _patch_definition_members.add(_member_id)",
+            "        _member_attribute = _member.Attributes.Duplicate()",
+            "        _member_attribute.LayerIndex = _patch_layers[_member.Attributes.LayerIndex]",
+            "        _member_attribute.MaterialIndex = _patch_materials.get(_member.Attributes.MaterialIndex, -1)",
+            "        _member_geometry.append(_member.Geometry)",
+            "        _member_attributes.append(_member_attribute)",
+            "    if not _member_geometry: raise Exception('instance definition has no members: ' + _definition.Name)",
+            "    _new_index = Rhino.RhinoDoc.ActiveDoc.InstanceDefinitions.Add(_definition.Name, _definition.Description, Rhino.Geometry.Point3d.Origin, _member_geometry, _member_attributes)",
+            "    if _new_index < 0: raise Exception('instance definition could not be recreated: ' + _definition.Name)",
+            "    _patch_definition_index[str(_definition.Id)] = _new_index",
+            # ---- kept objects, instance references against their rebuilt definition
+            "_patch_carried = {}",
+            "_patch_kept_objects = {}",
+            "for _base_object in _patch_base.Objects:",
+            "    _base_name = _base_object.Attributes.Name or ''",
+            "    if _base_name.startswith(_patch_witness_prefix) or _base_name in _patch_delete: continue",
+            "    if str(_base_object.Attributes.ObjectId) in _patch_definition_members: continue",
+            "    _base_attributes = _base_object.Attributes.Duplicate()",
+            "    _base_attributes.LayerIndex = _patch_layers[_base_object.Attributes.LayerIndex]",
+            "    _base_attributes.MaterialIndex = _patch_materials.get(_base_object.Attributes.MaterialIndex, -1)",
+            "    _base_geometry = _base_object.Geometry",
+            "    if isinstance(_base_geometry, Rhino.Geometry.InstanceReferenceGeometry):",
+            "        _definition_key = str(_base_geometry.ParentIdefId)",
+            "        if _definition_key not in _patch_definition_index: raise Exception('instance reference has no carried definition: ' + _base_name)",
+            "        _kept_guid = Rhino.RhinoDoc.ActiveDoc.Objects.AddInstanceObject(_patch_definition_index[_definition_key], _base_geometry.Xform, _base_attributes)",
+            "    else:",
+            "        _kept_guid = Rhino.RhinoDoc.ActiveDoc.Objects.Add(_base_geometry, _base_attributes)",
+            "    if _kept_guid == System.Guid.Empty: raise Exception('patch base object could not be re-added: ' + _base_name)",
+            "    _kept_meta = _patch_semantics.get(_base_name)",
+            "    if _kept_meta is None: raise Exception('patch base object is not in the kept set: ' + _base_name)",
+            "    if _kept_meta.get('layer'): rs.ObjectLayer(_kept_guid, _kept_meta['layer'])",
+            "    for _old_key in (rs.GetUserText(_kept_guid) or []):",
+            "        rs.SetUserText(_kept_guid, _old_key, None)",
+            "    for _key in sorted(_kept_meta.get('user_text', {})):",
+            "        rs.SetUserText(_kept_guid, _key, _kept_meta['user_text'][_key])",
+            "    if _kept_meta.get('visible') is False: rs.HideObject(_kept_guid)",
+            "    else: rs.ShowObject(_kept_guid)",
+            "    _patch_carried[_base_name] = _patch_carried.get(_base_name, 0) + 1",
+            "    _patch_kept_objects.setdefault(_base_name, []).append(_kept_guid)",
+            "if set(_patch_carried) != _patch_expected_names:",
+            "    raise Exception('patch base carried the wrong object names: missing %s, extra %s' % (sorted(_patch_expected_names - set(_patch_carried)), sorted(set(_patch_carried) - _patch_expected_names)))",
+        )
+    )
+
+
+def _saved_geometry_check(source_measures: Mapping[str, Mapping[str, object]] | None) -> tuple[str, ...]:
+    """The lines that compare the saved document with the shapes it came from.
+
+    Only an import-based export has shapes to compare against, and this is the
+    one place where the host can say what the saved geometry actually is: the
+    kernel's solid count, face count, closure and volume are checked against
+    the objects in the file that was just written, through RhinoCommon's own
+    mass properties, before the completion marker exists. A healed-away
+    opening or a solid that arrived as a surface fails the export here rather
+    than being reported as an exact work model.
+    """
+
+    if not source_measures:
+        return ()
+    return (
+        "_source_measures = json.loads("
+        + repr(json.dumps({key: dict(value) for key, value in sorted(source_measures.items())}, sort_keys=True))
+        + ")",
+        "_saved_by_name = {}",
+        "for _saved in _final_archive.Objects:",
+        "    _saved_by_name.setdefault(_saved.Attributes.Name or '', []).append(_saved.Geometry)",
+        "for _oid in sorted(_source_measures):",
+        "    _expected = _source_measures[_oid]",
+        "    _geometries = _saved_by_name.get(_oid) or []",
+        "    if not _geometries: raise Exception('saved work model has no object named ' + _oid)",
+        "    _solids = 0",
+        "    _faces = 0",
+        "    _volume = 0.0",
+        "    for _geometry in _geometries:",
+        "        if isinstance(_geometry, Rhino.Geometry.Extrusion): _geometry = _geometry.ToBrep(False)",
+        "        if not isinstance(_geometry, Rhino.Geometry.Brep):",
+        "            raise Exception(_oid + ': saved geometry is ' + type(_geometry).__name__ + ', not a B-rep')",
+        "        _faces += _geometry.Faces.Count",
+        "        if _geometry.IsSolid: _solids += 1",
+        "        _mass = Rhino.Geometry.VolumeMassProperties.Compute(_geometry)",
+        "        if _mass is not None: _volume += _mass.Volume",
+        "    if _solids != _expected['solid_count']:",
+        "        raise Exception(_oid + ': saved solids ' + str(_solids) + ' != ' + str(_expected['solid_count']))",
+        "    if _faces != _expected['face_count']:",
+        "        raise Exception(_oid + ': saved faces ' + str(_faces) + ' != ' + str(_expected['face_count']))",
+        "    if _expected['closed'] and _solids < 1:",
+        "        raise Exception(_oid + ': the exported shape is closed; the saved object is not')",
+        "    if _expected.get('volume') is not None:",
+        "        _allowed = max(abs(_expected['volume']) * 1e-6, 1e-9)",
+        "        if abs(_volume - _expected['volume']) > _allowed:",
+        "            raise Exception(_oid + ': saved volume ' + str(_volume) + ' != ' + str(_expected['volume']))",
+    )
+
+
+def _export_script(
+    translated_script: str,
+    *,
+    artifact_name: str,
+    completion_marker_name: str,
+    completion_token: str,
+    length_unit: str,
+    readback_tolerance: float,
+    patch_prelude: str | None = None,
+    source_measures: Mapping[str, Mapping[str, object]] | None = None,
+) -> str:
+    unit_enum = _UNIT_TO_RHINO[length_unit][0]
+    mesh_tolerance = _positive_finite(
+        readback_tolerance,
+        "readback_tolerance",
+    ) / 4.0
+    mesh_tolerance_literal = format(mesh_tolerance, ".17g")
+    success_payload = _completion_marker_payload(
+        artifact_relative_path=artifact_name,
+        completion_token=completion_token,
+        status="succeeded",
+    )
+    opening = (
+        patch_prelude.rstrip("\n")
+        if patch_prelude
+        else "_existing = rs.AllObjects() or []\nif _existing: rs.DeleteObjects(_existing)"
+    )
+    body = "\n".join(
+        (
+            f"Rhino.RhinoDoc.ActiveDoc.AdjustModelUnitSystem(Rhino.UnitSystem.{unit_enum}, False)",
+            opening,
+            "rs.EnableRedraw(False)",
+            translated_script.rstrip("\n"),
+            "rs.EnableRedraw(True)",
+            "_mesh_type = Rhino.Geometry.MeshType.Render",
+            "_mesh_parameters = Rhino.Geometry.MeshingParameters(Rhino.Geometry.MeshingParameters.QualityRenderMesh)",
+            "_mesh_parameters.DoublePrecision = True",
+            f"_mesh_parameters.Tolerance = {mesh_tolerance_literal}",
+            f"_mesh_parameters.MinimumTolerance = {mesh_tolerance_literal}",
+            "_archive_meshes = {}",
+            "_mesh_objects = {}",
+            "for _active_guid in (rs.AllObjects() or []):",
+            "    _active_object = Rhino.RhinoDoc.ActiveDoc.Objects.FindId(_active_guid)",
+            "    if _active_object is not None:",
+            "        _mesh_objects[str(_active_object.Id)] = _active_object",
+            "for _instance_definition in Rhino.RhinoDoc.ActiveDoc.InstanceDefinitions:",
+            "    if _instance_definition.IsDeleted or _instance_definition.IsReference:",
+            "        continue",
+            "    for _definition_object in _instance_definition.GetObjects():",
+            "        _mesh_objects[str(_definition_object.Id)] = _definition_object",
+            "for _rhino_object in sorted(_mesh_objects.values(), key=lambda _item: str(_item.Id)):",
+            "    _geometry = _rhino_object.Geometry",
+            "    if not isinstance(_geometry, (Rhino.Geometry.Brep, Rhino.Geometry.Extrusion)):",
+            "        continue",
+            "    _rhino_object.CreateMeshes(_mesh_type, _mesh_parameters, True)",
+            "    _retained_meshes = _rhino_object.GetMeshes(_mesh_type)",
+            "    _expected_meshes = _geometry.Faces.Count if isinstance(_geometry, Rhino.Geometry.Brep) else 1",
+            "    if _retained_meshes is None or len(_retained_meshes) != _expected_meshes:",
+            "        raise Exception('retained render-mesh face denominator mismatch')",
+            "    _mesh_copies = []",
+            "    for _retained_mesh in _retained_meshes:",
+            "        if _retained_mesh is None or not _retained_mesh.IsValid or _retained_mesh.Vertices.Count == 0 or _retained_mesh.Faces.Count == 0:",
+            "            raise Exception('retained render mesh is missing or invalid')",
+            "        _mesh_copies.append(_retained_mesh.DuplicateMesh())",
+            "    _archive_meshes[str(_rhino_object.Id)] = _mesh_copies",
+            "if not _archive_meshes:",
+            "    raise Exception('no meshable document geometry was enumerated')",
+            f"_artifact_name = {artifact_name!r}",
+            "_output_path = (_script_directory / _artifact_name).resolve()",
+            "if _output_path.parent != _script_directory:",
+            "    raise Exception('output escaped script workspace')",
+            "if _long(_output_path).exists(): raise Exception('output exists')",
+            "_raw_path = (_script_directory / (Path(_artifact_name).stem + '.archflow-raw.3dm')).resolve()",
+            "if _raw_path.parent != _script_directory or _long(_raw_path).exists():",
+            "    raise Exception('raw output path is invalid or occupied')",
+            "_write_options = Rhino.FileIO.FileWriteOptions()",
+            "_write_options.SuppressDialogBoxes = True",
+            "_write_options.IncludeRenderMeshes = True",
+            "if not Rhino.RhinoDoc.ActiveDoc.WriteFile(str(_raw_path), _write_options):",
+            "    raise Exception('raw 3dm save failed')",
+            "_archive = Rhino.FileIO.File3dm.Read(str(_long(_raw_path)))",
+            "if _archive is None:",
+            "    raise Exception('raw 3dm readback failed inside Rhino')",
+            "_archive_sources = {str(_item.Attributes.ObjectId): _item for _item in _archive.Objects}",
+            "_initial_archive_object_count = _archive.Objects.Count",
+            "_witness_mesh_count = sum(len(_items) for _items in _archive_meshes.values())",
+            "for _source_id in sorted(_archive_meshes):",
+            "    _source_object = _archive_sources.get(_source_id)",
+            "    if _source_object is None:",
+            "        raise Exception('archive retained-mesh source identity is missing')",
+            "    _saved_meshes = _archive_meshes[_source_id]",
+            "    _source_geometry = _source_object.Geometry",
+            "    _expected_saved_meshes = _source_geometry.Faces.Count if isinstance(_source_geometry, Rhino.Geometry.Brep) else 1",
+            "    if len(_saved_meshes) != _expected_saved_meshes:",
+            "        raise Exception('archive retained-mesh source denominator mismatch')",
+            "    for _mesh_index, _saved_mesh in enumerate(_saved_meshes):",
+            "        _witness_attributes = Rhino.DocObjects.ObjectAttributes()",
+            "        _witness_attributes.Name = '__archflow_visible_bounds__:' + _source_id + ':' + format(_mesh_index, '04d')",
+            "        _witness_attributes.LayerIndex = _source_object.Attributes.LayerIndex",
+            "        _witness_attributes.Visible = False",
+            "        _witness_attributes.SetUserString('archflow:visible_bounds_witness_for', _source_id)",
+            "        _witness_attributes.SetUserString('archflow:visible_bounds_witness_index', str(_mesh_index))",
+            "        _witness_attributes.SetUserString('archflow:visible_bounds_witness_count', str(len(_saved_meshes)))",
+            "        _witness_id = _archive.Objects.AddMesh(_saved_mesh, _witness_attributes)",
+            "        if str(_witness_id) == '00000000-0000-0000-0000-000000000000':",
+            "            raise Exception('failed to add explicit visible-bounds witness mesh')",
+            "if _archive.Objects.Count != _initial_archive_object_count + _witness_mesh_count:",
+            "    raise Exception('explicit witness mesh archive count mismatch before save')",
+            "_archive_options = Rhino.FileIO.File3dmWriteOptions()",
+            "_archive_options.Version = 8",
+            "_archive_options.SaveRenderMeshes = True",
+            "_archive_options.SaveUserData = True",
+            "if not _archive.Write(str(_output_path), _archive_options):",
+            "    raise Exception('final 3dm save failed')",
+            "_final_archive = Rhino.FileIO.File3dm.Read(str(_long(_output_path)))",
+            "if _final_archive is None or _final_archive.Objects.Count != _archive.Objects.Count:",
+            "    raise Exception('explicit witness mesh archive count mismatch after save')",
+            *_saved_geometry_check(source_measures),
+            "_long(_raw_path).unlink()",
+        )
+    )
+    indented_body = "\n".join(
+        ("    " + line if line else "") for line in body.splitlines()
+    )
+    return "\n".join(
+        (
+            "#! python 3",
+            "import json",
+            "from pathlib import Path",
+            "import Rhino",
+            "import rhinoscriptsyntax as rs",
+            *LONG_PATH_HELPER_SOURCE,
+            "_script_directory = Path(__file__).resolve().parent",
+            f"_marker_path = _script_directory / {completion_marker_name!r}",
+            f"_completion_token = {completion_token!r}",
+            "def _write_completion_marker(_payload):",
+            "    _text = json.dumps(_payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))",
+            # The marker is the one file a failure still has to write, and it
+            # sits deepest in the workspace: like every other file call in this
+            # script it is made through the extended-length name.
+            "    with _long(_marker_path).open('x', encoding='utf-8', newline='\\n') as _stream:",
+            "        _stream.write(_text)",
+            "try:",
+            indented_body,
+            "except Exception as _error:",
+            "    try:",
+            "        _write_completion_marker({",
+            "            'schema': 'RhinoCadCompletionMarker@1',",
+            f"            'artifact_relative_path': {artifact_name!r},",
+            "            'completion_token': _completion_token,",
+            "            'status': 'failed',",
+            "            'error_type': type(_error).__name__[:128],",
+            "            'error_detail': str(_error)[:1000],",
+            "        })",
+            "    finally:",
+            "        raise",
+            "else:",
+            f"    _write_completion_marker({success_payload!r})",
+            "",
+        )
+    )
+
+
+def _completion_marker_payload(
+    *,
+    artifact_relative_path: str,
+    completion_token: str,
+    status: str,
+) -> dict[str, str]:
+    return {
+        "schema": "RhinoCadCompletionMarker@1",
+        "artifact_relative_path": artifact_relative_path,
+        "completion_token": completion_token,
+        "status": status,
+    }

@@ -7,7 +7,7 @@ import unittest
 
 from monkeycad.backends.occt.kernel import occt_available
 from monkeycad.backends.occt.step import StepEntry
-from monkeycad.cad_execution import OcctDrawingPolyline, project_occt_lines
+from monkeycad.backends.occt.projection import OcctDrawingPolyline, project_occt_lines
 from monkeydiagram.documentation.styles import compose_review_sheet, drawing_style, list_drawing_styles
 from monkeydiagram.drawing_output import render_dxf, render_pdf
 

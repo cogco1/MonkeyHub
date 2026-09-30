@@ -18,11 +18,23 @@ from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from unittest.mock import patch
 
-from monkeycad import cad_backend, cad_execution
+from monkeycad.backends.occt import export as occt_export
+from monkeycad.backends.occt.backend import OcctBackend
 from monkeycad.backends.occt.errors import OcctBackendError
 from monkeycad.backends.occt.kernel import occt_available
 from monkeycad.backends.occt.step import read_step
-from monkeycad.cad_execution import CadExecutionError, CadProgramBinding, RhinoCadProgramBinding
+from monkeycad.backends.rhino import export as rhino_export
+from monkeycad.backends.rhino.backend import RhinoBackend
+from monkeycad.backends.rhino.export import discover_powershell
+from monkeycad.execution import (
+    CadExecutionError,
+    CadExecutionRequest,
+    CadExecutionResult,
+    CadProgramBinding,
+    RhinoCadProgramBinding,
+)
+from monkeycad.formats.three_dm_inspector import inspect_three_dm
+from monkeycad.registry import CAD_BACKEND_REGISTRY, get_cad_backend
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import stage_geometry_program
 from archflow.project.refs import BranchRef, RunRef, record_ref_from_uri
@@ -50,7 +62,7 @@ NEEDS_RHINO = unittest.skipUnless(
 
 
 def _real_rhino_options():
-    powershell = cad_execution.discover_powershell()
+    powershell = discover_powershell()
     if powershell is None:
         raise RuntimeError("real Rhino acceptance requires Windows PowerShell and Rhino 8 COM")
     return {"powershell_executable": powershell, "timeout_seconds": 120}
@@ -58,7 +70,7 @@ def _real_rhino_options():
 
 def _request(workspace, *, program=None, binding=None, **options):
     program = program or _program()
-    return cad_backend.CadExecutionRequest(
+    return CadExecutionRequest(
         program=program,
         binding=binding or _binding(program),
         speculative_workspace=workspace,
@@ -94,7 +106,7 @@ def _persisted_program(repository, run):
 @contextmanager
 def _controlled_rhino(root, *, bad_inspection=False, plans=None, oracle_shift=0.0):
     """Inject only host I/O and inspection; leave execution and validation real."""
-    prepare = cad_execution.prepare_rhino_three_dm_export
+    prepare = rhino_export.prepare_rhino_three_dm_export
     plans = [] if plans is None else plans
 
     def capture_plan(*args, **kwargs):
@@ -123,8 +135,8 @@ def _controlled_rhino(root, *, bad_inspection=False, plans=None, oracle_shift=0.
                 named_object_bboxes=tuple({**row, "bbox": shifted(row["bbox"])} for row in inspection.named_object_bboxes))
         return inspection
 
-    with patch.object(cad_execution, "prepare_rhino_three_dm_export", side_effect=capture_plan), \
-         patch.object(cad_execution, "inspect_three_dm", side_effect=inspect), \
+    with patch.object(rhino_export, "prepare_rhino_three_dm_export", side_effect=capture_plan), \
+         patch.object(rhino_export, "inspect_three_dm", side_effect=inspect), \
          _no_process():
         yield {
             "powershell_executable": _fake_executable(root),
@@ -215,11 +227,11 @@ class CadBackendConformanceTests(unittest.TestCase):
                     host = _controlled_rhino(root) if host_options is None else nullcontext(host_options)
                     with host as backend_options:
                         request = _request(workspace, program=program, binding=binding, backend_options=backend_options)
-                        result = cad_backend.get_cad_backend(backend_id).execute(request)
+                        result = get_cad_backend(backend_id).execute(request)
                 else:
                     request = _request(workspace, program=program, binding=binding)
                     with _no_process():
-                        result = cad_backend.get_cad_backend(backend_id).execute(request)
+                        result = get_cad_backend(backend_id).execute(request)
                 result.validate(request, backend_id)
                 self.assertEqual((result.backend_id, result.status, result.readback_verified), (backend_id, "succeeded", True), result.failures)
                 self.assertEqual(result.binding, binding)
@@ -240,7 +252,7 @@ class CadBackendConformanceTests(unittest.TestCase):
                 self.assertEqual(receipt["schema"], "RhinoCadExecutionReceipt@4" if backend_id == "rhino" else "OcctExecutionReceipt@1")
                 # The public wrapper must also consume the existing native
                 # receipt shape, without introducing a new persistent schema.
-                retained = cad_backend.get_cad_backend(backend_id).read_receipt(request, receipt)
+                retained = get_cad_backend(backend_id).read_receipt(request, receipt)
                 retained.validate(request, backend_id)
                 self.assertEqual(retained.artifacts, result.artifacts)
                 self.assertEqual(retained.receipt_payload, receipt)
@@ -257,7 +269,7 @@ class CadBackendConformanceTests(unittest.TestCase):
                     self.assertTrue(receipt["cleanup_witness_sha256"])
                     if host_options is not None:
                         saved = workspace / result.artifacts[0].relative_path
-                        cold = cad_execution.inspect_three_dm(saved)
+                        cold = inspect_three_dm(saved)
                         self.assertEqual(cold.to_dict(), result.inspection)
 
                 with self.assertRaises(CadExecutionError):
@@ -297,7 +309,7 @@ class CadBackendConformanceTests(unittest.TestCase):
                 "material_by_component": {"body-component": "stucco"},
                 "material_colors": {"stucco": (210, 205, 190)},
             }
-            backend = cad_backend.get_cad_backend(backend_id)
+            backend = get_cad_backend(backend_id)
             if backend_id == "rhino":
                 host = _controlled_rhino(root) if host_options is None else nullcontext(host_options)
                 with host as options:
@@ -309,7 +321,7 @@ class CadBackendConformanceTests(unittest.TestCase):
                     result = backend.execute(request)
             self.assertEqual(result.status, "succeeded", result.failures)
             if host_options is not None:
-                cold = cad_execution.inspect_three_dm(workspace / result.artifacts[0].relative_path)
+                cold = inspect_three_dm(workspace / result.artifacts[0].relative_path)
                 self.assertEqual(cold.to_dict(), result.inspection)
                 self.assertEqual(len(cold.object_material_bindings), 1)
                 material = cold.object_material_bindings[0]
@@ -348,8 +360,8 @@ class CadBackendConformanceTests(unittest.TestCase):
     def test_occt_does_not_turn_a_failed_cold_read_into_a_verified_result(self):
         with tempfile.TemporaryDirectory() as temporary, _no_process():
             request = _request(Path(temporary))
-            with patch.object(cad_execution, "read_step", side_effect=OcctBackendError("controlled cold-read failure")):
-                result = cad_backend.get_cad_backend("occt").execute(request)
+            with patch.object(occt_export, "read_step", side_effect=OcctBackendError("controlled cold-read failure")):
+                result = get_cad_backend("occt").execute(request)
             self.assertEqual(result.status, "failed")
             self.assertFalse(result.readback_verified)
             self.assertTrue(result.failures)
@@ -361,7 +373,7 @@ class CadBackendConformanceTests(unittest.TestCase):
             workspace = root / "workspace"
             workspace.mkdir()
             with _controlled_rhino(root, bad_inspection=True) as options:
-                result = cad_backend.get_cad_backend("rhino").execute(_request(workspace, backend_options=options))
+                result = get_cad_backend("rhino").execute(_request(workspace, backend_options=options))
             self.assertEqual(result.status, "failed")
             self.assertFalse(result.readback_verified)
             self.assertTrue(result.failures)
@@ -373,9 +385,9 @@ class CadBackendConformanceTests(unittest.TestCase):
         program = _program_of(seed, _radial_array("ring", seed))
         with tempfile.TemporaryDirectory() as temporary, _no_process():
             workspace = Path(temporary)
-            with patch.object(cad_execution, "prepare_rhino_three_dm_export", side_effect=AssertionError("unexpected Rhino fallback")):
+            with patch.object(rhino_export, "prepare_rhino_three_dm_export", side_effect=AssertionError("unexpected Rhino fallback")):
                 request = _request(workspace, program=program)
-                result = cad_backend.get_cad_backend("occt").execute(request)
+                result = get_cad_backend("occt").execute(request)
             result.validate(request, "occt")
             self.assertEqual((result.status, result.readback_verified), ("unsupported", False))
             self.assertEqual((result.failures[0]["op_id"], result.failures[0]["kind"]), ("ring", "radial_array"))
@@ -387,7 +399,7 @@ class CadBackendConformanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary, _no_process():
             workspace = Path(temporary)
             request = _request(workspace, program=program)
-            result = cad_backend.get_cad_backend("rhino").execute(request)
+            result = get_cad_backend("rhino").execute(request)
             result.validate(request, "rhino")
             self.assertEqual((result.status, result.readback_verified), ("unsupported", False))
             self.assertIn("unsupported-profile", result.failures[0]["detail"])
@@ -403,7 +415,7 @@ class CadBackendConformanceTests(unittest.TestCase):
                 existing = workspace / (request.artifact_stem + suffix)
                 existing.write_bytes(b"keep existing artifact")
                 with self.assertRaises(CadExecutionError):
-                    cad_backend.get_cad_backend(backend_id).execute(request)
+                    get_cad_backend(backend_id).execute(request)
                 self.assertEqual(existing.read_bytes(), b"keep existing artifact")
                 self.assertEqual(list(workspace.iterdir()), [existing])
 
@@ -427,7 +439,7 @@ class _RegisteredContractBackend:
     patch_rebuild = False
 
     def __init__(self, *, unsupported=False):
-        self.native = cad_backend.OcctBackend()
+        self.native = OcctBackend()
         self.requests = []
         self.unsupported = unsupported
 
@@ -437,7 +449,7 @@ class _RegisteredContractBackend:
     def execute(self, request):
         self.requests.append(request)
         if self.unsupported:
-            return cad_backend.CadExecutionResult(
+            return CadExecutionResult(
                 backend_id=self.backend_id, binding=request.binding, status="unsupported", readback_verified=False,
                 artifacts=(), physical_object_ids=(), expected_semantics={}, receipt_payload=None, inspection=None,
                 failures=({"code": "cad_execution.unsupported_operation", "detail": "contract-test does not realize this program"},),
@@ -453,7 +465,7 @@ class RegisteredBackendRunnerTests(unittest.TestCase):
     @NEEDS_OCCT
     def test_one_registration_enables_runner_execution_retention_and_reuse(self):
         backend = _RegisteredContractBackend()
-        with patch.dict(cad_backend.CAD_BACKEND_REGISTRY, {backend.backend_id: backend}), _no_process():
+        with patch.dict(CAD_BACKEND_REGISTRY, {backend.backend_id: backend}), _no_process():
             project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)), cad_backend=backend.backend_id)
             head = project.repository.read_head()
             first = _cad_seats(project.run_once())
@@ -473,9 +485,10 @@ class RegisteredBackendRunnerTests(unittest.TestCase):
 
     def test_registered_unsupported_result_is_retained_in_runner_without_native_fallback(self):
         backend = _RegisteredContractBackend(unsupported=True)
-        with patch.dict(cad_backend.CAD_BACKEND_REGISTRY, {backend.backend_id: backend}), _no_process(), \
-             patch.multiple(cad_execution,
-                 execute_occt_export=lambda *a, **k: self.fail("unsupported backend must not call OCCT"),
+        with patch.dict(CAD_BACKEND_REGISTRY, {backend.backend_id: backend}), _no_process(), \
+             patch.multiple(occt_export,
+                 execute_occt_export=lambda *a, **k: self.fail("unsupported backend must not call OCCT")), \
+             patch.multiple(rhino_export,
                  prepare_rhino_three_dm_export=lambda *a, **k: self.fail("unsupported backend must not prepare Rhino"),
                  execute_rhino_three_dm_export=lambda *a, **k: self.fail("unsupported backend must not call Rhino")):
             project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)), cad_backend=backend.backend_id)
@@ -596,7 +609,7 @@ class RealRhinoRunnerTests(unittest.TestCase):
 
         project.repository = FilesystemProjectRepository.open(project.repository.layout.root)
         project.run = project.repository.load_run(project.run.run_id)
-        with _no_process(), patch.object(cad_backend.RhinoBackend, "execute", side_effect=AssertionError("exact reuse started Rhino")):
+        with _no_process(), patch.object(RhinoBackend, "execute", side_effect=AssertionError("exact reuse started Rhino")):
             restarted = _cad_seats(project.run_once())
         self.assertEqual(set(restarted), set(first))
         for seat_id, result in restarted.items():

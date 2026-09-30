@@ -195,7 +195,7 @@ class DrawingTests(CandidateTestCase):
 
     def test_sheet_styles_generate_scaled_pdfs_on_source_run_and_reuse_after_restart(self):
         from pypdf import PdfReader
-        from monkeycad.cad_execution import project_occt_lines
+        from monkeycad.backends.occt.projection import project_occt_lines
 
         self.enable_monitor()
         styles = self.client.get("/api/drawings/styles")
@@ -260,7 +260,7 @@ class DrawingTests(CandidateTestCase):
         self.assertEqual(self.repository.read_head(), self.head)
 
     def test_sheet_hidden_objects_are_removed_before_visibility_and_recipe_changes_keep_old_pdf(self):
-        from monkeycad.cad_execution import project_occt_lines
+        from monkeycad.backends.occt.projection import project_occt_lines
 
         receipt = self.repository.load_json(record_ref_from_uri(self.step["receiptRef"], PROJECT_ID))
         physical = set(receipt["physical_object_ids"])

@@ -60,10 +60,8 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 from uuid import uuid4
 
-from monkeycad.cad_backend import (
-    CadExecutionError, CadExecutionRequest, CadExecutionSource, CadProgramBinding,
-    cad_backend_ids, get_cad_backend,
-)
+from monkeycad.execution import CadExecutionError, CadExecutionRequest, CadExecutionSource, CadProgramBinding
+from monkeycad.registry import cad_backend_ids, get_cad_backend
 from monkeyarch.capabilities.discipline_seats import (
     SeatSpec,
     check_seat_datums,
@@ -1342,7 +1340,9 @@ def _check_final_solid_relations(repository, run, record, relations, results, ob
     measurement to the exact STEP bytes read here.
     """
 
-    from monkeycad.cad_execution import OcctBackendError, measure_occt_solid_pairs, read_step
+    from monkeycad.backends.occt.errors import OcctBackendError
+    from monkeycad.backends.occt.measure import measure_occt_solid_pairs
+    from monkeycad.backends.occt.step import read_step
 
     pairs = tuple(sorted({tuple(pair) for relation in relations for pair in relation.parameters["object_pairs"]}))
     wanted = {name for pair in pairs for name in pair}

@@ -10,14 +10,18 @@ import math
 import subprocess
 from dataclasses import dataclass
 
-import monkeycad.cad_execution as cad
 from monkeycad.discovery import resolve_blender_executable
 from monkeycad.backends.blender.backend import _run_worker, _near, _face_loops
 from monkeycad.backends.blender.worker import READBACK_PREFIX, UNIT_SETTINGS
+from monkeycad.backends.occt.backend import OcctBackend
+from monkeycad.backends.occt.export import _STEP_FORMAT
 from monkeycad.backends.occt.preview import tessellate_shape
 from monkeycad.backends.occt.step import read_step
-from monkeycad.cad_backend import CadExecutionRequest, CadExecutionResult, OcctBackend
-from monkeycad.cad_program import _rgb
+from monkeycad.execution import (
+    CadExecutionError, CadExecutionRequest, CadExecutionResult, _portable_relative_path, _positive_finite,
+    _require_file_digest, _sha256_bytes, _strict_child,
+)
+from monkeycad.program import _rgb
 from archflow.contracts.canonical import canonical_json
 
 
@@ -33,17 +37,17 @@ class BlenderPresentation:
 
     def __post_init__(self):
         if self.camera_id != "overview" or self.render_preset != "preview-v1":
-            raise cad.CadExecutionError("V1 supports overview / preview-v1 only")
+            raise CadExecutionError("V1 supports overview / preview-v1 only")
         for name, maximum in (("resolution", 2048), ("samples", 256)):
             value = getattr(self, name)
             if type(value) is not int or not 1 <= value <= maximum:
-                raise cad.CadExecutionError(f"invalid Blender {name}")
+                raise CadExecutionError(f"invalid Blender {name}")
         for name in ("azimuth", "elevation"):
             value = getattr(self, name)
             if type(value) not in (int, float) or not math.isfinite(value):
-                raise cad.CadExecutionError(f"invalid Blender {name}")
+                raise CadExecutionError(f"invalid Blender {name}")
         if not -85 <= self.elevation <= 85:
-            raise cad.CadExecutionError("camera elevation must be within [-85,85]")
+            raise CadExecutionError("camera elevation must be within [-85,85]")
 
     def to_dict(self):
         return {**self.__dict__, "engine": "CYCLES", "device": "CPU", "seed": 0,
@@ -57,10 +61,10 @@ def _source(request, result):
     checked.validate(request, "occt")
     result.validate(request, "occt")
     if checked.status != "succeeded" or result.artifacts != checked.artifacts:
-        raise cad.CadExecutionError("projection requires successful verified OCCT source")
+        raise CadExecutionError("projection requires successful verified OCCT source")
     artifact = next(a for a in checked.artifacts if a.name == "exact")
-    if artifact.format != cad._STEP_FORMAT:
-        raise cad.CadExecutionError("projection requires OCCT STEP")
+    if artifact.format != _STEP_FORMAT:
+        raise CadExecutionError("projection requires OCCT STEP")
     return artifact
 
 
@@ -70,7 +74,7 @@ def _plan(request, result, presentation):
     entries = read_step(path, length_unit=request.program.proposal.length_unit.value)
     semantics = result.expected_semantics["objects"]
     if len(entries) != len(semantics) or {entry.name for entry in entries} != set(semantics):
-        raise cad.CadExecutionError("STEP source has missing/duplicate/unexpected object IDs")
+        raise CadExecutionError("STEP source has missing/duplicate/unexpected object IDs")
     objects = []
     # Deflection in source units: 1 mm. STEP reader already supplies Z-up.
     scale = UNIT_SETTINGS[request.program.proposal.length_unit.value][1]
@@ -82,7 +86,7 @@ def _plan(request, result, presentation):
         objects.append({"object_id": entry.name, "object_digest": request.program.object_digest(entry.name),
                         "vertices": [list(v) for v in vertices], "faces": [list(f) for f in triangles], "semantics": semantic,
                         "material": {"name": material or "projection-neutral", "color": [v / 255 for v in color] + [1.0]}})
-    cad._require_file_digest(path, source.sha256, "OCCT projection source after read")
+    _require_file_digest(path, source.sha256, "OCCT projection source after read")
     return {"binding_json": canonical_json(request.binding.to_dict()),
             "provenance_json": canonical_json(dict(request.provenance or {})),
             "length_unit": request.program.proposal.length_unit.value, "objects": objects,
@@ -93,39 +97,39 @@ def _plan(request, result, presentation):
 def _verify_scene(plan, readback):
     for key in ("binding_json", "provenance_json", "length_unit"):
         if readback.get(key) != plan[key]:
-            raise cad.CadExecutionError(f"projection cold read differs: {key}")
+            raise CadExecutionError(f"projection cold read differs: {key}")
     if not _near([readback.get("unit_scale")], [UNIT_SETTINGS[plan["length_unit"]][1]], 1e-7):
-        raise cad.CadExecutionError("projection units differ")
+        raise CadExecutionError("projection units differ")
     if readback.get("projection_json") != canonical_json(plan["projection"]):
-        raise cad.CadExecutionError("projection source/presentation binding differs")
+        raise CadExecutionError("projection source/presentation binding differs")
     rows = readback.get("objects", [])
     if sorted(str(row.get("object_id")) for row in rows) != [row["object_id"] for row in plan["objects"]]:
-        raise cad.CadExecutionError("projection object identity coverage differs")
+        raise CadExecutionError("projection object identity coverage differs")
     for expected, actual in zip(plan["objects"], sorted(rows, key=lambda row: row["object_id"])):
         if (actual.get("object_digest") != expected["object_digest"] or
                 actual.get("user_text") != expected["semantics"]["user_text"] or
                 actual.get("layer") != expected["semantics"]["layer"] or
                 actual.get("visible") != expected["semantics"].get("visible", True)):
-            raise cad.CadExecutionError("projection saved object semantics differ")
+            raise CadExecutionError("projection saved object semantics differ")
         vertices = actual.get("vertices", [])
         expected_vertices = expected["vertices"]
         tolerance = plan["readback_tolerance"]
         if len(vertices) != len(expected_vertices) or any(not _near(a, b, tolerance) for a, b in zip(vertices, expected_vertices)):
-            raise cad.CadExecutionError("projection saved geometry differs; reconcile in MonkeyHub")
+            raise CadExecutionError("projection saved geometry differs; reconcile in MonkeyHub")
         indices = {i: i for i in range(len(vertices))}
         if _face_loops(actual.get("faces"), indices) != _face_loops(expected["faces"], indices):
-            raise cad.CadExecutionError("projection saved topology differs")
+            raise CadExecutionError("projection saved topology differs")
         native = actual.get("material") or {}
         if native.get("name") != expected["material"]["name"] or not _near(native.get("color", []), expected["material"]["color"], 1e-6):
-            raise cad.CadExecutionError("projection material differs")
+            raise CadExecutionError("projection material differs")
     if not readback.get("presentation_verified") or not readback.get("blender_version"):
-        raise cad.CadExecutionError("saved camera/light/render settings differ")
+        raise CadExecutionError("saved camera/light/render settings differ")
 
 
 def _readback(output):
     rows = [line[len(READBACK_PREFIX):] for line in output.stdout.splitlines() if line.startswith(READBACK_PREFIX)]
     if len(rows) != 1:
-        raise cad.CadExecutionError("Blender must return exactly one cold-read result")
+        raise CadExecutionError("Blender must return exactly one cold-read result")
     return json.loads(rows[0])
 
 
@@ -138,7 +142,7 @@ Input refusals raise before Blender starts. External execution failures return
 an explicit failed receipt, preserving logs and never claiming partial artifacts.
 """
     presentation = presentation or BlenderPresentation()
-    cad._positive_finite(timeout_seconds, "timeout_seconds")
+    _positive_finite(timeout_seconds, "timeout_seconds")
     plan = _plan(request, source, presentation)
     workspace = request.speculative_workspace
     stem = request.artifact_stem + ".projection"
@@ -146,9 +150,9 @@ an explicit failed receipt, preserving logs and never claiming partial artifacts
              (("plan", ".json"), ("scene", ".blend"), ("render", ".png"),
               ("build_log", ".build.log"), ("inspect_log", ".inspect.log"), ("render_log", ".render.log"))}
     for path in paths.values():
-        cad._strict_child(workspace, path, require_exists=False)
+        _strict_child(workspace, path, require_exists=False)
         if path.exists():
-            raise cad.CadExecutionError(f"projection refuses to overwrite {path.name}")
+            raise CadExecutionError(f"projection refuses to overwrite {path.name}")
     receipt = {"schema": "BlenderProjectionReceipt@1", "request_id": stem,
                "binding": request.binding.to_dict(), "source_artifact": plan["projection"]["source_artifact"],
                "presentation": presentation.to_dict(), "status": "failed", "artifacts": [], "logs": [],
@@ -157,7 +161,7 @@ an explicit failed receipt, preserving logs and never claiming partial artifacts
     try:
         executable = resolve_blender_executable(blender_executable)
         if not executable:
-            raise cad.CadExecutionError("Blender executable unavailable")
+            raise CadExecutionError("Blender executable unavailable")
         paths["plan"].write_text(canonical_json(plan), encoding="utf-8")
         for stage, args in (("build", ("build", paths["plan"], paths["scene"])),
                             ("inspect", ("inspect", paths["scene"])),
@@ -175,17 +179,17 @@ an explicit failed receipt, preserving logs and never claiming partial artifacts
                 if log.exists():
                     receipt["logs"].append(_artifact(log, "log"))
             if stage == "build":
-                cad._strict_child(workspace, paths["scene"], require_exists=True)
-                scene_sha = cad._sha256_bytes(paths["scene"].read_bytes())
+                _strict_child(workspace, paths["scene"], require_exists=True)
+                scene_sha = _sha256_bytes(paths["scene"].read_bytes())
             else:
                 readback = _readback(output)
                 _verify_scene(plan, readback)
-                cad._require_file_digest(paths["scene"], scene_sha, "saved projection after cold read")
+                _require_file_digest(paths["scene"], scene_sha, "saved projection after cold read")
                 receipt.update(readback=readback, blender_version=readback["blender_version"])
         from PIL import Image
         with Image.open(paths["render"]) as image:
             if image.format != "PNG" or image.size != (presentation.resolution, presentation.resolution):
-                raise cad.CadExecutionError("render is not the requested PNG")
+                raise CadExecutionError("render is not the requested PNG")
             image.verify()
         _source(request, source)
         receipt.update(status="succeeded", artifacts=[_artifact(paths["scene"], "blend"), _artifact(paths["render"], "png")])
@@ -196,7 +200,7 @@ an explicit failed receipt, preserving logs and never claiming partial artifacts
 
 def _artifact(path, format):
     data = path.read_bytes()
-    return {"relative_path": path.name, "format": format, "sha256": cad._sha256_bytes(data), "size_bytes": len(data)}
+    return {"relative_path": path.name, "format": format, "sha256": _sha256_bytes(data), "size_bytes": len(data)}
 
 
 def verify_projection_artifacts(request, source, receipt):
@@ -205,20 +209,20 @@ def verify_projection_artifacts(request, source, receipt):
     if (receipt.get("schema") != "BlenderProjectionReceipt@1" or receipt.get("binding") != request.binding.to_dict()
             or receipt.get("source_artifact") != artifact.to_dict() or receipt.get("status") != "succeeded"
             or receipt.get("failures")):
-        raise cad.CadExecutionError("projection receipt crossed source binding or failed")
+        raise CadExecutionError("projection receipt crossed source binding or failed")
     settings = receipt["presentation"]
     presentation = BlenderPresentation(**{key: settings[key] for key in BlenderPresentation.__dataclass_fields__})
     if settings != presentation.to_dict():
-        raise cad.CadExecutionError("retained presentation differs")
+        raise CadExecutionError("retained presentation differs")
     _verify_scene(_plan(request, source, presentation), receipt["readback"])
     if receipt.get("blender_version") != receipt["readback"].get("blender_version"):
-        raise cad.CadExecutionError("retained Blender version differs")
+        raise CadExecutionError("retained Blender version differs")
     if sorted(a["format"] for a in receipt["artifacts"]) != ["blend", "png"]:
-        raise cad.CadExecutionError("projection artifacts missing")
+        raise CadExecutionError("projection artifacts missing")
     for row in receipt["artifacts"] + receipt["logs"]:
-        cad._portable_relative_path(row["relative_path"])
+        _portable_relative_path(row["relative_path"])
         path = request.speculative_workspace / row["relative_path"]
-        cad._strict_child(request.speculative_workspace, path, require_exists=True)
-        cad._require_file_digest(path, row["sha256"], "projection artifact")
+        _strict_child(request.speculative_workspace, path, require_exists=True)
+        _require_file_digest(path, row["sha256"], "projection artifact")
         if path.stat().st_size != row["size_bytes"]:
-            raise cad.CadExecutionError("projection artifact size differs")
+            raise CadExecutionError("projection artifact size differs")

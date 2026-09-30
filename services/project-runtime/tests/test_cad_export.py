@@ -40,11 +40,12 @@ from project_runtime.settings import (
     StudioSettings,
 )
 
-from monkeycad import cad_execution
+from monkeycad.backends.occt import export as occt_export
+from monkeycad.backends.rhino import export as rhino_export
 from monkeycad.backends.occt.kernel import occt_available
 from monkeycad.backends.occt.measure import ShapeMeasure, classify_program_point, measure_shape
 from monkeycad.backends.occt.step import StepEntry, read_step
-from monkeycad.cad_execution import CadCapabilityError
+from monkeycad.execution import CadCapabilityError
 from monkeycad.formats.three_dm_inspector import inspect_three_dm
 from archflow.state.geometry_program import load_compiled_geometry_program
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -81,7 +82,7 @@ def no_rhino():
     """Fail the test if anything reaches the Rhino entry points or starts a process."""
 
     return mock.patch.multiple(
-        "monkeycad.cad_execution",
+        "monkeycad.backends.rhino.export",
         prepare_rhino_three_dm_export=_refuse_rhino,
         execute_rhino_three_dm_export=_refuse_rhino,
     )
@@ -95,7 +96,7 @@ def no_cad_at_all():
     """Fail the test if a read path runs any CAD executor."""
 
     return mock.patch(
-        "monkeycad.cad_execution.execute_occt_export",
+        "monkeycad.backends.occt.export.execute_occt_export",
         side_effect=AssertionError("reading retained artifacts must not run CAD"),
     )
 
@@ -656,7 +657,7 @@ class UnsupportedOperationTests(OcctCandidateTestCase):
             "OCCT executor cannot realize portico-colonnade (array): block instancing is not realized",
             op_id="portico-colonnade", kind="array",
         )
-        with no_process(), mock.patch.object(cad_execution, "execute_occt_export", side_effect=refusal):
+        with no_process(), mock.patch.object(occt_export, "execute_occt_export", side_effect=refusal):
             accepted, job = self.run_candidate(self.client, "set height to 2.2", elementId="portico-base")
         # The run finished and retained its receipt; the export is what failed.
         self.assertEqual(job["status"], "succeeded", job)
@@ -1269,7 +1270,7 @@ class WholeAssemblyCandidateTests(OcctCandidateTestCase):
 # The real plan builder, kept from before ``no_rhino`` replaces it: an
 # ordinary candidate must never reach Rhino, and an explicitly requested work
 # model is the one caller that legitimately prepares a host export.
-_PREPARE_WORK_MODEL = cad_execution.prepare_rhino_three_dm_export
+_PREPARE_WORK_MODEL = rhino_export.prepare_rhino_three_dm_export
 
 
 class _CapturedHost:
@@ -1326,9 +1327,9 @@ class RhinoWorkModelExportTests(OcctCandidateTestCase):
         self.assertEqual(exact["format"], "step")
 
         client, host = self.open_host_client()
-        with mock.patch.object(cad_execution, "prepare_rhino_three_dm_export", _PREPARE_WORK_MODEL), \
-             mock.patch.object(cad_execution, "execute_rhino_three_dm_export", host), \
-             mock.patch.object(cad_execution, "discover_rhino_executables", return_value=(Path("Rhino.exe"),)):
+        with mock.patch.object(rhino_export, "prepare_rhino_three_dm_export", _PREPARE_WORK_MODEL), \
+             mock.patch.object(rhino_export, "execute_rhino_three_dm_export", host), \
+             mock.patch.object(rhino_export, "discover_rhino_executables", return_value=(Path("Rhino.exe"),)):
             response = client.post(
                 f"/api/artifacts/{exact['sha256']}/rhino-export", json={"runId": run_id},
             )
@@ -1380,8 +1381,8 @@ class RhinoWorkModelExportTests(OcctCandidateTestCase):
         _, preview = self.split(rows)
 
         client, host = self.open_host_client()
-        with mock.patch.object(cad_execution, "execute_rhino_three_dm_export", host), \
-             mock.patch.object(cad_execution, "discover_rhino_executables", return_value=(Path("Rhino.exe"),)):
+        with mock.patch.object(rhino_export, "execute_rhino_three_dm_export", host), \
+             mock.patch.object(rhino_export, "discover_rhino_executables", return_value=(Path("Rhino.exe"),)):
             response = client.post(
                 f"/api/artifacts/{preview['sha256']}/rhino-export", json={"runId": run_id},
             )

@@ -218,7 +218,7 @@ class IntegrationPackManager:
 
     def backend(self, pack_id):
         """Resolve the existing registry entry; never copy or replace a backend."""
-        from .cad_backend import get_cad_backend
+        from .registry import get_cad_backend
         pack = self._pack(pack_id)
         if pack.cad_backend is None:
             raise IntegrationUnavailable("unsupported", "This pack has no compiled CAD backend")

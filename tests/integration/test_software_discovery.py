@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from monkeycad import cad_execution
+from monkeycad.backends.rhino import export as rhino_export
 from monkeycad import discovery
 
 
@@ -126,16 +126,16 @@ class SoftwareDiscoveryTests(unittest.TestCase):
     def test_rhino_wrapper_keeps_newest_version_preference(self):
         expected = tuple(self.file(f"Rhino {version}/System/Rhino.exe") for version in (9, 8, 7, 6))
         registry = self.registry()
-        with patch.object(cad_execution, "SoftwareDiscoveryRegistry", return_value=registry):
-            self.assertEqual(cad_execution.discover_rhino_executables(), expected)
+        with patch.object(rhino_export, "SoftwareDiscoveryRegistry", return_value=registry):
+            self.assertEqual(rhino_export.discover_rhino_executables(), expected)
 
     def test_rhino_wrapper_reports_only_the_windows_com_host(self):
         # A Rhino for Mac bundle is software evidence, not the supervised COM host.
         self.file("Rhino 8.app/Contents/MacOS/Rhinoceros")
         mac = self.registry(system="Darwin", application_roots=(self.root,))
         self.assertEqual(len(mac.discover("rhino").installations), 1)
-        with patch.object(cad_execution, "SoftwareDiscoveryRegistry", return_value=mac):
-            self.assertEqual(cad_execution.discover_rhino_executables(), ())
+        with patch.object(rhino_export, "SoftwareDiscoveryRegistry", return_value=mac):
+            self.assertEqual(rhino_export.discover_rhino_executables(), ())
 
     def test_blender_path_precedes_standard_installs_then_newest_version(self):
         command = self.file("commands/blender.exe")

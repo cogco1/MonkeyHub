@@ -42,7 +42,7 @@ from archflow.project.version_refs import (
     structural_child,
 )
 from archflow.project.refs import BranchRef, ProjectRecordRef, ProjectVersionRef, RunRef
-from monkeycad.cad_execution import RhinoCadProgramBinding
+from monkeycad.execution import RhinoCadProgramBinding
 from monkeycad.formats.three_dm_inspector import ThreeDmInspection
 from archflow.state.spatial import (
     SchematicOption,
