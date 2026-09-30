@@ -46,7 +46,8 @@
         "docs/architecture/repository-layout.md",
         "docs/design/drawing-standard.md",
         "docs/design/design-history.md",
-        "docs/audits/drawing-v0.md"
+        "docs/audits/drawing-v0.md",
+        "packages/monkeycad/src/monkeycad/README.md"
       ],
       "depends_on": []
     }
