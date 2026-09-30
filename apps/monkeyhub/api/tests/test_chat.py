@@ -28,7 +28,10 @@ from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyhub_api import projects
-from monkeyhub_api.chat import activity, guides, judgments, mcp_server, preparation, providers, skill_plugins, store as chat, studio_tool, tool_calls, transport, turn_context, visual_review
+from monkeyhub_api.chat import (
+    activity, guides, judgments, mcp_server, preparation, providers, skill_plugins, store as chat, studio_tool,
+    tool_calls, transport, turn_context, visual_review,
+)
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import (
     AppStatus, ChatCreateRequest, ChatDesignContext, ChatMessage, ChatPostRequest, HubFailure,

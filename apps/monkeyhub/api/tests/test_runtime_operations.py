@@ -518,7 +518,7 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertEqual(refusal.exception.error.code, "OPERATION_NOT_ACKNOWLEDGEABLE")
 
     def test_dismiss_route_is_bound_to_its_runtime_and_project(self):
-        from monkeyhub_api.chat.store import _project
+        from monkeyhub_api.projects import _project
         from monkeyhub_api.main import HubSettings, create_app as create_hub
         hub = create_hub(HubSettings(runtime_root=self.root / "hub-app-runtime"))
         client = TestClient(hub, base_url="http://127.0.0.1:8790")  # Without its lifespan, nothing is started.
