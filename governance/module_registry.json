@@ -7870,7 +7870,7 @@
         "tools.verify_state_record",
         "studio.intent",
         "labs/spatial_observation/fixture.py",
-        "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs"
+        "apps/monkeyhub/web/test/drawingCanvas.browser.mjs"
       ],
       "invariants": [
         "A root already on sys.path keeps its place; a missing one goes before everything else, so neither an installed copy nor another checkout answers in its name",
