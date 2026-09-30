@@ -5,7 +5,7 @@ instructions.
 
 ## Long-term direction
 
-`docs/VISION.md` defines the direction: remove work imposed by tools so architects
+`docs/product/vision.md` defines the direction: remove work imposed by tools so architects
 can develop, inspect and revise ideas more directly with AI. Start from a real
 user action and identify what they should no longer have to explain, transfer or
 repair. Direct modeling can itself be design thinking; do not count every human
@@ -33,7 +33,7 @@ units and reference normalization; ask people about genuine design choices, not 
 ids or schemas. An unsupported tool operation is a system limitation, not missing user
 information. Keep precise values and diagnostics available on demand. Preserve exact-base
 binding, stated keep conditions, recovery and independent formal issue. The target loop and
-its currently implemented limits are described in `docs/ARCHITECTURE.md`.
+its currently implemented limits are described in `docs/architecture/overview.md`.
 
 ## Framework versus project data
 
@@ -43,7 +43,7 @@ its currently implemented limits are described in `docs/ARCHITECTURE.md`.
   `packages/monkeymonitor/` owns independent engineering usage, pricing and budget advice;
   its explicitly configured diagnostic logs are not project state. MonkeyHub
   composes the project workspaces. Core code imports neither workflow, and the
-  workflows do not import one another; see `docs/REPO_LAYOUT.md`.
+  workflows do not import one another; see `docs/architecture/repository-layout.md`.
 - `probes/<project_id>/` contains explicitly promoted, committed building
   inputs and framework-produced evidence used for regression or publication.
 - Active, unpromoted projects may use an explicitly configured external
@@ -106,7 +106,7 @@ writing it and ask the repository owner to decide its ownership.
   each capability's owning module and public contract; an owner is not a person or a
   single-file limit. Module `canonical` denotes established ownership, not a released
   application or issued project. A GitHub Issue is the only current task identity
-  (`CONTRIBUTING.md`); durable design decisions belong in `docs/ARCHITECTURE.md` or an
+  (`CONTRIBUTING.md`); durable design decisions belong in `docs/architecture/overview.md` or an
   ADR. `governance/work_registry.json` holds only live source-edit claims, `GH-<issue>`
   or `GH-<issue>/<lane>`, and their scopes. `governance/architecture_policy.json` holds
   the checks enforced by archcheck. Generated maps are views of these sources, not
@@ -123,12 +123,12 @@ writing it and ask the repository owner to decide its ownership.
   state, compilation or project persistence only when the behavior needs that contract.
   Registered ownership and reserved protocols do not implement automatic plugin loading
   or grant execution or project-write authority. The concrete integration path is in
-  `docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md`.
+  `docs/development/work-environment.md`.
 
 ## Before implementing anything
 
 MonkeyHub is the single application entry; MonkeyArch is its modeling workspace. Startup and agent access belong to the same Hub flow.
-For a first session, follow section 0 of [the Hub entry guide](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口).
+For a first session, follow section 0 of [the Hub entry guide](docs/development/work-environment.md#0-monkeyhub-统一入口).
 Reuse its source/project locations and bounded lookup sequence; do not load every linked document or search the whole tree to orient yourself.
 
 For a new source worktree, use `python tools/workspace.py create --branch codex/<task>`.
@@ -138,9 +138,9 @@ only for first setup or an explicit root change. Reuse the assigned checkout for
 work. Do not invent dated directories at drive roots for worktrees or package staging.
 The CLI preserves existing worktrees and design projects; project writes still use P036.
 
-The repository has one production spine (`docs/ARCHITECTURE.md`) and a module contract
-registry (`governance/module_registry.json`, rendered as `docs/SYSTEM_MAP.md`). Every
-capability has exactly one owner there. `docs/CANONICAL_SPINE.md` records the earlier
+The repository has one production spine (`docs/architecture/overview.md`) and a module contract
+registry (`governance/module_registry.json`, rendered as `docs/architecture/system-map.md`). Every
+capability has exactly one owner there. `docs/decisions/001-one-spine.md` records the earlier
 consolidation decision, not a migration to rerun. Before writing code:
 
 1. Find the owner with `python tools/devctl.py module <id-or-keywords>` (for example,
@@ -149,7 +149,7 @@ consolidation decision, not a migration to rerun. Before writing code:
 2. Read what that module `owns`, `does_not_own`, and its contract (`inputs`, `outputs`,
    `public_api`, `invariants`). Output is paged: follow any omitted-entry notice with
    `--section <name> --offset <n>`; use `--json` for structured output. Read the matching
-   `docs/SYSTEM_MAP.md` entry only when additional map context is needed.
+   `docs/architecture/system-map.md` entry only when additional map context is needed.
 3. Check that owner's public API and real callers for an existing implementation.
 4. Decide EXTEND (default), REFACTOR, or CREATE. CREATE needs a written reason why no owner
    fits; a second implementation of an owned capability is allowed only behind an interface
@@ -169,7 +169,7 @@ the spine.
   `python tools/archcheck.py`. The full regression is CI's job.
 - The master session reviews key behaviour. It spot-checks real projects locally only
   for performance-sensitive changes; the synthetic check that runs in CI is described
-  in `docs/testing/projection-check.md`.
+  in `docs/development/projection-check.md`.
 - A PR the owner has approved for merge gets GitHub auto-merge. When several PRs are
   ready, one integration PR (merge the reviewed branches, one CI run) beats serial
   merges under the up-to-date rule.
@@ -177,7 +177,7 @@ the spine.
   benchmarks while other heavy work runs on it.
 - `.github/workflows/nightly.yml` promotes a verified main to a prerelease every night;
   label a PR `release` to ship it right after merge
-  ([nightly release](docs/testing/nightly-release.md)).
+  ([nightly release](docs/development/nightly-release.md)).
 
 ## Extend behavior, remove superseded paths
 
@@ -197,7 +197,7 @@ production each has exactly one lifecycle owner, and for every Monkey applicatio
 owner is MonkeyHub. Do not add a second launcher, configuration file, tray icon or
 shortcut for a service the Hub already starts, monitors and stops.
 
-MonkeyHub is the application. The Project Runtime (`docs/PROJECT_RUNTIME.md`, module
+MonkeyHub is the application. The Project Runtime (`docs/architecture/project-runtime.md`, module
 `studio.shell`) is the project-scoped backend it starts per open project; Board, Arch and
 Diagram are workspace modules. Product behaviour — navigation, settings authority, chat,
 lifecycle — goes to `hub.shell`; project-scoped computation and record access go to the

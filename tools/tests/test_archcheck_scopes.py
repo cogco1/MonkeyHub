@@ -74,7 +74,7 @@ GH_SHARED = (
     "governance/module_registry.json",
     "governance/work_registry.json",
     "tests/",
-    "docs/SYSTEM_MAP.md",
+    "docs/architecture/system-map.md",
 )
 GH_POLICY = {"shared_write_scope": list(GH_SHARED)}
 
@@ -223,7 +223,7 @@ class ScopeOverlapTests(unittest.TestCase):
     def test_two_live_claims_on_the_same_directory_are_refused(self) -> None:
         findings = self.findings(
             _claim("GH-201", "active", "archflow/state/", "tests/"),
-            _claim("GH-202", "review", "archflow/state/", "docs/SYSTEM_MAP.md"),
+            _claim("GH-202", "review", "archflow/state/", "docs/architecture/system-map.md"),
         )
         self.assertEqual(1, len(findings), findings)
         finding = findings[0]

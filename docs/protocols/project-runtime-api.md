@@ -1,0 +1,1917 @@
+# The open ArchFlow protocol, version 2 (draft)
+
+**Status:** draft, written from the code on 2026-09-04. The one description of the wire is the
+FastAPI application (`services/project-runtime`); this document says what of it a client may
+rely on, and what version 2 has reserved but not yet built.
+
+ArchFlow is the methodology and this protocol. **MonkeyArch** is one implementation of it: the
+server `monkeyarch-api` and the client in `apps/monkeyhub/web`; a conforming server need
+be neither. Application DTO fields use `camelCase`, `serverVersion` included.
+The project-transfer envelope retains P036's existing `snake_case` fields and reference values.
+
+---
+
+## 1. The handshake
+
+A client asks one thing before anything else:
+
+```http
+GET /api/protocol
+```
+
+```json
+{
+  "protocol": "archflow/2",
+  "server": "monkeyarch-api",
+  "serverVersion": "0.1.0",
+  "mode": "local",
+  "capabilities": ["artifacts", "cad-export", "candidates", "captures", "compare", "events", "gestures",
+                   "intents", "pick", "program", "projection", "proposals", "validation"]
+}
+```
+
+`protocol` is `archflow/<major>`. `server` and `serverVersion` name the implementation, never the
+protocol. `mode` is `local` or `remote` (§10.1). `capabilities` are the feature names this process
+actually serves now, sorted; `cad-export` appears when geometry export is enabled, and
+`rhino-export` only when the configured export backend is explicitly Rhino.
+`/api/health`, `/api/protocol` and `/api/projects` are not capabilities — a conforming server
+always has them. The route opens no project, so a client can tell "this is not a server I speak
+to" from "this server cannot find its project": different problems, different people.
+
+---
+
+## 2. Identity
+
+Two identities and never three (ADR-003):
+
+| name | identifies | answer to |
+| --- | --- | --- |
+| `recordDigest` | the selected record's **content**, invariant under binding | "is this the same record?" |
+| `stateDigest` | that record **bound to a run and a base** | "is this the state I was given?" — a mismatch is `409 STALE_BASE` |
+| `head.stateSha256` | the project's published canonical version | "has the project moved?" |
+
+`head.stateSha256` is not a third identity of the design; it identifies the published container,
+not the record.
+
+A record is named by a URI of the form `project://<projectId>/<relative/path>.json`, and the
+digest in that file name is its identity. A content-addressed record therefore **cannot carry
+its own reference** (ADR-005): a client takes a record's URI from whatever pointed at it, never
+from a field inside it. A run is a directory, not a record; it is named the same way
+(`project://<projectId>/runs/<runId>`) and has no digest.
+
+Digests are never abbreviated on the wire; a client that shortens one for display sends back the
+full value it was given.
+
+---
+
+## 3. The four container states
+
+ISO 19650 calls a set of information a container and gives it a state. ADR-007 fixed each state
+on one place, and every resource below reads or writes exactly one of them.
+
+| state | what it holds | who writes it | how the protocol exposes it |
+| --- | --- | --- | --- |
+| **work in progress** | the authored State Record and the seat pack — loose files, nothing retained | the designer | read-only, through the projection (`GET /api/state`) |
+| **shared** | one run: the exact record used, the developed state, programs, relation checks, receipts, exported artifacts | the runner | listed, read, and **written** by running a candidate |
+| **published** | the one compare-and-swap position; moving a run there is an **issue** (出图) | `prepare_transition` + `compare_and_swap`, from a `PromotionDecision@1` | read-only: `head` on the binding |
+| **archived** | every canonical snapshot the published position has left behind | nobody deletes; the chain is the archive | not exposed in v2 (§10.5) |
+
+A shared run does not by itself establish acceptance. An explicit design Stage can
+reference its complete result as the current working design on one design branch (§5.4).
+The published container remains the formally issued position. Version 2 has no route
+that issues a project or writes canonical `HEAD`.
+
+---
+
+## 4. Resources
+
+`v2` says whether a client may rely on the shape: **stable** does not change within major 2 (a
+minor version may add fields); **provisional** may change within major 2 and a client should
+tolerate it.
+
+| method | path | returns | container | v2 |
+| --- | --- | --- | --- | --- |
+| GET | `/api/health` | `{status, service, projectBound}` — is the process up, does its binding open | none | stable |
+| GET | `/api/protocol` | server identity and capabilities (§1) | none | stable |
+| GET | `/api/projects` | the projects this server binds: `projectId`, `name`, `isDefault`. Path-free | none | stable |
+| GET | `/api/projects/{projectId}` | that project's binding: `head`, `referenceRun`, `intentProvider` | reads published + shared | stable |
+| GET | `/api/project` | the same, for the default project (§10.2) | reads published + shared | stable |
+| GET | `/api/state?run=` | the projection: component tree, `Element@1` rows and their numeric fields, parameters and their locks, dependency edges, `stateDigest`, `recordDigest`, `honesty[]` | reads work in progress + shared + published | stable |
+| GET | `/api/artifacts` | one row per certified file, with `format`, `representation`, `available` / `unavailableReason`; an OCCT STEP (`step` / `exact`) and mesh preview (`3dm` / `preview`) share one producing `receiptRef`. An editable work model is an additional `3dm` / `exact` row naming the STEP it was imported from in `sourceStepSha256` | reads shared | stable |
+| GET | `/api/index/{table}` | read-only rows of the project index (ADR-008): `table` is `run`, `record`, `artifact`, `document`, `candidate` or `stage`; the query names exact column values in camelCase (`runId`, `sha256`, `kind`, `assetSha256`, `branchId`, `candidateId`, `stageRef`, ...) and `limit` (default 1000). Answers `{projectId, epoch, revision, table, rows, truncated}` from one snapshot; each row carries its `rev` and names the P036 record it was read from — the rows are never evidence, the record is. 503 `INDEX_UNAVAILABLE` while the index is loading, behind this process's own last write, or when the process keeps none; 404 `INDEX_TABLE_NOT_FOUND`; 422 `INDEX_FILTER_INVALID` | reads a derived index | provisional |
+| GET | `/api/artifacts/{sha256}/bytes` | the certified bytes, re-hashed before they are served; `ETag`, RFC 6266 `Content-Disposition`, `Cache-Control: no-store` | reads shared | stable |
+| POST | `/api/model-assets` → 201 | original 3DM bytes (`projectId`, `fileName`, `contentBase64`, maximum 128 MiB). Both `runId` and `stateDigest` bind a composed model; omitting both retains an external source by exact byte digest. External rows have `representation=external` and null `modelSource`, design state and Stage; they are viewable original files, not semantic edit bases. Retries reuse exact registered bytes and preserve earlier revisions. No HEAD change | **writes shared source** | provisional |
+| GET | `/api/model-assets/{asset_sha256}/index` | exact `runId` + `stateDigest`; GUID-sorted native object metadata, units and source binding. `offset` / `limit` (default 50, maximum 200), optional repeated `objectId` GUIDs (maximum 200). Returns `objectCount`, `matchedCount`, `nextOffset`; unknown GUIDs fail with 404, mismatched source with 409. Names, layers and raw user strings are not inferred architectural roles. No geometry validation, scope admission or edit | reads shared | provisional |
+| POST | `/api/artifacts/{sha256}/rhino-export` → 201 | that run's exact STEP imported into this machine's Rhino and kept as an editable `*.work.3dm`; body carries `runId`, because the same bytes can be exported by more than one run. Ordinary and blocking, one export at a time; the answer is the work model's own artifact row, carrying `sourceStepSha256`. Asking again for the same source answers with the model already made. Without a local Rhino or shell: 409 `RHINO_HOST_UNAVAILABLE` | **writes shared workspace** | stable |
+| POST | `/api/captures` → 201 | a viewport PNG (maximum 32 MiB) retained under the named existing run's `workspaces/studio-captures/`; body carries `runId` and `pngBase64`, response carries its project-relative path and digest. Optional exact `modelSource` also registers a preview in the existing source-document store and adds `document` to the response; source run must equal `runId` | **writes shared workspace + optional source document** | stable |
+| GET | `/api/model-assets/{asset_sha256}/preview` | required `runId` + `stateDigest`; verifies the exact retained model and returns its registered viewport `SourceDocument`, or `null` when none exists. Image bytes use the existing documents route and SHA-256 verification. Ordinary uploaded images are never selected | reads shared | provisional |
+| POST | `/api/pick/resolve` | what the object a user clicked actually is (§6) | reads work in progress + shared | stable |
+| POST | `/api/proposals` → 201 | a typed, exact-base `DecisionOperator` with its closure and impact. Never applied | reads work in progress + shared | stable |
+| GET | `/api/proposals/{proposalId}` | that proposal, as it was returned | server memory | stable |
+| POST | `/api/proposals/{proposalId}/candidate` → 202 | a job id and the run id the candidate will make | **writes shared** | stable |
+| GET | `/api/jobs/{jobId}` | that job as the server last saw it, failures included | server memory | stable |
+| GET | `/api/candidates/{candidateId}` | the finished candidate, read back out of the records its run retained | reads shared | stable |
+| POST | `/api/candidates/combine` → 202 | a new candidate from independent saved component changes sharing one Stage (§5.4) | writes shared | provisional |
+| GET | `/api/design-history?branchId=main` | design branch pointers, their reachable committed Stages, and the project's admitted `candidates[]` and `studies[]` with `warnings[]` (§5.5); `include=rejected` also lists retained rejections | reads shared + design refs + the admissions review | provisional |
+| POST | `/api/candidate-reviews` → 201 | reject, archive/restore or endorse one exact Candidate, or endorse one exact Stage; actor, UTC time and an optional reason are retained | **writes the `studio-candidate-reviews` review**; moves no Working Head, Stage or formal HEAD | provisional |
+| POST | `/api/design-stages/initialize` → 201 | explicit initial Stage from a complete exact model | writes review + design ref | provisional |
+| POST | `/api/candidates/{candidateId}/accept` | immutable Stage and atomic advancement of its expected design branch head; a run with a live rejection is refused (§5.5) | writes review + design ref | provisional |
+| POST | `/api/admissions` → 201 | one closed loop's `CandidateAdmission@1` through the completion gate Stage acceptance shares (§5.5); an identical retry answers 200 with the record it repeats | **writes the `studio-admissions` review** | provisional |
+| GET | `/api/admissions?include=rejected` | every live admission record, admitted results only unless `include=rejected`, with `warnings[]` (§5.5) | reads the admissions review | provisional |
+| POST | `/api/design-branches` → 201 | a sustained branch forked from a reachable historical Stage | writes design ref | provisional |
+| GET | `/api/working-source?workspace=` | the Working Head (§4.1) and the exact source one workspace (`modeling`, `drawing`, `render`, `board`) follows: `head{runId, stateDigest, sourceStageRef, branchId, accepted, origin, lineage}`, `compatible`, `source`, `stageRef` (only for an exact accepted Stage model), `reason`, `warnings`. `policy=frozen` with `runId`/`stateDigest`/`assetSha256` keeps that pin and says whether the head moved past it | reads the working position + shared + design refs | provisional |
+| GET | `/api/working-draft/revision` | `{projectId, revisionSha256}` of the working position alone, for polling whether the head may have moved; no local draft and no project guard | reads the working position | provisional |
+| PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words | **writes the working position + that run's review** | provisional |
+| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged or started | reads the working position + shared + design refs + the admissions review + server memory | provisional |
+| POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
+| POST | `/api/drawings/section-perspectives` → 201 | exact-model section perspective document: `section` (`{line, keep}` or `{origin, normal}`) cuts the retained STEP, the kept side is drawn in perspective with the section plane as picture plane (true to scale at `scaleDenominator`), the cut in poché; optional `camera` (`{eye, target, up?, fovDeg?}` or the default one-point `{eyeHeight?, fovDeg?}`), `depth`, `hiddenObjectIds`; `cutLineMm`, `visibleLineMm`, `hatchSpacingMm` and, validated and stored as a cut plan's, `hatch.byMaterial.<material>` (`{spacingMm 0.5–20, angleDeg 0–<180, poche}`, stored complete: spacing defaults to this request's `hatchSpacingMm`, angle 45, poché false) and `beyond.fade` (0–1), so the cut takes the material hatch/poché and the fade greys what lies beyond it; an empty `byMaterial` or a zero fade is the request without them; the view recipe records the request, plane and resolved camera; refusals are named (`SECTION_PLANE_MISSES_MODEL`, `SECTION_EYE_ON_KEPT_SIDE`, …) | writes shared drawing artifacts and document registration | provisional |
+| GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
+| POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
+| POST | `/api/intents/context` | `ContextPack@1` against an exact source, with optional scalar, multiple-object, component or whole-project focus, dependency facts and bounded design-context supplements | reads work in progress + shared + published | provisional |
+| POST | `/api/visual-reviews` | one bounded look at exact sources rendered by their existing owners: `delivery: observation` (Runtime default) returns configured-provider findings/usage; `delivery: frames` returns source-bound PNGs for the caller's model, with no findings or additional provider; both return the next `budgetState`. Requests accept no pixels | reads shared; only observation delivery calls the configured provider | provisional |
+| POST | `/api/proposals/{proposalId}/decision` → 201 | an explicit judgement: accepted with its successful `candidateId`, rejected, or modified into a linked replacement (§5.2) | accepted is **written into its named run**; other decisions stay in memory until a candidate run against the same state | provisional |
+| GET | `/api/episodes?stateDigest=` | the judgements this process holds, each saying whether it lives in a run or only in memory (§5.2) | server memory + reads shared | provisional |
+| GET | `/api/episodes/{episodeId}` | one of them | server memory + reads shared | provisional |
+| GET | `/api/candidates/{candidateId}/compare?against=` | before / after / why, from the inspection records both runs retained | reads shared | provisional |
+| GET | `/api/events` | the server-sent event stream (§7) | server memory | provisional |
+| GET | `/api/state/frame` | the record's frame: each `Level@1` and `GridAxis@1` with its role, its value, the elements whose own references name it, and the closure of changing it; `honesty[]` | reads work in progress + shared + published | provisional |
+| POST | `/api/state/closure` | what changing `changedRefs` would move, and the propagating edges that carried it. Reads only; the POST carries the list and the `stateDigest` it is asked against | reads work in progress + shared + published | provisional |
+| GET | `/api/state/volumes` | the record's `Volume@1` boxes with their levels and their own plan area, and what the massing as a whole measures (§5.3) | reads work in progress + shared + published | provisional |
+| POST | `/api/options` → 201 | one massing option: a deterministic transform of the record's own pack, measured, with the findings of the envelope the request carried (§5.3) | server memory, pack **written into shared** as its own `option-NNN` run | provisional |
+| GET | `/api/options?run=` | the selected record's massing as the baseline and every option this process holds beside it, measured the same way; each option keeps its own source | server memory + reads shared | provisional |
+| POST | `/api/options/{optionId}/select` → 202 | run that option as a candidate, through the same candidate path a proposal takes; answers a job id, never a run | writes a **detached run** | provisional |
+
+| GET | `/api/program?run=` | the program sheet: departments, spaces with target area / count / clear height / function, adjacency requirements, `totals`, `honesty[]`. `source` is `input` (the architect's own `input/runner/program-sheet.json`) or `derived` (what the record's own `Space@1` zones say); an explicit run reads only that retained record's derivation | reads work in progress + shared + published | provisional |
+| POST | `/api/program` → 202 | apply a sheet to the record **as a candidate**: a job id, the run id it will make, and the server's own `totals`. The authored record is never rewritten. `saveInput: true` also writes the architect's own sheet file — local mode only (§10.1) | **writes shared**; with `saveInput`, **writes work in progress** | provisional |
+| GET | `/api/semantics` | every registered `role.*` and `condition.*` with its meaning and aliases: the vocabulary canonical state may name (ADR-006). Opens no project | none | provisional |
+
+The local account's preferences are not a Project Runtime resource: MonkeyHub serves them
+(["Local user settings"](#local-user-settings)).
+
+`/api/intents` is provisional because who
+signs an agent's compilation receipt is still moving; `/api/intents/context` because everything it
+composes is provisional itself and how much context it answers with is not bounded (below); the three deliberation resources because a
+judgement not yet met by a run is still one process's memory; `/api/compare` because its `why` comes from one
+process's memory of a proposal; `/api/events` because its event types are not a closed set and
+authenticated streams have no answer yet (§7); `/api/state/frame` and `/api/state/closure` because
+levels and axes are not yet editable — the grammar has no sentence for them — so what an
+architect can do with the frame is still moving; the four massing resources because an
+option's metrics are held in the server's memory — there is no retained record kind whose payload
+is a set of measurements, so only the option's pack survives a restart, in its own run; the program resources because who owns an
+authored sheet on a shared server has no answer yet.
+
+**Selected sources for program and massing.** `GET /api/program?run=<runId>` and
+`GET /api/options?run=<runId>` read that run's retained record. Both POST requests accept
+optional `sourceRunId` alongside the selected projection's `stateDigest`. Responses echo
+the source on the program view, options table and individual options. Omitting the source
+preserves the existing default-binding behavior. Selecting an option uses its creation
+source for both preflight and execution, even after the client views another run.
+Missing or inexact explicit runs are errors, not a fallback to authored WIP. These are
+optional API inputs; a client must pass the selected source to use this continuation.
+
+**Prepared task context.** `POST /api/intents/context` reads a `ContextPack@1` from the existing
+StateRecord and declared dependency graph. It carries the complete `utterance`, `projectId` and
+`stateDigest`, with `sourceRunId` or an explicit `sourceStageRef` for retained work. Omitting both
+source selectors is valid only for authored initial state; a retained design refuses
+`409 SOURCE_RUN_REQUIRED` rather than choosing a recent candidate. A completely unprepared empty
+project first uses the existing `/api/project/modeling` action to obtain an actionable digest.
+
+Focus is optional: `elementId`, up to 64 distinct `elementIds`, or `targetComponentId` and its
+descendants. No focus means a design-wide request, not permission to pick the first object.
+An element alone supplies its own component; an explicitly supplied component must agree.
+Project, actionable source, digest and focus checks retain `PROJECT_MISMATCH`, `STALE_BASE`,
+`TARGET_UNKNOWN`, `ELEMENT_UNKNOWN` and `ELEMENT_COMPONENT_MISMATCH` refusals. If both element
+fields are given, `elementIds` must contain only `elementId`.
+
+The scalar path retains its existing capability template, preflight and numeric context. Design
+context reads relevant dependency closure, upstream geometry, explicit locks and conditions;
+it does not infer stage restrictions. `focusElementIds` describes focus, and `readOnlyRefs`
+distinguishes surrounding read evidence for a local task. Neither grants or revokes edit authority.
+
+`confirmedStage` is a derived view of the selected source's committed DesignStage, or null.
+It names its exact `stageRef`, `runId`, `stateDigest`, branch and label. `isSource` is true only
+when the selected state is that accepted result; a candidate's inherited Stage does not qualify.
+The summary lists the accepted Stage's locked parameter keys and retained condition references.
+`changes` compares accepted/current records and lists changed references, declared downstream
+effects, review items and unresolved condition impacts. These are review prompts, not validation
+results. Lists are limited to 64 with `omittedCounts`; exact-source ContextPack supplements remain
+the way to read missing facts. Parameter locks do not freeze whole geometry, and undeclared or
+missing non-adjacent Stage dependencies are not resolved. This view writes no project record.
+This read creates no proposal, candidate, model call, stored summary or second project state.
+
+Design detail rows have a 32 KiB budget, with conditions prioritized. This is a detail budget,
+not a total response/token limit. `coverage` reports omitted groups and condition counts;
+incomplete coverage cannot establish that all constraints are satisfied. The source reference
+index contains up to 64 entries per page. Repeat the exact source, utterance and focus with
+`contextOffset=index.nextOffset` to page it, or up to 16 distinct `contextRefs` to prioritize
+additional facts without expanding focus. An individual fact over budget remains explicitly
+omitted. Existing internal Studio intent compilation is unchanged.
+
+`studyEvidence` optionally names up to three distinct `{studyId, ledgerRef}` pairs, using the
+existing Study revision reference contract. Each is read from this bound project at that exact
+revision; a different project, Study or unavailable ledger is refused, never replaced by its
+latest revision. Omitting this field reads no Study. The returned `studyEvidence` carries the
+retained DesignPrior with its pattern conditions/exceptions, declared competing hypotheses,
+supporting/counterevidence, relevant evidence gaps and source-page identity. It is separate from
+`scopedDecisions`, design conditions and `confirmedStage`: retrieval does not accept a prior or
+turn it into an executable constraint.
+
+Each Study content projection has a 12 KiB compact UTF-8 JSON budget. Identity, limitations and
+refusal metadata are outside that detail budget; this is not a billed-token or total-pack limit.
+If its complete selected content does not fit, no isolated prior statement is returned:
+`completeness.complete=false`, `reason=budget-exceeded`, `requiredBytes` and `budgetBytes` explain
+the omission. `no-design-prior` means the selected ledger contains no retained prior to project.
+Complete delivery of declared companions does not establish source sufficiency or applicability
+to the current building. Hypothesis status, unresolved preferences and `changedContext` remain
+as retained, including rejection and revision. Historical citations/summaries are not verified
+external source text. Counterfactual/comparison numerical details are explicitly omitted; use
+`GET /api/studies/{studyId}?ledgerRef=<exact-ref>` before relying on them. This exact reopen read
+is available through the existing project-bound Hub MCP tool; no Study writer is added there.
+Hub `designContext.studyEvidence` forwards the same references when preparing a fresh task.
+
+For visual observation, `GET /api/drawings/model-view` requires exact `runId`, `stateDigest` and
+`assetSha256` from a complete `ModelSource`, plus `view=front|back|left|right|top|axon` (default
+front); `axon` is the isometric view from the -X, -Y, +Z side with Z up, cropped by the same rule
+as the others: every physical object's retained bounds plus a 5% margin.
+It returns source metadata and an inline PNG (base64 `data`, `mimeType`, width/height, and
+`representation=orthographic-line-projection`), with longest dimension at most 1024 pixels.
+It reuses the retained STEP projection and creates no drawing record or project file. The
+source is verified on every read; the projection of a view already drawn for the same exact
+source is reused from process memory, never written.
+Incomplete/composed-only, Rhino-only or mismatched sources refuse; no bounding-box image stands
+in for missing geometry. MonkeyHub exposes the image as native MCP image content and keeps
+source metadata in a separate text block.
+
+To inspect a registered PDF or image page, use the existing `POST /api/board/export` with
+`projectId`, `pages: [{runId, assetSha256, revisionRef, pageIndex}]`, `format: "png"` and
+`zip: false`. Copy the exact registration from `GET /api/documents` or the generated drawing
+response; `pageIndex` is a zero-based integer. A generated revision cannot be omitted or
+substituted, and the owner verifies the retained source bytes before rendering. Optional
+`maxEdge` (integer 1–2048) bounds PNG/JPEG raster dimensions before PDF rendering; omitting
+it preserves ordinary 144 dpi PDF export behavior. PDF CropBox/rotation and image EXIF
+orientation remain part of the visible page. This transient clean-source export adds no
+annotations and writes no drawing, board scene or project state.
+
+MonkeyHub exposes this POST through `studio_schema` and `studio_request` as a read, without
+mutation admission, `operationId` or `awaitSeconds`. MCP accepts one PNG page only, requires
+an explicit `revisionRef` (null when the registered source has none), defaults `maxEdge` to
+2048 and limits the received PNG to 4 MiB. It returns native MCP image content plus verified
+project/run/asset/revision/page identity, raster dimensions and `annotationsIncluded: false`.
+`CHAT_IMAGE_TOO_LARGE` means to read the same page at a smaller `maxEdge`; invalid PNG responses
+report `CHAT_IMAGE_INVALID`. Runtime source/revision/page refusals retain their code and status.
+
+**Visual review.** `POST /api/visual-reviews` renders exact sources once under a
+caller-held allowance. `delivery` selects `observation` (the Runtime default, preserving
+existing clients) or `frames`. The body names `projectId`, `domain` (`modeling`, `board`,
+`drawing` or `render`), 1–4 distinct exact `sourceRefs`, `viewRecipe`, `task` (at most 600
+characters), 1–8 `criteria` (`criterionId`, `text`), up to 6 `preserve` conditions, up to 6
+`priorObservations`, up to 8 `knownFacts` of at most 120 characters, `reason` (`first_bundle`,
+`after_repair` or `polish_round`), `addressedFindingIds` for `after_repair`, and `budgetState`
+(`taskClass`, `allowed`, `used`, `lastFindingIds`).
+
+A modeling review names one model (`kind: "model"`, `runId`, `stateDigest`, `assetSha256`)
+and model-view directions (`front`, `back`, `left`, `right`, `top`, `axon`). Other domains
+name exact registered pages (`kind: "page"`, `runId`, `assetSha256`, explicit `revisionRef`,
+`pageIndex`). Source identity includes the document and revision: different documents may
+both name page 0. The caller may use `viewRecipe: ["page-0"]` for that bundle; the Runtime
+assigns distinct `source-<ordinal>-page-0` frame names in source order. Duplicate exact
+sources remain invalid. Request fields carry no pixels. Each frame comes from the source
+owner's verified `model_view` or one-page PNG export at 1600 px. Neither delivery mode
+writes project state or keeps a second review loop.
+
+With `delivery: "observation"`, the configured structured provider returns `observation`
+(`reviewId`, `reviewIndex`, `sourceRefs`, `viewRefs`, `frameSha256`, findings with `findingId`,
+`type`, `targetRefs`, `description`, `confidence`, `severity` and optional `evidenceRegion`,
+plus `unresolvedQuestions` and `suggestedChecks`; no verdict), provider-reported `usage`,
+and the next `budgetState`. This mode requires the Runtime's visual provider; a deterministic
+Runtime refuses with `VISUAL_PROVIDER_UNAVAILABLE`. When configured, Monitor records its
+`visual_observation` span and provider usage.
+
+With `delivery: "frames"`, no additional provider is called. The answer is `delivery: "frames"`,
+`observation: null`, `usage: null`, `frames` and the next `budgetState`. Each frame carries
+`sourceRef`, unique `viewRef`, `representation`, `frameSha256`, `width`, `height`,
+`mimeType: "image/png"` and base64 `data`. Successful delivery spends one review and leaves
+`lastFindingIds` empty. Images alone are not findings or acceptance; the receiving model
+must inspect them. Because this mode produces no structured finding ids, a subsequent
+`after_repair` request cannot satisfy the finding-bound repair contract and is refused.
+
+The allowance remains 0 for `deterministic_edit`, 2 for `spatial_formal` (one `first_bundle`,
+then an `after_repair` naming findings from the previous observation), or 1–4 rounds named
+by an explicit `polish` request. Source, allowance and rendering refusals before delivery
+or a provider call leave it unchanged. A missing exact source returns 409
+`VISUAL_SOURCE_MISMATCH` with `sourceRef`; the existing budget/order refusals retain their
+codes. A failed structured-provider call returns 502 `VISUAL_PROVIDER_FAILED`, its usage
+and the spent budget. Frames mode remains available without a configured observation provider.
+
+MonkeyHub exposes the route only through `visual_review`, not `studio_request` or
+`studio_schema`. Its native tool defaults to `delivery: "frames"`: the existing chat model
+receives native MCP images and source metadata, after Hub verifies every frame's source,
+PNG bytes, digest and dimensions. Explicit `delivery: "observation"` retains structured
+findings, with `escalate: true` when a finding targets a `preserve:*` condition. Hub fills
+`projectId` and `budgetState`; the Agent supplies `taskClass` and, for polish, `polishRounds`.
+One allowance belongs to each answered user message. Its class can change only before a
+review is spent; more than two polish rounds require the user's own refinement request.
+An answered frame-rendering failure spends nothing. A sent review with no answer
+(`VISUAL_REVIEW_UNANSWERED`) is conservatively counted as spent; a failed observation-provider
+call also stays spent. The returned `allowance` names `taskClass`, `allowed` and `used`.
+A structured review's trace records provider-reported image inputs and its review id;
+raw model-view or page reads remain `image_read`, separate from structured observations.
+
+**The program sheet.** A sheet is `ProgramSheet@1` and travels whole in both directions, carrying
+the `stateDigest` of the record it was read from. `POST /api/program` refuses `409 STALE_BASE` when
+that is not the state the project answers with now, and `422 PROGRAM_SHEET_INVALID` when the kernel
+refuses a row — a `function` outside the semantic registry, a `requirement` the kernel relation
+vocabulary has no kind for (`near` and `visual` have none; `adjacent` and `apart` become `adjacent`
+and `clearance`), a `spaceId` that would rewrite an existing entity. It refuses
+`422 PROGRAM_SHEET_NOT_APPLICABLE` when the record the sheet would make is one the kernel will not
+build a design view of — a space with no zone becomes a `Space@1` with no volume, and a record that
+already draws massing has no room for a zone that occupies nothing.
+
+A candidate made from a sheet carries no text proposal. Follow its execution through
+`GET /api/jobs/{jobId}`; a completed Studio candidate is readable through
+`GET /api/candidates/{candidateId}` from its retained runner records, including after a
+process restart. This does not recover an interrupted in-memory job or a missing proposal.
+
+`saveInput: true` on a remote server answers `409 WIP_WRITE_REMOTE` and **still makes the
+candidate**, naming its run and job in the refusal: running a sheet is a read of the record, and
+only keeping one needs an owner this protocol does not yet have.
+
+**Model preview images.** The browser captures only a stable retained model after loading,
+outside candidate execution; it skips local edits, blended or proposal previews and rechecks
+the exact source before and after asynchronous capture. Existing previews are read lazily;
+an absent, stale or unreadable image falls back to the model icon. A source-bound capture adds
+an ancillary PNG identity chunk without changing pixels, so identical pictures of distinct
+models cannot rebind the same document. The server verifies the run/state/model binding and
+PNG bytes; the pixel-to-model correspondence is the caller's declaration, not geometric
+validation. Previews use `viewRecipe.kind=viewport-preview`, have no drawing revision, and
+never enter StateRecord, candidate execution, or canonical HEAD. Unbound captures keep their
+original workspace-only response and do not become previews.
+
+**Server memory.** Proposals, jobs and events live in the process and are lost on restart. A
+client treats `PROPOSAL_NOT_FOUND` and `JOB_NOT_FOUND` as ordinary and never uses the event
+stream as a record of anything: what a run did is in the run.
+
+---
+
+## 5. Proposal → candidate → review readiness
+
+One chain, and each arrow is a route.
+
+1. **Read the state.** `GET /api/state` answers `stateDigest`. Every request that would change
+   something carries it back. An agent reads the same `stateDigest` for the same source from
+   `GET /api/construction/model[?run=]`, the model in construction terms, and sends it back with its
+   construction script (`POST /api/proposals/construction`;
+   [the construction contract](../design/construction-api.md#32-the-agent-contract-after-this-change)).
+2. **Propose.** `POST /api/proposals` (a sentence already in the grammar) or `POST /api/intents`
+   (any words; the server resolves what they are about, its agent compiles them into the grammar
+   and the grammar types them). Either way the answer is the *record's* proposal: a typed
+   `DecisionOperator` with the change, the closure it propagates through, and the conflicts it
+   reaches. Nothing has run. `POST /api/intents` ends in exactly one of four outcomes (§5.1),
+   and only the first is a proposal.
+
+For drawn faces and prisms, state element rows also expose optional `drawnShape`:
+`profile`, `height`, `workPlane` in building-world Y-up metres, and
+`parameterBoundFields`. Placement includes the recorded base level, reference offset
+and elevation. Reading this projection produces no geometry or project writes.
+Unsupported producers, cutouts and unresolved host datums return
+`drawnShape: null` with `drawnShapeReason`; the precision modeling panel remains available.
+
+Upright prisms also expose `elevation: {base, top, height, baseReference, topReference}`
+in metres, with each explicit reference stated as `{kind: "level" | "element-top", id, offset}`.
+A null base reference means absolute placement; a null top reference means height determines
+the top. State `levels[]` projects each retained Level's `levelId`, `name` and `elevation`.
+References are spatial datums and do not classify a mass as a storey, wall or slab.
+
+`GET /api/state?authored=true` also answers each element row's `params` and `references`
+exactly as authored: `"@key"` bindings kept, positions relative to the base reference. They
+are opt-in, so the default response does not grow; without the flag the row has neither key.
+These are the objects a `semanticEdit` entity replaces whole when it supplies them, so an
+edit to an existing element starts from them; `numericFields` and `drawnShape`
+are resolved values (bindings evaluated, datum and elevation applied) and are never a
+template for them. `verticalExtent: {base, top}` is the element's lowest and highest world
++Y in metres, from its producer's own datum and height rules and without producing geometry,
+for `prism` (tilted ones too), `planar-surface`, `curve`, `wall` and `loft`; other producers
+and unreadable inputs answer `null`. `elevation` remains the editable controls of upright
+drawn prisms and faces.
+
+Write vectors (`translation`, `axis`, `scale`, `origin`, push/pull `normal`, work-plane axes,
+loft sections) are the building-local modeling frame `[x, y, z]` with +y up; plan points are
+`[x, z]`. Candidate object and compare boxes are the export's Z-up CAD frame, `[x, z, y]` of
+the same point. A direct action's proposal summary states its vector and which way it goes
+(up or down, or horizontal along plan x or z) before anything runs.
+
+A modeling write whose `stateDigest` is not the selected source's is refused
+`409 STALE_BASE`, as are `POST /api/intents`, `/api/intents/context`, `/api/state/closure`,
+`/api/pick/resolve` and `/api/options`. The detail names the source it was checked against (the project's default
+source when no `sourceRunId` was sent) and, reading the newest 200 runs, the run whose
+receipt carries the sent state and the `sourceRunId` to send; otherwise it says no run it
+read has that state.
+
+`POST /api/proposals/elevation` shares the exact state/run/Stage and `sourceProposalId`
+continuation contract of the existing direct model routes. It accepts `set-base`, `set-top`,
+`set-height`, `bind-base`, `bind-top`, `detach-base`, `detach-top` for an `elementId`, or
+`set-datum` with `levelId`, `name` and `value`. Numeric edits preserve the existing reference
+through its offset. Base edits preserve height unless a top is explicitly bound; top/height
+edits preserve the base. Binding a base follows only the named level or mass top; detach
+keeps its current numeric position. A datum change propagates through existing declared
+dependencies. Cycles, missing targets, nonpositive height, protected state and stale bases
+refuse before a candidate is saved.
+
+`POST /api/proposals/transform` also accepts `kind: "compress-above"` for one atomic
+height edit of planar surfaces. It takes exactly one of `componentId` or nonempty
+`elementIds`, without `elementId`, plus finite `threshold` and `factor` with
+`0 < factor <= 1`. `componentId` selects elements whose component id equals it; it does
+not recurse into other components. The threshold is world +Y elevation in project units:
+points at or below it stay fixed, and a point above moves to
+`threshold + factor * (y - threshold)`. Crossing edges gain their threshold intersections.
+The existing `projectId`, `stateDigest`, `sourceRunId`, `sourceStageRef`, `sourceProposalId`
+and `keep` contracts still apply. All selected rows must be supported planar surfaces;
+nonplanar results, parameter bindings (including inherited Type bindings), unsupported
+host/top/cutout controls and the existing dependency guards refuse the whole batch.
+If nothing changes, the route returns `422 DIRECT_EDIT_NO_CHANGE`. A successful request
+returns the ordinary `ProposalDto`, with no partial proposal or project write on refusal.
+Only the existing proposal candidate endpoint executes and retains the result; acceptance
+and issue remain separate.
+
+The contextual elevation fields and datum chooser use the same local draft and undo history.
+Sync sends these intents through the typed route and saves one final candidate. New upright
+drawings detach their initial level placement within that proposal chain, so they remain free
+until explicitly bound. Retained legacy level bindings remain visible and can be detached.
+The reference plane is a disposable viewport guide. Datum snapping during pointer drag is
+not part of this numeric/reference slice; existing drag tools retain their local preview path.
+
+The P gesture uses the exact viewed shape or its current disposable local draft.
+Pointer movement previews cap extrusion or convex-profile side offset locally; an
+exact distance overrides the pointer. Click or Enter records one local action with
+its selected face normal. Zero distance and Esc record nothing. Tool or source
+changes discard only the unfinished gesture. The producer still owns geometry
+validation and parameter-binding checks; arbitrary imported 3DM editing is unsupported.
+
+Drawing, Push/Pull, numeric transforms, Delete and Undo/Redo update an in-memory draft
+without proposal or candidate requests. The exact loaded catalog and export identity
+can identify a local selection immediately; this is not a new server pick verdict.
+Manual Sync freezes the current action snapshot and sends the existing typed routes
+with `sourceProposalId`, followed by one final candidate request. A continued proposal
+answers with its latest step's `target`, and its candidate's compare `why` joins every
+step's sentence in order (a summarized sketch batch is one step). Net-zero edits do
+not create a candidate. The original state/run/Stage binding remains fixed throughout
+the chain, and MonkeyHub's existing `Idempotency-Key` admission prevents duplicate
+candidate execution when the same submission is retried. Edits during Sync remain
+editable in the local layer. A completed batch with no later input adopts its candidate
+as the next editing base; its download and parse keep the old model interactive and
+any new input cancels adoption. With later edits, only the candidate list refreshes,
+without replacing the ongoing gesture or draft. Failed requests retain the draft. A rejected
+pre-candidate snapshot can be replaced by a corrected edit; uncertain candidate
+submissions retain the same request and final proposal. Drafts stay with their exact
+source while browsing versions in the mounted task, but are not saved across page
+reload. Sync does not accept a DesignStage or issue HEAD.
+
+`POST /api/proposals/sketch` accepts `closed: false` with `height: 0` and two or more
+ordered local-plane points to create one retained polyline model curve. Omitting `closed`
+keeps the existing face/prism action. Line, freehand and two-point arc gestures share
+this route; arcs are segmented polylines, without retained analytic radius controls.
+The curve retains its base reference and work plane through the existing Element/CURVE
+and OCCT paths. Saved STEP and native 3DM curve geometry are checked against the authored
+points and length. Model pick, delete and history use the same candidate source binding.
+Pointer movement and completed gestures stay local until manual Sync.
+Snapping copies coordinates and does not infer a lasting host
+or alignment dependency; closed line networks do not yet split existing faces.
+
+The same sketch endpoint accepts a `DocumentTracingRequestDto` with `tracing`
+(`runId`, `assetSha256`, `pageIndex`, `revisionSha256`, optional `drawingRevisionRef`,
+and explicit `annotationIds`), the existing exact model base/keep fields, target
+component, `baseLevel` or `baseDatum`, and `height`. It reads saved line/polyline
+vertices and their calibration itself. It never accepts inferred image geometry or
+client-supplied profiles on this request. Closed contours require positive height;
+selected open paths use zero height. Ordinary arrows, freehand ink and page text are
+not converted. A source image need not already describe a model: this explicit
+action authors new editable sketches and makes no model-source association claim.
+
+Each resulting Element retains `sourceDocumentTrace` with the exact saved page
+reference, annotation id and calibration. Its stable id uses the source run, asset,
+drawing revision, page and annotation id, excluding the annotation revision. Continuing
+from a previous candidate and regenerating a corrected path therefore updates that
+element; unselected or erased page paths do not implicitly delete model elements.
+The candidate worker rechecks the retained source before creating its run. Existing
+proposal continuation, keep protection and exact-base checks still apply; no model
+call, separate persistence store, acceptance or HEAD change occurs here.
+
+### 5.1 The four outcomes of an intent
+
+An `authoredControlDraft` is diagnostic context on a `MISSING_EDITABLE_CONTROL` answer,
+not a control written into the model. The unused provisional `/api/controls` registration
+routes were removed on 2026-09-06: they only stored that draft in memory and had no design
+consumer. No retained project data requires migration. Actual design changes use typed
+proposals and candidates; the draft and existing missing-control diagnostics remain available.
+
+
+An intent is not a free exchange. It ends in one of four named answers, every one of which says
+which it is in an `outcome` field:
+
+| `outcome` | status and `code` | what it means |
+| --- | --- | --- |
+| `COMPILED` | `201` | the words became a proposal |
+| `NEEDS_CLARIFICATION` | `422 BLOCKED_NEEDS_HUMAN` | something only a person can settle, with a concrete `question` and the `acceptedForms` |
+| `MISSING_EDITABLE_CONTROL` | `422 MISSING_EDITABLE_CONTROL` | it is in the model and the record declares no control for it — a missing *system binding*, not a missing answer. Terminal |
+| `UNSUPPORTED` | `422 UNSUPPORTED_REQUEST` | no action can express the request, or the clarification stopped advancing. Terminal |
+
+An agent may explicitly answer `unsupported` with its reason when its available tools cannot
+perform the request; this is not missing information from the architect. Invalid agent scalar
+grammar or an agent-authored field/element/unit that the existing lowering refuses is
+`502 INTENT_AGENT_FAILED`, without a human question or grammar instructions. Direct deterministic
+input keeps its existing clarification behavior. This boundary does not implement agent self-repair.
+
+Each carries a **`pendingIntent`**: `requestId`, `stateDigest`, `originalUtterance`, `actionKind`
+(`change_existing_value` / `declare_missing_control` / `clarify` / `unsupported`),
+`targetComponentId`, `elementId`, `requestedSemanticProperty`, `knownSlots`, `missingSlots`,
+`candidates`, `scopeOptions`, `rejectedCandidates`, `reasonCode`, `continuationToken` and `turn`.
+
+**A selection is not a scope.** A request that resolved to one element has said *what*, not *how
+far*. Where the record reads the change as reaching a stack that seats on the element — columns →
+capitals → entablature, along the `support` relations and the `base` references the kernel already
+resolves — that is one more step, `NEEDS_CLARIFICATION` with reason `SCOPE_UNRESOLVED` and
+`missingSlots: ["scope"]`. The options are on `pendingIntent.scopeOptions`
+(`{scope: element | stack | datum, elementIds, label}`) and repeated as `candidates` with refs
+`scope:<name>`, so the question names the ids rather than asking anyone to imagine them. The
+architect answers in words (`整个叠层` / `the whole stack` / `整条标高` / `只这个`) or the client
+sends `scope` on the request; either settles `knownSlots.scope`. A single reading is not a
+question and is never asked. **A wider scope is a coverage, not a mutation**: the settled scope
+travels on `proposal.scope` (`{scope, elementIds}`, `null` for a proposal made straight from a
+selection) as what the client shows revalidated, and the operator still moves one scalar on one
+element. A datum is a grouping and not a propagation — it is offered and never stops a change on
+its own.
+
+**A derived control is shown, never compiled.** Where the number the request named is one a
+reference already pins — a height whose `top` is a level, a base that takes another element's
+published top — the catalog marks that capability `status: "derived"` with
+`source: "derived from <ref>"`, and the answer names the source with reason `CONTROL_IS_DERIVED`
+rather than typing a change the kernel refuses afterwards. Where the source is another element
+whose own capability is editable, the answer is `NEEDS_CLARIFICATION` and its controls are the
+`candidates`; where it is a level — a level's elevation is not an element capability — the answer
+is the terminal `MISSING_EDITABLE_CONTROL`, naming the level, with the draft's `suggestedAction`
+saying to move it. Neither reaches the agent.
+
+**A control states its unit.** Each catalog capability, and so each
+`candidate.modify_existing` field, carries `unit`: a bound field its parameter's unit, a
+literal the unit its advertised producer declares (`m` for every length those producers
+read), `null` where none is declared. The scalar grammar and the intent-request path read
+one exact table: a length said in any length unit (`mm`, `cm`, `m`, `in`, `ft`) is restated
+in the declared unit (`set height to 2200 mm` proposes 2.2 in m), and a bare number is taken in
+the declared unit. They ask, naming the unit expected, about a unit on a number that declares
+none and about a unit that is not a length. A keep conflict names the kept refs the change
+would reach, whether they came from `keep` or from a keep clause in the words.
+
+**The continuation is the whole of the continuity.** A client that answers sends back
+`continuationToken` and nothing else — never a transcript, and never its own idea of the
+selection. The token is single-use: the server closes it and issues a new one, so a reply cannot
+be replayed against a round that has moved on. A `continuationToken` of `null` means the answer
+was terminal and there is nothing left to ask; a client that renders an input box against one is
+building the loop this outcome exists to end.
+
+Two rules bind the server. **A pending intent is bound to a `stateDigest`**: one opened against a
+state the project has left is void and answers `409 STALE_CLARIFICATION` rather than being
+applied to the state that answers now. And **a clarification advances or terminates**: every
+reply must shrink `missingSlots`, correct the target, narrow `candidates`, compile, or terminate.
+A round that changes none of them is answered `UNSUPPORTED` with reason
+`CLARIFICATION_MADE_NO_PROGRESS` — the server says what it is missing instead of asking the same
+question again.
+
+`MISSING_EDITABLE_CONTROL` may carry an **`authoredControlDraft`**: the control somebody would
+have to author (`targetComponentId`, `suggestedElementId`, `semanticProperty`, `producer`,
+`binding`, `unit`, `provenance`, `confidence`, `dependencyRequirements`, `suggestedAction`). It is
+a value the server returns and never retains; no route writes it, it invents no number, and a
+neighbouring element whose field shares a name is named there only to be refused.
+3. **Run it as a candidate.** `POST /api/proposals/{id}/candidate` answers `202` and a job id.
+   This is the one write: a **harness run** in the shared container. It never closes a stage and
+   never becomes the reference run. Refusals come before the job starts when the proposal
+   conflicts with something the utterance asked to keep (`409 PROPOSAL_NOT_RUNNABLE`), its
+   client digest is stale (`409 STALE_BASE`), or the selected reference is not an exact retained
+   State Record on current HEAD (`409 REFERENCE_STATE_NOT_EXACT`, `REFERENCE_BASE_STALE` or
+   `REFERENCE_STATE_MISMATCH`). Everything after that is the job's, and a run the runner refuses
+   is a *failed job carrying the runner's own sentence*, never an HTTP error.
+4. **Follow it.** `GET /api/jobs/{jobId}`, or the event stream.
+5. **Read review readiness.** `GET /api/candidates/{id}/validation` returns the kernel's
+   validation receipt unedited, and beside it the server's `reviewReady`, a fixed conjunction of five named
+   clauses with `blockedBy[]` naming every clause that refused. Three-state law, verbatim:
+   *held / violated / unchecked are distinct; unchecked is never green; the server reports
+   candidate review readiness.* A client renders the server's boolean and computes no readiness
+   result of its own. `reviewReady` grants no issue authority: only `project.issue` can issue a run
+   or advance a stage.
+
+Review readiness is memoised per (candidate, published version): reading it twice is one result.
+
+### 5.2 The judgement is retained
+
+Running a candidate makes a reversible result, not a design decision. It does not mark that
+proposal accepted or reject other open proposals. The job registry already links the proposal
+and candidate; the run only flushes earlier explicit judgements against its base.
+
+The legacy proposal-decision route is `POST /api/proposals/{id}/decision` with
+`{"decision":"accepted","candidateId":"<the chosen candidate>","reason":"<optional reason>"}`.
+The candidate must have succeeded in this process and belong to that proposal. No latest-run
+default is used. `candidateId` is required for acceptance and refused for the other decisions;
+`modifiedTo` is only for modification. Acceptance runs nothing, moves no HEAD and grants no
+formal-issue authority. It retains the existing `DeliberationEpisode@1` in the named candidate run
+and preserves other proposals and alternatives against the same base. It does not create
+a design Stage. Previously retained episodes remain readable.
+
+That route remains for proposal deliberation and retained-data compatibility; it is not direction
+endorsement. Persistent review uses `/api/candidate-reviews` against an exact retained Candidate
+or Stage. Endorsement is independent: it neither accepts a Stage nor becomes an acceptance or
+publication prerequisite. Review requests carry `projectId`, `subjectKind` (`candidate` or
+`stage`), the exact `subjectRef`, `action` (`reject`, `archive`, `restore`, or `endorse`),
+and an optional `reason`; only endorsement applies to a Stage. Restoring an archived
+Candidate recovers its previous disposition, including an earlier rejection. History
+includes the latest review actor/time and the endorsement event's own `endorsedBy` /
+`endorsedAt`, so archiving by another person does not replace the endorsement attribution.
+These reviews currently refuse synchronized-project writes with `SYNC_REVIEW_SHARED`.
+
+Rejections and modifications made before a run remain process memory: `producedRun` is `null`
+and `persistence` is `in-memory (not version history)`. When a candidate meets those judgements,
+they are flushed into that run and say `run:<id>`. Restart recovery of active proposal/job state
+is not implied by retained episode or completed-candidate readback.
+
+### 5.3 Massing options
+
+A record's massing is its `MassingLevel@1`, `Volume@1`, `Space@1` and `Connection@1` entities
+together with the declared `option`. `GET /api/state/volumes` shows the boxes, and every option is
+one **deterministic transform** of the record's own `SchematicPack@1`: `add_floor`, `remove_floor`,
+`shift_volume`, `scale_volume`, `split_volume`, or `pack` — a whole pack the client sends, which is
+the socket a generative massing agent plugs into and the only transform that takes free-form
+geometry. The vocabulary is closed and `GET /api/options` carries it in `transforms[]`, so a client
+offers no button the server would refuse.
+
+**The frame the numbers are in.** A volume box is two coordinate triples in the kernel's voxel
+lattice — x and z are plan, y is up, both ends inclusive cells — and one plan cell is one square
+metre (`SpatialGridBasis(horizontal_area_per_cell=1.0)`). `footprintM2` is the union of every
+volume's plan rectangle, counted once where they overlap; `grossFloorAreaM2` is the sum of the
+per-level footprints; `heightM` is the top face of the highest massing level less the base of the
+lowest; and `efficiency` is the program targets as a share of the floor area, or `null` when the
+request carried no target. Whatever could not be measured is a line in `metrics.honesty[]` and
+never a zero.
+
+**What is retained.** Each option is written into a run of its own, `option-NNN`, as the kernel's
+own `SpatialOptionProposal@2` under the existing `selected-spatial-option` kind — the same record
+the runner writes for the option a run executes. The metrics are not retained: no record kind's
+payload is a set of measurements, so they live in the server's memory, and `persistence` on every
+option says so. Selecting an option runs it as a candidate through the same path a proposal takes;
+the run the runner leaves retains that massing as its own `selected-spatial-option`, and the
+authored record is never written.
+
+---
+
+### 5.4 Design history and exact-source drawings
+
+Servers advertising `design-history` expose immutable accepted Stages and persistent
+design branch pointers. Stage labels such as S0/S1 are display names. Initial acceptance
+takes `{projectId, branchId, label, modelSource}`; legacy exports are references until
+the architect explicitly establishes the first Stage. Native models must cover the
+complete producing run; a partial seat preview cannot become a full Stage.
+
+Candidate acceptance takes `{projectId, branchId, expectedHeadStageRef, label?}` and
+the persistent candidate id in the URL. It verifies the saved base and replayable
+operator chain, complete model and validation before advancing the exact design head.
+It reuses the existing model, returns the same Stage on a successful retry, and refuses
+a changed branch head. An unreachable record written before an interrupted pointer
+update is absent from committed history. Fork takes `{projectId, branchId,
+parentBranch, stageRef}` and produces no geometry.
+
+`sourceStageRef` on state/intents/proposals/program/options names the exact committed
+design base. A candidate's retained delta restores that source after restart. Successive
+candidate adjustments retain their actual parent record and operator; they create no
+intermediate Stage. Historical Stage exploration keeps its historical canonical base;
+the validation readout checks that same source base. Legacy candidates without a Stage
+retain the current-published-base validation rule. Formal issue still requires alignment
+with the current published base.
+
+`POST /api/candidates/combine` takes `{projectId, candidateIds}`. Saved candidates
+must descend from one exact Stage. The StateRecord owner normalizes supported independent
+component changes into one typed operator and checks shared writes and dependencies
+across all supplied changes. Conflicts are returned before a new run is created. The
+new candidate goes through the same generation, preview, validation and acceptance path.
+Candidate workspaces may compute overlapping scopes independently; queue limits are
+worker capacity and the single Rhino export resource.
+
+`POST /api/drawings/plans` accepts an optional `fileName` for a new cut plan.
+It is human-readable display metadata stored in the existing SourceDocument,
+never a storage path or `drawingId`. Leading/trailing whitespace is trimmed;
+a missing extension becomes `.png`, and any other extension, path separator,
+embedded line break, NUL or final name longer than 240 characters is refused with
+`422 DRAWING_NAME_INVALID` (the request also limits the input to 240 characters).
+Omitted or blank names use the existing drawing's name, or `drawingId.png` for
+a new drawing. Revisions and retries keep that name: supplying a different name
+for an existing drawing returns `409 DRAWING_NAME_MISMATCH` before reuse or
+projection, whether or not the recipe changed. Distinct drawing ids may share
+the same display name. This field does not apply to section perspectives.
+
+`POST /api/drawings/plans` also accepts representation-only `dressing` objects
+(`id`, `assetId: person-plan | tree-plan`, `positionUv`, `size`, `flipped`, optional
+`anchorObjectId`). Coordinates and size use the exact source STEP length unit. An
+unanchored position is fixed in the plan view; an anchored position is an offset
+from the named physical object's projected bounding-box centre. No nearest-object
+matching or architectural semantic promotion takes place.
+
+For agent edits, provide `previousRevisionRef` and `dressingOperations` instead of
+replacement `dressing`: `insert` requires an `object` with matching `id`, `move`
+requires `positionUv`, `scale` requires `size`, `flip` requires `flipped`, and
+`delete` requires only `id`. The batch applies atomically to that retained drawing
+recipe; unknown ids, new unknown anchors, duplicate ids and malformed operations
+are rejected before persistence. A maximum of 100 objects is supported. Rebuilds
+retain unresolved objects in the recipe and report `missing` / `outside-view` in
+`POST /api/drawings/plans/status`; unresolved objects are omitted from the output
+rather than silently repositioned. Drawing revisions never advance Design HEAD.
+The Hub Agent reaches these through `studio_request`: the plan write is admitted like
+any other drawing write, and `GET /api/drawings/plans/vector`, `GET
+/api/drawings/plans/dimensions` and `POST /api/drawings/plans/status` are reads sent
+straight to the bound Studio, with no `operationId`.
+
+A rebuild that names `previousRevisionRef` registers the new revision as that
+revision's whole-document replacement: its `replacesPages` names the previous
+page exactly as an upload's would, so a Board page updates in place, Publish
+offers the new page and Render follows it. A changed visible aspect ratio registers
+no replacement because the old frame cannot preserve the page's marks. A competing
+rebuild of an already replaced revision fails with `DOCUMENT_REPLACEMENT_CONFLICT`
+before projection writes anything. An identical retry of that predecessor's request,
+or an unchanged request for a revision itself, returns its retained result. Restoring
+an older recipe from a newer revision creates a new revision and replacement even
+when its pixels match history, preserving the correction's before/after and actor.
+Why a page
+was replaced is derived, never stored: the same drawing from the same exact source
+(model, Stage and imported asset) is a representation change, which Render does
+not count as a newer input; the same drawing from another source is a source
+change; a document without `drawingId` is an upload.
+
+A cut-plan request may say why it is asked for: `reason`, 1–200 characters in the
+asker's words (an agent passes the correction it was given; a direct edit omits
+it). It may also say who it comes from: `sourceKind` is `human` for a person's own
+edit (the Drawing canvas sends it) or `agent` for an agent's reading of what a
+person asked; omitted is unknown. The Hub's `studio_request` marks every plan request
+of its Agent `agent` and refuses one that claims `human`, so only a person's own edit
+counts toward a correction suggestion. The request boundary
+records who asked, as for decisions: `actorId`, `authenticated` and `origin`, where
+`hub` means a runtime the Hub manages and `studio` one it does not; a Hub-managed
+runtime serves both its window and its Agent, which is why `sourceKind` is asked for.
+Who asked, `reason` and `sourceKind` are retained in the revision's drawing receipt,
+never in `viewRecipe`, so they neither make nor distinguish revisions: an identical
+request returns the retained revision as it was asked for. Every SourceDocument with a `revisionRef`
+reads `previousRevisionRef`, `attribution`, `reason` and `sourceKind` from that
+receipt, read-only; a revision retained before they were recorded reads null.
+
+`GET /api/drawings/plans/vector?runId=…&assetSha256=…&revisionRef=…` reads the
+verified retained SVG, built-in vector symbols and exact source anchor choices.
+SVG `data-dressing` groups remain independently editable and do not claim the
+architectural `data-object` identity used by projected model vectors. The PNG and
+SVG share one rendering input. This read does not regenerate or create a revision.
+
+Cut-plan pens and hatch are paper values in `viewRecipe.graphics`: `cutLineMm`,
+`visibleLineMm` and `hatchSpacingMm`, and, optionally, `hatch` and `beyond`, which
+the request names in the same form. `hatch: {byMaterial: {<material>: {spacingMm?,
+angleDeg?, poche?}}}` draws the cut of each named model material with its own hatch
+(spacing 0.5–20 mm, angle 0–180 degrees) or solid poché; a rule is stored complete,
+an omitted spacing taking the revision's `hatchSpacingMm` and an omitted angle 45
+degrees, and a material without a rule keeps `hatchSpacingMm` at 45 degrees.
+`beyond: {fade}` (0–1) greys the lines below the cut. A request without them keeps
+the previous revision's; an empty `byMaterial` or a zero `fade` removes them, and a
+recipe without them is exactly the recipe it was before they existed, so it keeps
+its retained drawing and bytes. Paper values do not change with the scale. Imported
+models carry no material semantics, so their cuts keep the general hatch.
+
+A new cut plan starts from the project recipe: the active drawing decisions whose
+`typedBinding` is `{"kind": "recipe", "graphics": {…}}` (a person's confirmed
+`require`), for the project or the Stage the drawing's source is under. Each of
+`cutLineMm`, `visibleLineMm` and `hatchSpacingMm` is the request's value, else the
+previous revision's, else the recipe's (per key `hard`, then `strong_preference`, then
+`soft_preference`; a Stage's own before the project's), else the code default (0.35,
+0.18 and 2 mm). Every revision holds all three, so a rebuild keeps its own values and
+never reads the recipe. A recipe value is written into `viewRecipe.graphics` exactly as
+a requested one: an identical request reuses the revision it made, and a drawing made
+before the recipe keeps its revision and bytes. A revoked recipe no longer applies; a
+`hard` one is read first but not enforced, so an explicit value is still drawn.
+
+`GET /api/drawings/corrections?projectId=…[&drawingId=…]` reads what was corrected
+between a cut plan's revisions and writes nothing: every answer is derived again from
+the retained revisions and the active recipe decisions, which stay the one place a
+correction can become memory. `pairs` holds each revision of `drawingId` beside the
+revision its receipt names as previous, in the order drawn, and is empty without
+`drawingId`: `drawingId`, `beforeRevisionRef`, `afterRevisionRef`, `cause` (why the
+page was replaced, as above: `representation` or `source`), the after revision's
+`origin`, `sourceKind` and `reason`, `diff` and `class`. `diff` maps a dotted
+`viewRecipe` path to `[old, new]`, null where absent; `hiddenObjectIds.<id>` is
+`[was hidden, is hidden]`, `dimensions.<id>` and `dressing.<id>` are the whole object
+where it was added or removed and otherwise one entry per changed field, and
+`graphics.hatch.byMaterial.<material>` is that material's whole rule. `class` is the
+first that holds: `compiler_defect`, a source rebuild, which corrects nothing, or a
+revision that only hid objects the cleanup flagged (the cleanup report counts lines
+per rule and names no object, so no hide is one yet); `semantic_rule`, a material's
+hatch or poché rule; `recipe`, a pen, the hatch spacing, the fade beyond the cut or
+the number of entourage objects; and `local_override`, anything else: an object hidden
+or shown, entourage moved, flipped, scaled or swapped one for one, the crop, scale or
+cut, a dimension.
+
+`suggestions` always reads the whole project. A pair counts only when it is a
+representation change of class `recipe` whose `sourceKind` is not `agent`; each of
+`cutLineMm`, `visibleLineMm` and `hatchSpacingMm` it changed joins the group of that
+key and its direction, `increase` or `decrease` (2→3 and 2→4 are one direction),
+unless the recipe that drawing reads already decides the key: a `hard` or
+`strong_preference` value changes only by superseding its decision, while a
+`soft_preference` (an imported default among them) covers only a correction to its own
+value, so corrections away from it are still offered. A group spanning at least
+two distinct drawings is one suggestion: `suggestionId` (derived from `field`,
+`direction`, `value` and `drawingIds`, so the same offer keeps its id), `field`,
+`direction`, `value` (the paper value of the group's most recent after revision),
+`drawingIds`, `evidence` (each counted pair's `drawingId`, `beforeRevisionRef` and
+`afterRevisionRef`) and `page` (`runId`, `assetSha256`, `revisionRef` and `pageIndex`
+0 of that most recent revision: the exact document source a recipe decision cites),
+ordered by field and direction. A suggestion is only an offer. A person saves it with
+`POST /api/decisions`, a `require` drawing decision with a recipe `typedBinding` citing
+`page`, after which the recipe gives the key and it is no longer offered. Another
+project is refused with `PROJECT_MISMATCH`.
+
+A recipe can travel to another project (#252) as a file, `DrawingRecipeExport@1`:
+`{schema, recipe: {targetRef, strength, graphics}, source: {decisionId, revisionSha256},
+sha256}`. `graphics` holds only the values the recipe sets, `strength` is the hold it had,
+`revisionSha256` is the exact revision exported, and `sha256` is the SHA-256 of the
+canonical JSON (sorted keys, no whitespace, ASCII escapes) of every other field: the
+export's identity, so one revision always exports to the same content. No page, path,
+run, project id, actor or wording travels. `tools/export_drawing_recipe.py export
+--project <dir> --decision <id> --out <file>` writes one active recipe decision and
+never replaces a file; `import --project <dir> --file <file>` refuses a file with any
+other field, a value a cut-plan request would refuse or content that does not hash to
+its `sha256` (`422 RECIPE_EXPORT_INVALID`), shows the decision it would retain and
+writes nothing. With `--confirm`, a person's confirmation, it retains that decision: a
+`require` drawing decision with the export's target and values, `sourceKind: human`,
+held `soft_preference` for the whole project, applying by `scope`, attributed to the
+tool's own boundary (`tool:export-drawing-recipe`, unauthenticated, origin `tool`) and
+citing the new source kind `{"kind": "recipe-export", "exportSha256": …}`. Only the
+import writes that source, after checking the file: `POST /api/decisions` and a
+supersession still name a board, page or design run, and `DecisionDto.source` reads
+all four. A key the project already holds as a project `soft_preference` is `409
+DECISION_RECIPE_CONFLICT`; the imported decision revokes and supersedes like any
+other, and a person who confirms a value on one of the project's own pages holds it
+more strongly. The import writes through the Studio's decision function under the
+project's HEAD lock, the lock a runtime takes for every decision write, so it may run
+while a runtime has the project open; the runtime reads the decision on its next
+request.
+
+The local Runtime also exposes this transfer from the Drawing workspace:
+
+- `GET /api/decisions/{decision_id}/recipe-export?expectedRevisionRef=...` returns
+  `{fileName, content}` with the portable file text unchanged. A stale selection
+  is `409 DECISION_STALE`; refresh the recipe list before exporting a newer revision.
+- `POST /api/drawing-recipes/inspect` takes `{projectId, content}` (the exact JSON
+  file text) and returns
+  `projectId`, `targetRef`, `graphics`, `sourceDecisionId`, `sourceRevisionSha256`,
+  `exportSha256` and `importStrength: soft_preference`. This validates the file's
+  closed content and digest without writing any decision.
+- `POST /api/drawing-recipes/import` takes the same exact document plus
+  `confirmed: true`, `sourceKind: human` and `rawLanguage` (the displayed choice).
+  The file text is parsed only in Python: JavaScript must not normalize `3.0` to `3`
+  and change its canonical digest. It validates again and returns the retained
+  `DecisionDto` with HTTP 201.
+  Conflicts use the existing `DECISION_RECIPE_CONFLICT`; there is no implicit
+  supersession. Attribution comes from the Runtime boundary, never the file.
+
+Export and inspection require the existing `read` grant; import requires `accept`.
+These routes are local Runtime operations, excluded from the shared-project service.
+Hub forwards inspection as a read: no operation journal, notification or watcher wake,
+including when the file is refused. Confirmed import keeps normal write admission.
+The bound chat's decision tools remain feedback-only: they do not automatically
+promote or import recipes. Drawing offers a file preview and explicit import action;
+choosing or cancelling a file writes nothing. The retained import cites the portable
+file's digest, while the file carries the original decision revision digest. New
+cut plans consume the imported values through `project_recipe`; previous revisions
+keep their values and explicit drawing values still take precedence. `hard` sorts
+first in the existing recipe reader but is not an enforced office standard. This
+transfer creates neither team preferences nor firm rules.
+
+A projected vector (`polyline` or poché `polygon`) names its physical object in
+`data-object` and, for a model compiled from design state, its `data-component` and
+`data-material` (the CAD program's `archflow:component` / `archflow:material`); an
+imported native model names objects only. The group is the role: `section` is the cut
+and a cut plan's `visible` lies beyond it. A poché is one stroke-free even-odd `polygon`
+in `g#section-hatch`. Before the SVG, a deterministic cleanup at 0.05 mm on the sheet
+drops strokes shorter than that, projected edges lying on the cut and hidden lines under
+visible ones or inside the cut, and joins an object's collinear pieces. The drawing
+receipt keeps its per-rule counts under `cleanup` (never in the recipe) and, when the
+application gives them, the revision's `attribution`, `reason` and `sourceKind`;
+receipts retained earlier have none.
+
+`POST /api/drawings/plans/status` and `GET /api/drawings/plans/vector` also return
+`cleanup`: the deterministic line cleanup the projection owner retained with that
+revision's receipt (per-rule counts and input/output line counts), passed through
+unchanged, or null for a revision drawn before cleanup existed. It is kept in the
+receipt only, never in `viewRecipe`, so it never decides which revision a request
+reuses.
+
+Servers advertising `drawing-elevations` accept `{projectId, sourceStageRef, view}`
+or an exact candidate `modelSource` instead of `sourceStageRef`. Views are front,
+back, left and right. An optional `drawingId` groups revisions; the response's
+`revisionRef` names an immutable drawing receipt. SourceDocument adds `drawingId`,
+`revisionRef`, `sourceStageRef`, `viewRecipe` and `generatedAt`; original uploaded documents retain
+their existing shape with these fields absent/null. Document bytes may specify
+`revisionRef` to retrieve the exact generated revision. The first consumer needs a
+complete matching OCCT STEP and refuses partial native sources for composed models.
+New drawing registrations retain their UTC generation time once; repeating an identical
+request preserves its original revision and time. Default selection compares generated
+revisions only within the current exact model source. Later drawings do not modify the
+accepted Stage or prior page annotations.
+
+Document annotation pages, saved annotation references and visual inputs may carry
+`drawingRevisionRef`. For generated drawings this pins the exact revision through
+annotation saving, intent compilation and candidate execution, even when another
+drawing has identical PNG bytes. Annotation heads are separate per drawing revision;
+older records without this optional field keep their existing serialization.
+
+Page annotations also support editable `kind: "polyline"` vertices and an explicit
+`closed` boolean (2–512 distinct points; at least 3 when closed, without repeating the
+first vertex). `tracingCalibration` optionally saves `{origin, axisPoint, distance}`
+in the same annotation revision. Both points use normalized visible-page coordinates;
+distance is positive and finite in project length units. Distinct calibration points
+define the sketch origin and +X direction. Mapping accounts for the registered page's
+width/height, including PDF crop/rotation or image EXIF orientation. The left side of
+that directed axis maps to positive second plan coordinate. Existing producers map
+the internal XZ plan and Y height to the saved model's XY plan and Z height. There is
+no inferred scale, north or perspective correction. Omitting calibration saves a
+page without a tracing scale, and legacy annotations retain their serialized shape.
+
+### 5.5 Candidate admission
+
+A run that succeeded is not a Candidate; a Candidate is a closed-loop result plus admission.
+Servers advertising `candidate-admission` retain one `CandidateAdmission@1` per closed loop (a
+task, one worktree of a task, or one person's act) in the review area of the fixed
+`studio-admissions` run, read by name and never by scanning runs. Admission accepts no Stage,
+advances no branch, moves no Working Head and writes no working position. Lineage is still
+derived from each run's retained change, never recorded again.
+
+`POST /api/admissions` takes `{projectId, task: {kind, ids?}, study?: {id, label, baseRunId},
+messageSource?: {sessionId, messageId}, rawLanguage?, results: [{runId, outcome, supersedes?,
+label?, summary?, reason?}]}`. `outcome` is `admitted` or `rejected`; `supersedes` names the
+attempt runs a result replaced within the loop. `task.kind` is `ui` (a person's act), `hub-chat`
+(the Hub Agent closing a chat task on the user's behalf) or `retroactive` (a one-time review a
+person confirms). The record keeps the boundary's actor (`actorId`, `authenticated`) with the
+origin `studio` or `hub` for `ui`, `hub-agent` for `hub-chat` and `retroactive` for a review.
+`hub-chat` is refused outside a Hub-managed Runtime, names its `messageSource`, and rejects only
+with the user's bound `rawLanguage`. The answer is the retained record: `admissionId`,
+`admissionRef`, `previousRevisionRef` (null in this version), `occurredAt`, `actor`,
+`messageSource`, `rawLanguage`, `task`, `study` with the server's `baseStageRef`, and each result
+with `modelSource` (pinned for an admitted result), `receiptRef`, `recordDigest`, `baseStageRef`,
+`supersedes`, `label`, `summary`, `reason` and `blockedBy`. Facts only: no authority block and
+no digest of itself.
+
+The gate is Stage acceptance's own preflight. An admitted result is a completed Studio result
+that is not executing or interrupted (C2), replays from its retained change (C1), is validated
+against its exact base Stage or, unstaged, against the published version (C3), reads back an
+object inspection for every seat that exported (C4) and has exactly one complete model (C5).
+Every superseded run is a retained candidate result in the result's lineage or built from the same
+base, and neither another record nor a committed Stage claims it (C7). With a Study, every result
+is built from `study.baseRunId` and continues one base Stage. A
+rejection needs only C2. A person (`ui`, `retroactive`) may admit a result that is not
+review-ready as a comparison option: the failing review-readiness clauses are retained as its
+`blockedBy` marker. An Agent's admission must be review-ready, and Accept-as-Stage still
+requires review readiness. When any result fails, nothing is retained: `409
+ADMISSION_GATE_REFUSED` adds `failures[]`, one `{runId, clause, code, detail}` per failing clause.
+
+A run is in at most one live record, as a result or as a superseded attempt. An identical retry
+answers `200` with the record it repeats. Any other claim on a claimed run, rejecting or
+superseding a committed Stage's run, or declaring a Study id again with another label or base is
+`409 ADMISSION_CONFLICT`; changing a retained disposition is a later revision. A malformed
+combination is `422 ADMISSION_INVALID`, an unreadable admission record refuses every further
+write with `409 ADMISSION_RECORD_INVALID`, and a failed write is `409 ADMISSION_WRITE_FAILED`.
+`POST /api/candidates/{candidateId}/accept` refuses a run with a live rejection with `409
+CANDIDATE_REJECTED`. Admissions are not synchronized yet: a Runtime connected to a shared project
+answers `409 SYNC_ADMISSION_UNSUPPORTED`, and a shared project service does not expose the route.
+
+`GET /api/admissions` lists the live records with their admitted results; `include=rejected`
+adds the rejections, which stay readable as "already tried". `warnings[]` names unreadable
+records and runs that more than one live record claims; those runs are left out of every read.
+
+`GET /api/design-history` adds the project's `candidates[]` and `studies[]`, the same on every
+branch except that `acceptedStageRef` prefers the requested line. A Candidate has `candidateId`,
+`outcome`, `label`, `summary`, `baseStageRef` (null under the Unstaged root), `studyId`,
+`modelSource`, `admittedBy` (`actorId`, `authenticated`, `origin`), `admittedAt`,
+`admissionRef`, `legacy`, `acceptedStageRef` (the Stage it became, or the Stage whose accepted
+run it is the nearest admitted ancestor of), `continuedFrom` (its nearest admitted ancestor),
+`inWorkingHeadLineage`, `blockedBy` and `supersedes`. Only admitted results are listed;
+`include=rejected` adds rejections. A Study has `id`, `label`, `baseRunId`, `baseStageRef`,
+`candidateIds` and `source`: `declared` by a record, `admission` for a record that declared none
+(its results form one group keyed by its `admissionId`, based at the nearest run outside the
+loop), or `working-copy` for a retained Exploration. Runs are never grouped on a shared base
+alone.
+
+Earlier facts that already prove admission are read and never written: a committed Stage's run
+(`legacy: stage`), a non-base option of a retained `StudioWorkingCopy@1` (`legacy:
+working-copy`, grouped as a legacy Study) and the run an accepted `DeliberationEpisode@1`
+produced (`legacy: episode`). An admission record is stronger than any of them. Saved and
+recovery rows, chat candidate ids, pins and newest files prove nothing, so a project with many
+runs and none of these facts lists no Candidate. Creating an Exploration (`POST
+/api/working-copies`) is retired; retained Explorations stay readable and selectable.
+
+## 6. Pick and gesture resolution
+
+A pick sends what the object on screen claims about itself — its `archflow:*` user strings, the
+document's own strings, the object name — and the server answers **resolved**, **unbound** (this
+project never produced that object: a fact, not an error) or **unknown_component** (it claims an
+identity this record cannot honour). An element resolves only *within the component the object
+claims*; an object naming one component and matching an element of another is two claims that
+disagree, and the component answers alone.
+
+Separately, and enforcing nothing, the answer reports `sourceState` — `current`, `stale` or
+`unknown`. Opening last week's export to look at it is legitimate; the base is enforced where a
+change is proposed, not where one is inspected.
+
+Gestures travel with a sentence on `POST /api/intents`: a circle with no pick **is** the
+selection, a keep mark **is** a keep clause. The server reads them into the record's own names
+and prints back what it read as facts. A client never resolves a gesture itself.
+
+---
+
+## 7. The event stream
+
+`GET /api/events` is `text/event-stream`. Each frame carries the event type as its SSE `event`,
+the body as JSON, and the sequence number as its `id`. A client that reconnects sends the last
+`id` it saw as `Last-Event-ID` and is given what it missed; a resume point that cannot be read
+as a sequence replays everything rather than silently skipping ahead.
+
+`?limit=N` is the other way to read it: a catch-up that sends at most N events, replay included,
+and closes as soon as the backlog drains — so a bounded read always terminates, even on a quiet
+process. Without `limit` the connection is held open and carries live events.
+
+**Reserved.** The browser's `EventSource` cannot send an `Authorization` header, so an
+authenticated stream (§10.1) has no answer in v2. A minor version will name one — a bearer
+token on the stream request through a fetch reader, or a short-lived stream ticket — and until
+then a remote deployment's clients read the stream by other means or not at all.
+
+---
+
+## 8. Honesty lines
+
+Several answers carry `honesty[]`: plain sentences saying what that answer does **not** tell
+you. A projection whose bound view the kernel refused says so and still serves the entities the
+record declares; a candidate whose seat exported and left no artifact record says so; a
+review-readiness result says which of its clauses was vacuous.
+
+These are part of the protocol, not decoration. A conforming server states what it could not
+compute rather than answering with an empty list, and a client shows them verbatim rather than
+summarising them — an empty list being the one way a client can turn a refusal into a silent,
+confident-looking answer.
+
+---
+
+## 9. Errors
+
+Every failure, without exception, is one body:
+
+```json
+{"code": "STALE_BASE", "detail": "…"}
+```
+
+plus `question` and — when non-empty — `acceptedForms` for `BLOCKED_NEEDS_HUMAN`, `outcome`,
+`pendingIntent` and `authoredControlDraft` for a refusal that belongs to a clarification chain
+(§5.1), and `sourceRef`, `budgetState` and `usage` for a refused or failed visual review (§4).
+That includes
+unknown paths (`404 NOT_FOUND`), wrong methods (`405 METHOD_NOT_ALLOWED`), unreadable requests
+(`422 REQUEST_INVALID`) and server bugs (`500 INTERNAL_ERROR`, which says nothing about itself).
+Anything the framework refuses before a route runs keeps its own status under `HTTP_ERROR`.
+
+A `detail` never carries the server's own filesystem path. An error is read by whoever ran into
+it, and where a server keeps a project on disk is no part of an answer about a design.
+
+---
+
+## 10. What version 2 reserves
+
+### 10.1 Authentication
+
+A server is in one of two modes, and says which at `/api/protocol`.
+
+- **`local`** — unauthenticated. One user on one machine, a loopback listener. Nothing about
+  today's local pair changes: no token, no CORS, no header.
+- **`remote`** — every `/api/*` resource except `/api/health` and `/api/protocol` requires
+  `Authorization: Bearer <token>`. A request without one, or with the wrong one, is
+  `401 UNAUTHENTICATED` with `WWW-Authenticate: Bearer` — including for a path that does not
+  exist, so an anonymous caller learns nothing about which paths a server has. A remote server
+  that cannot name a token does not start.
+
+The token is opaque to the protocol: how a client obtained it, and what it stands for, is
+outside v2. There is no login resource, no session, no user identity on any answer, and no
+per-project authorisation. A minor version adds them; nothing in v2 pretends they exist.
+
+That absence has one consequence a client can see. Writing an authored work-in-progress file —
+today, `POST /api/program` with `saveInput: true` — is a **local-mode act only**: a remote server
+cannot say whose sheet it would be saving, so it answers `409 WIP_WRITE_REMOTE` rather than let one
+architect's brief silently replace another's. The read and the candidate are unaffected, and the
+refusal names the run that was made. When per-user authoring lands, this refusal goes with it.
+
+### 10.2 Multi-project addressing
+
+The general form of every resource is project-scoped:
+
+```
+/api/projects/{projectId}/…
+```
+
+The unscoped paths — `/api/state`, `/api/pick/resolve`, `/api/proposals`, and the rest — are the
+**default-project shortcut** for it. They are not deprecated and are not a second API: they mean
+the one project a server names `isDefault` in `GET /api/projects`.
+
+Version 2 serves the scoped prefix for the two listing resources only
+(`/api/projects`, `/api/projects/{projectId}`). Duplicating a dozen routes under a prefix that
+resolves to the same binding would be a second copy of the API to keep honest. What is built now
+is the part that cannot be retrofitted: the project segment has **one resolver**, so a server
+binding several projects fills that in, mounts the prefix, and no client and no route changes.
+An id that server does not bind is `404 PROJECT_NOT_FOUND`.
+
+A client that wants to be portable reads `GET /api/projects` first and uses the scoped form
+wherever a server offers it.
+
+### 10.3 Server identity and capabilities
+
+`capabilities` is how a client hides what a server cannot do instead of discovering it as a 404.
+A capability name is a feature, not a route: `projection`, `pick`, `gestures`, `intents`,
+`proposals`, `candidates`, `candidate-admission` (§5.5), `captures`, `compare`, `artifacts`, `program`, `validation`, `events`, and
+`cad-export` when geometry export is enabled, and `rhino-export` when Rhino is explicitly selected.
+
+An explicitly configured MonkeyMonitor diagnostic directory adds `operation-timing`
+and `operation-diagnostics`. The former retains `POST /api/events/model-load` for
+older clients. The latter adds `POST /api/events/timing` with `ClientTimingDto`:
+client event/operation UUIDs, optional parent UUID, the closed phase/status set,
+project/run/source binding, UTC interval and measured client duration. Optional
+details contain numeric waits/bytes, asset identity and request kind; no prompts,
+responses or provider token counters are accepted from this endpoint.
+`X-Monkey-Operation` and `X-Monkey-Parent` correlate individual requests and their
+candidate workers. They are diagnostic association only and grant no project action.
+The acknowledgement reports whether logging succeeded; diagnostics cannot retry a
+business request. Model-request round trips and nested service intervals are not
+pure inference time, and only an explicit client interaction root supplies total
+elapsed time. See [MonkeyMonitor timing](../../packages/monkeymonitor/src/monkeymonitor/README.md#turntrace).
+OCCT exports an exact STEP and a mesh 3DM preview from the same program. Clients load only the
+3DM in the viewer and offer the STEP as a download; two files sharing a receipt are one export.
+The list is sorted and reflects the running configuration,
+not the build.
+
+A client must tolerate a capability it does not know — that is how a minor version adds one —
+and must not infer a capability from a successful call.
+
+The identity in `/api/health` (`service: "archflow-studio-api"`) is the name the runtime's package
+had until #491, kept for the operators and probes that already read it. `/api/protocol` is the
+protocol's own answer, and `server` there is the implementation's product name.
+
+### 10.4 Versioning
+
+- **Major.** A client refuses a server whose protocol major differs from its own, and says so
+  rather than reporting answers it may have misread. This implementation serves `archflow/2`.
+  Version 2 replaces `advance` with `reviewReady` in the stable validation response and event
+  payloads. The field reports candidate review readiness, never issue or stage-advance
+  authority. This rename is incompatible with `archflow/1`: both client and server must use
+  major 2, and a mismatched client stops at the handshake before reading design responses.
+- **Minor.** Additive only: new resources, new capabilities, new fields on existing answers, new
+  error codes. Never a removal, a rename, or a change of meaning. A client ignores fields it does
+  not know and does not fail on an unknown error `code`.
+- **Server version.** `serverVersion` is the implementation's, and a client never branches on it.
+  Branch on `capabilities`.
+- **Provisional resources** (§4) are the exception a minor version may change. A client that
+  depends on one says so.
+
+### 10.5 Not in version 2
+
+Named here so nobody reads their absence as an oversight: issuing (writing the published
+container), the archived container as a resource, stage closure,
+project creation, authored-record writing (the work-in-progress container is
+read-only over the wire), server-side lookup of an artifact by digest across projects, and a
+second author's work-in-progress slot. Each has a place in the layout already; none has a route.
+
+---
+
+## 11. Conformance
+
+A **server** conforms when `/api/protocol` answers §1, `/api/health` and `/api/projects` answer,
+every stable resource in §4 it lists as a capability answers in the shape named there, every
+failure is the body in §9, every reference is a `project://` URI and every identity a digest
+(§2), no resource writes the published container, and `honesty[]` says what an answer does not
+cover rather than the answer being silently narrowed.
+
+A **client** conforms when it probes `/api/protocol` first, refuses a foreign major, sends back
+the `stateDigest` it was given, renders the server's codes and honesty lines verbatim, and
+computes no review readiness, impact or propagation of its own.
+
+## 12. Shared project and local Runtime (additive version 2.1)
+
+A shared project service advertises `shared-project` and `project-sync`. It authenticates
+operator-configured actors, each with explicit project `read`, `propose`, `accept` and/or
+`release` grants. No grant implies another. It exposes retained reads, candidate transfer,
+initial Stage creation, branch creation and the existing candidate acceptance operation.
+It does not construct an intent compiler or accept local computation jobs. Its OpenAPI
+document lists only the operations this service role exposes.
+
+A connected Runtime remains a single-user loopback process. Its operator configures one
+shared URL, project identity and actor token. It runs the local modeling/agent/drawing
+operations and retains local candidates. Multiple incoming actors cannot share that static
+upstream credential. Authenticated shared acceptance fills the existing Stage `accepted_by`
+field; `DesignStageDto.acceptedBy` exposes it. Earlier records keep their stored attribution.
+
+| Endpoint | Process and action | Result |
+| --- | --- | --- |
+| `GET /api/sync/manifest` | Shared, read | Snapshot dependency closure, file paths, SHA-256 and sizes; no embedded bytes |
+| `GET /api/sync/files?path=...&sha256=...` | Shared, read | One verified project file as binary; unrelated workspace files are refused |
+| `POST /api/sync/candidates` | Shared, propose | Verified immutable candidate dependencies; no acceptance or published HEAD change |
+| `POST /api/sync/pull` | Connected Runtime | Bootstrap an empty same-identity project or pull shared branches while retaining local candidates and inputs |
+| `POST /api/sync/push?candidateId=...` | Connected Runtime | Upload that candidate's missing dependencies to the configured shared service |
+
+Transfers carry `project_id`, `format_version`, `mode` (`snapshot` or `candidate`), `head`,
+`branches`, `root_run_id`, dependency `run_ids`, `files` (`path`, `sha256`, `size`) and
+`contents` (base64 bytes by path). Existing identical bytes may be omitted from `contents`;
+the receiver verifies the complete closure before installation. This is a transfer value,
+not another project file format. P036 remains the only project writer.
+
+The existing `POST /api/candidates/{id}/accept` on a connected Runtime delegates to the
+shared service and then pulls the result. It uploads a candidate first only when the shared
+service does not already hold it. Acceptance still verifies replay, model completeness,
+validation and exact branch base. A stale branch returns `409 DESIGN_BRANCH_STALE` and
+retains the local candidate; acceptance retries return the original Stage. Branch creation
+also delegates; initial Stage creation must occur on the shared project before clients pull.
+
+This slice synchronizes design branches only while published HEAD is identical. A different
+published HEAD or incompatible local branch returns `409 SYNC_BASE_CHANGED`; it is not
+silently overwritten. Lost network access returns `503 SYNC_UNAVAILABLE`; local work stays
+available. Accept, upload and pull never issue a published version. `release` is a distinct
+grant and does not expose a new issue endpoint. Remote hosting, TLS, real member onboarding
+and multi-machine installation remain deployment work. The existing browser SSE bearer
+limitation remains; this HTTP collaboration path does not depend on an SSE connection.
+
+## MonkeyHub project runtime
+
+Native Claude-compatible chats use `runtime/chats/<chatId>/scratch` under the explicit nonproject Hub runtime root for temporary calculation scripts and derived working files. ChatStore creates the directory, grants it through the existing CLI `--add-dir` argument and names it in the turn prompt. This does not grant writes to the CLI's protected configuration directory; retained design results still use the connected project APIs and P036.
+
+### External conversation presentation
+
+`POST /api/chat/presentation/bind` accepts an existing `projectDir`, stable `sourceSessionId`,
+provider, optional external `chatId`, and title. It reuses the same project/source conversation
+and returns `chatId`, `projectId`, `sourceSessionId`, a process-local bearer capability and a
+Hub deep link. It cannot adopt a native conversation or rebind a conversation to another project.
+Bind and presentation mutations require a loopback peer as well as the existing Host/Origin
+checks. The local machine remains the trust boundary; this is not a remote collaboration API.
+
+`POST /api/chat/sessions/{id}/presentation` requires that bearer capability plus the exact
+project/source binding. Its body contains UUID `turnId`/`messageId`, monotonically increasing
+`revision`, `kind: user|progress|assistant`, full `content`, status, and optional attachments or
+exact document references. A new external user item starts one turn without a model invocation.
+Progress uses the existing transient projection. Assistant snapshots persist in ChatStore,
+and the terminal result settles the turn's earlier streaming results. Identical retries return
+the existing result; stale, conflicting, cross-turn and post-stop writes are refused.
+An external process may outlive Hub: reopening marks its conversation interrupted while keeping
+its streaming snapshots, and explicit source rebind resumes that turn with a new capability.
+Explicitly stopped turns remain terminal. Native provider tools use a capability supplied by
+their owning Hub in the process environment, never command-line credentials.
+
+Chat summaries expose nullable `sourceSessionId`; non-null identifies an external, display-only
+conversation. Messages add optional `sourceTurnId`, `presentationRevision`, and `documents`.
+Document entries bind `runId`, `assetSha256`, `revisionRef`, `pageIndex`, verified `fileName` and
+`mimeType`. `GET /api/chat/sessions/{id}/documents/{messageId}/{index}` only reads a reference
+already retained in that conversation, rechecking project identity, exact revision/page and
+owner-verified bytes. `?download=true` downloads it. It never accepts a caller-selected file path.
+The existing attachment download accepts `?inline=true` for validated PNG/JPEG/WebP/GIF bytes;
+other formats remain downloads. Responses are `no-store` and `nosniff`.
+
+The same stdio adapter exposes `presentation_bind` for external connections and `chat_present`
+for both external and native conversations. Native `chat_present` exposes only
+`kind: "progress" | "assistant"`: Hub already owns the actual user turn, so native providers
+do not manufacture or repeat a user message. External presentation retains
+`kind: "user" | "progress" | "assistant"` with explicit turn/message identities.
+Native presentation status is always `streaming` until the CLI turn finishes; its schema exposes only that value and the adapter normalizes older `complete` requests to it, so a provider can revise the same message before completion. External presentation status remains caller-controlled.
+The adapter alone can read an explicitly selected
+local attachment path and convert it to the existing bounded upload. Provider summaries,
+public commentary and document views confer no design acceptance or Board write authority.
+
+### Conversational suggestions
+
+`chat_present` and `POST /api/chat/sessions/{id}/presentation` accept an optional
+`suggestion` on assistant messages. It contains `title`, `outcome`, `capability`
+(`available` or `needs-development`), `rationale`, optional `tools` and
+`deliverables`, `timeEstimate`, `costEstimate`, and the plain-text `prompt` the
+user may choose to send. An estimate has nullable `value` and `basis`; a stated
+value requires a nonblank basis. Missing estimates remain unknown. Capability
+and estimates are the Agent's source-backed assessment, not an execution result,
+price quote or permission grant. The Agent queries existing capabilities and
+schemas before proposing tools; no toolbox installer or new execution path is added.
+
+The card is retained with the assistant message in ChatStore, bound to its
+existing source turn and presentation revision. Card-only messages are valid.
+The existing snapshot rules also cover card contents: an identical retry is
+idempotent, and different contents at the same revision conflict. Native and
+external conversations can both display cards; external conversations remain
+display-only.
+
+Choosing a card posts only `projectId` and
+`suggestionSelection: {messageId, revision}` to the existing
+`POST /api/chat/sessions/{id}/messages`. The server resolves the prompt from the
+retained card and stores the selection on a new user message before starting
+the ordinary native-provider turn. It rejects simultaneous replacement text,
+attachments or context, wrong projects, unfinished or superseded cards, old
+turns, repeat choices, non-idle or archived chats, and external conversations.
+The transcript retains a choice across restart; loading it never replays work.
+The next Agent turn still uses the existing project tools, exact-base checks
+and permissions. Selecting an assessment of a missing capability does not
+install software, authorize spending or issue a project version.
+
+The UI exposes one primary action, a draft-only adjustment and a local skip.
+Adjustment preserves unsent text and attachments and requires an ordinary Send;
+skip does not start a turn. Details include the request to be sent and estimate
+bases. Simple, explicit requests continue directly without a mandatory card.
+The right-hand Design tree and lower-left global Usage remain the primary
+destinations; their duplicate project-info and Help entries are removed.
+
+### Conversation attention
+
+Chat summaries (`GET /api/chat/sessions`, and `GET /api/chat/sessions/{id}`) carry
+`attention: "permission" | null` (#300). It is `"permission"` exactly while a permission request
+in that conversation waits for a decision, the request the conversation shows with its options;
+answering, stopping, a withdrawn step and a Hub restart clear it. It is read from the transcript
+already in memory on every read and never stored. A permission request and its answer each move
+`updatedAt`, so two requests in a row are two moments.
+
+The Hub frontend reads this list about every 4 s and raises one notice per transition after its
+first reading: a permission became pending, a running turn became idle, or a turn failed or gained
+a new error (a stop the architect asked for is not one). A moment is keyed by chat, kind and
+`updatedAt` and announced once; the conversation on screen raises none. While the window is hidden
+the same moments become OS notifications and a count in the window title. A notice opens its chat
+through the cancelable window event `monkeyhub:open-chat` (`detail: {chatId, projectDir}`): the page
+showing conversations opens it and calls `preventDefault()`; unanswered within 300 ms, the Hub loads
+`?chatId=`. Notices never change the visible surface by themselves.
+
+### Runtime lifecycle
+
+The runtime's process contract — what the Hub supplies, what it owns, identity, isolation and
+the direct development start — is [project-runtime.md](../architecture/project-runtime.md); this section is its
+wire protocol on the Hub side. The runtime is API-only. One Hub frontend renders Arch and Board
+in place; Diagram opens a registered Board page, not a separate application. `AppStatus.url`
+for Arch/Board points to `/?runtimeId=...&view=arch|board`; `apiUrl` names the actual verified
+runtime API for agent access. Each project workspace has its own client, token and connection
+identity. Navigating between workspaces does not change a model editing base.
+
+The local Hub exposes `GET /api/runtime` and `GET /api/runtime/projects/{runtime_id}` as one
+runtime view: exact project/path binding, published P036 version/digest, reachable design
+Stages, owned worker identity/health, chats and operation status. `POST /api/runtime/projects/open`
+takes `{projectId, projectDir}` and attaches without starting a worker. Project identity plus
+normalized path determines the runtime id; identical project ids in different folders never
+share a worker, operation admission or projection.
+
+Worker/session observation continues each second. Retained history is refreshed for active
+jobs/operations, mutation or attachment wakeups and worker changes; an idle runtime reuses
+its projection and checks for external project changes every 30 seconds. These reads verify
+existing receipt/source facts without rebuilding candidate previews or recalculating viability.
+A forwarded read (GET/HEAD, or a read-only POST such as `/api/state/closure`) does not wake
+the runtime. Which document work copies exist is derived again only when the runs, their
+document records or the files in their copy workspaces change; that comparison runs on a wake
+and every 30 seconds and reads no other record.
+
+`GET /api/runtime/events` is SSE with event name `runtime`. Each event has `serverId`,
+`sequence`, `kind`, optional `runtimeId`, and optional `snapshot`; its event id combines the
+server instance and sequence. Every attachment starts with a current full snapshot rather
+than relying on a cursor from a previous Hub process. Subsequent events invalidate live views;
+they never replace retained project evidence. Browsers can reconnect and read the snapshot
+without submitting work again.
+
+Hub workspaces and chat submit existing Project Runtime API requests through
+`/api/runtime/projects/{runtime_id}/studio/api/...`. Mutation requests accept a UUID
+`Idempotency-Key`. It binds the method, full path and exact request bytes within that project
+runtime. A duplicate waits for or returns the existing reply; a changed payload/path/method
+returns `409 OPERATION_ID_CONFLICT`. Lost responses return an explicit recovery state, not an
+automatic retry. `X-Monkey-Operation` remains diagnostic correlation and is not an idempotency key.
+Hub forwards no caller-selected host and checks project ids in query/body and chat attachment.
+Same-origin Hub workspaces use this forwarding boundary. The retained compatibility origin check also permits currently verified owned runtime origins; it does not permit arbitrary hosts.
+
+For candidate-producing requests Hub supplies `X-Monkey-Candidate` and `X-Monkey-Worker`.
+Studio accepts that preallocated `hub-cand-<uuid hex>` only for its actual managed instance,
+retains all existing proposal/exact-base checks, and refuses any already existing run. Ordinary
+standalone requests keep server-generated ids. The read-only Studio `GET /api/runtime` uses
+the existing candidate/branch readers, accepts bounded `limit` and repeated `candidateId`, and
+separates process jobs from retained candidate outcomes. `baseStateDigest` in that retained
+candidate view is the operator's exact StateRecord binding digest; `resultStateDigest` is the
+runner's developed-design digest. Neither is silently substituted for a third identity.
+
+### 4.1 Working Head and Worktree Graph
+
+The Working Head is the architect's editing base, which ordinary Modeling, Drawing, Render and
+Board work follows. It is read from the retained working position (`design/working.json`
+`current`), which only the explicit `PUT /api/working-draft` moves: Continue on a shown result,
+adopting the architect's own Sync, or the Hub Agent continuing on the user's bound words (#294
+Q3). A generated candidate, including a continuation of the base,
+is recorded and shown but never adopted (GH-234 Q1/Q2). An unreadable position falls back to the
+main line's accepted head and then the reference run, with a warning. A position whose run has a live
+rejection (§5.5) stays the head and adds a warning; only Continue moves it. Resolving it writes nothing, takes no project
+guard and never picks a newest file. A continuation keeps its source position's branch, so a
+fork's work stays on the fork although it shares the parent's earlier Stages. A candidate's
+lineage follows its source and any results it combined. Drawing status targets, drawing-driven
+design changes and render/publication freshness compare with this head; a cut plan drawn from a
+chosen version (`follow: "frozen"` in its recipe) stays on that version until it is rebuilt with
+`follow: "live"`. The Worktree Graph derives other lines from the same position, design branches,
+candidate deltas and the job queue; its `reconcile` is the StateRecord combine rule applied as a
+dry run from the nearest shared source. Owner attribution belongs to the Hub journal, not to
+project records.
+
+The position's `revisionSha256` (from `GET /api/working-draft`, `/api/working-draft/revision` and
+`/api/working-source`) is the compare-and-swap token that `PUT /api/working-draft`, `POST
+/api/working-draft/save` and `PUT /api/working-draft/local` check. It covers the head, the listed
+runs and the local recovery, not the `active` ledger of executing or interrupted candidates that
+`working.json` also keeps, so a candidate starting or ending never refuses a write that read the
+position before it (GH-293). Listing a finished candidate does move it; the local draft writer
+reads again on `WORKING_DRAFT_STALE`, while its own witness and `expectedSource` guard the content.
+
+Whether a representation page is still current is one read-only projection
+(`representation_status`, #223), derived on every read and never stored. An explicit page
+replacement answers first; then a cut plan answers through the Drawing owner's read set, an AI
+render through its retained request, a page bound to one model state through this head, and a
+page bound to nothing by its replacements alone. Its words are `current`, `outdated`, `frozen`
+(kept on a chosen version) and `unavailable`; the Worktree Graph says `stale` for `outdated`,
+and Publish keeps its own words (Publication pages). A Worktree Graph drawing row is this
+projection of the drawing's latest page, so it agrees with the Drawing tool: a change outside
+the plan's read set leaves it current. A render row is the render owner's `sourceState`.
+
+Continue is an attributed act, whoever makes it (#294 S4). Each move onto a run retains one
+`AuditEvent@1` with `action: design.continued` in that run's review area. It names ids only:
+`actorId` and `authenticatedActor` from the request boundary, `origin` (`studio` or `hub` for
+the architect, `hub-agent` for the Agent), `previousHeadRunId` (the resolved head before the
+move), `targetRunId` and `messageSource`. Returning to the default names no run and retains
+nothing. When the event cannot be retained, the move is undone and the request answers `500
+CONTINUE_NOT_RETAINED`. The Agent's Continue carries the chat `messageSource` and the user's
+`rawLanguage`, both bound by Hub; a Runtime no Hub manages, a missing half, or no named run
+answers `422 WORKING_DRAFT_ATTRIBUTION_INVALID`. The event keeps the message ids, not the words.
+A Continue admits no Candidate and accepts no Stage, and the acceptance reader ignores the event
+because it names no `resultStageRef`.
+
+`POST /api/runtime/projects/{runtime_id}/recover` with `{projectId}` inspects retained outcomes
+before replacing one crashed owned Studio on the same port. It rebuilds the state projection
+through the existing read endpoint and never calls a mutation route. A Stage acceptance is
+committed only when branch ancestry contains the matching candidate and exact expected parent;
+candidate completion and formal project issue remain separate. `close` at the same runtime path
+cancels only its attached agents/permissions and drains its owned Studio. Normal Hub shutdown
+preserves the existing accepted-work drain.
+
+Each operation record carries `createdAt`, when this Hub admitted the request; rows admitted
+before admission times were kept, and observations of retained runs, have none.
+
+An operation that needs recovery also says whether the Hub can still recover it (#58).
+`recoverable` is true only while the retained project could still resolve it: the candidate run
+the request named is retained with its runner receipt, and an acceptance named the Stage it
+expected to succeed and its branch has not moved past that Stage. Recovery never replays a
+request, so an operation that named no run (for example `POST /api/proposals` or
+`POST /api/drawings/sheets`), a run retained without its receipt, and an acceptance that named no
+parent Stage or whose compare-and-swap can no longer land are not recoverable. Until the Hub has
+read the project since the reply was lost or since it started, an operation that named a run
+counts as recoverable, unless a person already dismissed it as unrecoverable. `recoverable` is
+false for every other status.
+
+`POST /api/runtime/operations/{operation_id}/acknowledge` with `{runtimeId, projectId}` records
+that a person dismissed the notice of one operation of that runtime that failed, went stale or
+needs recovery and is not recoverable (#285, #58). The dismissal is kept in the runtime's operation
+journal by operation id together with the status it read, so it survives a Hub restart, and the
+record reports it as `acknowledgedAt` only while it still reads that way: a failure that follows
+an unrecoverable interruption, or an interruption that turns out recoverable, is reported again.
+A dismissed operation that needs recovery no longer holds its place ahead of finished ones in the
+record list. Nothing is sent or replayed, and the operation's status, reason and result are
+unchanged. A recoverable operation answers `409 OPERATION_NOT_ACKNOWLEDGEABLE` and stays until a
+retained result resolves it; an unknown id answers `404 OPERATION_NOT_FOUND`.
+
+The bound chat's `studio_schema` tool has two read-only modes. Omit `path` to discover
+actions in the current Runtime OpenAPI intersected with the existing chat allow-list.
+Optional `pathPrefix` (for example `/api/drawings`) and `method` narrow the list; omitting
+`method` includes both reads and writes. `offset` defaults to 0, `limit` to 30 (1–50).
+The reply contains only `actions` (`method`, `path`, `summary`), `total`, paging fields,
+an explanatory `note`, and a `next` tool call when more actions remain. Supply an exact
+`method`/`path` to read what that action takes: its query and path parameters and its request
+body, with the schemas they name (responses are not described; the call answers with one).
+Any other argument, such as the retired `producer`, is refused by name; geometry is authored with
+a construction script, never chosen by producer. Discovery neither grants authority nor proves input validity.
+The chat projection of `GET /api/capabilities` preserves its registered-workflow fields
+and adds `actionDiscovery` pointing to this tool; a matched workflow is not an exhaustive
+list of API actions. Unknown paths return `CHAT_ACTION_UNKNOWN` with bounded same-domain
+suggestions; an existing action outside the chat allow-list remains `CHAT_TOOL_UNAVAILABLE`.
+A permitted schema query absent from this Runtime returns `CHAT_ACTION_UNSUPPORTED`.
+No refusal automatically substitutes or executes a suggested action.
+Drawing-only tasks complete through their registered documents and exact output readback;
+model-candidate admission applies to new model revisions. A later observation or admission
+failure does not revoke a document already retained by its drawing owner.
+
+A chat message may carry an optional `designContext` with `stateDigest` and the same optional
+source, focus and supplement fields as `/api/intents/context`. When it is there,
+Hub prepares that one turn against the bound Studio's `POST /api/intents/context` (§4) and appends
+the `ContextPack@1` it answers with to the prompt as data, leaving the architect's own message
+unedited and ahead of it. The selection belongs to the message that carried it: it is never
+inferred from a browsed candidate or the previous turn, and a later message with none of
+its own is prepared exactly as it was before. A refusal is that turn's answer in the words the
+refusal came with — no provider starts, and no other source is tried to get one started. The
+project the turn is bound to is still the conversation's own.
+
+The Hub UI supplies this context from its verified editing projection. Browsing history does not
+change it; explicit continuation does. An unsynchronized local draft has no saved context and
+must be synchronized before project-context continuation. A selected object is included only
+when its resolved source agrees with that editing digest.
+
+A chat message may carry an optional `renderContext` (#253): `{source, references}`, each an
+exact registered page `{runId, assetSha256, revisionRef, pageIndex}`, with one source and up to
+three distinct references and no page repeated. It needs no `designContext`. An external,
+archived or closing chat refuses it as it refuses any message, before any page is read. Before
+the message is kept or any CLI starts, Hub binds every page to the conversation's own project:
+that exact registration and page must exist, be a PNG or JPEG image and have no newer registered
+replacement. Otherwise the post is refused (`409 CHAT_RENDER_IMAGE_UNAVAILABLE`,
+`422 CHAT_RENDER_IMAGE_UNSUPPORTED`, `409 CHAT_RENDER_IMAGE_STALE`, or
+`503 CHAT_RENDER_IMAGE_UNREADABLE` when the project's documents cannot be read to check) and
+nothing is sent; no newer, same-named or nearby image is substituted. An interjection cannot carry
+one (`409 CHAT_INTERJECTION_IMAGES`). The bound pages stay on the user message as `documents` with
+`role` `source` or `reference`, and the native turn receives the roles and exact pages as data,
+with the instruction to look at each through `POST /api/board/export` before describing it. The
+Hub UI receives the pages from a Board hand-over and sends them with each message until the
+architect removes them, so a correction continues the same native session with the same pages;
+such a message carries no automatic editing base. While a reply runs, the composer holding them
+sends nothing: the pages and the words written beside them wait for the next message. A hand-over
+that lands while a message is still being sent is refused back to the Board, whose dialog keeps
+its words.
+
+The bound tool also reads `GET /api/render/capabilities`, `GET /api/render/jobs` and
+`GET /api/render/jobs/{job_id}`, and posts `POST /api/render/jobs` through the operation admission
+with Hub filling `projectId`. A request whose `providerId` is not one the Runtime reports available
+is refused before admission: `503 RENDER_UNAVAILABLE` when no provider is configured, otherwise
+`422 RENDER_PROVIDER_INVALID`. The Runtime's `requestId` keeps one attempt per request ([Render image
+attempts](#render-image-attempts)). `studio_schema` with `pathPrefix /api/render` answers the render guide.
+
+The bound chat tool exposes `GET /api/decisions`, `GET /api/decisions/{id}` and a
+narrow subset of the Runtime's decision writes. `POST /api/decisions` accepts only
+`avoid`/`keep`; Hub fills `rawLanguage` and `messageSource` from the current real
+user message and fixes `sourceKind=agent` for the interpreted scope/target. Those
+fields cannot be supplied by the provider. `POST /api/decisions/{id}/revisions`
+accepts only `revoke`, the revision read and the bound project; Hub verifies the
+original chat message and fills `reason`/`revisionMessageSource` from this turn.
+Optional tool argument `feedbackQuote` selects one unique continuous verbatim
+passage from that current user message, bounded by the Runtime's 2000-character
+limit; Hub rejects fabricated or ambiguous selections and extracts the words
+itself. The original message ID remains bound on both creation and revocation.
+Lock, supersede and Stage acceptance are not exposed by this capability. Runtime
+authorization and CAS remain authoritative. Its schema tool derives these
+narrowed inputs from the actual Runtime OpenAPI rather than another Decision DTO.
+
+The same tool closes the Agent's loops and continues only on the user's words (#294 Q3). It
+exposes `POST /api/admissions` with `task.kind` fixed to `hub-chat`, and `PUT
+/api/working-draft`; it reads `GET /api/admissions`, `GET /api/working-source` and `GET
+/api/working-draft/revision`. Hub fills `messageSource` from the last user message the Agent was
+given; an interjection still waiting for its next step binds nothing. It binds `rawLanguage`
+where the user's words carry the decision: a `feedbackQuote` passage, the whole message for a
+rejection, and always for a Continue. A Continue with no such message or words is refused (`409
+CHAT_FEEDBACK_SOURCE`), as is provider-supplied provenance, another task kind or a Continue
+without a run (`422`). The schema tool hides the bound fields, and the Continue reply carries only
+`projectId`, `revisionSha256` and `current`. The Hub prompt asks for one admission per completed
+loop: a declared Study for several alternatives, each result's superseded attempts, no
+intermediate runs, and a rejection or Continue only on the user's own words.
+The prepared default reads design and drawing decisions together, so the Agent is
+handed the same project recipe a new drawing starts from: a drawing decision
+whose `typedBinding` is `{"kind": "recipe", "graphics": {…}}` over the closed
+paper-space keys `cutLineMm`, `visibleLineMm` and `hatchSpacingMm`. Hub's context note
+names the order a new drawing reads it in: an explicit value in the drawing request, then
+the drawing's own previous revision, then the project recipe, then the default. Copy work,
+or a turn that wants one domain alone, selects `decisionContext.domain` on the
+existing context read. Full applicable decision slices pass through, while
+revoked, deferred or inapplicable records do not. Chat feedback cannot retain a
+recipe: the Runtime keeps one only for a person's confirmed `require`
+(`sourceKind=human`), and the chat saves `avoid`/`keep` as `agent`.
+
+`contextMode` defaults to `continue`, preserving native conversation continuity. Explicit
+`project` requires `designContext`; after that source read succeeds, Hub starts a new native
+CLI/ACP provider session containing the current request, current attachments and prepared
+project state. It does not load the previous provider transcript. Visible messages remain in
+the same Hub chat and mark the project-context turn; subsequent ordinary turns continue the
+new provider session. Failed/stopped preparation preserves the previous continuation. Retained
+provider identities remain available for usage attribution; old chat text is never projected
+as design state.
+
+The UI defaults to `stage` when a verified editing projection is available. Like `project`, this
+mode requires `designContext`. It starts a fresh provider only if the verified pack identifies
+the exact accepted result (`confirmedStage.isSource`) and that Stage differs from the provider's
+last confirmed starting Stage. The continuity marker is saved with Hub's existing chat metadata,
+so reopening the same Stage does not reset again. A candidate's inherited Stage, ordinary
+revision, history browsing, absent context or refused/cancelled read never triggers a boundary.
+No Stage is accepted by this process. The actual handoff message records `contextMode=stage`,
+`confirmedStageRef` and `confirmedStageLabel`; other automatic-mode turns remain `continue` in
+the visible history. Explicit API `continue` remains available for accumulated-history use.
+If startup fails or is cancelled before a replacement provider reports its session identity,
+Hub restores the prior continuation and removes the automatic handoff marker while retaining
+the failed turn and its error. Once a replacement identity exists, a later turn failure does
+not restore an older provider. Manual candidate-context resets retain the last handled Stage
+boundary, preventing another automatic reset when returning to that same Stage.
+
+Preparing is bounded by the turn's own limit and can be stopped inside it: a stop ends the turn
+then, abandoning that read rather than waiting it out, and the answer it may still produce reaches
+nothing. What the limit means after that differs by transport, and one does not stand in for the
+other. The CLI transports hold **one total limit for the turn**, so what preparing spent is time
+the CLI no longer has rather than a wait added outside the limit, and a turn whose budget is gone
+before the CLI starts answers `CHAT_TIMEOUT` without starting it. The ACP adapter's limit is an
+**inactivity interval** that its own updates reschedule, not a total; it keeps the whole interval,
+and preparing neither shortens it nor bounds the turn through it.
+
+The runtime admission/reply map is in-process. Hub cold startup reconstructs retained results
+and saved conversations, not pre-admission requests or lost proposal/job registries. No additional
+project store, canonical writer, dependency graph or persistent queue is introduced.
+
+### Project archives
+
+An archive is one ZIP holding a `ProjectArchiveManifest@1` and the retained bytes that manifest
+names. It is a transport container, never a second project format. Hub chooses no location of its
+own: both routes hand the locations the request named to `archflow.project.archive`, which
+installs every byte through the existing P036 immutable writer.
+
+| method | path | body | returns |
+| --- | --- | --- | --- |
+| POST | `/api/project/archive/export` | `{projectDir, archivePath}` | `201 ProjectArchiveSummary` |
+| POST | `/api/project/archive/restore` | `{archivePath, targetParent}` | `201 {summary, project}` |
+
+`projectDir` is the absolute folder of the project to export; `archivePath` is the absolute path
+of a new `.zip` file outside it, and on restore the absolute path of an existing one. `targetParent`
+is the absolute parent folder to restore into; `null` restores into this Hub's own workspace folder,
+the same one `GET /api/chat/workspace` names. The restored folder is named by the archive's own
+project id, never by the caller or the file name. `project` in the restore reply is the same
+`ChatProject` row `GET /api/chat/projects` lists, so a restored project is immediately selectable.
+
+`ProjectArchiveSummary` states identities, counts and locations only, and no design content.
+
+| field | what it says |
+| --- | --- |
+| `projectId`, `formatVersion`, `version`, `stateSha256` | which project, which format, and the published position the archive carries |
+| `runCount`, `fileCount`, `retainedBytes`, `categories` | how many runs and retained files travelled, their total bytes, and the file count per retained category |
+| `omissions`, `externalDependencies` | what deliberately did not travel, and what the archive still needs from outside it |
+| `archivePath`, `archiveBytes`, `archiveSha256`, `verified` | the archive file itself, and that it was read back and verified |
+| `projectDir` | the normalized absolute folder: the source on export, the restored project on restore |
+
+Refusals carry the usual `{code, detail}`. `404 PROJECT_NOT_FOUND`: the export folder holds no
+readable project manifest. `422 ARCHIVE_PATH_INVALID`: a relative path, a name that is not `.zip`,
+an export target inside the project, an archive file that already exists, a restore source that
+cannot be opened, or a location the operating system itself refuses — a missing drive, a vanished
+or unwritable folder, a parent that is a file. `422 ARCHIVE_INVALID`: the manifest, a member digest
+or the restored project did not verify. `409 ARCHIVE_TARGET_OCCUPIED`: the restore folder already
+holds files, which are left untouched, or another restore of the same project id is holding that
+same folder's project head. `409 ARCHIVE_SOURCE_CHANGED` (export only): a retained file moved
+between building the manifest and reading it, or another process held the project head for the
+whole of the export's read, so nothing was installed and the same export can be asked again.
+`422 ARCHIVE_SOURCE_INVALID` (export only): the project itself cannot be exported — a reference
+into another project, a dependency no retained run holds, a file no retained record names — and
+the detail carries the retained project's own refusal, so asking again changes nothing until the
+project is repaired.
+
+A corrupt archive is refused before the restore folder is created. When verification fails with
+bytes already written, Hub deletes nothing and the detail names the folder to remove before
+retrying — whether the restore created that folder or found it empty and filled it.
+
+### Local user settings
+
+| method | path | returns | writes |
+| --- | --- | --- | --- |
+| GET | `/api/settings/user` | saved local preferences; `{}` when no file exists | nothing; opens no project |
+| PUT | `/api/settings/user` | replace the saved local preferences; omitted/null fields clear their override | atomically `%APPDATA%/MonkeyArch/settings.json`, no project |
+
+The optional fields are `language` (`en` or `zh-CN`), `theme`
+(`dark`, `light`, `system`), `fontScale` (0.9, 1, 1.1), `uiStyle` (`classic`, `quiet`,
+`titleblock`, `night`), `intentProvider` (`deterministic`, `codex`, `anthropic`), a nonempty
+`intentModel`, positive finite `intentTimeoutS`, `renderProvider` (`off`, `gemini`), a nonempty
+`renderModel` of at most 160 characters, `renderTimeoutS` from 1 to 300, `chatProvider`
+(`codex`, `claude`, `coding-plan`), a nonempty `chatModel`, an http(s) `codingPlanBaseUrl`, and
+boolean `autoUpdate`. Other fields are refused. Both routes return saved fields only; nulls are
+omitted. PUT replaces the file, so a client preserves any saved fields it is not editing. A
+malformed file answers 422 `USER_SETTINGS_INVALID` and can be replaced by an explicit valid PUT.
+The client restores appearance from GET. When the Hub next starts a Project Runtime, saved intent
+and render fields override the corresponding runtime/environment defaults; clearing them restores
+the existing runtime over environment rule. Saving does not change the current compiler. Each
+Runtime start reads the file again: a malformed or non-UTF-8 file refuses the start with 422
+`APP_SETTINGS_INVALID` until a valid PUT replaces it, and the preferences never change project,
+CAD or credential settings.
+The Project Runtime served the same provisional routes, and advertised `user-settings`, until
+#486; it now does neither and reads no preference file.
+
+## MonkeyHub computer use
+
+Three Hub routes drive this machine's desktop through MonkeyControl, and none of them is a
+project interface: `POST /api/computer/inspect` `{application, window?, depth?}` answers one
+window's element tree; `POST /api/computer/actions` `{action, mode?}` runs one
+`ComputerAction@1` and answers the `ComputerActionReceipt@1` it earned; `POST
+/api/computer/recordings` `{command: "start"|"stop", name?}` starts or ends the one recording
+a runtime may have running. The contract of both documents, the refusal codes and the trace
+layout are [computer-use.md](computer-use.md).
+
+A receipt is a `200` body whatever it says, including `status: "refused"` and `status:
+"failed"`: the caller reads the refusal rather than being told the request failed. Only two
+outcomes are statuses of their own — `422 COMPUTER_ACTION_INVALID` when the payload is not a
+`ComputerAction@1`, and `409 COMPUTER_ACTION_REFUSED`, whose detail carries MonkeyControl's
+own code (`RECORDING_ACTIVE`, `RECORDING_NOT_ACTIVE`, `BACKEND_UNAVAILABLE`,
+`APP_NOT_ALLOWED`). Permission comes from `diagnostics/monkeycontrol/policy.json` under the
+Hub's runtime root, read again on every request; without it these routes answer `403
+COMPUTER_USE_NOT_ENABLED` naming that path, and the MCP tools `computer_inspect`,
+`computer_action` and `computer_record` proxy the same three routes with no second check.
+
+## Study on a registered document page
+
+The existing Board document editor offers a Study side panel. Its normalized
+polygons use the same page interaction surface, but are saved only through
+`research-evidence-ledger` (`EvidenceLedger@1`), never as document annotations.
+
+- `POST /api/studies` saves corrected evidence and optional `research` against
+  `expectedPreviousRef`. Research contains editable documentary citations,
+  competing hypotheses, gaps, declared counterfactuals, exact comparison references,
+  a CompositionPattern and a conditional DesignPrior. Clients cannot provide
+  computed `actual` or `comparisonResults` results. The server computes and archives
+  comparisons with the saved research; cold reads replay those retained results.
+- `GET /api/studies` discovers current retained Studies, optionally filtered by
+  `sourceRunId`, `assetSha256` and `pageIndex`. `GET /api/studies/{study_id}` can
+  reopen an exact `ledgerRef`; source bytes and retained findings are verified.
+- `POST /api/studies/compare` compares 2–6 exact retained revisions using the
+  existing aspect-correct topology/proportion descriptors. Its bounds-based
+  similarity is not a validated architectural composition-family judgment.
+  Archived comparison references name the compared revisions, which can precede
+  the Study revision containing the result; subsequent edits do not relabel them.
+- `POST /api/studies/propose` names `projectId`, `studyId`, `expectedPreviousRef`
+  and `action` (`trace` or `reason`). It renders the exact registered page and
+  invokes the configured Codex/Anthropic transport under `ModelPhase.RESEARCH`.
+  Machine traces stay proposed. The model's source, input revision, timing,
+  usage and response are retained in `modelInvocations`; no substitute provider
+  or deterministic mock is used when one is unavailable.
+  When Monitor is configured, the existing usage log also records the actual
+  provider boundary, reported tokens and failure outcome against this project
+  and input ledger. Diagnostic failures never repeat a provider call.
+
+New research observations use true page-aspect-correct polygons; old derivation
+snapshots remain readable with their original method stamp. Counterfactuals keep
+the target, conditions and prediction, recompute affected geometry, and retain
+the measured outcome separately from interpretations. Model explanations cannot
+add unsupplied historical citations or sign the user's preferences. Changed
+applicability can retain, revise or reject a prior without rewriting the source.
+All Study operations leave StateRecord, DesignStage and canonical HEAD unchanged.
+Method limits and the public synthetic experiment are described in
+[the Study method note](../research/study-evidence-method.md).
+
+## Conversational model conversion
+
+`POST /api/exports` accepts `targetFormat` (`3dm`, `skp`, `glb`, `dwg`) and
+exactly one of `upload`, `sourceArtifactId`, or `projectRevision`. An upload carries
+`fileName`, `contentBase64` and optional `attachmentId`; a project revision carries
+`runId`, `stateDigest` and optional `assetSha256`, and must resolve to one complete
+model of that retained state. The 202 response supplies `exportId`, `jobId`,
+`status` and `statusPath`. Hub's bound chat tool substitutes an exact session
+`attachmentId` for upload bytes through its session-scoped `model-source` route.
+
+`GET /api/exports/capabilities` reports all 12 directed routes and qualified
+providers. `GET /api/exports/{export_id}` reads retained source provenance,
+progress, provider, units, measurable losses and output-validation results.
+Only `succeeded` exposes `downloadPath`; `GET /api/exports/{export_id}/bytes`
+rechecks the retained output digest. Failed jobs have no downloadable output;
+unfinished jobs after a Runtime restart report `interrupted` and are not replayed.
+These operations use existing jobs and P036 noncanonical export runs, leaving
+project HEAD and the authoritative model unchanged.
+
+The current provider supports bounded 3DM/GLB triangle-mesh interchange and
+validated same-format delivery. It does not reconstruct exact CAD solids or
+transfer materials, textures or hierarchy. SKP/DWG routes report no configured
+executor; discovery of installed software does not enable conversion.
+See [the complete conversion limits](model-conversion.md).
+
+
+## Render image attempts
+
+The existing Project Runtime exposes `GET /api/render/capabilities`,
+`POST /api/render/jobs`, `GET /api/render/jobs` and `GET /api/render/jobs/{job_id}`.
+Capabilities come from the configured adapter; an unconfigured adapter is unavailable.
+`server-image`, `browser-native` and `host` name execution locations; this slice only
+executes `server-image`. It adds no service process or geometry candidate.
+
+An AI request carries `projectId`, a UUID `requestId`, `providerId`, one `source`,
+ordered `references`, `direction`, and `output` (`size`, `aspectRatio`). Every page
+ref is the exact existing `runId`, `assetSha256`, nullable `revisionRef` and zero-based
+`pageIndex`. A null revision selects only the unversioned registration. The first
+adapter input accepts PNG/JPEG pages; unsupported or unresolved pages are refused.
+Model correspondence and camera/view data are retained only from the registered
+source document when present. A standalone upload is a valid source.
+
+Each request creates its own `render-<UUID hex>` P036 run. Repeating identical
+parameters with that UUID returns the same job; different parameters return 409.
+Different UUIDs keep distinct attempts even when their pixels are identical.
+Transitions use `studio-render-job` / `StudioRenderJob@2`; result bytes and metadata
+use `studio.artifacts.save_document`, so Board consumes the same SourceDocument refs.
+No output changes Design HEAD, accepts a Stage or overwrites an earlier attempt.
+
+`status` is `queued`, `running`, `succeeded`, `failed` or `unknown`. A runtime restart,
+transport timeout or ambiguous upstream response cannot cause a second paid call.
+GET and repeated POST for the same request only recover status. A new explicit
+attempt needs a new UUID. `errorCode` and `error` contain only bounded safe reasons;
+raw provider errors, credentials and image bytes never enter diagnostics.
+`sourceState` is derived as `current`, `outdated` or `unavailable` by following the
+retained request through every source and reference, transitively: an explicit
+replacement of one of those pages makes it outdated, unless it only redraws the same
+drawing from the same exact source; so does a model-bound page whose exact state is no
+longer the Working Head's design (§4.1), and a cut-plan page whose drawing reads
+changed geometry, anchors or dimensions. A later accepted Stage alone
+changes nothing unless it becomes the Working Head. For a page bound to no model state,
+current means the exact registered page remains available and unreplaced, not that it
+matches an untracked external model or active view. An outdated result's updated source
+is where its pages' registered replacements lead; a newer drawing revision that
+registered none is another page, not an update.
+Old output registrations remain readable independently of source availability.
+`document` is the retained SourceDocument, and `resultAvailable` independently
+reports whether its immutable bytes can still be read. Usage and cost stay null
+when unreported; image pixels are never converted into invented tokens.
+
+Runtime configuration is injected through `ARCHFLOW_STUDIO_RENDER_PROVIDER`
+(`off` or `gemini`), `ARCHFLOW_STUDIO_RENDER_MODEL`,
+`ARCHFLOW_STUDIO_RENDER_API_KEY`, and `ARCHFLOW_STUDIO_RENDER_TIMEOUT_S`
+(default 120; maximum 300). The Runtime reads only its launch environment; keys
+are neither user-settings responses nor project records. An image adapter receives
+certified bytes and values through `application/render_contract.py`, has no project
+writer, and performs one call without automatic retry or model fallback.
+
+MonkeyHub resolves `renderProvider`, `renderModel` and `renderTimeoutS` from the
+existing local user preferences. For Gemini only, it forwards a key as the
+Runtime key above: the launch variable `MONKEYHUB_RENDER_API_KEY` when the Hub
+was started with one, otherwise the key saved from Hub settings in the account's
+Windows Credential Manager (#334), read again for every Runtime the Hub opens.
+Saving preferences or a key affects subsequently opened project Runtimes,
+without silently restarting active work.
+
+Provider keys are write-only over HTTP. `PUT /api/credentials/{gemini|coding-plan}`
+stores one and `DELETE` removes it; `GET /api/credentials` answers only whether a
+key is in use and where it comes from (`saved`, `environment`, or for Coding Plan
+`claude-config`), never the key, and a malformed request is refused without
+echoing its body. User preferences never contain keys. A Coding Plan conversation
+receives the saved `codingPlanBaseUrl` preference and saved token as
+`ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`, with any `ANTHROPIC_API_KEY`
+removed; other conversations never receive them. Saved keys are also redacted
+from transcripts and errors. `POST /api/links/{id}/open` opens one of the Hub's
+own provider key pages in the system browser, and
+`POST /api/chat/providers/{codex|claude}/login` opens that CLI's own sign-in in a
+console window of its own.
+
+Retained `StudioRenderJob@1` native rows remain read-only history with
+`request: null`. Their exact output documents remain usable, but a client cannot
+reuse them as an AI recipe or resume their old browser executor. An incomplete
+legacy attempt is `unknown`; it is never submitted by reading the history.
+
+The storage/history boundary in `RenderJobRecords` is adapted from
+YNNAP-HelloWorld's PR #235, commit `6f39e67116a2716c2dac70bb4ee3cf1b369afd9d`.
+The AI lane does not import its Native WebGL2 executor or claim Physical acceptance.
+Offline tests inject an adapter; only an explicitly authorized real provider call
+can complete online acceptance.
+
+## Publication pages
+
+`GET /api/publication` reads the project's current communication document.
+`PUT /api/publication` saves ordered pages and editable text/image placements,
+using `baseRevisionSha256` for optimistic concurrency. `PublicationDocument@1`
+is retained through P036 in the named `studio-publication` run. Saving it does
+not accept a Design Stage or advance `HEAD`.
+
+The embedded `spec` supplies point-based page width/height and the supported
+`hero` layout. Each image names an exact registered document page through
+`runId`, `assetSha256`, nullable `revisionRef`, and `pageIndex`. Placement and
+crop are presentation choices. Derived source status is `current`, `stale`,
+`missing`, or explicitly `frozen`; updating a source requires a deliberate
+save and does not rewrite other elements. It is the one representation-status
+projection (§4.1) in Publish's words: `stale` for an outdated page or inputs that
+cannot be verified, `missing` when the page's own bytes cannot be read, and
+`current` for a drawing kept on its chosen version. Drawing, Render and model-bound
+pages answer through their owners. A missing file cannot be made available by freezing it.
+
+`POST /api/publication/from-board` takes an exact Board revision and selected
+element/frame ids in narrative order. Frames expand top-to-bottom then
+left-to-right; duplicate children are placed once. The Board UI supplies its
+selection in visual reading order, and each page uses the same hero rule.
+Repeating the same retained selection does not duplicate pages. This bounded handoff consumes clean source pages,
+not Board review marks or freehand drawings.
+
+`POST /api/publication/export` requires an exact saved publication revision
+and `format: pptx | pdf`. It returns transient download bytes, not a design
+issue. Both compilers use the same page coordinates and measured text lines.
+PPTX has native editable text boxes and separate images. Supported simple PDF
+lines, rectangles, polygons and horizontal text become editable objects;
+unsupported PDF content remains a raster preview (up to 2048 pixels), named
+with the fallback reason in the PPTX. PDF export keeps ordinary source PDF
+vectors and uses their exact crop, scale and order; pages with annotations,
+transparency-group isolation or optional layers retain their rendered appearance.
+Authored text uses one measured font in both formats, embedded in PDF; missing glyphs or overflowing text refuse export.
+PDF is deterministic for the same retained inputs and installed font.
+
+Publish serializes autosaves after a typing pause and flushes pending edits
+before export, Board handoff and leaving the workspace/project. A save response
+acknowledges only the sent content; later typing remains pending. Failed saves
+keep the draft and expose retry/reload, including after closing and reopening
+that project within the same UI session. Reloading or closing a page with
+unsaved content requires an explicit discard; an unavailable exact source still
+refuses export.
+
+## Local integration diagnostics
+
+`GET /api/integrations` is a Hub-local read-only snapshot of integration
+manifests, detected software, installed/enabled Monkey components, per-capability
+qualification and available workflow ids. The first read performs bounded local
+discovery; `?rescan=true` explicitly refreshes it and revokes earlier qualification.
+No query launches CAD, loads vendor DLLs, installs a bridge, checks a license or
+writes project data. Public installation entries omit full executable paths.
+
+Detection does not imply installation, installation does not imply qualification,
+and qualification grants no project authority. The default adapters are bundled;
+the optional SketchUp live extension is absent. Explicit Python qualification
+uses the existing CAD/SDK/projection executors and their saved-output checks.
+`ready` and `checkedAt` describe the last qualification in this Hub session,
+not an authorization or guarantee for a later execution. See
+[Integration packs](integration-packs.md) for the contract and Revit design case.

@@ -4,7 +4,7 @@
 
 The workflow consumes shared ArchFlow facts, geometry values, CAD adapters and P036 project ports. The application host coordinates explicit handoffs with MonkeyDiagram; neither workflow imports the other.
 
-Owners and public contracts: [SYSTEM_MAP](../../../../docs/SYSTEM_MAP.md). File responsibilities: [REPO_LAYOUT](../../../../docs/REPO_LAYOUT.md).
+Owners and public contracts: [system map](../../../../docs/architecture/system-map.md). File responsibilities: [repository layout](../../../../docs/architecture/repository-layout.md).
 
 ## Window width and lintel relations
 

@@ -8,7 +8,7 @@ what it does for the building (``roles.py``) or what spatial condition it
 forms (``conditions.py``).
 
 Facets live only on ``Component@1.fields.facets`` (spec
-docs/2026-09-28-construction-api.md §3.4): the same stable identity may be a
+docs/design/construction-api.md §3.4): the same stable identity may be a
 block, later a wall, later a niche, and meaning accrues on it without ever
 touching its geometry. Adding, changing or removing a facet upserts the
 component alone, so every element, object, datum and dependency edge stays

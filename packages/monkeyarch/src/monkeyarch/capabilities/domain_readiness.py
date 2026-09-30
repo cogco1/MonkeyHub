@@ -4,7 +4,7 @@ A domain (``structure``, ``envelope``, ...) is a reader, not an oracle: it
 looks only at ``Component@1.fields.facets`` (L3, ``packages/archflow/src/archflow/semantics/facets.py``,
 read with ``component_facets``) and, when the facets it needs are missing,
 answers an explicit enrichment request instead of inferring anything from
-shape, producer or names (spec docs/2026-09-28-construction-api.md §3.6).
+shape, producer or names (spec docs/design/construction-api.md §3.6).
 This is the honest entry gate every domain tool calls before it runs; there
 is no structural or thermal engine here, only the question "do I know enough
 about this entity to evaluate it, and if not, what is missing and why".

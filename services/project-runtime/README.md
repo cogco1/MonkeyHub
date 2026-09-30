@@ -2,7 +2,7 @@
 
 MonkeyHub is the application. This directory holds the Project Runtime: the Python package
 `project_runtime` in `src/`, its tests and its requirements. It is not a second product.
-The [Project Runtime contract](../../docs/PROJECT_RUNTIME.md) defines project binding,
+The [Project Runtime contract](../../docs/architecture/project-runtime.md) defines project binding,
 process identity, lifecycle and API forwarding.
 
 Board and Arch render directly inside the Hub frontend. Diagram is the page editor

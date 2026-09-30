@@ -13,11 +13,11 @@ MonkeyHub 的任务以 **GitHub Issue** 为唯一 canonical task/spec identity�
 职责分工：
 
 - GitHub Issue：需求、讨论、验收、task identity；
-- GitHub Project（MonkeyHub Development）：优先级、状态、Initiative 与有证据的日期，规则见 [`docs/PROJECT_TRACKING.md`](docs/PROJECT_TRACKING.md)；
+- GitHub Project（MonkeyHub Development）：优先级、状态、Initiative 与有证据的日期，规则见 [`docs/development/project-tracking.md`](docs/development/project-tracking.md)；
 - Pull Request：一个可 review 的实现切片；
 - `work_registry.json`：源码工作真正开始时才登记的当前 claim（branch/worktree/write_scope/依赖/交接），不是第二份 backlog，完成即删除；
 - `module_registry.json`：长期软件 owner 与公开契约；
-- `docs/ARCHITECTURE.md` 与 `docs/adr/`：需要长期保留的设计决定；
+- `docs/architecture/overview.md` 与 `docs/decisions/`：需要长期保留的设计决定；
 - Git history：已完成工作的实现历史。
 
 ## 贡献许可
@@ -33,7 +33,7 @@ MonkeyHub 的第一方代码以 **AGPL-3.0-only** 发布，同时保留未来提
 3. **按任务的窄路径修改。** 开工前写明本次 `write_scope`；policy 的 `shared_write_scope` 仍可共享，不是运行权限。共享测试、生成视图及治理文件按 policy 处理，不自动视为生产路径冲突。提交标题写 `GH-<n>` 或 `GH-<n>/<lane>`；不写 claim 的提交只能改 policy 的 `shared_write_scope` 与 `unclaimed_write_scope`。
 4. **给独立功能合适的位置。** 先查现有公开函数和调用方；新的分析或出图算法可以有独立目录或外部包，通过函数、CLI、API 或 adapter 接入。不要强迫每个功能改 core 或塞进已有大文件；不要复制已有状态、持久化或发布权威。实验与接入方式见 [`labs/README.md`](labs/README.md) 和指南第 7 节。
 5. **按数据用途保存。** 活跃项目使用显式外部项目根，持久数据经 `archflow.project` 的现有接口保存；只有明确晋升的输入和证据进入 `probes/`。用户设置、临时文件和 adapter workspace 沿各自已有边界。确实新增持久记录或受检查的写入点时，更新现有 kind 表或 policy，不为普通内部函数新增登记。
-6. **共享接口先落主线。** 已有契约足够时各任务独立实现；不足时由现有 owner 的小型上游 PR 补齐，合入 `main` 后相关分支更新基线，不在后端分支复制接口。软件归口、公开契约或列出的测试改变时同步 module registry；内部修复不用改表。DTO 改动后运行 `api:generate` 和 `api:check`，实际对外协议变化同步 [`PROTOCOL.md`](docs/PROTOCOL.md)。前端文案沿用中英文同键表。
+6. **共享接口先落主线。** 已有契约足够时各任务独立实现；不足时由现有 owner 的小型上游 PR 补齐，合入 `main` 后相关分支更新基线，不在后端分支复制接口。软件归口、公开契约或列出的测试改变时同步 module registry；内部修复不用改表。DTO 改动后运行 `api:generate` 和 `api:check`，实际对外协议变化同步 [`docs/protocols/project-runtime-api.md`](docs/protocols/project-runtime-api.md)。前端文案沿用中英文同键表。
 7. **按影响验证。** 选择受影响的行为测试、类型检查或构建；纯文档检查命令、链接、生成地图和 scoped diff。`archcheck` 检查当前静态边界，`--changed` 检查已提交范围；重复能力检查只覆盖相同声明和部分代码复制，行为正确性与语义重复仍需测试和 review。
 8. **一个 reviewable slice 一个 PR。** 一般一个 Issue 对应一个 PR；只有 Issue 明确拆成多个独立切片时才开多个 PR。只 `git add -- <明确文件>`，核对 staged diff，通过相关 CI 并交独立 reviewer 后集成。PR 写清 Issue、行为、base、交接、重叠、实际检查和剩余验收。不直接 push `main`，不重写已推送历史；只在已落地的相关依赖或集成需要时同步，不做每日机械 rebase。
 
@@ -97,8 +97,8 @@ python tools/devctl.py work --json
 
 - [`CLA.md`](CLA.md) — 贡献版权/专利授权与双重许可边界。
 - [`LICENSING.md`](LICENSING.md) — AGPL 与商业许可说明。
-- [`docs/REPO_LAYOUT.md`](docs/REPO_LAYOUT.md) — 什么放哪、什么不进仓库。
+- [`docs/architecture/repository-layout.md`](docs/architecture/repository-layout.md) — 什么放哪、什么不进仓库。
 - [`AGENTS.md`](AGENTS.md) — 少量长期规则与项目边界。
-- [`docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md`](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md) — 环境搭建与首次跑通（队友从第 8 节开始）。
-- [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — 对外协议，客户端能依赖什么。
+- [`docs/development/work-environment.md`](docs/development/work-environment.md) — 环境搭建与首次跑通（队友从第 8 节开始）。
+- [`docs/protocols/project-runtime-api.md`](docs/protocols/project-runtime-api.md) — 对外协议，客户端能依赖什么。
 - [`services/project-runtime/README.md`](services/project-runtime/README.md) — 项目运行时（Project Runtime）API，以及 MonkeyHub 前端的 `api:check`、`typecheck`、`build`。
