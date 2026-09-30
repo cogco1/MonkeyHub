@@ -21,7 +21,7 @@ source_roots.put_first(ROOT)
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyhub_api import chat
+from monkeyhub_api.chat import store as chat
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import (
     ChatCreateRequest, ChatMessage, ChatPostRequest, ChatPresentationRequest,

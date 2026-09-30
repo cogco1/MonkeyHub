@@ -36,9 +36,9 @@ from project_runtime.events import StudioEvents
 from project_runtime.settings import StudioSettings
 from project_runtime.errors import StudioError
 
-from .chat import _NoRedirect, _project
-from .models import HubError, HubFailure
-from .runtime_models import HubRuntimeDto, OperationRecord, ProjectRuntimeDto, WorkerStatus
+from ..chat.store import _NoRedirect, _project
+from ..models import HubError, HubFailure
+from .models import HubRuntimeDto, OperationRecord, ProjectRuntimeDto, WorkerStatus
 
 
 _CANDIDATE_REQUEST = re.compile(

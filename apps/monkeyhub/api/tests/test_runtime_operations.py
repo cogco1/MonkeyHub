@@ -34,7 +34,7 @@ from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from project_runtime.api.dto.runtime import runtime_dto
 from monkeyhub_api.models import HubFailure
-from monkeyhub_api.runtime import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager
+from monkeyhub_api.runtime.manager import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager
 
 from test_monkeyhub_lifecycle import project_fixture
 
@@ -94,7 +94,7 @@ class OperationRecoveryTests(unittest.TestCase):
             return HttpResult(response.status_code, response.content, {"content-type": "application/json"})
 
         with patch.object(manager, "service", return_value=SimpleNamespace(url="http://isolated-worker")), \
-             patch("monkeyhub_api.runtime.request_http", side_effect=studio), patch.object(manager, "emit") as notify:
+             patch("monkeyhub_api.runtime.manager.request_http", side_effect=studio), patch.object(manager, "emit") as notify:
             for source, status in (("{}", 422), (content, 200)):
                 payload = {"projectId": self.fixture.PROJECT_ID, "content": source}
                 response = manager.forward(runtime, "/api/drawing-recipes/inspect", "POST", json.dumps(payload).encode(),
@@ -188,14 +188,14 @@ class OperationRecoveryTests(unittest.TestCase):
         operation_id = str(uuid4())
         body = b'{"privateRequestBody":"must never be stored"}'
         with patch.object(coordinator, "service", return_value=worker), \
-             patch("monkeyhub_api.runtime.request_http", side_effect=OSError("lost worker before retained output")) as forwarded:
+             patch("monkeyhub_api.runtime.manager.request_http", side_effect=OSError("lost worker before retained output")) as forwarded:
             with self.assertRaises(HubFailure) as failure:
                 coordinator.forward(runtime, "/api/program", "POST", body, {"idempotency-key": operation_id})
             self.assertEqual(failure.exception.error.code, "OPERATION_INTERRUPTED")
             self.assertEqual(forwarded.call_count, 1)
         self.assertNotIn("privateRequestBody", self.manager.journal_path.read_text(encoding="utf-8"))
         runtime.operations = self.durable_manager()  # No process-local state survives.
-        with patch("monkeyhub_api.runtime.request_http", side_effect=AssertionError("cold replay")) as forwarded:
+        with patch("monkeyhub_api.runtime.manager.request_http", side_effect=AssertionError("cold replay")) as forwarded:
             for repeated_body, expected in ((body, "OPERATION_NEEDS_RECOVERY"), (b"{}", "OPERATION_ID_CONFLICT")):
                 with self.subTest(expected=expected), self.assertRaises(HubFailure) as failure:
                     coordinator.forward(runtime, "/api/program", "POST", repeated_body, {"idempotency-key": operation_id})
@@ -211,8 +211,8 @@ class OperationRecoveryTests(unittest.TestCase):
         coordinator = ProjectRuntimeManager(None, None)
         runtime = ProjectRuntime("journal-runtime", self.fixture.PROJECT_ID, str(self.settings.project_dir),
             self.manager, ProjectBinding.open(self.settings), retained=self.snapshot())
-        with patch("monkeyhub_api.runtime.os.replace", side_effect=OSError("disk write failed")), \
-             patch("monkeyhub_api.runtime.request_http", side_effect=AssertionError("dispatch without durable identity")) as forwarded:
+        with patch("monkeyhub_api.runtime.manager.os.replace", side_effect=OSError("disk write failed")), \
+             patch("monkeyhub_api.runtime.manager.request_http", side_effect=AssertionError("dispatch without durable identity")) as forwarded:
             with self.assertRaises(HubFailure) as failure:
                 coordinator.forward(runtime, "/api/program", "POST", b"{}", {"idempotency-key": str(uuid4())})
             self.assertEqual(failure.exception.error.code, "OPERATION_LOG_UNAVAILABLE")
@@ -310,7 +310,7 @@ class OperationRecoveryTests(unittest.TestCase):
         headers = {"content-type": "application/json", "x-monkey-chat": chat_id}
         before = len(self.manager.records())
         with patch.object(coordinator, "service", return_value=SimpleNamespace(url="http://managed", instance_id="hub-test")), \
-             patch("monkeyhub_api.runtime.request_http", side_effect=dispatch):
+             patch("monkeyhub_api.runtime.manager.request_http", side_effect=dispatch):
             with self.assertRaises(HubFailure) as foreign:
                 coordinator.forward(runtime, "/api/admissions", "POST", admit({"runId": other, "outcome": "withdrawn"}),
                                     {**headers, "idempotency-key": str(uuid4())})
@@ -378,7 +378,7 @@ class OperationRecoveryTests(unittest.TestCase):
         answer = HttpResult(422, b'{"code":"SKETCH_INVALID","detail":"closed profile repeats its first point"}',
                             {"content-type": "application/json"})
         with patch.object(coordinator, "service", return_value=SimpleNamespace(url="http://isolated-worker")), \
-             patch("monkeyhub_api.runtime.request_http", return_value=answer), patch.object(coordinator, "emit") as notify:
+             patch("monkeyhub_api.runtime.manager.request_http", return_value=answer), patch.object(coordinator, "emit") as notify:
             response = coordinator.forward(runtime, "/api/proposals", "POST", b"{}", {"idempotency-key": str(uuid4())})
         self.assertEqual(response.status, 422)
         self.assertIn("operation/refused", [call.args[0] for call in notify.call_args_list])
@@ -485,7 +485,7 @@ class OperationRecoveryTests(unittest.TestCase):
         self.manager = self.durable_manager()
         admission, _ = self.admission("/api/drawings/sheets", {})
         self.manager.replied(admission, HttpResult(500, b'{"detail":"failed"}', {}))
-        with patch("monkeyhub_api.runtime.os.replace", side_effect=OSError("disk write failed")), \
+        with patch("monkeyhub_api.runtime.manager.os.replace", side_effect=OSError("disk write failed")), \
              self.assertRaises(HubFailure) as failure:
             self.manager.acknowledge(admission.record.operationId)
         self.assertEqual(failure.exception.error.code, "OPERATION_LOG_UNAVAILABLE")
@@ -518,7 +518,7 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertEqual(refusal.exception.error.code, "OPERATION_NOT_ACKNOWLEDGEABLE")
 
     def test_dismiss_route_is_bound_to_its_runtime_and_project(self):
-        from monkeyhub_api.chat import _project
+        from monkeyhub_api.chat.store import _project
         from monkeyhub_api.main import HubSettings, create_app as create_hub
         hub = create_hub(HubSettings(runtime_root=self.root / "hub-app-runtime"))
         client = TestClient(hub, base_url="http://127.0.0.1:8790")  # Without its lifespan, nothing is started.
@@ -681,7 +681,7 @@ class OperationRecoveryTests(unittest.TestCase):
             queried.extend(row["candidateId"] for row in response.json()["candidates"])
             return HttpResult(response.status_code, response.content, dict(response.headers))
 
-        with patch("monkeyhub_api.runtime.request_http", side_effect=bounded_read):
+        with patch("monkeyhub_api.runtime.manager.request_http", side_effect=bounded_read):
             runtime.retained = manager._read_retained(runtime, worker=worker)
             self.assertIn(first_result["candidateId"], queried)
             self.assertIn(second_result["candidateId"], queried)
@@ -746,7 +746,7 @@ class OperationRecoveryTests(unittest.TestCase):
             response = self.client.get(path)
             return HttpResult(response.status_code, response.content, dict(response.headers))
 
-        with patch("monkeyhub_api.runtime.request_http", side_effect=read):
+        with patch("monkeyhub_api.runtime.manager.request_http", side_effect=read):
             with self.assertRaises(TimeoutError):
                 manager.refresh(runtime)
             self.assertNotEqual(runtime.projection, "ready")
@@ -928,7 +928,7 @@ class OperationRecoveryTests(unittest.TestCase):
         manager = ProjectRuntimeManager(None, None)
         ready = SimpleNamespace(url="http://127.0.0.1:1", instance_id="fixture-instance")
         with patch.object(manager, "service", return_value=ready), \
-             patch("monkeyhub_api.runtime.request_http", side_effect=AssertionError("refused operation dispatched")) as forwarded:
+             patch("monkeyhub_api.runtime.manager.request_http", side_effect=AssertionError("refused operation dispatched")) as forwarded:
             with self.assertRaises(HubFailure) as refusal:
                 manager.forward(runtime, "/api/proposals/a-different-proposal/candidate", "POST", b"",
                     {"idempotency-key": original.record.operationId})
@@ -966,7 +966,7 @@ class OperationRecoveryTests(unittest.TestCase):
             return ready
 
         with patch.object(manager, "service", side_effect=refreshed), \
-             patch("monkeyhub_api.runtime.request_http", side_effect=studio):
+             patch("monkeyhub_api.runtime.manager.request_http", side_effect=studio):
             result = manager.forward(runtime, path, "POST", json.dumps(payload, sort_keys=True).encode(),
                 {"idempotency-key": str(uuid4()), "content-type": "application/json"})
         self.assertEqual(requests, [("POST", path)])

@@ -34,7 +34,7 @@ def hub_chat():
     """The Hub's chat adapter, which lives beside this API rather than inside it."""
 
     with patch.object(sys, "path", [str(Path(__file__).resolve().parents[3] / "apps/monkeyhub/api"), *sys.path]):
-        from monkeyhub_api import chat
+        from monkeyhub_api.chat import store as chat
         from monkeyhub_api.models import HubFailure
     return chat, HubFailure
 

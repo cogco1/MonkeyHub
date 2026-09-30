@@ -31,7 +31,7 @@ source_roots.put_first(ROOT)
 from project_runtime.application.projections import projection_queue
 from project_runtime.settings import StudioSettings
 from project_runtime.render_adapters.gemini import adapter_from_settings
-from monkeyhub_api.applications import Applications
+from monkeyhub_api.runtime.applications import Applications
 from monkeyhub_api.models import HubFailure
 from monkeyhub_api.settings.models import ApplicationSettingsDto
 
@@ -88,7 +88,7 @@ class StudioChildEnvironmentTests(unittest.TestCase):
         launches = []
         self.applications.source_revision = "synthetic-revision"
         with patch.dict(os.environ, self.inherited, clear=True), \
-                patch("monkeyhub_api.applications.ProjectManifest.from_dict",
+                patch("monkeyhub_api.runtime.applications.ProjectManifest.from_dict",
                       return_value=SimpleNamespace(project_id="synthetic-project")), \
                 patch.object(self.applications.supervisor, "start", side_effect=launches.append), \
                 patch.object(self.applications, "status"):
@@ -277,8 +277,8 @@ class HubChildStdinTests(unittest.TestCase):
             for scope, line, named in process_starts(path.read_text(encoding="utf-8")):
                 starts.setdefault(f"{path.relative_to(HUB_PACKAGE).as_posix()}:{scope}", []).append((line, named))
         # The scan reads the real package: these start processes today.
-        self.assertLessEqual({"applications.py:source_revision", "workers.py:WorkerSupervisor.start",
-                              "acp_session.py:CodexAcpSession._start", "chat.py:_stop_process"}, set(starts))
+        self.assertLessEqual({"runtime/applications.py:source_revision", "runtime/workers.py:WorkerSupervisor.start",
+                              "chat/acp_session.py:CodexAcpSession._start", "chat/store.py:_stop_process"}, set(starts))
         unnamed = [f"{site} (line {line})" for site, rows in starts.items() if site not in INHERITS_HUB_STDIN
                    for line, named in rows if not named]
         self.assertEqual(unnamed, [], "pass stdin=subprocess.DEVNULL or a pipe the Hub owns, "
@@ -300,7 +300,7 @@ class HubChildStdinTests(unittest.TestCase):
             f"sys.path.insert(0, {str(ROOT)!r})",
             "from tools.dev import source_roots",
             f"source_roots.put_first(Path({str(ROOT)!r}))",
-            "from monkeyhub_api.applications import source_revision",
+            "from monkeyhub_api.runtime.applications import source_revision",
             "# What --managed-stdin does: one thread always waits on the Hub's stdin.",
             "threading.Thread(target=sys.stdin.read, daemon=True).start()",
             "time.sleep(0.5)",

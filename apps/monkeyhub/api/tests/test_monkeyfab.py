@@ -43,7 +43,7 @@ class _FabCase(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.runtime = self.root / "runtime"
-        with patch("monkeyhub_api.applications.source_revision", return_value="a" * 40):
+        with patch("monkeyhub_api.runtime.applications.source_revision", return_value="a" * 40):
             self.app = create_app(HubSettings(runtime_root=self.runtime), source_root=ROOT)
         with patch.object(self.app.state.applications, "start"):
             self.client = self.enterContext(TestClient(self.app, base_url="http://127.0.0.1:8790"))
@@ -79,7 +79,7 @@ class _FabCase(unittest.TestCase):
 class FabApiTests(_FabCase):
     def test_fab_is_hosted_here_without_creating_or_stopping_a_child(self):
         with patch("monkeyhub_api.fabrication.available", return_value=True), patch(
-            "monkeyhub_api.applications.subprocess.Popen",
+            "monkeyhub_api.runtime.applications.subprocess.Popen",
         ) as spawn:
             rows = {row["appId"]: row for row in self.client.get("/api/apps").json()}
             self.assertEqual(rows["monkeyfab"]["state"], "running")

@@ -43,16 +43,16 @@ from uuid import UUID, uuid4
 # its architecture policy and its roots go first (tools/dev/source_roots.py); a
 # packaged interpreter ships no policy, and its python313._pth lists the roots.
 if __package__ in {None, ""}:
-    _source = Path(__file__).resolve().parents[4]
+    _source = Path(__file__).resolve().parents[5]
     _policy = _source / "governance" / "architecture_policy.json"
     if _policy.is_file():
         _roots = [str(_source / root) for root in json.loads(_policy.read_text(encoding="utf-8"))["python_source_roots"]]
         sys.path[:0] = [root for root in _roots if root not in sys.path]
-    __package__ = "monkeyhub_api"
+    __package__ = "monkeyhub_api.chat"
     # Started as a script this module is __main__, so a sibling importing it by
     # name would execute a second copy with its own context variables and its
     # own trace headers. One file is one module, whichever way it was started.
-    sys.modules.setdefault("monkeyhub_api.chat", sys.modules[__name__])
+    sys.modules.setdefault("monkeyhub_api.chat.store", sys.modules[__name__])
 
 from archflow.project.refs import ProjectRecordRef, require_identifier
 from archflow.project.repository import FilesystemProjectRepository
@@ -60,17 +60,17 @@ from archflow.state.state_record import StateRecord
 
 from pydantic import Field
 
-from . import credentials
+from ..settings import credentials
 from . import skill_plugins
-from .settings.store import read_application_settings, read_user_settings
+from ..settings.store import read_application_settings, read_user_settings
 
-from .models import (
+from ..models import (
     ChatAttachment, ChatAttention, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
     ChatDocument, ChatDocumentRef, ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
     ChatPermission, ChatPermissionOption, ChatPermissionRequest, ChatRenderContext, ChatSuggestion,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
 )
-from .chat_trace import HubTurnObserver
+from .turn_trace import HubTurnObserver
 from monkeymonitor.store import UsageLog
 
 _trace_headers = ContextVar("hub_tool_trace_headers", default={})
@@ -273,7 +273,7 @@ def _claude_approved(runtime_root: Path) -> tuple[str, ...]:
     # Imported inside every caller rather than at the top: computer_tools
     # reaches its routes through this module's own transport, and one of the
     # two has to be late for the other to exist.
-    from . import computer_tools
+    from .. import computer_tools
 
     if not computer_tools.read_policy(runtime_root).enabled:
         return _CLAUDE_APPROVED
@@ -291,7 +291,7 @@ def _source_checkout() -> Path | None:
     to edit — and this answers None so the caller can say so rather than
     pretend the code is writable.
     """
-    root = Path(__file__).resolve().parents[4]
+    root = Path(__file__).resolve().parents[5]
     if not (root / ".git").exists() or not (root / "AGENTS.md").is_file():
         return None
     return root if os.access(root, os.W_OK) else None
@@ -391,7 +391,7 @@ def _toml_value(value) -> str:
 
 def _codex_acp_command() -> tuple[str, ...] | None:
     """Use the application's locked adapter; never download during a turn."""
-    hub = Path(__file__).resolve().parents[2]
+    hub = Path(__file__).resolve().parents[3]
     bundled_node = hub.parents[1] / "_runtime/node/node.exe"
     node = str(bundled_node) if bundled_node.is_file() else shutil.which("node")
     adapter = hub / "node_modules/@agentclientprotocol/codex-acp/dist/index.js"
@@ -1942,7 +1942,7 @@ class ChatStore:
                 mcp_servers[row["name"]] = {**transport, "enabled": False, "required": False}
         except (ValueError, KeyError, TypeError) as exc:
             raise HubFailure(503, "CHAT_CONFIG_INVALID", "The installed Codex MCP configuration could not be read.") from exc
-        from . import computer_tools
+        from .. import computer_tools
 
         tool_names = ("studio_schema", "studio_request", "visual_review", "fab_request", "attachment_read",
                       "chat_present", *computer_tools.TOOL_NAMES)
@@ -4025,7 +4025,7 @@ def _visual_review(hub: str, chat_id: str, arguments: dict) -> dict:
 
 
 def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
-    from . import computer_tools
+    from .. import computer_tools
 
     if name == "chat_present":
         return _present_tool(hub, chat_id, arguments, os.environ.get("MONKEYHUB_PRESENTATION_TOKEN", ""))
@@ -4588,7 +4588,7 @@ def _present_tool(hub: str, chat_id: str, arguments: dict, token: str):
 
 
 def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | None = None) -> None:
-    from . import computer_tools
+    from .. import computer_tools
 
     sys.stdin.reconfigure(encoding="utf-8")
     sys.stdout.reconfigure(encoding="utf-8")

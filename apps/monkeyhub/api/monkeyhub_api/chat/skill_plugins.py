@@ -53,8 +53,8 @@ import uuid
 
 from archflow.contracts.canonical import canonical_digest
 
-from .models import HubFailure
-from .settings.store import read_application_settings
+from ..models import HubFailure
+from ..settings.store import read_application_settings
 
 PLUGIN_NAME = "monkeyhub-library"
 # Skills --setting-sources and disableBundledSkills leave in place, on Claude
@@ -266,7 +266,7 @@ def read_library(library_dir: str | None, hub_url: str) -> Library | None:
     if not library_dir:
         return None
     # chat reaches this module from its CLI launch; the reverse import is late.
-    from . import chat
+    from . import store as chat
 
     deadline = time.monotonic() + LIBRARY_BUDGET_S
     try:

@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from test_chat import FAKE_CLI, wait_for
 from test_acp_chat import HUB_AGENT
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyhub_api import chat
+from monkeyhub_api.chat import store as chat
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatPermissionRequest, ChatPostRequest
 

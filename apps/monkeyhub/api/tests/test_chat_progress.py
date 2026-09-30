@@ -2,13 +2,14 @@
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from monkeyhub_api import chat
+from monkeyhub_api.chat import store as chat
 from monkeyhub_api.models import ChatMessage
 
 
@@ -204,6 +205,31 @@ class ChatProgressProjectionTests(unittest.TestCase):
         }
         self.store._tool_message(self.session, bad, "item.completed", {})
         self.assertNotIn("candidate-19", "\n".join(row.content for row in self.visible_progress()))
+
+
+class HubEntryCompositionTests(unittest.TestCase):
+    """run.py adds the projection by replacing the ChatStore that create_app builds."""
+
+    def test_the_hub_entry_builds_its_chats_with_the_progress_store(self):
+        from monkeyhub_api import main as hub_main
+
+        self.addCleanup(setattr, hub_main, "ChatStore", hub_main.ChatStore)
+        # The CLI run.py serves is the Hub's own, whose create_app is checked below.
+        self.assertIs(HUB_RUN._hub_main(), hub_main.main)
+        temp = tempfile.TemporaryDirectory(prefix="Hub entry ")
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "source").mkdir()
+        (root / "source" / "source-version.txt").write_text("a" * 40, encoding="utf-8")
+        with patch.dict(os.environ, {"APPDATA": str(root / "roaming"), "LOCALAPPDATA": str(root / "local")}):
+            app = hub_main.create_app(hub_main.HubSettings(runtime_root=root / "runtime", port=9126),
+                                      source_root=root / "source")
+        self.addCleanup(app.state.updates.shutdown)
+        # Only a replacement on the module create_app reads reaches the store it
+        # builds; one set on any other module leaves the plain ChatStore, silently.
+        self.assertEqual(type(app.state.chats).__module__, HUB_RUN.__name__)
+        self.assertEqual(type(app.state.chats).__name__, "ProgressChatStore")
+        self.assertIsInstance(app.state.chats, chat.ChatStore)
 
 
 if __name__ == "__main__":

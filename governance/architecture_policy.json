@@ -109,7 +109,7 @@
   ],
   "allowed_write_sites": [
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
       "function": "_save",
       "operations": [
         "mkdir",
@@ -490,7 +490,7 @@
       "reason": "Write recording manifests and other canonical JSON documents atomically inside that directory."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/workers.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/workers.py",
       "function": "start",
       "operations": [
         "mkdir",
@@ -501,7 +501,7 @@
       "reason": "Creates only stdout/stderr logs for this Hub's own service children under its explicit nonproject runtime root; it never writes a project."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/chat.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
       "function": "_save",
       "operations": [
         "mkdir",
@@ -514,7 +514,7 @@
       "reason": "Saves chat attachment bytes and atomically saves their transcript metadata and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Runtime/P036 interfaces."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",
       "function": "materialize",
       "operations": [
         "mkdir",
@@ -526,7 +526,7 @@
       "reason": "Builds the skill library's Claude plugin directory (#252) only under the caller-supplied nonproject Hub runtime cache/skill-plugins/<index digest>, staged beside its final name and renamed into place. It is derived from the library project's Runtime API, rebuilt only for a new index and never written into a project."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",
       "function": "learn",
       "operations": [
         "mkdir",
