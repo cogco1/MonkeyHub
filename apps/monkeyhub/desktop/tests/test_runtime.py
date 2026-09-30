@@ -364,6 +364,10 @@ class DesktopRuntimeTests(unittest.TestCase):
         for directory in (APPLICATION_ROOT, APPLICATION_ROOT / "apps/archflow-studio/api", APPLICATION_ROOT / "apps/monkeyhub/api"):
             if str(directory) not in sys.path:
                 sys.path.insert(0, str(directory))
+        from tools import source_roots
+        # A checkout's own source roots go first; an installed bundle ships no
+        # architecture policy, and its python313._pth lists the same roots.
+        source_roots.put_first(APPLICATION_ROOT)
         from monkeyhub_api.applications import source_revision
         from monkeyhub_api.settings.models import ApplicationSettingsDto
         from monkeyhub_api.settings.store import save_application_settings

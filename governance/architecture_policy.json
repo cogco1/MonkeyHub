@@ -1,8 +1,8 @@
 {
   "schema": "ArchFlowArchitecturePolicy@1",
-  "source_root": "archflow",
+  "source_root": "packages/archflow",
   "checked_source_roots": [
-    "archflow",
+    "packages/archflow",
     "monkeyarch",
     "packages/monkeydiagram",
     "monkeymonitor",
@@ -22,7 +22,8 @@
     "apps/archflow-studio/api",
     "apps/monkeyhub/api",
     "apps/monkeyfab/src",
-    "packages/monkeydiagram/src"
+    "packages/monkeydiagram/src",
+    "packages/archflow/src"
   ],
   "repository_root_entries": [
     "apps",
@@ -51,7 +52,6 @@
     "pyproject.toml"
   ],
   "legacy_root_packages": [
-    "archflow",
     "monkeyarch",
     "monkeymonitor",
     "monkeycontrol"
@@ -62,6 +62,7 @@
     "tests/",
     "apps/archflow-studio/api/tests/",
     "packages/monkeydiagram/tests/",
+    "packages/archflow/tests/",
     "docs/PROTOCOL.md",
     "governance/architecture_policy.json",
     "docs/SYSTEM_MAP.md",
@@ -130,7 +131,7 @@
       "reason": "Atomic replacement shared by the existing account preferences and Hub launch configuration in an explicitly supplied nonproject runtime; neither file contains or writes project state."
     },
     {
-      "path": "archflow/project/repository.py",
+      "path": "packages/archflow/src/archflow/project/repository.py",
       "function": "*",
       "operations": [
         "mkdir",
@@ -143,7 +144,7 @@
       "reason": "The durable project repository is the sole project-document filesystem writer."
     },
     {
-      "path": "archflow/adapters/cad_execution.py",
+      "path": "packages/archflow/src/archflow/adapters/cad_execution.py",
       "function": "prepare_rhino_three_dm_export",
       "operations": [
         "open_write"
@@ -153,7 +154,7 @@
       "reason": "Exclusively creates a deterministic Rhino script inside the explicitly supplied non-symlink speculative workspace; saved 3DM output remains non-canonical."
     },
     {
-      "path": "archflow/adapters/cad_execution.py",
+      "path": "packages/archflow/src/archflow/adapters/cad_execution.py",
       "function": "work_model_workspace",
       "operations": [
         "mkdir"
@@ -245,7 +246,7 @@
       "reason": "Writes the response schema and transient document PNGs into the same TemporaryDirectory handed to codex exec; the directory is cleaned after the call and nothing under the project is touched."
     },
     {
-      "path": "archflow/project/inputs.py",
+      "path": "packages/archflow/src/archflow/project/inputs.py",
       "function": "write_program_sheet_file",
       "operations": [
         "mkdir",
@@ -256,7 +257,7 @@
       "reason": "writes input/runner/program-sheet.json only when POST /api/program carries saveInput=true in local mode; never writes state-record.json"
     },
     {
-      "path": "archflow/project/inputs.py",
+      "path": "packages/archflow/src/archflow/project/inputs.py",
       "function": "write_seat_pack_file",
       "operations": [
         "mkdir",
@@ -476,7 +477,7 @@
       "reason": "Creates the external --update-output and --update-work directories main() validated outside the source checkout, and writes one new MonkeyHub-<version>-update-index.json beside the patches create_patch wrote there."
     },
     {
-      "path": "archflow/adapters/blender_cad.py",
+      "path": "packages/archflow/src/archflow/adapters/blender_cad.py",
       "function": "execute",
       "operations": [
         "open_write"
@@ -519,7 +520,7 @@
       "reason": "Existing frontend SDK generation writes only disposable OpenAPI schema inputs under .generated/ (the Hub's, and the project runtime's in project-runtime/); never project data."
     },
     {
-      "path": "archflow/adapters/blender_projection.py",
+      "path": "packages/archflow/src/archflow/adapters/blender_projection.py",
       "function": "execute_blender_projection",
       "operations": [
         "write_text"
@@ -606,7 +607,7 @@
       "reason": "Writes a developer delta ZIP only to the explicit output outside both input bundles; inputs are read-only and only the bounded temporary ZIP is cleaned on failure."
     },
     {
-      "path": "archflow/project/index/store.py",
+      "path": "packages/archflow/src/archflow/project/index/store.py",
       "function": "__init__",
       "operations": [
         "mkdir",
@@ -617,7 +618,7 @@
       "reason": "Creates the index directory and opens index.lock, the single-writer lease, inside the caller-supplied nonproject index directory (the index subdirectory of the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
     },
     {
-      "path": "archflow/project/index/store.py",
+      "path": "packages/archflow/src/archflow/project/index/store.py",
       "function": "_quarantine",
       "operations": [
         "unlink",
@@ -628,7 +629,7 @@
       "reason": "Moves an index file SQLite cannot read, with its journal, aside before it is rebuilt once, removing the copy an earlier failure left, inside the caller-supplied nonproject index directory (the index subdirectory of the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
     },
     {
-      "path": "archflow/project/index/store.py",
+      "path": "packages/archflow/src/archflow/project/index/store.py",
       "function": "_rebuild",
       "operations": [
         "unlink"
@@ -638,7 +639,7 @@
       "reason": "Removes a stale partial build before the index is projected into a new file, inside the caller-supplied nonproject index directory (the index subdirectory of the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
     },
     {
-      "path": "archflow/project/index/store.py",
+      "path": "packages/archflow/src/archflow/project/index/store.py",
       "function": "_swap",
       "operations": [
         "unlink",
@@ -673,7 +674,7 @@
   ],
   "forbidden_layer_imports": [
     {
-      "source": "archflow",
+      "source": "packages/archflow/src/archflow",
       "targets": [
         "labs",
         "monkeymonitor",
@@ -704,7 +705,7 @@
       "reason": "The spine suite is the spine's. A lab's own checks live in that lab."
     },
     {
-      "source": "archflow",
+      "source": "packages/archflow/src/archflow",
       "targets": [
         "docs",
         "tests",
@@ -741,7 +742,16 @@
       "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
     },
     {
-      "source": "archflow/contracts",
+      "source": "packages/archflow/tests",
+      "targets": [
+        "tests",
+        "labs",
+        "archive"
+      ],
+      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+    },
+    {
+      "source": "packages/archflow/src/archflow/contracts",
       "targets": [
         "archflow.adapters",
         "archflow.capabilities",
@@ -756,7 +766,7 @@
       "reason": "Canonical contract primitives may depend on project identity only, never on higher domain, control, runtime, or adapter layers."
     },
     {
-      "source": "archflow/ports",
+      "source": "packages/archflow/src/archflow/ports",
       "targets": [
         "archflow.adapters",
         "archflow.capabilities",
@@ -768,7 +778,7 @@
       "reason": "External-world protocols may depend on stable identity contracts, never on their concrete adapters, orchestration, control, or validation implementations."
     },
     {
-      "source": "archflow/validation",
+      "source": "packages/archflow/src/archflow/validation",
       "targets": [
         "archflow.commit",
         "archflow.evaluation"
@@ -794,7 +804,7 @@
       "reason": "The Project Runtime (archflow_studio_api) validates requests, streams events and manages task lifecycle; design state, dependencies, validation, geometry and commit are calls into archflow. Geometry mathematics, graphs, .3dm writing and state schemas live in archflow and are imported, never reimplemented beside it. Pydantic models here are transport shapes, not a second canonical state."
     },
     {
-      "source": "archflow",
+      "source": "packages/archflow/src/archflow",
       "targets": [
         "monkeyarch",
         "monkeydiagram",
@@ -909,7 +919,7 @@
   ],
   "allowed_authority_symbols": [
     {
-      "path": "archflow/project/repository.py",
+      "path": "packages/archflow/src/archflow/project/repository.py",
       "symbol": "FilesystemProjectRepository",
       "owner": "P036"
     }

@@ -16,7 +16,8 @@ from archflow.state.decision_operator import ConditionComparator, DecisionOperat
 from archflow.state.operational_state import DependencyEffect, DependencyEdge, DesignObligation, FactEpistemicStatus, LegacyOperationalMarkovStateV2, ObligationStatus, OperationalMarkovState, StateDomain, StateFact, load_operational_state_record
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# The kernel this suite belongs to, which the case-answer guard reads.
+ARCHFLOW_SOURCE = Path(__file__).resolve().parents[1] / "src" / "archflow"
 PROJECT_ID = "test_pantheon"
 BOOTSTRAP_RUN_ID = "bootstrap-001"
 RUN_ID = "compiled-state-001"
@@ -2832,9 +2833,13 @@ class PantheonCompiledStateProbeTests(unittest.TestCase):
                 fixture_text,
                 f"guard token {token!r} is no longer written by the fixture",
             )
-        for path in (REPO_ROOT / "archflow").rglob("*"):
-            if path.suffix.lower() not in {".py", ".json", ".md"}:
-                continue
+        framework = [
+            path for path in ARCHFLOW_SOURCE.rglob("*")
+            if path.suffix.lower() in {".py", ".json", ".md"}
+        ]
+        # A moved kernel would leave nothing to read and the scan would pass.
+        self.assertIn(ARCHFLOW_SOURCE / "__init__.py", framework)
+        for path in framework:
             text = path.read_text(encoding="utf-8")
             for token in banned:
                 self.assertNotIn(token, text, str(path))

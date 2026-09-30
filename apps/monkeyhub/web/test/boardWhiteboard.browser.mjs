@@ -43,10 +43,12 @@ try {
 import base64, hashlib, json, sys
 from pathlib import Path
 from unittest import mock
+from tools import source_roots
+source_roots.put_first(Path(sys.argv[2]))
 import archflow
 from tests.support import make_project, retain_rhino_receipt, runner_state_digest, REFERENCE_RUN_ID
 from tests.test_documents import two_page_pdf
-assert Path(archflow.__file__).resolve() == Path(sys.argv[2], "archflow/__init__.py").resolve(), archflow.__file__
+assert Path(archflow.__file__).resolve() == Path(sys.argv[2], "packages/archflow/src/archflow/__init__.py").resolve(), archflow.__file__
 repository, _ = make_project(Path(sys.argv[1]))
 digest = runner_state_digest(repository, REFERENCE_RUN_ID)
 models = []

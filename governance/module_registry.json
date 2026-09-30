@@ -23,7 +23,7 @@
             "archflow.adapters.cad_backend.OcctBackend.execute",
             "archflow.adapters.cad_execution.execute_occt_export"
           ],
-          "implementation_file": "archflow/adapters/occt_backend.py",
+          "implementation_file": "packages/archflow/src/archflow/adapters/occt_backend.py",
           "output": "OcctExecutionReceipt@1: exact STEP B-rep and optional mesh .3dm preview from the same model; unsupported operations fail explicitly"
         },
         {
@@ -33,7 +33,7 @@
             "archflow.adapters.cad_execution.prepare_rhino_three_dm_export",
             "archflow.adapters.cad_execution.execute_rhino_three_dm_export"
           ],
-          "implementation_file": "archflow/adapters/cad_execution.py",
+          "implementation_file": "packages/archflow/src/archflow/adapters/cad_execution.py",
           "output": "RhinoCadExecutionReceipt@4: explicit Rhino compatibility export with host supervision and saved .3dm readback"
         },
         {
@@ -41,7 +41,7 @@
           "entry_points": [
             "archflow.adapters.blender_cad.BlenderBackend.execute"
           ],
-          "implementation_file": "archflow/adapters/blender_cad.py",
+          "implementation_file": "packages/archflow/src/archflow/adapters/blender_cad.py",
           "output": "BlenderExecutionReceipt@1: closed mesh .blend for solid/straight-extrusion programs, independently read in a fresh process; unsupported operations fail explicitly"
         }
       ]
@@ -212,7 +212,7 @@
       "tests": [
         "apps/archflow-studio/api/tests/test_boards.py",
         "apps/archflow-studio/api/tests/test_binding.py",
-        "tests/test_project_repository.py"
+        "packages/archflow/tests/test_project_repository.py"
       ],
       "status_note": "Initial input preparation is verified through real OCCT modeling and drawing tests; image interpretation is a separate task."
     }
@@ -220,7 +220,7 @@
   "modules": [
     {
       "module_id": "adapters.cad_execution",
-      "owner_path": "archflow/adapters/cad_execution.py",
+      "owner_path": "packages/archflow/src/archflow/adapters/cad_execution.py",
       "purpose": "Execute an exact compiled program through one CAD backend interface: OCCT exact STEP/mesh preview, supervised Rhino export, or Blender mesh scene save and cold readback. Extract named drawing edges and material sections from existing OCCT shapes.",
       "owns": [
         "CadProgramBinding and backend export identities: the exact P036 record/branch/stage identity an export is bound to; RhinoCadProgramBinding remains a compatibility alias with unchanged serialization",
@@ -422,22 +422,22 @@
       ],
       "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added.",
       "files": [
-        "archflow/adapters/cad_execution.py",
-        "archflow/adapters/occt_backend.py",
-        "archflow/adapters/cad_backend.py",
-        "archflow/adapters/blender_cad.py",
-        "archflow/adapters/blender_worker.py",
-        "archflow/adapters/blender_projection.py",
-        "archflow/adapters/model_formats.py",
-        "archflow/adapters/model_providers.py",
-        "archflow/adapters/local_cad_discovery.py",
-        "archflow/adapters/sketchup_reader.py",
-        "archflow/adapters/integration_packs.py"
+        "packages/archflow/src/archflow/adapters/cad_execution.py",
+        "packages/archflow/src/archflow/adapters/occt_backend.py",
+        "packages/archflow/src/archflow/adapters/cad_backend.py",
+        "packages/archflow/src/archflow/adapters/blender_cad.py",
+        "packages/archflow/src/archflow/adapters/blender_worker.py",
+        "packages/archflow/src/archflow/adapters/blender_projection.py",
+        "packages/archflow/src/archflow/adapters/model_formats.py",
+        "packages/archflow/src/archflow/adapters/model_providers.py",
+        "packages/archflow/src/archflow/adapters/local_cad_discovery.py",
+        "packages/archflow/src/archflow/adapters/sketchup_reader.py",
+        "packages/archflow/src/archflow/adapters/integration_packs.py"
       ]
     },
     {
       "module_id": "adapters.cad_patch",
-      "owner_path": "archflow/adapters/cad_patch.py",
+      "owner_path": "packages/archflow/src/archflow/adapters/cad_patch.py",
       "purpose": "Diff two compiled programs into the closed set of operations a Rhino rebuild must redo, and the prelude that carries the rest of the prior document forward.",
       "owns": [
         "per-object structural digests of what the CAD script actually emits",
@@ -475,7 +475,7 @@
         "state.geometry_program"
       ],
       "used_by": [
-        "archflow/adapters/cad_execution.py",
+        "packages/archflow/src/archflow/adapters/cad_execution.py",
         "tests/test_cad_patch.py"
       ],
       "invariants": [
@@ -491,7 +491,7 @@
     },
     {
       "module_id": "adapters.cad_program",
-      "owner_path": "archflow/adapters/cad_program.py",
+      "owner_path": "packages/archflow/src/archflow/adapters/cad_program.py",
       "purpose": "Translate a compiled neutral geometry program into one deterministic, semantics-carrying rhinoscriptsyntax build script, plus the analytic denominator it must reproduce.",
       "owns": [
         "the supported operation vocabulary and its rhinoscriptsyntax emission (solid, revolve, extrusion, planar_surface, loft, boolean union/difference/intersection, linear and radial array, transform, curve)",
@@ -539,8 +539,8 @@
         "state.geometry_program"
       ],
       "used_by": [
-        "archflow/adapters/cad_execution.py",
-        "archflow/adapters/cad_patch.py",
+        "packages/archflow/src/archflow/adapters/cad_execution.py",
+        "packages/archflow/src/archflow/adapters/cad_patch.py",
         "monkeyarch/runtime/project_runner.py",
         "tools/verify_state_record.py",
         "tests/test_cad_program.py",
@@ -699,7 +699,7 @@
     },
     {
       "module_id": "adapters.three_dm_inspector",
-      "owner_path": "archflow/adapters/three_dm_inspector.py",
+      "owner_path": "packages/archflow/src/archflow/adapters/three_dm_inspector.py",
       "purpose": "Read one .3dm file headlessly and return a deterministic, JSON-compatible summary of what is actually saved in it.",
       "owns": [
         "the ThreeDmInspection shape and its versioned key sets (the one place the schema's required keys are declared)",
@@ -739,7 +739,7 @@
         "contracts.canonical"
       ],
       "used_by": [
-        "archflow/adapters/cad_execution.py",
+        "packages/archflow/src/archflow/adapters/cad_execution.py",
         "monkeyarch/runtime/project_runner.py",
         "tests/test_three_dm_inspector.py",
         "tests/test_cad_execution.py",
@@ -1521,7 +1521,7 @@
     },
     {
       "module_id": "contracts.authority",
-      "owner_path": "archflow/contracts/authority.py",
+      "owner_path": "packages/archflow/src/archflow/contracts/authority.py",
       "purpose": "The single source of the all-False authority-flag block that every retained record carries.",
       "owns": [
         "the default authority field names (DEFAULT_AUTHORITY_FIELDS)",
@@ -1545,7 +1545,7 @@
       ],
       "depends_on": [],
       "used_by": [
-        "archflow/state/stage_workflow.py",
+        "packages/archflow/src/archflow/state/stage_workflow.py",
         "monkeyarch/capabilities/discipline_seats.py",
         "monkeyarch/capabilities/geometry_proposal.py",
         "monkeyarch/runtime/project_runner.py",
@@ -1559,13 +1559,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_stage_workflow.py"
+        "packages/archflow/tests/test_stage_workflow.py"
       ],
       "notes": "Canonical per ADR-004: the one writer of the historical authority block; never re-checked on read; never added to a new record kind."
     },
     {
       "module_id": "contracts.canonical",
-      "owner_path": "archflow/contracts/canonical.py",
+      "owner_path": "packages/archflow/src/archflow/contracts/canonical.py",
       "purpose": "Deterministic finite-JSON encoding and the sha-256 primitives every record digest on the spine is built from.",
       "owns": [
         "canonical JSON text with sorted keys, no NaN/Infinity and no cycles (canonical_json)",
@@ -1595,17 +1595,17 @@
       ],
       "depends_on": [],
       "used_by": [
-        "archflow/project/digests.py",
-        "archflow/state/state_record.py",
-        "archflow/state/geometry_program.py",
-        "archflow/state/spatial.py",
-        "archflow/state/operational_state.py",
-        "archflow/state/stage_workflow.py",
-        "archflow/relations/contracts.py",
-        "archflow/state/decision_operator.py",
-        "archflow/state/developed_design.py",
+        "packages/archflow/src/archflow/project/digests.py",
+        "packages/archflow/src/archflow/state/state_record.py",
+        "packages/archflow/src/archflow/state/geometry_program.py",
+        "packages/archflow/src/archflow/state/spatial.py",
+        "packages/archflow/src/archflow/state/operational_state.py",
+        "packages/archflow/src/archflow/state/stage_workflow.py",
+        "packages/archflow/src/archflow/relations/contracts.py",
+        "packages/archflow/src/archflow/state/decision_operator.py",
+        "packages/archflow/src/archflow/state/developed_design.py",
         "monkeyarch/runtime/project_runner.py",
-        "archflow/ports/model.py"
+        "packages/archflow/src/archflow/ports/model.py"
       ],
       "invariants": [
         "a pure function of the value: no filesystem, no clock, no randomness",
@@ -1620,7 +1620,7 @@
     },
     {
       "module_id": "contracts.fields",
-      "owner_path": "archflow/contracts/fields.py",
+      "owner_path": "packages/archflow/src/archflow/contracts/fields.py",
       "purpose": "Strict scalar and deterministic-tuple validators shared by the newer typed contracts.",
       "owns": [
         "bounded, trimmed, non-empty text (text)",
@@ -1667,9 +1667,9 @@
         "project.refs"
       ],
       "used_by": [
-        "archflow/relations/contracts.py",
-        "archflow/state/operational_state.py",
-        "archflow/state/geometry_program.py",
+        "packages/archflow/src/archflow/relations/contracts.py",
+        "packages/archflow/src/archflow/state/operational_state.py",
+        "packages/archflow/src/archflow/state/geometry_program.py",
         "monkeyarch/capabilities/wall_solver.py"
       ],
       "invariants": [
@@ -1684,7 +1684,7 @@
     },
     {
       "module_id": "ports.model",
-      "owner_path": "archflow/ports/model.py",
+      "owner_path": "packages/archflow/src/archflow/ports/model.py",
       "purpose": "Own the provider-independent model invocation contracts: request, receipt, status, phase and the AsyncModelProvider Protocol.",
       "owns": [
         "ModelInvocationRequest@1 and ModelInvocationReceipt@3 with retained @2 serialization, their serde and their schema refs",
@@ -1738,7 +1738,7 @@
     },
     {
       "module_id": "project.archive",
-      "owner_path": "archflow/project/archive.py",
+      "owner_path": "packages/archflow/src/archflow/project/archive.py",
       "purpose": "One portable archive of a retained project: the ZIP transport container around the existing P036 transfer representation, and the content-free summary of what travelled.",
       "owns": [
         "Portable ProjectArchiveManifest@1 export/restore wrapper around the P036 transfer representation, its member/hash/manifest validation and its content-free ArchiveSummary"
@@ -1782,18 +1782,18 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_archive.py",
+        "packages/archflow/tests/test_project_archive.py",
         "tests/test_create_project.py",
-        "tests/test_project_transfer.py"
+        "packages/archflow/tests/test_project_transfer.py"
       ],
       "notes": "CREATE: the archive wrapper had no owner besides a CLI; two consumers (CLI and Hub API) now share it.",
       "files": [
-        "archflow/project/archive.py"
+        "packages/archflow/src/archflow/project/archive.py"
       ]
     },
     {
       "module_id": "project.containers",
-      "owner_path": "archflow/project/containers.py",
+      "owner_path": "packages/archflow/src/archflow/project/containers.py",
       "purpose": "Naming the four container states of ADR-007 over the layout: which work is in progress, which run is shared, what is published, and what the archive holds.",
       "owns": [
         "the four container states and the ISO 19650 suitability code each one carries (ContainerState, StatusCode)",
@@ -1836,7 +1836,7 @@
         "project.repository"
       ],
       "used_by": [
-        "tests/test_project_containers.py"
+        "packages/archflow/tests/test_project_containers.py"
       ],
       "invariants": [
         "no persistence, no pointer beside HEAD, no write of any kind",
@@ -1847,13 +1847,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_containers.py"
+        "packages/archflow/tests/test_project_containers.py"
       ],
       "notes": "The seam for parallel development: many work in progress, one published. The author and branch parameters resolve against paths and records that exist today, so the second author and the second branch arrive without a second store."
     },
     {
       "module_id": "project.digests",
-      "owner_path": "archflow/project/digests.py",
+      "owner_path": "packages/archflow/src/archflow/project/digests.py",
       "purpose": "The one semantic digest of canonical project-state content, taken with the state's own declared digest field removed.",
       "owns": [
         "digesting canonical state content excluding state_sha256 (project_state_sha256)",
@@ -1876,7 +1876,7 @@
         "contracts.canonical"
       ],
       "used_by": [
-        "archflow/project/repository.py"
+        "packages/archflow/src/archflow/project/repository.py"
       ],
       "invariants": [
         "a declared state_sha256 that disagrees with the content raises",
@@ -1885,13 +1885,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_repository.py"
+        "packages/archflow/tests/test_project_repository.py"
       ],
       "notes": "31 lines; it is the seam between the semantic content digest and the repository's byte digest, which differ by a trailing newline."
     },
     {
       "module_id": "project.inputs",
-      "owner_path": "archflow/project/inputs.py",
+      "owner_path": "packages/archflow/src/archflow/project/inputs.py",
       "purpose": "The one reader of a project's work-in-progress inputs at the paths the layout owns (ADR-007), with explicit writers for the authored seat pack and program sheet.",
       "owns": [
         "reading the work-in-progress inputs at the layout's authored_record and seat_pack paths",
@@ -1960,13 +1960,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_inputs.py"
+        "packages/archflow/tests/test_project_inputs.py"
       ],
       "notes": "The finding was never that the file is read by path - work in progress is read by path. It was that three readers did it and nobody owned it."
     },
     {
       "module_id": "project.issue",
-      "owner_path": "archflow/project/issue.py",
+      "owner_path": "packages/archflow/src/archflow/project/issue.py",
       "purpose": "Issuing a run as the published design (ADR-007 rule 5): the one act that moves a shared run to the published container.",
       "owns": [
         "the conditions of an issue: the run's base is the published version, its stage closed SATISFIED with an exit binding naming that closure, and its seats all executed",
@@ -2029,7 +2029,7 @@
     },
     {
       "module_id": "project.layout",
-      "owner_path": "archflow/project/layout.py",
+      "owner_path": "packages/archflow/src/archflow/project/layout.py",
       "purpose": "Pure mapping from a project root and identifiers to filesystem paths, with no directory creation and no writes.",
       "owns": [
         "the on-disk names of a project's areas (project.json, HEAD, objects/sha256, events, canonical, runs, exports, input)",
@@ -2079,14 +2079,14 @@
         "project.refs"
       ],
       "used_by": [
-        "archflow/project/repository.py",
-        "archflow/project/inputs.py",
+        "packages/archflow/src/archflow/project/repository.py",
+        "packages/archflow/src/archflow/project/inputs.py",
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
         "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/state.py",
-        "archflow/project/memo.py",
-        "archflow/project/watch.py"
+        "packages/archflow/src/archflow/project/memo.py",
+        "packages/archflow/src/archflow/project/watch.py"
       ],
       "invariants": [
         "never creates a directory and never writes",
@@ -2097,16 +2097,16 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_inputs.py",
+        "packages/archflow/tests/test_project_inputs.py",
         "tests/test_project_runner.py",
-        "tests/test_project_fingerprint.py",
-        "tests/test_project_watch.py"
+        "packages/archflow/tests/test_project_fingerprint.py",
+        "packages/archflow/tests/test_project_watch.py"
       ],
-      "notes": "A path table walked by every FilesystemProjectRepository test; only the two authored-input paths are asserted directly, in tests/test_project_inputs.py. RunLayout is returned by ProjectLayout.run but never imported by name."
+      "notes": "A path table walked by every FilesystemProjectRepository test; only the two authored-input paths are asserted directly, in packages/archflow/tests/test_project_inputs.py. RunLayout is returned by ProjectLayout.run but never imported by name."
     },
     {
       "module_id": "project.location",
-      "owner_path": "archflow/project/location.py",
+      "owner_path": "packages/archflow/src/archflow/project/location.py",
       "purpose": "Read-only resolution of where an existing project repository physically lives, and the single helper that opens it.",
       "owns": [
         "the deterministic authority order local then relocated then workspace (locate_project)",
@@ -2141,7 +2141,7 @@
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-        "tests/test_project_location.py"
+        "packages/archflow/tests/test_project_location.py"
       ],
       "invariants": [
         "never creates directories and never writes state",
@@ -2150,13 +2150,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_location.py"
+        "packages/archflow/tests/test_project_location.py"
       ],
       "notes": "ProjectLocation is returned but never imported by name; the only non-test consumer is the Studio binding module."
     },
     {
       "module_id": "project.manifest",
-      "owner_path": "archflow/project/manifest.py",
+      "owner_path": "packages/archflow/src/archflow/project/manifest.py",
       "purpose": "The immutable project.json identity and format-version record.",
       "owns": [
         "project identity on disk (ProjectManifest.project_id)",
@@ -2182,9 +2182,9 @@
         "project.refs"
       ],
       "used_by": [
-        "archflow/project/repository.py",
-        "archflow/project/location.py",
-        "archflow/project/ports.py"
+        "packages/archflow/src/archflow/project/repository.py",
+        "packages/archflow/src/archflow/project/location.py",
+        "packages/archflow/src/archflow/project/ports.py"
       ],
       "invariants": [
         "the manifest carries no mutable state: exactly schema, project_id and format_version",
@@ -2192,13 +2192,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_repository.py"
+        "packages/archflow/tests/test_project_repository.py"
       ],
-      "notes": "No dedicated test; the one test that imports ProjectManifest does so as a fixture, and real coverage comes through tests/test_project_repository.py."
+      "notes": "No dedicated test; the one test that imports ProjectManifest does so as a fixture, and real coverage comes through packages/archflow/tests/test_project_repository.py."
     },
     {
       "module_id": "project.memo",
-      "owner_path": "archflow/project/memo.py",
+      "owner_path": "packages/archflow/src/archflow/project/memo.py",
       "purpose": "The one bounded, thread-safe memo every cache of values derived from a project's retained files uses (ADR-008 phase 1a), and the stat stamps and racy rule such a value is keyed by.",
       "owns": [
         "ContentMemo: a least-recently-used map from a tuple key to a value, bounded by its entry count and optionally by a total size its owner states for each entry",
@@ -2228,11 +2228,11 @@
         "project.layout"
       ],
       "used_by": [
-        "archflow/project/repository.py",
+        "packages/archflow/src/archflow/project/repository.py",
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
         "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
-        "archflow/project/watch.py"
+        "packages/archflow/src/archflow/project/watch.py"
       ],
       "invariants": [
         "a memo is never a source of truth: a kept value answers only what reading its files again would answer, and dropping any entry costs only that read",
@@ -2242,13 +2242,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_memo.py"
+        "packages/archflow/tests/test_project_memo.py"
       ],
       "notes": "Created because four owners needed the same bounded LRU and stamping (#365); a cache is not added beside it as an ad-hoc dict."
     },
     {
       "module_id": "project.index",
-      "owner_path": "archflow/project/index/__init__.py",
+      "owner_path": "packages/archflow/src/archflow/project/index/__init__.py",
       "purpose": "The derived project index (ADR-008 phase 1b): one SQLite file per project in a cache directory outside it, filled by one projector for a rebuild and for every change on one keeper thread, stamped, never migrated, and read in snapshots by agents and routes without re-reading the records.",
       "owns": [
         "ProjectIndex: the index file, its schema (meta, place, run, record, artifact, document, candidate, stage, projection), the writer lease beside it, load (reuse, reconcile or rebuild), apply (projected before the write transaction opens; one commit, and one revision when a row changed), quarantine of an unreadable file, and read-only snapshots",
@@ -2366,21 +2366,21 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_index.py",
+        "packages/archflow/tests/test_project_index.py",
         "apps/archflow-studio/api/tests/test_indexed_reads.py",
         "apps/archflow-studio/api/tests/test_index_changes.py",
         "apps/archflow-studio/api/tests/test_projections.py"
       ],
       "notes": "Created because no owner held a persistent derived store (ADR-008 phase 1b, #365). It hears of changes only through project.watch and the repository write observer; it never walks the project itself.",
       "files": [
-        "archflow/project/index/__init__.py",
-        "archflow/project/index/keeper.py",
-        "archflow/project/index/store.py"
+        "packages/archflow/src/archflow/project/index/__init__.py",
+        "packages/archflow/src/archflow/project/index/keeper.py",
+        "packages/archflow/src/archflow/project/index/store.py"
       ]
     },
     {
       "module_id": "project.watch",
-      "owner_path": "archflow/project/watch.py",
+      "owner_path": "packages/archflow/src/archflow/project/watch.py",
       "purpose": "Keeps each project root's layout fingerprint current on one background thread per root and process, so a reader takes the latest fingerprint with one attribute read and no request ever walks the project (ADR-008, #363).",
       "owns": [
         "the one layout watch per project root and process: its thread, its leases and its stop",
@@ -2429,7 +2429,7 @@
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-        "archflow/project/index/keeper.py"
+        "packages/archflow/src/archflow/project/index/keeper.py"
       ],
       "invariants": [
         "metadata only, like layout_fingerprint: it stats and lists directories and stats the pointer files; it opens, reads and writes no project file",
@@ -2442,7 +2442,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_watch.py",
+        "packages/archflow/tests/test_project_watch.py",
         "apps/archflow-studio/api/tests/test_conditional_reads.py",
         "apps/archflow-studio/api/tests/test_derivation_memo.py"
       ],
@@ -2450,7 +2450,7 @@
     },
     {
       "module_id": "project.ports",
-      "owner_path": "archflow/project/ports.py",
+      "owner_path": "packages/archflow/src/archflow/project/ports.py",
       "purpose": "Persistence port protocols and the validated destination a producer must be handed before it is allowed to write anything.",
       "owns": [
         "the persistence area vocabulary (PersistenceArea)",
@@ -2489,7 +2489,7 @@
         "project.refs"
       ],
       "used_by": [
-        "archflow/project/repository.py",
+        "packages/archflow/src/archflow/project/repository.py",
         "monkeyarch/capabilities/geometry_proposal.py",
         "monkeyarch/runtime/project_runner.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
@@ -2506,13 +2506,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_repository.py"
+        "packages/archflow/tests/test_project_repository.py"
       ],
       "notes": "WorkspaceSink is the narrow binary-file seam for an already assigned run workspace; it does not make the file canonical or receipt-certified."
     },
     {
       "module_id": "project.record_kinds",
-      "owner_path": "archflow/project/record_kinds.py",
+      "owner_path": "packages/archflow/src/archflow/project/record_kinds.py",
       "purpose": "The table of retained record kinds: every kind the spine writes or reads as a retained record, with the schema its payload declares and what it is for.",
       "owns": [
         "RECORD_KINDS: the one table of retained record kinds, keyed by kind",
@@ -2555,9 +2555,9 @@
         "project.ports"
       ],
       "used_by": [
-        "archflow/project/repository.py",
-        "archflow/project/containers.py",
-        "archflow/project/issue.py",
+        "packages/archflow/src/archflow/project/repository.py",
+        "packages/archflow/src/archflow/project/containers.py",
+        "packages/archflow/src/archflow/project/issue.py",
         "monkeyarch/runtime/project_runner.py",
         "monkeyarch/capabilities/geometry_proposal.py",
         "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
@@ -2567,7 +2567,7 @@
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
         "tools/freeze_project_stage_workflow.py",
         "tools/verify_state_record.py",
-        "tests/test_record_kinds.py",
+        "packages/archflow/tests/test_record_kinds.py",
         "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
         "apps/archflow-studio/api/archflow_studio_api/application/gestures.py",
@@ -2581,13 +2581,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_record_kinds.py"
+        "packages/archflow/tests/test_record_kinds.py"
       ],
       "notes": "Wave B / W5. Retained runs from the archived lanes carry kinds this table does not hold; reads stay unrestricted so they remain readable (ADR-004), and the lane tests that write one are skipped, naming that rule."
     },
     {
       "module_id": "project.refs",
-      "owner_path": "archflow/project/refs.py",
+      "owner_path": "packages/archflow/src/archflow/project/refs.py",
       "purpose": "Defines the four stable identity types (project version, run, branch, record, artifact) and the portable identifier and path validators the whole spine reuses.",
       "owns": [
         "branch equality checks (require_exact_branch, require_same_branch)",
@@ -2641,18 +2641,18 @@
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
-        "archflow/project/manifest.py",
-        "archflow/contracts/fields.py",
-        "archflow/project/containers.py",
-        "archflow/project/layout.py",
-        "archflow/project/ports.py",
-        "archflow/project/repository.py",
-        "archflow/relations/contracts.py",
+        "packages/archflow/src/archflow/project/manifest.py",
+        "packages/archflow/src/archflow/contracts/fields.py",
+        "packages/archflow/src/archflow/project/containers.py",
+        "packages/archflow/src/archflow/project/layout.py",
+        "packages/archflow/src/archflow/project/ports.py",
+        "packages/archflow/src/archflow/project/repository.py",
+        "packages/archflow/src/archflow/relations/contracts.py",
         "monkeyarch/runtime/project_runner.py",
-        "archflow/state/geometry_program.py",
-        "archflow/state/operational_state.py",
-        "archflow/state/state_record.py",
-        "tests/test_project_repository.py",
+        "packages/archflow/src/archflow/state/geometry_program.py",
+        "packages/archflow/src/archflow/state/operational_state.py",
+        "packages/archflow/src/archflow/state/state_record.py",
+        "packages/archflow/tests/test_project_repository.py",
         "tools/run_project.py",
         "tools/verify_state_record.py"
       ],
@@ -2666,13 +2666,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_repository.py"
+        "packages/archflow/tests/test_project_repository.py"
       ],
       "notes": "No dedicated test module; 46 test modules and ~30 spine modules import these Ref types, making it the widest dependency on the spine. ProjectVersionRef still accepts the pre-M007 run_id keyword as a project id."
     },
     {
       "module_id": "project.version_ref_owners",
-      "owner_path": "archflow/project/version_ref_owners.py",
+      "owner_path": "packages/archflow/src/archflow/project/version_ref_owners.py",
       "purpose": "Load every shared-core module that declares where its records keep a project-version identity, so no reader depends on which modules a caller happened to import.",
       "owns": [
         "the list of shared-core owner modules, loaded by importing this module, and the separate list of workflow-owned ones (WORKFLOW_OWNER_MODULES) that load_workflow_owners() imports on request",
@@ -2706,7 +2706,7 @@
         "project.version_refs"
       ],
       "used_by": [
-        "archflow/project/repository.py",
+        "packages/archflow/src/archflow/project/repository.py",
         "tools/create_project.py"
       ],
       "invariants": [
@@ -2721,7 +2721,7 @@
     },
     {
       "module_id": "project.version_refs",
-      "owner_path": "archflow/project/version_refs.py",
+      "owner_path": "packages/archflow/src/archflow/project/version_refs.py",
       "purpose": "Hold each record schema owner's declaration of where that record keeps a project-version identity, and apply a declaration generically so a format migration restates only what an owner has stated.",
       "owns": [
         "the schema-to-pointer declaration table and its registration (register, declared_pointers, declared_schemas); registering one schema twice with different pointers is refused",
@@ -2774,14 +2774,14 @@
       ],
       "depends_on": [],
       "used_by": [
-        "archflow/project/repository.py",
-        "archflow/project/refs.py",
-        "archflow/project/issue.py",
-        "archflow/state/state_record.py",
-        "archflow/state/spatial.py",
-        "archflow/state/stage_workflow.py",
-        "archflow/state/developed_design.py",
-        "archflow/project/version_ref_owners.py"
+        "packages/archflow/src/archflow/project/repository.py",
+        "packages/archflow/src/archflow/project/refs.py",
+        "packages/archflow/src/archflow/project/issue.py",
+        "packages/archflow/src/archflow/state/state_record.py",
+        "packages/archflow/src/archflow/state/spatial.py",
+        "packages/archflow/src/archflow/state/stage_workflow.py",
+        "packages/archflow/src/archflow/state/developed_design.py",
+        "packages/archflow/src/archflow/project/version_ref_owners.py"
       ],
       "invariants": [
         "never writes the filesystem and imports no other archflow module",
@@ -2798,7 +2798,7 @@
     },
     {
       "module_id": "project.repository",
-      "owner_path": "archflow/project/repository.py",
+      "owner_path": "packages/archflow/src/archflow/project/repository.py",
       "purpose": "The single durable filesystem owner of one project document: immutable content-addressed records plus one atomic compare-and-swap HEAD.",
       "owns": [
         "the only write path to a project on disk (initialize, put_json, ingest, put_workspace_file)",
@@ -2899,9 +2899,9 @@
         "project.memo"
       ],
       "used_by": [
-        "archflow/project/inputs.py",
-        "archflow/project/issue.py",
-        "archflow/project/location.py",
+        "packages/archflow/src/archflow/project/inputs.py",
+        "packages/archflow/src/archflow/project/issue.py",
+        "packages/archflow/src/archflow/project/location.py",
         "monkeyarch/runtime/project_runner.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
@@ -2913,7 +2913,7 @@
         "tools/issue_project.py",
         "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
         "tools/create_project.py",
-        "archflow/project/watch.py"
+        "packages/archflow/src/archflow/project/watch.py"
       ],
       "invariants": [
         "an existing content path is never overwritten; new content is installed or the write fails",
@@ -2934,20 +2934,20 @@
       "status": "canonical",
       "tests": [
         "tests/test_freeze_project_stage_workflow.py",
-        "tests/test_project_repository.py",
-        "tests/test_record_kinds.py",
-        "tests/test_project_transfer.py",
+        "packages/archflow/tests/test_project_repository.py",
+        "packages/archflow/tests/test_record_kinds.py",
+        "packages/archflow/tests/test_project_transfer.py",
         "tests/test_project_format_migration.py",
-        "tests/test_project_working_draft.py",
-        "tests/test_project_fingerprint.py",
-        "tests/test_project_memo.py",
-        "tests/test_project_watch.py"
+        "packages/archflow/tests/test_project_working_draft.py",
+        "packages/archflow/tests/test_project_fingerprint.py",
+        "packages/archflow/tests/test_project_memo.py",
+        "packages/archflow/tests/test_project_watch.py"
       ],
       "notes": "1311 lines carrying the whole persistence concept, including Windows sharing-violation retries around the HEAD swap; PreparedTransition and RecoveryReport are returned but never imported by name."
     },
     {
       "module_id": "relations.contracts",
-      "owner_path": "archflow/relations/contracts.py",
+      "owner_path": "packages/archflow/src/archflow/relations/contracts.py",
       "purpose": "Persistence-neutral typed contracts for the architectural relation graph, and the relation-kind vocabulary the State Record validates against.",
       "owns": [
         "the node kind vocabulary (ArchitecturalNodeKind, ArchitecturalNode)",
@@ -2992,7 +2992,7 @@
         "project.refs"
       ],
       "used_by": [
-        "archflow/state/state_record.py"
+        "packages/archflow/src/archflow/state/state_record.py"
       ],
       "invariants": [
         "owns no design, stage-acceptance, persistence or canonical-write authority",
@@ -3002,7 +3002,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_program_sheet.py"
+        "packages/archflow/tests/test_program_sheet.py"
       ],
       "notes": "On the spine only because state_record.py imports ArchitecturalRelationKind; the graph types have no spine consumer and §2.2 sends the ArchitecturalRelation graph to the monuments/controller lanes, so this module should shrink to the enum."
     },
@@ -3118,7 +3118,7 @@
       "used_by": [
         "tools/run_project.py",
         "tools/verify_state_record.py",
-        "archflow/state/state_record.py",
+        "packages/archflow/src/archflow/state/state_record.py",
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
         "tests/test_project_runner.py",
@@ -3150,7 +3150,7 @@
         "tests/test_cad_backend_contract.py",
         "tests/test_blender_projection_runner.py"
       ],
-      "notes": "archflow/state/state_record.py imports SchematicPack/bootstrap_developed_state from here - the state to runtime inversion CANONICAL_SPINE 2.2 folds away."
+      "notes": "packages/archflow/src/archflow/state/state_record.py imports SchematicPack/bootstrap_developed_state from here - the state to runtime inversion CANONICAL_SPINE 2.2 folds away."
     },
     {
       "module_id": "runtime.drawing_elevation",
@@ -3273,7 +3273,7 @@
     },
     {
       "module_id": "semantics.conditions",
-      "owner_path": "archflow/semantics/conditions.py",
+      "owner_path": "packages/archflow/src/archflow/semantics/conditions.py",
       "purpose": "The registered spatial conditions a component or connection may form, with meanings and aliases.",
       "owns": [
         "the condition vocabulary (condition.*) and its aliases"
@@ -3294,21 +3294,21 @@
         "semantics.roles"
       ],
       "used_by": [
-        "archflow/semantics/registry.py",
-        "archflow/state/state_record.py"
+        "packages/archflow/src/archflow/semantics/registry.py",
+        "packages/archflow/src/archflow/state/state_record.py"
       ],
       "invariants": [
         "a condition is not an object; one geometry may form several"
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_semantics.py"
+        "packages/archflow/tests/test_semantics.py"
       ],
       "notes": ""
     },
     {
       "module_id": "semantics.facets",
-      "owner_path": "archflow/semantics/facets.py",
+      "owner_path": "packages/archflow/src/archflow/semantics/facets.py",
       "purpose": "The registered L3 facets a component may carry once its meaning is established: namespaced key/value pairs, each key either a closed set of values or free text.",
       "owns": [
         "the facet vocabulary (architectural.role, architectural.enclosure, structural.role, material.name, fabrication.method), which keys are free text, and the free-text length bounds"
@@ -3330,7 +3330,7 @@
       ],
       "depends_on": [],
       "used_by": [
-        "archflow/state/state_record.py"
+        "packages/archflow/src/archflow/state/state_record.py"
       ],
       "invariants": [
         "a facet is not an entity type and not a role or a condition (ADR-006); an enumerated key accepts only its closed set of values, a free-text key accepts 1-120 characters"
@@ -3343,7 +3343,7 @@
     },
     {
       "module_id": "semantics.registry",
-      "owner_path": "archflow/semantics/registry.py",
+      "owner_path": "packages/archflow/src/archflow/semantics/registry.py",
       "purpose": "Resolve a semantic string (id, id+id, alias, or a registered compound phrase) to registered ids, or name the nearest ones.",
       "owns": [
         "resolution of semantic text to registered ids (resolve_semantic_kind)",
@@ -3374,7 +3374,7 @@
         "semantics.roles"
       ],
       "used_by": [
-        "archflow/state/state_record.py",
+        "packages/archflow/src/archflow/state/state_record.py",
         "tools/devctl.py"
       ],
       "invariants": [
@@ -3383,13 +3383,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_semantics.py"
+        "packages/archflow/tests/test_semantics.py"
       ],
       "notes": ""
     },
     {
       "module_id": "semantics.roles",
-      "owner_path": "archflow/semantics/roles.py",
+      "owner_path": "packages/archflow/src/archflow/semantics/roles.py",
       "purpose": "The registered roles a component may hold (what it does for the building), with meanings and aliases.",
       "owns": [
         "the role vocabulary (role.*) and its aliases"
@@ -3410,21 +3410,21 @@
       ],
       "depends_on": [],
       "used_by": [
-        "archflow/semantics/registry.py",
-        "archflow/state/state_record.py"
+        "packages/archflow/src/archflow/semantics/registry.py",
+        "packages/archflow/src/archflow/state/state_record.py"
       ],
       "invariants": [
         "ids are role.<name>; a term is added with a written reason why existing terms cannot compose it (ADR-006)"
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_semantics.py"
+        "packages/archflow/tests/test_semantics.py"
       ],
       "notes": "V1 seeded from the villa record's 41 semantic_kind phrases."
     },
     {
       "module_id": "state.commitments",
-      "owner_path": "archflow/state/commitments.py",
+      "owner_path": "packages/archflow/src/archflow/state/commitments.py",
       "purpose": "Typed normative commitments and their authorized lifecycle transitions.",
       "owns": [
         "the commitment record and its schema (Commitment, CriterionRef)",
@@ -3462,10 +3462,10 @@
         "contracts.fields"
       ],
       "used_by": [
-        "archflow/state/model.py",
-        "archflow/state/operational_state.py",
-        "archflow/state/decision_operator.py",
-        "archflow/submission/model.py",
+        "packages/archflow/src/archflow/state/model.py",
+        "packages/archflow/src/archflow/state/operational_state.py",
+        "packages/archflow/src/archflow/state/decision_operator.py",
+        "packages/archflow/src/archflow/submission/model.py",
         "monkeyarch/capabilities/declaration.py"
       ],
       "invariants": [
@@ -3476,13 +3476,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_authority_seam.py"
+        "packages/archflow/tests/test_project_authority_seam.py"
       ],
       "notes": "Canonical: state.model, operational_state, submission.model, decision_operator and capabilities.declaration all take Commitment from here; the lifecycle transitions are the same type's, not a parallel."
     },
     {
       "module_id": "state.decision_operator",
-      "owner_path": "archflow/state/decision_operator.py",
+      "owner_path": "packages/archflow/src/archflow/state/decision_operator.py",
       "purpose": "Compile one typed design action into a deterministic state delta, a successor operational state and a closure receipt.",
       "owns": [
         "the typed intent record with no write authority (DecisionOperator, StateCondition, ConditionComparator)",
@@ -3534,15 +3534,15 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_operational_markov_compiler.py",
-        "tests/integration/test_pantheon_compiled_state.py",
+        "packages/archflow/tests/test_operational_markov_compiler.py",
+        "packages/archflow/tests/test_pantheon_compiled_state.py",
         "apps/archflow-studio/api/tests/test_proposals.py"
       ],
       "notes": "Canonical: the Studio's conversational proposals remain DecisionOperator@2 inputs to OperationalMarkovState. StateRecord application is separately owned by state.record through its closed StateRecordOperator; no Studio-local successor remains."
     },
     {
       "module_id": "state.derivation",
-      "owner_path": "archflow/state/derivation.py",
+      "owner_path": "packages/archflow/src/archflow/state/derivation.py",
       "purpose": "Named quantities as small arithmetic expressions over evidence readings, evaluated in dependency order by a safe parser.",
       "owns": [
         "the DerivationTable@1 and DerivedQuantity records and their digests",
@@ -3582,7 +3582,7 @@
         "project.refs"
       ],
       "used_by": [
-        "archflow/state/state_record.py",
+        "packages/archflow/src/archflow/state/state_record.py",
         "monkeyarch/capabilities/reference_resolver.py"
       ],
       "invariants": [
@@ -3599,7 +3599,7 @@
     },
     {
       "module_id": "state.design_portfolio",
-      "owner_path": "archflow/state/design_portfolio.py",
+      "owner_path": "packages/archflow/src/archflow/state/design_portfolio.py",
       "purpose": "The reloadable ledger of schematic branches, their lineage, and the authorized selection among them.",
       "owns": [
         "immutable committed DesignStage values with exact state, model and runner references",
@@ -3648,7 +3648,7 @@
         "state.spatial"
       ],
       "used_by": [
-        "archflow/state/developed_design.py",
+        "packages/archflow/src/archflow/state/developed_design.py",
         "monkeyarch/runtime/project_runner.py"
       ],
       "invariants": [
@@ -3660,13 +3660,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_design_portfolio.py"
+        "packages/archflow/tests/test_design_portfolio.py"
       ],
       "notes": "Canonical for now: the developed-design projection cites a selected schematic (BranchRevisionRef, DesignOptionPortfolio types); retiring the massing view is P102's remaining tail and changes state_digest, so it is a decided change, not a fold."
     },
     {
       "module_id": "state.developed_design",
-      "owner_path": "archflow/state/developed_design.py",
+      "owner_path": "packages/archflow/src/archflow/state/developed_design.py",
       "purpose": "The design-development state the geometry producer and the discipline seats still read: developed components, attributes, discipline obligations, expert advice and coordination status.",
       "owns": [
         "the developed component and its attributes with their source claims (DevelopedComponent, DevelopedAttribute)",
@@ -3736,7 +3736,7 @@
     },
     {
       "module_id": "state.geometry_program",
-      "owner_path": "archflow/state/geometry_program.py",
+      "owner_path": "packages/archflow/src/archflow/state/geometry_program.py",
       "purpose": "The typed, platform-neutral geometry program (operations, frames, assemblies, assets, datums) and the published project levels and grids.",
       "owns": [
         "the generic operation and parameter vocabularies (GeometryOperationKind, GeometryParameterKind, GeometryOperation, GeometryParameter)",
@@ -3819,9 +3819,9 @@
         "state.operational_state"
       ],
       "used_by": [
-        "archflow/adapters/cad_execution.py",
-        "archflow/adapters/occt_backend.py",
-        "archflow/state/state_record.py",
+        "packages/archflow/src/archflow/adapters/cad_execution.py",
+        "packages/archflow/src/archflow/adapters/occt_backend.py",
+        "packages/archflow/src/archflow/state/state_record.py",
         "monkeyarch/capabilities/discipline_seats.py",
         "monkeyarch/capabilities/element_producers.py",
         "monkeyarch/capabilities/geometry_proposal.py",
@@ -3855,7 +3855,7 @@
     },
     {
       "module_id": "state.model",
-      "owner_path": "archflow/state/model.py",
+      "owner_path": "packages/archflow/src/archflow/state/model.py",
       "purpose": "The CanonicalState@1 HEAD shape (facts, commitments, open obligations, artifacts) and the StateRef compatibility alias.",
       "owns": [
         "the canonical HEAD state value and its uniqueness rules (CanonicalState)",
@@ -3894,9 +3894,9 @@
         "state.program"
       ],
       "used_by": [
-        "archflow/validation/engine.py",
-        "archflow/validation/model.py",
-        "archflow/submission/model.py",
+        "packages/archflow/src/archflow/validation/engine.py",
+        "packages/archflow/src/archflow/validation/model.py",
+        "packages/archflow/src/archflow/submission/model.py",
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py"
       ],
       "invariants": [
@@ -3908,13 +3908,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_authority_seam.py"
+        "packages/archflow/tests/test_project_authority_seam.py"
       ],
       "notes": "Canonical; its Obligation is the legacy obligation shape CanonicalState@1 carries. Projecting DesignObligation into it is an open gap with no Issue yet; until then the two shapes coexist by decision, not by accident."
     },
     {
       "module_id": "state.operational_state",
-      "owner_path": "archflow/state/operational_state.py",
+      "owner_path": "packages/archflow/src/archflow/state/operational_state.py",
       "purpose": "The branch-local kernel state (facts, bindings, locks, obligations, dependency edges) that the State Record and every downstream contract reuse.",
       "owns": [
         "portable logical-ref and local-id syntax (require_logical_ref, require_local_id, PORTABLE_LOGICAL_REF_PATTERN)",
@@ -3972,15 +3972,15 @@
         "state.commitments"
       ],
       "used_by": [
-        "archflow/state/state_record.py",
-        "archflow/state/spatial.py",
-        "archflow/state/developed_design.py",
+        "packages/archflow/src/archflow/state/state_record.py",
+        "packages/archflow/src/archflow/state/spatial.py",
+        "packages/archflow/src/archflow/state/developed_design.py",
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
-        "archflow/state/design_portfolio.py",
-        "tests/test_operational_markov_compiler.py",
-        "archflow/state/stage_workflow.py",
-        "archflow/state/decision_operator.py",
-        "archflow/state/geometry_program.py",
+        "packages/archflow/src/archflow/state/design_portfolio.py",
+        "packages/archflow/tests/test_operational_markov_compiler.py",
+        "packages/archflow/src/archflow/state/stage_workflow.py",
+        "packages/archflow/src/archflow/state/decision_operator.py",
+        "packages/archflow/src/archflow/state/geometry_program.py",
         "monkeyarch/compilers/geometry.py",
         "monkeyarch/capabilities/geometry_proposal.py",
         "apps/archflow-studio/api/archflow_studio_api/application/intent.py"
@@ -3994,14 +3994,14 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_operational_markov_compiler.py",
-        "tests/integration/test_pantheon_compiled_state.py"
+        "packages/archflow/tests/test_operational_markov_compiler.py",
+        "packages/archflow/tests/test_pantheon_compiled_state.py"
       ],
       "notes": "The widest state dependency after project.refs; it carries its own _version_dict/_branch_dict serde parallel to contracts.branch, and require_logical_ref is a second logical-ref validator alongside contracts.fields.logical_ref."
     },
     {
       "module_id": "state.program",
-      "owner_path": "archflow/state/program.py",
+      "owner_path": "packages/archflow/src/archflow/state/program.py",
       "purpose": "The compact voxel-era building program (use, footprint, required spaces, clearances) carried by canonical state.",
       "owns": [
         "the BuildingProgram@1 record and its JSON form",
@@ -4026,7 +4026,7 @@
       ],
       "depends_on": [],
       "used_by": [
-        "archflow/state/model.py"
+        "packages/archflow/src/archflow/state/model.py"
       ],
       "invariants": [
         "dimensions are integers in blocks: the vocabulary is voxel-era, not metric",
@@ -4036,13 +4036,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_program_sheet.py"
+        "packages/archflow/tests/test_program_sheet.py"
       ],
       "notes": "Canonical: BuildingProgram is the legacy_program_view field of CanonicalState@1 and retained states carry it."
     },
     {
       "module_id": "state.record",
-      "owner_path": "archflow/state/state_record.py",
+      "owner_path": "packages/archflow/src/archflow/state/state_record.py",
       "purpose": "The canonical StateRecord@1: a project's design state as typed entities, parameters, relations, obligations and evidence, the one closed typed operator that derives a successor, and the typed views derived from it. It states no stage: a stage belongs to the run that executes it (ADR-007).",
       "owns": [
         "design content identity, independent of run and base (StateRecord.digest)",
@@ -4154,7 +4154,7 @@
         "project.version_refs"
       ],
       "used_by": [
-        "archflow/project/inputs.py",
+        "packages/archflow/src/archflow/project/inputs.py",
         "monkeyarch/runtime/project_runner.py",
         "monkeyarch/compilers/geometry.py",
         "monkeyarch/capabilities/geometry_proposal.py",
@@ -4163,7 +4163,7 @@
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
         "apps/archflow-studio/api/archflow_studio_api/application/options.py",
         "apps/archflow-studio/api/archflow_studio_api/application/program.py",
-        "archflow/state/program_sheet.py",
+        "packages/archflow/src/archflow/state/program_sheet.py",
         "monkeyarch/capabilities/element_reindex.py",
         "tools/reindex_project.py",
         "tools/verify_state_record.py"
@@ -4200,7 +4200,7 @@
     },
     {
       "module_id": "state.spatial",
-      "owner_path": "archflow/state/spatial.py",
+      "owner_path": "packages/archflow/src/archflow/state/spatial.py",
       "purpose": "The schematic option contracts (grid basis, levels, volumes, zones, connections, components) and the stable-id component transition receipt.",
       "owns": [
         "the semantic component, its maturity ladder and its digest (DesignComponent, ComponentMaturity)",
@@ -4260,9 +4260,9 @@
         "monkeyarch/runtime/project_runner.py",
         "monkeyarch/capabilities/discipline_seats.py",
         "monkeyarch/capabilities/geometry_proposal.py",
-        "archflow/state/state_record.py",
-        "archflow/state/developed_design.py",
-        "archflow/state/design_portfolio.py",
+        "packages/archflow/src/archflow/state/state_record.py",
+        "packages/archflow/src/archflow/state/developed_design.py",
+        "packages/archflow/src/archflow/state/design_portfolio.py",
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py"
       ],
       "invariants": [
@@ -4274,13 +4274,13 @@
       "status": "canonical",
       "tests": [
         "tests/test_semantic_geometry_tree.py",
-        "tests/test_design_portfolio.py"
+        "packages/archflow/tests/test_design_portfolio.py"
       ],
       "notes": "Carries module-local _branch_to_dict/_branch_from_dict copies of contracts.branch, and depends on two fold targets (design_maturity for DesignPhase, site_context for SiteBounds); SpatialLevel is a third level vocabulary alongside ProjectLevel and MassingLevel@1. The site-context record (ground model, approach, unknowns) is archived with the sandbox lane."
     },
     {
       "module_id": "state.stage_workflow",
-      "owner_path": "archflow/state/stage_workflow.py",
+      "owner_path": "packages/archflow/src/archflow/state/stage_workflow.py",
       "purpose": "The ordered stage sequence of a project and the exact, authority-free envelope and exit binding that guard stage orchestration.",
       "owns": [
         "the stage sequence record, its stages and its digest (ProjectStageWorkflow, ProjectStage)",
@@ -4362,7 +4362,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_stage_workflow.py",
+        "packages/archflow/tests/test_stage_workflow.py",
         "tests/test_freeze_project_stage_workflow.py",
         "tests/test_project_runner.py"
       ],
@@ -6122,7 +6122,7 @@
     },
     {
       "module_id": "submission.model",
-      "owner_path": "archflow/submission/model.py",
+      "owner_path": "packages/archflow/src/archflow/submission/model.py",
       "purpose": "The candidate submission: the only boundary from speculative work to formal review.",
       "owns": [
         "the submission record and its full content digest (CandidateSubmission.content_digest)",
@@ -6154,7 +6154,7 @@
         "state.model"
       ],
       "used_by": [
-        "archflow/validation/engine.py",
+        "packages/archflow/src/archflow/validation/engine.py",
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py"
       ],
       "invariants": [
@@ -6165,7 +6165,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_authority_seam.py"
+        "packages/archflow/tests/test_project_authority_seam.py"
       ],
       "notes": "Canonical: CandidateSubmission/CandidateDelta are what validate_submission reads; the Studio builds them. They are checked against an empty CanonicalState until retained requirements are projected into it, an open gap with no Issue yet."
     },
@@ -6564,7 +6564,7 @@
     },
     {
       "module_id": "validation.engine",
-      "owner_path": "archflow/validation/engine.py",
+      "owner_path": "packages/archflow/src/archflow/validation/engine.py",
       "purpose": "The read-only hard gates that turn a canonical state plus a candidate submission into a validation receipt.",
       "owns": [
         "the validator protocol (Validator)",
@@ -6611,13 +6611,13 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_authority_seam.py"
+        "packages/archflow/tests/test_project_authority_seam.py"
       ],
       "notes": "No archflow/ module imports it; its only production caller is the Studio API, and it reads CanonicalState@1, the HEAD shape a requirement projection would retire."
     },
     {
       "module_id": "validation.model",
-      "owner_path": "archflow/validation/model.py",
+      "owner_path": "packages/archflow/src/archflow/validation/model.py",
       "purpose": "The spine's validation result vocabulary: a finding, and the receipt that binds a verdict to the exact submission content checked.",
       "owns": [
         "finding severity (Severity)",
@@ -6647,7 +6647,7 @@
         "state.model"
       ],
       "used_by": [
-        "archflow/validation/engine.py",
+        "packages/archflow/src/archflow/validation/engine.py",
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/validation.py"
       ],
@@ -6658,7 +6658,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_authority_seam.py"
+        "packages/archflow/tests/test_project_authority_seam.py"
       ],
       "notes": "§2.2 names Finding/ValidationReceipt the one validation result; CheckFinding/CheckReceiptEnvelope in validation/contracts.py is the parallel scheduled for deletion."
     },
@@ -6949,7 +6949,7 @@
     },
     {
       "module_id": "state.program_sheet",
-      "owner_path": "archflow/state/program_sheet.py",
+      "owner_path": "packages/archflow/src/archflow/state/program_sheet.py",
       "purpose": "The architect's program sheet and the two directions between it and a record's spatial option: one sheet row per Space@1, and a typed operator for what a sheet adds.",
       "owns": [
         "the ProgramSheet@1 payload shape and its refusals (ProgramSheetError)",
@@ -6994,7 +6994,7 @@
         "project.refs"
       ],
       "used_by": [
-        "archflow/project/inputs.py",
+        "packages/archflow/src/archflow/project/inputs.py",
         "apps/archflow-studio/api/archflow_studio_api/application/program.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/program.py"
       ],
@@ -7008,10 +7008,10 @@
       ],
       "status": "canonical",
       "files": [
-        "archflow/state/program_sheet.py"
+        "packages/archflow/src/archflow/state/program_sheet.py"
       ],
       "tests": [
-        "tests/test_program_sheet.py"
+        "packages/archflow/tests/test_program_sheet.py"
       ],
       "reason": "Design step 2 (programming): the architect's sheet is a document of its own, two-way with the record's zones the way Snaptrude keeps its program table two-way with the model - here with the record as the truth and additions only."
     },

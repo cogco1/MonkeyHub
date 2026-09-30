@@ -74,7 +74,7 @@ const ELLIPSE_SAMPLES = 32;
 const MIN_EXTENT = 0.001;
 /** The record rounds a profile point to nine decimals before refusing repeats. */
 const POINT_DECIMALS = 9;
-/** archflow/project/refs.py: ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ */
+/** packages/archflow/src/archflow/project/refs.py: ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ */
 const MAX_ELEMENT_ID = 100;
 const FOOTPRINT_TYPES = ["rectangle", "diamond", "ellipse", "line", "freedraw"];
 

@@ -302,7 +302,7 @@ def main():
         return
     scenario = next(row for row in config["scenarios"] if row["id"] == args.scenario)
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    source_diff = subprocess.check_output(["git", "diff", "HEAD", "--", "apps", "archflow", "monkeyarch", "monkeymonitor", "tests/monkeymonitor", "tools/benchmark_intent_context.py"], cwd=ROOT)
+    source_diff = subprocess.check_output(["git", "diff", "HEAD", "--", "apps", "packages/archflow", "monkeyarch", "monkeymonitor", "tests/monkeymonitor", "tools/benchmark_intent_context.py"], cwd=ROOT)
     fixture_revision = subprocess.check_output(["git", "log", "-1", "--format=%H", "--", config["fixture"]], cwd=ROOT, text=True).strip()
     args.output.mkdir(parents=True, exist_ok=True)
     root_context = nullcontext(str(args.retained_root)) if args.retained_root else tempfile.TemporaryDirectory(prefix="monkeyhub-turn-benchmark-")

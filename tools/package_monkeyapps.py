@@ -66,14 +66,17 @@ RELEASE_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*
 # Each Python package ships at the bundle root, where python313._pth's ..\.. finds it,
 # wherever the repository keeps it, so a move changes neither the ._pth nor the bundle's layout.
 BUNDLED_PACKAGES = {
-    "archflow": "archflow", "monkeyarch": "monkeyarch",
+    "archflow": "packages/archflow/src/archflow", "monkeyarch": "monkeyarch",
     "monkeydiagram": "packages/monkeydiagram/src/monkeydiagram",
     "monkeymonitor": "monkeymonitor", "monkeycontrol": "monkeycontrol",
 }
+# The kernel's manifest names the Python requirements and the cad-occt extra the
+# embedded runtime installs (prepare_runtime).
+KERNEL_MANIFEST = "packages/archflow/pyproject.toml"
 # Git, rather than the working directory, supplies these files. User runtime
 # configuration, projects, credentials, caches and local WIP never enter a ZIP.
 SOURCE_PATHS = (
-    *BUNDLED_PACKAGES.values(),
+    *BUNDLED_PACKAGES.values(), KERNEL_MANIFEST,
     "apps/archflow-studio/api",
     "apps/monkeyhub", "apps/monkeyfab", "packages/web-shared", "OPEN_MONKEYHUB.cmd",
     "README.md", "SECURITY.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
@@ -124,7 +127,7 @@ def prepare_runtime(source: Path, destination: Path, cache: Path,
     destination.mkdir(parents=True)
     with zipfile.ZipFile(fetch_runtime(cache)) as archive:
         archive.extractall(destination)
-    metadata = tomllib.loads((source / "pyproject.toml").read_text(encoding="utf-8"))
+    metadata = tomllib.loads((source / KERNEL_MANIFEST).read_text(encoding="utf-8"))
     requirements = [*metadata["project"]["dependencies"],
                     *metadata["project"]["optional-dependencies"]["cad-occt"]]
     fab_metadata = tomllib.loads((source / "apps/monkeyfab/pyproject.toml").read_text(encoding="utf-8"))

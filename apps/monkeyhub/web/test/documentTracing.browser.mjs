@@ -42,9 +42,11 @@ try {
 import base64, io, json, sys
 from pathlib import Path
 from PIL import Image, ImageDraw
+from tools import source_roots
+source_roots.put_first(Path(sys.argv[2]))
 import archflow
 from tests.support import make_empty_project
-assert Path(archflow.__file__).resolve() == Path(sys.argv[2], "archflow/__init__.py").resolve()
+assert Path(archflow.__file__).resolve() == Path(sys.argv[2], "packages/archflow/src/archflow/__init__.py").resolve()
 make_empty_project(Path(sys.argv[1]))
 # Original six-corner concept sketch, with an intentionally irregular stroke.
 image = Image.new("RGB", (800, 600), "#fffdf6")

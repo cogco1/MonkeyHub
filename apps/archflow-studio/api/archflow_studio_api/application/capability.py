@@ -83,10 +83,9 @@ class CapabilityIndexUnavailable(StudioError):
 def registry_path(start: Path | None = None) -> Path | None:
     """The module registry beside this installation, or ``None``.
 
-    Source checkout and installed bundle share one layout — the registry sits
-    at the root both ``apps/`` and ``archflow/`` live under — so walking up
-    from this file finds the same file in either, and nothing has to be told
-    where it is.
+    Source checkout and installed bundle keep the registry at the root
+    ``apps/`` lives under, so walking up from this file finds the same file in
+    either, and nothing has to be told where it is.
     """
 
     here = (start or Path(__file__)).resolve()

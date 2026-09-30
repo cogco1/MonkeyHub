@@ -60,7 +60,7 @@ write (or read transfer).  Nothing else is serialised: shape building,
 measuring and tessellation do not touch the statics.
 
 Requires the optional dependency ``cadquery-ocp`` (``pip install -e
-'.[cad-occt]'``).  It is imported lazily: importing this module, or the
+'packages/archflow[cad-occt]'``).  It is imported lazily: importing this module, or the
 execution owner that imports it, never loads OCCT.
 """
 
@@ -486,7 +486,7 @@ def _occt() -> SimpleNamespace:
     except ImportError as exc:
         raise OcctUnavailableError(
             "optional dependency 'cadquery-ocp' is unavailable; install it with "
-            "python -m pip install -e '.[cad-occt]'; no Rhino is required or started"
+            "python -m pip install -e 'packages/archflow[cad-occt]'; no Rhino is required or started"
         ) from exc
     namespace = SimpleNamespace(OCP=ocp, **modules)
     # The STEP writer prints transfer statistics at Info level; a kernel
@@ -2425,7 +2425,7 @@ def write_preview_three_dm(
     except ImportError as exc:
         raise OcctUnavailableError(
             "optional dependency 'rhino3dm' is unavailable; install it with "
-            "python -m pip install -e '.[cad-occt]'"
+            "python -m pip install -e 'packages/archflow[cad-occt]'"
         ) from exc
     if not isinstance(path, Path):
         raise TypeError("path must be pathlib.Path")

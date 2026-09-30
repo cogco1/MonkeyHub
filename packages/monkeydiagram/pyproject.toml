@@ -7,7 +7,7 @@ name = "monkeydiagram"
 version = "0.1.0"
 description = "Drawings and diagrams from retained ArchFlow sources: projection, SVG/PNG and paper PDF/DXF output."
 requires-python = ">=3.12"
-# archflow comes from the same checkout (the root project) or bundle. It is not a
+# archflow comes from the same checkout (packages/archflow) or bundle. It is not a
 # published distribution, so naming it here would send pip to an index for it.
 dependencies = []
 

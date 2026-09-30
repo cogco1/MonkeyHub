@@ -862,7 +862,7 @@ def _whole_document_head(
     return first, frozenset(known), reason
 
 
-# What P036 accepts as one workspace path segment (archflow/project/refs.py).
+# What P036 accepts as one workspace path segment (packages/archflow/src/archflow/project/refs.py).
 _WORK_COPY_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$")
 
 

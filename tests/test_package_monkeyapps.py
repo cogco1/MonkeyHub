@@ -145,7 +145,7 @@ class PackageAdapterTests(unittest.TestCase):
         self.node = self.root / "node.exe"
         self.node.write_bytes(b"selected Node runtime")
         for directory in (
-            "archflow", "monkeyarch", "monkeymonitor", "monkeycontrol",
+            "monkeyarch", "monkeymonitor", "monkeycontrol",
             "apps/archflow-studio/api/archflow_studio_api",
             "apps/monkeyhub/api", "apps/monkeyhub/installer/third-party",
             "apps/monkeyfab/src/monkeyfab", "apps/monkeyfab/tests",
@@ -162,6 +162,7 @@ class PackageAdapterTests(unittest.TestCase):
             "apps/monkeyfab/tests/test_cli.py",
             "monkeycontrol/__init__.py", "monkeycontrol/hosts/execution_host.ps1",
             "packages/monkeydiagram/src/monkeydiagram/__init__.py", "packages/monkeydiagram/tests/test_svg.py",
+            "packages/archflow/src/archflow/__init__.py", "packages/archflow/tests/test_project_repository.py",
         ):
             target = self.source / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -222,7 +223,11 @@ class PackageAdapterTests(unittest.TestCase):
         # where python313._pth's ..\.. finds it, without its tests.
         self.assertEqual((self.bundle / "monkeydiagram/__init__.py").read_text(), "fixture")
         self.assertIn("packages/monkeydiagram/src/monkeydiagram", builder.SOURCE_PATHS)
+        self.assertEqual((self.bundle / "archflow/__init__.py").read_text(), "fixture")
+        self.assertIn("packages/archflow/src/archflow", builder.SOURCE_PATHS)
         self.assertFalse((self.bundle / "packages").exists())
+        # The embedded runtime's requirements are read from the kernel's own manifest.
+        self.assertIn("packages/archflow/pyproject.toml", builder.SOURCE_PATHS)
         # A user holding only the ZIP can still find the security-reporting route.
         self.assertEqual((self.bundle / "SECURITY.md").read_text(), "fixture")
         self.assertIn("SECURITY.md", builder.SOURCE_PATHS)

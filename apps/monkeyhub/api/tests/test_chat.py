@@ -17,9 +17,12 @@ from uuid import UUID, NAMESPACE_URL, uuid4, uuid5
 from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[4]
-for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhub/api"):
-    if str(directory) not in sys.path:
-        sys.path.insert(0, str(directory))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from tools import source_roots  # noqa: E402 - this checkout's tools, found above
+
+# The checkout's Python source roots, as its architecture policy lists them, go first.
+source_roots.put_first(ROOT)
 
 from fastapi.testclient import TestClient
 
@@ -214,8 +217,9 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 root, runtime, project, fake, log = (Path(value) for value in sys.argv[1:6])
-for directory in (root, root / "apps/archflow-studio/api", root / "apps/monkeyhub/api"):
-    sys.path.insert(0, str(directory))
+sys.path.insert(0, str(root))
+from tools import source_roots
+source_roots.put_first(root)
 
 from monkeyhub_api import chat
 from monkeyhub_api.models import ChatCreateRequest, ChatDesignContext, ChatPostRequest

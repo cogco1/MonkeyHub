@@ -966,11 +966,13 @@ class OperationalMarkovCompilerTests(unittest.TestCase):
 
         sources = (
             Path(__file__).parents[1]
+            / "src"
             / "archflow"
             / "state"
             / "operational_state.py"
         ).read_text(encoding="utf-8") + (
             Path(__file__).parents[1]
+            / "src"
             / "archflow"
             / "state"
             / "decision_operator.py"

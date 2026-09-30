@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 from pathlib import Path
 import unittest
 
@@ -9,9 +10,127 @@ from monkeyarch.compilers.geometry import (
     compile_geometry_program,
 )
 from archflow.state.spatial import NEUTRAL_SEMANTIC_KIND, ComponentMaturity, DesignComponent, SpatialProposalError, compile_component_transition
+from archflow.state.spatial import ConstraintResponseStatus, MassingVolume, SchematicOption, SiteBounds, SpatialConstraintResponse, SpatialGridBasis, SpatialLevel, SpatialOptionProposal, SpatialZone
 from archflow.state.geometry_program import SemanticBinding
-from tests.test_design_portfolio import EVIDENCE, _option
 from tests.test_geometry_compiler import COMMITMENT, _proposal, _state
+
+
+# The option these tests deepen, as ArchFlow's own suite builds it
+# (packages/archflow/tests/test_design_portfolio.py). A package's suite is not
+# importable from the repository suite, so this copy is the tree tests' own.
+EVIDENCE = "project://portfolio-project/input/research.json"
+REQUIREMENT_A = "commitment:public-access"
+REQUIREMENT_B = "obligation:protected-site"
+
+
+def _option(
+    option_id: str,
+    *,
+    requirement_refs: tuple[str, ...] = (
+        REQUIREMENT_A,
+        REQUIREMENT_B,
+    ),
+    evidence_ref: str = EVIDENCE,
+    shape: int = 0,
+) -> SchematicOption:
+    level = SpatialLevel(
+        level_id="ground",
+        base_y=0,
+        height=4,
+        source_refs=(evidence_ref,),
+    )
+    volume = MassingVolume(
+        volume_id="primary",
+        bounds=SiteBounds(
+            minimum=(shape, 0, 0),
+            maximum=(shape + 1, 3, 1),
+        ),
+        level_ids=("ground",),
+        source_refs=(evidence_ref,),
+    )
+    zone = SpatialZone(
+        zone_id="main",
+        program_node_refs=("program-node:main",),
+        level_ids=("ground",),
+        volume_ids=("primary",),
+        source_refs=(evidence_ref,),
+    )
+    responses = tuple(
+        SpatialConstraintResponse(
+            response_id=f"response-{index}",
+            constraint_ref=ref,
+            status=ConstraintResponseStatus.SATISFIED,
+            rationale=f"Option {option_id} addresses {ref}.",
+            source_refs=(evidence_ref,),
+        )
+        for index, ref in enumerate(requirement_refs, start=1)
+    )
+    proposal = SpatialOptionProposal(
+        option_id=option_id,
+        label=f"Project-authored option {option_id}",
+        program_scenario_ref=None,
+        footprint_range_ref=None,
+        grid_basis=SpatialGridBasis(
+            horizontal_area_per_cell=1.0,
+            area_unit="project_grid_unit",
+            source_refs=(evidence_ref,),
+        ),
+        footprint_cells=((shape, 0), (shape + 1, 0)),
+        levels=(level,),
+        volumes=(volume,),
+        zones=(zone,),
+        components=(
+            DesignComponent(
+                component_id="building",
+                parent_component_id=None,
+                semantic_kind="building",
+                intent="Own the selected schematic massing.",
+                maturity=ComponentMaturity.SCHEMATIC,
+                revision=0,
+                volume_ids=("primary",),
+                unresolved_child_roles=(),
+                source_refs=(evidence_ref,),
+            ),
+            DesignComponent(
+                component_id="primary-support",
+                parent_component_id="building",
+                semantic_kind="structural-support",
+                intent="Carry the selected schematic massing.",
+                maturity=ComponentMaturity.SCHEMATIC,
+                revision=0,
+                volume_ids=(),
+                unresolved_child_roles=(),
+                source_refs=(evidence_ref,),
+            ),
+            DesignComponent(
+                component_id="primary-surface",
+                parent_component_id="building",
+                semantic_kind="enclosure-surface",
+                intent="Resolve the selected schematic envelope.",
+                maturity=ComponentMaturity.SCHEMATIC,
+                revision=0,
+                volume_ids=(),
+                unresolved_child_roles=(),
+                source_refs=(evidence_ref,),
+            ),
+        ),
+        connections=(),
+        constraint_responses=responses,
+        typology_hypothesis=f"Project hypothesis {option_id}",
+        palette_refs=(),
+        rationale=f"Architect rationale for {option_id}.",
+        responds_to_refs=requirement_refs,
+        expert_advice_refs=(),
+        evidence_refs=(evidence_ref,),
+    )
+    signature = hashlib.sha256(
+        f"{option_id}:{shape}".encode("utf-8")
+    ).hexdigest()
+    return SchematicOption(
+        proposal=proposal,
+        footprint_area=2.0,
+        topology_signature=signature,
+    )
 
 
 def _component(
@@ -70,11 +189,11 @@ class SemanticGeometryTreeTests(unittest.TestCase):
     def test_removed_projection_and_p026_bypass_have_no_production_route(
         self,
     ) -> None:
-        root = Path(__file__).resolve().parents[1] / "archflow"
-        source = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in root.rglob("*.py")
-        )
+        root = Path(__file__).resolve().parents[1] / "packages" / "archflow" / "src" / "archflow"
+        paths = tuple(root.rglob("*.py"))
+        # A moved kernel would leave nothing to read and the scan would pass.
+        self.assertIn(root / "__init__.py", paths)
+        source = "\n".join(path.read_text(encoding="utf-8") for path in paths)
         for forbidden in (
             "CandidateProgramProjection",
             "candidate_value_ids",

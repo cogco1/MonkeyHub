@@ -28,9 +28,10 @@ load before its cold reads; the result then says how the index loaded, how
 long that took and where it stood after the write. What is compared and judged
 does not change. Without it the candidate keeps no index.
 
-Each side runs in its own interpreter with ``<code-root>`` and
-``<code-root>/apps/archflow-studio/api`` first on ``sys.path`` and refuses to
-run if ``archflow`` resolves anywhere else. This file imports nothing from
+Each side runs in its own interpreter with its kernel source (``<code-root>``
+before #489, ``<code-root>/packages/archflow/src`` from it on), ``<code-root>``
+and ``<code-root>/apps/archflow-studio/api`` first on ``sys.path`` and refuses
+to run if ``archflow`` resolves anywhere else. This file imports nothing from
 either root; the worker half (``worker`` subcommand) imports the side it reads.
 """
 
@@ -65,6 +66,10 @@ SLOWER_MS = 200.0
 # project is settled (older than any racy window) before a side reads it.
 SETTLED_AGE_NS = 3600 * 1_000_000_000
 STUDIO_API = Path("apps") / "archflow-studio" / "api"
+# archflow left the code root for packages/archflow/src in #489. The job compares a change
+# with its base, so a side keeps the root layout until every base has the packages one;
+# then the root layout goes (``_kernel_source``).
+KERNEL_SOURCE = Path("packages") / "archflow" / "src"
 # How long an opt-in index (``--index-dir``) is waited for to load or catch up.
 INDEX_WAIT_S = 600.0
 
@@ -100,12 +105,22 @@ def scratch_copy(project: Path, scratch: Path) -> Path:
 # ---- one side, in its own interpreter ----------------------------------------
 
 
+def _kernel_source(code_root: Path) -> Path:
+    """Where this side keeps ``archflow``: at the code root before #489, in its package after."""
+
+    return code_root if (code_root / "archflow" / "__init__.py").is_file() else code_root / KERNEL_SOURCE
+
+
 def _bind(code_root: Path) -> None:
-    """Put this side's code first on ``sys.path`` and prove it is what imports."""
+    """Put this side's code first on ``sys.path`` and prove it is what imports.
+
+    Importing the runtime package puts the side's other source roots in front as well.
+    """
 
     here = Path(__file__).resolve().parent
     rest = [entry for entry in sys.path if Path(entry or ".").resolve() != here]
-    sys.path[:] = [str(code_root), str(code_root / STUDIO_API), *rest]
+    first = dict.fromkeys(str(path) for path in (_kernel_source(code_root), code_root, code_root / STUDIO_API))
+    sys.path[:] = [*first, *rest]
     import archflow
     import archflow_studio_api
 

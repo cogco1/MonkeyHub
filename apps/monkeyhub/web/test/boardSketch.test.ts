@@ -194,7 +194,7 @@ test("footprint ids are stable, identifier-safe and never fold two shapes into o
   assert.equal(sketch.footprintElementId(element("rectangle", "AbC_12-x")), sketch.footprintElementId(element("rectangle", "AbC_12-x")));
   assert.equal(sketch.footprintElementId(element("rectangle", "AbC_12-x")), "board-AbC_12-x");
   assert.match(sketch.footprintElementId(element("rectangle", "we!rd id")), /^board-[A-Za-z0-9._-]+$/);
-  // archflow/project/refs.py: ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$
+  // packages/archflow/src/archflow/project/refs.py: ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$
   assert.match(sketch.footprintElementId(element("rectangle", "x".repeat(400))), /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/);
   for (const [left, right] of [["ab_c", "ab-c"], ["AB-C", "ab-c"], ["a.b", "a-b"]]) {
     assert.notEqual(sketch.footprintElementId(element("rectangle", left)), sketch.footprintElementId(element("rectangle", right)));

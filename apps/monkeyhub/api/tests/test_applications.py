@@ -21,9 +21,12 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[4]
-for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhub/api"):
-    if str(directory) not in sys.path:
-        sys.path.insert(0, str(directory))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from tools import source_roots  # noqa: E402 - this checkout's tools, found above
+
+# The checkout's Python source roots, as its architecture policy lists them, go first.
+source_roots.put_first(ROOT)
 
 from archflow_studio_api.application.projections import projection_queue
 from archflow_studio_api.settings import StudioSettings
@@ -294,7 +297,9 @@ class HubChildStdinTests(unittest.TestCase):
         harness.write_text("\n".join((
             "import sys, threading, time",
             "from pathlib import Path",
-            f"sys.path[:0] = {[str(ROOT), str(ROOT / 'apps/archflow-studio/api'), str(ROOT / 'apps/monkeyhub/api')]!r}",
+            f"sys.path.insert(0, {str(ROOT)!r})",
+            "from tools import source_roots",
+            f"source_roots.put_first(Path({str(ROOT)!r}))",
             "from monkeyhub_api.applications import source_revision",
             "# What --managed-stdin does: one thread always waits on the Hub's stdin.",
             "threading.Thread(target=sys.stdin.read, daemon=True).start()",
