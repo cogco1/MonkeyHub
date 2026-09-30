@@ -105,8 +105,8 @@ P036 retains the working position and local recovery inside the project. It neve
 
 | Content | Owner and location |
 | --- | --- |
-| Language, theme, font scale, model defaults, and the default chat connection and model | Existing Studio settings owner; APPDATA/MonkeyArch/settings.json |
-| Chosen Studio project/run, workspace folder for new projects, CAD export and service ports | Same settings owner; runtime-root/config/applications.json |
+| Language, theme, font scale, model defaults, and the default chat connection and model | Hub settings (monkeyhub_api/settings); APPDATA/MonkeyArch/settings.json |
+| Chosen Studio project/run, workspace folder for new projects, CAD export and service ports | Same Hub settings; runtime-root/config/applications.json |
 | Hub-owned child stdout/stderr | runtime-root/logs/ |
 | Chat transcripts, archive state, project associations and native CLI session ids | runtime-root/chats/; these are conversations, not building state |
 | Chat attachment bytes | runtime-root/chats/<session-id>/attachments/; transcripts retain file metadata only |
@@ -191,7 +191,7 @@ The actual schema is available at GET /openapi.json. Generate a client from this
 | GET /api/apps | AppStatus[] for the five fixed application cards; Fab is hosted by Hub when installed |
 | POST /api/apps/{app_id}/start | 202 with starting or current status; repeat requests reuse the owned process |
 | POST /api/apps/{app_id}/stop | 202 with stopping or current status; stopping any Studio card stops their shared service |
-| GET/PUT /api/settings/user | Existing UserSettingsDto and existing local preference routes |
+| GET/PUT /api/settings/user | The local account's UserSettingsDto preferences (APPDATA/MonkeyArch/settings.json) |
 | GET/PUT /api/settings/apps | projectDir, referenceRun, cadExport, studioPort, monitorPort |
 | GET /api/fab/profiles | Printer envelopes from the installed MonkeyFab CLI |
 | POST /api/fab/prepare | Prepare a local STL/OBJ in the explicitly selected output directory and return the CLI result |
