@@ -1,20 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-523",
-      "status": "active",
-      "branch": "codex/523-module-ids",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-523-module-ids",
-      "base_ref": "3dddfdc2cb6799a44d015617c2383b8302eea0e1",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "tools.archcheck"
-      ],
-      "write_scope": [],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
