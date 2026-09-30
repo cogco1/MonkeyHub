@@ -1,48 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-519",
-      "status": "active",
-      "branch": "codex/519-runtime-owners",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-519-runtime-owners",
-      "base_ref": "4f353d15fe0b60221ead3ea96d92ca176be14e5d",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "studio.shell",
-        "studio.binding",
-        "studio.artifacts",
-        "studio.board",
-        "studio.candidate",
-        "studio.render",
-        "studio.study",
-        "studio.options",
-        "studio.intent",
-        "capabilities.element_reindex",
-        "state.massing_metrics",
-        "runtime.drawing_elevation",
-        "documentation.drawings",
-        "hub.shell",
-        "tools.archcheck"
-      ],
-      "write_scope": [
-        "services/project-runtime/src/project_runtime/",
-        "packages/monkeyarch/src/monkeyarch/authoring/frame.py",
-        "packages/monkeyarch/src/monkeyarch/domain/massing_transforms.py",
-        "packages/monkeydiagram/src/monkeydiagram/corrections.py",
-        "packages/monkeydiagram/src/monkeydiagram/documentation/sheet_layout.py",
-        "packages/monkeydiagram/src/monkeydiagram/study.py",
-        "apps/monkeyhub/api/monkeyhub_api/chat/media.py",
-        "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
-        "labs/candidate_evaluation/retained_fixture.py",
-        "tools/governance/archcheck.py",
-        "docs/architecture/project-runtime.md",
-        "docs/architecture/repository-layout.md",
-        "services/project-runtime/README.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
