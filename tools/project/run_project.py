@@ -37,8 +37,7 @@ from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 
-from monkeyarch.domain.declaration import DeclarationQuadrant  # noqa: E402
-from monkeyarch.domain.discipline_seats import SeatSpec  # noqa: E402
+from monkeyarch.domain.discipline_seats import DeclarationQuadrant, SeatSpec  # noqa: E402
 from monkeyarch.application.geometry_proposal import GeometryProposalProviderIdentity  # noqa: E402
 from archflow.state.stage_workflow import CompositeStageClosureReceipt
 from archflow.project.inputs import load_authored_record, load_seat_pack_file  # noqa: E402

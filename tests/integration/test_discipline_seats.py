@@ -11,8 +11,8 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from monkeyarch.domain.declaration import DeclarationQuadrant
 from monkeyarch.domain.discipline_seats import (
+    DeclarationQuadrant,
     DeclaredEngagement,
     HandoverKind,
     check_handover_exclusions,

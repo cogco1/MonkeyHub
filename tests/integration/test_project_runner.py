@@ -17,8 +17,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 from pathlib import Path
 
-from monkeyarch.domain.declaration import DeclarationQuadrant
-from monkeyarch.domain.discipline_seats import SeatSpec
+from monkeyarch.domain.discipline_seats import DeclarationQuadrant, SeatSpec
 from monkeyarch.application.geometry_proposal import GeometryProposalProviderIdentity
 from archflow.state.geometry_program import load_compiled_geometry_program
 from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
