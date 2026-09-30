@@ -67,6 +67,7 @@ def _policy(**changes: object) -> dict[str, object]:
         ],
         "authority_symbol_patterns": [],
         "allowed_authority_symbols": [],
+        "module_id_namespaces": {"tools": "tools"},
     }
     policy.update(changes)
     validate_policy(policy)
@@ -630,9 +631,9 @@ class RegistryIdNamespaceTests(unittest.TestCase):
     OWNERS = (
         "packages/archflow/src/archflow/project/repository.py",
         "packages/archflow/src/archflow/project/index/__init__.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/massing_metrics.py",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_svg.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py",
+        "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py",
         "packages/monkeymonitor/src/monkeymonitor/usage.py",
         "services/project-runtime/src/project_runtime/binding.py",
         "apps/monkeyhub/api/monkeyhub_api/main.py",
@@ -646,19 +647,18 @@ class RegistryIdNamespaceTests(unittest.TestCase):
         for relative in self.OWNERS:
             _write(self.root, relative)
 
-    def findings(self, *modules: tuple[str, str], namespaces: object = NAMESPACES) -> list[tuple[str, str]]:
+    def findings(self, *modules: tuple[str, str], namespaces: dict[str, str] = NAMESPACES) -> list[tuple[str, str]]:
         _write(self.root, REGISTRY_PATH, {"modules": [
             {"module_id": module_id, "owner_path": owner, "depends_on": [], "untested_reason": "synthetic owner"}
             for module_id, owner in modules
         ]})
-        policy = _policy() if namespaces is None else _policy(module_id_namespaces=namespaces)
-        return [(item.code, item.message) for item in check_registry(self.root, policy)]
+        return [(item.code, item.message) for item in check_registry(self.root, _policy(module_id_namespaces=namespaces))]
 
     def test_ids_that_begin_with_their_units_namespace_pass(self) -> None:
         self.assertEqual([], self.findings(
             ("archflow.project.repository", "packages/archflow/src/archflow/project/repository.py"),
             ("archflow.project.index", "packages/archflow/src/archflow/project/index/__init__.py"),
-            ("monkeyarch.runtime.project_runner", "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py"),
+            ("monkeyarch.application.project_runner", "packages/monkeyarch/src/monkeyarch/application/project_runner.py"),
             # A package-level id is the namespace alone; the Hub names its owner by capability.
             ("monkeymonitor", "packages/monkeymonitor/src/monkeymonitor/usage.py"),
             ("project_runtime.binding", "services/project-runtime/src/project_runtime/binding.py"),
@@ -669,9 +669,9 @@ class RegistryIdNamespaceTests(unittest.TestCase):
     def test_an_id_that_names_another_namespace_is_a_finding(self) -> None:
         findings = self.findings(
             ("project.repository", "packages/archflow/src/archflow/project/repository.py"),
-            ("state.massing_metrics", "packages/monkeyarch/src/monkeyarch/capabilities/massing_metrics.py"),
-            ("runtime.project_runner", "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py"),
-            ("adapters.drawing_svg", "packages/monkeydiagram/src/monkeydiagram/drawing_svg.py"),
+            ("state.massing_metrics", "packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py"),
+            ("runtime.project_runner", "packages/monkeyarch/src/monkeyarch/application/project_runner.py"),
+            ("adapters.drawing_svg", "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py"),
             ("studio.binding", "services/project-runtime/src/project_runtime/binding.py"),
             ("monkeyhub.shell", "apps/monkeyhub/api/monkeyhub_api/main.py"),
         )
@@ -680,7 +680,7 @@ class RegistryIdNamespaceTests(unittest.TestCase):
         for text in (
             "project.repository: owner_path packages/archflow/src/archflow/project/repository.py is in "
             "packages/archflow/src/archflow, whose module ids begin with 'archflow', but this id begins with 'project'",
-            "state.massing_metrics: owner_path packages/monkeyarch/src/monkeyarch/capabilities/massing_metrics.py "
+            "state.massing_metrics: owner_path packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py "
             "is in packages/monkeyarch/src/monkeyarch, whose module ids begin with 'monkeyarch', but this id begins with 'state'",
             "whose module ids begin with 'monkeyarch', but this id begins with 'runtime'",
             "whose module ids begin with 'monkeydiagram', but this id begins with 'adapters'",
@@ -708,10 +708,12 @@ class RegistryIdNamespaceTests(unittest.TestCase):
         self.assertEqual(["REGISTRY_ID_NAMESPACE"], [code for code, _ in findings])
         self.assertIn("is in tools/governance, whose module ids begin with 'governance'", findings[0][1])
 
-    def test_the_rule_waits_for_the_policy_to_name_its_units(self) -> None:
-        # The policy carries the table once the registry's ids are renamed; until then no id is held to it.
-        self.assertEqual([], self.findings(("studio.binding", "services/project-runtime/src/project_runtime/binding.py"),
-                                           namespaces=None))
+    def test_the_policy_must_name_the_units(self) -> None:
+        # A policy without the table would hold no id to anything.
+        without = _policy()
+        del without["module_id_namespaces"]
+        with self.assertRaisesRegex(ArchitecturePolicyError, "module_id_namespaces"):
+            validate_policy(without)
 
     def test_a_unit_that_is_gone_is_a_finding(self) -> None:
         moved = {**NAMESPACES, "packages/monkeycad/src/monkeycad": "monkeycad", "scripts/dev/start.py": "scripts"}
@@ -754,6 +756,10 @@ class ImportNameTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(name, _module_name(path, roots))
 
+    # The owners' ids begin with their namespace but are not their import names,
+    # so a match can only come from the owner's path.
+    NAMESPACES = {"packages/archflow/src/archflow": "archflow", "monkeyarch": "monkeyarch", "tools": "tools"}
+
     def registry_findings(self, python_source_roots: list[str], owner: str, owner_id: str, imported: str) -> list[str]:
         root = _temporary_root(self)
         _write(root, owner)
@@ -763,19 +769,20 @@ class ImportNameTests(unittest.TestCase):
             {"module_id": "tools.consumer", "owner_path": "tools/consumer.py", "depends_on": [owner_id],
              "untested_reason": "synthetic consumer"},
         ]})
-        return [item.code for item in check_registry(root, _policy(python_source_roots=python_source_roots))]
+        policy = _policy(python_source_roots=python_source_roots, module_id_namespaces=self.NAMESPACES)
+        return [item.code for item in check_registry(root, policy)]
 
     def test_an_owner_under_a_src_layout_is_matched_through_its_source_root(self) -> None:
         owner = "packages/archflow/src/archflow/state/record.py"
-        self.assertEqual([], self.registry_findings([".", "packages/archflow/src"], owner, "state.ledger", "archflow.state.record"))
+        self.assertEqual([], self.registry_findings([".", "packages/archflow/src"], owner, "archflow.ledger", "archflow.state.record"))
         self.assertEqual(
             ["REGISTRY_DEPENDS_ON_DRIFT"],
-            self.registry_findings(["."], owner, "state.ledger", "archflow.state.record"),
+            self.registry_findings(["."], owner, "archflow.ledger", "archflow.state.record"),
         )
 
     def test_a_package_owner_is_the_package(self) -> None:
         self.assertEqual([], self.registry_findings(
-            ["."], "monkeyarch/authoring/construction/__init__.py", "construction.script", "monkeyarch.authoring.construction",
+            ["."], "monkeyarch/authoring/construction/__init__.py", "monkeyarch.script", "monkeyarch.authoring.construction",
         ))
 
 

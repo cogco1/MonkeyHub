@@ -176,29 +176,26 @@ def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
             raise ArchitecturePolicyError(
                 "source_root cannot be import-only"
             )
-    # Optional until the registry's ids are renamed into their namespaces
-    # (#523); while the policy names no units, no id is checked against one.
     namespaces = policy.get("module_id_namespaces")
-    if namespaces is not None:
-        if not isinstance(namespaces, dict) or not namespaces:
+    if not isinstance(namespaces, dict) or not namespaces:
+        raise ArchitecturePolicyError(
+            "module_id_namespaces must map each distribution unit's directory to its namespace"
+        )
+    units: set[tuple[str, ...]] = set()
+    for unit, namespace in namespaces.items():
+        if not _repository_path(unit):
             raise ArchitecturePolicyError(
-                "module_id_namespaces must map each distribution unit's directory to its namespace"
+                f"module_id_namespaces entry {unit!r} must be a repository-relative directory"
             )
-        units: set[tuple[str, ...]] = set()
-        for unit, namespace in namespaces.items():
-            if not _repository_path(unit):
-                raise ArchitecturePolicyError(
-                    f"module_id_namespaces entry {unit!r} must be a repository-relative directory"
-                )
-            if _scope_parts(unit) in units:
-                raise ArchitecturePolicyError(
-                    f"module_id_namespaces names {unit!r} twice"
-                )
-            units.add(_scope_parts(unit))
-            if not isinstance(namespace, str) or not MODULE_ID_NAMESPACE.fullmatch(namespace):
-                raise ArchitecturePolicyError(
-                    f"module_id_namespaces[{unit!r}] must be one lowercase id segment, not {namespace!r}"
-                )
+        if _scope_parts(unit) in units:
+            raise ArchitecturePolicyError(
+                f"module_id_namespaces names {unit!r} twice"
+            )
+        units.add(_scope_parts(unit))
+        if not isinstance(namespace, str) or not MODULE_ID_NAMESPACE.fullmatch(namespace):
+            raise ArchitecturePolicyError(
+                f"module_id_namespaces[{unit!r}] must be one lowercase id segment, not {namespace!r}"
+            )
 
     write_sites = policy.get("allowed_write_sites")
     if not isinstance(write_sites, list):
@@ -484,7 +481,7 @@ def check_policy_paths(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFin
                 ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
                 f"python_source_roots entry {python_root!r} {state}; no module import name begins there",
             )
-    for unit in policy.get("module_id_namespaces") or {}:
+    for unit in policy["module_id_namespaces"]:
         state = directory_state(unit)
         if state is not None:
             yield PolicyFinding(
@@ -1130,8 +1127,7 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
     named after a product, a retired service or another package's
     subpackage is ``REGISTRY_ID_NAMESPACE``, and so is an owner outside every
     unit. The rest of the id is not checked: MonkeyCAD and the Hub name
-    their owners by capability. Until the policy names its units the rule is
-    not applied.
+    their owners by capability.
     """
 
     registry_path = root / "governance" / "module_registry.json"
@@ -1140,7 +1136,7 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
     data = json.loads(registry_path.read_text(encoding="utf-8"))
     entries = data.get("modules", [])
     rel_registry = registry_path.relative_to(root).as_posix()
-    namespaces = policy.get("module_id_namespaces")
+    namespaces = policy["module_id_namespaces"]
     owners: dict[str, str] = {}
     ids: set[str] = set()
     owner_bodies: dict[str, tuple[str, str]] = {}
@@ -1155,10 +1151,9 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
         if module_id in ids:
             yield PolicyFinding(rel_registry, 1, "REGISTRY_DUPLICATE_MODULE", f"module_id {module_id} listed twice")
         ids.add(module_id)
-        if namespaces is not None:
-            problem = _id_namespace_problem(module_id, entry.get("owner_path", ""), namespaces)
-            if problem is not None:
-                yield PolicyFinding(rel_registry, 1, "REGISTRY_ID_NAMESPACE", problem)
+        problem = _id_namespace_problem(module_id, entry.get("owner_path", ""), namespaces)
+        if problem is not None:
+            yield PolicyFinding(rel_registry, 1, "REGISTRY_ID_NAMESPACE", problem)
         owner = root / entry.get("owner_path", "")
         if not owner.is_file():
             yield PolicyFinding(rel_registry, 1, "REGISTRY_OWNER_MISSING", f"{module_id}: owner_path {entry.get('owner_path')} does not exist")
