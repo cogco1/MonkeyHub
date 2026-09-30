@@ -1115,6 +1115,28 @@
         "docs"
       ],
       "reason": "Desktop automation receives plain action values and writes only receipts under a caller-supplied diagnostics directory; the spine, both workflows and the Hub never become its dependencies."
+    },
+    {
+      "source": "packages",
+      "targets": [
+        "project_runtime"
+      ],
+      "reason": "The Project Runtime composes the packages for one open project; a package, and a package's own tests, never import it back."
+    },
+    {
+      "source": "services/project-runtime/src/project_runtime/application",
+      "targets": [
+        "project_runtime.api.routes",
+        "project_runtime.api.conditional"
+      ],
+      "reason": "The HTTP layer calls the application layer, never the reverse: api imports application, and application imports no route and not the conditional-read middleware. project_runtime.api.dto joins these targets once #519 gives application the record schemas it still reads through six DTO imports (decisions, rendering twice, representation_dependencies, study_model, working_draft)."
+    },
+    {
+      "source": "services/project-runtime/src/project_runtime/api/dto",
+      "targets": [
+        "project_runtime.api.routes"
+      ],
+      "reason": "A DTO shapes the wire and never reaches back into a route; only create_app (project_runtime.main) mounts the routes."
     }
   ],
   "authority_symbol_patterns": [
