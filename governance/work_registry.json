@@ -1,37 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-519",
-      "status": "active",
-      "branch": "codex/519-runtime-owners",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-519-runtime-owners",
-      "base_ref": "4f353d15fe0b60221ead3ea96d92ca176be14e5d",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "studio.shell",
-        "studio.binding",
-        "studio.artifacts",
-        "studio.board",
-        "studio.candidate",
-        "studio.render",
-        "studio.study",
-        "studio.options",
-        "studio.intent",
-        "capabilities.element_reindex",
-        "state.massing_metrics",
-        "runtime.drawing_elevation",
-        "documentation.drawings",
-        "hub.shell",
-        "tools.archcheck"
-      ],
-      "write_scope": [
-        "docs/architecture/repository-layout.md",
-        "services/project-runtime/src/project_runtime/application/drawings.py"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
