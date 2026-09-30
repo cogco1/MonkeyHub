@@ -28,8 +28,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tools.archcheck import (
-    REGISTRY_SCHEMA, ArchitecturePolicyError, _index_tree, check_changed_scopes, check_imports,
-    check_registry, check_scopes, load_policy, validate_policy,
+    REGISTRY_SCHEMA, ArchitecturePolicyError, _checked_python_files, _index_tree, _is_import_only,
+    check_changed_scopes, check_imports, check_registry, check_scopes, load_policy, validate_policy,
 )
 
 
@@ -158,7 +158,10 @@ class WorkflowBoundaryTests(unittest.TestCase):
                 self.assertEqual((), findings)
 
     def test_a_package_suite_imports_neither_the_repository_suite_nor_a_lab(self) -> None:
-        for suite in ("packages/monkeydiagram/tests", "packages/archflow/tests"):
+        root = Path(__file__).resolve().parents[2]
+        suites = sorted(path.relative_to(root).as_posix() for path in (root / "packages").glob("*/tests"))
+        self.assertIn("packages/monkeyarch/tests", suites)
+        for suite in suites:
             for target in ("tests.support", "labs.spatial_observation.fixture"):
                 with self.subTest(suite=suite, target=target):
                     findings = tuple(check_imports(f"{suite}/test_example.py",
@@ -168,6 +171,29 @@ class WorkflowBoundaryTests(unittest.TestCase):
             "from monkeydiagram.drawing_svg import drawing_svg\nfrom archflow.adapters import occt_backend"
         )), self.policy))
         self.assertEqual((), findings)
+
+    def test_every_test_root_refuses_a_lab_and_retired_lane_code(self) -> None:
+        """Each test root on disk is held to the rule, function-local imports included.
+
+        Retired lane code is kept outside the public checkout and a lab's checks live
+        in the lab (ADR-001). A test root added without the rule fails here.
+        """
+
+        root = Path(__file__).resolve().parents[2]
+        suites = set()
+        for path in _checked_python_files(root, self.policy):
+            relative = path.relative_to(root).as_posix()
+            parts = relative.split("/")
+            if "tests" in parts[:-1] and not _is_import_only(relative, self.policy):
+                suites.add("/".join(parts[: parts.index("tests") + 1]))
+        self.assertLessEqual({"tests", "tools/tests", "packages/archflow/tests", "packages/monkeyarch/tests",
+                              "services/project-runtime/tests", "apps/monkeyhub/api/tests"}, suites)
+        for suite in sorted(suites):
+            for target in ("archive.lanes.example", "labs.spatial_observation.fixture"):
+                with self.subTest(suite=suite, target=target):
+                    findings = tuple(check_imports(f"{suite}/test_example.py", _index_tree(ast.parse(
+                        f"def later():\n    import {target}\n")), self.policy))
+                    self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
 
     def test_registry_checks_dependencies_from_each_workflow_package(self) -> None:
         for package in ("monkeyarch", "monkeydiagram"):
