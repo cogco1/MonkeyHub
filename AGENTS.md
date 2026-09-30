@@ -37,7 +37,7 @@ its currently implemented limits are described in `docs/ARCHITECTURE.md`.
 
 ## Framework versus project data
 
-- `archflow/` contains shared project, fact and technical contracts. `monkeyarch/`
+- `packages/archflow/` contains shared project, fact and technical contracts. `monkeyarch/`
   owns 3D modeling algorithms; `packages/monkeydiagram/` owns drawing algorithms.
   `apps/monkeyfab/` owns print preparation and upload-only CLI behavior, bundled from the same Hub commit.
   `monkeymonitor/` owns independent engineering usage, pricing and budget advice;
@@ -77,7 +77,7 @@ its currently implemented limits are described in `docs/ARCHITECTURE.md`.
 
 ## Architectural semantics
 
-- A record's semantic fields name ids from `archflow/semantics/` (`role.*`, `condition.*`)
+- A record's semantic fields name ids from `packages/archflow/src/archflow/semantics/` (`role.*`, `condition.*`)
   or an alias that resolves to them; the record refuses anything else and names the nearest
   ids (ADR-006). Entity, role and condition are three things and never one hierarchy.
 - A new term goes into the table with a written reason why existing terms cannot be composed

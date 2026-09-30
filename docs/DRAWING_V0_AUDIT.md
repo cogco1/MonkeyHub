@@ -10,13 +10,13 @@
 
 | 事实及 owner | 实际类型、public API 与实现位置 | 可复用程度 |
 |---|---|---|
-| 设计真源：`state.record` | `StateRecord`、`Entity`、`Parameter`、`StateRecordOperator`；[state_record.py](../archflow/state/state_record.py)，137、175、479、965 行 | 设计实体、参数、关系、依赖与锁；Drawing 不写入这些事实 |
+| 设计真源：`state.record` | `StateRecord`、`Entity`、`Parameter`、`StateRecordOperator`；[state_record.py](../packages/archflow/src/archflow/state/state_record.py)，137、175、479、965 行 | 设计实体、参数、关系、依赖与锁；Drawing 不写入这些事实 |
 | 来源与登记：`studio.artifacts` | `ModelSource`、`SourceDocument`、`DocumentPage`；[application/artifacts.py](../apps/archflow-studio/api/archflow_studio_api/application/artifacts.py)，120、217、247 行 | 已保留精确来源、逻辑 drawingId、immutable revision、recipe；可直接延伸 |
 | 投影与保留：`runtime.drawing_elevation` | `ElevationSource`、`ElevationView`、`ElevationProjection`、`ElevationDrawing`、`VerifiedElevationSource`；[drawing_elevation.py](../packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py)，144、187、267、326、339 行 | 已能校验 exact STEP、生成 SVG/PNG、P036 落盘及冷读回；目前只接 elevation/top |
-| 几何：`adapters.cad_execution` | `StepEntry`、`OcctDrawingPolyline(object_id, kind, points)`、`OcctDrawingRegion(object_id, loops)`；[occt_backend.py](../archflow/adapters/occt_backend.py)，896、1124、1133 行 | 已有真实剖切、断面区域、深度裁切、整体 HLR；无持久 edge/vertex naming |
+| 几何：`adapters.cad_execution` | `StepEntry`、`OcctDrawingPolyline(object_id, kind, points)`、`OcctDrawingRegion(object_id, loops)`；[occt_backend.py](../packages/archflow/src/archflow/adapters/occt_backend.py)，896、1124、1133 行 | 已有真实剖切、断面区域、深度裁切、整体 HLR；无持久 edge/vertex naming |
 | 页批注：`studio.intent` | `DocumentGesture`、`DocumentAnnotationRef`、`DocumentAnnotationPage`；`read_document_annotations` / `save_document_annotations`；[gestures.py](../apps/archflow-studio/api/archflow_studio_api/application/gestures.py)，97、149、187、313、327 行 | exact page/revision、撤销、CAS、冷重开；不是模型尺寸 |
 | 图纸表达：`documentation.drawings` | `DrawingPlan`、图纸验证、PaperCanvas 与 PDF/DXF renderer；[drawings.py](../packages/monkeydiagram/src/monkeydiagram/documentation/drawings.py)、[drawing_output.py](../packages/monkeydiagram/src/monkeydiagram/drawing_output.py) | 可复用纸面单位、尺寸一致性和绘制。其 `DrawingState` JSON schema 是调用方提供数据的验证格式，不是已存在的持久 Drawing 产品状态；不得将它升级为第二真源 |
-| 存储：`project.repository` | `FilesystemProjectRepository.put_json / put_workspace_file / load_json / list_json`；[repository.py](../archflow/project/repository.py) | 沿现有 `STUDIO_SOURCE_DOCUMENT`、`DRAWING_PROJECTION_RECEIPT`、`STUDIO_DOCUMENT_ANNOTATIONS` record kinds；无需新数据库 |
+| 存储：`project.repository` | `FilesystemProjectRepository.put_json / put_workspace_file / load_json / list_json`；[repository.py](../packages/archflow/src/archflow/project/repository.py) | 沿现有 `STUDIO_SOURCE_DOCUMENT`、`DRAWING_PROJECTION_RECEIPT`、`STUDIO_DOCUMENT_ANNOTATIONS` record kinds；无需新数据库 |
 
 实际已有 HTTP：`GET/POST /api/documents`、`GET /api/documents/{sha}/bytes`、`POST /api/drawings/elevations`、`GET /api/drawings/styles`、`POST /api/drawings/sheets`、`GET /api/drawings/model-view`、`GET/PUT /api/document-annotations`、`POST /api/proposals`。前两类 drawing 生成由 [routes/drawings.py](../apps/archflow-studio/api/archflow_studio_api/routes/drawings.py) → `application/drawings.py` → 当前投影 owner 调用；`model-view` 是不保留的观察 PNG。
 
@@ -74,7 +74,7 @@ source_stage_ref, view_recipe, generated_at, replaces_pages
 
 但几何原语已具备，位于现有 CAD owner：
 
-- [occt_backend.py](../archflow/adapters/occt_backend.py) 1299 行：`project_occt_lines(..., depth_range=None)`；深度裁切实际对 B-rep 与 slab 作 Boolean common，再对所有参与对象统一执行 HLR。
+- [occt_backend.py](../packages/archflow/src/archflow/adapters/occt_backend.py) 1299 行：`project_occt_lines(..., depth_range=None)`；深度裁切实际对 B-rep 与 slab 作 Boolean common，再对所有参与对象统一执行 HLR。
 - 1375 行：`section_occt_lines(...)`，由 `BRepAlgoAPI_Section` 生成真实相交线，保留 `object_id`。
 - 1457 行：`section_occt_regions(...)`，按 solid 与拓扑连通性取得闭环及内孔；开壳/开线不会自动变成填黑材料。
 - [drawing_svg.py](../packages/monkeydiagram/src/monkeydiagram/drawing_svg.py) 159–181 行当前只输出 visible/hidden；传入 section 会被漏掉。278 行的 PNG renderer 只接受受限 SVG 元素，尚不支持填充。必须同时扩展两者及孔洞校验，不能只接算法就声称平面完成。
@@ -107,7 +107,7 @@ designTarget                可选 parameter:<key>；仅真实存在的绑定可
 
 ## 6. revision 如何参与 dependency / invalidation？
 
-**当前 main 没有可直接登记 Drawing 的项目级 dependency index。** [StateRecord.dependency_edges()/closure()/closures()](../archflow/state/state_record.py)（479–536 行）覆盖设计实体、参数、关系。`DependencyEdge` 的现有字段为 `upstream_ref, downstream_ref, relation, source_ref, effect`；effect 为 `invalidates / requires_revalidation / blocks / supports_only`（[operational_state.py](../archflow/state/operational_state.py)，80、449 行）。#223 的 project-global index 是结论/方向，不能报告成已交付 API。
+**当前 main 没有可直接登记 Drawing 的项目级 dependency index。** [StateRecord.dependency_edges()/closure()/closures()](../packages/archflow/src/archflow/state/state_record.py)（479–536 行）覆盖设计实体、参数、关系。`DependencyEdge` 的现有字段为 `upstream_ref, downstream_ref, relation, source_ref, effect`；effect 为 `invalidates / requires_revalidation / blocks / supports_only`（[operational_state.py](../packages/archflow/src/archflow/state/operational_state.py)，80、449 行）。#223 的 project-global index 是结论/方向，不能报告成已交付 API。
 
 首片在 `studio.artifacts` 的 drawing 应用逻辑中按现有 records 派生一份临时 dependency/status 结果：
 
@@ -123,7 +123,7 @@ exact design Stage / model receipt / compiled program
 比较规则必须明确：
 
 1. **先选比较目标。** 通常从源 Stage 所属设计分支的现有 branch head 读取目标 accepted Stage；也可明确选择目标 exact ModelSource。不可取项目任意“最新文件”。历史图正常可读，outdated 是相对目标来源的判断，不是损坏。
-2. 比较实际 read set：解析 recipe 的对象选择规则、crop、cut/depth，再读取参与可见性/断面的对象及 anchor 的 entity/parameter closure。几何输入复用 [cad_patch.select_patch_operations](../archflow/adapters/cad_patch.py) 的 structural/analytic comparison 与 CAD receipt/program refs；编译器的 `object_digest` 包含整个 semantic binding 的对象清单和 evidence，会把无关对象新增误报为变化，不能直接作为 Drawing 几何比较键。材料仅在本图表达实际读取时参与。
+2. 比较实际 read set：解析 recipe 的对象选择规则、crop、cut/depth，再读取参与可见性/断面的对象及 anchor 的 entity/parameter closure。几何输入复用 [cad_patch.select_patch_operations](../packages/archflow/src/archflow/adapters/cad_patch.py) 的 structural/analytic comparison 与 CAD receipt/program refs；编译器的 `object_digest` 包含整个 semantic binding 的对象清单和 evidence，会把无关对象新增误报为变化，不能直接作为 Drawing 几何比较键。材料仅在本图表达实际读取时参与。
 3. **不能只追踪输出线的对象。** HLR 遮挡物同样是输入；还要重算新来源中进入/离开视域的对象集合，否则新增墙不会触发更新。V0 可保守地重算整张受影响视图的 HLR；不建立逐线增量引擎。源单位、坐标变换、算法变化也必须进入判断。
 4. anchor 所依赖设计对象变化 → 测量/标签需重解；只是 lineweight、scale、placement 改变 → 新 Drawing revision，设计不变。无关 render override 不在 read set 中，不使图纸 outdated。
 5. 只有 run/Stage binding 变化而实际读取内容相同，应显示“来源版本不同、相关内容未变”；不能仅比较 `stateDigest` 就宣称图形失效，也不能静默改写旧绑定。用户要求绑定新来源时仍产生新 receipt。

@@ -73,7 +73,7 @@ on an explicit project is `scripts/dev/run-project-runtime.ps1`).
 
 ## Python entry and development
 
-Use Python 3.12 or later with apps/archflow-studio/api/requirements.txt and apps/monkeyhub/api/requirements.txt. Studio's normal OCCT export additionally uses the root project's cad-occt extra. The packaged interpreter may be newer if the installer has verified its binary dependencies.
+Use Python 3.12 or later with apps/archflow-studio/api/requirements.txt and apps/monkeyhub/api/requirements.txt. Studio's normal OCCT export additionally uses the cad-occt extra of packages/archflow. The packaged interpreter may be newer if the installer has verified its binary dependencies.
 
 For new Codex chats in a source checkout, install the pinned ACP adapter once with `npm ci --prefix apps/monkeyhub`. Hub uses `agent-client-protocol==0.12.1` and `@agentclientprotocol/codex-acp==1.11.0`, passing the installed native Codex executable through `CODEX_PATH` instead of choosing the adapter's bundled Codex. The compatibility check uses Codex 0.153.4. Node must be on PATH. A missing dependency is shown as unavailable; sending a message never downloads an adapter. This source integration does not update an already installed Hub package.
 

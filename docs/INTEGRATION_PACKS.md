@@ -11,7 +11,7 @@ runtime-qualified conversion providers and the compiled CAD interface.
 `hub.shell` exposes its read-only diagnostic view. There is no second CAD
 execution registry, project store or universal host lifecycle.
 
-`archflow/adapters/integration_packs.py` defines `IntegrationPack`,
+`packages/archflow/src/archflow/adapters/integration_packs.py` defines `IntegrationPack`,
 `PackComponent`, `PackCapability`, `PackWorkflow` and `PackInstallation`.
 `IntegrationPack.manifest()` serializes `MonkeyIntegrationPack@1`.
 The manifest names product/component ids, version, bridge kind, installation

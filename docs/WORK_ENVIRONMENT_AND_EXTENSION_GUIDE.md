@@ -10,8 +10,8 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 本文是索引和操作指南。发生冲突时，软件归口以
 [`governance/module_registry.json`](../governance/module_registry.json) 为准，对外协议以
 [`PROTOCOL.md`](PROTOCOL.md) 为准，项目落盘以
-[`archflow/project/layout.py`](../archflow/project/layout.py) 与
-[`archflow/project/repository.py`](../archflow/project/repository.py) 为准。
+[`packages/archflow/src/archflow/project/layout.py`](../packages/archflow/src/archflow/project/layout.py) 与
+[`packages/archflow/src/archflow/project/repository.py`](../packages/archflow/src/archflow/project/repository.py) 为准。
 
 下文的实现说明以当前代码和 owner 为依据；本机启动核验与第二位成员实际试用分别报告。
 
@@ -197,7 +197,7 @@ facets 解锁的能力才可使用，例如 `architectural.role = wall` 之后�
 
 ```text
 Git 源码仓 / worktree
-  archflow/                  公共项目底座、建筑事实和技术接口
+  packages/archflow/         公共项目底座、建筑事实和技术接口（src/ 布局，自带 pyproject.toml 与本包测试）
   monkeyarch/                三维建模算法与运行编排
   packages/monkeydiagram/    图纸投影与表达（src/ 布局，自带 pyproject.toml 与本包测试）
   apps/archflow-studio/api/  项目运行时；API-only，历史目录名保留
@@ -214,7 +214,7 @@ Git 源码仓 / worktree
 
 活跃项目与 `probes/` 使用同一种 P036 项目格式；它们只因是否被明确提升进 Git 而不同，
 不得为外部项目再建第二个数据库或写入器。通用说明见
-[`archflow/project/README.md`](../archflow/project/README.md)。项目的选择属于 MonkeyHub：Hub 的应用设置（`<runtime root>/config/applications.json`）为每个 Studio
+[`packages/archflow/src/archflow/project/README.md`](../packages/archflow/src/archflow/project/README.md)。项目的选择属于 MonkeyHub：Hub 的应用设置（`<runtime root>/config/applications.json`）为每个 Studio
 实例指定单个 `project_dir`、CAD 后端与参考 run，启动 Studio 子进程时注入环境变量；Studio 自身没有
 与之并行的持久配置。开发时直接启动用 `scripts/dev/run-project-runtime.ps1 -ProjectDir <项目目录>`，
 项目目录必须显式给出。开发工具通过下述一次配置取得工作区、缓存与临时目录。
@@ -373,7 +373,7 @@ work registry 只登记进行中的源码 claim；模块的 `canonical` 标签�
 ### 3.1 record、receipt、ref 和物理文件
 
 - **record** 是项目保留的结构化事实。`put_json` 只接收
-  [`project.record_kinds`](../archflow/project/record_kinds.py) 已登记的 kind，并返回
+  [`project.record_kinds`](../packages/archflow/src/archflow/project/record_kinds.py) 已登记的 kind，并返回
   `ProjectRecordRef`。
 - **receipt** 只证明一次跨边界行为，例如持久化写入、外部调用、CAD 导出、验收决定或 issue；
   receipt 保留时通常也是 `records/` 中的一种 record。确定性内存转换不自造 receipt。
@@ -411,7 +411,7 @@ project-bound Studio capture；该表现已按当前项目存储、protocol、re
 当前配置没有 `output_root`；工具不得从 `workspace_root` 猜其父目录。项目外分发文件不能反向成为
 canonical 事实。这只是把既有三种用途分开，没有建立新项目存储体系。
 
-以下位置不得承载项目持久状态：浏览器 `Downloads`、源码 `archflow/`、`tests/`、`docs/`、
+以下位置不得承载项目持久状态：浏览器 `Downloads`、源码 `packages/archflow/`、`tests/`、`docs/`、
 仓库级 `.runs/`、未分配的任意绝对路径，以及与当前项目或 run 不一致的另一个项目目录。
 
 ### 给人使用的产出文件名
@@ -453,7 +453,7 @@ Project Runtime（FastAPI）
                 │ 调用现有 Python owner / 项目存储接口
                 ▼
 ArchFlow kernel + 项目存储
-  archflow/state, capabilities, compilers, validation, project
+  packages/archflow/src/archflow/state, capabilities, compilers, validation, project
                 │
                 ▼
 显式绑定的 <project-root>
@@ -511,7 +511,7 @@ HEAD                   Published（唯一已发布位置）
 ```
 
 唯一 canonical 路径是
-[`project.issue.issue_run`](../archflow/project/issue.py)：先完整校验 run，再调用项目存储模块的
+[`project.issue.issue_run`](../packages/archflow/src/archflow/project/issue.py)：先完整校验 run，再调用项目存储模块的
 `prepare_transition`，最后对 `HEAD` 做 `compare_and_swap`。直接写 `HEAD`、`canonical/`，或因为“测试
 都过了”就把一个 run 当作当前设计，均不成立。
 
@@ -541,7 +541,7 @@ Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-na
 
 | 名称 | 用途与边界 | 当前代码标识或入口 |
 | --- | --- | --- |
-| **ArchFlow** | 共享项目底座、建筑事实、技术契约与正式发布 | `archflow/` |
+| **ArchFlow** | 共享项目底座、建筑事实、技术契约与正式发布 | `packages/archflow/` |
 | **MonkeyHub** | 唯一对外应用入口；启动、工作区切换、服务管理与共享设置，Agent 接入也沿此入口 | `apps/monkeyhub/`；`OPEN_MONKEYHUB.cmd` |
 | **MonkeyArch** | 三维建模、模型候选与续改 | `monkeyarch/`；Hub `appId: monkeyarch` |
 | **MonkeyDiagram** | 图纸、图解、平立剖表达与单页批注 | `packages/monkeydiagram/`；Hub rail「工具」组的「图纸」（与渲染、制作、用量并列）；Board 双击已登记图页进入精确页面编辑 |
@@ -708,7 +708,7 @@ node --version
 py -3.12 -m venv "$RuntimeRoot\venv"
 $Python = "$RuntimeRoot\venv\Scripts\python.exe"
 $env:PATH = "$RuntimeRoot\venv\Scripts;" + $env:PATH
-& $Python -m pip install -e '.[cad-inspection]'
+& $Python -m pip install -e 'packages/archflow[cad-inspection]'
 & $Python -m pip install -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 & $Python -m pip check
 npm.cmd ci --prefix apps/monkeyhub/web
@@ -779,7 +779,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SourceRoot\apps\monkey
 ```
 
 唯一的前端 `dist` 目录来自 `npm --prefix apps/monkeyhub/web run build`。Hub 启动后在其设置里选择 8.3 创建的项目、CAD 后端
-（默认 `occt`，需要 `.[cad-occt]`；未安装时选 `off`）和参考 run；意图 provider、模型与超时来自 Hub 的
+（默认 `occt`，需要 `packages/archflow[cad-occt]`；未安装时选 `off`）和参考 run；意图 provider、模型与超时来自 Hub 的
 用户偏好。每个项目的 Studio 进程由 Hub 创建、监控和关闭；退出走托盘的 `Quit MonkeyHub`。
 不要与下面的手动方式同时使用同一组端口。
 
