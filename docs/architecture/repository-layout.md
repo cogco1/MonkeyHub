@@ -181,10 +181,15 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
   基准驱动在 `tools/benchmarks/`。
 - `docs/` 根目录只有 `README.md` 索引；其余文档在类别子目录里，决定记录是 `docs/decisions/NNN-*.md`。
 
-第二轮做内部拆分，每项另开 Issue、单独 PR，范围在开工前确认。CAD 已从
+第二轮做内部拆分，每项另开 Issue、单独 PR，范围在开工前确认。已落地：CAD 从
 `packages/archflow/src/archflow/adapters/` 抽成 `packages/monkeycad/`（#514；第一轮的 Step 0，#485，先把 CAD 的版本声明移进了内核），并按后端与格式拆开（#515）；
-MonkeyArch 已按层整理（#516，第 4 节），Runtime 已把确认的值逻辑按函数归还 owner（#519，见 [Project Runtime](project-runtime.md)）；其余候选项有 Runtime 内部分层、`hub.shell` 分组、模块 ID 规范化。
-第一轮不改模块 ID：R1-9（#495）分组后 `tools.*` 仍是原 ID（如 `tools.archcheck`），只更新 `owner_path` 等路径，随 ID 规范化一起调整。
+MonkeyArch 按层整理（#516，第 4 节）；MonkeyDiagram 按来源、投影、表达与图纸 run 拆开（#517，第 3 节）；Runtime 内部分层（#518），
+确认的值逻辑按函数归还 owner（#519，见 [Project Runtime](project-runtime.md)）；Hub 后端分组并拆开大文件（#520、#521）；
+模块 ID 按 owner 所在分发单元的命名空间规范化（#523，6.3）。测试 fixture 随 owner 归位（#522）进行中。
+第一轮不改模块 ID：R1-9（#495）分组后 `tools.*` 只更新了 `owner_path` 等路径。#523 起 `studio.*` 换成 `project_runtime.*`
+（文档登记 `studio.artifacts` 是 `project_runtime.documents`），archflow、monkeyarch、monkeydiagram 与 tools 的 id 取 owner 的导入路径
+（如 `tools.archcheck` → `tools.governance.archcheck`、`capabilities.wall_solver` → `monkeyarch.domain.wall_solver`），`monkeycad.*`、
+`hub.shell` 与三个包级 id 不变；`GET /api/capabilities` 的 `owner` 随之改名。决定记录、审计、研究与注明日期的设计笔记保留当时的 id。
 
 ### 6.1 命名规则
 

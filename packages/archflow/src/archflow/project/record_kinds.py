@@ -524,8 +524,9 @@ _TABLE: tuple[RecordKind, ...] = (
         CATALOG_CONFRONTATION,
         "CatalogConfrontationReceipt@1",
         _RUN_RECORD,
-        "which templates a catalog confrontation selected; capabilities."
-        "geometry_proposal checks this schema by name, and writes none",
+        "which templates a catalog confrontation selected; "
+        "monkeyarch.application.geometry_proposal checks this schema by name, "
+        "and writes none",
     ),
     RecordKind(
         COMPONENT_CATALOG,
