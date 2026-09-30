@@ -305,13 +305,31 @@ def _parse(path: Path, root: Path) -> tuple[ast.Module | None, PolicyFinding | N
         return None, PolicyFinding(relative, line, "PARSE_ERROR", str(exc))
 
 
-def _import_targets(nodes: Iterable[ast.AST]) -> Iterator[tuple[str, int]]:
+def _import_targets(
+    nodes: Iterable[ast.AST], module: str | None = None, package: bool = False
+) -> Iterator[tuple[tuple[str, ...], int]]:
+    """What each import statement names, the module it imports from first.
+
+    ``import a.b`` names ``a.b``; ``from x import y`` names ``x`` and then
+    ``x.y``, since ``y`` may be a submodule. A relative import is resolved
+    against ``module``, the importing file's import name (``package`` when that
+    file is its package's ``__init__.py``), so a rule also holds inside a
+    package that imports itself relatively; without a name it is skipped.
+    """
+
     for node in nodes:
         if isinstance(node, ast.Import):
             for alias in node.names:
-                yield alias.name, node.lineno
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            yield node.module, node.lineno
+                yield (alias.name,), node.lineno
+        elif isinstance(node, ast.ImportFrom):
+            base = node.module or ""
+            if node.level:
+                parts = [] if module is None else module.split(".")[: None if package else -1]
+                if node.level > len(parts):
+                    continue
+                base = ".".join([*parts[: len(parts) - node.level + 1], *([base] if base else [])])
+            if base:
+                yield (base, *(f"{base}.{alias.name}" for alias in node.names if alias.name != "*")), node.lineno
 
 
 def _module_matches(target: str, prefix: str) -> bool:
@@ -562,22 +580,24 @@ def check_imports(
     index: _SourceIndex,
     policy: dict[str, Any],
 ) -> Iterator[PolicyFinding]:
-    for target, line in _import_targets(index.nodes):
-        if _source_matches(
-            relative,
-            policy["source_root"],
-        ) and _module_matches(target, "probes"):
+    module = _module_name(relative, policy["python_source_roots"])
+    package = relative.rsplit("/", 1)[-1] == "__init__.py"
+    framework = _source_matches(relative, policy["source_root"])
+    for names, line in _import_targets(index.nodes, module, package):
+        probe = next((name for name in names if _module_matches(name, "probes")), None) if framework else None
+        if probe is not None:
             yield PolicyFinding(
                 relative,
                 line,
                 "PROBE_REVERSE_IMPORT",
-                f"framework imports project probe module {target!r}",
+                f"framework imports project probe module {probe!r}",
             )
         for rule in policy["forbidden_layer_imports"]:
             if not _source_matches(relative, rule["source"]):
                 continue
             for forbidden in rule["targets"]:
-                if _module_matches(target, forbidden):
+                target = next((name for name in names if _module_matches(name, forbidden)), None)
+                if target is not None:
                     yield PolicyFinding(
                         relative,
                         line,

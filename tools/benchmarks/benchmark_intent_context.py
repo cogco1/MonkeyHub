@@ -29,7 +29,7 @@ from archflow.project.refs import ProjectVersionRef, RunRef
 from archflow.state.operational_state import DesignObligation
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.state_record import Entity, Parameter, Relation, StateRecord, ValidatorBinding
-from project_runtime.application.binding import ReferenceRun
+from project_runtime.binding import ReferenceRun
 from project_runtime.application.intent_agent import (
     MAX_OUTPUT_TOKENS, SYSTEM_PROMPT, Selection, _compile_context_request, _context_budget, _prompt,
     record_sheet, response_schema,

@@ -60,9 +60,9 @@ from .artifacts import (
     require_complete_model,
     require_model_source,
 )
-from .authentication import ActorAttribution, LOCAL_ACTOR_ID, ORIGIN_HUB, ORIGIN_HUB_AGENT, ORIGIN_STUDIO
-from .binding import retained_sources
-from .binding import ProjectBinding, ReferenceRun, record_kind
+from ..authentication import ActorAttribution, LOCAL_ACTOR_ID, ORIGIN_HUB, ORIGIN_HUB_AGENT, ORIGIN_STUDIO
+from ..binding import retained_sources
+from ..binding import ProjectBinding, ReferenceRun, record_kind
 from .candidate import CandidateRun, describe, read_candidate_delta, replay_candidate
 from .compare import shapes_of
 from .episodes import (
@@ -71,12 +71,12 @@ from .episodes import (
     _working_copy_from,
     evidence_generation,
 )
-from .jobs import SUCCEEDED
+from ..jobs import SUCCEEDED
 from .projection import project_state
 from .validation import validate_candidate, validate_design_candidate
 from .working_draft import lineage_of, resolve_working_source
 from ..ports import StudioEventSink
-from ..transport.errors import StudioError, error_sentence
+from ..errors import StudioError, error_sentence
 
 
 AUDIT_EVENT_SCHEMA = "AuditEvent@1"

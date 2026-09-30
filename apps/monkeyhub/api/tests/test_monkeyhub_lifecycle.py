@@ -37,7 +37,7 @@ from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.settings import StudioSettings
-from monkeyhub_api import chat as chat_tools
+from monkeyhub_api.chat import store as chat_tools
 from monkeyhub_api.main import HubSettings, complete_interrupted_connection_teardown, create_app
 from monkeyhub_api.settings.models import ApplicationSettingsDto
 from monkeyhub_api.settings.store import save_application_settings
@@ -235,7 +235,7 @@ class HubApiLifecycleTests(LocalHubCase):
                 self.assertEqual(response.status_code, 409, response.text)
                 self.assertEqual(response.json()["code"], "PROJECT_REQUIRED")
             actual_popen = subprocess.Popen
-            with patch("monkeyhub_api.applications.subprocess.Popen", wraps=actual_popen) as spawn:
+            with patch("monkeyhub_api.runtime.applications.subprocess.Popen", wraps=actual_popen) as spawn:
                 first = client.post("/api/apps/monkeymonitor/start")
                 repeated = client.post("/api/apps/monkeymonitor/start")
                 self.assertEqual(first.status_code, 202, first.text)
@@ -317,7 +317,7 @@ class HubApiLifecycleTests(LocalHubCase):
                 thread.join(5)
 
     def test_a_real_child_from_an_unexpected_source_is_refused_and_stopped(self):
-        with patch("monkeyhub_api.applications.source_revision", return_value="f" * 40), self.hub() as client:
+        with patch("monkeyhub_api.runtime.applications.source_revision", return_value="f" * 40), self.hub() as client:
             self.configure(client)
             response = client.post("/api/apps/monkeymonitor/start")
             self.assertEqual(response.status_code, 202, response.text)
@@ -356,7 +356,7 @@ class HubApiLifecycleTests(LocalHubCase):
                 self.assertEqual(prepared.status_code, 200, prepared.text)
                 self.assertTrue(prepared.json()["initialized"])
                 arch = self.wait_state(client, "monkeyarch", "running", project_dir=root)
-                with patch("monkeyhub_api.applications.subprocess.Popen") as spawn:
+                with patch("monkeyhub_api.runtime.applications.subprocess.Popen") as spawn:
                     repeated = client.post(route, params=query, json=body)
                     self.assertEqual(repeated.status_code, 200, repeated.text)
                     self.assertFalse(repeated.json()["initialized"])

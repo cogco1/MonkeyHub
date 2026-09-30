@@ -39,9 +39,9 @@ from monkeyarch.construction import (
     ConstructionError, ConstructionResult, compile_construction_script, geometry_view, made_by_construction,
 )
 
-from ..adapters.seats import SeatsError, load_seat_pack, seats_of
-from ..transport.errors import StudioError
-from .binding import ProjectBinding
+from .seats import SeatsError, load_seat_pack, seats_of
+from ..errors import StudioError
+from ..binding import ProjectBinding
 from .intent import buildable_components, component_edit_proposal, kept_refs
 from .projection import StateProjection, project_proposed_record
 from .proposals import Proposal, continue_proposal, operator_of, proposal_from

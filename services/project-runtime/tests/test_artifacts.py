@@ -247,8 +247,8 @@ class ArtifactTests(unittest.TestCase):
         self.assertEqual(len(payload["artifacts"]), 5)
 
     def test_single_run_listing_reads_its_refs_once_and_byte_lookup_stays_in_that_run(self) -> None:
-        from project_runtime.application.binding import bound_project
-        from project_runtime.transport.errors import StudioError
+        from project_runtime.binding import bound_project
+        from project_runtime.errors import StudioError
 
         other = self.repository.create_run("another-export-run")
         retain_rhino_receipt(self.repository, other, stage_id="other-stage", file_name="copy.3dm", payload_bytes=MODEL_BYTES)

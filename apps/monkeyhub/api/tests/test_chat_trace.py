@@ -16,8 +16,8 @@ from fastapi.testclient import TestClient
 
 import test_chat
 from test_chat import wait_for
-from monkeyhub_api import chat
-from monkeyhub_api.chat_trace import HubTurnObserver
+from monkeyhub_api.chat import store as chat
+from monkeyhub_api.chat.turn_trace import HubTurnObserver
 from monkeyhub_api.main import HubSettings, create_app
 from monkeymonitor.store import BUSY_NOTICE, UsageLog
 from monkeymonitor.trace import build_traces
@@ -162,7 +162,7 @@ class HubTraceTests(unittest.TestCase):
                  ("coding-plan", "endpoint-model", standard, "coding-plan", "not_found"))
         for provider, model, usage, plan, status in cases:
             with self.subTest(provider=provider, speed=usage["speed"]), \
-                 patch("monkeyhub_api.chat_trace._now", return_value="2026-09-26T10:00:00+00:00"):
+                 patch("monkeyhub_api.chat.turn_trace._now", return_value="2026-09-26T10:00:00+00:00"):
                 store = UsageLog(Path(self.temp) / f"{provider}-{usage['speed']}")
                 trace = HubTurnObserver(store, "turn", "project", provider, None)
                 trace.ready()
@@ -184,8 +184,8 @@ class HubTraceTests(unittest.TestCase):
     def test_completed_tool_without_start_keeps_tool_and_prior_agent_duration_unknown(self):
         clock = [0.0]
         origin = datetime(2026, 9, 13, tzinfo=timezone.utc)
-        with patch("monkeyhub_api.chat_trace.perf_counter", side_effect=lambda: clock[0]), \
-             patch("monkeyhub_api.chat_trace._now", side_effect=lambda: (origin + timedelta(seconds=clock[0])).isoformat()):
+        with patch("monkeyhub_api.chat.turn_trace.perf_counter", side_effect=lambda: clock[0]), \
+             patch("monkeyhub_api.chat.turn_trace._now", side_effect=lambda: (origin + timedelta(seconds=clock[0])).isoformat()):
             trace = HubTurnObserver(self.store, "turn", "project", "codex", None)
             trace.ready()
             clock[0] = 5.0
@@ -212,7 +212,7 @@ class HubTraceTests(unittest.TestCase):
         trace.finish("failed")
         self.assertTrue(all(row.status == "failed" for row in self.rows()))
         with patch.object(self.store, "append", side_effect=OSError("unavailable")):
-            with self.assertLogs("monkeyhub_api.chat_trace", level="WARNING"):
+            with self.assertLogs("monkeyhub_api.chat.turn_trace", level="WARNING"):
                 trace = HubTurnObserver(self.store, "another", "project", "codex", None)
                 trace.ready()
                 trace.finish("succeeded")
@@ -295,7 +295,7 @@ class HubTraceTests(unittest.TestCase):
     def test_non_finite_tool_payload_cannot_fail_the_observed_turn(self):
         trace = HubTurnObserver(self.store, "turn", "project", "codex", None)
         trace.ready()
-        with self.assertLogs("monkeyhub_api.chat_trace", level="WARNING"):
+        with self.assertLogs("monkeyhub_api.chat.turn_trace", level="WARNING"):
             trace.tool("invalid", "studio_request", {"body": {"value": float("nan")}}, running=True)
         trace.finish("succeeded")
         self.assertEqual(next(row for row in self.rows() if row.phase == "hub_turn").status, "succeeded")

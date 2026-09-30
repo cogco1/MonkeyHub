@@ -14,7 +14,7 @@ from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER, STUDIO_SOURC
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.application import study as study_application
-from project_runtime.application.binding import bound_project, record_kind
+from project_runtime.binding import bound_project, record_kind
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 

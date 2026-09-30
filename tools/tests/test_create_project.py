@@ -157,7 +157,7 @@ class CreateProjectTests(unittest.TestCase):
         with patch.object(sys, "path", [str(studio_api), *sys.path]):
             from PIL import Image
             from project_runtime.application.artifacts import document_bytes, list_documents, save_document
-            from project_runtime.application.binding import ProjectBinding
+            from project_runtime.binding import ProjectBinding
             from project_runtime.application.boards import read_board, save_board
             from project_runtime.settings import StudioSettings
 

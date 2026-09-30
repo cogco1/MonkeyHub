@@ -42,7 +42,7 @@ from archflow.state.developed_design import (
     DevelopedDesignState,
 )
 from archflow.state.design_portfolio import DesignStage
-from archflow.state.operational_state import DependencyEdge
+from archflow.state.dependencies import DependencyEdge
 from archflow.state.spatial import DesignComponent
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.state_record import (
@@ -65,8 +65,8 @@ from monkeyarch.capabilities.element_producers import (
 )
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 
-from ..transport.errors import StudioError, error_sentence
-from .binding import ProjectBinding, ReferenceRun, STUDIO_RUN_ID
+from ..errors import StudioError, error_sentence
+from ..binding import ProjectBinding, ReferenceRun, STUDIO_RUN_ID
 
 # The project runner's own view kwargs. Changing any of them turns
 # ``stateDigest`` into a number no receipt carries.

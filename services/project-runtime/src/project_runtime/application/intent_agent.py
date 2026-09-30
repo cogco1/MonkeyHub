@@ -51,7 +51,7 @@ from archflow.state.state_record import component_facets
 from monkeyarch.construction import vocabulary
 
 from ..settings import INTENT_PROVIDER_ENV, SettingsError, StudioSettings
-from ..transport.errors import StudioError
+from ..errors import StudioError
 from .construction import MODEL_ROOT, CompiledScript, construction_model, in_construction_words, script_result
 from .intent import ACCEPTED_FORMS, KEEP_SENTENCE, resolve_keep_refs
 from .projection import StateProjection

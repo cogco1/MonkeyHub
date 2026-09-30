@@ -29,7 +29,7 @@ from unittest import mock
 from fastapi.testclient import TestClient
 
 from project_runtime.application import candidate as candidate_module
-from project_runtime.application.binding import record_kind
+from project_runtime.binding import record_kind
 from project_runtime.main import create_app
 from project_runtime.settings import (
     CAD_EXPORT_ENV,
@@ -43,7 +43,7 @@ from project_runtime.settings import (
 from archflow.adapters import cad_execution, occt_backend
 from archflow.adapters.cad_execution import CadCapabilityError
 from archflow.adapters.three_dm_inspector import inspect_three_dm
-from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
+from archflow.state.geometry_program import load_compiled_geometry_program
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import record_ref_from_uri
 

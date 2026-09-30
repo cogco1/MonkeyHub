@@ -43,7 +43,7 @@ from dataclasses import dataclass
 import threading
 from typing import Any, Callable, Mapping
 
-from archflow.state.model import ArtifactRef, CanonicalState
+from archflow.submission.canonical_state import ArtifactRef, CanonicalState
 from archflow.state.state_record import StateRecord
 from archflow.submission.model import CandidateDelta, CandidateSubmission, Claim
 from archflow.validation.engine import (
@@ -64,9 +64,9 @@ from archflow.project.record_kinds import STATE_RECORD
 from archflow.project.repository import ProjectRepositoryError
 
 from ..ports import StudioEventSink
-from ..transport.errors import StudioError, error_sentence
+from ..errors import StudioError, error_sentence
 from .artifacts import ArtifactRecord
-from .binding import ProjectBinding, ReferenceRun
+from ..binding import ProjectBinding, ReferenceRun
 from .candidate import CandidateRun, RelationTotals, SeatOutcome
 
 # The claim a candidate makes about itself: this run happened, and here is the

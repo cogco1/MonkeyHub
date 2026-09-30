@@ -689,7 +689,7 @@ class DocumentTracingTests(unittest.TestCase):
         self.assertEqual(result.json()["code"], "TRACING_CALIBRATION_REQUIRED")
 
     def test_exact_old_revision_and_later_correction_replace_one_object_across_candidates(self):
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         from project_runtime.application.projection import project_state
 
         head = self.repository.read_head()
@@ -743,9 +743,9 @@ class DocumentTracingTests(unittest.TestCase):
         self.assertEqual(refused.json()["code"], "TRACING_TARGET_MISMATCH")
 
     def test_missing_source_at_worker_boundary_leaves_no_run_and_retry_keeps_same_page(self):
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         from project_runtime.application.gestures import require_document_trace
-        from project_runtime.transport.errors import StudioError
+        from project_runtime.errors import StudioError
 
         page = self.save()
         proposal = self.draw(page).json()

@@ -11,7 +11,7 @@ from .artifacts import artifact_bytes, list_artifacts, require_model_source, req
 from .projection import project_state
 from archflow.adapters.model_formats import convert, FORMATS
 from archflow.adapters.model_providers import ConversionCoordinator, ConversionFailure
-from ..transport.errors import StudioError, error_sentence
+from ..errors import StudioError, error_sentence
 
 KIND = "studio-model-export"
 

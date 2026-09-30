@@ -16,10 +16,10 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from test_monkeyhub_lifecycle import ROOT, LocalHubCase, free_ports, http_json, port_open, project_fixture, wait_for
-from monkeyhub_api.applications import Applications
+from monkeyhub_api.runtime.applications import Applications
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import HubFailure
-from monkeyhub_api.workers import (
+from monkeyhub_api.runtime.workers import (
     _ACTIVE_PROBE_S, _STABLE_PROBE_S, _UNAVAILABLE_AFTER_S, WorkerLaunch, WorkerSupervisor, _Child,
 )
 
@@ -370,8 +370,8 @@ class WorkerSupervisorTests(unittest.TestCase):
                     return Response()
 
                 child.signal = SimpleNamespace(wait=waited, clear=lambda: None, set=lambda: None)
-                with patch("monkeyhub_api.workers.build_opener", return_value=SimpleNamespace(open=opened)), \
-                     patch("monkeyhub_api.workers.time.monotonic", side_effect=lambda: now[0]):
+                with patch("monkeyhub_api.runtime.workers.build_opener", return_value=SimpleNamespace(open=opened)), \
+                     patch("monkeyhub_api.runtime.workers.time.monotonic", side_effect=lambda: now[0]):
                     self.supervisor._watch(child)
                 self.assertEqual(child.service_pid, 4321)
                 self.assertEqual(child.state, "crashed")

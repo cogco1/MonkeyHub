@@ -24,10 +24,10 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_BOARD_SCENE
 from archflow.project.repository import ProjectRepositoryError
 
-from ..transport.errors import StudioError
+from ..errors import StudioError
 from .artifacts import SourceDocument, document_bytes
-from .binding import retained_sources
-from .binding import ProjectBinding, record_kind
+from ..binding import retained_sources
+from ..binding import ProjectBinding, record_kind
 from .projections import DOCUMENT_PAGE, ProjectionQueue, ProjectionSpec, on_demand_spec
 
 BOARD_RUN_ID = "studio-board"

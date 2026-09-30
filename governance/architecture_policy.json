@@ -109,7 +109,7 @@
   ],
   "allowed_write_sites": [
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
       "function": "_save",
       "operations": [
         "mkdir",
@@ -490,7 +490,7 @@
       "reason": "Write recording manifests and other canonical JSON documents atomically inside that directory."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/workers.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/workers.py",
       "function": "start",
       "operations": [
         "mkdir",
@@ -501,7 +501,7 @@
       "reason": "Creates only stdout/stderr logs for this Hub's own service children under its explicit nonproject runtime root; it never writes a project."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/chat.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
       "function": "_save",
       "operations": [
         "mkdir",
@@ -514,7 +514,7 @@
       "reason": "Saves chat attachment bytes and atomically saves their transcript metadata and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Runtime/P036 interfaces."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",
       "function": "materialize",
       "operations": [
         "mkdir",
@@ -526,7 +526,7 @@
       "reason": "Builds the skill library's Claude plugin directory (#252) only under the caller-supplied nonproject Hub runtime cache/skill-plugins/<index digest>, staged beside its final name and renamed into place. It is derived from the library project's Runtime API, rebuilt only for a new index and never written into a project."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",
       "function": "learn",
       "operations": [
         "mkdir",
@@ -1089,6 +1089,28 @@
         "labs"
       ],
       "reason": "Desktop automation receives plain action values and writes only receipts under a caller-supplied diagnostics directory; the spine, both workflows and the Hub never become its dependencies."
+    },
+    {
+      "source": "packages",
+      "targets": [
+        "project_runtime"
+      ],
+      "reason": "The Project Runtime composes the packages for one open project; a package, and a package's own tests, never import it back."
+    },
+    {
+      "source": "services/project-runtime/src/project_runtime/application",
+      "targets": [
+        "project_runtime.api.routes",
+        "project_runtime.api.conditional"
+      ],
+      "reason": "The HTTP layer calls the application layer, never the reverse: api imports application, and application imports no route and not the conditional-read middleware. project_runtime.api.dto joins these targets once #519 gives application the record schemas it still reads through six DTO imports (decisions, rendering twice, representation_dependencies, study_model, working_draft)."
+    },
+    {
+      "source": "services/project-runtime/src/project_runtime/api/dto",
+      "targets": [
+        "project_runtime.api.routes"
+      ],
+      "reason": "A DTO shapes the wire and never reaches back into a route; only create_app (project_runtime.main) mounts the routes."
     }
   ],
   "authority_symbol_patterns": [

@@ -1271,10 +1271,10 @@ def _serve(project_dir: Path, memory_cap_mb: int) -> None:
     if hasattr(os, "nice"):
         os.nice(10)
     threading.Thread(target=_watch_memory, args=(memory_cap_mb * 1024 * 1024,), daemon=True).start()
-    from .binding import ProjectBinding
+    from ..binding import ProjectBinding
     from .drawings import check_model_view_source, draw_loaded_view, load_model_view
     from ..settings import StudioSettings
-    from ..transport.errors import StudioError
+    from ..errors import StudioError
 
     answers.write(_READY.decode("ascii") + "\n")
     answers.flush()

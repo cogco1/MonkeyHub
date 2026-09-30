@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from project_runtime.application.binding import record_kind
+from project_runtime.binding import record_kind
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 

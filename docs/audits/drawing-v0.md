@@ -18,7 +18,7 @@
 | 图纸表达：`documentation.drawings` | `DrawingPlan`、图纸验证、PaperCanvas 与 PDF/DXF renderer；[drawings.py](../../packages/monkeydiagram/src/monkeydiagram/documentation/drawings.py)、[drawing_output.py](../../packages/monkeydiagram/src/monkeydiagram/drawing_output.py) | 可复用纸面单位、尺寸一致性和绘制。其 `DrawingState` JSON schema 是调用方提供数据的验证格式，不是已存在的持久 Drawing 产品状态；不得将它升级为第二真源 |
 | 存储：`project.repository` | `FilesystemProjectRepository.put_json / put_workspace_file / load_json / list_json`；[repository.py](../../packages/archflow/src/archflow/project/repository.py) | 沿现有 `STUDIO_SOURCE_DOCUMENT`、`DRAWING_PROJECTION_RECEIPT`、`STUDIO_DOCUMENT_ANNOTATIONS` record kinds；无需新数据库 |
 
-实际已有 HTTP：`GET/POST /api/documents`、`GET /api/documents/{sha}/bytes`、`POST /api/drawings/elevations`、`GET /api/drawings/styles`、`POST /api/drawings/sheets`、`GET /api/drawings/model-view`、`GET/PUT /api/document-annotations`、`POST /api/proposals`。前两类 drawing 生成由 [routes/drawings.py](../../services/project-runtime/src/project_runtime/routes/drawings.py) → `application/drawings.py` → 当前投影 owner 调用；`model-view` 是不保留的观察 PNG。
+实际已有 HTTP：`GET/POST /api/documents`、`GET /api/documents/{sha}/bytes`、`POST /api/drawings/elevations`、`GET /api/drawings/styles`、`POST /api/drawings/sheets`、`GET /api/drawings/model-view`、`GET/PUT /api/document-annotations`、`POST /api/proposals`。前两类 drawing 生成由 [routes/drawings.py](../../services/project-runtime/src/project_runtime/api/routes/drawings.py) → `application/drawings.py` → 当前投影 owner 调用；`model-view` 是不保留的观察 PNG。
 
 ## 2. 哪些 UI 可以复用？
 
@@ -41,7 +41,7 @@ model_source, model_source_binding_ref, drawing_id, revision_ref
 source_stage_ref, view_recipe, generated_at, replaces_pages
 ```
 
-持久登记的基本字段是 snake_case；新增历史字段使用 `modelSource / drawingId / revisionRef / sourceStageRef / viewRecipe / generatedAt`。`model_source_binding_ref` 是读回登记 record 的 URI，不是额外持久文档身份。HTTP 的 [SourceDocumentDto](../../services/project-runtime/src/project_runtime/transport/artifacts.py)（330 行）映射为 camelCase。
+持久登记的基本字段是 snake_case；新增历史字段使用 `modelSource / drawingId / revisionRef / sourceStageRef / viewRecipe / generatedAt`。`model_source_binding_ref` 是读回登记 record 的 URI，不是额外持久文档身份。HTTP 的 [SourceDocumentDto](../../services/project-runtime/src/project_runtime/api/dto/artifacts.py)（330 行）映射为 camelCase。
 
 `ModelSource` 恰为 `runId / stateDigest / assetSha256`；相同像素或相同文件名不能替换其中任一项。`revisionRef` 当前在单视投影中指向 `DrawingProjectionReceipt@1`。`drawingId` 用于同一逻辑视图的多次生成。
 
@@ -70,7 +70,7 @@ source_stage_ref, view_recipe, generated_at, replaces_pages
 
 已有立面/顶投影生产链：`_selected_source()` → `_complete_source()` → `read_elevation_source()` → `project_model_axis_elevation()` → `project_occt_lines()` → SVG → 同源 PNG → `freeze_model_axis_elevation()` → 文档登记。它验证完整模型、STEP receipt/hash、program/source/run/base、单位和对象集合。
 
-`ElevationRequestDto` 只允许 front/back/left/right/top；[transport/drawings.py](../../services/project-runtime/src/project_runtime/transport/drawings.py) 28 行明确 top 不是剖切平面。没有已接通的 section/plan HTTP 产品路径。
+`ElevationRequestDto` 只允许 front/back/left/right/top；[transport/drawings.py](../../services/project-runtime/src/project_runtime/api/dto/drawings.py) 28 行明确 top 不是剖切平面。没有已接通的 section/plan HTTP 产品路径。
 
 但几何原语已具备，位于现有 CAD owner：
 
@@ -83,7 +83,7 @@ source_stage_ref, view_recipe, generated_at, replaces_pages
 
 ## 5. 当前 anchors 是什么？首个尺寸最少需要什么？
 
-当前页引用：`DocumentAnnotationRef(run_id, asset_sha256, page_index, revision_sha256, drawing_revision_ref)`。当前 `DocumentGesture` 字段：`id, kind, points, color, line_width, label, font_size, closed`。`points` 为页面左上原点的 [0,1] 坐标；text anchor 是文字框左上角。DTO 明确拒绝 model hits/world/camera。`ruler.label` 是手工文字，不是测量值。[gestures.py](../../services/project-runtime/src/project_runtime/application/gestures.py) 97–210 行、[transport/intent.py](../../services/project-runtime/src/project_runtime/transport/intent.py) 145 行。
+当前页引用：`DocumentAnnotationRef(run_id, asset_sha256, page_index, revision_sha256, drawing_revision_ref)`。当前 `DocumentGesture` 字段：`id, kind, points, color, line_width, label, font_size, closed`。`points` 为页面左上原点的 [0,1] 坐标；text anchor 是文字框左上角。DTO 明确拒绝 model hits/world/camera。`ruler.label` 是手工文字，不是测量值。[gestures.py](../../services/project-runtime/src/project_runtime/application/gestures.py) 97–210 行、[transport/intent.py](../../services/project-runtime/src/project_runtime/api/dto/intent.py) 145 行。
 
 CAD 线条已有 `object_id`，SVG 有 `data-object`；没有可跨重建信任的 edge ordinal。`DrawingPlan` 中 start/end/value/datum/source 可以做尺寸一致性校核，却不证明来源模型正确。不能用像素端点、最近线或 `EDGE5` 作持久语义锚点。
 
@@ -155,7 +155,7 @@ exact design Stage / model receipt / compiled program
 | “把这个门洞改为 1200 mm”且有有效直接参数绑定 | Drawing 解析准确 entity/parameter、单位与当前来源，调用现有 `POST /api/proposals`；以参数单位换算后的值生成 proposal，再进入 candidate 和明确 acceptance |
 | 当前尺寸只有几何测量，找不到唯一直接设计控制，或参数派生/锁定/断锚 | 禁止改可见文字伪造结果；沿现有 derived/locked/missing-control 反馈，保留可读测量与明确限制 |
 
-准确现有请求是 [ProposalRequestDto](../../services/project-runtime/src/project_runtime/transport/proposal.py) 483 行：`projectId, stateDigest, sourceRunId, sourceStageRef, keep`，以及 `utterance + targetComponentId + elementId` 或 `semanticEdit` 二选一。对于已验证 `@door_width` 且单位为米的首例，可提交 `semanticEdit: {summary: "…", parameters: [{key: "door_width", value: 1.2}]}`。不加入第二模型解释，不修改原 dimension label，不拉伸分离二维线。
+准确现有请求是 [ProposalRequestDto](../../services/project-runtime/src/project_runtime/api/dto/proposal.py) 483 行：`projectId, stateDigest, sourceRunId, sourceStageRef, keep`，以及 `utterance + targetComponentId + elementId` 或 `semanticEdit` 二选一。对于已验证 `@door_width` 且单位为米的首例，可提交 `semanticEdit: {summary: "…", parameters: [{key: "door_width", value: 1.2}]}`。不加入第二模型解释，不修改原 dimension label，不拉伸分离二维线。
 
 调用方必须携带所显示图纸的准确来源，不用当前编辑窗口的另一模型代替。参数锁、keep、派生参数和 stale base 校验继续由现有 intent/StateRecord owner 执行。生成候选、接受 Stage、正式 issue 保持三个不同动作。
 

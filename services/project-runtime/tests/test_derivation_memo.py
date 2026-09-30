@@ -20,7 +20,7 @@ from archflow.project import watch
 from archflow.project.record_kinds import STATE_RECORD
 from archflow.project.repository import ProjectIntegrityError
 from project_runtime.application.artifacts import list_artifacts
-from project_runtime.application.binding import ProjectBinding
+from project_runtime.binding import ProjectBinding
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 

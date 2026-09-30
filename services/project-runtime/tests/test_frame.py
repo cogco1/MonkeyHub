@@ -26,7 +26,7 @@ from archflow.state.state_record import StateRecord
 from project_runtime.application.frame import closure_of_refs, frame_of
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.errors import StudioError
+from project_runtime.errors import StudioError
 
 from .support import (
     PORTICO_RECORD_PAYLOAD,

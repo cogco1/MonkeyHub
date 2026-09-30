@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Mapping
 
 from archflow.project.refs import (
     BranchRef,
@@ -20,12 +19,17 @@ from archflow.project.refs import (
     RunRef,
 )
 from archflow.state.commitments import Commitment
+from archflow.state.dependencies import DependencyEdge, DependencyEffect
 from archflow.contracts.canonical import canonical_json
 from archflow.contracts.fields import (
+    enum_member,
     list_of as _list,
     mapping as _mapping,
+    require_local_id,
+    require_logical_ref,
     string_tuple,
     tuple_of,
+    unbounded_text as _text,
     unique as _unique,
 )
 
@@ -33,15 +37,6 @@ from archflow.contracts.fields import (
 _MAX_ITEMS = 4096
 _MAX_FACT_JSON_BYTES = 64_000
 _MAX_QUALIFICATION_CHARS = 1_000
-#: Portable ``scheme:path`` logical-reference shape. This is the single source
-#: for typed validation and provider-facing JSON Schema publication.
-PORTABLE_LOGICAL_REF_PATTERN = (
-    r"^(?![Ff][Ii][Ll][Ee]:)(?![A-Za-z]:[\\/])"
-    r"[A-Za-z][A-Za-z0-9+.-]*:[^\s\\]+$"
-)
-
-_PORTABLE_REF = re.compile(PORTABLE_LOGICAL_REF_PATTERN)
-_LOCAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$")
 
 
 class StateDomain(StrEnum):
@@ -77,50 +72,8 @@ class FactEpistemicStatus(StrEnum):
     UNKNOWN = "unknown"
 
 
-class DependencyEffect(StrEnum):
-    """What may propagate along one named dependency."""
-
-    INVALIDATES = "invalidates"
-    REQUIRES_REVALIDATION = "requires_revalidation"
-    BLOCKS = "blocks"
-    SUPPORTS_ONLY = "supports_only"
-
-
 class OperationalStateMigrationRequired(ValueError):
     """A legacy state lacks semantics that must not be invented."""
-
-
-def _text(value: object, field: str) -> str:
-    """Unbounded non-empty text; logical refs and legacy documents use it."""
-
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{field} must be non-empty text")
-    return value
-
-
-def require_logical_ref(value: object, field: str) -> str:
-    text = _text(value, field)
-    if text.lower().startswith("file:") or re.match(r"^[A-Za-z]:[\\/]", text):
-        raise ValueError(f"{field} cannot be an absolute machine path")
-    if _PORTABLE_REF.fullmatch(text) is None:
-        raise ValueError(f"{field} must be a portable logical reference")
-    return text
-
-
-def require_local_id(value: object, field: str) -> str:
-    text = _text(value, field)
-    if _LOCAL_ID.fullmatch(text) is None:
-        raise ValueError(f"{field} must be a portable local id")
-    return text
-
-
-def _enum(enum_type: type[StrEnum], value: object, field: str) -> Any:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be text")
-    try:
-        return enum_type(value)
-    except ValueError as exc:
-        raise ValueError(f"{field} has an unsupported value") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,17 +207,17 @@ class StateFact:
         if set(payload) != expected:
             raise ValueError("state fact schema drifted")
         return cls(
-            domain=_enum(
-                StateDomain,
+            domain=enum_member(
                 payload["domain"],
+                StateDomain,
                 "fact domain",
             ),
             key=payload["key"],
             value=payload["value"],
             source_ref=payload["source_ref"],
-            epistemic_status=_enum(
-                FactEpistemicStatus,
+            epistemic_status=enum_member(
                 payload["epistemic_status"],
+                FactEpistemicStatus,
                 "fact epistemic_status",
             ),
             confidence=payload["confidence"],
@@ -423,9 +376,9 @@ class DesignObligation:
             obligation_id=payload["obligation_id"],
             statement=payload["statement"],
             source_ref=payload["source_ref"],
-            status=_enum(
-                ObligationStatus,
+            status=enum_member(
                 payload["status"],
+                ObligationStatus,
                 "obligation status",
             ),
             subject_refs=string_tuple(
@@ -441,99 +394,6 @@ class DesignObligation:
             blocked_by=string_tuple(
                 payload["blocked_by"],
                 "obligation blocked_by",
-            ),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class DependencyEdge:
-    upstream_ref: str
-    downstream_ref: str
-    relation: str
-    source_ref: str
-    effect: DependencyEffect = DependencyEffect.SUPPORTS_ONLY
-
-    def __post_init__(self) -> None:
-        require_logical_ref(self.upstream_ref, "dependency upstream_ref")
-        require_logical_ref(self.downstream_ref, "dependency downstream_ref")
-        if self.upstream_ref == self.downstream_ref:
-            raise ValueError("dependency cannot be a self edge")
-        _text(self.relation, "dependency relation")
-        require_logical_ref(self.source_ref, "dependency source_ref")
-        if not isinstance(self.effect, DependencyEffect):
-            raise TypeError(
-                "dependency effect must be a DependencyEffect"
-            )
-        if (
-            self.effect
-            in {
-                DependencyEffect.INVALIDATES,
-                DependencyEffect.REQUIRES_REVALIDATION,
-            }
-            and self.downstream_ref.startswith(
-                ("obligation:", "commitment:")
-            )
-        ):
-            raise ValueError(
-                "normative refs require blocking or support-only edges"
-            )
-        if (
-            self.effect is DependencyEffect.BLOCKS
-            and (
-                not self.upstream_ref.startswith("obligation:")
-                or not self.downstream_ref.startswith("obligation:")
-            )
-        ):
-            raise ValueError(
-                "blocking dependency must connect obligation refs"
-            )
-
-    @property
-    def identity(self) -> tuple[str, str, str, str]:
-        return (
-            self.upstream_ref,
-            self.downstream_ref,
-            self.relation,
-            self.effect.value,
-        )
-
-    @property
-    def ref(self) -> str:
-        digest = hashlib.sha256(
-            canonical_json(self.identity).encode("utf-8")
-        ).hexdigest()
-        return f"dependency:{digest}"
-
-    def to_dict(self) -> dict[str, str]:
-        return {
-            "upstream_ref": self.upstream_ref,
-            "downstream_ref": self.downstream_ref,
-            "relation": self.relation,
-            "source_ref": self.source_ref,
-            "effect": self.effect.value,
-        }
-
-    @classmethod
-    def from_dict(cls, value: object) -> DependencyEdge:
-        payload = _mapping(value, "dependency edge")
-        expected = {
-            "upstream_ref",
-            "downstream_ref",
-            "relation",
-            "source_ref",
-            "effect",
-        }
-        if set(payload) != expected:
-            raise ValueError("dependency edge schema drifted")
-        return cls(
-            upstream_ref=payload["upstream_ref"],
-            downstream_ref=payload["downstream_ref"],
-            relation=payload["relation"],
-            source_ref=payload["source_ref"],
-            effect=_enum(
-                DependencyEffect,
-                payload["effect"],
-                "dependency effect",
             ),
         )
 

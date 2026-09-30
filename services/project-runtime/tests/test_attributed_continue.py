@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import AUDIT_EVENT
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.main import create_app
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID

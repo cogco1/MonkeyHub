@@ -16,7 +16,7 @@ API_ROOT = Path(__file__).resolve().parents[1]
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
-from monkeyhub_api.acp_session import AcpCancelled, AcpSessionError, CodexAcpSession
+from monkeyhub_api.chat.acp_session import AcpCancelled, AcpSessionError, CodexAcpSession
 
 
 PNG_IMAGE = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"

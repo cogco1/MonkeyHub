@@ -33,9 +33,10 @@ from archflow.project.record_kinds import (
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.contracts.authority import no_authority
 from archflow.state.geometry_program import (
-    AssetSubstitutionReceipt,
-    CompiledGeometryObject,
     CompiledGeometryProgram,
+    decode_proposal_body,
+    decode_proposal_items,
+    load_geometry_program_proposal,
 )
 from monkeyarch.compilers.geometry import (
     GeometryIssue,
@@ -70,9 +71,9 @@ from archflow.state.geometry_program import (
     SemanticBinding,
     required_assembly_roles,
 )
-from archflow.state.operational_state import PORTABLE_LOGICAL_REF_PATTERN
 from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 from archflow.contracts.fields import (
+    PORTABLE_LOGICAL_REF_PATTERN,
     mapping as _mapping,
 )
 
@@ -3061,7 +3062,7 @@ def _proposal_from_body(
     )
     if value["schema"] != _PROPOSAL_BODY_SCHEMA:
         raise GeometryProposalProductionError("geometry proposal body schema changed")
-    return _construct_proposal(
+    return decode_proposal_body(
         value,
         design_state.project_id,
         design_state.run_id,
@@ -3124,47 +3125,42 @@ def _proposal_from_edit(
     element_errors = None if errors is None else failures
     prior = prior_program.proposal
     frame_upserts = attempt(
-        lambda: _decode_sorted_list(
+        lambda: decode_proposal_items(
+            "frames",
             value["frame_upserts"],
-            _frame,
             "frame_upserts",
-            lambda item: item.frame_id,
             errors=element_errors,
         )
     )
     asset_upserts = attempt(
-        lambda: _decode_sorted_list(
+        lambda: decode_proposal_items(
+            "assets",
             value["asset_upserts"],
-            _asset,
             "asset_upserts",
-            lambda item: item.asset_id,
             errors=element_errors,
         )
     )
     binding_upserts = attempt(
-        lambda: _decode_sorted_list(
+        lambda: decode_proposal_items(
+            "semantic_bindings",
             value["semantic_binding_upserts"],
-            _binding,
             "semantic_binding_upserts",
-            lambda item: item.binding_id,
             errors=element_errors,
         )
     )
     operation_upserts = attempt(
-        lambda: _decode_sorted_list(
+        lambda: decode_proposal_items(
+            "operations",
             value["operation_upserts"],
-            _operation,
             "operation_upserts",
-            lambda item: item.op_id,
             errors=element_errors,
         )
     )
     assembly_upserts = attempt(
-        lambda: _decode_sorted_list(
+        lambda: decode_proposal_items(
+            "assemblies",
             value["assembly_upserts"],
-            _assembly,
             "assembly_upserts",
-            lambda item: item.assembly_id,
             errors=element_errors,
         )
     )
@@ -3199,20 +3195,18 @@ def _proposal_from_edit(
         )
     )
     revisions = attempt(
-        lambda: _decode_sorted_list(
-            value["revisions"],
-            _revision,
+        lambda: decode_proposal_items(
             "revisions",
-            lambda item: item.object_id,
+            value["revisions"],
+            "revisions",
             errors=element_errors,
         )
     )
     retirements = attempt(
-        lambda: _decode_sorted_list(
-            value["retirements"],
-            _retirement,
+        lambda: decode_proposal_items(
             "retirements",
-            lambda item: item.object_id,
+            value["retirements"],
+            "retirements",
             errors=element_errors,
         )
     )
@@ -3330,293 +3324,6 @@ def _merge_edit_items(
     return tuple(current[key] for key in sorted(current))
 
 
-def _construct_proposal(
-    value: Mapping[str, Any],
-    project_id: str,
-    run_id: str,
-    base: ProjectVersionRef,
-    design_state_digest: str,
-    *,
-    errors: list[Exception] | None = None,
-) -> GeometryProgramProposal | None:
-    """Decode independent proposal fields while preserving raise-first loads."""
-
-    failures: list[Exception] = []
-
-    def attempt(decode: Any) -> Any:
-        if errors is None:
-            return decode()
-        try:
-            return decode()
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            failures.append(exc)
-            return None
-
-    def decode_tolerance() -> GeometryTolerance:
-        tolerance = _mapping(value["tolerance"], "geometry tolerance")
-        _exact(
-            tolerance,
-            {"schema", "linear", "angular_radians"},
-            "geometry tolerance",
-        )
-        if tolerance["schema"] != GeometryTolerance.SCHEMA:
-            raise GeometryProposalProductionError(
-                "geometry tolerance schema changed"
-            )
-        return GeometryTolerance(
-            tolerance["linear"],
-            tolerance["angular_radians"],
-        )
-
-    element_errors = None if errors is None else failures
-    length_unit = attempt(lambda: LengthUnit(value["length_unit"]))
-    tolerance = attempt(decode_tolerance)
-    frames = attempt(
-        lambda: _decode_sorted_list(
-            value["frames"],
-            _frame,
-            "frames",
-            lambda item: item.frame_id,
-            errors=element_errors,
-        )
-    )
-    assets = attempt(
-        lambda: _decode_sorted_list(
-            value["assets"],
-            _asset,
-            "assets",
-            lambda item: item.asset_id,
-            errors=element_errors,
-        )
-    )
-    semantic_bindings = attempt(
-        lambda: _decode_sorted_list(
-            value["semantic_bindings"],
-            _binding,
-            "semantic_bindings",
-            lambda item: item.binding_id,
-            errors=element_errors,
-        )
-    )
-    operations = attempt(
-        lambda: _decode_sorted_list(
-            value["operations"],
-            _operation,
-            "operations",
-            lambda item: item.op_id,
-            errors=element_errors,
-        )
-    )
-    assemblies = attempt(
-        lambda: _decode_sorted_list(
-            value["assemblies"],
-            _assembly,
-            "assemblies",
-            lambda item: item.assembly_id,
-            errors=element_errors,
-        )
-    )
-    revisions = attempt(
-        lambda: _decode_sorted_list(
-            value["revisions"],
-            _revision,
-            "revisions",
-            lambda item: item.object_id,
-            errors=element_errors,
-        )
-    )
-    retirements = attempt(
-        lambda: _decode_sorted_list(
-            value["retirements"],
-            _retirement,
-            "retirements",
-            lambda item: item.object_id,
-            errors=element_errors,
-        )
-    )
-    if failures:
-        assert errors is not None
-        errors.extend(failures)
-        return None
-
-    try:
-        return GeometryProgramProposal(
-            proposal_id=value["proposal_id"],
-            project_id=project_id,
-            run_id=run_id,
-            base=base,
-            design_state_digest=design_state_digest,
-            predecessor_program_digest=value["predecessor_program_digest"],
-            length_unit=length_unit,
-            tolerance=tolerance,
-            frames=frames,
-            assets=assets,
-            semantic_bindings=semantic_bindings,
-            operations=operations,
-            assemblies=assemblies,
-            revisions=revisions,
-            retirements=retirements,
-        )
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        if errors is None:
-            raise
-        errors.append(exc)
-        return None
-
-
-def _frame(value: object) -> CoordinateFrame:
-    payload = _mapping(value, "coordinate frame")
-    _exact(payload, {"schema", "frame_id", "parent_frame_id", "transform_from_parent", "source_refs"}, "coordinate frame")
-    transform = _mapping(payload["transform_from_parent"], "affine transform")
-    _exact(transform, {"schema", "matrix"}, "affine transform")
-    if payload["schema"] != CoordinateFrame.SCHEMA or transform["schema"] != AffineTransform.SCHEMA:
-        raise GeometryProposalProductionError("coordinate frame schema changed")
-    return CoordinateFrame(
-        frame_id=payload["frame_id"],
-        parent_frame_id=payload["parent_frame_id"],
-        transform_from_parent=AffineTransform(tuple(transform["matrix"])),
-        source_refs=_strings_from_json(payload["source_refs"], "frame source_refs"),
-    )
-
-
-def _parameter(value: object) -> GeometryParameter:
-    payload = _mapping(value, "geometry parameter")
-    _exact(payload, {"schema", "name", "kind", "value_json", "unit"}, "geometry parameter")
-    if payload["schema"] != GeometryParameter.SCHEMA:
-        raise GeometryProposalProductionError("geometry parameter schema changed")
-    value_json = payload["value_json"]
-    if isinstance(value_json, str):
-        try:
-            decoded_value = json.loads(value_json)
-        except json.JSONDecodeError:
-            pass
-        else:
-            value_json = canonical_json(decoded_value)
-    return GeometryParameter(
-        name=payload["name"],
-        kind=GeometryParameterKind(payload["kind"]),
-        value_json=value_json,
-        unit=None if payload["unit"] is None else LengthUnit(payload["unit"]),
-    )
-
-
-def _binding(value: object) -> SemanticBinding:
-    payload = _mapping(value, "semantic binding")
-    _exact(payload, {"schema", "binding_id", "component_id", "object_ids", "commitment_refs", "evidence_refs"}, "semantic binding")
-    if payload["schema"] != SemanticBinding.SCHEMA:
-        raise GeometryProposalProductionError("semantic binding schema changed")
-    return SemanticBinding(
-        binding_id=payload["binding_id"],
-        component_id=payload["component_id"],
-        object_ids=_strings_from_json(payload["object_ids"], "binding object_ids"),
-        commitment_refs=_strings_from_json(payload["commitment_refs"], "commitment_refs"),
-        evidence_refs=_strings_from_json(payload["evidence_refs"], "evidence_refs"),
-    )
-
-
-def _asset(value: object) -> AssetReference:
-    payload = _mapping(value, "asset reference")
-    _exact(payload, {"schema", "asset_id", "uri", "media_type", "sha256", "native_unit", "sockets", "provenance_refs"}, "asset reference")
-    if payload["schema"] != AssetReference.SCHEMA:
-        raise GeometryProposalProductionError("asset reference schema changed")
-    return AssetReference(
-        asset_id=payload["asset_id"], uri=payload["uri"], media_type=payload["media_type"],
-        sha256=payload["sha256"], native_unit=LengthUnit(payload["native_unit"]),
-        sockets=_strings_from_json(payload["sockets"], "asset sockets"),
-        provenance_refs=_strings_from_json(payload["provenance_refs"], "asset provenance_refs"),
-    )
-
-
-def _statements(value: object) -> dict[str, str]:
-    """One operation's declared statements: identifier keys, text values.
-
-    Absent is empty — an operation that declares nothing writes no field,
-    which is what keeps every program authored before statements existed
-    byte-identical.
-    """
-
-    if value is None:
-        return {}
-    payload = _mapping(value, "operation statements")
-    for key, item in payload.items():
-        if not isinstance(item, str):
-            raise GeometryProposalProductionError(
-                f"operation statement {key!r} must be text"
-            )
-    return dict(payload)
-
-
-def _operation(value: object) -> GeometryOperation:
-    payload = _mapping(value, "geometry operation")
-    _exact(payload, {"schema", "op_id", "kind", "output_object_ids", "input_object_ids", "frame_id", "parameters", "semantic_binding_ids", "asset_id", "asset_socket_id", "asset_scale", "responds_to_object_ids", "responds_to_frame_ids", "responds_to_binding_ids"}, "geometry operation", optional=frozenset({"statements"}))
-    if payload["schema"] != GeometryOperation.SCHEMA:
-        raise GeometryProposalProductionError("geometry operation schema changed")
-    scale = payload["asset_scale"]
-    return GeometryOperation(
-        op_id=payload["op_id"], kind=GeometryOperationKind(payload["kind"]),
-        output_object_ids=_strings_from_json(payload["output_object_ids"], "output_object_ids"),
-        input_object_ids=_strings_from_json(payload["input_object_ids"], "input_object_ids"),
-        frame_id=payload["frame_id"],
-        parameters=_decode_sorted_list(
-            payload["parameters"],
-            _parameter,
-            "parameters",
-            lambda item: item.name,
-        ),
-        semantic_binding_ids=_strings_from_json(payload["semantic_binding_ids"], "semantic_binding_ids"),
-        asset_id=payload["asset_id"], asset_socket_id=payload["asset_socket_id"],
-        asset_scale=None if scale is None else tuple(scale),
-        responds_to_object_ids=_strings_from_json(payload["responds_to_object_ids"], "responds_to_object_ids"),
-        responds_to_frame_ids=_strings_from_json(payload["responds_to_frame_ids"], "responds_to_frame_ids"),
-        responds_to_binding_ids=_strings_from_json(payload["responds_to_binding_ids"], "responds_to_binding_ids"),
-        statements=_statements(payload.get("statements")),
-    )
-
-
-def _member(value: object) -> AssemblyMember:
-    payload = _mapping(value, "assembly member")
-    _exact(payload, {"schema", "role", "object_ids"}, "assembly member")
-    if payload["schema"] != AssemblyMember.SCHEMA:
-        raise GeometryProposalProductionError("assembly member schema changed")
-    return AssemblyMember(AssemblyRole(payload["role"]), _strings_from_json(payload["object_ids"], "member object_ids"))
-
-
-def _assembly(value: object) -> HostedAssembly:
-    payload = _mapping(value, "hosted assembly")
-    _exact(payload, {"schema", "assembly_id", "kind", "host_object_id", "host_socket_id", "members", "interface_refs", "semantic_binding_ids", "maturity"}, "hosted assembly")
-    if payload["schema"] != HostedAssembly.SCHEMA:
-        raise GeometryProposalProductionError("hosted assembly schema changed")
-    return HostedAssembly(
-        assembly_id=payload["assembly_id"], kind=AssemblyKind(payload["kind"]),
-        host_object_id=payload["host_object_id"], host_socket_id=payload["host_socket_id"],
-        members=_decode_sorted_list(
-            payload["members"],
-            _member,
-            "members",
-            lambda item: item.role.value,
-        ),
-        interface_refs=_strings_from_json(payload["interface_refs"], "interface_refs"),
-        semantic_binding_ids=_strings_from_json(payload["semantic_binding_ids"], "semantic_binding_ids"),
-        maturity=DetailMaturity(payload["maturity"]),
-    )
-
-
-def _revision(value: object) -> ObjectRevisionPrecondition:
-    payload = _mapping(value, "object revision")
-    _exact(payload, {"schema", "object_id", "expected_digest", "reason_refs"}, "object revision")
-    if payload["schema"] != ObjectRevisionPrecondition.SCHEMA:
-        raise GeometryProposalProductionError("object revision schema changed")
-    return ObjectRevisionPrecondition(payload["object_id"], payload["expected_digest"], _strings_from_json(payload["reason_refs"], "revision reason_refs"))
-
-
-def _retirement(value: object) -> ObjectRetirement:
-    payload = _mapping(value, "object retirement")
-    _exact(payload, {"schema", "object_id", "expected_digest", "reason_refs"}, "object retirement")
-    if payload["schema"] != ObjectRetirement.SCHEMA:
-        raise GeometryProposalProductionError("object retirement schema changed")
-    return ObjectRetirement(payload["object_id"], payload["expected_digest"], _strings_from_json(payload["reason_refs"], "retirement reason_refs"))
-
-
 def _proposal_body(proposal: GeometryProgramProposal) -> dict[str, object]:
     payload = proposal.to_dict()
     return {
@@ -3665,211 +3372,7 @@ def _proposal_from_record(value: object) -> GeometryProgramProposal:
         or payload["proposal_only"] is not True
     ):
         raise GeometryProposalProductionError("geometry proposal record acquired forbidden authority")
-    return _proposal_from_full(payload["proposal"])
-
-
-def _proposal_from_full(value: object) -> GeometryProgramProposal:
-    proposal = _mapping(value, "geometry proposal")
-    _exact(proposal, {"schema", "proposal_id", "project_id", "run_id", "base", "design_state_digest", "predecessor_program_digest", "length_unit", "tolerance", "frames", "assets", "semantic_bindings", "operations", "assemblies", "revisions", "retirements", "generation_authority", "hard_gate_authority", "canonical_write_authority"}, "geometry proposal")
-    if (
-        proposal["schema"] != GeometryProgramProposal.SCHEMA
-    ):
-        raise GeometryProposalProductionError("geometry proposal acquired forbidden authority")
-    body = dict(_proposal_body_from_full(proposal))
-    return _construct_proposal(
-        body,
-        proposal["project_id"],
-        proposal["run_id"],
-        ProjectVersionRef.from_dict(proposal["base"], "project base"),
-        proposal["design_state_digest"],
-    )
-
-
-_COMPILED_PROGRAM_BASE_KEYS = frozenset(
-    {
-        "schema", "proposal", "proposal_digest", "operation_order",
-        "frame_digests", "component_digests", "semantic_binding_digests",
-        "objects", "asset_substitutions", "execution_authority",
-        "hard_gate_authority", "canonical_write_authority",
-    }
-)
-_COMPILED_PROGRAM_SCHEMA_KEYS = {
-    "CompiledGeometryProgram@2": _COMPILED_PROGRAM_BASE_KEYS,
-    "CompiledGeometryProgram@3": _COMPILED_PROGRAM_BASE_KEYS
-    | {"interface_datums", "datum_bindings"},
-}
-if set(_COMPILED_PROGRAM_SCHEMA_KEYS) != set(CompiledGeometryProgram.ACCEPTED_SCHEMAS):
-    raise AssertionError(
-        "compiled program loader key sets drifted from "
-        "CompiledGeometryProgram.ACCEPTED_SCHEMAS"
-    )
-
-
-def load_compiled_geometry_program(value: object) -> CompiledGeometryProgram:
-    """Reload one exact compiled program without granting execution authority.
-
-    Accepts the current schema and the retained @2 generation, whose
-    records predate interface datums (P090) and reload with empty datum
-    fields.
-    """
-
-    payload = _mapping(value, "compiled geometry program")
-    schema = payload.get("schema")
-    if schema not in _COMPILED_PROGRAM_SCHEMA_KEYS:
-        raise GeometryProposalProductionError(
-            "compiled geometry program schema is unsupported"
-        )
-    _exact(
-        payload,
-        set(_COMPILED_PROGRAM_SCHEMA_KEYS[schema]),
-        "compiled geometry program",
-    )
-    proposal = _proposal_from_full(payload["proposal"])
-    if payload["proposal_digest"] != proposal.proposal_digest:
-        raise GeometryProposalProductionError(
-            "compiled geometry proposal digest changed"
-        )
-    interface_datums: tuple[InterfaceDatum, ...] = ()
-    datum_bindings: tuple[DatumBinding, ...] = ()
-    if schema == "CompiledGeometryProgram@3":
-        interface_datums = _decode_list(
-            payload["interface_datums"],
-            InterfaceDatum.from_dict,
-            "interface datums",
-        )
-        datum_bindings = _decode_list(
-            payload["datum_bindings"],
-            DatumBinding.from_dict,
-            "datum bindings",
-        )
-    program = CompiledGeometryProgram(
-        proposal=proposal,
-        operation_order=_ordered_strings_from_json(
-            payload["operation_order"], "operation_order"
-        ),
-        frame_digests=_compiled_digest_pairs(
-            payload["frame_digests"], "frame_id", "frame_digests"
-        ),
-        component_digests=_compiled_digest_pairs(
-            payload["component_digests"], "component_id", "component_digests"
-        ),
-        semantic_binding_digests=_compiled_digest_pairs(
-            payload["semantic_binding_digests"],
-            "binding_id",
-            "semantic_binding_digests",
-        ),
-        objects=_decode_sorted_list(
-            payload["objects"],
-            _compiled_object,
-            "compiled objects",
-            lambda item: item.object_id,
-        ),
-        asset_substitutions=_decode_list(
-            payload["asset_substitutions"],
-            _asset_substitution_receipt,
-            "asset substitutions",
-        ),
-        interface_datums=interface_datums,
-        datum_bindings=datum_bindings,
-    )
-    rendered = program.to_dict()
-    if schema == "CompiledGeometryProgram@2":
-        rendered = {
-            key: item
-            for key, item in rendered.items()
-            if key not in ("interface_datums", "datum_bindings")
-        }
-        rendered["schema"] = "CompiledGeometryProgram@2"
-    if rendered != dict(payload):
-        raise GeometryProposalProductionError(
-            "compiled geometry program is not an exact canonical record"
-        )
-    return program
-
-
-def _compiled_digest_pairs(
-    value: object,
-    identity_field: str,
-    label: str,
-) -> tuple[tuple[str, str], ...]:
-    entries = _decode_list(value, lambda item: _mapping(item, label), label)
-    pairs: list[tuple[str, str]] = []
-    for entry in entries:
-        _exact(entry, {identity_field, "digest"}, label)
-        pairs.append((entry[identity_field], entry["digest"]))
-    return tuple(pairs)
-
-
-def _ordered_strings_from_json(value: object, field: str) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        raise TypeError(f"{field} must be a list")
-    if any(not isinstance(item, str) or not item for item in value):
-        raise GeometryProposalProductionError(f"{field} contains invalid text")
-    if len(value) != len(set(value)):
-        raise GeometryProposalProductionError(f"{field} contains duplicate values")
-    return tuple(value)
-
-
-def _compiled_object(value: object) -> CompiledGeometryObject:
-    payload = _mapping(value, "compiled geometry object")
-    _exact(
-        payload,
-        {"schema", "object_id", "producer_op_id", "object_digest"},
-        "compiled geometry object",
-    )
-    if payload["schema"] != CompiledGeometryObject.SCHEMA:
-        raise GeometryProposalProductionError(
-            "compiled geometry object schema changed"
-        )
-    return CompiledGeometryObject(
-        object_id=payload["object_id"],
-        producer_op_id=payload["producer_op_id"],
-        object_digest=payload["object_digest"],
-    )
-
-
-def _asset_substitution_receipt(value: object) -> AssetSubstitutionReceipt:
-    payload = _mapping(value, "asset substitution receipt")
-    _exact(
-        payload,
-        {
-            "schema", "requested_asset_id", "requested_sha256",
-            "replacement_asset_id", "replacement_sha256", "loss_codes",
-            "evidence_refs", "lossless", "canonical_write_authority",
-        },
-        "asset substitution receipt",
-    )
-    if (
-        payload["schema"] != AssetSubstitutionReceipt.SCHEMA
-        or payload["lossless"] is not False
-    ):
-        raise GeometryProposalProductionError(
-            "asset substitution receipt authority changed"
-        )
-    return AssetSubstitutionReceipt(
-        requested_asset_id=payload["requested_asset_id"],
-        requested_sha256=payload["requested_sha256"],
-        replacement_asset_id=payload["replacement_asset_id"],
-        replacement_sha256=payload["replacement_sha256"],
-        loss_codes=_strings_from_json(payload["loss_codes"], "loss_codes"),
-        evidence_refs=_strings_from_json(
-            payload["evidence_refs"], "substitution evidence_refs"
-        ),
-    )
-
-
-def _proposal_body_from_full(value: Mapping[str, Any]) -> Mapping[str, Any]:
-    return {
-        "schema": _PROPOSAL_BODY_SCHEMA,
-        **{
-            key: value[key]
-            for key in (
-                "proposal_id", "predecessor_program_digest", "length_unit",
-                "tolerance", "frames", "assets", "semantic_bindings",
-                "operations", "assemblies", "revisions", "retirements",
-            )
-        },
-    }
+    return load_geometry_program_proposal(payload["proposal"])
 
 
 def _persist_lineage(
@@ -3948,41 +3451,6 @@ def _strings_from_json(value: object, field: str) -> tuple[str, ...]:
             f"{field} contains duplicate values"
         )
     return tuple(sorted(value))
-
-
-def _decode_list(
-    value: object,
-    decoder: Any,
-    field: str,
-    *,
-    errors: list[Exception] | None = None,
-) -> tuple[Any, ...]:
-    if not isinstance(value, list):
-        raise TypeError(f"{field} must be a list")
-    decoded = []
-    for index, item in enumerate(value):
-        try:
-            decoded.append(decoder(item))
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            wrapped = GeometryProposalProductionError(f"{field}[{index}]: {exc}")
-            if errors is None:
-                raise wrapped from exc
-            wrapped.__cause__ = exc
-            errors.append(wrapped)
-    return tuple(decoded)
-
-
-def _decode_sorted_list(
-    value: object,
-    decoder: Any,
-    field: str,
-    key: Any,
-    *,
-    errors: list[Exception] | None = None,
-) -> tuple[Any, ...]:
-    return tuple(
-        sorted(_decode_list(value, decoder, field, errors=errors), key=key)
-    )
 
 
 def _base_dict(base: ProjectVersionRef) -> dict[str, object]:

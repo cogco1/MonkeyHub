@@ -1,7 +1,7 @@
 """The conversational agent's model-export tool uses the bound backend."""
 import unittest
 from unittest.mock import patch
-from monkeyhub_api import chat
+from monkeyhub_api.chat import store as chat
 from monkeyhub_api.models import HubFailure
 
 

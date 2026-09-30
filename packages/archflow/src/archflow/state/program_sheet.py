@@ -43,7 +43,7 @@ import difflib
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Sequence
 
-from archflow.relations.contracts import ArchitecturalRelationKind
+from archflow.semantics.relation_kinds import ArchitecturalRelationKind
 from archflow.project.refs import require_identifier
 from archflow.semantics.registry import registered_ids, resolve_semantic_kind, suggest_semantic_kind
 from archflow.state.state_record import (

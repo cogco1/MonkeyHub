@@ -14,7 +14,7 @@ from project_runtime.application.intent_agent import _parse_answer, _strict_resp
 from project_runtime.application.intent_context import IntentContext, compile_context, model_context
 from project_runtime.application.intent_requests import action_answer, action_preflight, provider_schema, request_schema, validate_request_answer
 from project_runtime.application.projection import _elements
-from project_runtime.transport.errors import StudioError
+from project_runtime.errors import StudioError
 
 
 def _record(*, bound=False, producer="wall", parameter_unit="m"):

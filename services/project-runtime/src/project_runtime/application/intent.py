@@ -36,7 +36,7 @@ from archflow.state.state_record import (
 )
 from monkeyarch.construction import made_by_construction
 
-from ..transport.errors import BlockedNeedsHuman, StudioError
+from ..errors import BlockedNeedsHuman, StudioError
 from .impact import impact
 from .projection import ProjectedElement, StateProjection
 

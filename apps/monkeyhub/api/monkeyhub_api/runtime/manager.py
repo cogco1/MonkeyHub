@@ -1,0 +1,1660 @@
+"""Live project attachments and observed operations over the existing Studio/P036.
+
+No operation is replayed by a watcher or by recovery. A lost HTTP response is
+reconciled against retained results; absence of proof remains visible.
+"""
+
+from collections import deque
+from contextlib import suppress
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from http.client import HTTPConnection, HTTPException
+import base64
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import socket
+import threading
+import time
+from urllib.error import HTTPError
+from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.request import HTTPHandler, ProxyHandler, Request, build_opener
+from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
+
+from archflow.project.record_kinds import STUDIO_DOCUMENT_MODEL_SOURCE, STUDIO_SOURCE_DOCUMENT
+from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
+from project_runtime.application.artifacts import (
+    WORK_COPY_WORKSPACE,
+    DocumentWorkCopy,
+    document_bytes,
+    list_document_work_copies,
+)
+from project_runtime.binding import ProjectBinding, ReadToken
+from project_runtime.events import StudioEvents
+from project_runtime.settings import StudioSettings
+from project_runtime.errors import StudioError
+
+from ..chat.store import _NoRedirect, _project
+from ..models import HubError, HubFailure
+from .models import HubRuntimeDto, OperationRecord, ProjectRuntimeDto, WorkerStatus
+
+
+_CANDIDATE_REQUEST = re.compile(
+    r"^/api/(proposals/[^/]+/candidate|candidates/combine|capabilities/[^/]+/run|options/[^/]+/select|program)$"
+)
+_ACCEPT_REQUEST = re.compile(r"^/api/candidates/([^/]+)/accept$")
+_PROPOSAL_CANDIDATE = re.compile(r"^/api/proposals/([^/]+)/candidate$")
+_ACTIVE = {"queued", "planning", "validated", "executing", "committing"}
+# Finished outcomes a person can read and dismiss. One that needs recovery joins
+# them only when the Hub has no way to recover it; otherwise it stays until it is.
+_ACKNOWLEDGEABLE = {"failed", "stale"}
+# A validation (422) or conflict (409) answer that names nothing the Studio took
+# on is a refusal: the caller reads it in the reply and nothing is left to
+# recover (#404 F10). Answers that say a run already exists are not refusals.
+_REFUSAL_STATUSES = {409, 422}
+_RETAINED_CODES = {"OPERATION_RETAINED", "CANDIDATE_ALREADY_RETAINED"}
+_IDLE_RETAINED_REFRESH_S = 30
+# How long the project observer waits between passes (#435). A pass while
+# anything is in motion - an operation or job, a worker between states, a
+# closing runtime, an observed work copy - follows it every second. Otherwise
+# nothing it compares changes without a wake: the supervisor, the chat store
+# and an attaching client end the wait at once, and a Hub mutation asks for a
+# full read. The idle wait only bounds what a missed wake could delay.
+_ACTIVE_HEARTBEAT_S = 1
+_IDLE_HEARTBEAT_S = 5
+# Worker states that stay put until the supervisor says otherwise.
+_SETTLED_WORKER_STATES = {"ready", "stopped", "crashed", "unavailable"}
+_WORKING_CLEANUP_INTERVAL_S = 15 * 60
+# A sample must remain unchanged for this interval before bytes are read.
+# File timestamps alone cannot measure that wait: producers can preserve them.
+_WORK_COPY_SETTLED_NS = 2_000_000_000
+# Unchanged stat metadata is only a fast path, not proof of unchanged content.
+# Recheck occasionally for in-place saves that preserve both size and mtime.
+_WORK_COPY_CONTENT_REFRESH_NS = _IDLE_RETAINED_REFRESH_S * 1_000_000_000
+# The record kinds that decide which documents exist (studio.artifacts
+# list_documents; a drawing's receipt only adds who made it and why). If
+# another kind ever decides that, the work-copy key below has to name it too.
+_DOCUMENT_RECORD_KINDS = (STUDIO_SOURCE_DOCUMENT, STUDIO_DOCUMENT_MODEL_SOURCE)
+# How often an unwoken watcher compares that key; a wake compares it at once.
+_WORK_COPY_CHECK_S = _IDLE_RETAINED_REFRESH_S
+# How long the Hub waits before it attaches to a worker's event stream again
+# after that stream ended or was refused: this first, then doubled for each
+# further attachment that carried nothing, up to the cap; back to this after one that did.
+_WORKER_EVENTS_RETRY_S = 0.5
+_WORKER_EVENTS_RETRY_MAX_S = 30.0
+# How many of each project's Studio events the Hub keeps to open a new page's panel with.
+_STUDIO_REPLAY = 200
+
+
+def project_key(path: str) -> str:
+    return os.path.normcase(str(Path(path).resolve()))
+
+
+def binding_signature(project_dir: str) -> tuple[int, int, int, bool] | None:
+    """Two stats that move whenever the folder could stop being the project it was.
+
+    The identity, size and time of ``project.json``, and whether ``HEAD``
+    exists. ``None`` when the manifest cannot be stat'ed at all.
+    """
+
+    root = Path(project_dir)
+    try:
+        manifest = os.stat(root / "project.json")
+    except OSError:
+        return None
+    return manifest.st_size, manifest.st_mtime_ns, manifest.st_ino, (root / "HEAD").exists()
+
+
+def _dismissible(record: OperationRecord) -> bool:
+    return record.status in _ACKNOWLEDGEABLE or (record.status == "needs_recovery" and not record.recoverable)
+
+
+def worker_dto(row) -> WorkerStatus:
+    return WorkerStatus(
+        workerId=row.worker_id, serviceId=row.service_id, projectId=row.project_id,
+        projectDir=row.project_dir, instanceId=row.instance_id, processId=row.process_id,
+        desiredState=row.desired_state, state=row.state, healthy=row.healthy,
+        url=row.url, error=row.error,
+    )
+
+
+@dataclass
+class HttpResult:
+    status: int
+    body: bytes
+    headers: dict[str, str]
+
+    def json(self):
+        try:
+            value = json.loads(self.body)
+            return value if isinstance(value, dict) else {}
+        except (ValueError, UnicodeError):
+            return {}
+
+
+def _connect_then_time(address, timeout, source_address=None) -> socket.socket:
+    """Connect to a worker at once; the request's timeout then bounds the exchange.
+
+    A timed connect waits in select(), which Windows wakes a timer tick (about
+    15 ms) late even when the local worker accepted at once.
+    """
+    connection = socket.create_connection(address, None, source_address)
+    connection.settimeout(timeout)
+    return connection
+
+
+class _WorkerConnection(HTTPConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = _connect_then_time
+
+
+class _WorkerHandler(HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_WorkerConnection, req)
+
+
+# One opener for every worker request: building one makes an HTTPS handler whose
+# default context reads the system certificate store, about 20 ms on Windows.
+_WORKER_OPENER = build_opener(ProxyHandler({}), _NoRedirect(), _WorkerHandler())
+
+
+def request_http(base: str, path: str, method="GET", body: bytes | None = None,
+                 headers: dict[str, str] | None = None, *, timeout: float = 10) -> HttpResult:
+    """Exactly one request, including error responses. Never follows a redirect."""
+    request = Request(base.rstrip("/") + path, data=body, method=method, headers=headers or {})
+    try:
+        response = _WORKER_OPENER.open(request, timeout=timeout)
+    except HTTPError as error:
+        response = error
+    with response:
+        return HttpResult(response.status, response.read(), {
+            name: value for name, value in response.headers.items()
+            if name.lower() in {"content-type", "content-disposition", "etag", "cache-control", "x-monkey-index"}
+        })
+
+
+@dataclass
+class _Admission:
+    record: OperationRecord
+    signature: tuple[str, str, str]
+    expected_stage: str | None = None
+    branch_id: str = "main"
+    accepting_candidate: bool = False
+    response: HttpResult | None = None
+    finished: threading.Event = field(default_factory=threading.Event)
+    # Whether the latest retained read left what recovery needs to resolve this
+    # request: the run it named with its runner receipt and, for an acceptance,
+    # a branch head its commit can still land on. None until a read after this
+    # Hub started or lost the reply.
+    resolvable: bool | None = None
+
+    @property
+    def expects_stage(self) -> bool:
+        """An acceptance that named the Stage it succeeds: the only one whose commit can be found."""
+        return self.accepting_candidate and bool(self.expected_stage)
+
+
+class OperationManager:
+    """Request admission and recovery observations, never a project writer."""
+
+    def __init__(self, project_id: str, *, journal_path: Path | None = None,
+                 project_dir: str | None = None):
+        self.project_id = project_id
+        self.journal_path = journal_path
+        self.project_dir = project_key(project_dir) if project_dir is not None else None
+        if journal_path is not None and self.project_dir is None:
+            raise ValueError("A durable operation manager requires its exact project directory.")
+        self._lock = threading.RLock()
+        self._operations: dict[str, _Admission] = {}
+        self._retained: dict[str, OperationRecord] = {}
+        # Dismissed notices by operation id, for admitted requests and observed
+        # runs alike: when, and the status the person read.
+        self._acknowledged: dict[str, tuple[str, str]] = {}
+        self._restore()
+
+    def _restore(self) -> None:
+        if self.journal_path is None or not self.journal_path.exists():
+            return
+        try:
+            saved = json.loads(self.journal_path.read_text(encoding="utf-8"))
+            if saved["projectId"] != self.project_id or saved["projectDir"] != self.project_dir:
+                raise ValueError("The operation journal belongs to another project binding.")
+            for row in saved["operations"]:
+                record = OperationRecord.model_validate(row["record"])
+                signature = row["signature"]
+                if (record.projectId != self.project_id or str(UUID(record.operationId)) != record.operationId
+                        or record.operationId in self._operations
+                        or not isinstance(signature, list) or len(signature) != 3
+                        or not all(isinstance(value, str) for value in signature)
+                        or not re.fullmatch(r"[0-9a-f]{64}", signature[2])
+                        or not isinstance(row["acceptingCandidate"], bool)
+                        or not isinstance(row["branchId"], str)
+                        or (row["expectedStage"] is not None and not isinstance(row["expectedStage"], str))):
+                    raise ValueError("Invalid saved operation binding.")
+                # A local journal never proves a successful P036 commit/result.
+                record.committed, record.resultDigest, record.resultRevision = False, None, None
+                if record.status in _ACTIVE or (record.candidateId and record.status == "completed"):
+                    record.status = "needs_recovery"
+                    record.reason = "Hub restarted before this operation's retained result was reconciled. No request was replayed."
+                admission = _Admission(record, tuple(signature), row["expectedStage"],
+                                       row["branchId"], row["acceptingCandidate"])
+                admission.finished.set()  # A prior process cannot deliver its HTTP response.
+                self._operations[record.operationId] = admission
+            # A dismissal is a person's reading of one outcome, not a recovery
+            # fact: an unreadable entry only brings its notice back.
+            acknowledged = saved.get("acknowledged", {})
+            for key, value in (acknowledged.items() if isinstance(acknowledged, dict) else ()):
+                if isinstance(value, str):
+                    # Kept before a dismissal named its status, when only a failed
+                    # or stale one could be dismissed. A request keeps that status;
+                    # an observed run could only have failed.
+                    admitted = self._operations.get(key)
+                    value = {"acknowledgedAt": value, "status": admitted.record.status if admitted else "failed"}
+                    if value["status"] not in _ACKNOWLEDGEABLE:
+                        continue
+                if (isinstance(value, dict) and isinstance(value.get("acknowledgedAt"), str)
+                        and value.get("status") in _ACKNOWLEDGEABLE | {"needs_recovery"}):
+                    self._acknowledged[key] = (value["acknowledgedAt"], value["status"])
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise HubFailure(503, "OPERATION_LOG_INVALID", "The saved operation identities could not be read for this project. Requests were not replayed.") from exc
+
+    def _save(self) -> None:
+        if self.journal_path is None:
+            return
+        # Only recovery metadata crosses this Hub-runtime boundary. Request
+        # bodies and successful project results stay with their existing owners.
+        saved = {"projectId": self.project_id, "projectDir": self.project_dir, "operations": [{
+            "record": row.record.model_dump(exclude={"committed", "resultDigest", "resultRevision", "reason",
+                                                     "admissionSequence", "recoverable", "acknowledgedAt"}),
+            "signature": row.signature, "expectedStage": row.expected_stage,
+            "branchId": row.branch_id, "acceptingCandidate": row.accepting_candidate,
+        } for row in self._operations.values()]}
+        if self._acknowledged:
+            saved["acknowledged"] = {key: {"acknowledgedAt": at, "status": status}
+                                     for key, (at, status) in self._acknowledged.items()}
+        temporary = self.journal_path.with_suffix(".tmp")
+        try:
+            self.journal_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with temporary.open("w", encoding="utf-8") as stream:
+                    json.dump(saved, stream, ensure_ascii=False)
+                    stream.write("\n")
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, self.journal_path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        except OSError as exc:
+            raise HubFailure(503, "OPERATION_LOG_UNAVAILABLE", "The operation identity could not be saved. Read runtime status before any new request; this request was not retried.") from exc
+
+    def admit(self, operation_id: str, method: str, path: str, body: bytes, *,
+              retained: dict | None, source: str, session_id: str | None) -> tuple[_Admission, bool]:
+        try:
+            operation_id = str(UUID(operation_id))
+        except ValueError as exc:
+            raise HubFailure(422, "OPERATION_ID_INVALID", "Idempotency-Key must be a UUID.") from exc
+        signature = method, path, hashlib.sha256(body).hexdigest()
+        try:
+            payload = json.loads(body) if body else {}
+        except (ValueError, UnicodeError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        with self._lock:
+            existing = self._operations.get(operation_id)
+            if existing:
+                if existing.signature != signature:
+                    raise HubFailure(409, "OPERATION_ID_CONFLICT", "This operation id already names a different request.")
+                return existing, False
+            route = urlsplit(path).path
+            published = (retained or {}).get("published", {})
+            candidate = f"hub-cand-{UUID(operation_id).hex}" if method == "POST" and _CANDIDATE_REQUEST.fullmatch(route) else None
+            accepted = _ACCEPT_REQUEST.fullmatch(route) if method == "POST" else None
+            if accepted:
+                candidate = accepted.group(1)
+            proposal = _PROPOSAL_CANDIDATE.fullmatch(route)
+            record = OperationRecord(
+                operationId=operation_id, projectId=self.project_id, kind=f"{method} {route}",
+                source=source, status="committing" if accepted else "executing",
+                baseRevision=published.get("version"),
+                baseDigest=payload.get("stateDigest") or published.get("stateSha256"),
+                sourceRunId=payload.get("sourceRunId"),
+                sourceStageRef=payload.get("sourceStageRef") or payload.get("expectedHeadStageRef"),
+                proposalId=proposal.group(1) if proposal else None,
+                candidateId=candidate, sessionId=session_id,
+                createdAt=datetime.now(timezone.utc).isoformat(),
+            )
+            expected_stage, branch_id = payload.get("expectedHeadStageRef"), payload.get("branchId", "main")
+            admission = _Admission(record, signature,
+                expected_stage if isinstance(expected_stage, str) else None,
+                branch_id if isinstance(branch_id, str) else "main", bool(accepted))
+            self._operations[operation_id] = admission
+            try:
+                self._save()  # Must succeed before a caller can dispatch this request.
+            except HubFailure:
+                del self._operations[operation_id]
+                raise
+            return admission, True
+
+    def replied(self, admission: _Admission, response: HttpResult) -> None:
+        with self._lock:
+            admission.response = response
+            payload = response.json()
+            record = admission.record
+            if payload.get("baseStateDigest"):
+                record.baseDigest = payload["baseStateDigest"]
+                record.baseRecordDigest = payload.get("recordDigest")
+                record.sourceRunId = payload.get("sourceRunId")
+                record.sourceStageRef = payload.get("sourceStageRef")
+            for name in ("proposalId", "jobId", "candidateId"):
+                if isinstance(payload.get(name), str):
+                    setattr(record, name, payload[name])
+            if response.status >= 400:
+                code = str(payload.get("code", ""))
+                admitted = any(isinstance(payload.get(name), str) for name in ("proposalId", "jobId", "candidateId"))
+                if response.status in _REFUSAL_STATUSES and not admitted and code not in _RETAINED_CODES:
+                    record.status = "refused"
+                else:
+                    record.status = "stale" if "STALE" in code else "failed"
+                record.reason = str(payload.get("detail", f"HTTP {response.status}"))[:1200]
+            elif record.candidateId:
+                # Even a 200 accept or successful job needs retained evidence.
+                record.status = "committing" if admission.accepting_candidate else "executing"
+            else:
+                record.status = "completed"
+            try:
+                self._save()
+            finally:
+                admission.finished.set()
+
+    def interrupted(self, admission: _Admission, reason: str) -> None:
+        with self._lock:
+            admission.record.status = "needs_recovery"
+            admission.record.reason = reason
+            # Only a read after the lost reply can say whether it left a run to recover.
+            admission.resolvable = None
+            try:
+                self._save()
+            finally:
+                admission.finished.set()
+
+    def bind_proposal(self, admission: _Admission, proposal: dict, base_revision: int):
+        with self._lock:
+            record = admission.record
+            record.baseRevision = base_revision
+            record.baseDigest = proposal["baseStateDigest"]
+            record.baseRecordDigest = proposal["recordDigest"]
+            record.sourceRunId = proposal.get("sourceRunId")
+            record.sourceStageRef = proposal.get("sourceStageRef")
+            record.status = "validated"
+            self._save()
+
+    def reconcile(self, retained: dict, *, worker_alive: bool) -> None:
+        candidates = {row["candidateId"]: row for row in retained.get("candidates", [])}
+        jobs = {row["candidateId"]: row for row in retained.get("jobs", [])}
+        stages = retained.get("stages", [])
+        # A stage must be reachable from a committed branch. Prepared files are
+        # intentionally absent from the existing inspector's answer.
+        if not stages:
+            stages = [stage for branch in retained.get("branches", []) for stage in branch.get("stages", [])]
+        heads = {branch.get("branchId"): branch.get("headStageRef") for branch in retained.get("branches", [])}
+        with self._lock:
+            for admission in self._operations.values():
+                record = admission.record
+                if record.status in {"failed", "stale", "cancelled", "refused"}:
+                    continue
+                candidate = candidates.get(record.candidateId)
+                # All that recovery can find again: the named run with its receipt.
+                # An acceptance commits by compare-and-swap on the head it expected,
+                # so once its branch has moved on without it, it never will.
+                admission.resolvable = bool(candidate and candidate.get("receiptRef")) and (
+                    not admission.expects_stage
+                    or heads.get(admission.branch_id, admission.expected_stage) == admission.expected_stage)
+                job = jobs.get(record.candidateId)
+                if job:
+                    record.jobId = job.get("jobId")
+                    record.proposalId = record.proposalId or job.get("proposalId")
+                if admission.expects_stage:
+                    committed = next((stage for stage in stages
+                        if stage.get("candidateId") == record.candidateId
+                        and stage.get("branchId") == admission.branch_id
+                        and stage.get("parentStageRef") == admission.expected_stage), None)
+                    if committed:
+                        record.status, record.committed, record.reason = "completed", True, None
+                        record.resultDigest = committed.get("recordDigest") or committed.get("stateDigest")
+                        # Stage acceptance is independent of formal issue.
+                        record.resultRevision = None
+                        continue
+                elif not admission.accepting_candidate and candidate and candidate.get("status") in {"completed", "succeeded"}:
+                    record.status, record.reason = "completed", None
+                    record.resultDigest = candidate.get("resultStateDigest") or candidate.get("resultRecordDigest")
+                    record.baseDigest = candidate.get("baseStateDigest") or record.baseDigest
+                    record.baseRecordDigest = candidate.get("baseRecordDigest") or record.baseRecordDigest
+                    record.baseRevision = (candidate.get("base") or {}).get("version", record.baseRevision)
+                    continue
+                if candidate and candidate.get("status") == "failed":
+                    record.status = "failed"
+                    record.reason = candidate.get("error") or "The retained candidate reports incomplete execution."
+                    continue
+                if job and worker_alive:
+                    status = job.get("status")
+                    record.status = {"queued": "queued", "running": "executing", "failed": "failed"}.get(status, "needs_recovery")
+                    record.reason = job.get("error")
+                elif record.candidateId and not worker_alive and record.status in _ACTIVE:
+                    record.status = "needs_recovery"
+                    record.reason = "The worker stopped before a complete retained result could be verified. This operation was not replayed."
+            observed = {}
+            tracked = {row.record.candidateId for row in self._operations.values()}
+            for candidate_id, candidate in candidates.items():
+                if candidate_id in tracked:
+                    continue
+                status = candidate.get("status", "needs_recovery")
+                status = {"succeeded": "completed", "running": "executing"}.get(status, status)
+                observed[candidate_id] = OperationRecord(
+                    operationId=f"candidate:{candidate_id}", projectId=self.project_id,
+                    kind="candidate", source="retained", candidateId=candidate_id, status=status,
+                    baseRevision=(candidate.get("base") or {}).get("version"),
+                    baseRecordDigest=candidate.get("baseRecordDigest"),
+                    baseDigest=candidate.get("baseStateDigest"), resultDigest=candidate.get("resultStateDigest"),
+                    jobId=candidate.get("jobId"), proposalId=candidate.get("proposalId"),
+                    committed=bool(candidate.get("commitStageRefs")),
+                    reason=candidate.get("error"),
+                    # An observed run is never replayed either; only its receipt can resolve it.
+                    recoverable=status == "needs_recovery" and bool(candidate.get("receiptRef")),
+                )
+            self._retained = observed
+
+    def _recoverable(self, admission: _Admission) -> bool:
+        """Whether reading retained results can still resolve this operation.
+
+        Recovery replays nothing. It reconciles a lost reply against the run
+        the request named and that run's runner receipt, and an acceptance
+        against a commit under the Stage it named. A request that named no run,
+        such as a proposal or a drawing sheet, leaves nothing to reconcile; nor
+        does a run no read finds with its receipt, since whatever would have
+        written that receipt is never run again, nor an acceptance whose branch
+        has moved past the Stage it expected.
+        """
+        record = admission.record
+        if record.status != "needs_recovery" or not record.candidateId:
+            return False
+        if admission.accepting_candidate and not admission.expects_stage:
+            return False
+        if admission.resolvable is None:
+            # Not read since the reply was lost or this Hub started: the notice
+            # stays, unless a person already read it as unrecoverable.
+            return self._acknowledged.get(record.operationId, ("", ""))[1] != "needs_recovery"
+        return admission.resolvable
+
+    def _shown(self, record: OperationRecord, admission: _Admission | None = None, **update) -> OperationRecord:
+        # Every OperationRecord field is a scalar, so a shallow copy is already a
+        # detached one; a deep copy of each record was most of a snapshot (#363).
+        shown = record.model_copy(update={**update, "acknowledgedAt": None})
+        if admission is not None:
+            shown.recoverable = self._recoverable(admission)
+        # A dismissal speaks only for the status it read: an operation that
+        # later reads otherwise, or turns out recoverable, is reported again.
+        at, status = self._acknowledged.get(record.operationId, (None, None))
+        if status == shown.status and _dismissible(shown):
+            shown.acknowledgedAt = at
+        return shown
+
+    def records(self) -> list[OperationRecord]:
+        with self._lock:
+            # The existing journal retains this admission order across Hub
+            # restarts. Derive it before the bounded/reordered display window;
+            # it supplies no result status and is never written back to disk.
+            values = [self._shown(row.record, row, admissionSequence=index)
+                      for index, row in enumerate(self._operations.values(), start=1)]
+            # Keep active work visible even after many completed requests, and
+            # recovery until it is recovered or a person dismissed it.
+            active = [row for row in values if row.status in _ACTIVE
+                      or (row.status == "needs_recovery" and row.acknowledgedAt is None)]
+            recent = [row for row in values if row not in active][-50:]
+            return [*active, *recent, *(self._shown(row) for row in self._retained.values())]
+
+    def _has_active(self) -> bool:
+        # Liveness needs status only, not detached display copies of the whole
+        # admission history on every project heartbeat.
+        with self._lock:
+            return (any(row.record.status in _ACTIVE for row in self._operations.values())
+                    or any(row.status in _ACTIVE for row in self._retained.values()))
+
+    def acknowledge(self, operation_id: str) -> OperationRecord:
+        """Dismiss one operation's notice; its record and outcome stay as they are.
+
+        A failed or stale operation can be dismissed, and one that needs
+        recovery when the Hub has no way to recover it. The dismissal is kept
+        in this journal with the status it read, so it outlasts a Hub restart
+        and ends if the operation reads otherwise. An operation the Hub can
+        still recover cannot be dismissed: it stays until a retained result
+        resolves it.
+        """
+        with self._lock:
+            admission = self._operations.get(operation_id)
+            if admission is not None:
+                record, sequence = admission.record, list(self._operations).index(operation_id) + 1
+            else:
+                record = next((row for row in self._retained.values() if row.operationId == operation_id), None)
+                sequence = None
+            if record is None:
+                raise HubFailure(404, "OPERATION_NOT_FOUND", "This project runtime has no operation with that id.")
+            shown = self._shown(record, admission)
+            if not _dismissible(shown):
+                raise HubFailure(409, "OPERATION_NOT_ACKNOWLEDGEABLE",
+                                 "Only a failed or stale operation, or one the Hub cannot recover, can be dismissed. "
+                                 "An operation that can still be recovered stays until it is.")
+            if shown.acknowledgedAt is None:
+                previous = self._acknowledged.get(operation_id)
+                self._acknowledged[operation_id] = (datetime.now(timezone.utc).isoformat(), shown.status)
+                try:
+                    self._save()
+                except HubFailure as exc:
+                    if previous is None:
+                        del self._acknowledged[operation_id]
+                    else:
+                        self._acknowledged[operation_id] = previous
+                    raise HubFailure(503, "OPERATION_LOG_UNAVAILABLE",
+                                     "The dismissal could not be saved, so the notice stays. Nothing else changed.") from exc
+            return self._shown(record, admission, admissionSequence=sequence)
+
+    def runs_of(self, session_id: str, since: datetime) -> list[OperationRecord]:
+        """Copies of the new runs one chat asked this Hub for since ``since``, in admission order."""
+        with self._lock:
+            return [row.record.model_copy() for row in self._operations.values()
+                    if row.record.sessionId == session_id and row.record.candidateId and not row.accepting_candidate
+                    and row.record.createdAt and datetime.fromisoformat(row.record.createdAt) >= since]
+
+    def made_by(self, session_id: str, run_id: object) -> bool:
+        """Whether this chat asked this Hub for the new run ``run_id``."""
+        with self._lock:
+            return any(row.record.sessionId == session_id and row.record.candidateId == run_id and not row.accepting_candidate
+                       for row in self._operations.values())
+
+    def candidate_ids(self) -> tuple[str, ...]:
+        with self._lock:
+            return tuple(dict.fromkeys(row.record.candidateId for row in self._operations.values()
+                if row.record.candidateId and row.record.status in _ACTIVE | {"needs_recovery"}))
+
+
+@dataclass
+class _WorkCopyObservation:
+    """What this process has seen of one explicitly opened work copy.
+
+    ``observed_sha256`` is the only thing that decides whether the file moved:
+    a page replaced through some other client does not make an untouched copy
+    an edit, and an edit back to bytes the project already registered is still
+    an edit. ``failure`` keeps the last refusal for that copy visible until it
+    registers something or stops being bound; it is per copy, so one unreadable
+    file never speaks for the project.
+    """
+
+    copy: DocumentWorkCopy
+    sample: tuple[int, int, int, int] | None = None
+    sample_since_ns: int | None = None
+    # Both observation times use the monotonic clock, independent of file dates.
+    hashed_at_ns: int | None = None
+    observed_sha256: str | None = None
+    failure: HubError | None = None
+
+
+class _Wake(threading.Event):
+    """The project observer's one wait.
+
+    ``set`` asks the next pass for a full retained read, as a Hub mutation or
+    a first open does. ``check`` asks it to read again now only if the project
+    moved since its last read, as opening an observed project again does.
+    ``nudge`` only ends the wait, so the next pass compares its small status
+    values now without reading the project again.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._read = False
+        self._check = False
+
+    def set(self) -> None:
+        self._read = True
+        super().set()
+
+    def nudge(self) -> None:
+        super().set()
+
+    def check(self) -> None:
+        """End the wait and read the project now if it moved since the last read (the idle fallback's question)."""
+        self._check = True
+        super().set()
+
+    def take(self) -> bool:
+        """End this wake; whether a full read was asked since the last take."""
+        super().clear()
+        read, self._read = self._read, False
+        return read
+
+    def take_check(self) -> bool:
+        """Whether a moved-since-read check was asked since the last take."""
+        check, self._check = self._check, False
+        return check
+
+
+@dataclass
+class ProjectRuntime:
+    runtime_id: str
+    project_id: str
+    project_dir: str
+    operations: OperationManager
+    binding: ProjectBinding
+    state: str = "open"
+    retained: dict | None = None
+    projection: str = "unknown"
+    error: HubError | None = None
+    lock: threading.RLock = field(default_factory=threading.RLock)
+    refresh_lock: threading.RLock = field(default_factory=threading.RLock)
+    wake: _Wake = field(default_factory=_Wake)
+    thread: threading.Thread | None = None
+    last_workers: tuple = ()
+    last_snapshot: dict | None = None
+    projection_key: tuple | None = None
+    # Keyed by the copy's origin page identity, which never moves. Runtime
+    # lifetime only: the copies themselves are the project's, and which ones
+    # exist is derived from it, never remembered here.
+    work_copies: dict[tuple[str, str, str | None], _WorkCopyObservation] = field(default_factory=dict)
+    # A project whose documents will not list at all. Separate from ``error``
+    # because it is not a fact about the retained projection.
+    work_copy_error: HubError | None = None
+    # What the last successful derivation of ``work_copies`` was read from.
+    work_copy_key: tuple | None = None
+    next_working_cleanup: float = 0.0
+    # ``binding_signature`` when the binding was last verified. ``get`` checks
+    # the project again only once these two stats move (#363).
+    binding_signature: tuple | None = None
+
+
+class _WorkerEvents:
+    """The Hub's one attachment to a project worker's event stream (#366).
+
+    It forwards what a browser follows on ``/api/runtime/events``, so each Hub
+    page holds one stream however many projects and surfaces it shows:
+    ``index.committed`` as an index hint, every other event as the Studio's own,
+    with the worker stream it was numbered on (``stream``): a restarted worker
+    numbers from 1 again, and only ``<stream>:<seq>`` tells its events apart
+    from the last one's. When the stream may have lost something - the first
+    attachment to this worker, or a ``stream.reset`` (the worker restarted, or
+    its buffer overflowed) - it also sends a hint without a revision, so
+    clients read the index again; a reattachment that resumes sends none. A
+    hint is never the data and never required: clients also read on their own
+    stream's snapshot and on focus.
+
+    A stream that ends or is refused is attached again after
+    ``_WORKER_EVENTS_RETRY_S`` (0.5 s), then after a delay that doubles while
+    attachments carry nothing (1, 2, 4 s ... up to ``_WORKER_EVENTS_RETRY_MAX_S``);
+    an attachment that carried an event starts the delays from 0.5 s again.
+    """
+
+    def __init__(self, manager: "ProjectRuntimeManager", runtime_id: str, url: str) -> None:
+        self.manager, self.runtime_id, self.url = manager, runtime_id, url
+        self._stopped = threading.Event()
+        self._socket: socket.socket | None = None
+        self._last_id = ""
+        self._attached = False
+        self._received = False
+        self.thread = threading.Thread(target=self._run, daemon=True, name=f"hub-worker-events-{runtime_id[:8]}")
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def stop(self) -> None:
+        self._stopped.set()
+        stream = self._socket
+        if stream is not None:
+            try:
+                stream.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    @property
+    def alive(self) -> bool:
+        return self.thread.is_alive() and not self._stopped.is_set()
+
+    def _run(self) -> None:
+        address = urlsplit(self.url)
+        delay = _WORKER_EVENTS_RETRY_S
+        while not self._stopped.is_set():
+            connection = HTTPConnection(address.hostname, address.port, timeout=10)
+            self._received = False
+            try:
+                connection.connect()
+                self._socket = stream = connection.sock
+                if self._stopped.is_set():
+                    return
+                connection.request("GET", "/api/events", headers={"Last-Event-ID": self._last_id,
+                                                                   "Accept": "text/event-stream"})
+                response = connection.getresponse()
+                if response.status == 200:
+                    # A held stream is quiet between events; only stop() or the worker ends it.
+                    # (A response that closes the connection has taken the socket from it.)
+                    stream.settimeout(None)
+                    if not self._attached:
+                        # This worker's history before now was never relayed: clients read the index again.
+                        self._attached = True
+                        self.manager.index_hint(self.runtime_id, None)
+                    self._read(response)
+            except (OSError, HTTPException, ValueError):
+                pass
+            finally:
+                self._socket = None
+                connection.close()
+            if self._received:
+                delay = _WORKER_EVENTS_RETRY_S
+            self._stopped.wait(delay)
+            delay = min(delay * 2, _WORKER_EVENTS_RETRY_MAX_S)
+
+    def _read(self, response) -> None:
+        event, data, event_id = "", [], None
+        while not self._stopped.is_set():
+            line = response.readline()
+            if not line:
+                return
+            text = line.decode("utf-8", "replace").rstrip("\r\n")
+            if text.startswith("event:"):
+                event = text[6:].strip()
+            elif text.startswith("data:"):
+                data.append(text[5:].strip())
+            elif text.startswith("id:"):
+                event_id = text[3:].strip()
+            elif text == "":
+                if data:
+                    self._received = True
+                    self._dispatch(event, "\n".join(data), event_id)
+                if event_id is not None:
+                    self._last_id = event_id
+                event, data, event_id = "", [], None
+
+    def _dispatch(self, event: str, data: str, event_id: str | None) -> None:
+        try:
+            body = json.loads(data)
+        except ValueError:
+            return
+        if not isinstance(body, dict):
+            return
+        if event == "index.committed":
+            self.manager.index_hint(self.runtime_id, {"epoch": body.get("epoch"), "revision": body.get("revision"),
+                                                      "domains": body.get("domains") or []})
+        elif event == "stream.reset":
+            self.manager.index_hint(self.runtime_id, None)
+        elif event:
+            # ``<stream>:<seq>``: the worker process that numbered it.
+            stream = (event_id or "").rpartition(":")[0] or None
+            self.manager.studio_event(self.runtime_id, stream, body)
+
+
+class ProjectRuntimeManager:
+    def __init__(self, applications, chats):
+        self.applications, self.chats = applications, chats
+        self.server_id = str(uuid4())
+        self.events = StudioEvents(buffer_size=256)
+        self._lock = threading.RLock()
+        self._projects: dict[str, ProjectRuntime] = {}
+        self._closing = threading.Event()
+        self._client_count = 0
+        self._chat_changed = set()
+        # One attachment per project to its worker's event stream (#366).
+        self._worker_events: dict[str, _WorkerEvents] = {}
+        # Each project's latest Studio events, which open a new page's event panel (#366).
+        self._studio_replay: dict[str, deque] = {}
+        # A supervisor that owns real workers says when one changed, so an idle
+        # observer reports a crash at once instead of on its next pass (#435).
+        supervisor = getattr(applications, "supervisor", None)
+        if supervisor is not None:
+            supervisor.add_listener(self._nudge)
+        if chats is not None:
+            # An external chat's result card is built from these records (#404 F15).
+            chats.turn_results = self.turn_results
+
+    def turn_results(self, session_id: str, project_dir: str, since: str) -> list[tuple[str, str, str]]:
+        """The candidates a chat's own requests made since ``since``: (candidateId, request kind, admitted at).
+
+        Only runs this Hub admitted for that chat and saw complete; an acceptance
+        names no new run. A run still under way is read once more first. Called
+        outside the chat lock.
+        """
+        key = project_key(project_dir)
+        with self._lock:
+            runtime = next((row for row in self._projects.values() if project_key(row.project_dir) == key), None)
+        if runtime is None:
+            return []
+        start = datetime.fromisoformat(since)
+
+        if any(record.status in _ACTIVE for record in runtime.operations.runs_of(session_id, start)) and runtime.state == "open":
+            with suppress(HubFailure, StudioError, OSError, TimeoutError, HTTPException):
+                self.refresh(runtime)
+        return [(record.candidateId, record.kind, record.createdAt) for record in runtime.operations.runs_of(session_id, start)
+                if record.status == "completed"]
+
+    @property
+    def _clients(self) -> int:
+        return self._client_count
+
+    @_clients.setter
+    def _clients(self, value: int) -> None:
+        # Every project's status carries the attached client count.
+        self._client_count = value
+        self._nudge()
+
+    def _nudge(self) -> None:
+        """End every observer's wait for a look at its status values, without a read."""
+        with self._lock:
+            runtimes = tuple(self._projects.values())
+        for runtime in runtimes:
+            runtime.wake.nudge()
+
+    def emit(self, kind: str, runtime_id: str | None = None):
+        self.events.publish(event={"kind": kind, "runtimeId": runtime_id})
+
+    def index_hint(self, runtime_id: str, index: dict | None) -> None:
+        """Tell attached clients that a project's index moved (``index``), or may have (None): read it again."""
+
+        self.events.publish(event={"kind": "index/committed", "runtimeId": runtime_id, "index": index})
+
+    def studio_event(self, runtime_id: str, stream: str | None, event: dict) -> None:
+        """Relay one of a project worker's own events, numbered on its ``stream``, and keep it for replay."""
+
+        relayed = {"kind": "studio/event", "runtimeId": runtime_id, "stream": stream, "studio": event}
+        with self._lock:
+            self._studio_replay.setdefault(runtime_id, deque(maxlen=_STUDIO_REPLAY)).append(relayed)
+        self.events.publish(event=relayed)
+
+    def studio_replay(self) -> list[dict]:
+        """Every project's kept Studio events, oldest first per project."""
+
+        with self._lock:
+            return [event for kept in self._studio_replay.values() for event in kept]
+
+    def _follow_worker(self, runtime: ProjectRuntime, workers) -> None:
+        """Keep one attachment to the running worker's event stream, and none to any other."""
+
+        url = None
+        if runtime.state == "open" and not self._closing.is_set():
+            url = next((row.url for row in workers
+                        if row.state in {"ready", "busy"} and row.healthy and row.url), None)
+        with self._lock:
+            current = self._worker_events.get(runtime.runtime_id)
+            if current is not None and current.url == url and current.alive:
+                return
+            if current is not None:
+                current.stop()
+                del self._worker_events[runtime.runtime_id]
+            if url is None:
+                return
+            follower = _WorkerEvents(self, runtime.runtime_id, url)
+            self._worker_events[runtime.runtime_id] = follower
+        follower.start()
+
+    def _stop_following(self, runtime_id: str | None = None) -> None:
+        with self._lock:
+            ids = list(self._worker_events) if runtime_id is None else [runtime_id]
+            followers = [self._worker_events.pop(key) for key in ids if key in self._worker_events]
+            for key in ids:
+                self._studio_replay.pop(key, None)
+        for follower in followers:
+            follower.stop()
+
+    def chat_changed(self, session):
+        # Called under ChatStore's lock: no lock inversion, IO or project open.
+        with self._lock:
+            self._chat_changed.add(project_key(session.projectDir))
+        self._nudge()
+
+    def open(self, project_id: str, project_dir: str) -> ProjectRuntime:
+        # Taken before the check, so a change during it is seen by the next get().
+        signature = binding_signature(project_dir)
+        key = project_key(project_dir)
+        runtime_id = str(uuid5(NAMESPACE_URL, f"{project_id}:{key}"))
+        with self._lock:
+            attached = self._projects.get(runtime_id)
+        # An attached runtime whose folder has the same two stats is the project
+        # it was verified to be, as in get(): a page opening it again (a reload)
+        # does not open and verify the whole project again (#449).
+        if (attached is None or signature is None or signature != attached.binding_signature
+                or project_key(attached.project_dir) != key):
+            actual_id, actual_dir = _project(project_dir)
+            if actual_id != project_id:
+                raise HubFailure(409, "PROJECT_MISMATCH", "The requested project identity does not match this folder.")
+            key = project_key(actual_dir)
+            runtime_id = str(uuid5(NAMESPACE_URL, f"{actual_id}:{key}"))
+        else:
+            actual_id, actual_dir = attached.project_id, attached.project_dir
+        with self._lock:
+            if self._closing.is_set():
+                raise HubFailure(409, "HUB_STOPPING", "Hub is closing.")
+            runtime = self._projects.get(runtime_id)
+            if runtime is None:
+                settings = StudioSettings(project_dir=Path(actual_dir), cad_export="off")
+                binding = ProjectBinding(FilesystemProjectRepository.open(Path(actual_dir)),
+                    project_id=actual_id, project_dir=Path(actual_dir), settings=settings)
+                operations = OperationManager(actual_id, project_dir=actual_dir,
+                    journal_path=self.applications.runtime_root / "runtime/operations" / f"{runtime_id}.json")
+                runtime = ProjectRuntime(runtime_id, actual_id, actual_dir, operations, binding)
+                self._projects[runtime_id] = runtime
+            runtime.binding_signature = signature
+            if runtime.state == "closed":
+                runtime.state = "open"
+            if runtime.thread is None or not runtime.thread.is_alive():
+                runtime.thread = threading.Thread(target=self._watch, args=(runtime,), daemon=True, name=f"hub-project-{project_id}")
+                runtime.thread.start()
+                self.emit("project/opened", runtime_id)
+                runtime.wake.set()
+            else:
+                # Already observed: read the project again now only if something
+                # on disk moved since the last read, as the idle fallback does,
+                # instead of a full read while the page that opened it loads.
+                runtime.wake.check()
+            return runtime
+
+    def get(self, runtime_id: str, project_id: str | None = None) -> ProjectRuntime:
+        with self._lock:
+            runtime = self._projects.get(runtime_id)
+        if runtime is None:
+            raise HubFailure(404, "RUNTIME_NOT_FOUND", "Open the project's runtime first.")
+        if project_id is not None and project_id != runtime.project_id:
+            raise HubFailure(409, "PROJECT_MISMATCH", "This request names another project.")
+        # Opening and verifying the project costs tens of milliseconds, and every
+        # proxied request comes through here. Two stats say whether it can have
+        # changed; only then is it checked again, with the same refusal.
+        signature = binding_signature(runtime.project_dir)
+        if signature is None or signature != runtime.binding_signature:
+            if _project(runtime.project_dir) != (runtime.project_id, runtime.project_dir):
+                raise HubFailure(409, "PROJECT_MISMATCH", "The runtime's project binding changed.")
+            runtime.binding_signature = signature
+        return runtime
+
+    def discover(self):
+        for project in self.chats.projects():
+            runtime_id = str(uuid5(NAMESPACE_URL, f"{project.projectId}:{project_key(project.projectDir)}"))
+            with self._lock:
+                present = runtime_id in self._projects
+            if not present:
+                try:
+                    self.open(project.projectId, project.projectDir)
+                except (HubFailure, StudioError):
+                    continue
+
+    def project_snapshot(self, runtime: ProjectRuntime, *, chats: list | None = None,
+                         workers: tuple | None = None, keys: dict[str, str] | None = None) -> ProjectRuntimeDto:
+        """One project's status. ``snapshot`` passes the chats and workers it read
+        once for every project, and ``keys``, each path it has resolved already:
+        resolving a path is a file-system call, and it was most of a snapshot (#363).
+        """
+
+        keys = {} if keys is None else keys
+
+        def key_of(path: str) -> str:
+            if path not in keys:
+                keys[path] = project_key(path)
+            return keys[path]
+
+        key = key_of(runtime.project_dir)
+        if chats is None:
+            chats = [*self.chats.list(), *self.chats.list(archived=True)]
+        sessions = [row for row in chats if row.projectId == runtime.project_id and key_of(row.projectDir) == key]
+        if workers is None:
+            rows = self.applications.worker_snapshots(project_dir=runtime.project_dir)
+        else:
+            # The supervisor's own selection: a worker whose launch names this project.
+            rows = [row for row in workers if row.project_dir is not None and key_of(row.project_dir) == key]
+        workers = [worker_dto(row) for row in rows]
+        with runtime.lock:
+            # A refused work-copy edit is reported through the runtime's one
+            # error surface, behind anything wrong with the project itself and
+            # one at a time: the point is that the architect learns their save
+            # did not land, not that every copy gets its own channel.
+            failure = runtime.error or runtime.work_copy_error or next(
+                (row.failure for row in tuple(runtime.work_copies.values()) if row.failure is not None), None)
+            return ProjectRuntimeDto(runtimeId=runtime.runtime_id, projectId=runtime.project_id, projectDir=runtime.project_dir,
+                state=runtime.state, workers=workers, operations=runtime.operations.records(), sessions=sessions,
+                retained=runtime.retained, projection=runtime.projection, clients=self._clients, error=failure)
+
+    def snapshot(self) -> HubRuntimeDto:
+        with self._lock:
+            runtimes = tuple(self._projects.values())
+        buffered = self.events.replay()
+        # One read of the chats and of the workers, and one resolution of each
+        # path, answer every project; per project each was read again.
+        keys: dict[str, str] = {}
+        chats = [*self.chats.list(), *self.chats.list(archived=True)]
+        workers = self.applications.worker_snapshots()
+        return HubRuntimeDto(serverId=self.server_id, sequence=buffered[-1]["seq"] if buffered else 0,
+            projects=[self.project_snapshot(runtime, chats=chats, workers=workers, keys=keys) for runtime in runtimes],
+            workers=[worker_dto(row) for row in workers])
+
+    def _read_retained(self, runtime: ProjectRuntime, *, worker=None) -> dict:
+        from project_runtime.status import inspect_runtime
+        from project_runtime.api.dto.runtime import runtime_dto
+        ids = runtime.operations.candidate_ids()
+        run_ids = runtime.binding.run_ids()
+        candidates = {}
+        if worker is not None:
+            # Preserve the existing recent window and tracked operations, but
+            # never make one HTTP request parse fifty large retained results.
+            # A page discovers ordinary runs without misclassifying them as
+            # explicit candidates. Every refresh revalidates its evidence.
+            recent = tuple(reversed(run_ids[-50:]))
+            reads = [(offset, (run_id,) if run_id in ids else ())
+                     for offset, run_id in enumerate(recent)]
+            reads.extend((len(run_ids), (candidate_id,)) for candidate_id in ids if candidate_id not in recent)
+            reads = reads or [(0, ())]
+        else:
+            # In-process cold/recovery reads have no HTTP deadline. They use
+            # the same inspector and never trust a previous completed row.
+            reads = [(0, ids[offset:offset + 200]) for offset in range(0, len(ids), 200)] or [(0, ())]
+        result = None
+        scanned = 0
+        for offset, chunk in reads:
+            if worker is None:
+                current = runtime_dto(inspect_runtime(runtime.binding, candidate_ids=chunk)).model_dump(by_alias=True)
+            else:
+                query = urlencode([("limit", "1"), ("offset", str(offset)), *(("candidateId", value) for value in chunk)])
+                response = request_http(worker.url, f"/api/runtime?{query}", timeout=10)
+                if response.status != 200:
+                    raise HubFailure(503, "RUNTIME_READ_FAILED", "The bound Studio could not read its runtime state.")
+                current = response.json()
+            if current.get("projectId") != runtime.project_id or project_key(current.get("projectDir", "")) != project_key(runtime.project_dir):
+                raise HubFailure(409, "PROJECT_MISMATCH", "The runtime snapshot belongs to another project.")
+            if result is not None and (result.get("published"), result.get("branches")) != (current.get("published"), current.get("branches")):
+                raise HubFailure(409, "RUNTIME_CHANGED", "The project changed during runtime inspection; read its next snapshot.")
+            candidates.update((row["candidateId"], row) for row in current.get("candidates", []))
+            scanned += current.get("runsScanned", 0)
+            result = current
+        if runtime.binding.run_ids() != run_ids:
+            raise HubFailure(409, "RUNTIME_CHANGED", "Project runs changed during runtime inspection; read its next snapshot.")
+        result["candidates"] = list(candidates.values())
+        result["runsScanned"] = scanned
+        result["hasMore"] = len(run_ids) > 50
+        return result
+
+    def refresh(self, runtime: ProjectRuntime, *, cold: bool = False) -> None:
+        with runtime.refresh_lock:
+            self._refresh(runtime, cold=cold)
+
+    def _refresh(self, runtime: ProjectRuntime, *, cold: bool = False) -> None:
+        workers = self.applications.worker_snapshots(project_dir=runtime.project_dir)
+        worker = next(iter(workers), None)
+        alive = worker is not None and worker.state in {"ready", "busy"} and worker.healthy
+        previous_workers = runtime.last_workers
+        current_workers = tuple((row.instance_id, row.state, row.healthy) for row in workers)
+        if current_workers != previous_workers:
+            runtime.last_workers = current_workers
+            for row in workers:
+                self.emit(f"worker/{row.state}", runtime.runtime_id)
+            cold = cold or not alive
+        if alive and not cold:
+            retained = self._read_retained(runtime, worker=worker)
+        elif cold or runtime.retained is None:
+            retained = self._read_retained(runtime)
+        else:
+            return
+        latest = next(iter(self.applications.worker_snapshots(project_dir=runtime.project_dir)), None)
+        if worker is not None and (latest is None or latest.instance_id != worker.instance_id or latest.state not in {"ready", "busy"}):
+            alive = False
+        if retained.get("projectId") != runtime.project_id or project_key(retained.get("projectDir", "")) != project_key(runtime.project_dir):
+            raise HubFailure(409, "PROJECT_MISMATCH", "The runtime snapshot belongs to another project.")
+        # A missed health check does not change the projection's source. Keep
+        # its binding while stale so the same worker/base can recover without
+        # another expensive state read; a new instance or base still rebuilds.
+        projection_key = (worker.instance_id, retained.get("published"), retained.get("branches")) if alive else runtime.projection_key
+        with runtime.lock:
+            previous = runtime.retained
+            runtime.retained = retained
+            runtime.operations.reconcile(retained, worker_alive=alive)
+        if alive and projection_key != runtime.projection_key:
+            # A verified candidate remains observed even if the independent
+            # default-view rebuild is slow. It does not make that view ready.
+            projection = request_http(worker.url, "/api/state", timeout=10)
+            if projection.status != 200:
+                raise HubFailure(503, "PROJECTION_UNAVAILABLE", "The recovered Studio could not rebuild its retained state projection.")
+        with runtime.lock:
+            runtime.error = None
+            runtime.projection = "ready" if alive else "stale" if worker else "unknown"
+            runtime.projection_key = projection_key
+        busy = runtime.operations._has_active() or any(row.get("status") in {"queued", "running"} for row in retained.get("jobs", []))
+        self.applications.set_busy(project_dir=runtime.project_dir, busy=busy)
+        if previous is not None and previous.get("published") != retained.get("published"):
+            self.emit("state/committed", runtime.runtime_id)
+        if previous is not None and previous.get("branches") != retained.get("branches"):
+            self.emit("operation/committed", runtime.runtime_id)
+
+    @staticmethod
+    def _work_copy_key(copy: DocumentWorkCopy) -> tuple[str, str, str | None]:
+        return copy.run_id, copy.asset_sha256, copy.revision_ref
+
+    def bind_work_copies(self, runtime: ProjectRuntime) -> dict[tuple[str, str, str | None], str]:
+        """Re-derive which of this project's registered documents have an editable file.
+
+        The project is the only record of that: a registered document names
+        exactly one possible copy path and a row exists only when that file is
+        there. So a copy opened before this process started is bound on
+        the first pass, and one the architect deleted stops being observed. No
+        directory is scanned, no name is guessed and nothing is materialised —
+        a copy exists because somebody asked the Studio for it.
+        """
+
+        copies = {self._work_copy_key(copy): copy for copy in list_document_work_copies(runtime.binding)}
+        for key in tuple(runtime.work_copies):
+            if key not in copies:
+                del runtime.work_copies[key]
+        for key, copy in copies.items():
+            observed = runtime.work_copies.get(key)
+            if observed is None:
+                runtime.work_copies[key] = _WorkCopyObservation(copy)
+            else:
+                if copy.refusal != observed.copy.refusal:
+                    # A settled file otherwise waits for its content refresh.
+                    # Whether the owner will take these bytes has just changed,
+                    # so the next pass has to look: an edit refused while the
+                    # document was someone else's is still waiting to register.
+                    observed.hashed_at_ns = None
+                observed.copy = copy
+                if (observed.failure is not None
+                        and observed.failure.code == "WORK_COPY_OPERATION_INTERRUPTED"
+                        and observed.observed_sha256 == copy.head_asset_sha256):
+                    # A lost response is not a failed write. Verify the exact
+                    # retained successor through the owner's reader, without
+                    # replaying the POST or inferring success from liveness.
+                    try:
+                        document, _ = document_bytes(runtime.binding, copy.head_run_id,
+                                                     copy.head_asset_sha256, copy.head_revision_ref)
+                    except (StudioError, ProjectRepositoryError, OSError, ValueError, KeyError, TypeError):
+                        continue
+                    if (document.run_id, document.asset_sha256, document.revision_ref) == (
+                            copy.head_run_id, copy.head_asset_sha256, copy.head_revision_ref):
+                        observed.failure = None
+                        self.emit("artifact/updated", runtime.runtime_id)
+        return {key: str(copy.path) for key, copy in copies.items()}
+
+    def _work_copy_inputs(self, runtime: ProjectRuntime) -> tuple:
+        """Everything that decides which work copies exist, without deriving them.
+
+        Deriving them lists the project's documents, which reads every record
+        of every run: seconds, and most of the project's bytes, on a large
+        project (#314). The rows depend on nothing else than the runs, their
+        document records and which files each run's copy workspace holds.
+        A record is named by its content digest, so a changed record is a
+        changed ref; this reads those refs and the names of the copy files and
+        nothing else. It only says when to derive again: the derivation stays
+        the one answer to which copies exist.
+        """
+
+        binding, inputs = runtime.binding, []
+        for run_id in binding.run_ids():
+            records = tuple(ref.uri for kind in _DOCUMENT_RECORD_KINDS
+                            for ref in binding.record_refs(run_id, kind=kind))
+            workspace = binding.repository.layout.run(run_id).workspaces / WORK_COPY_WORKSPACE
+            files = tuple(sorted(str(Path(folder, name)) for folder, _, names in os.walk(workspace) for name in names))
+            inputs.append((run_id, records, files))
+        return tuple(inputs)
+
+    def _stable_work_copy_bytes(self, observed: _WorkCopyObservation) -> bytes | None:
+        """The copy's settled contents, or ``None`` while it is still moving.
+
+        A producer's save is not atomic on every path. The same
+        file identity, size and mtime must remain stable for the settle interval,
+        and the complete sample is checked again after reading. Identity catches
+        atomic replacements even when timestamps are preserved; a bounded content
+        refresh catches same-size in-place writes that preserve timestamps too.
+        The document owner still validates complete bytes before registration.
+        """
+
+        path = observed.copy.path
+        try:
+            before = path.stat()
+        except FileNotFoundError:
+            # A transient missing file is what an atomic save/rename looks
+            # like from here, not a deletion. Binding decides what exists.
+            return None
+        sample = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+        now = time.monotonic_ns()
+        if observed.sample != sample:
+            observed.sample, observed.hashed_at_ns = sample, None
+            observed.sample_since_ns = now
+            return None
+        if observed.sample_since_ns is None or now - observed.sample_since_ns < _WORK_COPY_SETTLED_NS:
+            return None
+        if (observed.hashed_at_ns is not None
+                and now - observed.hashed_at_ns < _WORK_COPY_CONTENT_REFRESH_NS):
+            return None
+        try:
+            data = path.read_bytes()
+            after = path.stat()
+        except FileNotFoundError:
+            return None
+        after_sample = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+        if after_sample != sample:
+            observed.sample, observed.hashed_at_ns = after_sample, None
+            observed.sample_since_ns = time.monotonic_ns()
+            return None
+        observed.hashed_at_ns = time.monotonic_ns()
+        return data
+
+    def _observe_work_copies(self, runtime: ProjectRuntime) -> int:
+        """Register what each settled work copy changed to, whole, or say why not.
+
+        Three cases are kept apart on purpose. Bytes this process has not seen
+        move are nothing, even when the document they answer for was replaced
+        by some other client — an untouched copy must never roll the Board back.
+        Bytes that moved to what the project already says are equally nothing.
+        Anything else moved, including an undo to an earlier registration, and
+        is offered to the document owner: it either becomes the next registered
+        revision or its refusal is carried to the user, per copy, unchanged.
+
+        A copy the document owner no longer considers editable is never dropped:
+        its file is still on disk and still holds someone's work, so unwatching
+        it would throw away every save made from here on. It is reported only
+        when its bytes have actually moved — an untouched copy whose document
+        was replaced elsewhere is news the row carries, not a project error —
+        and a refused edit keeps its place in the queue until the refusal goes.
+        """
+
+        registered = 0
+        for key, observed in tuple(runtime.work_copies.items()):
+            try:
+                data = self._stable_work_copy_bytes(observed)
+            except OSError as exc:
+                observed.failure = HubError(code="WORK_COPY_READ_FAILED",
+                    detail=f"{observed.copy.file_name}: {exc}"[:1200])
+                continue
+            if data is None:
+                continue
+            digest = hashlib.sha256(data).hexdigest()
+            baseline = observed.observed_sha256
+            if digest == baseline:
+                # Nothing has moved since the last look, so neither a read that
+                # failed nor a refusal is waiting on anything any more.
+                if observed.failure and observed.failure.code in {
+                        "WORK_COPY_READ_FAILED", "WORK_COPY_NOT_EDITABLE"}:
+                    observed.failure = None
+                continue
+            # Binding re-derives these rows, but only on a due pass, so the row
+            # this observation carries can be a whole idle interval old. The
+            # derivation below is what makes the answer current: aim at the
+            # document the project answers for right now, or say why it cannot.
+            try:
+                copy = next((row for row in list_document_work_copies(runtime.binding)
+                             if self._work_copy_key(row) == key), None)
+            except (StudioError, ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:
+                observed.hashed_at_ns = None
+                observed.failure = HubError(code="WORK_COPY_READ_FAILED",
+                    detail=f"{observed.copy.file_name}: {exc}"[:1200])
+                continue
+            if copy is None:
+                continue
+            observed.copy = copy
+            if copy.refusal is not None:
+                if baseline is None and digest in copy.known_sha256:
+                    # Untouched since it was seeded. The document it answered
+                    # for moved on without it, which is not this copy's news to
+                    # report: the row carries the reason, and nothing is stale.
+                    observed.failure = None
+                    continue
+                # These bytes are an edit the owner will not take. Say so, and
+                # leave the baseline alone: when the refusal goes away the same
+                # edit is still waiting to be offered, not silently swallowed.
+                observed.failure = HubError(code="WORK_COPY_NOT_EDITABLE",
+                    detail=f"{copy.file_name}: {copy.refusal}"[:1200])
+                continue
+            observed.observed_sha256 = digest
+            if digest == copy.head_asset_sha256:
+                # The copy agrees with the document again. Whatever was refused
+                # before is no longer waiting on anything, so it stops being
+                # reported without anything having been registered.
+                observed.failure = None
+                continue
+            if baseline is None and digest in copy.known_sha256:
+                # With no prior observation, old untouched bytes and an offline
+                # undo cannot be distinguished. Keep the registered page and
+                # expose the disagreement instead of silently losing the edit.
+                observed.failure = HubError(code="WORK_COPY_RESTART_CONFLICT", detail=(
+                    f"{copy.file_name}: The work copy matches an earlier page version. "
+                    "Hub cannot tell whether it was left unchanged or reverted while closed. "
+                    "The current registered page is still shown; review the copy before editing again."
+                )[:1200])
+                continue
+            try:
+                if digest in copy.known_sha256:
+                    raise StudioError(409, "DOCUMENT_REVISION_ALREADY_REGISTERED",
+                        "These bytes are already a registered revision of this page. "
+                        "Returning to that version cannot be registered as a new revision; "
+                        "the current registered page is still shown.")
+                # Board uploads and observed edits must share Studio's document
+                # writer. Calling save_document in this Hub process would use
+                # a separate lock and could create two successors of one page.
+                self.service(runtime)
+                result = self.forward(runtime, "/api/documents", "POST", json.dumps({
+                    "projectId": runtime.project_id, "runId": None,
+                    "fileName": copy.file_name, "mimeType": copy.mime_type,
+                    "contentBase64": base64.b64encode(data).decode("ascii"),
+                    # One file standing for one whole document: say that, and
+                    # let the document owner refuse a file that has gained or
+                    # lost a page rather than infer the intent from a page list.
+                    "replacesDocument": {"runId": copy.head_run_id,
+                        "assetSha256": copy.head_asset_sha256, "revisionRef": copy.head_revision_ref},
+                }).encode("utf-8"), {"content-type": "application/json"})
+                if result.status >= 400:
+                    error = result.json()
+                    raise StudioError(result.status, error.get("code", "DOCUMENT_WORK_COPY_FAILED"),
+                                      error.get("detail", "The edited page was not registered."))
+            except HubFailure as exc:
+                if exc.error.code == "WORKER_UNAVAILABLE":
+                    # No request was sent; the file stays pending until Studio
+                    # is ready. A dispatched request with a lost reply is never retried.
+                    observed.observed_sha256 = baseline
+                    observed.hashed_at_ns = None
+                observed.failure = HubError(code=f"WORK_COPY_{exc.error.code}",
+                    detail=f"{copy.file_name}: {exc.error.detail}"[:1200])
+                continue
+            except StudioError as exc:
+                # An edit that cannot be registered is reported, not dropped:
+                # the previously registered page stays the Board's preview and
+                # this copy carries the reason until it registers something
+                # else. One digest, one report — a re-save of the same bytes
+                # does not repeat it.
+                observed.failure = HubError(code=f"WORK_COPY_{exc.code}",
+                                            detail=f"{copy.file_name}: {exc.detail}"[:1200])
+                continue
+            observed.failure = None
+            registered += 1
+            self.emit("artifact/updated", runtime.runtime_id)
+        return registered
+
+    def _clean_working_draft(self, runtime: ProjectRuntime) -> tuple[str, ...]:
+        """The Hub schedules maintenance; only P036 can remove project files.
+
+        What P036 removes is superseded local recovery: crash-recovery copies
+        of unsynced edits that nothing reads back. It never removes a run, so
+        no operation or conversation has to protect a candidate from it.
+        """
+        repository = runtime.binding.repository
+        if repository.read_working_draft()[1] is None:
+            return ()
+        return repository.prune_working_draft(now=datetime.now(timezone.utc).isoformat())
+
+    def _watch(self, runtime: ProjectRuntime):
+        try:
+            self._watch_project(runtime)
+        finally:
+            self._stop_following(runtime.runtime_id)
+            # The binding's layout watch holds the project folder open; a
+            # runtime that stopped observing lets go of it, and one opened
+            # again watches again on its first read.
+            runtime.binding.close()
+
+    def _watch_project(self, runtime: ProjectRuntime):
+        next_retained_read = next_work_copy_check = 0.0
+        last_snapshot_inputs = last_retained = None
+        # The project's read token when the last successful refresh began;
+        # None when the watch had published none yet.
+        last_token: ReadToken | None = None
+        while not self._closing.is_set():
+            force_read = runtime.wake.take()
+            checked = runtime.wake.take_check()
+            workers = self.applications.worker_snapshots(project_dir=runtime.project_dir)
+            self._follow_worker(runtime, workers)
+            worker_states = tuple((row.instance_id, row.state, row.healthy) for row in workers)
+            drained = runtime.state == "closed" and not any(row.process_id is not None for row in workers)
+            active = runtime.operations._has_active() or any(
+                row.get("status") in {"queued", "running"} for row in (runtime.retained or {}).get("jobs", []))
+            prompted = drained or force_read or active or worker_states != runtime.last_workers
+            due = prompted or checked or time.monotonic() >= next_retained_read
+            try:
+                token = None
+                if due and not prompted:
+                    # Only the idle fallback asks, and it asks only whether a
+                    # separate client changed the project. If nothing on disk
+                    # moved since the last such read - an equal, stable read
+                    # token - the retained history is not read again. The
+                    # binding's layout watch keeps that token current on its
+                    # own thread, so asking walks nothing (#363).
+                    token = runtime.binding.read_token()
+                    if last_token is not None and last_token.stable and token == last_token:
+                        due = False
+                        next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
+                if due:
+                    # Keep liveness/session reads responsive without rebuilding
+                    # unchanged retained history on every idle heartbeat. Hub
+                    # mutations wake this observer; the fallback sees changes
+                    # made through a separate Studio/project client.
+                    last_token = None
+                    if token is None:
+                        # Every read records the token it began under, so the
+                        # first idle fallback after an open or a wake is skipped
+                        # too when nothing moved since. Not waited for: before
+                        # the watch's first walk there is none, and the next
+                        # idle fallback reads as it always did (#435).
+                        token = runtime.binding.read_token(wait=False)
+                    self.refresh(runtime, cold=drained)
+                    next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
+                    # Taken before the read began, and kept only once it succeeded.
+                    last_token = token
+            except (HubFailure, StudioError, OSError, HTTPException, ValueError) as exc:
+                next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
+                with runtime.lock:
+                    runtime.error = exc.error if isinstance(exc, HubFailure) else HubError(code="RUNTIME_READ_FAILED", detail=str(exc)[:1200])
+                    runtime.projection = "stale"
+            # Work copies are an explicit opt-in beside the project, not part
+            # of its retained projection. A document listing that will not read
+            # or a file that will not open therefore says nothing about whether
+            # the project is stale, and never delays the next retained read.
+            try:
+                if force_read or drained or time.monotonic() >= next_work_copy_check:
+                    # Which copies exist is re-derived only when what decides
+                    # it moved, checked on a wake and on the idle cadence, not
+                    # on every heartbeat of active work. Their metadata is still
+                    # watched every heartbeat, with bounded content reads after
+                    # a copy has settled.
+                    next_work_copy_check = time.monotonic() + _WORK_COPY_CHECK_S
+                    inputs = self._work_copy_inputs(runtime)
+                    if inputs != runtime.work_copy_key:
+                        self.bind_work_copies(runtime)
+                        runtime.work_copy_key = inputs
+                self._observe_work_copies(runtime)
+            except (StudioError, ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:
+                with runtime.lock:
+                    runtime.work_copy_error = HubError(code="WORK_COPY_READ_FAILED", detail=str(exc)[:1200])
+            else:
+                with runtime.lock:
+                    runtime.work_copy_error = None
+            if time.monotonic() >= runtime.next_working_cleanup:
+                runtime.next_working_cleanup = time.monotonic() + _WORKING_CLEANUP_INTERVAL_S
+                try:
+                    # No client lists superseded recovery, so removing it is
+                    # not an artifact change and wakes nobody.
+                    self._clean_working_draft(runtime)
+                except (ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:
+                    # An inconsistent recovery snapshot refuses expiry while the
+                    # existing project remains available for inspection.
+                    with runtime.lock:
+                        runtime.error = HubError(code="WORKING_CLEANUP_REFUSED", detail=str(exc)[:1200])
+            with self._lock:
+                chat_changed = project_key(runtime.project_dir) in self._chat_changed
+                self._chat_changed.discard(project_key(runtime.project_dir))
+            with runtime.lock:
+                retained = runtime.retained
+                snapshot_inputs = (workers, runtime.state, runtime.projection, self._clients,
+                    runtime.error, runtime.work_copy_error,
+                    tuple(row.failure for row in runtime.work_copies.values()))
+            # Active work and wakes still read the complete view. Idle ticks
+            # compare only small status values; retained refresh replaces its
+            # value, and the existing chat callback reports session changes.
+            # Work-copy refusals and worker details can change between reads.
+            if (due or chat_changed or snapshot_inputs != last_snapshot_inputs
+                    or retained is not last_retained):
+                last_snapshot_inputs, last_retained = snapshot_inputs, retained
+                snapshot = self.project_snapshot(runtime).model_dump()
+                if snapshot != runtime.last_snapshot or chat_changed:
+                    previous = runtime.last_snapshot
+                    runtime.last_snapshot = snapshot
+                    self.emit("agent/progress" if chat_changed else "project/updated", runtime.runtime_id)
+                    if previous and previous.get("projection") != snapshot["projection"]:
+                        self.emit("projection/updated" if snapshot["projection"] == "ready" else "projection/invalidated", runtime.runtime_id)
+            if drained:
+                break
+            settled = (not active and not runtime.work_copies and runtime.state == "open"
+                       and all(row.state in _SETTLED_WORKER_STATES for row in workers))
+            runtime.wake.wait(_IDLE_HEARTBEAT_S if settled else _ACTIVE_HEARTBEAT_S)
+
+    def service(self, runtime: ProjectRuntime):
+        self.get(runtime.runtime_id)
+        if runtime.state != "open":
+            raise HubFailure(409, "RUNTIME_CLOSED", "This project runtime is closed.")
+        worker = next(iter(self.applications.worker_snapshots(project_dir=runtime.project_dir)), None)
+        if worker is None or worker.state not in {"ready", "busy"} or not worker.healthy or not worker.url:
+            raise HubFailure(503, "WORKER_UNAVAILABLE", "The project's Studio is not ready. Recover a crashed worker explicitly before continuing.")
+        return worker
+
+    def forward(self, runtime: ProjectRuntime, path: str, method: str, body: bytes,
+                headers: dict[str, str]) -> HttpResult:
+        parsed = urlsplit(path)
+        if parsed.scheme or parsed.netloc or parsed.fragment or not (parsed.path.startswith("/api/") or parsed.path == "/openapi.json") or ".." in parsed.path.split("/"):
+            raise HubFailure(422, "STUDIO_PATH_INVALID", "Only the bound Studio API can be called.")
+        for key, values in parse_qs(parsed.query).items():
+            if key in {"projectId", "project_id"} and values != [runtime.project_id]:
+                raise HubFailure(409, "PROJECT_MISMATCH", "This request names another project.")
+        try:
+            payload = json.loads(body) if body else {}
+        except (ValueError, UnicodeError):
+            payload = {}
+        if isinstance(payload, dict) and payload.get("projectId", runtime.project_id) != runtime.project_id:
+            raise HubFailure(409, "PROJECT_MISMATCH", "This request names another project.")
+        mutation = method not in {"GET", "HEAD", "OPTIONS"} and not parsed.path.startswith("/api/events/") and parsed.path not in {"/api/state/closure", "/api/pick/resolve"}
+        if method == "POST" and parsed.path == "/api/drawing-recipes/inspect":
+            mutation = False  # File validation is a read, including a refused file.
+        admission = None
+        if mutation:
+            operation_id = headers.get("idempotency-key") or str(uuid4())
+            session_id = headers.get("x-monkey-chat")
+            if session_id:
+                session = self.chats.get(session_id)
+                if session.projectId != runtime.project_id or project_key(session.projectDir) != project_key(runtime.project_dir):
+                    raise HubFailure(409, "PROJECT_MISMATCH", "This chat is bound to another project.")
+                if session.status != "running":
+                    raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is no longer running.")
+                if method == "POST" and parsed.path == "/api/admissions" and isinstance(payload, dict):
+                    # #404 F13: the Agent withdraws only a result this chat asked this Hub for.
+                    withdrawn = [row.get("runId") for row in payload.get("results") or () if isinstance(row, dict) and row.get("outcome") == "withdrawn"]
+                    foreign = [run_id for run_id in withdrawn if not runtime.operations.made_by(session_id, run_id)]
+                    if foreign:
+                        raise HubFailure(409, "CANDIDATE_NOT_THIS_CHATS", "The Agent withdraws only a result it made in this chat: "
+                                         + ", ".join(map(str, foreign)) + " was not. Only the architect's words can reject another result.")
+            admission, fresh = runtime.operations.admit(operation_id, method, path, body,
+                retained=runtime.retained, source="chat" if session_id else "studio", session_id=session_id)
+            if not fresh:
+                if not admission.finished.wait(10):
+                    raise HubFailure(409, "OPERATION_RUNNING", "The same operation is still running. Read its runtime status; it has not been submitted again.")
+                if admission.response is not None:
+                    return admission.response
+                raise HubFailure(409, "OPERATION_NEEDS_RECOVERY", "The operation lost its response. Read retained runtime results; it has not been replayed.")
+            self.emit("operation/started", runtime.runtime_id)
+        dispatched = False
+        try:
+            worker = self.service(runtime)
+            forwarded = {key: value for key, value in headers.items()
+                         if key in {"content-type", "x-monkey-operation", "x-monkey-parent", "if-none-match",
+                                    "x-monkey-turn-id", "x-monkey-parent-span-id"}}
+            if admission and method == "POST" and _CANDIDATE_REQUEST.fullmatch(parsed.path):
+                candidate_id = admission.record.candidateId
+                # A Hub restart can reconstruct this deterministic run identity.
+                # An existing run, even incomplete, must never be executed again.
+                if candidate_id in runtime.binding.run_ids():
+                    raise HubFailure(409, "OPERATION_RETAINED", f"Operation already has retained run {candidate_id}. Read its candidate/runtime status; no work was replayed.")
+                forwarded["X-Monkey-Candidate"] = candidate_id
+                forwarded["X-Monkey-Worker"] = worker.instance_id
+            # The requested route decides this, not the record: a retained
+            # refresh also names the candidate's proposal on the acceptance
+            # bound to it, and an acceptance path is no proposal to re-read.
+            if admission and method == "POST" and _PROPOSAL_CANDIDATE.fullmatch(parsed.path):
+                proposal_read = request_http(worker.url, parsed.path.removesuffix("/candidate"), timeout=10)
+                if proposal_read.status >= 400:
+                    payload = proposal_read.json()
+                    raise HubFailure(proposal_read.status, payload.get("code", "PROPOSAL_UNAVAILABLE"), payload.get("detail", "The proposal could not be read."))
+                proposal = proposal_read.json()
+                source_run = proposal.get("sourceRunId")
+                base = runtime.binding.load_run(source_run).base if source_run else runtime.binding.head()
+                runtime.operations.bind_proposal(admission, proposal, base.version)
+            dispatched = True
+            result = request_http(worker.url, path, method, body or None, forwarded, timeout=180)
+            if admission:
+                result.headers["X-Monkey-Operation-Id"] = admission.record.operationId
+                runtime.operations.replied(admission, result)
+                self.emit("operation/progress" if admission.record.status in _ACTIVE else f"operation/{admission.record.status}", runtime.runtime_id)
+            if mutation:
+                # A read changes nothing retained. Waking on every one made each
+                # page poll re-read the project's history (#314).
+                runtime.wake.set()
+            return result
+        except (OSError, TimeoutError, HTTPException, HubFailure) as exc:
+            if admission:
+                if not dispatched and isinstance(exc, HubFailure):
+                    # A refusal before dispatch is known, even when a previous
+                    # operation left a candidate with this identity on disk.
+                    runtime.operations.replied(admission, HttpResult(exc.status, exc.error.model_dump_json().encode("utf-8"), {"content-type": "application/json"}))
+                else:
+                    runtime.operations.interrupted(admission, "The request did not return a verified result. Read retained state before any new operation; this request will not be replayed.")
+                runtime.wake.set()
+                self.emit(f"operation/{admission.record.status}" if admission.record.status == "refused" else "operation/failed", runtime.runtime_id)
+            if isinstance(exc, HubFailure):
+                raise
+            raise HubFailure(503, "OPERATION_INTERRUPTED", "The worker connection ended. Runtime status will reconcile retained results; the request was not retried.") from exc
+
+    def recover(self, runtime: ProjectRuntime) -> ProjectRuntimeDto:
+        with runtime.refresh_lock:
+            if runtime.state != "open":
+                raise HubFailure(409, "RUNTIME_CLOSED", "Open this project runtime before recovering its worker.")
+            # Inspect while the old process is dead, before any replacement can
+            # invalidate a cache. This action never calls a mutation route.
+            self.refresh(runtime, cold=True)
+            self.applications.recover(project_dir=runtime.project_dir)
+            runtime.projection = "rebuilding"
+            self.emit("worker/recovering", runtime.runtime_id)
+        runtime.wake.set()
+        return self.project_snapshot(runtime)
+
+    def acknowledge(self, runtime: ProjectRuntime, operation_id: str) -> OperationRecord:
+        """Record that a person read the notice of an operation that failed, went stale or cannot be recovered.
+
+        No request is sent or replayed.
+        """
+        record = runtime.operations.acknowledge(operation_id)
+        self.emit("operation/acknowledged", runtime.runtime_id)
+        runtime.wake.set()
+        return record
+
+    def close(self, runtime: ProjectRuntime) -> ProjectRuntimeDto:
+        runtime.state = "closed"
+        self.chats.close_project(runtime.project_dir)
+        self.applications.stop("monkeyarch", project_dir=runtime.project_dir)
+        runtime.wake.set()
+        # Its watcher keeps observing accepted jobs until the owned process
+        # finishes normal shutdown, then performs the final retained read.
+        self.emit("project/closed", runtime.runtime_id)
+        return self.project_snapshot(runtime)
+
+    def begin_shutdown(self):
+        self._closing.set()
+        self._stop_following()
+        with self._lock:
+            runtimes = tuple(self._projects.values())
+        for runtime in runtimes:
+            runtime.wake.set()
+
+    def shutdown(self):
+        self.begin_shutdown()
+        with self._lock:
+            runtimes = tuple(self._projects.values())
+        for runtime in runtimes:
+            if runtime.thread:
+                runtime.thread.join(timeout=12)
+            # Its observer closes it on the way out; one that never ran, or
+            # has not finished, still lets go of the folder here.
+            runtime.binding.close()

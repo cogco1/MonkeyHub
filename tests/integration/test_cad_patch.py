@@ -495,7 +495,7 @@ class ComposedThreeDmPatchTests(unittest.TestCase):
             GeometryParameterKind, LengthUnit,
         )
         from archflow.adapters.cad_execution import CadExecutionStatus, execute_occt_export
-        from archflow.adapters.cad_program import expected_object_bounds
+        from archflow.state.geometry_program import expected_object_bounds
 
         r = self.rhino
 

@@ -19,7 +19,7 @@ from tools.dev import source_roots  # noqa: E402 - this checkout's tools, found 
 
 # The checkout's Python source roots, as its architecture policy lists them, go first.
 source_roots.put_first(ROOT)
-from monkeyhub_api import chat
+from monkeyhub_api.chat import store as chat
 from monkeyhub_api.models import HubFailure
 
 

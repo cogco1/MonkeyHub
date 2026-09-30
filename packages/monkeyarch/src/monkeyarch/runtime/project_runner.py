@@ -60,7 +60,6 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 from uuid import uuid4
 
-from archflow.adapters.cad_program import expected_object_bounds
 from archflow.adapters.cad_backend import (
     CadExecutionError, CadExecutionRequest, CadExecutionSource, CadProgramBinding,
     cad_backend_ids, get_cad_backend,
@@ -78,7 +77,6 @@ from monkeyarch.capabilities.geometry_proposal import (
     GeometryProposalPolicy,
     GeometryProposalProviderIdentity,
     GeometryProposalStatus,
-    load_compiled_geometry_program,
     produce_geometry_program_proposal,
     proposal_authoring_output,
 )
@@ -140,6 +138,8 @@ from archflow.state.geometry_program import (
     ProjectGrids,
     ProjectLevels,
     SemanticBinding,
+    expected_object_bounds,
+    load_compiled_geometry_program,
 )
 from archflow.state.spatial import SiteBounds
 from archflow.state.state_record import RecordBinding, Relation, SchematicPack, StateRecord, ValidatorBinding, bootstrap_developed_state, developed_design_view, project_grids_of, project_levels_of, volume_boxes_of

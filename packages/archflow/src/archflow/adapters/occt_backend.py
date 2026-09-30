@@ -78,8 +78,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Mapping, Sequence
 
-from archflow.adapters.cad_program import _params, _revolve_parameters, lift_to_base_level
-from archflow.state.geometry_program import CompiledGeometryProgram, delivered_object_ids
+from archflow.state.geometry_program import (
+    CompiledGeometryProgram,
+    delivered_object_ids,
+    lift_to_base_level,
+    operation_parameters,
+    revolve_parameters,
+)
 
 
 class OcctBackendError(ValueError):
@@ -311,13 +316,13 @@ def _difference_plan(operation, operations, producers):
     minus the projected void profiles, extruded once.
     """
 
-    params = _params(operation)
+    params = operation_parameters(operation)
     inputs = sorted(operation.input_object_ids)
     base_id = inputs[int(params.get("base_index", 0))]
     source = operations.get(producers.get(base_id, ""))
     if source is None or source.kind.value != "extrusion":
         return None, f"the base {base_id} is not an extrusion"
-    base_params = _params(source)
+    base_params = operation_parameters(source)
     outer = _loop(lift_to_base_level(base_params["profile"], base_params, source.op_id))
     vector = tuple(float(value) for value in base_params["vector"])
     normal = _unit_normal(outer)
@@ -333,7 +338,7 @@ def _difference_plan(operation, operations, producers):
         void = operations.get(producers.get(void_id, ""))
         if void is None or void.kind.value != "extrusion":
             return None, f"the void {void_id} is not an extrusion"
-        void_params = _params(void)
+        void_params = operation_parameters(void)
         loop = _loop(lift_to_base_level(void_params["profile"], void_params, void.op_id))
         void_vector = tuple(float(value) for value in void_params["vector"])
         v_n = _dot(void_vector, normal)
@@ -631,7 +636,7 @@ def build_program_shapes(
                 raise OcctCapabilityError(
                     op_id, kind, "exactly one output object per operation is realized"
                 )
-            params = _params(operation)
+            params = operation_parameters(operation)
             output = operation.output_object_ids[0]
             try:
                 if reused:
@@ -713,7 +718,7 @@ def declared_delivery(operation) -> str:
     if operation.kind.value == "curve":
         return CURVE
     if operation.kind.value == "planar_surface" or (
-        operation.kind.value == "loft" and _params(operation).get("cap_ends", True) is False
+        operation.kind.value == "loft" and operation_parameters(operation).get("cap_ends", True) is False
     ):
         return OPEN_SURFACE
     return CLOSED_SOLID
@@ -768,7 +773,7 @@ def _build_operation(
         vx, vy, vz = cad_point(vector)
         return occ.BRepPrimAPI.BRepPrimAPI_MakePrism(face, occ.gp.gp_Vec(vx, vy, vz)).Shape()
     if kind == "revolve":
-        a0, a1, r0, r1 = _revolve_parameters(params, op_id)
+        a0, a1, r0, r1 = revolve_parameters(params, op_id)
         axis = [a1[i] - a0[i] for i in range(3)]
         length = math.sqrt(sum(value * value for value in axis))
         placement = occ.gp.gp_Ax2(_gp_point(occ, a0), occ.gp.gp_Dir(*cad_point(axis)))

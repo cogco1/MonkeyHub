@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from archflow.adapters.cad_program import expected_object_bounds
+from archflow.state.geometry_program import expected_object_bounds
 from archflow.adapters.cad_patch import select_patch_operations
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
@@ -134,7 +134,7 @@ class PrismCutoutRunTests(unittest.TestCase):
     _run = runner_support.IncrementalSourceRunTests.run_source
 
     def test_saved_source_can_remove_and_restore_a_panel_while_reusing_its_neighbour(self):
-        from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
+        from archflow.state.geometry_program import load_compiled_geometry_program
 
         for patcher in runner_support._no_rhino():
             patcher.start()

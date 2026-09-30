@@ -12,8 +12,8 @@ from uuid import NAMESPACE_URL, uuid5
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_PUBLICATION
-from ..transport.errors import StudioError
-from .binding import ProjectBinding, record_kind, retained_sources
+from ..errors import StudioError
+from ..binding import ProjectBinding, record_kind, retained_sources
 from . import artifacts, boards
 
 RUN_ID = "studio-publication"

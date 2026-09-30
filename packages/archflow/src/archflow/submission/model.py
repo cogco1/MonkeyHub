@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from archflow.state.model import (
+from archflow.submission.canonical_state import (
     ArtifactRef,
     Fact,
     Obligation,

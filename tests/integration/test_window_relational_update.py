@@ -13,7 +13,7 @@ from unittest.mock import patch
 from archflow.adapters import occt_backend
 from archflow.adapters.cad_execution import CadProgramBinding, execute_occt_export
 from archflow.adapters.cad_patch import select_patch_operations
-from archflow.adapters.cad_program import expected_object_bounds
+from archflow.state.geometry_program import expected_object_bounds
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STATE_RECORD, stage_geometry_program
 from archflow.project.refs import BranchRef, record_ref_from_uri
@@ -31,7 +31,7 @@ from archflow.state.state_record import (
     evaluate_parameters,
     resolve_element_bindings,
 )
-from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
+from archflow.state.geometry_program import load_compiled_geometry_program
 from monkeyarch.runtime import project_runner
 from tests.integration import test_project_runner as runner_support
 

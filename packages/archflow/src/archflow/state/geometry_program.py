@@ -18,10 +18,11 @@ from typing import Any, Mapping
 
 from archflow.project.refs import ProjectVersionRef
 from archflow.project.refs import require_identifier
-from archflow.state.operational_state import require_logical_ref
 from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 from archflow.contracts.fields import (
+    mapping as _mapping,
     number,
+    require_logical_ref,
 )
 
 
@@ -1908,3 +1909,927 @@ class CompiledGeometryProgram:
             "hard_gate_authority": False,
             "canonical_write_authority": False,
         }
+
+
+# ---------------------------------------------------------------- reading retained programs
+#
+# What ``GeometryProgramProposal.to_dict`` and ``CompiledGeometryProgram.to_dict``
+# write is read back here: the values are rebuilt exactly, and a compiled
+# program that is not the canonical rendering of what was rebuilt is refused.
+# A provider's answer decodes through the same functions (``decode_proposal_body``,
+# ``decode_proposal_items``), so a proposal reads one way wherever it comes from.
+
+_COMPILED_PROGRAM_BASE_KEYS = frozenset(
+    {
+        "schema", "proposal", "proposal_digest", "operation_order",
+        "frame_digests", "component_digests", "semantic_binding_digests",
+        "objects", "asset_substitutions", "execution_authority",
+        "hard_gate_authority", "canonical_write_authority",
+    }
+)
+_COMPILED_PROGRAM_SCHEMA_KEYS = {
+    "CompiledGeometryProgram@2": _COMPILED_PROGRAM_BASE_KEYS,
+    "CompiledGeometryProgram@3": _COMPILED_PROGRAM_BASE_KEYS
+    | {"interface_datums", "datum_bindings"},
+}
+if set(_COMPILED_PROGRAM_SCHEMA_KEYS) != set(CompiledGeometryProgram.ACCEPTED_SCHEMAS):
+    raise AssertionError(
+        "compiled program loader key sets drifted from "
+        "CompiledGeometryProgram.ACCEPTED_SCHEMAS"
+    )
+
+
+def load_compiled_geometry_program(value: object) -> CompiledGeometryProgram:
+    """Reload one exact compiled program without granting execution authority.
+
+    Accepts the current schema and the retained @2 generation, whose
+    records predate interface datums (P090) and reload with empty datum
+    fields.
+    """
+
+    payload = _mapping(value, "compiled geometry program")
+    schema = payload.get("schema")
+    if schema not in _COMPILED_PROGRAM_SCHEMA_KEYS:
+        raise GeometryProgramError(
+            "compiled geometry program schema is unsupported"
+        )
+    _exact(
+        payload,
+        set(_COMPILED_PROGRAM_SCHEMA_KEYS[schema]),
+        "compiled geometry program",
+    )
+    proposal = load_geometry_program_proposal(payload["proposal"])
+    if payload["proposal_digest"] != proposal.proposal_digest:
+        raise GeometryProgramError(
+            "compiled geometry proposal digest changed"
+        )
+    interface_datums: tuple[InterfaceDatum, ...] = ()
+    datum_bindings: tuple[DatumBinding, ...] = ()
+    if schema == "CompiledGeometryProgram@3":
+        interface_datums = _decode_list(
+            payload["interface_datums"],
+            InterfaceDatum.from_dict,
+            "interface datums",
+        )
+        datum_bindings = _decode_list(
+            payload["datum_bindings"],
+            DatumBinding.from_dict,
+            "datum bindings",
+        )
+    program = CompiledGeometryProgram(
+        proposal=proposal,
+        operation_order=_ordered_strings_from_json(
+            payload["operation_order"], "operation_order"
+        ),
+        frame_digests=_compiled_digest_pairs(
+            payload["frame_digests"], "frame_id", "frame_digests"
+        ),
+        component_digests=_compiled_digest_pairs(
+            payload["component_digests"], "component_id", "component_digests"
+        ),
+        semantic_binding_digests=_compiled_digest_pairs(
+            payload["semantic_binding_digests"],
+            "binding_id",
+            "semantic_binding_digests",
+        ),
+        objects=_decode_sorted_list(
+            payload["objects"],
+            _compiled_object,
+            "compiled objects",
+            lambda item: item.object_id,
+        ),
+        asset_substitutions=_decode_list(
+            payload["asset_substitutions"],
+            _asset_substitution_receipt,
+            "asset substitutions",
+        ),
+        interface_datums=interface_datums,
+        datum_bindings=datum_bindings,
+    )
+    rendered = program.to_dict()
+    if schema == "CompiledGeometryProgram@2":
+        rendered = {
+            key: item
+            for key, item in rendered.items()
+            if key not in ("interface_datums", "datum_bindings")
+        }
+        rendered["schema"] = "CompiledGeometryProgram@2"
+    if rendered != dict(payload):
+        raise GeometryProgramError(
+            "compiled geometry program is not an exact canonical record"
+        )
+    return program
+
+
+def load_geometry_program_proposal(value: object) -> GeometryProgramProposal:
+    """Reload one exact ``GeometryProgramProposal@2`` record.
+
+    The proposal is bound to the project, run, base and design state the
+    record names; its body fields decode as ``decode_proposal_body`` reads
+    them.
+    """
+
+    proposal = _mapping(value, "geometry proposal")
+    _exact(proposal, {"schema", "proposal_id", "project_id", "run_id", "base", "design_state_digest", "predecessor_program_digest", "length_unit", "tolerance", "frames", "assets", "semantic_bindings", "operations", "assemblies", "revisions", "retirements", "generation_authority", "hard_gate_authority", "canonical_write_authority"}, "geometry proposal")
+    if (
+        proposal["schema"] != GeometryProgramProposal.SCHEMA
+    ):
+        raise GeometryProgramError("geometry proposal acquired forbidden authority")
+    return decode_proposal_body(
+        proposal,
+        proposal["project_id"],
+        proposal["run_id"],
+        ProjectVersionRef.from_dict(proposal["base"], "project base"),
+        proposal["design_state_digest"],
+    )
+
+
+def decode_proposal_body(
+    value: Mapping[str, Any],
+    project_id: str,
+    run_id: str,
+    base: ProjectVersionRef,
+    design_state_digest: str,
+    *,
+    errors: list[Exception] | None = None,
+) -> GeometryProgramProposal | None:
+    """One proposal from the fields a proposal body carries, bound to the state named here.
+
+    Without ``errors`` the first malformed field raises, as a retained record
+    is read. With ``errors`` every independent field or item that fails is
+    appended there and None is returned, so a caller reading a provider's
+    answer can report every failure of one round together.
+    """
+
+    failures: list[Exception] = []
+
+    def attempt(decode: Any) -> Any:
+        if errors is None:
+            return decode()
+        try:
+            return decode()
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            failures.append(exc)
+            return None
+
+    def decode_tolerance() -> GeometryTolerance:
+        tolerance = _mapping(value["tolerance"], "geometry tolerance")
+        _exact(
+            tolerance,
+            {"schema", "linear", "angular_radians"},
+            "geometry tolerance",
+        )
+        if tolerance["schema"] != GeometryTolerance.SCHEMA:
+            raise GeometryProgramError(
+                "geometry tolerance schema changed"
+            )
+        return GeometryTolerance(
+            tolerance["linear"],
+            tolerance["angular_radians"],
+        )
+
+    element_errors = None if errors is None else failures
+    length_unit = attempt(lambda: LengthUnit(value["length_unit"]))
+    tolerance = attempt(decode_tolerance)
+    frames = attempt(
+        lambda: decode_proposal_items(
+            "frames",
+            value["frames"],
+            "frames",
+            errors=element_errors,
+        )
+    )
+    assets = attempt(
+        lambda: decode_proposal_items(
+            "assets",
+            value["assets"],
+            "assets",
+            errors=element_errors,
+        )
+    )
+    semantic_bindings = attempt(
+        lambda: decode_proposal_items(
+            "semantic_bindings",
+            value["semantic_bindings"],
+            "semantic_bindings",
+            errors=element_errors,
+        )
+    )
+    operations = attempt(
+        lambda: decode_proposal_items(
+            "operations",
+            value["operations"],
+            "operations",
+            errors=element_errors,
+        )
+    )
+    assemblies = attempt(
+        lambda: decode_proposal_items(
+            "assemblies",
+            value["assemblies"],
+            "assemblies",
+            errors=element_errors,
+        )
+    )
+    revisions = attempt(
+        lambda: decode_proposal_items(
+            "revisions",
+            value["revisions"],
+            "revisions",
+            errors=element_errors,
+        )
+    )
+    retirements = attempt(
+        lambda: decode_proposal_items(
+            "retirements",
+            value["retirements"],
+            "retirements",
+            errors=element_errors,
+        )
+    )
+    if failures:
+        assert errors is not None
+        errors.extend(failures)
+        return None
+
+    try:
+        return GeometryProgramProposal(
+            proposal_id=value["proposal_id"],
+            project_id=project_id,
+            run_id=run_id,
+            base=base,
+            design_state_digest=design_state_digest,
+            predecessor_program_digest=value["predecessor_program_digest"],
+            length_unit=length_unit,
+            tolerance=tolerance,
+            frames=frames,
+            assets=assets,
+            semantic_bindings=semantic_bindings,
+            operations=operations,
+            assemblies=assemblies,
+            revisions=revisions,
+            retirements=retirements,
+        )
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        if errors is None:
+            raise
+        errors.append(exc)
+        return None
+
+
+def decode_proposal_items(
+    name: str,
+    value: object,
+    field: str,
+    *,
+    errors: list[Exception] | None = None,
+) -> tuple[Any, ...]:
+    """One item list of a proposal, decoded and in identity order.
+
+    ``name`` is the proposal field the items belong to (``frames``,
+    ``assets``, ``semantic_bindings``, ``operations``, ``assemblies``,
+    ``revisions`` or ``retirements``); ``field`` is what the caller's record
+    calls the list, and what a failure names. With ``errors``, an item that
+    fails is appended there and the rest still decode.
+    """
+
+    decoder, identity = _PROPOSAL_ITEMS[name]
+    return _decode_sorted_list(value, decoder, field, identity, errors=errors)
+
+
+def _compiled_digest_pairs(
+    value: object,
+    identity_field: str,
+    label: str,
+) -> tuple[tuple[str, str], ...]:
+    entries = _decode_list(value, lambda item: _mapping(item, label), label)
+    pairs: list[tuple[str, str]] = []
+    for entry in entries:
+        _exact(entry, {identity_field, "digest"}, label)
+        pairs.append((entry[identity_field], entry["digest"]))
+    return tuple(pairs)
+
+
+def _ordered_strings_from_json(value: object, field: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise TypeError(f"{field} must be a list")
+    if any(not isinstance(item, str) or not item for item in value):
+        raise GeometryProgramError(f"{field} contains invalid text")
+    if len(value) != len(set(value)):
+        raise GeometryProgramError(f"{field} contains duplicate values")
+    return tuple(value)
+
+
+def _compiled_object(value: object) -> CompiledGeometryObject:
+    payload = _mapping(value, "compiled geometry object")
+    _exact(
+        payload,
+        {"schema", "object_id", "producer_op_id", "object_digest"},
+        "compiled geometry object",
+    )
+    if payload["schema"] != CompiledGeometryObject.SCHEMA:
+        raise GeometryProgramError(
+            "compiled geometry object schema changed"
+        )
+    return CompiledGeometryObject(
+        object_id=payload["object_id"],
+        producer_op_id=payload["producer_op_id"],
+        object_digest=payload["object_digest"],
+    )
+
+
+def _asset_substitution_receipt(value: object) -> AssetSubstitutionReceipt:
+    payload = _mapping(value, "asset substitution receipt")
+    _exact(
+        payload,
+        {
+            "schema", "requested_asset_id", "requested_sha256",
+            "replacement_asset_id", "replacement_sha256", "loss_codes",
+            "evidence_refs", "lossless", "canonical_write_authority",
+        },
+        "asset substitution receipt",
+    )
+    if (
+        payload["schema"] != AssetSubstitutionReceipt.SCHEMA
+        or payload["lossless"] is not False
+    ):
+        raise GeometryProgramError(
+            "asset substitution receipt authority changed"
+        )
+    return AssetSubstitutionReceipt(
+        requested_asset_id=payload["requested_asset_id"],
+        requested_sha256=payload["requested_sha256"],
+        replacement_asset_id=payload["replacement_asset_id"],
+        replacement_sha256=payload["replacement_sha256"],
+        loss_codes=_strings_from_json(payload["loss_codes"], "loss_codes"),
+        evidence_refs=_strings_from_json(
+            payload["evidence_refs"], "substitution evidence_refs"
+        ),
+    )
+
+
+def _frame(value: object) -> CoordinateFrame:
+    payload = _mapping(value, "coordinate frame")
+    _exact(payload, {"schema", "frame_id", "parent_frame_id", "transform_from_parent", "source_refs"}, "coordinate frame")
+    transform = _mapping(payload["transform_from_parent"], "affine transform")
+    _exact(transform, {"schema", "matrix"}, "affine transform")
+    if payload["schema"] != CoordinateFrame.SCHEMA or transform["schema"] != AffineTransform.SCHEMA:
+        raise GeometryProgramError("coordinate frame schema changed")
+    return CoordinateFrame(
+        frame_id=payload["frame_id"],
+        parent_frame_id=payload["parent_frame_id"],
+        transform_from_parent=AffineTransform(tuple(transform["matrix"])),
+        source_refs=_strings_from_json(payload["source_refs"], "frame source_refs"),
+    )
+
+
+def _parameter(value: object) -> GeometryParameter:
+    payload = _mapping(value, "geometry parameter")
+    _exact(payload, {"schema", "name", "kind", "value_json", "unit"}, "geometry parameter")
+    if payload["schema"] != GeometryParameter.SCHEMA:
+        raise GeometryProgramError("geometry parameter schema changed")
+    value_json = payload["value_json"]
+    if isinstance(value_json, str):
+        try:
+            decoded_value = json.loads(value_json)
+        except json.JSONDecodeError:
+            pass
+        else:
+            value_json = canonical_json(decoded_value)
+    return GeometryParameter(
+        name=payload["name"],
+        kind=GeometryParameterKind(payload["kind"]),
+        value_json=value_json,
+        unit=None if payload["unit"] is None else LengthUnit(payload["unit"]),
+    )
+
+
+def _binding(value: object) -> SemanticBinding:
+    payload = _mapping(value, "semantic binding")
+    _exact(payload, {"schema", "binding_id", "component_id", "object_ids", "commitment_refs", "evidence_refs"}, "semantic binding")
+    if payload["schema"] != SemanticBinding.SCHEMA:
+        raise GeometryProgramError("semantic binding schema changed")
+    return SemanticBinding(
+        binding_id=payload["binding_id"],
+        component_id=payload["component_id"],
+        object_ids=_strings_from_json(payload["object_ids"], "binding object_ids"),
+        commitment_refs=_strings_from_json(payload["commitment_refs"], "commitment_refs"),
+        evidence_refs=_strings_from_json(payload["evidence_refs"], "evidence_refs"),
+    )
+
+
+def _asset(value: object) -> AssetReference:
+    payload = _mapping(value, "asset reference")
+    _exact(payload, {"schema", "asset_id", "uri", "media_type", "sha256", "native_unit", "sockets", "provenance_refs"}, "asset reference")
+    if payload["schema"] != AssetReference.SCHEMA:
+        raise GeometryProgramError("asset reference schema changed")
+    return AssetReference(
+        asset_id=payload["asset_id"], uri=payload["uri"], media_type=payload["media_type"],
+        sha256=payload["sha256"], native_unit=LengthUnit(payload["native_unit"]),
+        sockets=_strings_from_json(payload["sockets"], "asset sockets"),
+        provenance_refs=_strings_from_json(payload["provenance_refs"], "asset provenance_refs"),
+    )
+
+
+def _decode_statements(value: object) -> dict[str, str]:
+    """One operation's declared statements: identifier keys, text values.
+
+    Absent is empty — an operation that declares nothing writes no field,
+    which is what keeps every program authored before statements existed
+    byte-identical.
+    """
+
+    if value is None:
+        return {}
+    payload = _mapping(value, "operation statements")
+    for key, item in payload.items():
+        if not isinstance(item, str):
+            raise GeometryProgramError(
+                f"operation statement {key!r} must be text"
+            )
+    return dict(payload)
+
+
+def _operation(value: object) -> GeometryOperation:
+    payload = _mapping(value, "geometry operation")
+    _exact(payload, {"schema", "op_id", "kind", "output_object_ids", "input_object_ids", "frame_id", "parameters", "semantic_binding_ids", "asset_id", "asset_socket_id", "asset_scale", "responds_to_object_ids", "responds_to_frame_ids", "responds_to_binding_ids"}, "geometry operation", optional=frozenset({"statements"}))
+    if payload["schema"] != GeometryOperation.SCHEMA:
+        raise GeometryProgramError("geometry operation schema changed")
+    scale = payload["asset_scale"]
+    return GeometryOperation(
+        op_id=payload["op_id"], kind=GeometryOperationKind(payload["kind"]),
+        output_object_ids=_strings_from_json(payload["output_object_ids"], "output_object_ids"),
+        input_object_ids=_strings_from_json(payload["input_object_ids"], "input_object_ids"),
+        frame_id=payload["frame_id"],
+        parameters=_decode_sorted_list(
+            payload["parameters"],
+            _parameter,
+            "parameters",
+            lambda item: item.name,
+        ),
+        semantic_binding_ids=_strings_from_json(payload["semantic_binding_ids"], "semantic_binding_ids"),
+        asset_id=payload["asset_id"], asset_socket_id=payload["asset_socket_id"],
+        asset_scale=None if scale is None else tuple(scale),
+        responds_to_object_ids=_strings_from_json(payload["responds_to_object_ids"], "responds_to_object_ids"),
+        responds_to_frame_ids=_strings_from_json(payload["responds_to_frame_ids"], "responds_to_frame_ids"),
+        responds_to_binding_ids=_strings_from_json(payload["responds_to_binding_ids"], "responds_to_binding_ids"),
+        statements=_decode_statements(payload.get("statements")),
+    )
+
+
+def _member(value: object) -> AssemblyMember:
+    payload = _mapping(value, "assembly member")
+    _exact(payload, {"schema", "role", "object_ids"}, "assembly member")
+    if payload["schema"] != AssemblyMember.SCHEMA:
+        raise GeometryProgramError("assembly member schema changed")
+    return AssemblyMember(AssemblyRole(payload["role"]), _strings_from_json(payload["object_ids"], "member object_ids"))
+
+
+def _assembly(value: object) -> HostedAssembly:
+    payload = _mapping(value, "hosted assembly")
+    _exact(payload, {"schema", "assembly_id", "kind", "host_object_id", "host_socket_id", "members", "interface_refs", "semantic_binding_ids", "maturity"}, "hosted assembly")
+    if payload["schema"] != HostedAssembly.SCHEMA:
+        raise GeometryProgramError("hosted assembly schema changed")
+    return HostedAssembly(
+        assembly_id=payload["assembly_id"], kind=AssemblyKind(payload["kind"]),
+        host_object_id=payload["host_object_id"], host_socket_id=payload["host_socket_id"],
+        members=_decode_sorted_list(
+            payload["members"],
+            _member,
+            "members",
+            lambda item: item.role.value,
+        ),
+        interface_refs=_strings_from_json(payload["interface_refs"], "interface_refs"),
+        semantic_binding_ids=_strings_from_json(payload["semantic_binding_ids"], "semantic_binding_ids"),
+        maturity=DetailMaturity(payload["maturity"]),
+    )
+
+
+def _revision(value: object) -> ObjectRevisionPrecondition:
+    payload = _mapping(value, "object revision")
+    _exact(payload, {"schema", "object_id", "expected_digest", "reason_refs"}, "object revision")
+    if payload["schema"] != ObjectRevisionPrecondition.SCHEMA:
+        raise GeometryProgramError("object revision schema changed")
+    return ObjectRevisionPrecondition(payload["object_id"], payload["expected_digest"], _strings_from_json(payload["reason_refs"], "revision reason_refs"))
+
+
+def _retirement(value: object) -> ObjectRetirement:
+    payload = _mapping(value, "object retirement")
+    _exact(payload, {"schema", "object_id", "expected_digest", "reason_refs"}, "object retirement")
+    if payload["schema"] != ObjectRetirement.SCHEMA:
+        raise GeometryProgramError("object retirement schema changed")
+    return ObjectRetirement(payload["object_id"], payload["expected_digest"], _strings_from_json(payload["reason_refs"], "retirement reason_refs"))
+
+
+# Each item list of a proposal: its element decoder and the identity it is ordered by.
+_PROPOSAL_ITEMS: Mapping[str, tuple[Any, Any]] = MappingProxyType({
+    "frames": (_frame, lambda item: item.frame_id),
+    "assets": (_asset, lambda item: item.asset_id),
+    "semantic_bindings": (_binding, lambda item: item.binding_id),
+    "operations": (_operation, lambda item: item.op_id),
+    "assemblies": (_assembly, lambda item: item.assembly_id),
+    "revisions": (_revision, lambda item: item.object_id),
+    "retirements": (_retirement, lambda item: item.object_id),
+})
+
+
+def _exact(
+    value: Mapping[str, Any],
+    fields: set[str],
+    label: str,
+    *,
+    optional: frozenset[str] = frozenset(),
+) -> None:
+    actual = set(value)
+    if actual != fields | (actual & optional):
+        missing = sorted(fields - actual)
+        unexpected = sorted(actual - fields - optional)
+        raise GeometryProgramError(
+            f"{label}: field mismatch; missing={missing}; "
+            f"unexpected={unexpected}"
+        )
+
+
+def _strings_from_json(value: object, field: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise TypeError(f"{field} must be a list")
+    if any(not isinstance(item, str) or not item for item in value):
+        raise GeometryProgramError(
+            f"{field} contains invalid text"
+        )
+    if len(value) != len(set(value)):
+        raise GeometryProgramError(
+            f"{field} contains duplicate values"
+        )
+    return tuple(sorted(value))
+
+
+def _decode_list(
+    value: object,
+    decoder: Any,
+    field: str,
+    *,
+    errors: list[Exception] | None = None,
+) -> tuple[Any, ...]:
+    if not isinstance(value, list):
+        raise TypeError(f"{field} must be a list")
+    decoded = []
+    for index, item in enumerate(value):
+        try:
+            decoded.append(decoder(item))
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            wrapped = GeometryProgramError(f"{field}[{index}]: {exc}")
+            if errors is None:
+                raise wrapped from exc
+            wrapped.__cause__ = exc
+            errors.append(wrapped)
+    return tuple(decoded)
+
+
+def _decode_sorted_list(
+    value: object,
+    decoder: Any,
+    field: str,
+    key: Any,
+    *,
+    errors: list[Exception] | None = None,
+) -> tuple[Any, ...]:
+    return tuple(
+        sorted(_decode_list(value, decoder, field, errors=errors), key=key)
+    )
+
+
+# ---------------------------------------------------------------- analytic bounds
+#
+# What a realization of a compiled program must measure, predicted from the
+# program alone, and the placement readers every executor shares with that
+# prediction: an operation's parameters, a profile lifted onto its datum-bound
+# base level and a revolve's end sections. Construction checks a cut against
+# the same prediction the CAD receipts are compared with.
+
+
+class GeometryBoundsError(GeometryProgramError):
+    """An operation whose placement or bounds the analytic replay cannot determine."""
+
+
+class DifferenceBoundsError(GeometryBoundsError):
+    """A ``boolean_difference`` whose bounds ``expected_object_bounds`` cannot determine analytically.
+
+    ``disjoint`` is true when a void's bounds miss the base's, so the difference
+    would remove nothing; otherwise the voids can alter an extremum of the base.
+    """
+
+    def __init__(self, message: str, *, disjoint: bool) -> None:
+        super().__init__(message)
+        self.disjoint = disjoint
+
+
+#: The operation kinds ``expected_object_bounds`` replays. A CAD translation
+#: emits these and no other: an object of another kind would have no bounds
+#: to be checked against.
+ANALYTIC_OPERATION_KINDS: frozenset[str] = frozenset(
+    {
+        "planar_surface",
+        "solid",
+        "revolve",
+        "extrusion",
+        "loft",
+        "boolean_union",
+        "boolean_difference",
+        "boolean_intersection",
+        "array",
+        "radial_array",
+        "transform",
+        "curve",
+    }
+)
+
+
+def lift_to_base_level(points, params: Mapping[str, object], op_id: str):
+    """Apply an optional datum-bound ``base_level`` to profile points.
+
+    ``base_level`` (P090, M096) is the elevation the profile's lowest
+    point must sit on. Elevation is the program's Y axis. The profile
+    keeps its shape; only its elevation derives from the datum, so a
+    dependent object never restates the level it sits on.
+    """
+
+    if "base_level" not in params:
+        if "base_offset" in params:
+            raise GeometryBoundsError(
+                f"{op_id}: base_offset without a datum-bound base_level restates an elevation"
+            )
+        return [tuple(float(v) for v in p) for p in points]
+    raw = params["base_level"]
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw):
+        raise GeometryBoundsError(f"{op_id}: base_level must be a finite number")
+    # P092: an element's own vertical dimension above its storey (a sill
+    # height, a frame seat) rides on the datum instead of restating it.
+    offset = params.get("base_offset", 0.0)
+    if isinstance(offset, bool) or not isinstance(offset, (int, float)) or not math.isfinite(offset):
+        raise GeometryBoundsError(f"{op_id}: base_offset must be a finite number")
+    lifted = [tuple(float(v) for v in p) for p in points]
+    if not lifted:
+        return lifted
+    shift = float(raw) + float(offset) - min(p[1] for p in lifted)
+    return [(p[0], p[1] + shift, p[2]) for p in lifted]
+
+
+def revolve_parameters(params: Mapping[str, object], op_id: str):
+    """The declared circular end sections, placed on their optional storey datum."""
+
+    a0, a1 = lift_to_base_level((params["axis_start"], params["axis_end"]), params, op_id)
+    length = math.dist(a0, a1)
+    if not math.isfinite(length) or length <= 0.0:
+        raise GeometryBoundsError(f"revolve {op_id} requires a finite non-zero axis")
+    # Retained circular-section realization has a 0.01 minimum end radius.
+    # All executors and the predictor use it identically.
+    radii = tuple(max(float(params[name]), 0.01) for name in ("start_radius", "end_radius"))
+    if any(not math.isfinite(radius) for radius in radii):
+        raise GeometryBoundsError(f"revolve {op_id} requires finite radii")
+    return a0, a1, *radii
+
+
+def _is_axis_aligned_box(profile, vector) -> bool:
+    """True for a rectangular, axis-aligned, level profile extruded along Y."""
+
+    if len(profile) != 4 or len(vector) != 3:
+        return False
+    if float(vector[0]) != 0.0 or float(vector[2]) != 0.0 or float(vector[1]) == 0.0:
+        return False
+    ys = {round(float(p[1]), 12) for p in profile}
+    xs = sorted({round(float(p[0]), 12) for p in profile})
+    zs = sorted({round(float(p[2]), 12) for p in profile})
+    if len(ys) != 1 or len(xs) != 2 or len(zs) != 2:
+        return False
+    corners = {(x, z) for x in xs for z in zs}
+    return {(round(float(p[0]), 12), round(float(p[2]), 12)) for p in profile} == corners
+
+
+def operation_parameters(operation) -> dict[str, object]:
+    """An operation's parameters as the JSON values they state, by name."""
+
+    decoded = {}
+    for parameter in operation.parameters:
+        decoded[parameter.name] = json.loads(parameter.value_json)
+    return decoded
+
+
+def _rotate_about_vertical(point, center, degrees):
+    theta = math.radians(degrees)
+    c, s = math.cos(theta), math.sin(theta)
+    x, z = point[0] - center[0], point[2] - center[2]
+    return (
+        center[0] + x * c + z * s,
+        point[1],
+        center[2] + z * c - x * s,
+    )
+
+
+def expected_object_bounds(program) -> dict[str, dict]:
+    """Analytic per-object bounds the CAD realization must reproduce.
+
+    The replay tracks each object's extreme points through the same
+    operation semantics the translator emits, so an equivalence receipt
+    can compare CAD-measured bounding boxes against program-derived ones
+    without trusting either side's renderer.
+    """
+
+    proposal = program.proposal
+    operations = {op.op_id: op for op in proposal.operations}
+    points: dict[str, list] = {}
+    counts: dict[str, int] = {}
+    boxes: set[str] = set()   # objects known to be axis-aligned boxes
+    actual: set[str] = set()  # objects whose points lie on the object itself (vertices), not on its box
+    for op_id in program.operation_order:
+        operation = operations[op_id]
+        kind = operation.kind.value
+        if kind not in ANALYTIC_OPERATION_KINDS:
+            continue
+        params = operation_parameters(operation)
+        out = operation.output_object_ids[0]
+        ins = list(operation.input_object_ids)
+        if kind == "curve":
+            if not bool(params.get("retain_for_inspection", False)):
+                continue
+            points[out] = lift_to_base_level(params["points"], params, op_id)
+            counts[out] = 1
+            actual.add(out)
+        elif kind == "solid":
+            o, s = params["origin"], params["size"]
+            points[out] = [
+                (o[0] + dx * s[0], o[1] + dy * s[1], o[2] + dz * s[2])
+                for dx in (0, 1)
+                for dy in (0, 1)
+                for dz in (0, 1)
+            ]
+            counts[out] = 1
+            boxes.add(out)
+            actual.add(out)
+        elif kind == "planar_surface":
+            points[out] = lift_to_base_level(params["profile"], params, op_id)
+            counts[out] = 1
+            actual.add(out)
+        elif kind == "extrusion":
+            profile = lift_to_base_level(params["profile"], params, op_id)
+            vector = params["vector"]
+            points[out] = [tuple(p) for p in profile] + [
+                (p[0] + vector[0], p[1] + vector[1], p[2] + vector[2])
+                for p in profile
+            ]
+            counts[out] = 1
+            if _is_axis_aligned_box(profile, vector):
+                boxes.add(out)
+            actual.add(out)
+        elif kind == "revolve":
+            a0, a1, r0, r1 = revolve_parameters(params, op_id)
+            axis = [float(a1[i]) - float(a0[i]) for i in range(3)]
+            axis_length = math.sqrt(sum(value * value for value in axis))
+            if not math.isfinite(axis_length) or axis_length <= 0.0:
+                raise GeometryBoundsError(
+                    f"revolve {op_id} requires a finite non-zero axis"
+                )
+            unit_axis = [value / axis_length for value in axis]
+            pts = []
+            for level, radius in (
+                (a0, r0),
+                (a1, r1),
+            ):
+                projected_radii = [
+                    radius * math.sqrt(max(0.0, 1.0 - component * component))
+                    for component in unit_axis
+                ]
+                pts.extend(
+                    tuple(
+                        float(level[axis_index]) + sign * projected_radii[axis_index]
+                        for axis_index in range(3)
+                    )
+                    for sign in (-1.0, 1.0)
+                )
+            points[out] = pts
+            counts[out] = 1
+        elif kind == "loft":
+            points[out] = [
+                tuple(p)
+                for p in lift_to_base_level(params["profiles"], params, op_id)
+            ]
+            counts[out] = 1
+            actual.add(out)
+        elif kind == "boolean_union":
+            points[out] = [p for i in ins for p in points[i]]
+            counts[out] = 1
+            if all(i in actual for i in ins): actual.add(out)
+        elif kind == "boolean_difference":
+            base = sorted(ins)[int(params.get("base_index", 0))]
+            base_min, base_max = _point_bounds(points[base])
+            cutters = {
+                cutter: _point_bounds(points[cutter])
+                for cutter in ins if cutter != base
+            }
+            for cutter, (cutter_min, cutter_max) in cutters.items():
+                if any(cutter_max[axis] <= base_min[axis] or cutter_min[axis] >= base_max[axis]
+                       for axis in range(3)):
+                    raise DifferenceBoundsError(
+                        f"boolean difference {op_id}: void {cutter} removes nothing from {base}; "
+                        "their bounds do not overlap",
+                        disjoint=True,
+                    )
+            # A base point strictly outside every void's closed bounds survives
+            # the cut. Check voids together: separate cuts may jointly remove a
+            # face that either cut alone would preserve.
+            retained = [
+                point for point in points[base]
+                if all(any(point[axis] < lo[axis] or point[axis] > hi[axis]
+                           for axis in range(3))
+                       for lo, hi in cutters.values())
+            ]
+            # Keep all plan positions as well as the six current extrema:
+            # radial_array later rotates this projection about vertical.
+            # A wall-end door with a header satisfies both conditions.
+            plan_positions = {(point[0], point[2]) for point in retained}
+            keeps_every_extreme = (
+                bool(retained)
+                and _point_bounds(retained) == (base_min, base_max)
+                and all((point[0], point[2]) in plan_positions for point in points[base])
+            )
+            if base in actual and keeps_every_extreme:
+                pass
+            elif base in boxes:
+                raise DifferenceBoundsError(
+                    "boolean difference bounds are not analytically "
+                    f"determined for {op_id}: cutters can alter a base extremum "
+                    "or its vertical-axis rotation",
+                    disjoint=False,
+                )
+            else:
+                # Other shapes can hold an extremum at a single point: accept only
+                # voids strictly inside the base's box.
+                for cutter, (cutter_min, cutter_max) in cutters.items():
+                    if not all(base_min[axis] < cutter_min[axis] and cutter_max[axis] < base_max[axis]
+                               for axis in range(3)):
+                        raise DifferenceBoundsError(
+                            "boolean difference bounds are not analytically "
+                            f"determined for {op_id}: void {cutter} can alter a base extremum of {base}",
+                            disjoint=False,
+                        )
+            points[out] = list(points[base])
+            counts[out] = 1
+            if base in actual and len(retained) == len(points[base]):
+                actual.add(out)
+        elif kind == "boolean_intersection":
+            lo = [max(min(c[axis] for c in points[i]) for i in ins)
+                  for axis in range(3)]
+            hi = [min(max(c[axis] for c in points[i]) for i in ins)
+                  for axis in range(3)]
+            points[out] = [
+                (lo[0], lo[1], lo[2]),
+                (hi[0], hi[1], hi[2]),
+            ]
+            counts[out] = 1
+        elif kind == "array":
+            count, step = int(params["count"]), params["step"]
+            points[out] = [
+                (p[0] + step[0] * i, p[1] + step[1] * i, p[2] + step[2] * i)
+                for i in range(count)
+                for p in points[ins[0]]
+            ]
+            counts[out] = count * counts[ins[0]]
+            if ins[0] in actual: actual.add(out)
+        elif kind == "radial_array":
+            count = int(params["count"])
+            center = params["center"]
+            angle = float(params["angle_step_degrees"])
+            start = float(params.get("start_angle_degrees", 0.0))
+            points[out] = [
+                _rotate_about_vertical(p, center, start + i * angle)
+                for i in range(count)
+                for p in points[ins[0]]
+            ]
+            counts[out] = count * counts[ins[0]]
+            if ins[0] in actual: actual.add(out)
+        elif kind == "transform":
+            points[out] = list(points[ins[0]])
+            counts[out] = counts[ins[0]]
+            if ins[0] in actual: actual.add(out)
+    delivered = set(delivered_object_ids(proposal))
+    bounds: dict[str, dict] = {}
+    for object_id, pts in points.items():
+        if object_id not in delivered:
+            continue
+        bounds[object_id] = {
+            "bbox_min": [min(p[axis] for p in pts) for axis in range(3)],
+            "bbox_max": [max(p[axis] for p in pts) for axis in range(3)],
+            "brep_count": counts[object_id],
+        }
+    return bounds
+
+
+def _point_bounds(
+    values: list[tuple[float, float, float]],
+) -> tuple[list[float], list[float]]:
+    if not values:
+        raise GeometryBoundsError("analytic bounds require at least one point")
+    return (
+        [min(point[axis] for point in values) for axis in range(3)],
+        [max(point[axis] for point in values) for axis in range(3)],
+    )

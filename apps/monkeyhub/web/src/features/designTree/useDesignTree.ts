@@ -135,7 +135,7 @@ const readInOrder = new WeakSet<DesignTreeSource>();
  *
  * Given the source read last, a refresh stops at the first view the runtime
  * answers as unchanged (304: the client hands back the same object). Each
- * view's tag carries the project's read token (0a, transport/conditional.py),
+ * view's tag carries the project's read token (0a, api/conditional.py),
  * so an unchanged Worktree Graph means an unchanged project, and an unchanged
  * working source means unchanged histories on every line. That holds only for
  * views read after the one that vouches for them, so a refresh asks for them

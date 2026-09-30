@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from archflow.adapters import occt_backend
 from archflow.project.refs import record_ref_from_uri
 from project_runtime.application.artifacts import ModelSource
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.drawing_dimensions import (
     list_plan_dimension_intents, resolve_plan_dimensions,
 )

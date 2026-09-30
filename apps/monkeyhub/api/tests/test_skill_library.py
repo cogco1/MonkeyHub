@@ -28,7 +28,7 @@ from fastapi.testclient import TestClient
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.main import create_app as create_studio
 from project_runtime.settings import StudioSettings
-from monkeyhub_api import chat, skill_plugins
+from monkeyhub_api.chat import skill_plugins, store as chat
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest
 from monkeyhub_api.settings.models import ApplicationSettingsDto

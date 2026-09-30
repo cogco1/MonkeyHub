@@ -227,7 +227,7 @@ class WhyTests(CompareTestCase):
 
     def test_a_long_chain_names_its_first_and_last_steps_and_counts_the_rest(self) -> None:
         # #404 item 13: a Manual Sync chain of 20 steps does not become a 20-sentence why.
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         from project_runtime.application.compare import compare_runs, why_of
 
         steps = tuple(f"set height to {0.1 * index:.1f}" for index in range(1, 21))

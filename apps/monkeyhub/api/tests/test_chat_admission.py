@@ -29,7 +29,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from monkeyhub_api import chat
+from monkeyhub_api.chat import store as chat
 from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, HubFailure
 
 TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}

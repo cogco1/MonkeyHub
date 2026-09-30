@@ -20,8 +20,8 @@ from fastapi.testclient import TestClient
 
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.refs import record_ref_from_uri
-from project_runtime.application.authentication import LOCAL_ACTOR_ID, ORIGIN_STUDIO, ActorAttribution
-from project_runtime.application.binding import bound_project
+from project_runtime.authentication import LOCAL_ACTOR_ID, ORIGIN_STUDIO, ActorAttribution
+from project_runtime.binding import bound_project
 from project_runtime.application.decisions import (
     DECISIONS_RUN_ID,
     RECIPE_EXPORT_SCHEMA,
@@ -34,7 +34,7 @@ from project_runtime.application.decisions import (
 )
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.errors import StudioError
+from project_runtime.errors import StudioError
 
 from .support import PROJECT_ID, make_project
 from .test_decisions import DecisionFixture, document_source, message

@@ -80,7 +80,7 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 | `packages/archflow/src/archflow/project/`、`contracts/`、共享 `state/` 与 `semantics/` | 留在 ArchFlow。图纸可引用建筑事实；图纸排版、字形和笔迹不进入建筑 StateRecord。状态中的建模专用表示需按实际消费者单独划分，不能整目录搬走。 |
 | `packages/monkeyarch/src/monkeyarch/` 的 `capabilities/`、`compilers/geometry.py`、`runtime/project_runner.py` | 3D 生成、求解、重建语义、关系检查、编译和运行。原 `archflow` 中的对应生产文件已退役，调用方直接导入新位置。 |
 | `packages/monkeydiagram/src/monkeydiagram/` 的 `drawing_elevation.py`、`drawing_svg.py` | 图纸来源核验、模型轴立面投影编排、SVG／PNG 表达。两位既有 owner 保持原 API 和记录语义，不复制 renderer。 |
-| `packages/archflow/src/archflow/state/geometry_program.py` 的 `CompiledGeometryProgram` 等值 | 三维编译器与共享 CAD 执行器共用的结果契约。数据值留在 ArchFlow，生成这些值的编译算法归 MonkeyArch。 |
+| `packages/archflow/src/archflow/state/geometry_program.py` 的 `CompiledGeometryProgram` 等值 | 三维编译器与共享 CAD 执行器共用的结果契约。数据值、已保留记录的读取器（`load_compiled_geometry_program`）和解析包围盒（`expected_object_bounds`）留在 ArchFlow，读取程序或预测包围盒不必导入 MonkeyArch 或 CAD 代码；生成这些值的编译算法归 MonkeyArch。 |
 | `adapters/cad_execution.py`、`three_dm_inspector.py`、`ports/model.py` | 已被两条链使用的技术部分留在 ArchFlow。模型生成与二维投影的领域规则分别归各工作流；按函数职责处理混合文件，不整份复制。 |
 | Web 的 `ThreeDmViewport`、Program／Options、模型 `Annotate`／`useModelAnnotations` | 归 `workspaces/monkeyarch/`；通用三维显示器若有实际共享消费者，可以继续共用。 |
 | Web 的 `DocumentCanvas`、`DocumentTextLayer`、`documentInk`、`documentVisualInput`、`useDocumentAnnotations` | 已在 `workspaces/monkeydiagram/`。模型修改提交仍是显式交给 MonkeyArch 的动作，不能误称为重新出图。 |
@@ -138,10 +138,12 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
 ```text
 <source-root>/
 ├─ apps/monkeyhub/                  产品：api/ web/ desktop/ installer/ assets/ run.py launch-hub.ps1
+│  ├─ api/monkeyhub_api/            Hub 后端：chat/ runtime/ settings/ 三组；只有一个文件的组（main、updates、
+│  │                                fabrication、computer_tools、project_archive）与共用的 models 留在包根
 │  └─ web/                          单一源根：src/ test/ scripts/ tools/ assets/
-├─ services/project-runtime/        src/project_runtime/  tests/  README.md  requirements.txt  pyproject.toml
+├─ services/project-runtime/        src/project_runtime/{api/{routes,dto},application,render_adapters}  tests/  README.md  requirements.txt  pyproject.toml
 ├─ packages/
-│  ├─ archflow/                     src/archflow/{contracts,project,state,semantics,validation,submission,ports,relations,adapters}
+│  ├─ archflow/                     src/archflow/{contracts,project,state,semantics,validation,submission,ports,adapters}
 │  ├─ monkeyarch/                   src/monkeyarch/（第一轮保持原内部结构）
 │  ├─ monkeydiagram/                src/monkeydiagram/
 │  ├─ monkeymonitor/  monkeycontrol/  monkeyfab/    src/<包名>/
@@ -216,7 +218,7 @@ Project Runtime 自 #491 起按仓库路径 `services/project-runtime/src/projec
 | --- | --- |
 | `repository_root_entries` | 根目录的完整清单：第 6 节的目录加上根文件。`ROOT_ENTRY` 按 `git ls-files` 检查，被 git 忽略的本地文件不算；清单外的条目都是 finding，搬回根目录的包也一样 |
 | `python_source_roots` | 模块导入名从哪一级目录开始算，当前是 `.`、`services/project-runtime/src`、`apps/monkeyhub/api`、`packages/monkeyfab/src`、`packages/monkeydiagram/src`、`packages/archflow/src`、`packages/monkeyarch/src`、`packages/monkeymonitor/src`、`packages/monkeycontrol/src`。这是唯一的清单：本地开发的各入口按检出读它（第 6 节）。新的 src 布局包加上自己的 `packages/<包名>/src`；含受检 Python 的 `src` 目录不在表里时报 `POLICY_PATH_MISSING` |
-| `checked_source_roots`、`forbidden_layer_imports` 的 `source` | `packages/` 下的包：检查根写包根 `packages/<包名>`，包的层规则 `source` 写 `packages/<包名>/src/<包名>`，`packages/<包名>/tests` 另有一条不导入根 `tests`、`labs`、`archive` 的规则，也和根 `tests/` 一样列入 `shared_write_scope`。Runtime 是服务：检查根和层规则的 `source` 都写服务根 `services/project-runtime`，包与它的 `tests/` 同受一条规则约束，`services/project-runtime/tests/` 列入 `shared_write_scope`。路径不存在、检查根下没有 Python 源码、或层规则匹配不到任何受检文件时报 `POLICY_PATH_MISSING`；`allowed_write_sites` 与 `allowed_authority_symbols` 的文件缺失时 archcheck 直接以错误退出 |
+| `checked_source_roots`、`forbidden_layer_imports` 的 `source` | `packages/` 下的包：检查根写包根 `packages/<包名>`，包的层规则 `source` 写 `packages/<包名>/src/<包名>`，`packages/<包名>/tests` 另有一条不导入根 `tests`、`labs`、`archive` 的规则，也和根 `tests/` 一样列入 `shared_write_scope`。Runtime 是服务：检查根和层规则的 `source` 都写服务根 `services/project-runtime`，包与它的 `tests/` 同受一条规则约束，`services/project-runtime/tests/` 列入 `shared_write_scope`；包内分层（#518）的规则写到层目录，如 `services/project-runtime/src/project_runtime/application` 不导入 `project_runtime.api.routes`。`source` 为 `packages` 的一条规则让每个包和包自己的测试都不导入 `project_runtime`。相对导入先按所在文件的导入名解析成完整模块名再比对，`from x import y` 按 `x` 和 `x.y` 两个名字比对。路径不存在、检查根下没有 Python 源码、或层规则匹配不到任何受检文件时报 `POLICY_PATH_MISSING`；`allowed_write_sites` 与 `allowed_authority_symbols` 的文件缺失时 archcheck 直接以错误退出 |
 | `forbidden_layer_imports` 的 `targets` | 写导入名，不写路径。目标是 `python_source_roots` 下的模块或它上面的包，例如 `monkeyarch.runtime`、`archflow`；以本仓顶层包开头的名字只能这样解析，残留的 import 不能让已经删掉的模块继续算数。其他名字是第三方库，要有受检文件实际导入它，例如 `shapely`、`OCP`。另一类是 Git 忽略的目录，例如 `archive/`：退役 lane 只留在部分检出里，规则防止已提交的代码导入它。解析不了的目标报 `POLICY_TARGET_MISSING`（#511）；模块搬走或删除时，同一个 PR 把目标改到新位置或删掉 |
 
 module registry 里的路径同样必须存在：`owner_path`（`REGISTRY_OWNER_MISSING`）、`tests`（`REGISTRY_TEST_MISSING`），

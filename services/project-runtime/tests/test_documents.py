@@ -26,7 +26,7 @@ from project_runtime.application.artifacts import (
     list_documents,
     save_document,
 )
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 

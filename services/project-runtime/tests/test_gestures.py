@@ -18,7 +18,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.gestures import direction_words
 from project_runtime.application.intent import merge_keep
 from project_runtime.application.intent_agent import (

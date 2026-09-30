@@ -7,7 +7,7 @@ import unittest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_LOCAL_DRAFT
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyhub_api.runtime import ProjectRuntimeManager
+from monkeyhub_api.runtime.manager import ProjectRuntimeManager
 
 
 OLD = "2020-01-01T00:00:00+00:00"

@@ -20,7 +20,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import (
     Entity, StateRecordEditKind, StateRecordOperator, compile_parameter_locks,
 )
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.candidate import run_operator
 from project_runtime.application.projection import project_state
 from project_runtime.main import create_app

@@ -26,9 +26,9 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_SKILL
 from archflow.project.repository import ProjectRepositoryError
 
-from ..transport.errors import StudioError
-from .authentication import ActorAttribution
-from .binding import ProjectBinding, retained_sources
+from ..errors import StudioError
+from ..authentication import ActorAttribution
+from ..binding import ProjectBinding, retained_sources
 
 SKILLS_RUN_ID = "studio-skills"
 SKILL_SCHEMA = "StudioSkill@1"

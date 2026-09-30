@@ -13,7 +13,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.utils import ImageReader
 
-from ..transport.errors import StudioError
+from ..errors import StudioError
 from .artifacts import document_bytes
 from .boards import BoardExport, cached_page
 from .publications import read_publication

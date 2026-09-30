@@ -21,7 +21,7 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
   // as the runtime's working position is; a project not named here keeps its fixed head.
   const headsFollowDraft = new Set();
   // #363: the views a runtime answers conditionally, each tagged by the project's whole retained
-  // state, the path and the query, as transport/conditional.py tags them by the project's read token.
+  // state, the path and the query, as api/conditional.py tags them by the project's read token.
   const conditional = new Set(["/api/design-history", "/api/worktrees", "/api/artifacts", "/api/documents",
     "/api/working-source", "/api/board", "/api/render/jobs"]);
   const notModified = [];

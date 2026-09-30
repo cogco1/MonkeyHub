@@ -26,8 +26,8 @@ from monkeycontrol.record import NAME as RECORDING_NAME
 from monkeycontrol.runtime import RuntimeRefusal
 from monkeycontrol.trace import ResolvedTarget, WindowInfo, build_receipt
 
-from monkeyhub_api import chat
-from monkeyhub_api.chat_trace import HubTurnObserver
+from monkeyhub_api.chat import store as chat
+from monkeyhub_api.chat.turn_trace import HubTurnObserver
 from monkeyhub_api.computer_tools import POLICY_PATH, ComputerService, read_policy, tool_definitions
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import HubFailure

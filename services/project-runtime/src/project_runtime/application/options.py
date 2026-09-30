@@ -61,8 +61,8 @@ from archflow.state.state_record import (
     volume_boxes_of,
 )
 
-from ..transport.errors import StudioError
-from .binding import ProjectBinding
+from ..errors import StudioError
+from ..binding import ProjectBinding
 from .artifacts import ModelSource, require_model_source
 from .projection import project_state
 

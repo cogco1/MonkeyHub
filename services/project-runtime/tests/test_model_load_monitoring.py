@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi.testclient import TestClient
 
 from project_runtime.main import create_app
-from project_runtime.application.monitoring import MonitoredCompiler
+from project_runtime.application.monitored_compiler import MonitoredCompiler
 from project_runtime.settings import StudioSettings
 from monkeymonitor.store import UsageLog
 
@@ -113,7 +113,7 @@ class ModelLoadMonitoringTests(unittest.TestCase):
         self.assertIn("model_ingest.inspect", failed)
         self.assertNotIn("model_ingest.persist", {row.phase for row in rows})
         with patch.object(self.app.state.monitor.store, "append", side_effect=OSError("offline")):
-            with self.assertLogs("project_runtime.application.monitoring", level="WARNING"):
+            with self.assertLogs("project_runtime.monitoring", level="WARNING"):
                 response = self.model_upload()
         self.assertEqual(response.status_code, 201, response.text)
         # A failed import released the registration lock and retained no bad source.
@@ -158,7 +158,7 @@ class ModelLoadMonitoringTests(unittest.TestCase):
 
     def test_disabled_or_broken_logger_does_not_change_the_operation(self):
         with patch.object(self.app.state.monitor.store, "append", side_effect=OSError("offline")) as append:
-            with self.assertLogs("project_runtime.application.monitoring", level="WARNING"):
+            with self.assertLogs("project_runtime.monitoring", level="WARNING"):
                 result = self.client.post("/api/events/model-load", json=self.payload)
             self.assertEqual(result.status_code, 200)
             self.assertEqual(result.json(), {"recorded": False})
@@ -286,7 +286,7 @@ class ExternalModelImportTests(unittest.TestCase):
     def test_empty_project_retains_external_revisions_without_design_state(self):
         import base64
         from .support import make_empty_project
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             repository = make_empty_project(root)

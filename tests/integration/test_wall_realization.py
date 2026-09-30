@@ -19,7 +19,7 @@ import math
 import unittest
 from dataclasses import replace
 
-from archflow.adapters.cad_program import expected_object_bounds
+from archflow.state.geometry_program import expected_object_bounds
 from archflow.state.state_record import project_grids_of, project_levels_of
 from monkeyarch.capabilities.element_producers import (
     ElementProducerError,

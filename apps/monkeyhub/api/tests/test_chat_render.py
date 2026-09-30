@@ -38,7 +38,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.application.render_contract import RenderCapability, RenderOutput
 from project_runtime.main import create_app as studio_app
 from project_runtime.settings import StudioSettings
-from monkeyhub_api import chat
+from monkeyhub_api.chat import store as chat
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, ChatPresentationBindRequest, HubFailure
 

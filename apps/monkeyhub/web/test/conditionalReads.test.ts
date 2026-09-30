@@ -20,7 +20,7 @@ async function harness(t: TestContext) {
 }
 
 /**
- * A runtime whose views are tagged by one project version, as transport/conditional.py tags them by its read token.
+ * A runtime whose views are tagged by one project version, as api/conditional.py tags them by its read token.
  * A read answers the project as it was when the read arrived; a write changes it when it is let through.
  */
 function runtime(t: TestContext, answer: (path: string, query: URLSearchParams) => unknown) {

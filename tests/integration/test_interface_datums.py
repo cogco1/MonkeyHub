@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import unittest
 
-from monkeyarch.capabilities.geometry_proposal import (
-    load_compiled_geometry_program,
-)
 from monkeyarch.compilers.geometry import (
     GeometryCompileStatus,
     GeometryIssueCode,
@@ -19,6 +16,7 @@ from archflow.state.geometry_program import (
     InterfaceDatum,
     InterfaceDatumKind,
     LengthUnit,
+    load_compiled_geometry_program,
     verify_datum_directions,
 )
 from tests.integration.test_geometry_compiler import COMMITMENT, _codes, _proposal, _state
@@ -391,6 +389,21 @@ class CompiledProgramReloadTests(unittest.TestCase):
         self.assertEqual(
             reloaded.program_digest, plain.program.program_digest
         )
+
+    def test_a_record_that_is_not_the_exact_program_is_refused(self) -> None:
+        rendered = compile_geometry_program(
+            self.state,
+            self.proposal,
+            active_commitment_refs=(COMMITMENT,),
+        ).program.to_dict()
+        for changed, message in (
+            ({**rendered, "schema": "CompiledGeometryProgram@9"}, "schema is unsupported"),
+            ({key: item for key, item in rendered.items() if key != "objects"}, r"field mismatch; missing=\['objects'\]"),
+            ({**rendered, "proposal_digest": "0" * 64}, "proposal digest changed"),
+            ({**rendered, "execution_authority": True}, "not an exact canonical record"),
+        ):
+            with self.subTest(message=message), self.assertRaisesRegex(GeometryProgramError, message):
+                load_compiled_geometry_program(changed)
 
 
 if __name__ == "__main__":

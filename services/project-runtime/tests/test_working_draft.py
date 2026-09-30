@@ -131,7 +131,7 @@ class WorkingDraftTests(CandidateTestCase):
         # GH-293: a candidate that starts right after Sync records its execution
         # in the working document. The autosave that read the position just
         # before still lands; only its own source guard can refuse it.
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         repository = bound_project(self.app.state).repository
         draft = {"source": self.source(), "commands": [{"kind": "translate", "offset": [1, 0, 0]}], "attempt": None}
         first = self.local(None, draft)
@@ -174,7 +174,7 @@ class WorkingDraftTests(CandidateTestCase):
         import base64
         from pathlib import Path
         from project_runtime.application.artifacts import register_model_asset
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         content = base64.b64encode((Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes()).decode()
         for generated in (True, False):
             accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")

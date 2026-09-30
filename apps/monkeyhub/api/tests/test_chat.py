@@ -27,7 +27,7 @@ source_roots.put_first(ROOT)
 from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyhub_api import chat, skill_plugins
+from monkeyhub_api.chat import skill_plugins, store as chat
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import (
     AppStatus, ChatCreateRequest, ChatDesignContext, ChatMessage, ChatPostRequest, HubFailure,
@@ -221,7 +221,7 @@ sys.path.insert(0, str(root))
 from tools.dev import source_roots
 source_roots.put_first(root)
 
-from monkeyhub_api import chat
+from monkeyhub_api.chat import store as chat
 from monkeyhub_api.models import ChatCreateRequest, ChatDesignContext, ChatPostRequest
 
 commands = {name: (sys.executable, str(fake), str(log)) for name in ("codex", "claude")}
@@ -3708,7 +3708,7 @@ class ChatTests(unittest.TestCase):
 
         self.enterContext(patch.object(chat, "_request_json", side_effect=request))
         self.enterContext(patch.object(chat, "_SERVICE_OPENER")).open.side_effect = open_request
-        self.enterContext(patch("project_runtime.routes.intents.visual_provider", return_value=Provider()))
+        self.enterContext(patch("project_runtime.api.routes.intents.visual_provider", return_value=Provider()))
         return session, page, sent
 
     def say(self, session, content):
@@ -4333,7 +4333,7 @@ class ChatTests(unittest.TestCase):
                         f"the CLI was given a fresh limit beside the preparation ({quick=:.2f} {slow=:.2f})")
 
     def test_the_acp_adapter_keeps_its_own_inactivity_interval(self):
-        from monkeyhub_api import acp_session as adapter
+        from monkeyhub_api.chat import acp_session as adapter
 
         session = self.create()
         self.store._sessions[session.id].transport = "acp"
@@ -4396,7 +4396,7 @@ class AcpCommandTests(unittest.TestCase):
             bundled_node = root / "_runtime/node/node.exe"
             bundled_node.parent.mkdir(parents=True)
             bundled_node.touch()
-            with patch.object(chat, "__file__", str(hub / "api/monkeyhub_api/chat.py")), \
+            with patch.object(chat, "__file__", str(hub / "api/monkeyhub_api/chat/store.py")), \
                     patch.object(chat.importlib.util, "find_spec", return_value=object()), \
                     patch.object(chat.shutil, "which", return_value=None) as lookup:
                 self.assertEqual(chat._codex_acp_command(), (str(bundled_node), str(adapter)))
@@ -4410,7 +4410,7 @@ class AcpCommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             hub = Path(temporary) / "apps/monkeyhub"
             adapter = hub / "node_modules/@agentclientprotocol/codex-acp/dist/index.js"
-            with patch.object(chat, "__file__", str(hub / "api/monkeyhub_api/chat.py")), \
+            with patch.object(chat, "__file__", str(hub / "api/monkeyhub_api/chat/store.py")), \
                     patch.object(chat.shutil, "which", return_value="node.exe"), \
                     patch.object(chat.importlib.util, "find_spec", return_value=object()) as sdk:
                 self.assertIsNone(chat._codex_acp_command())

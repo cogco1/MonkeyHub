@@ -37,7 +37,7 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from archflow.adapters.cad_program import DifferenceBoundsError
+from archflow.state.geometry_program import DifferenceBoundsError
 from archflow.state.state_record import StateRecord
 from monkeyarch.capabilities.element_producers import (
     ElementProducerError,

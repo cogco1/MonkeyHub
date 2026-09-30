@@ -50,12 +50,12 @@ from archflow.project.record_kinds import DELIBERATION_EPISODE, STUDIO_WORKING_C
 from archflow.project.refs import ProjectRecordRef, RunRef
 
 from ..ports import StudioEventSink
-from ..transport.errors import StudioError
+from ..errors import StudioError
 from .clarification import property_in
 from .proposals import PERSISTENCE, Proposal, write_refs_of
 from .artifacts import ModelSource, require_model_source
-from .binding import retained_sources
-from .binding import ProjectBinding, record_kind
+from ..binding import retained_sources
+from ..binding import ProjectBinding, record_kind
 from .projection import project_state
 from .pick import COMPONENT_KEY, OBJECT_REF_KEY, OBJECT_REF_PREFIX, element_of_object
 from archflow.adapters.three_dm_inspector import inspect_three_dm_contents

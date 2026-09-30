@@ -29,7 +29,7 @@ from monkeycontrol.runtime import (
     process_name,
 )
 
-from . import chat
+from .chat import store as chat
 from .models import (
     ComputerActionRequest, ComputerInspectRequest, ComputerPolicy,
     ComputerRecordingRequest, HubFailure,

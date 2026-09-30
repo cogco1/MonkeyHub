@@ -62,7 +62,8 @@ from monkeydiagram.drawing_svg import clean_drawing
 from project_runtime.application.decisions import RECIPE_KEYS
 from project_runtime.application.drawing_plans import PAPER_DEFAULTS
 from project_runtime.application.intent_agent import CodexCompiler
-from project_runtime.application.monitoring import MonitoredCompiler, StudioMonitor
+from project_runtime.application.monitored_compiler import MonitoredCompiler
+from project_runtime.monitoring import StudioMonitor
 from project_runtime.application.visual_observation import (
     MAX_FACT_TEXT, MAX_FACTS, MAX_PRIOR, Criterion, EvidenceFrame, PriorFinding, ReviewReason, SourceRef,
     StudioModelVisualProvider, TaskClass, VisualObservation, VisualReviewBudget, VisualReviewRequest,

@@ -35,7 +35,7 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from project_runtime.application.binding import bound_project, record_kind
+from project_runtime.binding import bound_project, record_kind
 from project_runtime.application.candidate import execute_candidate, replay_candidate
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
@@ -51,7 +51,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.archive import restore_project_archive, write_project_archive
 from archflow.project.repository import FilesystemProjectRepository
 
-from project_runtime.transport.errors import StudioError
+from project_runtime.errors import StudioError
 
 from .support import (
     PROJECT_ID,
@@ -932,7 +932,7 @@ class CandidateContinuationTests(CandidateTestCase):
             self.assertEqual(response.json()["code"], "REFERENCE_BASE_STALE")
 
     def test_queued_continuation_rechecks_the_selected_record(self) -> None:
-        from project_runtime.application.jobs import JobRegistry
+        from project_runtime.jobs import JobRegistry
         self.app.state.jobs.shutdown()
         self.app.state.jobs = JobRegistry(self.app.state.events, max_workers=1)
         proposal = self.propose(**self.source_body)
@@ -1117,7 +1117,7 @@ class CandidateComponentRemovalTests(CandidateTestCase):
     def test_retained_seat_refs_cannot_fall_back_when_missing_or_bound_to_another_run(self) -> None:
         from archflow.project.refs import record_ref_from_uri
         from archflow.state.state_record import StateRecord, StateRecordEditKind, StateRecordOperator
-        from project_runtime.adapters.seats import candidate_seats, SeatsError
+        from project_runtime.application.seats import candidate_seats, SeatsError
 
         source_id, _ = self.source()
         source = StateRecord.from_dict(_run_state_record(self.repository, source_id))
@@ -1159,7 +1159,7 @@ class CandidateComponentRemovalTests(CandidateTestCase):
         from archflow.adapters.cad_execution import patch_composed_three_dm
         from archflow.adapters.three_dm_inspector import inspect_three_dm_contents
         from project_runtime.application.artifacts import ModelSource
-        from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
+        from archflow.state.geometry_program import load_compiled_geometry_program
         if not occt_backend.occt_available():
             self.skipTest("cadquery-ocp is not installed")
 

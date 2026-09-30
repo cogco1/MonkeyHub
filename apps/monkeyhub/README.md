@@ -127,7 +127,7 @@ Connect the external agent to the existing Hub stdio adapter, using the running 
 an existing project folder, and that agent's actual stable session ID:
 
 ```powershell
-python apps/monkeyhub/api/monkeyhub_api/chat.py --mcp --hub-url http://127.0.0.1:8790 --project-dir "<project folder>" --source-session-id "<source session id>" --title "Design review"
+python apps/monkeyhub/api/monkeyhub_api/chat/store.py --mcp --hub-url http://127.0.0.1:8790 --project-dir "<project folder>" --source-session-id "<source session id>" --title "Design review"
 ```
 
 This is an MCP server command to register in the external host, not a second Hub launcher.
