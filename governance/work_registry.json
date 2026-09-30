@@ -1,4 +1,51 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-516",
+      "status": "active",
+      "branch": "codex/integration-515-516-517",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-515-516-517",
+      "base_ref": "3dddfdc2cb6799a44d015617c2383b8302eea0e1",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "capabilities.wall_solver",
+        "capabilities.opening_solver",
+        "capabilities.reference_resolver",
+        "capabilities.relation_checks",
+        "state.massing_metrics",
+        "capabilities.domain_readiness",
+        "capabilities.discipline_seats",
+        "capabilities.declaration",
+        "capabilities.element_producers",
+        "capabilities.element_reindex",
+        "construction.script",
+        "compilers.geometry",
+        "capabilities.geometry_proposal",
+        "runtime.project_runner",
+        "project.record_kinds",
+        "project.version_ref_owners",
+        "state.record",
+        "state.stage_workflow",
+        "studio.artifacts",
+        "studio.binding",
+        "studio.candidate",
+        "studio.construction",
+        "studio.domains",
+        "studio.intent",
+        "studio.options",
+        "tools.open_stage_run",
+        "tools.reindex_project",
+        "tools.run_project",
+        "tools.verify_state_record"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/api/tests/test_chat.py",
+        "docs/architecture/repository-layout.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
