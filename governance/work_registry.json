@@ -1,35 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-486",
-      "status": "active",
-      "branch": "codex/486-hub-settings",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-486-hub-settings",
-      "base_ref": "17ac51d57162cf2eca3f37f4336f32d748656aa2",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "hub.shell",
-        "studio.shell",
-        "studio.intent"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/api/",
-        "apps/archflow-studio/api/archflow_studio_api/settings.py",
-        "apps/archflow-studio/api/archflow_studio_api/protocol.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/settings.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/settings.py",
-        "apps/monkeyhub/web/workspaces/src/api/",
-        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
-        "apps/monkeyhub/desktop/tests/test_runtime.py",
-        "apps/monkeyhub/README.md",
-        ".claude/launch.json",
-        "docs/PROJECT_RUNTIME.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
