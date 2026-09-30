@@ -20,60 +20,19 @@ from monkeycad.backends.occt import export as occt_export
 from monkeycad.backends.occt.backend import OcctBackend
 from monkeycad.backends.rhino import export as rhino_export
 from monkeycad.backends.rhino.backend import RhinoBackend
-from monkeycad.execution import CadExecutionError, CadExecutionRequest, CadExecutionSource
+from monkeycad.execution import CadExecutionError, CadExecutionSource
 from monkeycad.registry import cad_backend_ids, get_cad_backend
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
-from archflow.state.geometry_program import (
-    GeometryOperation, GeometryOperationKind, GeometryParameter,
-    GeometryParameterKind, LengthUnit,
-)
-from tests.integration.test_cad_execution import _binding
-from tests.integration.test_cad_backend_contract import _taller_plinth
-from tests.integration.test_occt_execution import _box, _loft, _program_of
-from tests.integration.test_project_runner import _ExportProject, _options, _prism_row, _record
+from archflow.state.geometry_program import GeometryParameter, GeometryParameterKind, LengthUnit
+from tests.integration.support import LONG_BOX_ID, _blender_request as _request, _box, _extrusion, _loft, _program_of
+from tests.integration.runner_support import _ExportProject, _options, _prism_row, _record, _taller_plinth
 
 
 BLENDER_EXECUTABLE = os.environ.get("ARCHFLOW_BLENDER_EXECUTABLE")
 NEEDS_BLENDER = unittest.skipUnless(
     BLENDER_EXECUTABLE, "set ARCHFLOW_BLENDER_EXECUTABLE to run real Blender acceptance",
 )
-LONG_BOX_ID = "box-" + "identity-preserved-" * 4
-
-
-def _extrusion(*, vector=(2.0, 3.0, 1.0)):
-    return GeometryOperation(
-        op_id="triangle", kind=GeometryOperationKind.EXTRUSION,
-        output_object_ids=("triangle-object",), input_object_ids=(),
-        frame_id="world", semantic_binding_ids=("body-binding",),
-        parameters=(
-            GeometryParameter.create(name="base_level", kind=GeometryParameterKind.NUMBER, value=5.0, unit=LengthUnit.METER),
-            GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=2.0, unit=LengthUnit.METER),
-            GeometryParameter.create(name="profile", kind=GeometryParameterKind.POINTS3,
-                                     value=[[1.0, 0.0, 2.0], [5.0, 0.0, 2.0], [1.0, 0.0, 5.0]], unit=LengthUnit.METER),
-            GeometryParameter.create(name="vector", kind=GeometryParameterKind.VECTOR3, value=list(vector), unit=LengthUnit.METER),
-        ),
-    )
-
-
-def _two_objects(unit=LengthUnit.MILLIMETER):
-    operations = (_box(LONG_BOX_ID, [10.0, 20.0, 30.0], [2.0, 3.0, 4.0]), _extrusion())
-    operations = tuple(replace(op, parameters=tuple(
-        replace(parameter, unit=unit) if parameter.unit is not None else parameter
-        for parameter in op.parameters
-    )) for op in operations)
-    program = _program_of(*operations)
-    return replace(program, proposal=replace(program.proposal, length_unit=unit))
-
-
-def _request(workspace, *, program=None, **changes):
-    program = program or _two_objects()
-    return CadExecutionRequest(
-        program=program, binding=_binding(program), speculative_workspace=workspace,
-        artifact_stem="blender-candidate", **changes,
-    )
-
-
 @contextmanager
 def _without_other_backends():
     with patch.object(OcctBackend, "execute", side_effect=AssertionError("unexpected OCCT fallback")), \

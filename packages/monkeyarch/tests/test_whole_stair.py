@@ -30,8 +30,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import stage_geometry_program
 from archflow.project.refs import BranchRef
 from archflow.state.geometry_program import GeometryOperationKind, ProjectGridAxis, ProjectGrids, ProjectLevel, ProjectLevels
-from tests.integration.support import shared_bound_state
-from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
+from spine_fixture import COMMITMENT, _only, _proposal, _state, shared_bound_state
 
 NEEDS_OCCT = unittest.skipUnless(
     occt_available(), "cadquery-ocp is not installed: python -m pip install -e 'packages/monkeycad[occt]'"

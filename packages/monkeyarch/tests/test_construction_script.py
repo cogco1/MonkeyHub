@@ -1,7 +1,7 @@
 """#419: the construction script is a small bounded language, interpreted and never executed.
 
 These tests pin the language itself: what it evaluates, what it refuses (always at a line),
-its limits and its print log. Geometry lowering is pinned in tests/integration/test_construction_lowering.py.
+its limits and its print log. Geometry lowering is pinned in test_construction_lowering.py.
 """
 from __future__ import annotations
 

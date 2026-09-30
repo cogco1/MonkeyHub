@@ -19,7 +19,7 @@ from archflow.state.geometry_program import (
     load_compiled_geometry_program,
     verify_datum_directions,
 )
-from tests.integration.test_geometry_compiler import COMMITMENT, _codes, _proposal, _state
+from spine_fixture import COMMITMENT, _codes, _proposal, _state
 
 
 def _level(datum_id: str = "wall-bearing-level", value: float = 3.33):

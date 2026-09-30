@@ -288,7 +288,7 @@ class DeliveredObjectTests(unittest.TestCase):
     """#419: a program delivers what nothing consumes and what it retains for inspection."""
 
     def setUp(self) -> None:
-        from tests.integration.test_geometry_compiler import _proposal, _state
+        from spine_fixture import _proposal, _state
 
         self.proposal = _proposal(_state())
 

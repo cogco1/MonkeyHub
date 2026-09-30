@@ -36,9 +36,8 @@ from monkeyarch.authoring.element_producers import (
 from monkeyarch.application.geometry_proposal import GeometryProposalStatus
 from monkeyarch.domain.reference_resolver import ReferenceContext
 from monkeyarch.compilation.geometry import compile_geometry_program
-from tests.integration.support import ProducerFixture, authored_record
-from tests.integration.test_element_producers import BASIS, PN, _grids, _levels
-from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
+from portico_fixture import BASIS, PN, _grids, _levels
+from spine_fixture import COMMITMENT, ProducerFixture, _only, _proposal, _state, authored_record
 
 LONG, DEEP = 5.0, 0.25
 NOT_A_RECTANGLE = "the block's footprint is not a rectangle"
@@ -269,7 +268,7 @@ class ScriptOnARealisedBlockTests(unittest.TestCase):
 
     def test_top_of_the_realised_block_is_a_base_before_and_after_a_move(self) -> None:
         from monkeyarch.authoring.construction.lowering import compile_construction_script
-        from tests.integration.test_construction_lowering import _apply, _compile, _record
+        from lowering_fixture import _apply, _compile, _record
 
         record = _apply(_record(), _compile("block = extrude(rect(0, 0, 6, 0.3), 3)"))
         block = next(entity for entity in record.entities if entity.entity_id == "block-body")
@@ -316,7 +315,7 @@ class RoundedTurnTests(unittest.TestCase):
                             self.assertAlmostEqual(got, want, delta=2e-9)
 
     def test_a_block_turned_by_a_script_is_realised(self) -> None:
-        from tests.integration.test_construction_lowering import _apply, _compile, _record
+        from lowering_fixture import _apply, _compile, _record
 
         record = _apply(_record(), _compile("block = extrude(rect(0, 0, 6, 0.3), 3)\nrotate(block, 33.3)"))
         block = next(entity for entity in record.entities if entity.entity_id == "block-body")
@@ -351,7 +350,7 @@ class HostedDoorTests(unittest.TestCase):
 
     def test_the_model_view_keeps_the_bounds_of_a_block_with_a_door(self) -> None:
         from monkeyarch.authoring.construction.lowering import geometry_view
-        from tests.integration.test_construction_lowering import _apply, _compile, _record
+        from lowering_fixture import _apply, _compile, _record
 
         record = _apply(_record(), _compile("block = extrude(rect(0, 0, 6, 0.3), 3)"))
         block = next(entity for entity in record.entities if entity.entity_id == "block-body")
@@ -369,7 +368,7 @@ class OpeningInterfaceTests(ProducerFixture):
 
     async def _produced_with(self, interface_refs: tuple[str, ...]):
         from monkeyarch.application.geometry_proposal import proposal_authoring_output
-        from tests.integration.support import ScriptedProvider
+        from spine_fixture import ScriptedProvider
 
         [assembly] = self.proposal.assemblies
         proposal = replace(self.proposal, assemblies=(replace(assembly, interface_refs=interface_refs),))
@@ -383,7 +382,7 @@ class OpeningInterfaceTests(ProducerFixture):
         self.assertIs(status, GeometryProposalStatus.ACCEPTED, issues)
 
     async def test_a_declared_interface_is_delivered(self) -> None:
-        from tests.integration.support import INTERFACE_REF
+        from spine_fixture import INTERFACE_REF
 
         status, issues = await self._produced_with((INTERFACE_REF,))
         self.assertIs(status, GeometryProposalStatus.ACCEPTED, issues)

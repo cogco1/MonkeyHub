@@ -297,9 +297,9 @@
         "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
         "tests/integration/test_cad_backend_contract.py",
         "tests/integration/test_cad_execution.py",
-        "tests/integration/test_cad_patch.py",
-        "tests/integration/test_cad_program.py",
-        "tests/integration/test_element_producers.py"
+        "packages/monkeyarch/tests/test_cad_patch.py",
+        "packages/monkeyarch/tests/test_cad_program.py",
+        "packages/monkeyarch/tests/test_element_producers.py"
       ],
       "invariants": [
         "the common result preserves native success/readback evidence and validates exact binding, semantic identity, workspace containment and artifact bytes; it is not a new retained receipt or write authority",
@@ -311,9 +311,9 @@
       "status": "canonical",
       "tests": [
         "tests/integration/test_cad_backend_contract.py",
-        "tests/integration/test_cad_patch.py",
+        "packages/monkeyarch/tests/test_cad_patch.py",
         "tests/integration/test_cad_execution.py",
-        "tests/integration/test_cad_program.py"
+        "packages/monkeyarch/tests/test_cad_program.py"
       ],
       "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added. P103 incremental export; the only reason a run may reuse a prior .3dm. #515: execution.py holds the interface, binding, status and errors, the export provenance and bounds helpers both exporters share, and the speculative-workspace and hash helpers (they raise CadExecutionError and the interface calls them, so they are not a module of their own); registry.py the backend table; program.py the object semantics every backend's readback is checked against; patch.py the operation diff.",
       "files": [
@@ -539,10 +539,10 @@
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "tests/integration/test_cad_program.py",
+        "packages/monkeyarch/tests/test_cad_program.py",
         "tests/integration/test_cad_execution.py",
-        "tests/integration/test_cad_patch.py",
-        "tests/integration/test_element_producers.py"
+        "packages/monkeyarch/tests/test_cad_patch.py",
+        "packages/monkeyarch/tests/test_element_producers.py"
       ],
       "invariants": [
         "an unsupported operation kind fails CadTranslationError rather than being dropped silently",
@@ -561,10 +561,10 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_cad_program.py",
+        "packages/monkeyarch/tests/test_cad_program.py",
         "tests/integration/test_cad_execution.py",
         "tests/integration/test_cad_backend_contract.py",
-        "tests/integration/test_cad_patch.py"
+        "packages/monkeyarch/tests/test_cad_patch.py"
       ],
       "notes": "The single CAD translation on the spine; P107's in-process OCCT executor would be a second executor of this program, not a second translation. #515: backends/rhino/ holds the translation, the patch prelude and the export script wrapper (script.py), the supervised export and readback (export.py), the STEP-import work model (step_import.py) and the registered RhinoBackend (backend.py); the object semantics every backend's readback is checked against are monkeycad.execution's (program.py).",
       "files": [
@@ -988,7 +988,7 @@
         "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "tools/project/run_project.py",
         "services/project-runtime/src/project_runtime/application/seats.py",
-        "tests/integration/test_discipline_seats.py",
+        "packages/monkeyarch/tests/test_discipline_seats.py",
         "tests/integration/test_project_runner.py"
       ],
       "invariants": [
@@ -1000,7 +1000,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_discipline_seats.py",
+        "packages/monkeyarch/tests/test_discipline_seats.py",
         "tests/integration/test_project_runner.py"
       ],
       "notes": "P095/P098; seats are people, not state - they arrive beside the record, never inside it."
@@ -1086,8 +1086,8 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "tests/integration/test_element_producers.py",
-        "tests/integration/test_cad_patch.py",
+        "packages/monkeyarch/tests/test_element_producers.py",
+        "packages/monkeyarch/tests/test_cad_patch.py",
         "services/project-runtime/src/project_runtime/application/construction.py"
       ],
       "invariants": [
@@ -1111,14 +1111,14 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_element_producers.py",
-        "tests/integration/test_whole_stair.py",
-        "tests/integration/test_cad_patch.py",
+        "packages/monkeyarch/tests/test_element_producers.py",
+        "packages/monkeyarch/tests/test_whole_stair.py",
+        "packages/monkeyarch/tests/test_cad_patch.py",
         "tests/integration/test_project_runner.py",
         "tests/integration/test_prism_cutouts.py",
         "tests/integration/test_occt_execution.py",
         "packages/monkeyarch/tests/test_wall_explicit_point_reference.py",
-        "tests/integration/test_wall_realization.py"
+        "packages/monkeyarch/tests/test_wall_realization.py"
       ],
       "notes": "The single geometry-emission owner on the spine; monument vocabulary (solids of revolution, boolean chains, classical-order members) would be added here rather than beside it.",
       "files": [
@@ -1196,9 +1196,9 @@
         "tools/project/run_project.py",
         "tools/project/verify_state_record.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
-        "tests/integration/test_production_policy.py",
-        "tests/integration/test_element_producers.py",
-        "tests/integration/test_state_record.py"
+        "packages/monkeyarch/tests/test_production_policy.py",
+        "packages/monkeyarch/tests/test_element_producers.py",
+        "packages/monkeyarch/tests/test_state_record.py"
       ],
       "invariants": [
         "no fallback: a round that does not compile is rejected with issues, never patched into acceptance",
@@ -1214,10 +1214,10 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_production_policy.py",
-        "tests/integration/test_element_producers.py",
-        "tests/integration/test_wall_realization.py",
-        "tests/integration/test_geometry_authoring_contract.py"
+        "packages/monkeyarch/tests/test_production_policy.py",
+        "packages/monkeyarch/tests/test_element_producers.py",
+        "packages/monkeyarch/tests/test_wall_realization.py",
+        "packages/monkeyarch/tests/test_geometry_authoring_contract.py"
       ],
       "notes": "The runner drives it with an inline RecordedProposalProvider for replay; a live provider enters through project_runtime.intent, which signs its call with the same archflow.ports.model receipt."
     },
@@ -1268,7 +1268,7 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
-        "tests/integration/test_element_producers.py"
+        "packages/monkeyarch/tests/test_element_producers.py"
       ],
       "invariants": [
         "a type carries proportions only - no position, no level, no absolute size",
@@ -1280,10 +1280,10 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_element_producers.py",
-        "tests/integration/test_opening_solver.py",
+        "packages/monkeyarch/tests/test_element_producers.py",
+        "packages/monkeyarch/tests/test_opening_solver.py",
         "tests/integration/test_occt_execution.py",
-        "tests/integration/test_wall_realization.py"
+        "packages/monkeyarch/tests/test_wall_realization.py"
       ],
       "notes": "P092 filler side; P099 gives the arrayed placement so N identical openings share one member definition."
     },
@@ -1343,8 +1343,8 @@
         "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
         "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "packages/monkeyarch/tests/test_derivations_and_references.py",
-        "tests/integration/test_element_producers.py",
-        "tests/integration/test_cad_patch.py"
+        "packages/monkeyarch/tests/test_element_producers.py",
+        "packages/monkeyarch/tests/test_cad_patch.py"
       ],
       "invariants": [
         "resolve_elevation never returns a number - the compiler is the only thing that turns a datum id into one",
@@ -1356,7 +1356,7 @@
       "status": "canonical",
       "tests": [
         "packages/monkeyarch/tests/test_derivations_and_references.py",
-        "tests/integration/test_element_producers.py",
+        "packages/monkeyarch/tests/test_element_producers.py",
         "packages/monkeyarch/tests/test_wall_explicit_point_reference.py"
       ],
       "notes": "The datum namespace boundary: level ids and element-top ids resolve here, so producers stay coordinate-free."
@@ -1413,7 +1413,7 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "tests/integration/test_relation_checks.py"
+        "packages/monkeyarch/tests/test_relation_checks.py"
       ],
       "invariants": [
         "nothing is healed: a check only measures and reports",
@@ -1425,7 +1425,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_relation_checks.py",
+        "packages/monkeyarch/tests/test_relation_checks.py",
         "tests/integration/test_project_runner.py",
         "packages/monkeyarch/tests/test_lintel_bearing.py",
         "tests/integration/test_window_relational_update.py"
@@ -1485,7 +1485,7 @@
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
         "packages/monkeyarch/src/monkeyarch/domain/opening_solver.py",
-        "tests/integration/test_element_producers.py"
+        "packages/monkeyarch/tests/test_element_producers.py"
       ],
       "invariants": [
         "the wall is one solid; every opening is a void request the wall hosts, never a separate subtraction chain",
@@ -1496,11 +1496,11 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_element_producers.py",
+        "packages/monkeyarch/tests/test_element_producers.py",
         "packages/monkeyarch/tests/test_wall_solver_contact.py",
         "tests/integration/test_prism_cutouts.py"
       ],
-      "notes": "P092 host side: the wall grants the aperture, the opening type never moves it. The spine suite drives it through the authored record's south wall (tests/integration/support.py)."
+      "notes": "P092 host side: the wall grants the aperture, the opening type never moves it. The spine suite drives it through the authored record's south wall (packages/monkeyarch/tests/spine_fixture.py)."
     },
     {
       "module_id": "monkeyarch.compilation.geometry",
@@ -1558,12 +1558,12 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
-        "tests/integration/test_geometry_compiler.py",
-        "tests/integration/test_interface_datums.py",
-        "tests/integration/test_element_producers.py",
-        "tests/integration/test_cad_patch.py",
-        "tests/integration/test_semantic_geometry_tree.py",
-        "tests/integration/test_state_record.py"
+        "packages/monkeyarch/tests/test_geometry_compiler.py",
+        "packages/monkeyarch/tests/test_interface_datums.py",
+        "packages/monkeyarch/tests/test_element_producers.py",
+        "packages/monkeyarch/tests/test_cad_patch.py",
+        "packages/monkeyarch/tests/test_semantic_geometry_tree.py",
+        "packages/monkeyarch/tests/test_state_record.py"
       ],
       "invariants": [
         "pure: it reads inputs and returns a result, and never writes or mutates anything",
@@ -1576,9 +1576,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_geometry_compiler.py",
-        "tests/integration/test_interface_datums.py",
-        "tests/integration/test_semantic_geometry_tree.py"
+        "packages/monkeyarch/tests/test_geometry_compiler.py",
+        "packages/monkeyarch/tests/test_interface_datums.py",
+        "packages/monkeyarch/tests/test_semantic_geometry_tree.py"
       ],
       "notes": "Named canonical in ADR-001's record, section 2.2 'Program and compiler'; runtime/geometry_compiler.py is only its shim."
     },
@@ -1676,7 +1676,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_state_record.py"
+        "packages/monkeyarch/tests/test_state_record.py"
       ],
       "notes": "state/geometry_program.py re-implements this as digest_value/require_sha256 rather than importing it: a second digest implementation still on the spine."
     },
@@ -1805,9 +1805,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_production_policy.py"
+        "packages/monkeyarch/tests/test_production_policy.py"
       ],
-      "notes": "ModelPhase.INTENT_COMPILATION is the Studio's phase; nothing retained carries it yet. The archived P053 control plane held the only other instantiation of these contracts. The spine suite drives the Protocol and the receipt round trip through tests/integration/support.py ScriptedProvider."
+      "notes": "ModelPhase.INTENT_COMPILATION is the Studio's phase; nothing retained carries it yet. The archived P053 control plane held the only other instantiation of these contracts. The spine suite drives the Protocol and the receipt round trip through packages/monkeyarch/tests/spine_fixture.py ScriptedProvider."
     },
     {
       "module_id": "archflow.project.archive",
@@ -3117,7 +3117,7 @@
         "services/project-runtime/src/project_runtime/application/candidate.py",
         "services/project-runtime/src/project_runtime/application/harness.py",
         "tests/integration/test_project_runner.py",
-        "tests/integration/test_state_record.py",
+        "packages/monkeyarch/tests/test_state_record.py",
         "tools/project/open_stage_run.py"
       ],
       "invariants": [
@@ -3141,7 +3141,7 @@
       "status": "canonical",
       "tests": [
         "tests/integration/test_project_runner.py",
-        "tests/integration/test_state_record.py",
+        "packages/monkeyarch/tests/test_state_record.py",
         "tests/integration/test_cad_backend_contract.py",
         "tests/integration/test_blender_projection_runner.py"
       ],
@@ -3352,7 +3352,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_facets.py"
+        "packages/monkeyarch/tests/test_facets.py"
       ],
       "notes": "Facets live on Component@1.fields.facets (spec docs/design/construction-api.md §3.4); GH-419 Task C2."
     },
@@ -3640,7 +3640,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_state_record.py",
+        "packages/monkeyarch/tests/test_state_record.py",
         "packages/archflow/tests/test_operational_markov_compiler.py"
       ],
       "notes": "Split out of archflow.state.operational_state (#512) together with the closure archflow.state.state_record, archflow.state.decision_operator and the Studio frame each carried a copy of."
@@ -3832,8 +3832,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_geometry_compiler.py",
-        "tests/integration/test_discipline_seats.py"
+        "packages/monkeyarch/tests/test_geometry_compiler.py",
+        "packages/monkeyarch/tests/test_discipline_seats.py"
       ],
       "notes": "Canonical, but 14 of its 19 public types are never imported outside the module, and it depends on two fold targets (design_maturity, design_portfolio); StateRecord reaches it only through developed_design_view."
     },
@@ -3987,12 +3987,12 @@
       "status": "canonical",
       "tests": [
         "tests/integration/test_cad_execution.py",
-        "tests/integration/test_cad_program.py",
-        "tests/integration/test_geometry_compiler.py",
-        "tests/integration/test_geometry_program.py",
-        "tests/integration/test_interface_datums.py",
+        "packages/monkeyarch/tests/test_cad_program.py",
+        "packages/monkeyarch/tests/test_geometry_compiler.py",
+        "packages/monkeyarch/tests/test_geometry_program.py",
+        "packages/monkeyarch/tests/test_interface_datums.py",
         "tests/integration/test_occt_execution.py",
-        "tests/integration/test_wall_realization.py"
+        "packages/monkeyarch/tests/test_wall_realization.py"
       ],
       "notes": "The values, the reader of their retained records and their analytic bounds (#513) are one contract, so MonkeyArch construction, the runtime and the CAD adapters read programs and predict bounds without importing one another; every digest comes from archflow.contracts.canonical."
     },
@@ -4276,10 +4276,10 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_state_record.py",
+        "packages/monkeyarch/tests/test_state_record.py",
         "tests/integration/test_project_runner.py",
         "services/project-runtime/tests/test_projection.py",
-        "tests/integration/test_massing_metrics.py",
+        "packages/monkeyarch/tests/test_massing_metrics.py",
         "packages/monkeyarch/tests/test_lintel_bearing.py",
         "tests/integration/test_window_relational_update.py",
         "services/project-runtime/tests/test_derivation_memo.py"
@@ -4360,7 +4360,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/integration/test_semantic_geometry_tree.py",
+        "packages/monkeyarch/tests/test_semantic_geometry_tree.py",
         "packages/archflow/tests/test_design_portfolio.py"
       ],
       "notes": "Carries module-local _branch_to_dict/_branch_from_dict copies of contracts.branch, and depends on two fold targets (design_maturity for DesignPhase, site_context for SiteBounds); SpatialLevel is a third level vocabulary alongside ProjectLevel and MassingLevel@1. The site-context record (ground model, approach, unknowns) is archived with the sandbox lane."
@@ -6938,8 +6938,8 @@
         "packages/monkeyarch/src/monkeyarch/domain/massing_transforms.py"
       ],
       "tests": [
-        "tests/integration/test_massing_metrics.py",
-        "packages/monkeyarch/tests/test_massing_transforms.py"
+        "packages/monkeyarch/tests/test_massing_transforms.py",
+        "packages/monkeyarch/tests/test_massing_metrics.py"
       ],
       "reason": "Snaptrude shows GFA, floor count and efficiency beside every massing option; here they are read from the record's own massing entities, once, by one module, so the studio's options and any later provider measure the same thing."
     },
@@ -8467,7 +8467,7 @@
       ],
       "used_by": [
         "packages/monkeyarch/tests/test_construction_script.py",
-        "tests/integration/test_construction_lowering.py"
+        "packages/monkeyarch/tests/test_construction_lowering.py"
       ],
       "invariants": [
         "A script is parsed with ast and walked by an allow-list; Python never compiles or executes it.",
@@ -8491,8 +8491,8 @@
       "status": "canonical",
       "tests": [
         "packages/monkeyarch/tests/test_construction_script.py",
-        "tests/integration/test_construction_lowering.py",
-        "tests/integration/test_wall_realization.py"
+        "packages/monkeyarch/tests/test_construction_lowering.py",
+        "packages/monkeyarch/tests/test_wall_realization.py"
       ],
       "notes": "Spec docs/design/construction-api.md section 3.1. The interpreter's verbs and the vocabulary are one table (script.IMPLEMENTED_VERBS is checked against vocabulary.VERBS at import).",
       "files": [

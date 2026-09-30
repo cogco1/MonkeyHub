@@ -26,8 +26,7 @@ from monkeycad.integration_packs import (
 )
 from monkeycad.discovery import Discovery, Installation, SoftwareDiscoveryRegistry
 from monkeycad.formats.meshes import ConversionError, Mesh, Scene
-from tests.integration.test_blender_cad import _request as _blender_request
-from tests.integration.test_cad_backend_contract import _controlled_rhino, _request as _rhino_request
+from tests.integration.support import _blender_request, _controlled_rhino, _rhino_request
 
 
 class _Discovery:

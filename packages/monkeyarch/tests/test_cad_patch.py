@@ -19,37 +19,9 @@ from monkeycad.formats.three_dm_compose import patch_composed_three_dm
 from monkeycad.patch import CadPatchError, PatchSelection, select_patch_operations
 from monkeycad.program import expected_object_semantics
 from archflow.state.geometry_program import delivered_object_ids
-from monkeyarch.authoring.element_producers import ProductionContext, produce_rows
-from monkeyarch.domain.reference_resolver import ReferenceContext
 from monkeyarch.compilation.geometry import compile_geometry_program
-from tests.integration.test_cad_execution import _binding
-from tests.integration.test_element_producers import _grids, _levels, _rows
-from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
-
-
-def _compile(rows, *, array_seed: str | None = None):
-    """The slice as a compiled program; ``array_seed`` adds a P099-style block array over that operation."""
-
-    context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=_levels()), published={}, frame_id="world")
-    produced = produce_rows(rows, context)
-    operations = tuple(replace(op, semantic_binding_ids=("building-binding",)) for e in produced for op in e.operations)
-    if array_seed is not None:
-        from archflow.state.geometry_program import GeometryOperation, GeometryOperationKind, GeometryParameter, GeometryParameterKind, LengthUnit
-
-        seed = next(op for op in operations if op.op_id == array_seed)
-        operations += (GeometryOperation(
-            op_id=f"{array_seed}-array", kind=GeometryOperationKind.ARRAY, output_object_ids=(f"{seed.output_object_ids[0]}-array",),
-            input_object_ids=seed.output_object_ids, frame_id=seed.frame_id,
-            parameters=(GeometryParameter.create(name="count", kind=GeometryParameterKind.INTEGER, value=3),
-                        GeometryParameter.create(name="step", kind=GeometryParameterKind.VECTOR3, value=[0.0, 0.0, 1.0], unit=LengthUnit.METER)),
-            semantic_binding_ids=seed.semantic_binding_ids),)
-    bindings = tuple(b for e in produced for b in e.bindings)
-    datums = tuple(sorted(list(context.published.values()) + list(_levels().datums()), key=lambda d: d.datum_id))
-    state = _state()
-    proposal = _only(_proposal(state, extra_operations=operations), operations, ())
-    result = compile_geometry_program(state, proposal, active_commitment_refs=(COMMITMENT,), interface_datums=datums, datum_bindings=bindings)
-    assert result.program is not None, [(i.code.value, i.subject_id, i.detail) for i in result.receipt.issues]
-    return result.program
+from portico_fixture import _binding, _compile, _rows
+from spine_fixture import COMMITMENT, _only, _proposal, _state
 
 
 def _capital_rows(**capital_params):
@@ -64,7 +36,7 @@ class PatchSelectionTests(unittest.TestCase):
             import rhino3dm as r
         except ImportError:
             self.skipTest("rhino3dm is not installed")
-        from tests.integration.test_cad_program import binding, op, program
+        from translation_fixture import binding, op, program
 
         names = tuple(f"object-{i:02}" for i in range(25))
         build = program(*(op(f"solid-{i}", "solid", [name], bindings=(f"binding-{i}",), origin=[0, 0, 0], size=[1, 1, 1]) for i, name in enumerate(names)),
