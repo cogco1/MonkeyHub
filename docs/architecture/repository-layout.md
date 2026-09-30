@@ -91,7 +91,7 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 
 API 中的装配用例仍保留一位 owner；拆出混合文件中的具体方法，应随下一项真实用例进行，
 不能为目录对称复制 DTO、来源校验或保存流程。HTTP 接口及客户端契约保持不变。
-模块 ID 不因产品名而改名；每次搬迁把 `owner_path`、调用方和公开类型的路径同步到注册表。
+模块 ID 的首段是 `owner_path` 所在分发单元的命名空间（6.3），产品改名不改 ID；每次搬迁把 `owner_path`、调用方和公开类型的路径同步到注册表。
 CAD 离开 ArchFlow 时（#514）按能力新建了六个 owner：`monkeycad.execution`、`monkeycad.occt`、`monkeycad.rhino`、`monkeycad.blender`、`monkeycad.formats`、`monkeycad.integrations`，取代原来四个 `adapters.*` CAD id。
 
 ## 4. 依赖方向与交接
@@ -230,6 +230,12 @@ Project Runtime 自 #491 起按仓库路径 `services/project-runtime/src/projec
 module registry 里的路径同样必须存在：`owner_path`（`REGISTRY_OWNER_MISSING`）、`tests`（`REGISTRY_TEST_MISSING`），
 以及 `files`、`used_by`（路径或模块 id）、`spine`、interface 实现文件和 capability 测试（`REGISTRY_PATH_MISSING`）。
 registry 路径不写通配符。
+
+模块 id 的首段是 `owner_path` 所在分发单元的命名空间（#523）。policy 的 `module_id_namespaces` 把单元目录映射到命名空间：
+`packages/<包名>/src/<包名>` 是包名，`services/project-runtime/src/project_runtime` 是 `project_runtime`，
+`apps/monkeyhub/api/monkeyhub_api` 是 `hub`，`tools` 是 `tools`，包含 `owner_path` 的最长单元为准。首段不符、owner 不在任何单元里
+都报 `REGISTRY_ID_NAMESPACE`，表里的单元目录不存在报 `POLICY_PATH_MISSING`；新增包或服务时在表里加一项。只查首段：
+MonkeyCAD 与 Hub 的 id 按能力命名。
 
 docs 树自 R1-8 起按 `git ls-files` 检查，被 git 忽略的本地笔记不算：根目录只有 `README.md`（`DOCS_ROOT`）；文档名是小写 kebab-case 的 Markdown，决定记录是 `NNN-kebab.md`，目录名是 kebab-case，文件名不以日期开头（kebab 正则本身接受 `2026-09-28-x.md`，所以日期另有一条规则），非 Markdown 文件只在 `docs/prototypes/`（`DOC_NAME`）。
 

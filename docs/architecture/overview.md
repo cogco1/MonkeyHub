@@ -37,7 +37,9 @@ The UI direction is two peer workspace entries. MonkeyDiagram can begin with an
 existing document or diagram, or reference a specific model version from MonkeyArch.
 Both workflows reuse ArchFlow project identity, source binding, execution and P036
 storage. They do not require separate repositories, databases or geometry engines.
-Existing module owners keep their contracts; product names do not rename module ids.
+Existing module owners keep their contracts. A module id begins with the namespace of the package or
+service that holds its owner (policy `module_id_namespaces`, archcheck `REGISTRY_ID_NAMESPACE`);
+renaming a product does not rename an id.
 
 This is the agreed product boundary, not a claim that every listed drawing operation
 is implemented. The current document canvas and markup are usable code; the model-axis
