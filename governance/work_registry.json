@@ -1,4 +1,32 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-520",
+      "status": "active",
+      "branch": "codex/integration-512-518-520",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-512-518-520",
+      "base_ref": "008514fd9f85207c2ee4995303b5c05cc67bbb10",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "hub.shell",
+        "tools.package_monkeyapps"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/models.py",
+        "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/monkeyhub/api/tests/test_chat_presentation.py",
+        "apps/monkeyhub/api/tests/test_project_runtime.py",
+        "apps/monkeyhub/api/tests/test_runtime_operations.py",
+        "docs/architecture/project-runtime.md",
+        "docs/architecture/repository-layout.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
