@@ -189,7 +189,9 @@ MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 
 以下只搬不改：P036、StateRecord、Stage／candidate／HEAD、协议与 API 路径、settings 文件的位置与格式、
 已有用户数据。看起来像旧名、但已写入数据或线上接口的名字也保留：`studio-*` 记录类型和 run id、
 `archflow-studio.*` localStorage 键、`service: "archflow-studio-api"`、`studioPort`、`/studio/`、
-`ARCHFLOW_STUDIO_*`。Runtime 改名（R1-5）只替换了 `archflow_studio_api` 和 `apps/archflow-studio/api` 两个字面值。
+`ARCHFLOW_STUDIO_*`，以及手动启动的 Runtime 在系统临时目录下的缓存根 `archflow-studio-cache`：
+那里的投影缓存按项目文件夹跨运行复用，只在自己的根里回收，改名会把已有缓存留成无人清理的孤儿。
+Runtime 改名（R1-5）只替换了 `archflow_studio_api` 和 `apps/archflow-studio/api` 两个字面值。
 
 ### 6.2 安装包里的位置
 
@@ -215,6 +217,7 @@ Project Runtime 自 #491 起按仓库路径 `services/project-runtime/src/projec
 | `repository_root_entries` | 根目录的完整清单：第 6 节的目录加上根文件。`ROOT_ENTRY` 按 `git ls-files` 检查，被 git 忽略的本地文件不算；清单外的条目都是 finding，搬回根目录的包也一样 |
 | `python_source_roots` | 模块导入名从哪一级目录开始算，当前是 `.`、`services/project-runtime/src`、`apps/monkeyhub/api`、`packages/monkeyfab/src`、`packages/monkeydiagram/src`、`packages/archflow/src`、`packages/monkeyarch/src`、`packages/monkeymonitor/src`、`packages/monkeycontrol/src`。这是唯一的清单：本地开发的各入口按检出读它（第 6 节）。新的 src 布局包加上自己的 `packages/<包名>/src`；含受检 Python 的 `src` 目录不在表里时报 `POLICY_PATH_MISSING` |
 | `checked_source_roots`、`forbidden_layer_imports` 的 `source` | `packages/` 下的包：检查根写包根 `packages/<包名>`，包的层规则 `source` 写 `packages/<包名>/src/<包名>`，`packages/<包名>/tests` 另有一条不导入根 `tests`、`labs`、`archive` 的规则，也和根 `tests/` 一样列入 `shared_write_scope`。Runtime 是服务：检查根和层规则的 `source` 都写服务根 `services/project-runtime`，包与它的 `tests/` 同受一条规则约束，`services/project-runtime/tests/` 列入 `shared_write_scope`。路径不存在、检查根下没有 Python 源码、或层规则匹配不到任何受检文件时报 `POLICY_PATH_MISSING`；`allowed_write_sites` 与 `allowed_authority_symbols` 的文件缺失时 archcheck 直接以错误退出 |
+| `forbidden_layer_imports` 的 `targets` | 写导入名，不写路径。目标是 `python_source_roots` 下的模块或它上面的包，例如 `monkeyarch.runtime`、`archflow`；以本仓顶层包开头的名字只能这样解析，残留的 import 不能让已经删掉的模块继续算数。其他名字是第三方库，要有受检文件实际导入它，例如 `shapely`、`OCP`。另一类是 Git 忽略的目录，例如 `archive/`：退役 lane 只留在部分检出里，规则防止已提交的代码导入它。解析不了的目标报 `POLICY_TARGET_MISSING`（#511）；模块搬走或删除时，同一个 PR 把目标改到新位置或删掉 |
 
 module registry 里的路径同样必须存在：`owner_path`（`REGISTRY_OWNER_MISSING`）、`tests`（`REGISTRY_TEST_MISSING`），
 以及 `files`、`used_by`（路径或模块 id）、`spine`、interface 实现文件和 capability 测试（`REGISTRY_PATH_MISSING`）。

@@ -3,7 +3,7 @@
   "_note": "Internal development only. MonkeyHub is the sole production launcher (OPEN_MONKEYHUB.cmd, the desktop package). These profiles start services on an explicit project for smoke runs and UI work; the project comes from ARCHFLOW_STUDIO_PROJECT_DIR, else from the Hub's own application settings.",
   "configurations": [
     {
-      "name": "studio-api-dev",
+      "name": "project-runtime-dev",
       "runtimeExecutable": "py",
       "runtimeArgs": [
         "-3.12",
@@ -24,7 +24,7 @@
       "port": 5175
     },
     {
-      "name": "studio-api-smoke",
+      "name": "project-runtime-smoke",
       "runtimeExecutable": "py",
       "runtimeArgs": [
         "-3.12",

@@ -2,13 +2,15 @@
 
 A check whose path has gone passes forever: a source root that no longer
 exists is walked as an empty set, a layer rule whose source matches nothing
-never fires, and a registry that names a moved file keeps describing the old
-tree. Moving the repository's packages (#484 and the topology lanes after it)
-would otherwise leave each of these guards silently switched off.
+never fires, a layer rule's target that names a module nobody can import
+forbids nothing, and a registry that names a moved file keeps describing the
+old tree. Moving the repository's packages (#484 and the topology lanes after
+it) would otherwise leave each of these guards silently switched off.
 
 The cases build small trees in a temporary directory; the root-entry and docs
-cases make it a Git repository, because both are read from the index. Nothing
-here reads or writes this repository.
+cases make it a Git repository, because both are read from the index, and so
+do the target cases that ask Git what it ignores. Nothing here reads or writes
+this repository.
 """
 from __future__ import annotations
 
@@ -24,7 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tools.governance.archcheck import (
     ARCHITECTURE_POLICY, ArchitecturePolicyError, _checked_python_files, _module_name,
-    check_docs_layout, check_policy_paths, check_registry, check_repository_root, validate_policy,
+    check_docs_layout, check_layer_targets, check_policy_paths, check_registry, check_repository_root,
+    run_checks, validate_policy,
 )
 
 
@@ -162,6 +165,133 @@ class PolicyPathTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ArchitecturePolicyError, "does not exist: archflow/project/repository.py"):
             validate_policy(_policy(allowed_write_sites=[site]), self.root)
+
+
+class LayerTargetTests(unittest.TestCase):
+    """A layer rule's target names a module that exists (#511).
+
+    Targets are import names, not paths, so a module that moves or goes leaves
+    its target naming nothing: archflow.runtime moved into monkeyarch, the
+    archflow.commit lane was archived, and the rules naming them kept passing
+    while they forbade nothing.
+    """
+
+    PYTHON_SOURCE_ROOTS = [".", "packages/archflow/src", "packages/monkeyarch/src"]
+
+    def setUp(self) -> None:
+        self.root = _temporary_root(self, "repo")
+        _git(self.root, "init", "-q")
+        _write(self.root, ".gitignore", "archive/\n")
+        for relative in (
+            "packages/archflow/src/archflow/contracts/canonical.py",
+            "packages/archflow/src/archflow/project/repository.py",
+            "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+            "tools/check.py",
+        ):
+            _write(self.root, relative)
+        _write(self.root, "docs/architecture/overview.md", "text\n")
+        _write(self.root, "probes/fixture/README.md", "text\n")
+
+    def findings(self, *targets: str, imported: tuple[str, ...] = ()) -> list[tuple[str, str, str]]:
+        rule = {
+            "source": "packages/archflow/src/archflow/contracts", "targets": list(targets),
+            "reason": "Contract primitives depend on project identity only.",
+        }
+        policy = _policy(python_source_roots=self.PYTHON_SOURCE_ROOTS, forbidden_layer_imports=[rule])
+        return [(item.path, item.code, item.message) for item in check_layer_targets(self.root, policy, imported)]
+
+    def test_a_module_and_every_package_above_it_resolve(self) -> None:
+        self.assertEqual([], self.findings(
+            "archflow", "archflow.project", "archflow.project.repository",
+            "monkeyarch.runtime", "monkeyarch.runtime.project_runner", "tools", "tools.check",
+        ))
+
+    def test_a_target_whose_module_is_gone_is_a_finding(self) -> None:
+        findings = self.findings("archflow.runtime", "archflow.project.repositories", "archflow.commit")
+        self.assertEqual([(ARCHITECTURE_POLICY, "POLICY_TARGET_MISSING")] * 3, [item[:2] for item in findings])
+        messages = "\n".join(message for _, _, message in findings)
+        for text in (
+            "forbidden_layer_imports[0] target 'archflow.runtime' names no module: archflow has no module runtime",
+            "target 'archflow.project.repositories' names no module: archflow.project has no module repositories",
+            "target 'archflow.commit' names no module: archflow has no module commit",
+        ):
+            self.assertIn(text, messages)
+        self.assertTrue(all(message.endswith("the rule guards nothing against it") for _, _, message in findings))
+
+    def test_each_rule_that_names_a_dead_target_is_reported(self) -> None:
+        rules = [
+            {"source": "tools", "targets": ["archflow.evaluation"], "reason": "Tools stay independent."},
+            {"source": "packages/archflow/src/archflow/contracts", "targets": ["tools", "archflow.evaluation"],
+             "reason": "Contract primitives depend on project identity only."},
+        ]
+        policy = _policy(python_source_roots=self.PYTHON_SOURCE_ROOTS, forbidden_layer_imports=rules)
+        messages = sorted(item.message for item in check_layer_targets(self.root, policy, ()))
+        self.assertEqual(2, len(messages))
+        self.assertTrue(messages[0].startswith("forbidden_layer_imports[0] target 'archflow.evaluation'"))
+        self.assertTrue(messages[1].startswith("forbidden_layer_imports[1] target 'archflow.evaluation'"))
+
+    def test_a_module_is_named_as_it_is_imported_not_by_its_path(self) -> None:
+        # A src layout's modules are named from their Python source root (#488).
+        self.assertEqual([], self.findings("monkeyarch.runtime"))
+        findings = self.findings("packages.monkeyarch.src.monkeyarch.runtime", "src.monkeyarch")
+        self.assertEqual(["POLICY_TARGET_MISSING"] * 2, [code for _, code, _ in findings])
+
+    def test_a_directory_without_python_names_no_module(self) -> None:
+        # docs/ holds documents and probes/ project data: nothing there can be imported.
+        findings = self.findings("docs", "docs.architecture", "probes")
+        self.assertEqual(["POLICY_TARGET_MISSING"] * 3, [code for _, code, _ in findings])
+
+    def test_a_third_party_target_resolves_while_checked_code_imports_it(self) -> None:
+        imported = ("numpy", "OCP.gp", "shapely.geometry", "archflow.project.repository")
+        self.assertEqual([], self.findings("numpy", "OCP", "shapely", "shapely.geometry", imported=imported))
+        findings = self.findings("networkx", "scipy", "OCP.BRepAlgoAPI", imported=imported)
+        self.assertEqual(["POLICY_TARGET_MISSING"] * 3, [code for _, code, _ in findings])
+        self.assertIn(
+            "target 'networkx' names no module under the Python source roots, no checked file imports it",
+            findings[0][2],
+        )
+
+    def test_an_import_does_not_revive_a_module_the_repository_no_longer_has(self) -> None:
+        # A leftover import of a moved module is broken code, not a module to forbid.
+        findings = self.findings("archflow.runtime", imported=("archflow.runtime.project_runner",))
+        self.assertEqual(["POLICY_TARGET_MISSING"], [code for _, code, _ in findings])
+
+    def test_a_directory_git_ignores_holds_code_outside_the_public_tree(self) -> None:
+        # archive/ keeps retired lanes in some checkouts only: an import of it works
+        # on one machine and fails on every other, which is why the rules name it.
+        self.assertEqual([], self.findings("archive", "archive.lanes.example"))
+        findings = self.findings("archives", "private")
+        self.assertEqual(["POLICY_TARGET_MISSING"] * 2, [code for _, code, _ in findings])
+        self.assertIn("Git ignores no directory of that name", findings[0][2])
+        _write(self.root, "archive/lanes/example.py")  # a checkout that keeps the retired lanes
+        self.assertEqual([], self.findings("archive", "archive.lanes.example"))
+
+
+class LayerTargetRunTests(unittest.TestCase):
+    """The tree check fails on a dead target and learns third-party use from the checked files."""
+
+    def test_archcheck_reports_a_target_that_names_no_module(self) -> None:
+        root = _temporary_root(self, "repo")
+        _git(root, "init", "-q")
+        _write(root, ".gitignore", "archive/\n")
+        _write(root, "README.md", "text\n")
+        _write(root, "archflow/state/value.py")
+        _write(root, "tools/check.py", "import numpy\n\n\ndef later():\n    from OCP.gp import gp_Pnt\n")
+        _git(root, "add", "-A")
+
+        def findings(*targets: str) -> list[tuple[str, str]]:
+            rule = {"source": "archflow", "targets": list(targets), "reason": "The core never imports tooling."}
+            policy = _policy(
+                repository_root_entries=["archflow", "tools", ".gitignore", "README.md"],
+                forbidden_layer_imports=[rule],
+            )
+            return [(item.code, item.message) for item in run_checks(root, policy)]
+
+        self.assertEqual([], findings("tools", "numpy", "OCP", "archive"))
+        dead = findings("tools", "scipy", "archflow.runtime")
+        self.assertEqual(["POLICY_TARGET_MISSING"] * 2, [code for code, _ in dead])
+        self.assertIn("target 'archflow.runtime' names no module", dead[0][1] + dead[1][1])
+        self.assertIn("target 'scipy' names no module", dead[0][1] + dead[1][1])
 
 
 class PolicyShapeTests(unittest.TestCase):

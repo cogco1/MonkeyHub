@@ -79,7 +79,7 @@ jobs:
       # Each test root runs in its own process: the package and tools suites have
       # no __init__.py, and several roots hold modules of one name.
       # This job installs every prerequisite its suites check for (PyMuPDF from
-      # the Studio requirements), so a missing one fails instead of skipping.
+      # the Runtime requirements), so a missing one fails instead of skipping.
       # Windows-only cases remain platform skips here.
       - name: Integration and packaging tests
         env:
@@ -107,7 +107,7 @@ jobs:
       - name: Fab geometry, CLI and upload boundaries
         run: python -m pytest packages/monkeyfab/tests -q
 
-      - name: Studio API suite
+      - name: Project Runtime suite
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: python -m pytest services/project-runtime/tests -q
@@ -244,7 +244,7 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node test/viewportSelection.browser.mjs
 
-  studio:
+  hub-first-run:
     name: Hub first-run (${{ matrix.os }})
     strategy:
       matrix:
@@ -336,7 +336,7 @@ jobs:
           INDEX_START: packages/archflow/tests
           INDEX_TOP: packages/archflow/tests
 
-      - name: Studio indexed reads on Windows
+      - name: Runtime indexed reads on Windows
         if: runner.os == 'Windows'
         working-directory: services/project-runtime
         shell: python

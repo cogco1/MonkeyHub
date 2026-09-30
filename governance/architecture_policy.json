@@ -435,7 +435,7 @@
       ],
       "kind": "diagnostics",
       "owner": "monkeymonitor",
-      "reason": "Create the caller-selected diagnostics directory and shared Hub/Studio journal lock file; no project authority."
+      "reason": "Create the caller-selected diagnostics directory and shared Hub/Runtime journal lock file; no project authority."
     },
     {
       "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
@@ -511,7 +511,7 @@
       ],
       "kind": "application_conversation",
       "owner": "hub.shell",
-      "reason": "Saves chat attachment bytes and atomically saves their transcript metadata and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Studio/P036 interfaces."
+      "reason": "Saves chat attachment bytes and atomically saves their transcript metadata and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Runtime/P036 interfaces."
     },
     {
       "path": "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
@@ -843,7 +843,7 @@
       "targets": [
         "labs"
       ],
-      "reason": "The Studio ships to users; a lab is not shipped."
+      "reason": "MonkeyHub ships to users; a lab is not shipped."
     },
     {
       "source": "tests",
@@ -855,7 +855,6 @@
     {
       "source": "packages/archflow/src/archflow",
       "targets": [
-        "docs",
         "tests",
         "tools",
         "archive",
@@ -863,7 +862,7 @@
         "monkeyfab",
         "monkeycontrol"
       ],
-      "reason": "Reusable framework code cannot import repository tooling, tests, or documentation modules. Probe imports are rejected by the dedicated probe reverse-import rule."
+      "reason": "Reusable framework code cannot import repository tooling or tests. Probe imports are rejected by the dedicated probe reverse-import rule."
     },
     {
       "source": "tools",
@@ -961,13 +960,6 @@
       "source": "packages/archflow/src/archflow/contracts",
       "targets": [
         "archflow.adapters",
-        "archflow.capabilities",
-        "archflow.compilers",
-        "archflow.control",
-        "archflow.evidence",
-        "archflow.materials",
-        "archflow.research",
-        "archflow.runtime",
         "archflow.validation"
       ],
       "reason": "Canonical contract primitives may depend on project identity only, never on higher domain, control, runtime, or adapter layers."
@@ -976,10 +968,6 @@
       "source": "packages/archflow/src/archflow/ports",
       "targets": [
         "archflow.adapters",
-        "archflow.capabilities",
-        "archflow.compilers",
-        "archflow.control",
-        "archflow.runtime",
         "archflow.validation"
       ],
       "reason": "External-world protocols may depend on stable identity contracts, never on their concrete adapters, orchestration, control, or validation implementations."
@@ -987,25 +975,20 @@
     {
       "source": "packages/archflow/src/archflow/validation",
       "targets": [
-        "archflow.commit",
-        "archflow.evaluation"
+        "archflow.project.repository"
       ],
-      "reason": "Hard validation cannot commit or depend on soft evaluation."
+      "reason": "Hard validation cannot commit: the project repository is the one canonical writer (P036)."
     },
     {
       "source": "services/project-runtime",
       "targets": [
         "rhino3dm",
         "numpy",
-        "networkx",
         "OCP",
-        "build123d",
         "shapely",
         "trimesh",
-        "scipy",
         "tests",
         "tools",
-        "probes",
         "archive"
       ],
       "reason": "The Project Runtime (project_runtime) validates requests, streams events and manages task lifecycle; design state, dependencies, validation, geometry and commit are calls into archflow. Geometry mathematics, graphs, .3dm writing and state schemas live in archflow and are imported, never reimplemented beside it. Pydantic models here are transport shapes, not a second canonical state."
@@ -1026,10 +1009,8 @@
       "targets": [
         "monkeydiagram",
         "labs",
-        "docs",
         "tests",
         "tools",
-        "probes",
         "archive",
         "monkeymonitor",
         "monkeyfab",
@@ -1042,10 +1023,8 @@
       "targets": [
         "monkeyarch",
         "labs",
-        "docs",
         "tests",
         "tools",
-        "probes",
         "archive",
         "monkeymonitor",
         "monkeyfab",
@@ -1056,7 +1035,6 @@
     {
       "source": "packages/monkeyarch/src/monkeyarch/capabilities",
       "targets": [
-        "archflow.commit",
         "archflow.project.repository"
       ],
       "reason": "Detached modeling capabilities cannot acquire persistence or promotion authority."
@@ -1075,7 +1053,6 @@
         "monkeyarch",
         "monkeydiagram",
         "project_runtime",
-        "probes",
         "archive",
         "monkeyfab",
         "monkeycontrol"
@@ -1092,7 +1069,6 @@
         "project_runtime",
         "monkeyhub_api",
         "labs",
-        "probes",
         "archive",
         "monkeycontrol"
       ],
@@ -1107,12 +1083,10 @@
         "monkeyfab",
         "project_runtime",
         "monkeyhub_api",
-        "probes",
         "archive",
         "tools",
         "tests",
-        "labs",
-        "docs"
+        "labs"
       ],
       "reason": "Desktop automation receives plain action values and writes only receipts under a caller-supplied diagnostics directory; the spine, both workflows and the Hub never become its dependencies."
     }

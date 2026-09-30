@@ -1,10 +1,6 @@
 # The repository's development and test configuration. Nothing is built from here:
 # each Python package has its own manifest, packages/<name>/pyproject.toml.
 
-[tool.archflow]
-phase = "P1"
-test_command = "python -m unittest discover -s tests -v"
-
 [tool.pytest.ini_options]
 # A package suite and tools/tests have no __init__.py, so two suites holding modules of one
 # name cannot share a process. monkeycontrol's test_trace.py and test_cli.py repeat
