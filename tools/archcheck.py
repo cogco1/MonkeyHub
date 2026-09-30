@@ -2,10 +2,10 @@
 
 Two modes. Without arguments it checks the tree: layer imports, filesystem
 write ownership, state authorities, the probe boundary, the entries Git tracks
-at the repository root, the module registry and every path it names, and the
-live work registry -- GitHub Issue claims only, no two of them holding the
-same path or checkout. A path the policy configures must exist: a rule whose
-path is gone is reported, never skipped.
+at the repository root and under docs/, the module registry and every path it
+names, and the live work registry -- GitHub Issue claims only, no two of them
+holding the same path or checkout. A path the policy configures must exist: a
+rule whose path is gone is reported, never skipped.
 
 With ``--changed <base>`` it checks one branch instead, using each commit's
 policy and work registry from Git. Once the scope rule exists in a parent, a
@@ -681,6 +681,81 @@ def check_repository_root(root: Path, policy: dict[str, Any]) -> Iterator[Policy
             f"legacy_root_packages still lists {entry!r}, which Git no longer tracks at the "
             "root; remove it so the ratchet only shrinks",
         )
+
+
+# The docs tree (#494): README.md alone at the root, the rest in category
+# directories, lowercase kebab-case names, decisions numbered.
+DOCS_DIRECTORY = "docs"
+KEBAB_DOC_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\.md")
+DECISION_DOC_NAME = re.compile(r"\d{3}-[a-z0-9]+(?:-[a-z0-9]+)*\.md")
+KEBAB_DIRECTORY_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+# KEBAB_DOC_NAME alone accepts 2026-09-28-construction-api.md; the date
+# belongs in the document's front matter (created:), not in its name.
+DATE_PREFIX = re.compile(r"\d{4}-\d{2}-\d{2}-")
+# The one name a convention fixes; GitHub shows it as the directory's page.
+CONVENTIONAL_DOC_NAMES = frozenset({"README.md"})
+# A prototype's files keep the names its page and scripts load them by.
+PROTOTYPE_ASSETS = "docs/prototypes/"
+
+
+def check_docs_layout(root: Path) -> Iterator[PolicyFinding]:
+    """docs/ holds README.md at its root and categorised, kebab-case documents.
+
+    Read from Git's index, like the root entries: a checkout keeps ignored
+    private notes under docs/ that belong to no layout. Every other file sits
+    in a category directory (finding ``DOCS_ROOT``). A document is lowercase
+    kebab-case Markdown, a decision is ``NNN-kebab.md``, a directory is
+    kebab-case, and no name begins with a date (finding ``DOC_NAME``).
+    README.md is allowed everywhere; the non-Markdown files of a prototype
+    under docs/prototypes/ keep their own names, and no other directory holds
+    anything but Markdown.
+    """
+
+    directories: set[str] = set()
+    for path in sorted(
+        entry for entry in _git(root, "ls-files", "-z", "--", DOCS_DIRECTORY).split("\0") if entry
+    ):
+        parts = path.split("/")
+        name = parts[-1]
+        if len(parts) == 2:
+            if name not in CONVENTIONAL_DOC_NAMES:
+                yield PolicyFinding(
+                    path, 1, "DOCS_ROOT",
+                    f"only README.md stays at the docs root; move {name} into its category "
+                    "directory (docs/README.md lists them)",
+                )
+            continue
+        for depth in range(2, len(parts)):
+            directory = "/".join(parts[:depth])
+            if directory not in directories and not KEBAB_DIRECTORY_NAME.fullmatch(parts[depth - 1]):
+                directories.add(directory)
+                yield PolicyFinding(
+                    directory, 1, "DOC_NAME",
+                    f"directory {parts[depth - 1]!r} is not lowercase kebab-case",
+                )
+        if name in CONVENTIONAL_DOC_NAMES:
+            continue
+        if path.startswith(PROTOTYPE_ASSETS) and not name.endswith(".md"):
+            continue
+        if DATE_PREFIX.match(name):
+            yield PolicyFinding(
+                path, 1, "DOC_NAME",
+                f"{name} begins with a date; name the subject and put the date in the "
+                "document's front matter (created: YYYY-MM-DD)",
+            )
+        elif parts[1] == "decisions" and len(parts) == 3:
+            if not DECISION_DOC_NAME.fullmatch(name):
+                yield PolicyFinding(
+                    path, 1, "DOC_NAME",
+                    f"{name} is not a decision name: NNN-lowercase-kebab-case.md, "
+                    "keeping the ADR's three-digit number",
+                )
+        elif not KEBAB_DOC_NAME.fullmatch(name):
+            yield PolicyFinding(
+                path, 1, "DOC_NAME",
+                f"{name} is not a lowercase kebab-case Markdown name"
+                + ("" if name.endswith(".md") else "; only docs/prototypes/ keeps other files"),
+            )
 
 
 def _normalized_body(src: str, node: ast.FunctionDef) -> str:
@@ -1436,14 +1511,16 @@ def check_changed_scopes(
 def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
     """Check the tree under ``root``, which must be a Git checkout.
 
-    The root entries are read from Git's index (``check_repository_root``);
-    everything else is read from the files on disk.
+    The root entries and the docs tree are read from Git's index
+    (``check_repository_root``, ``check_docs_layout``); everything else is
+    read from the files on disk.
     """
 
     validate_policy(policy, root)
     findings: list[PolicyFinding] = list(check_probe_boundary(root, policy))
     findings.extend(check_policy_paths(root, policy))
     findings.extend(check_repository_root(root, policy))
+    findings.extend(check_docs_layout(root))
     findings.extend(check_registry(root, policy))
     findings.extend(check_scopes(root, policy, load_work_registry(root)))
     for path in _checked_python_files(root, policy):
