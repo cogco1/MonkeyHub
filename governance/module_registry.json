@@ -295,8 +295,8 @@
         "packages/monkeydiagram/src/monkeydiagram/sources.py",
         "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
         "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
-        "packages/monkeyarch/tests/test_cad_backend_contract.py",
-        "packages/monkeycad/tests/test_cad_execution.py",
+        "tests/integration/test_cad_backend_contract.py",
+        "tests/integration/test_cad_execution.py",
         "packages/monkeyarch/tests/test_cad_patch.py",
         "packages/monkeyarch/tests/test_cad_program.py",
         "packages/monkeyarch/tests/test_element_producers.py"
@@ -310,9 +310,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "packages/monkeyarch/tests/test_cad_backend_contract.py",
+        "tests/integration/test_cad_backend_contract.py",
         "packages/monkeyarch/tests/test_cad_patch.py",
-        "packages/monkeycad/tests/test_cad_execution.py",
+        "tests/integration/test_cad_execution.py",
         "packages/monkeyarch/tests/test_cad_program.py"
       ],
       "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added. P103 incremental export; the only reason a run may reuse a prior .3dm. #515: execution.py holds the interface, binding, status and errors, the export provenance and bounds helpers both exporters share, and the speculative-workspace and hash helpers (they raise CadExecutionError and the interface calls them, so they are not a module of their own); registry.py the backend table; program.py the object semantics every backend's readback is checked against; patch.py the operation diff.",
@@ -425,7 +425,7 @@
       "status": "canonical",
       "tests": [
         "tests/integration/test_occt_execution.py",
-        "packages/monkeyarch/tests/test_cad_backend_contract.py",
+        "tests/integration/test_cad_backend_contract.py",
         "packages/monkeycad/tests/test_occt_native_models.py"
       ],
       "notes": "P107 in-process OCCT executor; OCP and rhino3dm are imported lazily, so importing the package or any of its modules loads neither. #515 splits it by concern: kernel (the binding and the shape helpers the others share), build and boolean, measure, step, native_models, projection, section and preview, with the export orchestration in export.py and the registered OcctBackend in backend.py.",
@@ -540,7 +540,7 @@
       "used_by": [
         "services/project-runtime/src/project_runtime/application/artifacts.py",
         "packages/monkeyarch/tests/test_cad_program.py",
-        "packages/monkeycad/tests/test_cad_execution.py",
+        "tests/integration/test_cad_execution.py",
         "packages/monkeyarch/tests/test_cad_patch.py",
         "packages/monkeyarch/tests/test_element_producers.py"
       ],
@@ -562,8 +562,8 @@
       "status": "canonical",
       "tests": [
         "packages/monkeyarch/tests/test_cad_program.py",
-        "packages/monkeycad/tests/test_cad_execution.py",
-        "packages/monkeyarch/tests/test_cad_backend_contract.py",
+        "tests/integration/test_cad_execution.py",
+        "tests/integration/test_cad_backend_contract.py",
         "packages/monkeyarch/tests/test_cad_patch.py"
       ],
       "notes": "The single CAD translation on the spine; P107's in-process OCCT executor would be a second executor of this program, not a second translation. #515: backends/rhino/ holds the translation, the patch prelude and the export script wrapper (script.py), the supervised export and readback (export.py), the STEP-import work model (step_import.py) and the registered RhinoBackend (backend.py); the object semantics every backend's readback is checked against are monkeycad.execution's (program.py).",
@@ -620,8 +620,8 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "packages/monkeyarch/tests/test_blender_cad.py",
-        "packages/monkeycad/tests/test_blender_projection.py"
+        "tests/integration/test_blender_cad.py",
+        "tests/integration/test_blender_projection.py"
       ],
       "invariants": [
         "Blender supports positive solids and straight extrusions of simple planar profiles in the initial slice; all other operations fail before host execution or workspace writes. Complete rebuilds preserve source artifacts; cached exact requests verify retained proof and bytes without starting a host",
@@ -629,9 +629,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "packages/monkeyarch/tests/test_blender_cad.py",
-        "packages/monkeycad/tests/test_blender_projection.py",
-        "packages/monkeyarch/tests/test_blender_projection_runner.py"
+        "tests/integration/test_blender_cad.py",
+        "tests/integration/test_blender_projection.py",
+        "tests/integration/test_blender_projection_runner.py"
       ],
       "notes": "P115 #13: Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. backends/blender/worker.py runs in Blender's own Python and is started by file name from beside backends/blender/backend.py, so the two stay in one directory.",
       "files": [
@@ -703,7 +703,7 @@
         "services/project-runtime/src/project_runtime/application/episodes.py",
         "services/project-runtime/src/project_runtime/application/model_exports.py",
         "packages/monkeycad/tests/test_three_dm_inspector.py",
-        "packages/monkeycad/tests/test_cad_execution.py",
+        "tests/integration/test_cad_execution.py",
         "tests/integration/test_occt_execution.py"
       ],
       "invariants": [
@@ -768,15 +768,15 @@
       "used_by": [
         "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
         "apps/monkeyhub/api/tests/test_integrations.py",
-        "packages/monkeycad/tests/test_integration_packs.py"
+        "tests/integration/test_integration_packs.py"
       ],
       "invariants": [
         "Discovery/status never launches software, loads vendor libraries, queries a network/license or writes project data. Detected software, installed components and verified capabilities remain separate; qualification never grants project authority. CAD_BACKEND_REGISTRY remains the only compiled execution registry."
       ],
       "status": "canonical",
       "tests": [
-        "packages/monkeycad/tests/test_software_discovery.py",
-        "packages/monkeycad/tests/test_integration_packs.py"
+        "tests/integration/test_software_discovery.py",
+        "tests/integration/test_integration_packs.py"
       ],
       "notes": "The Hub's /api/integrations serves these views (hub.shell).",
       "files": [
@@ -1126,7 +1126,7 @@
         "packages/monkeyarch/tests/test_whole_stair.py",
         "packages/monkeyarch/tests/test_cad_patch.py",
         "tests/integration/test_project_runner.py",
-        "packages/monkeyarch/tests/test_prism_cutouts.py",
+        "tests/integration/test_prism_cutouts.py",
         "tests/integration/test_occt_execution.py",
         "packages/monkeyarch/tests/test_wall_explicit_point_reference.py",
         "packages/monkeyarch/tests/test_wall_realization.py"
@@ -1457,7 +1457,7 @@
         "packages/monkeyarch/tests/test_relation_checks.py",
         "tests/integration/test_project_runner.py",
         "packages/monkeyarch/tests/test_lintel_bearing.py",
-        "packages/monkeyarch/tests/test_window_relational_update.py"
+        "tests/integration/test_window_relational_update.py"
       ],
       "notes": "One checker per kind the record can declare; adding a kind means adding a checker here and an id to CHECK_KINDS in the same change."
     },
@@ -1529,7 +1529,7 @@
       "tests": [
         "packages/monkeyarch/tests/test_element_producers.py",
         "packages/monkeyarch/tests/test_wall_solver_contact.py",
-        "packages/monkeyarch/tests/test_prism_cutouts.py"
+        "tests/integration/test_prism_cutouts.py"
       ],
       "notes": "P092 host side: the wall grants the aperture, the opening type never moves it. The spine suite drives it through the authored record's south wall (packages/monkeyarch/tests/spine_fixture.py)."
     },
@@ -3196,8 +3196,8 @@
       "tests": [
         "tests/integration/test_project_runner.py",
         "packages/monkeyarch/tests/test_state_record.py",
-        "packages/monkeyarch/tests/test_cad_backend_contract.py",
-        "packages/monkeyarch/tests/test_blender_projection_runner.py"
+        "tests/integration/test_cad_backend_contract.py",
+        "tests/integration/test_blender_projection_runner.py"
       ],
       "notes": "packages/archflow/src/archflow/state/state_record.py imports SchematicPack/bootstrap_developed_state from here - the state to runtime inversion ADR-001's record (section 2.2) folds away."
     },
@@ -4033,10 +4033,10 @@
       ],
       "status": "canonical",
       "tests": [
-        "packages/monkeycad/tests/test_cad_execution.py",
+        "tests/integration/test_cad_execution.py",
         "packages/monkeyarch/tests/test_cad_program.py",
         "packages/monkeyarch/tests/test_geometry_compiler.py",
-        "packages/archflow/tests/test_geometry_program.py",
+        "packages/monkeyarch/tests/test_geometry_program.py",
         "packages/monkeyarch/tests/test_interface_datums.py",
         "tests/integration/test_occt_execution.py",
         "packages/monkeyarch/tests/test_wall_realization.py"
@@ -4328,7 +4328,7 @@
         "services/project-runtime/tests/test_projection.py",
         "packages/monkeyarch/tests/test_massing_metrics.py",
         "packages/monkeyarch/tests/test_lintel_bearing.py",
-        "packages/monkeyarch/tests/test_window_relational_update.py",
+        "tests/integration/test_window_relational_update.py",
         "services/project-runtime/tests/test_derivation_memo.py"
       ],
       "notes": "The projection is built here; state no longer imports runtime."
@@ -5745,7 +5745,7 @@
         "services/project-runtime/tests/test_elevation.py",
         "apps/monkeyhub/web/test/elevation.browser.mjs",
         "services/project-runtime/tests/test_decisions.py",
-        "services/project-runtime/tests/test_nonadjacent_stage_context.py",
+        "tests/integration/test_nonadjacent_stage_context.py",
         "services/project-runtime/tests/test_visual_observation.py",
         "services/project-runtime/tests/test_visual_reviews.py",
         "services/project-runtime/tests/test_candidate_admission.py",
@@ -6707,7 +6707,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tools/tests/test_verify_state_record.py"
+        "tests/integration/test_verify_state_record.py"
       ],
       "notes": "The P102 migration receipt tool; the paper's replay comparison runs through it. The reference phase is preserved through identity comparison, equivalence state and harness; legacy receipts without a phase retain the design_development default."
     },

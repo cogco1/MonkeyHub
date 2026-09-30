@@ -98,8 +98,8 @@ reprojection. This V1 has no Blender-to-canonical writer or automatic promotion.
 ```powershell
 $env:ARCHFLOW_BLENDER_EXECUTABLE = '<absolute-path-to-blender-executable>'
 $env:ARCHFLOW_PROJECTION_DEMO_ROOT = '<absolute-path-to-new-output-directory>'
-python -m pytest packages/monkeyarch/tests/test_blender_projection_runner.py -v
-python -m pytest packages/monkeycad/tests/test_blender_projection.py packages/monkeyarch/tests/test_blender_cad.py -v
+python -m unittest tests.integration.test_blender_projection_runner -v
+python -m unittest tests.integration.test_blender_projection tests.integration.test_blender_cad -v
 python tools/governance/archcheck.py
 ```
 

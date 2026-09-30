@@ -239,7 +239,7 @@ npm.cmd run build
 
 ```powershell
 $env:ARCHFLOW_BLENDER_EXECUTABLE = (Get-Command blender -CommandType Application).Source
-python -m pytest packages/monkeyarch/tests/test_blender_cad.py packages/monkeyarch/tests/test_cad_backend_contract.py -v
+python -m unittest tests.integration.test_blender_cad tests.integration.test_cad_backend_contract -v
 ```
 
 测试使用临时 workspace/project，通过两个独立后台进程先保存、再打开检查。未设置该变量时，真实宿主用例会 skip，不能将其写成通过。已有精确输出可由 runner 复用；有 source 时保留来源文件并按当前程序完整重建，不承诺增量 patch 或 `.blend` 字节重现。

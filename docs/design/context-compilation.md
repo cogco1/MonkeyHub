@@ -285,7 +285,7 @@ this project; the paired measurements below must report that separately.
 
 ### Non-adjacent construction interface (#185)
 
-`services/project-runtime/tests/test_nonadjacent_stage_context.py` reuses the existing window/lintel
+`tests/integration/test_nonadjacent_stage_context.py` reuses the existing window/lintel
 fixture as a bare opening and measured lintel-bearing construction slice.
 The filled window's frame/glass and unmeasured room/outside relation are outside
 this fixture; their existing tests remain unchanged. Its 150 mm end bearing is
@@ -329,7 +329,7 @@ revisions remain readable. Stage-only and exact-source decisions do not leak
 from S0 into S2, copy decisions remain outside design context, and separate
 API tests cover keep/avoid/reject strength, explicit narrowing and revocation.
 
-Reproduce with `python -m pytest services/project-runtime/tests/test_nonadjacent_stage_context.py -v`
+Reproduce with `python -m unittest tests.integration.test_nonadjacent_stage_context -v`
 (OCCT is required; missing OCCT is an explicit skip), and
 `python -m pytest services/project-runtime/tests/test_decisions.py services/project-runtime/tests/test_intent_context.py -q`.
 This proves retained-state/API and real CAD behavior in a disposable fixture.
