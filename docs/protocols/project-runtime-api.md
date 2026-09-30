@@ -1666,15 +1666,20 @@ retrying — whether the restore created that folder or found it empty and fille
 | PUT | `/api/settings/user` | replace the saved local preferences; omitted/null fields clear their override | atomically `%APPDATA%/MonkeyArch/settings.json`, no project |
 
 The optional fields are `language` (`en` or `zh-CN`), `theme`
-(`dark`, `light`, `system`), `fontScale` (0.9, 1, 1.1), `intentProvider` (`deterministic`,
-`codex`, `anthropic`), a nonempty `intentModel`, and positive finite `intentTimeoutS`.
-Other fields are refused. Both routes return saved fields only; nulls are omitted. PUT replaces
-the file, so a client preserves any saved fields it is not editing. A malformed file answers
-422 `USER_SETTINGS_INVALID` and can be replaced by an explicit valid PUT.
-The client restores appearance from GET. At the next local launch, saved intent fields override
-the corresponding runtime/environment defaults; clearing them restores the existing runtime
-over environment rule. Saving does not change the current compiler. The launcher ignores an
-unreadable or invalid file with a warning and never changes project, CAD or credential settings.
+(`dark`, `light`, `system`), `fontScale` (0.9, 1, 1.1), `uiStyle` (`classic`, `quiet`,
+`titleblock`, `night`), `intentProvider` (`deterministic`, `codex`, `anthropic`), a nonempty
+`intentModel`, positive finite `intentTimeoutS`, `renderProvider` (`off`, `gemini`), a nonempty
+`renderModel` of at most 160 characters, `renderTimeoutS` from 1 to 300, `chatProvider`
+(`codex`, `claude`, `coding-plan`), a nonempty `chatModel`, an http(s) `codingPlanBaseUrl`, and
+boolean `autoUpdate`. Other fields are refused. Both routes return saved fields only; nulls are
+omitted. PUT replaces the file, so a client preserves any saved fields it is not editing. A
+malformed file answers 422 `USER_SETTINGS_INVALID` and can be replaced by an explicit valid PUT.
+The client restores appearance from GET. When the Hub next starts a Project Runtime, saved intent
+and render fields override the corresponding runtime/environment defaults; clearing them restores
+the existing runtime over environment rule. Saving does not change the current compiler. Each
+Runtime start reads the file again: a malformed or non-UTF-8 file refuses the start with 422
+`APP_SETTINGS_INVALID` until a valid PUT replaces it, and the preferences never change project,
+CAD or credential settings.
 The Project Runtime served the same provisional routes, and advertised `user-settings`, until
 #486; it now does neither and reads no preference file.
 

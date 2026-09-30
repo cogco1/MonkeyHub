@@ -121,6 +121,8 @@ implemented behavior; remaining work and its acceptance are tracked in
   storage layout, references, and persistence.
 - [Repository layout](docs/architecture/repository-layout.md) — what lives in the repository, the
   external workspace (building projects and their evidence) and the external archive.
+- [Documentation index](docs/README.md) — every document by category: architecture, product,
+  protocols, development, design, research, audits, decisions and prototypes.
 
 ## Team development on GitHub
 

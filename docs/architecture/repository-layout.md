@@ -46,6 +46,7 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 ├─ packages/monkeymonitor/       用量、计价、算法建议接口及诊断 CLI/API：src/monkeymonitor/、pyproject.toml、本包 tests/
 ├─ packages/monkeycontrol/       桌面自动化动作契约与执行：src/monkeycontrol/、pyproject.toml、本包 tests/
 ├─ packages/monkeyfab/           制造算法、CLI、参数和测试，默认随 Hub 打包，安装包内仍在 apps/monkeyfab/
+├─ packages/web-shared/          Hub web 共用的外观、语言与基础样式：src/，web 按相对路径引用
 ├─ apps/monkeyhub/               唯一应用入口：api/、desktop/、installer/、assets/、run.py、launch-hub.ps1
 │  └─ web/                       唯一生产前端、依赖与构建；另有 test/、scripts/、tools/、assets/
 │     └─ src/                    单一源根：Hub 导航、聊天、设置、统一语言目录与项目工作区
@@ -56,21 +57,21 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 │           ├─ monkeydiagram/    Board 双击图页打开的精确页面编辑
 │           └─ monkeyboard/      画板、方案比较与会议展示
 ├─ services/project-runtime/     Project Runtime：API-only，src/project_runtime/、tests/、requirements.txt、pyproject.toml；每项目一个进程，由 Hub 管理
-├─ apps/shared-web/src/          Hub web 共用的外观、语言与基础样式
 ├─ labs/                         兴趣驱动的探索；可以导入核心，核心不反向导入
 ├─ scripts/dev/                  仅供开发的薄启动脚本（显式 --project-dir）；生产入口只有 MonkeyHub
 ├─ tools/                        对应既有能力的 CLI 与治理命令
 ├─ tests/                        行为和边界测试；随真实迁移同步 imports
 ├─ probes/                       明确晋升的项目输入与回归证据
 ├─ governance/                   现有模块、工作、策略三类来源
-└─ docs/                         架构、目录、协议与现行工作说明
+└─ docs/                         README.md 索引；architecture、product、protocols、development、design、
+                                 research、audits、decisions、prototypes 九类文档
 ```
 
 一个源码仓、同一发行版本可以包含多块代码。独立工作流首先要求职责、目录和依赖清楚；
 是否拆成独立部署或安装包，由真实使用需要决定，不与目录划分捆绑。
 `services/project-runtime/` 是 Hub 按项目启动的服务，只提供 API，不含前端。
 
-现状的问题：测试分散在多个根下；docs 混用多种命名。
+现状的问题：测试分散在多个根下。
 第 6、7 节给出目标和顺序。
 
 ## 3. 文件归属
@@ -182,7 +183,7 @@ MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 
 | 对象 | 规则 |
 | --- | --- |
 | Python 包和模块 | snake_case（语言规则），包括 `labs/<名字>/` 与 `tools/` 下的模块 |
-| docs 文件与非代码目录 | 小写 kebab-case，例如 `services/project-runtime/`、`packages/web-shared/`、`docs/**`；docs 文件名不带日期前缀，`README.md` 保留原名 |
+| docs 文件与非代码目录 | 小写 kebab-case，例如 `services/project-runtime/`、`packages/web-shared/`、`docs/**`；docs 文件名不带日期前缀，日期写进文首 front matter（`created:`）；决定记录为 `docs/decisions/NNN-*.md`，保留 ADR 编号；`README.md` 保留原名；非 Markdown 文件只放 `docs/prototypes/`，沿用原型自己的文件名 |
 | 其他代码文件 | 沿用各自语言的惯例；TS/React 文件不批量改名 |
 | 例外 | 工具规定的文件名、生成文件、第三方原名，以及写进安装约定的名字：`OPEN_MONKEYHUB.cmd`、`MonkeyHub.exe`、`INSTALL_MONKEYHUB.cmd`、`_runtime/…`、`Cargo.toml`、`tauri.conf.json` 等 |
 
@@ -204,22 +205,22 @@ MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 
 
 | 当前 | 目标 | Issue |
 | --- | --- | --- |
-| `archflow_studio_api` 中 Hub 设置的持久化，以及 `routes/settings.py`、`transport/settings.py` | `apps/monkeyhub/api/monkeyhub_api/settings/`；Runtime 自己的 `GET/PUT /api/settings/user` 与 `user-settings` 能力退役 | #486 |
-| `apps/shared-web/` | `packages/web-shared/` | #487 |
-| `apps/archflow-studio/assets/` | `apps/monkeyhub/assets/` | #487 |
+| `archflow_studio_api` 中 Hub 设置的持久化，以及 `routes/settings.py`、`transport/settings.py` | `apps/monkeyhub/api/monkeyhub_api/settings/`；Runtime 自己的 `GET/PUT /api/settings/user` 与 `user-settings` 能力退役 | #486（已落地） |
+| `apps/shared-web/` | `packages/web-shared/` | #487（已落地） |
+| `apps/archflow-studio/assets/` | `apps/monkeyhub/assets/` | #487（已落地） |
 | `monkeydiagram/` | `packages/monkeydiagram/src/monkeydiagram/`；只测本包的 7 个测试进 `packages/monkeydiagram/tests/` | #488（已落地） |
 | `archflow/`（连同 `adapters/`） | `packages/archflow/src/archflow/`；只测本包的 19 个测试进 `packages/archflow/tests/` | #489（已落地） |
 | `monkeyarch/`、`monkeymonitor/`、`monkeycontrol/` | `packages/<包名>/src/<包名>/`；monkeycontrol 的 11 个测试与 monkeymonitor 不借用 helper 的 4 个测试进 `packages/<包名>/tests/` | #490（已落地） |
 | `apps/monkeyfab/`（`src/monkeyfab/`、`tests/`、`pyproject.toml`） | `packages/monkeyfab/`；安装包内仍是 `apps/monkeyfab/` | #490（已落地） |
 | `apps/archflow-studio/api/archflow_studio_api/` | `services/project-runtime/src/project_runtime/` | #491（已落地） |
 | `apps/archflow-studio/api/tests/`、`apps/archflow-studio/api/requirements.txt`、`apps/archflow-studio/README.md` | `services/project-runtime/{tests/,requirements.txt,README.md}`；`apps/archflow-studio/` 删除 | #491（已落地） |
-| `apps/monkeyhub/web/workspaces/src/`、`workspaces/test/` | `apps/monkeyhub/web/src/`、`web/test/`，按子树平移，不改文件名；会与 Hub 自己的文件同名的放进各自目录：`api/` → `src/api/project-runtime/`，`styles.css` → `src/app/styles.css` | #492 |
-| `apps/monkeyhub/web/workspaces/{scripts,tools,assets}/` | `apps/monkeyhub/web/{scripts,tools,assets}/`；Runtime 的 OpenAPI schema 生成到 `web/.generated/project-runtime/` | #492 |
+| `apps/monkeyhub/web/workspaces/src/`、`workspaces/test/` | `apps/monkeyhub/web/src/`、`web/test/`，按子树平移，不改文件名；会与 Hub 自己的文件同名的放进各自目录：`api/` → `src/api/project-runtime/`，`styles.css` → `src/app/styles.css` | #492（已落地） |
+| `apps/monkeyhub/web/workspaces/{scripts,tools,assets}/` | `apps/monkeyhub/web/{scripts,tools,assets}/`；Runtime 的 OpenAPI schema 生成到 `web/.generated/project-runtime/` | #492（已落地） |
 | 根 `tests/` 中只测一个包、且不借用其他测试 helper 的文件（含 `tests/monkeycontrol/`） | `packages/<包名>/tests/`，随该包搬迁 | #488–#490（已落地） |
 | 根 `tests/` 中其余测试 | 只属于一个 owner 的去该 owner 的 `tests/`；互相借用 helper 的一组整体进 `tests/integration/`；测 tools 的进 `tools/tests/`；打包测试进 `tests/packaging/`；基准驱动与数据进 `tools/benchmarks/` | #493 |
-| `docs/` 根目录的大写与日期前缀文件、`docs/testing/` | `docs/{architecture,product,protocols,development,design,research,audits}/`，小写 kebab 文件名；新增 `docs/README.md` | #494 |
-| `docs/adr/ADR-NNN-*.md`、`docs/CANONICAL_SPINE.md` | `docs/decisions/NNN-*.md`；`CANONICAL_SPINE` 并入 `001` | #494 |
-| `docs/REPO_LAYOUT.md`（本文） | `docs/architecture/repository-layout.md`；policy 的 `unclaimed_write_scope` 与 archcheck 的 `ROOT_ENTRY` 提示同步 | #494 |
+| `docs/` 根目录的大写与日期前缀文件、`docs/testing/` | `docs/{architecture,product,protocols,development,design,research,audits}/`，小写 kebab 文件名；新增 `docs/README.md` | #494（已落地） |
+| `docs/adr/ADR-NNN-*.md`、`docs/CANONICAL_SPINE.md` | `docs/decisions/NNN-*.md`；`CANONICAL_SPINE` 并入 `001` | #494（已落地） |
+| `docs/REPO_LAYOUT.md`（本文） | `docs/architecture/repository-layout.md`；policy 的 `unclaimed_write_scope` 与 archcheck 的 `ROOT_ENTRY` 提示同步 | #494（已落地） |
 | `tools/*.py` | `archcheck`、`devctl` → `tools/governance/`；`workspace` → `tools/dev/`；`package_monkeyapps` → `tools/release/`；项目 CLI → `tools/project/`；`benchmark_*`、`projection_check` → `tools/benchmarks/` | #495 |
 
 不变：`apps/monkeyhub/{api,desktop,installer,run.py,launch-hub.ps1}`、`labs/`、`probes/`、`scripts/dev/`、
@@ -232,17 +233,17 @@ MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 
 
 | 步骤 | Issue | 内容 | 必须先落地 |
 | --- | --- | --- | --- |
-| R1-0 | #484 | archcheck 护栏与本文：配置路径缺失即报错、`python_source_roots`、`ROOT_ENTRY`、`REGISTRY_PATH_MISSING`；删除死规则与悬空依赖 | — |
-| Step 0 | #485 | CAD 的版本引用声明移入 `packages/archflow/src/archflow/project`，内核不再为此导入 CAD 代码 | — |
-| R1-1a | #486 | Hub 设置归 Hub | — |
-| R1-1b | #487 | `packages/web-shared` 与 Hub 图标资源；可与 R1-1a 并行开发 | — |
+| R1-0 | #484 | archcheck 护栏与本文：配置路径缺失即报错、`python_source_roots`、`ROOT_ENTRY`、`REGISTRY_PATH_MISSING`；删除死规则与悬空依赖。已落地 | — |
+| Step 0 | #485 | CAD 的版本引用声明移入 `packages/archflow/src/archflow/project`，内核不再为此导入 CAD 代码。已落地 | — |
+| R1-1a | #486 | Hub 设置归 Hub。已落地 | — |
+| R1-1b | #487 | `packages/web-shared` 与 Hub 图标资源；可与 R1-1a 并行开发。已落地 | — |
 | R1-2 | #488 | 按检出配置源码根；MonkeyDiagram 作 src 布局试点。已落地，机制见第 6 节 | R1-0 |
 | R1-3 | #489 | `archflow/` → `packages/archflow`。已落地 | R1-2 |
 | R1-4 | #490 | monkeyarch、monkeymonitor、monkeycontrol、monkeyfab → `packages/`。已落地 | R1-3 |
 | R1-5 | #491 | Project Runtime → `services/project-runtime`（`project_runtime`）。已落地 | R1-1a、R1-4 |
-| R1-6 | #492 | Hub web 单一源根 | R1-1b |
+| R1-6 | #492 | Hub web 单一源根。已落地 | R1-1b |
 | R1-7 | #493 | 测试随 owner | R1-4、R1-5：测试要进的包和服务目录已存在 |
-| R1-8 | #494 | docs 分类与命名，打开 docs 检查 | R1-2 至 R1-5，免得指向代码的链接改两遍 |
+| R1-8 | #494 | docs 分类与命名，打开 docs 检查。已落地 | R1-2 至 R1-5，免得指向代码的链接改两遍 |
 | R1-9 | #495 | tools 按用途分组 | R1-5 |
 | R1-10 | #496 | 去掉 `legacy_root_packages` 棘轮，确认没有遗留目录和引用，发布第一轮报告 | 以上全部 |
 
@@ -266,4 +267,6 @@ archflow 搬迁（R1-3）和 Runtime 改名（R1-5）这两个 PR 里，CI 的 p
 
 module registry 里的路径同样必须存在：`owner_path`（`REGISTRY_OWNER_MISSING`）、`tests`（`REGISTRY_TEST_MISSING`），
 以及 `files`、`used_by`（路径或模块 id）、`spine`、interface 实现文件和 capability 测试（`REGISTRY_PATH_MISSING`）。
-registry 路径不写通配符。docs 根目录、文件名与日期前缀的检查在 R1-8 打开。
+registry 路径不写通配符。
+
+docs 树自 R1-8 起按 `git ls-files` 检查，被 git 忽略的本地笔记不算：根目录只有 `README.md`（`DOCS_ROOT`）；文档名是小写 kebab-case 的 Markdown，决定记录是 `NNN-kebab.md`，目录名是 kebab-case，文件名不以日期开头（kebab 正则本身接受 `2026-09-28-x.md`，所以日期另有一条规则），非 Markdown 文件只在 `docs/prototypes/`（`DOC_NAME`）。
