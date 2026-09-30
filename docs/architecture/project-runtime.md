@@ -233,7 +233,7 @@ not `GET`, `HEAD` or `OPTIONS`, except `/api/events/*`, `POST /api/state/closure
 `POST /api/pick/resolve` (`runtime/manager.py`, `forward`) — `X-Monkey-Candidate`
 and `X-Monkey-Worker` for candidate-producing requests, and an allowlist of forwarded request
 headers. `GET .../studio/api/events` is not forwarded (`STUDIO_EVENTS_RELAYED`): the Hub
-attaches once to each worker's own `/api/events` (`runtime/manager.py`, `_WorkerEvents`; it resumes
+attaches once to each worker's own `/api/events` (`runtime/worker_http.py`, `_WorkerEvents`; it resumes
 with `Last-Event-ID` and reattaches after 0.5 s, then 1, 2, 4 s … while attachments carry
 nothing) and relays it on its single `GET /api/runtime/events` stream, which every Hub page
 already holds: `index` frames are the worker's `index.committed` hints (#366), `studio` frames

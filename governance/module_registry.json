@@ -7655,6 +7655,8 @@
         "apps/monkeyhub/web/src/notifications/",
         "apps/monkeyhub/api/monkeyhub_api/runtime/workers.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/worker_http.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/models.py",
         "apps/monkeyhub/desktop/",
         "apps/monkeyhub/assets/",

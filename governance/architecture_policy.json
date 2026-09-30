@@ -109,7 +109,7 @@
   ],
   "allowed_write_sites": [
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
       "function": "_save",
       "operations": [
         "mkdir",

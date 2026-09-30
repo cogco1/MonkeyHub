@@ -18,7 +18,7 @@ import uvicorn
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, http_json, wait_for
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyhub_api.main import HubServer, HubSettings, create_app
-from monkeyhub_api.runtime.manager import _WorkerEvents
+from monkeyhub_api.runtime.worker_http import _WorkerEvents
 
 
 class RuntimeSseTests(LocalHubCase):
@@ -303,7 +303,7 @@ class WorkerEventsTests(unittest.TestCase):
         self.assertEqual([call.args for call in manager.index_hint.call_args_list], [("runtime-a", None), ("runtime-a", None)])
 
     def test_a_stream_that_ends_at_once_is_attached_again_ever_later_and_hints_once(self):
-        with mock.patch("monkeyhub_api.runtime.manager._WORKER_EVENTS_RETRY_S", 0.2):
+        with mock.patch("monkeyhub_api.runtime.worker_http._WORKER_EVENTS_RETRY_S", 0.2):
             server, manager = self.follow([])
             time.sleep(1.0)
         # Attached at 0, 0.2 and 0.6 s: the first wait is the first delay, then it doubles

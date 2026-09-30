@@ -401,7 +401,9 @@ class ChatPresentationTests(unittest.TestCase):
 
     def test_external_turn_that_made_a_candidate_gets_the_study_card(self):
         """#404 F15: an external turn's requests through the Hub give it the same result card."""
-        from monkeyhub_api.runtime.manager import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager
+        from monkeyhub_api.runtime.manager import ProjectRuntime, ProjectRuntimeManager
+        from monkeyhub_api.runtime.operations import OperationManager
+        from monkeyhub_api.runtime.worker_http import HttpResult
 
         runtimes = ProjectRuntimeManager(None, self.store)
         self.assertEqual(self.store.turn_results, runtimes.turn_results)
