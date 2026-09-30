@@ -1,4 +1,35 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-517",
+      "status": "active",
+      "branch": "codex/integration-515-516-517",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-515-516-517",
+      "base_ref": "3dddfdc2cb6799a44d015617c2383b8302eea0e1",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "runtime.drawing_elevation",
+        "adapters.drawing_svg",
+        "adapters.mesh_views",
+        "documentation.drawings",
+        "project.version_ref_owners",
+        "project.record_kinds",
+        "studio.artifacts",
+        "studio.intent"
+      ],
+      "write_scope": [
+        "docs/architecture/repository-layout.md",
+        "docs/audits/drawing-v0.md",
+        "docs/design/design-history.md",
+        "labs/spatial_observation/fixture.py",
+        "packages/archflow/src/archflow/project/record_kinds.py",
+        "packages/archflow/src/archflow/project/version_ref_owners.py",
+        "services/project-runtime/src/project_runtime/application/drawing_dimensions.py"
+      ],
+      "depends_on": []
+    }
+  ]
 }
