@@ -14,3 +14,4 @@ decision, ADR-001 keeps the 2026-09-03 consolidation record it came from.
 - [ADR-008](008-one-tree-many-projections.md) — One decision tree, many projections: a derived index and a content-keyed cache
 - [ADR-009](009-memory-layer.md) — Memory is its own layer: `studio.memory`, beside State, not inside decisions
 - [ADR-010](010-admission-is-the-agents-registration.md) — An admission is the Agent's registration of a finished loop, not the architect's endorsement
+- [ADR-011](011-interface-information-hierarchy.md) — One information hierarchy on every surface: text menus, focused instruments, status text
