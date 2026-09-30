@@ -1,6 +1,6 @@
 """Axonometric line views from triangulated shapes: a depth buffer, not an exact hidden-line solve.
 
-The exact solve (``drawing_elevation.project_model_axis_elevation`` through
+The exact solve (``views.project_model_axis_elevation`` through
 ``HLRBRep_Algo``) grows much faster than the number of objects: on a synthetic
 600-object model it takes about 4 s of a 7 s model view. A view that only has
 to be looked at - the model view's axonometric, the Design Tree thumbnail -
@@ -12,7 +12,7 @@ where the buffer does not hide them.
 Everything is deterministic: the same shapes, frame and size give the same
 bytes. The PNG carries only the text chunks the caller names (no time, no
 random id). Nothing is written; retained drawings stay with
-``drawing_elevation``. numpy comes with the drawing requirements (shapely).
+``drawing_runs``. numpy comes with the drawing requirements (shapely).
 """
 
 from __future__ import annotations
@@ -81,9 +81,9 @@ def _renderer_version() -> str:
     (``read_elevation_source``) gives every projection a new key.
     """
 
-    from monkeydiagram import drawing_elevation
+    from monkeydiagram import sources
 
-    functions = (tessellate_shape, drawing_elevation.read_elevation_source, drawing_elevation._read_native_source,
+    functions = (tessellate_shape, sources.read_elevation_source, sources._read_native_source,
                  triangulate, _clean, _welded, _feature_edges, _expand, _depth_buffer, mesh_line_view)
     digest = hashlib.sha256()
     for function in functions:

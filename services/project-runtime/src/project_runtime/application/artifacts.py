@@ -469,7 +469,8 @@ def document_bytes(
 def _registered_document_bytes(binding: ProjectBinding, document: SourceDocument) -> bytes:
     run_id, asset_sha256 = document.run_id, document.asset_sha256
     if document.revision_ref is not None:
-        from monkeydiagram.drawing_elevation import DrawingElevationError, read_model_axis_elevation
+        from monkeydiagram.drawing_runs import read_model_axis_elevation
+        from monkeydiagram.sources import DrawingElevationError
 
         try:
             drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(document.revision_ref, binding.project_id))

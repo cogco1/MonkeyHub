@@ -36,9 +36,8 @@ from archflow.state.state_record import (
 from monkeyarch.authoring.element_producers import ProductionContext, element_rows_of, produce_rows
 from monkeyarch.domain.reference_resolver import ReferenceContext
 from monkeyarch.compilation.geometry import compile_geometry_program
-from monkeydiagram.drawing_elevation import (
-    ElevationSource, project_model_axis_elevation, read_elevation_source,
-)
+from monkeydiagram.projection.views import project_model_axis_elevation
+from monkeydiagram.sources import ElevationSource, read_elevation_source
 
 VIEWS = ("front", "back", "left", "right", "top")
 EVIDENCE = "evidence:public-spatial-observation-fixture"

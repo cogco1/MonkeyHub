@@ -145,7 +145,7 @@ class PolicyPathTests(unittest.TestCase):
 
     def test_a_moved_package_needs_its_src_directory_as_a_python_source_root(self) -> None:
         for relative in (
-            "packages/monkeydiagram/src/monkeydiagram/drawing_svg.py",
+            "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py",
             "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
             "services/project-runtime/src/project_runtime/main.py",
         ):

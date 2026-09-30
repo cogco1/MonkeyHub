@@ -80,7 +80,7 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 | --- | --- |
 | `packages/archflow/src/archflow/project/`、`contracts/`、共享 `state/` 与 `semantics/` | 留在 ArchFlow。图纸可引用建筑事实；图纸排版、字形和笔迹不进入建筑 StateRecord。状态中的建模专用表示需按实际消费者单独划分，不能整目录搬走。 |
 | `packages/monkeyarch/src/monkeyarch/` 的 `domain/`、`authoring/`、`compilation/`、`application/` | 3D 生成、求解、重建语义、关系检查、编译和运行，按层分目录（#516，第 4 节）。原 `archflow` 中的对应生产文件已退役，调用方直接导入新位置。 |
-| `packages/monkeydiagram/src/monkeydiagram/` 的 `drawing_elevation.py`、`drawing_svg.py` | 图纸来源核验、模型轴立面投影编排、SVG／PNG 表达。两位既有 owner 保持原 API 和记录语义，不复制 renderer。 |
+| `packages/monkeydiagram/src/monkeydiagram/` 的 `sources.py`、`projection/`、`rendering/`、`drawing_runs.py` | 图纸来源核验（`sources`）、视图与内存投影（`projection/views`，只供查看的 `projection/mesh_views`）、SVG／PNG 与纸面 PDF／DXF（`rendering/svg`、`rendering/paper`），以及图纸 run 的保存与冷读（`drawing_runs`，包内唯一写项目的模块）。#517 拆分 `drawing_elevation.py` 时保持原有函数、类型和记录语义，不复制 renderer。 |
 | `packages/archflow/src/archflow/state/geometry_program.py` 的 `CompiledGeometryProgram` 等值 | 三维编译器与共享 CAD 执行器共用的结果契约。数据值、已保留记录的读取器（`load_compiled_geometry_program`）和解析包围盒（`expected_object_bounds`）留在 ArchFlow，读取程序或预测包围盒不必导入 MonkeyArch 或 CAD 代码；生成这些值的编译算法归 MonkeyArch。 |
 | `packages/monkeycad/src/monkeycad/`（#514 之前是 `archflow/adapters/`） | CAD 执行与模型格式归 MonkeyCAD：两条工作流、Runtime 和 Hub 调用它，它只依赖 ArchFlow 内核。#514 整包平移、不改文件名，`cad_execution.py`、`occt_backend.py` 的拆分在 #515。模型生成与二维投影的领域规则分别归各工作流；按函数职责处理混合文件，不整份复制。 |
 | `packages/archflow/src/archflow/ports/model.py` | 两条链都用的模型调用端口留在 ArchFlow。 |

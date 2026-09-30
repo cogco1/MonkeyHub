@@ -212,7 +212,7 @@ Checkout 旧 Stage 只读。若从当前 head 做局部墙体修改，保留完�
 - [jobs](../../services/project-runtime/src/project_runtime/jobs.py)、[proposals](../../services/project-runtime/src/project_runtime/application/proposals.py)、[runner](../../packages/monkeyarch/src/monkeyarch/application/project_runner.py)、[cad_patch](../../packages/monkeycad/src/monkeycad/cad_patch.py)：并发冲突、复用与增量执行边界。
 - [project ports](../../packages/archflow/src/archflow/project/ports.py)、[repository](../../packages/archflow/src/archflow/project/repository.py)、[layout](../../packages/archflow/src/archflow/project/layout.py)、[issue](../../packages/archflow/src/archflow/project/issue.py)：现有持久化范围、原子发布和本方案需要补充的设计 branch 引用。
 - [App](../../apps/monkeyhub/web/src/app/App.tsx)、[VersionsStrip](../../apps/monkeyhub/web/src/features/stage/VersionsStrip.tsx)、[Stage](../../apps/monkeyhub/web/src/features/stage/Stage.tsx)、[DocumentCanvas](../../apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx)：当前视图、来源和显示生命周期。
-- [drawing_elevation](../../packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py)、[既有出图方案](drawing-system.md)、[system map](../architecture/system-map.md)：已实现立面消费者和其他能力边界。
+- [drawing_elevation](https://github.com/cogco1/MonkeyHub/blob/959a9284f0474664620510b241c7b27050c8c64f/monkeydiagram/drawing_elevation.py)、[既有出图方案](drawing-system.md)、[system map](../architecture/system-map.md)：已实现立面消费者和其他能力边界。
 
 ## 12. 本地实施结果（2026-09-09）
 

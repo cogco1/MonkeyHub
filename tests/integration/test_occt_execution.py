@@ -300,7 +300,7 @@ class OcctDrawingTests(unittest.TestCase):
 
         from PIL import Image
 
-        from monkeydiagram.drawing_svg import drawing_svg, render_svg_png
+        from monkeydiagram.rendering.svg import drawing_svg, render_svg_png
 
         frame = {**self.frame, "origin": (3, 3, 4)}
         (region,) = section_occt_regions(self.entries, object_ids=("panel",), **frame)

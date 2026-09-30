@@ -73,7 +73,7 @@ RUNNER_RUN_FAILURE = "runner-run-failure"
 RUNNER_RUN_RECEIPT = "runner-run-receipt"
 STAGE_GEOMETRY_PROGRAM = "<identifier>-geometry-program"
 
-# ---- the drawing consumer's kind (packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py)
+# ---- the drawing consumer's kind (packages/monkeydiagram/src/monkeydiagram/drawing_runs.py)
 
 DRAWING_PROJECTION_RECEIPT = "drawing-projection-receipt"
 

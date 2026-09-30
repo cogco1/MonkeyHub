@@ -34,14 +34,19 @@ from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, record_ref_from_uri, require_identifier
-from monkeydiagram.drawing_elevation import (
-    CUT_PLAN_KIND, ELEVATION_KIND, SECTION_PERSPECTIVE_KIND, UNIT_METRES, DrawingElevationError, DrawnView, ElevationSource,
-    NativeModelSource, ElevationView, SectionPerspectiveError, SectionPerspectiveView, axonometric_frame,
-    freeze_model_axis_elevation, freeze_section_perspective, inspection_witness_ids, object_semantics,
-    project_model_axis_elevation, read_elevation_source, read_model_axis_elevation, VerifiedElevationSource,
+from monkeydiagram.drawing_runs import (
+    CUT_PLAN_KIND, DrawnView, freeze_model_axis_elevation, freeze_section_perspective, read_model_axis_elevation,
 )
-from monkeydiagram.drawing_svg import PNG_MEDIA_TYPE, SVG_MEDIA_TYPE, DrawingSvgError, svg_paper_marks
-from monkeydiagram.mesh_views import MeshViewError, mesh_line_view, mesh_pipeline, pixel_size, triangulate
+from monkeydiagram.projection.mesh_views import MeshViewError, mesh_line_view, mesh_pipeline, pixel_size, triangulate
+from monkeydiagram.projection.views import (
+    ELEVATION_KIND, SECTION_PERSPECTIVE_KIND, UNIT_METRES, ElevationView, SectionPerspectiveError, SectionPerspectiveView,
+    axonometric_frame, project_model_axis_elevation,
+)
+from monkeydiagram.rendering.svg import PNG_MEDIA_TYPE, SVG_MEDIA_TYPE, DrawingSvgError, svg_paper_marks
+from monkeydiagram.sources import (
+    DrawingElevationError, ElevationSource, NativeModelSource, VerifiedElevationSource, inspection_witness_ids,
+    object_semantics, read_elevation_source,
+)
 
 from .artifacts import (
     FORMAT_3DM, ArtifactRecord, ModelSource, SourceDocument, _document_pages, _document_source_lock, _unavailable,
@@ -271,7 +276,8 @@ def _source_files(*modules: str) -> dict[str, str]:
             for name in modules}
 
 
-_OCCT_DRAWING = ("monkeydiagram.drawing_elevation", "monkeydiagram.drawing_svg", "monkeycad.cad_execution",
+_OCCT_DRAWING = ("monkeydiagram.sources", "monkeydiagram.projection.views", "monkeydiagram.drawing_runs",
+                 "monkeydiagram.rendering.svg", "monkeycad.cad_execution",
                  "monkeycad.occt_backend")
 
 
@@ -292,7 +298,7 @@ def drawing_pipeline(kind: str) -> dict[str, Any]:
     if kind == SHEET:
         from monkeycad.occt_backend import backend_identity
 
-        return {"kind": kind, "code": {**_source_files(*_OCCT_DRAWING, "monkeydiagram.drawing_output",
+        return {"kind": kind, "code": {**_source_files(*_OCCT_DRAWING, "monkeydiagram.rendering.paper",
                                                          "monkeydiagram.documentation.styles",
                                                          "project_runtime.application.boards"),
                                        "sheet": hashlib.sha256("".join(inspect.getsource(function) for function in (
@@ -349,7 +355,7 @@ def _through_projections(projections: ProjectionQueue | None, kind: str, model_s
         files, facts, hit = projections.on_demand(on_demand_spec(kind, _source_of(model_source), recipe_of_view), files)
         if hit:
             from monkeycad.occt_backend import backend_identity
-            from monkeydiagram.drawing_svg import svg_objects
+            from monkeydiagram.rendering.svg import svg_objects
 
             facts = {**facts, "backend": backend_identity(),
                      "counts": {**facts["counts"], "objects_drawn_in_svg": len(svg_objects(files["svg"]))}}
@@ -475,7 +481,7 @@ def draw_model_view(
     """Verify one exact retained model and draw one view of it; nothing is cached or written.
 
     ``axon`` is drawn from the model's triangles against a depth buffer
-    (``monkeydiagram.mesh_views``); the orthographic elevations keep the exact
+    (``monkeydiagram.projection.mesh_views``); the orthographic elevations keep the exact
     hidden-line solve. ``png_text`` becomes the axonometric PNG's text chunks.
     This is a read of the run's own recorded state, so a run on an older
     canonical base is drawn too.
@@ -857,7 +863,7 @@ def _sheet_files(canvas, recipe_json: str) -> dict[str, bytes]:
     """
 
     from pypdf import PdfReader, PdfWriter
-    from monkeydiagram.drawing_output import render_dxf, render_pdf, render_svg
+    from monkeydiagram.rendering.paper import render_dxf, render_pdf, render_svg
     from .boards import page_export_png
 
     pdf = render_pdf(canvas)

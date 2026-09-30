@@ -18,7 +18,8 @@ from project_runtime.application.drawing_dimensions import (
 from project_runtime.application.drawings import _complete_source
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from monkeydiagram.drawing_elevation import ElevationView, read_elevation_source
+from monkeydiagram.projection.views import ElevationView
+from monkeydiagram.sources import read_elevation_source
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_candidate import CandidateTestCase

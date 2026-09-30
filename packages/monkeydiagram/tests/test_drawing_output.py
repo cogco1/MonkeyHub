@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import unittest
 
-from monkeydiagram.drawing_output import MM_PER_PT, PaperCanvas, render_dxf, render_pdf, render_svg
+from monkeydiagram.rendering.paper import MM_PER_PT, PaperCanvas, render_dxf, render_pdf, render_svg
 
 
 DRAWING_DEPS = all(find_spec(name) is not None for name in ("reportlab", "fontTools", "ezdxf"))
@@ -95,7 +95,7 @@ class DrawingOutputTests(unittest.TestCase):
 
         # ezdxf lists its DXF classes from a set, in the order each process hashes it.
         script = ("import hashlib, sys, reportlab; from pathlib import Path; "
-                  "from monkeydiagram.drawing_output import PaperCanvas, render_dxf; "
+                  "from monkeydiagram.rendering.paper import PaperCanvas, render_dxf; "
                   "font = Path(reportlab.__file__).parent / 'fonts' / 'Vera.ttf'; "
                   "c = PaperCanvas(font_mapping={'Test': font}); c.start_sheet('A01', (420, 297)); "
                   "c.setFont('Test', 12); c.drawString(30, 40, 'SHEET A01'); c.line(10, 10, 200, 120); "

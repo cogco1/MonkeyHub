@@ -273,7 +273,7 @@ class PublicationTests(unittest.TestCase):
 
     def test_source_drawing_keeps_native_vectors_and_editable_pptx_objects(self):
         from project_runtime.application.drawings import _sheet_fonts
-        from monkeydiagram.drawing_output import PaperCanvas, render_pdf, MM_PER_PT
+        from monkeydiagram.rendering.paper import PaperCanvas, render_pdf, MM_PER_PT
         drawing = PaperCanvas(font_mapping={"normal": _sheet_fonts()["normal"]})
         drawing.start_sheet("A01", (200 * MM_PER_PT, 100 * MM_PER_PT))
         drawing.setFont("normal", 12)

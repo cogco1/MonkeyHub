@@ -295,7 +295,9 @@
         "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
         "services/project-runtime/src/project_runtime/application/drawing_plans.py",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/sources.py",
+        "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
         "tests/integration/test_cad_backend_contract.py",
         "tests/integration/test_cad_execution.py",
         "tests/integration/test_cad_patch.py"
@@ -386,9 +388,10 @@
         "monkeycad.local_cad_discovery"
       ],
       "used_by": [
-        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_svg.py",
-        "packages/monkeydiagram/src/monkeydiagram/mesh_views.py",
+        "packages/monkeydiagram/src/monkeydiagram/sources.py",
+        "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
+        "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py",
+        "packages/monkeydiagram/src/monkeydiagram/projection/mesh_views.py",
         "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
         "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "services/project-runtime/src/project_runtime/application/drawings.py",
@@ -752,7 +755,7 @@
     },
     {
       "module_id": "adapters.drawing_svg",
-      "owner_path": "packages/monkeydiagram/src/monkeydiagram/drawing_svg.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py",
       "purpose": "Serialise drawing polylines, orthographic or a section perspective, as one deterministic SVG that names each polyline's source object, and render a PNG from those SVG bytes.",
       "owns": [
         "cropping projected polylines to the view window after visibility was solved (crop_polylines)",
@@ -766,7 +769,7 @@
       "does_not_own": [
         "projecting geometry - monkeycad.occt (project_occt_lines)",
         "choosing the view, verifying the source or writing anything - runtime.drawing_elevation through project.repository",
-        "PDF/DXF sheets and the drawing standard behind them - documentation.drawings; line-weight standards, annotations and title blocks are that owner's conventions, not this serializer's"
+        "PDF/DXF sheets and the sheet styles behind them - documentation.drawings; line-weight standards, annotations and title blocks are that owner's conventions, not this serializer's"
       ],
       "inputs": [
         "OcctDrawingPolyline tuple",
@@ -804,7 +807,8 @@
         "monkeycad.occt"
       ],
       "used_by": [
-        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
         "packages/monkeydiagram/tests/test_drawing_svg.py",
         "packages/monkeydiagram/tests/test_drawing_elevation.py"
       ],
@@ -825,7 +829,7 @@
     },
     {
       "module_id": "adapters.mesh_views",
-      "owner_path": "packages/monkeydiagram/src/monkeydiagram/mesh_views.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/projection/mesh_views.py",
       "purpose": "Draw a fast look-only line view of named shapes from their triangles against a depth buffer: the model view's axonometric and the projection cache's thumbnails. Created because the exact hidden-line solve (monkeycad.occt through runtime.drawing_elevation) grows too fast with object count for a view nobody retains, and no drawing owner rasterises meshes.",
       "owns": [
         "triangulating the named shapes at a caller-chosen chord error, after forgetting any mesh a shape already holds so a model read once draws every size as a fresh read would, and naming the curve-only objects left out (triangulate)",
@@ -2640,7 +2644,7 @@
         "tools/project/freeze_project_stage_workflow.py",
         "tools/project/verify_state_record.py",
         "packages/archflow/tests/test_record_kinds.py",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
         "services/project-runtime/src/project_runtime/application/gestures.py",
         "services/project-runtime/src/project_runtime/application/decisions.py"
@@ -2982,7 +2986,8 @@
         "tools/project/verify_state_record.py",
         "tools/project/freeze_project_stage_workflow.py",
         "tools/project/issue_project.py",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/sources.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
         "tools/project/create_project.py",
         "packages/archflow/src/archflow/project/watch.py"
       ],
@@ -3160,7 +3165,7 @@
     },
     {
       "module_id": "runtime.drawing_elevation",
-      "owner_path": "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
       "purpose": "Freeze model-axis projections, horizontal cut plans and section perspectives from verified STEP or registered native model geometry into SVG/PNG and the existing drawing receipt, without changing design state.",
       "owns": [
         "ElevationSource: the retained STEP and OcctExecutionReceipt@1 a drawing is derived from, and the verification that they agree (SHA, run, base, unit, Z-up, STEP names = physical object ids)",
@@ -3248,7 +3253,9 @@
         "project.record_kinds",
         "project.refs",
         "project.repository",
-        "project.version_refs"
+        "project.version_refs",
+        "monkeydiagram.sources",
+        "monkeydiagram.projection.views"
       ],
       "used_by": [
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
@@ -3275,7 +3282,12 @@
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
         "packages/monkeydiagram/tests/test_drawing_section_perspective.py"
       ],
-      "notes": "CREATE 2026-09-07: the plan's first real consumer at the application boundary. runtime.project_runner is the seat/stage loop and does not derive drawings; adapters have no repository authority. First frozen drawing: villa-rotonda-reconstruction run drawing-a0-20260907-villa-b-minus-y from source run studio-cand-20260906-010451-dca4de25-4e9d (external workspace, noncanonical)."
+      "notes": "CREATE 2026-09-07: the plan's first real consumer at the application boundary. runtime.project_runner is the seat/stage loop and does not derive drawings; adapters have no repository authority. First frozen drawing: villa-rotonda-reconstruction run drawing-a0-20260907-villa-b-minus-y from source run studio-cand-20260906-010451-dca4de25-4e9d (external workspace, noncanonical). Split in #517: sources.py verifies the source, projection/views.py holds the frames and in-memory projections, drawing_runs.py retains drawing runs and registers the receipt's version refs.",
+      "files": [
+        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
+        "packages/monkeydiagram/src/monkeydiagram/sources.py",
+        "packages/monkeydiagram/src/monkeydiagram/projection/views.py"
+      ]
     },
     {
       "module_id": "semantics.conditions",
@@ -4615,9 +4627,11 @@
         "project.refs",
         "project.repository",
         "runtime.drawing_elevation",
+        "monkeydiagram.sources",
+        "monkeydiagram.projection.views",
         "documentation.drawings",
         "monkeydiagram.documentation.styles",
-        "monkeydiagram.drawing_output",
+        "monkeydiagram.rendering.paper",
         "contracts.canonical",
         "studio.binding",
         "studio.shell",
@@ -8041,12 +8055,9 @@
     },
     {
       "module_id": "documentation.drawings",
-      "owner_path": "packages/monkeydiagram/src/monkeydiagram/documentation/drawings.py",
-      "purpose": "Validate and compile caller-supplied drawing information against a configurable drawing standard, and render common paper scenes to PDF and editable DXF.",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
+      "purpose": "Compose sheets in existing project styles and render common paper scenes to PDF, editable DXF and paper SVG.",
       "owns": [
-        "Drawing Standard v0.1: configurable sheet, view, graphic, annotation, information, status, coordination and revision conventions",
-        "DrawingState structural and cross-record validation: preferred scales, view references, dimension values and chains, source certainty, note placement, tags, interfaces, revisions and paper bounds",
-        "DrawingPlan as a detached plain domain value without receipt, digest or persistence authority",
         "PaperCanvas recording of resolved paper primitives with glyph and stroke bounds, and PDF/DXF/SVG serialization of those same scenes (SVG in paper mm with live text); the same scene always gives the same DXF bytes: the header dates and ezdxf's write time are one fixed time, its class table is in name order whatever the process's hashing, and its GUIDs derive from the file's content",
         "reusable ARCH400 white presentation and ARCH364 technical sheet styles extracted from existing drawings; compose_review_sheet places caller-supplied orthographic linework and measured dimensions at one explicit scale without changing model geometry",
         "compose_view_sheet: caller-placed retained drawings (SheetView: a drawing's svg_paper_marks at its own paper size, placed at a top-left in mm) on a caller-sized paper in a style's frame margin and type sizes, each titled with its subtitle and scale label, a section's cut line with arrows and label on the plan it crosses (SheetSectionMark) and a title strip with the title, sheet number, source line and notes; a drawing or its labels leaving the frame, overlapping another drawing or the title strip, or strip text that does not fit, is refused by name, never moved, scaled or cropped"
@@ -8058,24 +8069,16 @@
         "choosing artifact destinations, persistent writes, canonical promotion or issuance - existing project ports and explicit project decisions"
       ],
       "inputs": [
-        "caller-supplied DrawingState mapping",
-        "Drawing Standard configuration mapping",
         "paper drawing operations and explicit font mapping",
         "optional named source geometry projections for DXF modelspace"
       ],
       "outputs": [
-        "DrawingFinding tuple",
-        "DrawingPlan",
         "common paper scenes with printable bounds",
         "PDF bytes",
         "DXF bytes",
         "SVG bytes"
       ],
       "public_api": [
-        "DrawingFinding",
-        "DrawingPlan",
-        "validate_drawing_state",
-        "compile_drawing_state",
         "PaperPrimitive",
         "PaperSheet",
         "PaperCanvas",
@@ -8094,7 +8097,6 @@
         "monkeycad.execution"
       ],
       "used_by": [
-        "packages/monkeydiagram/tests/test_drawing_standard.py",
         "packages/monkeydiagram/tests/test_drawing_output.py",
         "packages/monkeydiagram/tests/test_drawing_styles.py",
         "services/project-runtime/src/project_runtime/main.py",
@@ -8102,27 +8104,21 @@
       ],
       "invariants": [
         "Source design and project information remain the only facts; drawing values do not confirm or mutate them.",
-        "Scale is an explicit drawing convention, never a packing result; exceptions carry an explicit reason.",
-        "Derived dimensions retain their source certainty and unresolved dimensions cannot become construction control.",
-        "Tags, section references and revisions resolve against stable ids; actual paper primitives must fit the stated printable area.",
+        "Scale is an explicit drawing convention, never a packing result.",
         "PDF, DXF and SVG are serialized from the same paper scenes; none is reconstructed from another, and the same scenes give the same bytes of each.",
-        "The grammar uses ordinary values and no filesystem IO. Output adapters return bytes and never choose or write a project path.",
+        "Output adapters return bytes and never choose or write a project path.",
         "A view sheet moves each drawing's own marks to where the caller placed them, with their own pens and greys: nothing is re-projected, rescaled or cropped, and the placement is the caller's, never a packing result."
       ],
       "status": "canonical",
       "files": [
-        "packages/monkeydiagram/src/monkeydiagram/documentation/drawings.py",
         "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
-        "packages/monkeydiagram/src/monkeydiagram/documentation/drawing_standard_v0_1.json",
-        "packages/monkeydiagram/src/monkeydiagram/documentation/drawing_state.schema.json",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_output.py"
+        "packages/monkeydiagram/src/monkeydiagram/rendering/paper.py"
       ],
       "tests": [
-        "packages/monkeydiagram/tests/test_drawing_standard.py",
         "packages/monkeydiagram/tests/test_drawing_styles.py",
         "packages/monkeydiagram/tests/test_drawing_output.py"
       ],
-      "notes": "CREATE justified in docs/design/drawing-standard.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework."
+      "notes": "CREATE justified in docs/design/drawing-standard.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework. #517 retired the Drawing Standard v0.1 validator (documentation/drawings.py) and its two JSON files: no production reader (topology audit Q13). The sheet styles and the paper scene remain."
     },
     {
       "module_id": "monkeyfab",

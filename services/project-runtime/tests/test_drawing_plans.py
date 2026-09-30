@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from monkeycad.occt_backend import occt_available
 from archflow.project.record_kinds import DRAWING_PROJECTION_RECEIPT
 from archflow.project.refs import record_ref_from_uri
-from monkeydiagram.drawing_elevation import read_model_axis_elevation
+from monkeydiagram.drawing_runs import read_model_axis_elevation
 from project_runtime.application import drawing_plans
 from project_runtime.application.artifacts import _chain_head, _page_replacements, list_documents, replacement_cause
 from project_runtime.binding import bound_project
@@ -84,7 +84,7 @@ def _freeze_retaining(freeze, repository, fields, kwargs):
 def receipt_fields(**fields):
     """Cut-plan receipts retained meanwhile carry exactly these fields; None leaves one out.
 
-    The projection owner (monkeydiagram.drawing_elevation) writes its own
+    The projection owner (monkeydiagram.drawing_runs) writes its own
     receipt fields; this retains known values, or none as an older revision
     has, around the real projection so the application's reading is checked.
     """

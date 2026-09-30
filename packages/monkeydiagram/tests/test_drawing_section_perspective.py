@@ -19,20 +19,24 @@ from monkeycad import occt_backend
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import SEAT_OCCT_EXECUTION, STUDIO_MODEL_ASSET
 from archflow.project.repository import FilesystemProjectRepository
-from monkeydiagram.drawing_elevation import (
-    SECTION_PERSPECTIVE_KIND,
-    ElevationSource,
-    NativeModelSource,
-    SectionPerspectiveError,
-    SectionPerspectiveView,
+from monkeydiagram.drawing_runs import (
     freeze_section_perspective,
     list_model_axis_elevations,
-    object_semantics,
-    project_section_perspective,
-    read_elevation_source,
     read_model_axis_elevation,
 )
-from monkeydiagram.drawing_svg import svg_objects
+from monkeydiagram.projection.views import (
+    SECTION_PERSPECTIVE_KIND,
+    SectionPerspectiveError,
+    SectionPerspectiveView,
+    project_section_perspective,
+)
+from monkeydiagram.rendering.svg import svg_objects
+from monkeydiagram.sources import (
+    ElevationSource,
+    NativeModelSource,
+    object_semantics,
+    read_elevation_source,
+)
 
 NEEDS_OCCT = unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
 SOURCE_RUN = "source-run"

@@ -22,7 +22,7 @@ class MeshLineViewTests(unittest.TestCase):
                      for name, corner, size in boxes)
 
     def draw(self, entries, *, crop=(-1, -1, 11, 11), size=240, **frame):
-        from monkeydiagram.mesh_views import mesh_line_view, pixel_size, triangulate
+        from monkeydiagram.projection.mesh_views import mesh_line_view, pixel_size, triangulate
 
         meshes, skipped = triangulate(entries, [entry.name for entry in entries],
                                       linear_deflection=pixel_size(crop, size) / 2)
@@ -70,7 +70,7 @@ class MeshLineViewTests(unittest.TestCase):
         from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
         from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
 
-        from monkeydiagram.mesh_views import mesh_line_view, pixel_size, triangulate
+        from monkeydiagram.projection.mesh_views import mesh_line_view, pixel_size, triangulate
 
         entries = (occt_backend.StepEntry("column", (), None, BRepPrimAPI_MakeCylinder(
             gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), 1.0, 6.0).Shape()),)
@@ -92,7 +92,7 @@ class MeshLineViewTests(unittest.TestCase):
         from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
         from OCP.gp import gp_Pnt
 
-        from monkeydiagram.mesh_views import triangulate
+        from monkeydiagram.projection.mesh_views import triangulate
 
         curve = occt_backend.StepEntry("rail", (), None, BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, 0), gp_Pnt(1, 0, 0)).Edge())
         meshes, skipped = triangulate((curve, *self.entries(("wall", (0, 0, 0), (1, 1, 1)))), ["rail", "wall"],
@@ -106,7 +106,7 @@ class MeshLineViewMemoryTests(unittest.TestCase):
     def test_large_overlapping_faces_are_drawn_in_bounded_memory(self):
         import tracemalloc
 
-        from monkeydiagram.mesh_views import ObjectMesh, mesh_line_view
+        from monkeydiagram.projection.mesh_views import ObjectMesh, mesh_line_view
 
         # Twelve slabs, each filling the whole 1024 px view at its own depth: about
         # 50 million candidate pixels, which used to be expanded a few hundred

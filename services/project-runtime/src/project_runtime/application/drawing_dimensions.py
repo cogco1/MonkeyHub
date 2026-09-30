@@ -17,8 +17,9 @@ from archflow.project.repository import ProjectRepositoryError
 from archflow.state.state_record import parameter_bindings_of, project_grids_of, project_levels_of
 from monkeyarch.authoring.element_producers import ProductionContext, element_rows_of, produce_rows
 from monkeyarch.domain.reference_resolver import ReferenceContext
-from monkeydiagram.drawing_elevation import ElevationView, VerifiedElevationSource
-from monkeydiagram.drawing_svg import dimension_placement_fits
+from monkeydiagram.projection.views import ElevationView
+from monkeydiagram.rendering.svg import dimension_placement_fits
+from monkeydiagram.sources import VerifiedElevationSource
 
 from .artifacts import ModelSource, require_complete_model, require_model_source
 from ..binding import ProjectBinding

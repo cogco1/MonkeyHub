@@ -2,6 +2,8 @@
 
 状态：2026-09-06 已实施并在当前柜体五页图中验证。标准及框架代码在本工作区；模型和图纸成果仍由项目仓库保存，当前成果为设计协调稿。
 
+2026-09-30（#517）：DrawingState 校验器 `documentation/drawings.py`、标准配置 `drawing_standard_v0_1.json` 与结构 `drawing_state.schema.json` 在仓库内没有生产读取方，按拓扑审计 Q13 退役，可从 Git 历史取回。下文各 System 的规则保留为设计记录；纸面样式 `documentation/styles.py` 与纸面场景 `rendering/paper.py` 仍在使用。
+
 ## 责任分工
 
 | 内容 | 唯一负责处 | 图纸如何使用 |
@@ -121,22 +123,9 @@ Studio 的 `GET /api/drawings/styles` 提供可选风格；`POST /api/drawings/s
 选定的比例不因版面不足自动缩小。隐藏对象、立面轮廓简化和说明由请求明确给定；切换风格不改变模型或原图。
 这两套配置来自已核对的现有图纸；任意参考 PDF/图片的自动风格识别尚未接入。
 
-标准配置为 `packages/monkeydiagram/src/monkeydiagram/documentation/drawing_standard_v0_1.json`，结构为 `drawing_state.schema.json`。Python 入口为 `monkeydiagram.documentation` 的 `validate_drawing_state(state, standard)` 与 `compile_drawing_state(state, standard)`。JSON Schema 说明结构；Python 校验器还检查跨记录关系、尺寸端点及图面边界。
+标准配置 `drawing_standard_v0_1.json`、结构 `drawing_state.schema.json` 以及 `validate_drawing_state`／`compile_drawing_state` 已于 #517 退役（见文首状态）。
 
-调用方先准备项目来源、对象、材料、视图目的与尺寸状态，运行校验与编译，再用 `monkeydiagram.drawing_output.PaperCanvas` 记录纸面内容。PDF 与 DXF 导出相同场景；图元边界回填 DrawingState 后，在写出成果前再检查实际可打印范围。成果字节交回现有项目仓库端口。输出依赖是 `packages/monkeydiagram/pyproject.toml` 的 `drawings` extra（Runtime 的 requirements.txt 列出同样的版本）；核心校验器不需要 CAD 或 PDF 库。
-
-```python
-import json
-from importlib.resources import files
-from monkeydiagram.documentation import compile_drawing_state, validate_drawing_state
-
-standard = json.loads(files("monkeydiagram.documentation").joinpath(
-    "drawing_standard_v0_1.json").read_text(encoding="utf-8"))
-findings = validate_drawing_state(state, standard)
-plan = compile_drawing_state(state, standard)  # invalid data raises ValueError
-```
-
-编译器解析统一的 `view.title`、`view.scale_label` 和 `reference.label`，消费者直接使用。`view.information` 声明图页实际包含的信息，校验器对照类型的 required/forbidden 集合；它不通过声明替代图面检查。纸面边界来自字体字形与线宽，不等同于自动解决所有文字碰撞，最终幅面仍需视觉复核。
+调用方用 `monkeydiagram.rendering.paper.PaperCanvas` 记录纸面内容。PDF 与 DXF 导出相同场景；成果字节交回现有项目仓库端口。输出依赖是 `packages/monkeydiagram/pyproject.toml` 的 `drawings` extra（Runtime 的 requirements.txt 列出同样的版本）。纸面边界来自字体字形与线宽，不等同于自动解决所有文字碰撞，最终幅面仍需视觉复核。
 
 室内或建筑项目替换对象、基准、视图组合与接口项，继续使用同一标准。新视图类型只有在实际阅读任务需要时加入配置。板件页由项目下游选择控制；选择 exact geometry 与 schedule 时仍需提供板材、封边、孔位、加工坐标和公差，不能把当前 STEP 自动称为 CNC 生产文件。
 
