@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from archflow.adapters.occt_backend import occt_available
+from monkeycad.occt_backend import occt_available
 from archflow.project.record_kinds import DRAWING_PROJECTION_RECEIPT
 from archflow.project.refs import record_ref_from_uri
 from monkeydiagram.drawing_elevation import read_model_axis_elevation

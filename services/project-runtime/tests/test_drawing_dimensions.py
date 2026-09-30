@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from archflow.adapters import occt_backend
+from monkeycad import occt_backend
 from archflow.project.refs import record_ref_from_uri
 from project_runtime.application.artifacts import ModelSource
 from project_runtime.binding import bound_project

@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import rhino3dm as rhino
 
-from archflow.adapters import occt_backend as backend
+from monkeycad import occt_backend as backend
 
 
 def _model(unit=rhino.UnitSystem.Meters):

@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from archflow.adapters import three_dm_inspector
+from monkeycad import three_dm_inspector
 from .support import PROJECT_ID, make_empty_project
 
 

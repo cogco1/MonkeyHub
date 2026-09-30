@@ -30,7 +30,7 @@ from typing import Any, Mapping
 from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity
 from archflow.state.geometry_program import load_compiled_geometry_program
 from monkeyarch.capabilities.discipline_seats import SeatSpec
-from archflow.adapters.cad_execution import patch_composed_three_dm
+from monkeycad.cad_execution import patch_composed_three_dm
 from archflow.project.layout import cad_workspace_path
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (

@@ -528,7 +528,7 @@ HEAD                   Published（唯一已发布位置）
 面向用户的模块显示名采用“领域｜具体任务或输出”，用用户熟悉的动作、对象和图种说明用途，
 如“建模｜固定视角模型检查图”“出图｜建筑、室内与家具图纸制作”；不要只写“阶段出图”。
 这是项目约定，任务用词参考 [GOV.UK 服务命名指南](https://www.gov.uk/service-manual/design/naming-your-service)。
-显示名不充当代码身份：注册表继续用现有 `module_id`（如 `adapters.cad_execution`）、
+显示名不充当代码身份：注册表继续用现有 `module_id`（如 `monkeycad.execution`）、
 `owner_path` 和 `public_api`；花果山 Skill ID 则沿用自己的 kebab-case，不跨体系统一改名。
 Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-names)：模块短小、小写，
 必要时用下划线，函数用 snake_case，类用 CapWords。显示名修订不迁移旧 ID、API 或引用，
@@ -707,7 +707,7 @@ node --version
 py -3.12 -m venv "$RuntimeRoot\venv"
 $Python = "$RuntimeRoot\venv\Scripts\python.exe"
 $env:PATH = "$RuntimeRoot\venv\Scripts;" + $env:PATH
-& $Python -m pip install -e 'packages/archflow[cad-inspection]'
+& $Python -m pip install -e packages/archflow -e 'packages/monkeycad[inspection]'
 & $Python -m pip install -r services/project-runtime/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 & $Python -m pip check
 npm.cmd ci --prefix apps/monkeyhub/web
@@ -778,7 +778,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SourceRoot\apps\monkey
 ```
 
 唯一的前端 `dist` 目录来自 `npm --prefix apps/monkeyhub/web run build`。Hub 启动后在其设置里选择 8.3 创建的项目、CAD 后端
-（默认 `occt`，需要 `packages/archflow[cad-occt]`；未安装时选 `off`）和参考 run；意图 provider、模型与超时来自 Hub 的
+（默认 `occt`，需要 `packages/monkeycad[occt]`；未安装时选 `off`）和参考 run；意图 provider、模型与超时来自 Hub 的
 用户偏好。每个项目的 Studio 进程由 Hub 创建、监控和关闭；退出走托盘的 `Quit MonkeyHub`。
 不要与下面的手动方式同时使用同一组端口。
 

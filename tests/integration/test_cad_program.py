@@ -7,7 +7,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from archflow.adapters.cad_program import (
+from monkeycad.cad_program import (
     CadTranslationError,
     expected_object_semantics,
     translate_to_rhino_python,
@@ -882,7 +882,7 @@ class LayerSchemeTests(unittest.TestCase):
     def test_a_caller_supplied_scheme_renames_the_category_and_keeps_identity(self) -> None:
         """P108 numbered layers: <category>::<component>; unmapped components stay on the historical path."""
 
-        from archflow.adapters.cad_program import _component_layer, expected_object_semantics
+        from monkeycad.cad_program import _component_layer, expected_object_semantics
 
         self.assertEqual(_component_layer((), None), "archflow")
         self.assertEqual(_component_layer(("portico-columns",), None), "archflow::portico-columns")

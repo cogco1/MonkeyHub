@@ -329,7 +329,7 @@ def test_consumer_cannot_claim_conditions_or_images_removed_in_transport(scored_
 
 
 def test_expanded_p036_fixture_matches_reviewed_truth_and_exact_shell_clearance(tmp_path):
-    from archflow.adapters.occt_backend import occt_available
+    from monkeycad.occt_backend import occt_available
     from labs.spatial_observation.fixture import Fixture
     from labs.spatial_observation.revision_benchmark import ROOF, SCREEN, revision_record, tasks
 

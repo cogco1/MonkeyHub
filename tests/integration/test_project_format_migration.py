@@ -58,8 +58,8 @@ from archflow.project.repository import (
     plan_project_migration,
 )
 from archflow.state.operational_state import DesignObligation
-from archflow.adapters.cad_execution import RhinoCadProgramBinding
-from archflow.adapters.three_dm_inspector import ThreeDmInspection
+from monkeycad.cad_execution import RhinoCadProgramBinding
+from monkeycad.three_dm_inspector import ThreeDmInspection
 from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef
 from archflow.state.spatial import (
     SchematicOption,

@@ -171,7 +171,7 @@ class ContractTests(unittest.TestCase):
         from OCP.TopAbs import TopAbs_SOLID
         from OCP.TopExp import TopExp_Explorer
 
-        from archflow.adapters.occt_backend import build_program_shapes, measure_shape
+        from monkeycad.occt_backend import build_program_shapes, measure_shape
         from monkeyarch.compilers.geometry import compile_geometry_program
         from archflow.state.geometry_program import InterfaceDatum, InterfaceDatumKind, LengthUnit
         from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state

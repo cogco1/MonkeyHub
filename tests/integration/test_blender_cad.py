@@ -16,9 +16,9 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from archflow.adapters import cad_backend, cad_execution
-from archflow.adapters.cad_backend import CadExecutionRequest, CadExecutionSource
-from archflow.adapters.cad_execution import CadExecutionError
+from monkeycad import cad_backend, cad_execution
+from monkeycad.cad_backend import CadExecutionRequest, CadExecutionSource
+from monkeycad.cad_execution import CadExecutionError
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.geometry_program import (
@@ -344,7 +344,7 @@ class BlenderHostTests(unittest.TestCase):
         result.validate(request, "blender")
 
     def test_cold_read_rejects_changed_face_connections_but_accepts_equivalent_loop_order(self):
-        from archflow.adapters import blender_cad
+        from monkeycad import blender_cad
 
         extrusion = _extrusion(vector=(0, 1, 0))
         parameters = {

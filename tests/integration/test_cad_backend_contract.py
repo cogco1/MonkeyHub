@@ -18,8 +18,8 @@ from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from unittest.mock import patch
 
-from archflow.adapters import cad_backend, cad_execution, occt_backend
-from archflow.adapters.cad_execution import CadExecutionError, CadProgramBinding, RhinoCadProgramBinding
+from monkeycad import cad_backend, cad_execution, occt_backend
+from monkeycad.cad_execution import CadExecutionError, CadProgramBinding, RhinoCadProgramBinding
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import stage_geometry_program
 from archflow.project.refs import BranchRef, RunRef, record_ref_from_uri

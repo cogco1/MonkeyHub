@@ -5,7 +5,7 @@ from pathlib import Path
 from PIL import Image
 import pytest
 
-from archflow.adapters.occt_backend import occt_available
+from monkeycad.occt_backend import occt_available
 from labs.event_gating.fixtures import MINIMUM_TWIN_DISTANCE, prepare
 
 

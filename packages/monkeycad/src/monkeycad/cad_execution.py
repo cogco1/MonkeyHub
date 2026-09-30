@@ -26,9 +26,9 @@ from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable, Mapping, Sequence
 
-from archflow.adapters.cad_patch import CadPatchError, build_patch_prelude, select_patch_operations
-from archflow.adapters.local_cad_discovery import SoftwareDiscoveryRegistry
-from archflow.adapters.cad_program import (
+from monkeycad.cad_patch import CadPatchError, build_patch_prelude, select_patch_operations
+from monkeycad.local_cad_discovery import SoftwareDiscoveryRegistry
+from monkeycad.cad_program import (
     LONG_PATH_HELPER_SOURCE,
     CadTranslationError,
     _resolved_layer_colors,
@@ -36,7 +36,7 @@ from archflow.adapters.cad_program import (
     translate_step_import_to_rhino_python,
     translate_to_rhino_python,
 )
-from archflow.adapters.occt_backend import (
+from monkeycad.occt_backend import (
     _observe_operation as _observe_occt_operation,
     _polyline_geometry,
     CLOSED_SOLID,
@@ -64,7 +64,7 @@ from archflow.adapters.occt_backend import (
     write_preview_three_dm,
     write_step,
 )
-from archflow.adapters.three_dm_inspector import (
+from monkeycad.three_dm_inspector import (
     ThreeDmInspection,
     ThreeDmInspectionError,
     inspect_three_dm,

@@ -22,7 +22,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from archflow.adapters import occt_backend
+from monkeycad import occt_backend
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 

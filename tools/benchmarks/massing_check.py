@@ -35,7 +35,7 @@ BOUNDS_TOLERANCE = 0.005
 def check_massing(step_path: Path, *, hidden_names: Iterable[str] = (), length_unit: str = "meter") -> dict:
     """Measure the study's visible solids in ``step_path`` against the task."""
 
-    from archflow.adapters import occt_backend
+    from monkeycad import occt_backend
 
     hidden = set(hidden_names)
     solids = []

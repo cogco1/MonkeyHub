@@ -6,9 +6,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from archflow.adapters.local_cad_discovery import discover_local_cad, Discovery
-from archflow.adapters.model_formats import GLB, Mesh, Scene, convert, ConversionError
-from archflow.adapters.model_providers import (
+from monkeycad.local_cad_discovery import discover_local_cad, Discovery
+from monkeycad.model_formats import GLB, Mesh, Scene, convert, ConversionError
+from monkeycad.model_providers import (
     Capability, ConversionCoordinator, ConversionFailure, ConvertedFile, InProcessMeshProvider,
     LocalSoftwareProvider, NO_EXECUTOR, Validation, preview_policy,
 )
@@ -165,7 +165,7 @@ class ProviderTests(unittest.TestCase):
                 convert(fixture(),"glb","3dm",providers=[provider])
 
     def test_runtime_missing_changes_capability_and_dispatch(self):
-        with patch("archflow.adapters.model_providers.ThreeDM",side_effect=ConversionError("missing runtime")):
+        with patch("monkeycad.model_providers.ThreeDM",side_effect=ConversionError("missing runtime")):
             coordinator = ConversionCoordinator([InProcessMeshProvider()])
             routes = coordinator.capabilities()
             self.assertFalse(any(row["available"] for row in routes))

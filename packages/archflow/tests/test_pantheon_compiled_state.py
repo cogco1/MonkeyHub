@@ -2834,12 +2834,15 @@ class PantheonCompiledStateProbeTests(unittest.TestCase):
                 fixture_text,
                 f"guard token {token!r} is no longer written by the fixture",
             )
+        # The CAD package left the kernel (#514) and is still framework code.
+        cad_source = ARCHFLOW_SOURCE.parents[2] / "monkeycad" / "src" / "monkeycad"
         framework = [
-            path for path in ARCHFLOW_SOURCE.rglob("*")
+            path for source in (ARCHFLOW_SOURCE, cad_source) for path in source.rglob("*")
             if path.suffix.lower() in {".py", ".json", ".md"}
         ]
         # A moved kernel would leave nothing to read and the scan would pass.
         self.assertIn(ARCHFLOW_SOURCE / "__init__.py", framework)
+        self.assertIn(cad_source / "__init__.py", framework)
         for path in framework:
             text = path.read_text(encoding="utf-8")
             for token in banned:

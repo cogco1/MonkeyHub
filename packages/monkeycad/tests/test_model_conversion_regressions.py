@@ -3,7 +3,7 @@
 import json
 import struct
 
-from archflow.adapters.model_formats import ThreeDM, convert
+from monkeycad.model_formats import ThreeDM, convert
 
 
 def _glb_with_black_seam() -> bytes:

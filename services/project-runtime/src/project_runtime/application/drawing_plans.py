@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from pathlib import PurePath
 
-from archflow.adapters.cad_patch import select_patch_operations
+from monkeycad.cad_patch import select_patch_operations
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT

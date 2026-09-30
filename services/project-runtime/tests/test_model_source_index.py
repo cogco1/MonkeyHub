@@ -85,6 +85,6 @@ class ModelSourceIndexTests(unittest.TestCase):
         self.assertEqual(response.json()["code"], "MODEL_SOURCE_MISMATCH")
 
     def test_source_index_does_not_run_full_geometry_inspection(self):
-        with patch("archflow.adapters.three_dm_inspector._encoded_geometry_sha256", side_effect=AssertionError("full inspection")):
+        with patch("monkeycad.three_dm_inspector._encoded_geometry_sha256", side_effect=AssertionError("full inspection")):
             response = self.client.get(self.path, params={**self.params, "objectId": self.ids[1]})
         self.assertEqual(response.status_code, 200, response.text)

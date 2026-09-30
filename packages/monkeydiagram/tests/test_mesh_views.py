@@ -6,7 +6,7 @@ from io import BytesIO
 from math import sqrt
 import unittest
 
-from archflow.adapters import occt_backend
+from monkeycad import occt_backend
 
 
 @unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")

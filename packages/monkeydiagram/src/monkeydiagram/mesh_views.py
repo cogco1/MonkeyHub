@@ -25,8 +25,8 @@ from io import BytesIO
 import math
 from typing import Any, Mapping, Sequence
 
-from archflow.adapters.cad_execution import StepEntry
-from archflow.adapters.occt_backend import OcctBackendError, tessellate_shape
+from monkeycad.cad_execution import StepEntry
+from monkeycad.occt_backend import OcctBackendError, tessellate_shape
 
 RENDERER_NAME = "mesh-lines"
 #: Adjacent triangles meeting at more than this angle draw their shared edge.

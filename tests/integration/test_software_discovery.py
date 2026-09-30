@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from archflow.adapters import cad_execution
-from archflow.adapters import local_cad_discovery as discovery
+from monkeycad import cad_execution
+from monkeycad import local_cad_discovery as discovery
 
 
 class SoftwareDiscoveryTests(unittest.TestCase):
@@ -189,7 +189,7 @@ class SoftwareDiscoveryTests(unittest.TestCase):
             self.assertEqual(discovery.resolve_blender_executable(), str(command))
 
     def test_blender_backend_uses_shared_selection_before_its_worker(self):
-        from archflow.adapters import blender_cad
+        from monkeycad import blender_cad
         from tests.integration.test_blender_cad import _request
 
         selected = "configured-blender"
