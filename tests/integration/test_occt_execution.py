@@ -46,7 +46,7 @@ from monkeycad.cad_execution import (
 )
 from monkeycad import cad_program
 from monkeycad.cad_program import CadTranslationError
-from monkeycad.three_dm_inspector import inspect_three_dm
+from monkeycad.formats.three_dm_inspector import inspect_three_dm
 from monkeyarch.capabilities.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 from archflow.state.geometry_program import CompiledGeometryObject, CompiledGeometryProgram

@@ -5,7 +5,7 @@ import unittest
 from dataclasses import replace
 
 from archflow.state.geometry_program import expected_object_bounds
-from monkeycad.cad_patch import select_patch_operations
+from monkeycad.patch import select_patch_operations
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import Entity, Parameter, StateRecord, StateRecordEditKind, StateRecordOperator, apply_state_record_operator

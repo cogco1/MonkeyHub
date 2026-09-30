@@ -427,7 +427,7 @@ class CandidateRunTests(CandidateTestCase):
 
     def test_first_candidate_reads_actual_objects_and_keeps_them_after_restart(self) -> None:
         from monkeycad.occt_backend import occt_available
-        from monkeycad.three_dm_inspector import inspect_three_dm
+        from monkeycad.formats.three_dm_inspector import inspect_three_dm
 
         if not occt_available():
             self.skipTest("cadquery-ocp is not installed")
@@ -1157,7 +1157,7 @@ class CandidateComponentRemovalTests(CandidateTestCase):
         import base64
         from monkeycad import occt_backend
         from monkeycad.cad_execution import patch_composed_three_dm
-        from monkeycad.three_dm_inspector import inspect_three_dm_contents
+        from monkeycad.formats.three_dm_inspector import inspect_three_dm_contents
         from project_runtime.application.artifacts import ModelSource
         from archflow.state.geometry_program import load_compiled_geometry_program
         if not occt_backend.occt_available():

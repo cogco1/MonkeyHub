@@ -12,9 +12,9 @@ from dataclasses import dataclass
 
 import monkeycad.cad_execution as cad
 import monkeycad.occt_backend as occt_backend
-from monkeycad.local_cad_discovery import resolve_blender_executable
-from monkeycad.blender_cad import _run_worker, _near, _face_loops
-from monkeycad.blender_worker import READBACK_PREFIX, UNIT_SETTINGS
+from monkeycad.discovery import resolve_blender_executable
+from monkeycad.backends.blender.backend import _run_worker, _near, _face_loops
+from monkeycad.backends.blender.worker import READBACK_PREFIX, UNIT_SETTINGS
 from monkeycad.cad_backend import CadExecutionRequest, CadExecutionResult, OcctBackend
 from monkeycad.cad_program import _rgb
 from archflow.contracts.canonical import canonical_json

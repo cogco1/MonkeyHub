@@ -260,7 +260,7 @@ def _options(options, allowed, backend_id):
 
 # Add an implementation here and declare it under compiled-cad-execution in the
 # module registry. The runner uses this same table for selection and execution.
-from monkeycad.blender_cad import BlenderBackend
+from monkeycad.backends.blender.backend import BlenderBackend
 
 CAD_BACKEND_REGISTRY: dict[str, CadBackend] = {backend.backend_id: backend for backend in (OcctBackend(), RhinoBackend(), BlenderBackend())}
 

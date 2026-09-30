@@ -38,7 +38,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from monkeycad import occt_backend
-from monkeycad.three_dm_inspector import inspect_three_dm_index
+from monkeycad.formats.three_dm_inspector import inspect_three_dm_index
 from archflow.contracts.canonical import canonical_json_bytes
 from archflow.state.state_record import StateRecord, component_facets
 from project_runtime.main import create_app

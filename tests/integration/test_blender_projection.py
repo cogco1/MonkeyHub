@@ -8,7 +8,8 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from monkeycad import cad_backend, cad_execution as cad, blender_projection as projection
+from monkeycad import cad_backend, cad_execution as cad
+from monkeycad.backends.blender import projection
 from monkeycad.occt_backend import occt_available
 from tests.integration.test_occt_execution import _box, _program_of
 from tests.integration.test_cad_execution import _binding

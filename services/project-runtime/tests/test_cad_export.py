@@ -42,7 +42,7 @@ from project_runtime.settings import (
 
 from monkeycad import cad_execution, occt_backend
 from monkeycad.cad_execution import CadCapabilityError
-from monkeycad.three_dm_inspector import inspect_three_dm
+from monkeycad.formats.three_dm_inspector import inspect_three_dm
 from archflow.state.geometry_program import load_compiled_geometry_program
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import record_ref_from_uri

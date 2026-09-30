@@ -56,7 +56,7 @@ from archflow.project.record_kinds import (
     RUNNER_RUN_RECEIPT, SEAT_OCCT_EXECUTION, SEAT_RHINO_EXECUTION, STUDIO_SOURCE_DOCUMENT, STUDIO_MODEL_ASSET,
     STUDIO_DOCUMENT_MODEL_SOURCE,
 )
-from monkeycad.three_dm_inspector import inspect_three_dm_contents, inspect_three_dm_index, ThreeDmInspectionError
+from monkeycad.formats.three_dm_inspector import inspect_three_dm_contents, inspect_three_dm_index, ThreeDmInspectionError
 from monkeycad.cad_program import ROOT_LAYER
 from archflow.project.index import IndexUnavailable
 from archflow.project.layout import cad_workspace_path
@@ -2049,8 +2049,8 @@ def register_model_asset(
 
 
 def _register_external_skp(binding, file_name, content_base64, monitor, event_sink):
-    from monkeycad.model_formats import ConversionError, ThreeDM
-    from monkeycad.sketchup_reader import read_skp
+    from monkeycad.formats.meshes import ConversionError, ThreeDM
+    from monkeycad.formats.sketchup_reader import read_skp
 
     if len(file_name) > 240 or any(char in file_name for char in "/\\\r\n\x00"):
         raise StudioError(422, "MODEL_ASSET_INVALID", "Provide a model file name, not a server path.")

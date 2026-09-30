@@ -59,7 +59,7 @@ from archflow.project.repository import (
 )
 from archflow.state.operational_state import DesignObligation
 from monkeycad.cad_execution import RhinoCadProgramBinding
-from monkeycad.three_dm_inspector import ThreeDmInspection
+from monkeycad.formats.three_dm_inspector import ThreeDmInspection
 from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef
 from archflow.state.spatial import (
     SchematicOption,

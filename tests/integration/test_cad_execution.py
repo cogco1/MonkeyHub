@@ -23,7 +23,7 @@ from monkeycad.cad_execution import (
     prepare_rhino_three_dm_export,
     verify_rhino_export_readback,
 )
-from monkeycad.three_dm_inspector import ThreeDmInspection
+from monkeycad.formats.three_dm_inspector import ThreeDmInspection
 from archflow.project.refs import BranchRef, ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.state.geometry_program import (
     CompiledGeometryObject,

@@ -13,8 +13,8 @@ import subprocess
 from pathlib import Path
 
 import monkeycad.cad_execution as cad
-from monkeycad.local_cad_discovery import resolve_blender_executable
-from monkeycad.blender_worker import READBACK_PREFIX, UNIT_SETTINGS
+from monkeycad.discovery import resolve_blender_executable
+from monkeycad.backends.blender.worker import READBACK_PREFIX, UNIT_SETTINGS
 from monkeycad.cad_program import CadTranslationError, _rgb, expected_object_semantics
 from archflow.contracts.canonical import canonical_json
 from archflow.project.record_kinds import SEAT_BLENDER_EXECUTION
@@ -226,7 +226,7 @@ def _readback_failures(request, plan, readback, provenance):
 def _run_worker(executable, workspace, timeout, *arguments):
     return subprocess.run(
         [str(executable), "--background", "--factory-startup", "--disable-autoexec", "--python-exit-code", "1",
-         "--python", str(Path(__file__).with_name("blender_worker.py")), "--", *map(str, arguments)],
+         "--python", str(Path(__file__).with_name("worker.py")), "--", *map(str, arguments)],
         cwd=workspace, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True,
         timeout=timeout, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )

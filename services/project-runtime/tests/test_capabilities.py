@@ -18,7 +18,7 @@ from urllib.parse import quote
 
 from fastapi.testclient import TestClient
 
-from monkeycad.three_dm_inspector import inspect_three_dm
+from monkeycad.formats.three_dm_inspector import inspect_three_dm
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.application import capability as capability_module
 from project_runtime.main import create_app

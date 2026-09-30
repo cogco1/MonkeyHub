@@ -16,14 +16,16 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import urllib.request
 
-from monkeycad import blender_cad, cad_backend
+from monkeycad import cad_backend
+from monkeycad.backends.blender import backend as blender_backend
+from monkeycad.backends.blender.worker import READBACK_PREFIX, UNIT_SETTINGS
 from monkeycad.cad_execution import CadExecutionError
 from monkeycad.integration_packs import (
     IntegrationPack, IntegrationPackManager, IntegrationUnavailable,
     PackCapability, PackComponent, PackInstallation, PackWorkflow,
 )
-from monkeycad.local_cad_discovery import Discovery, Installation, SoftwareDiscoveryRegistry
-from monkeycad.model_formats import ConversionError, Mesh, Scene
+from monkeycad.discovery import Discovery, Installation, SoftwareDiscoveryRegistry
+from monkeycad.formats.meshes import ConversionError, Mesh, Scene
 from tests.integration.test_blender_cad import _request as _blender_request
 from tests.integration.test_cad_backend_contract import _controlled_rhino, _request as _rhino_request
 
@@ -72,13 +74,13 @@ def _controlled_blender(*, mode="valid"):
                 "material": row.get("material"),
             })
         readback = {**plan, "objects": rows, "blender_version": "controlled-test-host",
-                    "unit_scale": blender_cad.UNIT_SETTINGS[plan["length_unit"]][1]}
+                    "unit_scale": UNIT_SETTINGS[plan["length_unit"]][1]}
         if mode == "wrong-binding":
             readback["binding_json"] = "{}"
-        return SimpleNamespace(returncode=0, stdout=blender_cad.READBACK_PREFIX + json.dumps(readback))
+        return SimpleNamespace(returncode=0, stdout=READBACK_PREFIX + json.dumps(readback))
 
-    with patch.object(blender_cad, "resolve_blender_executable", return_value="controlled-blender"), \
-         patch.object(blender_cad, "_run_worker", side_effect=worker), \
+    with patch.object(blender_backend, "resolve_blender_executable", return_value="controlled-blender"), \
+         patch.object(blender_backend, "_run_worker", side_effect=worker), \
          patch.object(subprocess, "Popen", side_effect=AssertionError("unexpected CAD launch")), \
          patch.object(subprocess, "run", side_effect=AssertionError("unexpected CAD launch")):
         yield calls
@@ -265,7 +267,7 @@ class IntegrationQualificationTests(unittest.TestCase):
                 self.assertEqual(manager.capability_status("rhino", "model.patch")["status"], "not-qualified")
 
     def test_sketchup_reader_version_refusal_propagates_and_source_success_does_not_enable_live_capabilities(self):
-        from monkeycad import sketchup_reader
+        from monkeycad.formats import sketchup_reader
 
         manager = IntegrationPackManager(discovery=_Discovery())
         data, sdk_path = b"controlled SKP source", "configured-SketchUpAPI.dll"
@@ -285,7 +287,7 @@ class IntegrationQualificationTests(unittest.TestCase):
         self.assertEqual(manager.capability_status("sketchup", "source.read")["status"], "failed")
 
     def test_projection_wrapper_preserves_existing_failure_and_does_not_qualify_a_sibling(self):
-        from monkeycad import blender_projection
+        from monkeycad.backends.blender import projection as blender_projection
 
         manager = IntegrationPackManager(discovery=_Discovery())
         request, source = object(), object()

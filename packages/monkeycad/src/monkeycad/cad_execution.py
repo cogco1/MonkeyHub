@@ -26,8 +26,8 @@ from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable, Mapping, Sequence
 
-from monkeycad.cad_patch import CadPatchError, build_patch_prelude, select_patch_operations
-from monkeycad.local_cad_discovery import SoftwareDiscoveryRegistry
+from monkeycad.patch import CadPatchError, build_patch_prelude, select_patch_operations
+from monkeycad.discovery import SoftwareDiscoveryRegistry
 from monkeycad.cad_program import (
     LONG_PATH_HELPER_SOURCE,
     CadTranslationError,
@@ -64,7 +64,7 @@ from monkeycad.occt_backend import (
     write_preview_three_dm,
     write_step,
 )
-from monkeycad.three_dm_inspector import (
+from monkeycad.formats.three_dm_inspector import (
     ThreeDmInspection,
     ThreeDmInspectionError,
     inspect_three_dm,
@@ -3681,7 +3681,7 @@ def _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256,
     if len(by_name) != len(entries) or set(by_name) != set(delivered_object_ids(prior_program.proposal)):
         details.update(cache_reason="source_object_identity_changed", cache_checks={"artifact": "same", "object_names": "changed"})
         raise CadExecutionError("OCCT reuse source has missing or ambiguous physical objects")
-    from .cad_patch import select_patch_operations
+    from .patch import select_patch_operations
 
     selection = select_patch_operations(program, prior_program)
     # The Rhino patch's kept set excludes the entire connected input closure.

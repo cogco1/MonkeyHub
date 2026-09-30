@@ -344,7 +344,7 @@ class BlenderHostTests(unittest.TestCase):
         result.validate(request, "blender")
 
     def test_cold_read_rejects_changed_face_connections_but_accepts_equivalent_loop_order(self):
-        from monkeycad import blender_cad
+        from monkeycad.backends.blender import backend as blender_backend
 
         extrusion = _extrusion(vector=(0, 1, 0))
         parameters = {
@@ -386,7 +386,7 @@ class BlenderHostTests(unittest.TestCase):
                 retained = self.backend.read_receipt(request, payload)
                 retained.validate(request, "blender")
 
-        real_worker = blender_cad._run_worker
+        real_worker = blender_backend._run_worker
         changed_plans = []
 
         def change_connections(executable, workspace, timeout, *arguments):
@@ -407,7 +407,7 @@ class BlenderHostTests(unittest.TestCase):
             return real_worker(executable, workspace, timeout, *arguments)
 
         changed_request = replace(request, artifact_stem="concave-changed-connections")
-        with _without_other_backends(), patch.object(blender_cad, "_run_worker", side_effect=change_connections):
+        with _without_other_backends(), patch.object(blender_backend, "_run_worker", side_effect=change_connections):
             result = self.backend.execute(changed_request)
         self.assertEqual(len(changed_plans), 1)
         actual = result.receipt_payload["readback"]["objects"][0]
