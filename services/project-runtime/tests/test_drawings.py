@@ -22,7 +22,7 @@ from monkeydiagram.drawing_elevation import read_model_axis_elevation
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from project_runtime.application.artifacts import ModelSource
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.drawings import _complete_source
 from project_runtime.application.gestures import require_document_comment_source
 from project_runtime.application.projection import project_state
@@ -472,7 +472,7 @@ class DrawingTests(CandidateTestCase):
     def test_logging_failure_cannot_interrupt_real_generation_and_document_registration(self) -> None:
         self.enable_monitor()
         with patch.object(self.app.state.monitor.store, "append", side_effect=OSError("diagnostic disk unavailable")), \
-                self.assertLogs("project_runtime.application.monitoring", level="WARNING"):
+                self.assertLogs("project_runtime.monitoring", level="WARNING"):
             generated = self.generate()
         self.assertEqual(generated.status_code, 201, generated.text)
         with TestClient(create_app(self.settings)) as reopened:

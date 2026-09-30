@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, SEAT_3DM_INSPECTION
 from archflow.state.state_record import StateRecord
 
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.catalog import (
     BOUND,
     EDITABLE,

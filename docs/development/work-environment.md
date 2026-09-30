@@ -449,7 +449,7 @@ React / Vite / three.js / rhino3dm-wasm
                 ▼
 Project Runtime（FastAPI）
   services/project-runtime/src/project_runtime
-  transport → routes → application → adapters
+  api（routes、dto）→ application；binding、jobs、events 等基础设施在包根
                 │ 调用现有 Python owner / 项目存储接口
                 ▼
 ArchFlow kernel + 项目存储
@@ -607,7 +607,7 @@ ArchFlow 继续复用现有 FastAPI/OpenAPI 与生成客户端，外部模块从
 
 - 新的对外行为先决定是否属于 protocol feature；若是，在
   `project_runtime/protocol.py` 暴露 capability，并同步 `docs/protocols/project-runtime-api.md` 的 route/status/error。
-- wire shape 只写在 `project_runtime/transport/` 的 Pydantic DTO；业务值留在 application/kernel 的普通
+- wire shape 只写在 `project_runtime/api/dto/` 的 Pydantic DTO；业务值留在 application/kernel 的普通
   domain type。
 - route 只接收调用所需身份和内容，不接收客户端指定的服务器路径。
 - 有持久化时先确认现有 项目存储接口 是否足够；不够只增加最窄的 area-bound capability，并由

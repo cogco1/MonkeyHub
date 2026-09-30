@@ -33,7 +33,7 @@ from archflow.contracts.canonical import canonical_digest
 from archflow.ports.model import ModelInvocationReceipt, ModelInvocationRequest, ModelPhase
 
 from .intent_agent import ANTHROPIC, CODEX, CODEX_DEFAULT_MODEL_ID, IntentAgentFailed, invoke_structured
-from .monitoring import StudioMonitor
+from ..monitoring import StudioMonitor
 
 
 DOMAINS = ("modeling", "board", "drawing", "render")

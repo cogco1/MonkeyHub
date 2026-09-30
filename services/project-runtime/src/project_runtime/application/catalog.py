@@ -38,8 +38,8 @@ from typing import Mapping, Sequence
 from archflow.state.state_record import StateRecord
 from monkeyarch.capabilities.element_producers import parameter_unit
 
-from ..transport.errors import StudioError
-from .binding import ProjectBinding
+from ..errors import StudioError
+from ..binding import ProjectBinding
 from .compare import Shape, shapes_of
 from .pick import element_of_object
 from .projection import StateProjection

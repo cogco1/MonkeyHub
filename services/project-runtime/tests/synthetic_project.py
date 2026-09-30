@@ -39,7 +39,7 @@ from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecordEditKind, StateRecordOperator
 from project_runtime.application import design_history, working_draft
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.candidate import run_operator
 from project_runtime.application.projection import project_state
 from project_runtime.main import create_app

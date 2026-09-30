@@ -483,7 +483,7 @@ class PagePreviewTests(unittest.TestCase):
         from pathlib import Path
         from fastapi.testclient import TestClient
         from archflow.project.repository import FilesystemProjectRepository
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         from project_runtime.main import create_app
         from project_runtime.settings import StudioSettings
 

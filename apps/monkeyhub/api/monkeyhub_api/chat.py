@@ -860,7 +860,7 @@ def _check_providers(commands: Mapping[str, tuple[str, ...]], environment: Mappi
 def _project_binding(project_id: str, project_dir: str):
     """The conversation's own project, opened read-only, once its identity is verified."""
 
-    from project_runtime.application.binding import ProjectBinding
+    from project_runtime.binding import ProjectBinding
     from project_runtime.settings import StudioSettings
 
     if _project(project_dir) != (project_id, project_dir):
@@ -879,7 +879,7 @@ def _registered_page(binding, ref: ChatDocumentRef):
 
     from archflow.project.repository import ProjectRepositoryError
     from project_runtime.application.artifacts import list_documents
-    from project_runtime.transport.errors import StudioError
+    from project_runtime.errors import StudioError
 
     try:
         document = next((row for row in list_documents(binding, ref.runId)
@@ -908,7 +908,7 @@ def _render_images(project_id: str, project_dir: str, context: ChatRenderContext
 
     from archflow.project.repository import ProjectRepositoryError
     from project_runtime.application.artifacts import list_documents
-    from project_runtime.transport.errors import StudioError
+    from project_runtime.errors import StudioError
 
     binding = _project_binding(project_id, project_dir)
     bound = []
@@ -1380,7 +1380,7 @@ class ChatStore:
             # the Board export gives, which also verifies the source bytes against P036.
             from dataclasses import replace
             from project_runtime.application.boards import BoardExportPage, export_board_pages
-            from project_runtime.transport.errors import StudioError
+            from project_runtime.errors import StudioError
             try:
                 page = export_board_pages(binding, [BoardExportPage(ref.runId, ref.assetSha256, ref.revisionRef, ref.pageIndex)],
                                           "png", False, 2048)

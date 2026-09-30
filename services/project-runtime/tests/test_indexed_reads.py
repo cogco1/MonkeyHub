@@ -31,13 +31,13 @@ from fastapi.testclient import TestClient
 from archflow.project.index import INDEX_FILE, IndexLocked, ProjectIndex
 from archflow.project.index.store import _WriterLease
 from project_runtime.application import artifacts
-from project_runtime.application import binding as binding_module
-from project_runtime.application.binding import ProjectBinding, bound_project
-from project_runtime.application.index import StudioProjector, attach_project_index
-from project_runtime.application.synchronization import pull_shared_project
+from project_runtime import binding as binding_module
+from project_runtime.binding import ProjectBinding, bound_project
+from project_runtime.index import StudioProjector, attach_project_index
+from project_runtime.synchronization import pull_shared_project
 from project_runtime.main import create_app
 from project_runtime.settings import SettingsError, StudioSettings
-from project_runtime.transport.conditional import INDEXED_READS
+from project_runtime.api.conditional import INDEXED_READS
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, retain_rhino_receipt
 from .test_conditional_reads import settle, slow_disk, wait_until
@@ -378,7 +378,7 @@ class IndexedReadTests(DesignHistoryFixture):
     def test_a_started_worker_derives_its_first_views_once_before_any_request_asks(self) -> None:
         """#449: a worker with an index prepares its first reads; one asked meanwhile waits for them."""
 
-        from project_runtime.routes import episodes, runtime
+        from project_runtime.api.routes import episodes, runtime
 
         stage = self.initialize()
         candidate_id = self.candidate_from(stage)

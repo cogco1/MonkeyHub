@@ -50,10 +50,10 @@ from archflow.state.state_record import (
     parameter_bindings_of,
 )
 
-from ..transport.errors import StudioError
+from ..errors import StudioError
 from .artifacts import document_bytes
-from .authentication import ActorAttribution
-from .binding import ProjectBinding, retained_sources
+from ..authentication import ActorAttribution
+from ..binding import ProjectBinding, retained_sources
 from .boards import BOARD_RUN_ID, read_board
 from .projection import project_state, require_actionable
 
@@ -1013,7 +1013,7 @@ def read_recipe_export(document: Any) -> RecipeExport:
                               + ", ".join(f"{key} under {owner}" for key, owner in RECIPE_KEYS.items()) + ".")
     # The wire's own bounds, read where they are defined. Imported here
     # because the transport module imports this one.
-    from ..transport.decisions import RecipeGraphicsDto
+    from ..api.dto.decisions import RecipeGraphicsDto
 
     try:
         RecipeGraphicsDto.model_validate(dict(graphics), strict=True)

@@ -17,7 +17,7 @@ from archflow.project.refs import record_ref_from_uri
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_MODEL_ASSET
 from project_runtime.application.artifacts import list_documents, replacement_cause
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest

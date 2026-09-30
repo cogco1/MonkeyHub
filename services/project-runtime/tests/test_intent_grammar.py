@@ -13,7 +13,7 @@ import shutil
 import tempfile
 import unittest
 
-from project_runtime.application.binding import ProjectBinding
+from project_runtime.binding import ProjectBinding
 from project_runtime.application.intent import (
     DeterministicIntentProvider,
     ParsedIntent,
@@ -21,7 +21,7 @@ from project_runtime.application.intent import (
 )
 from project_runtime.application.projection import project_state
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.errors import BlockedNeedsHuman
+from project_runtime.errors import BlockedNeedsHuman
 
 from .support import PROJECT_ID, make_project
 

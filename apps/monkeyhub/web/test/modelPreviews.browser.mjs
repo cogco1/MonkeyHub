@@ -33,7 +33,7 @@ from tests.support import make_project, PROJECT_ID, REFERENCE_RUN_ID, runner_sta
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from project_runtime.application.artifacts import register_model_asset
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 root, port = Path(sys.argv[1]), int(sys.argv[2])
 repo, _ = make_project(root)
 second = repo.create_run('preview-other-run')

@@ -245,7 +245,7 @@ class HostedOpeningRefusalTestCase(HostedOpeningTestCase):
     def test_the_model_lists_the_capability_only_where_the_route_takes_the_host(self) -> None:
         # The wall meaning alone does not make a host: a cutter and a geometry id of several parts carry the
         # facet, yet the route refuses them, so the model view offers them no hosted-opening either.
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         from project_runtime.application.construction import construction_model
         from project_runtime.application.projection import project_proposed_record, project_state
 

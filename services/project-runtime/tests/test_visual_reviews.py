@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from archflow.adapters import occt_backend
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.application import intent_agent
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.intent_agent import CodexCompiler
 from project_runtime.application.visual_observation import (
     Criterion, ReviewReason, SourceRef, TaskClass, VisualReviewBudget, VisualReviewRequest,
@@ -30,7 +30,7 @@ from project_runtime.application.visual_observation import (
 from project_runtime.application.visual_reviews import PAGE_MAX_EDGE, review_sources
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.errors import StudioError
+from project_runtime.errors import StudioError
 
 from .support import PROJECT_ID
 from .test_candidate import CandidateTestCase
@@ -147,7 +147,7 @@ class PageReviewTests(unittest.TestCase):
         second = self.second_document_page()
         expected = [self.exported_page(), self.exported_page(source=second)]
         before = files(self.root)
-        with patch("project_runtime.routes.intents.visual_provider",
+        with patch("project_runtime.api.routes.intents.visual_provider",
                    side_effect=AssertionError("the connected caller will observe these images")):
             response = self.review(delivery="frames", sourceRefs=[self.page, second])
         self.assertEqual(response.status_code, 200, response.text)
@@ -489,7 +489,7 @@ class ModelReviewTests(CandidateTestCase):
         views = ["front", "axon"]
         expected = [self.owner_view(view) for view in views]
         before = files(self.repository.layout.root)
-        with patch("project_runtime.routes.intents.visual_provider",
+        with patch("project_runtime.api.routes.intents.visual_provider",
                    side_effect=AssertionError("frames use the current caller, not another provider")):
             response = self.review(self.model, views, delivery="frames")
         self.assertEqual(response.status_code, 200, response.text)

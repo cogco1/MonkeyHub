@@ -17,8 +17,8 @@ from archflow.project.record_kinds import CANDIDATE_REVIEW, DESIGN_STAGE, STUDIO
 from archflow.project.refs import record_ref_from_uri
 from archflow.state.state_record import StateRecordEditKind, StateRecordOperator
 from project_runtime.application.artifacts import list_artifacts
-from project_runtime.application.authentication import ActorAttribution
-from project_runtime.application.binding import bound_project
+from project_runtime.authentication import ActorAttribution
+from project_runtime.binding import bound_project
 from project_runtime.application.candidate import replay_candidate, run_operator
 from project_runtime.application.design_history import review_judgements, save_review_judgement
 from project_runtime.application.projection import project_state
@@ -151,7 +151,7 @@ class DesignHistoryTests(DesignHistoryFixture):
             self.assertEqual(response.status_code, 201, response.text)
             self.assertEqual(response.json()["disposition"], "unreviewed")
             self.assertEqual(response.json()["endorsedBy"], "architect-a")
-            with patch("project_runtime.routes.episodes._attribution",
+            with patch("project_runtime.api.routes.episodes._attribution",
                        return_value=ActorAttribution("architect-c", True, "hub")):
                 renewed = restarted.post("/api/candidate-reviews", json={
                     "projectId": PROJECT_ID, "subjectKind": "candidate", "subjectRef": stage["candidateId"], "action": "endorse"})

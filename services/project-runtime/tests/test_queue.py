@@ -12,7 +12,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from project_runtime.application.jobs import (
+from project_runtime.jobs import (
     EXCLUSIVE,
     EXCLUSIVE_REASON,
     PARALLEL,
@@ -21,7 +21,7 @@ from project_runtime.application.jobs import (
     SUCCEEDED,
     JobRegistry,
 )
-from project_runtime.transport.errors import StudioError
+from project_runtime.errors import StudioError
 
 
 class Recorder:

@@ -30,7 +30,7 @@ from monkeydiagram.drawing_elevation import (
 from .artifacts import (
     ModelSource, _document_pages, _document_source_lock, document_bytes, drawing_revision_replacement, list_documents,
 )
-from .binding import retained_sources
+from ..binding import retained_sources
 from .decisions import project_recipe
 from .drawings import (
     VIEW_MARGIN, _complete_source, _elevation_view, _selected_source, _document_source, DrawingAssetSource, is_vertical_section,
@@ -42,7 +42,7 @@ from .intent_requests import in_unit
 from .projection import project_state, require_actionable
 from .working_draft import WorkingSources
 from .proposals import proposal_from
-from ..transport.errors import StudioError
+from ..errors import StudioError
 
 UNIT_METRES = {"meter": 1.0, "millimeter": .001, "inch": .0254, "foot": .3048}
 # What the code draws a cut plan with when nothing else names a value: the

@@ -12,7 +12,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from archflow.adapters.model_formats import GLB, ThreeDM, Mesh, Scene, convert, ConversionError
 from .support import make_project, PROJECT_ID, REFERENCE_RUN_ID
 

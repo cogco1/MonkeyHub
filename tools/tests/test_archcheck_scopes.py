@@ -207,6 +207,48 @@ class WorkflowBoundaryTests(unittest.TestCase):
                 findings = tuple(check_registry(root, self.policy))
                 self.assertTrue(any(f.code == "REGISTRY_DEPENDS_ON_DRIFT" for f in findings))
 
+    def _layer_findings(self, relative: str, source: str) -> tuple:
+        return tuple(f for f in check_imports(relative, _index_tree(ast.parse(source)), self.policy)
+                     if f.code == "LAYER_AUTHORITY_VIOLATION")
+
+    def test_the_runtime_application_layer_imports_no_route_and_not_the_middleware(self) -> None:
+        """The runtime imports itself relatively, so the rule holds on resolved names (#518)."""
+
+        application = "services/project-runtime/src/project_runtime/application/example.py"
+        for source in (
+            "from ..api.routes.proposals import _require_bound_project",
+            "from ..api import routes",
+            "from ..api.conditional import ConditionalReads",
+            "from project_runtime.api.routes import candidates",
+            "def later():\n    from ..api.routes import candidates\n",
+        ):
+            with self.subTest(source=source):
+                self.assertTrue(self._layer_findings(application, source))
+        self.assertTrue(self._layer_findings(
+            "services/project-runtime/src/project_runtime/api/dto/example.py", "from ..routes import candidates"))
+        for relative, source in (
+            (application, "from ..errors import StudioError\nfrom ..binding import ProjectBinding\nfrom .projection import StateProjection"),
+            ("services/project-runtime/src/project_runtime/api/routes/example.py",
+             "from . import candidates\nfrom ..dto.intent import IntentDto\nfrom ...application import clarification"),
+            ("services/project-runtime/src/project_runtime/main.py", "from .api import routes\nfrom .api.routes import memory"),
+        ):
+            with self.subTest(relative=relative, source=source):
+                self.assertEqual((), self._layer_findings(relative, source))
+
+    def test_no_package_imports_the_runtime_that_composes_it(self) -> None:
+        for relative in ("packages/archflow/src/archflow/state/example.py", "packages/monkeyarch/src/monkeyarch/example.py",
+                         "packages/monkeydiagram/src/monkeydiagram/example.py", "packages/monkeydiagram/tests/test_example.py"):
+            with self.subTest(relative=relative):
+                self.assertTrue(self._layer_findings(relative, "from project_runtime.binding import ProjectBinding"))
+
+    def test_a_relative_import_is_held_to_the_rule_its_resolved_name_breaks(self) -> None:
+        contracts = "packages/archflow/src/archflow/contracts/example.py"
+        self.assertTrue(self._layer_findings(contracts, "from .. import validation"))
+        self.assertTrue(self._layer_findings(contracts, "from ..validation.engine import validate"))
+        self.assertEqual((), self._layer_findings(contracts, "from ..project import refs"))
+        # Beyond the top-level package it names nothing, as Python would refuse it.
+        self.assertEqual((), self._layer_findings(contracts, "from ..... import validation"))
+
 
 class UnclaimedPolicyTests(unittest.TestCase):
     def test_the_policy_states_what_a_commit_without_a_claim_may_write(self) -> None:

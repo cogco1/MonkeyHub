@@ -31,7 +31,7 @@ from fastapi.testclient import TestClient
 import uvicorn
 
 from project_runtime.main import _watch_managed_stdin, create_app
-from project_runtime.routes.events import stream_events
+from project_runtime.api.routes.events import stream_events
 from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, make_project

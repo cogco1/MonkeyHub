@@ -26,8 +26,8 @@ from typing import Any, Mapping, Sequence
 from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, SEAT_3DM_INSPECTION
 from archflow.project.refs import ProjectRecordRef
 
-from ..transport.errors import StudioError
-from .binding import ProjectBinding, record_kind
+from ..errors import StudioError
+from ..binding import ProjectBinding, record_kind
 
 UNCHANGED = "unchanged"
 CHANGED = "changed"

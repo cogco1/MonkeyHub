@@ -146,7 +146,7 @@ class ConstructionTestCase(unittest.TestCase):
         raise AssertionError("the candidate never finished")
 
     def record(self, run: str | None = None):
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         from project_runtime.application.projection import project_state
 
         return project_state(bound_project(self.client.app.state), run).record
@@ -291,9 +291,9 @@ class ConstructionRefusalTestCase(ConstructionTestCase):
         from unittest import mock
 
         from project_runtime.application import construction
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         from project_runtime.application.projection import project_state
-        from project_runtime.transport.errors import StudioError
+        from project_runtime.errors import StudioError
 
         binding = bound_project(self.client.app.state)
         projection = project_state(binding)

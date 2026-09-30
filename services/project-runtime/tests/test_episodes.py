@@ -37,7 +37,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from project_runtime.application import episodes
-from project_runtime.application.binding import record_kind
+from project_runtime.binding import record_kind
 from project_runtime.application.episodes import SCHEMA
 from project_runtime.application.proposals import PERSISTENCE
 from project_runtime.main import create_app

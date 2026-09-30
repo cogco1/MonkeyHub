@@ -66,12 +66,12 @@ from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 
 from ..ports import StudioEventSink
-from ..transport.errors import StudioError, error_sentence
-from .authentication import ActorAttribution
-from .binding import retained_sources
-from .binding import ProjectBinding, ReferenceRun, record_kind
+from ..errors import StudioError, error_sentence
+from ..authentication import ActorAttribution
+from ..binding import retained_sources
+from ..binding import ProjectBinding, ReferenceRun, record_kind
 from .projection import StateProjection, project_state, require_actionable
-from .monitoring import StudioMonitor
+from ..monitoring import StudioMonitor
 
 # A file digest, as it travels in a path parameter. Lowercase because that is
 # what the kernel writes; anything else names no artifact here.

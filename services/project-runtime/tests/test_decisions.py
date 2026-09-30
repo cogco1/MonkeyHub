@@ -22,7 +22,7 @@ from archflow.project.refs import ProjectRecordRef, record_file_name
 from archflow.project.repository import undeclared_version_identities
 from archflow.project.version_refs import locations, restate
 from archflow.state.state_record import StateRecord
-from project_runtime.application.binding import ProjectBinding, bound_project
+from project_runtime.binding import ProjectBinding, bound_project
 from project_runtime.application.decisions import (
     DECISIONS_RUN_ID,
     RECIPE_KEYS,
@@ -33,9 +33,9 @@ from project_runtime.application.decisions import (
 )
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.decisions import RecipeGraphicsDto
-from project_runtime.transport.drawings import PlanRequestDto
-from project_runtime.transport.errors import StudioError
+from project_runtime.api.dto.decisions import RecipeGraphicsDto
+from project_runtime.api.dto.drawings import PlanRequestDto
+from project_runtime.errors import StudioError
 
 from .support import (
     PROJECT_ID,

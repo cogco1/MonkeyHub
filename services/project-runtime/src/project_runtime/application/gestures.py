@@ -28,9 +28,9 @@ from archflow.project.record_kinds import STUDIO_DOCUMENT_ANNOTATIONS, STUDIO_DO
 from archflow.project.refs import ProjectRecordRef
 from archflow.contracts.canonical import canonical_digest, require_sha256
 
-from ..transport.errors import StudioError
+from ..errors import StudioError
 from .artifacts import ModelSource, SourceDocument, document_bytes, require_model_source
-from .binding import ProjectBinding, record_kind
+from ..binding import ProjectBinding, record_kind
 
 from .intent_agent import DocumentVisual, Selection
 from .pick import PickRequest, resolve_pick

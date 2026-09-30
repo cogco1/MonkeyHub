@@ -35,7 +35,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from project_runtime.application.artifacts import ArtifactRecord, ModelSource
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.candidate import (
     CandidateRun,
     RelationTotals,

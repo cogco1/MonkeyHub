@@ -31,7 +31,7 @@ import uvicorn
 
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.application.artifacts import save_document
-from project_runtime.application.binding import ProjectBinding
+from project_runtime.binding import ProjectBinding
 from project_runtime.settings import StudioSettings
 from monkeyhub_api import chat
 from monkeyhub_api.chat import ChatStore

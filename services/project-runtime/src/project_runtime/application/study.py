@@ -33,8 +33,8 @@ from archflow.project.refs import ProjectRecordRef, record_ref_from_uri, require
 from archflow.project.repository import ProjectRepositoryError
 
 from .artifacts import _registered_document_bytes, list_documents
-from .binding import ProjectBinding, record_kind
-from ..transport.errors import StudioError
+from ..binding import ProjectBinding, record_kind
+from ..errors import StudioError
 
 
 LEDGER_SCHEMA = "EvidenceLedger@1"

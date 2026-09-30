@@ -13,10 +13,10 @@ from pathlib import Path
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord, developed_design_view
 from monkeyarch.runtime.project_runner import CAD_BACKEND_OCCT, RunOptions, run_project
-from project_runtime.adapters.harness import HARNESS_PHASE, STAGE_ID, harness_guard
-from project_runtime.adapters.seats import seats_of
+from project_runtime.application.harness import HARNESS_PHASE, STAGE_ID, harness_guard
+from project_runtime.application.seats import seats_of
 from project_runtime.application.artifacts import ModelSource, list_artifacts, require_complete_model
-from project_runtime.application.binding import ProjectBinding
+from project_runtime.binding import ProjectBinding
 from project_runtime.settings import StudioSettings
 
 from .support import PROJECT_ID, RECORD_PAYLOAD, REFERENCE_RUN_ID, SEATS_PAYLOAD, VIEW_KWARGS

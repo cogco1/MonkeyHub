@@ -8,13 +8,13 @@ from unittest.mock import patch
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, STUDIO_CANDIDATE_WORKFLOW
 from archflow.project.refs import record_ref_from_uri
-from project_runtime.application.binding import ProjectBinding, bound_project
+from project_runtime.binding import ProjectBinding, bound_project
 from project_runtime.application.artifacts import ModelSource
 from project_runtime.application.design_history import initialize_design_stage
-from project_runtime.application.runtime import inspect_runtime
+from project_runtime.status import inspect_runtime
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.errors import StudioError
-from project_runtime.transport.runtime import runtime_dto
+from project_runtime.errors import StudioError
+from project_runtime.api.dto.runtime import runtime_dto
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_candidate import CandidateTestCase

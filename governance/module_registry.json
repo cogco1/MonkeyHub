@@ -798,7 +798,7 @@
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
         "tools/project/run_project.py",
-        "services/project-runtime/src/project_runtime/adapters/seats.py",
+        "services/project-runtime/src/project_runtime/application/seats.py",
         "tests/integration/test_discipline_seats.py",
         "tests/integration/test_project_runner.py"
       ],
@@ -886,7 +886,7 @@
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tools/project/run_project.py",
-        "services/project-runtime/src/project_runtime/adapters/seats.py",
+        "services/project-runtime/src/project_runtime/application/seats.py",
         "tests/integration/test_discipline_seats.py",
         "tests/integration/test_project_runner.py"
       ],
@@ -1901,7 +1901,7 @@
       ],
       "does_not_own": [
         "naming the authored input paths (project.layout)",
-        "parsing SeatPack@1 (tools.run_project, the Studio's adapters/seats.py)",
+        "parsing SeatPack@1 (tools.run_project, the Studio's application/seats.py)",
         "retaining anything; nothing read here is indexed, digested or verified by the repository (project.repository)",
         "deciding which run uses the record (runtime.project_runner, studio.candidate)",
         "the meaning of the record it parsed (state.record)",
@@ -1945,7 +1945,7 @@
         "tools/project/run_project.py",
         "tools/project/verify_state_record.py",
         "services/project-runtime/src/project_runtime/application/projection.py",
-        "services/project-runtime/src/project_runtime/adapters/seats.py"
+        "services/project-runtime/src/project_runtime/application/seats.py"
       ],
       "invariants": [
         "absent and unreadable are different refusals, and each names the file it wanted",
@@ -2081,8 +2081,8 @@
         "packages/archflow/src/archflow/project/inputs.py",
         "services/project-runtime/src/project_runtime/application/projection.py",
         "services/project-runtime/src/project_runtime/application/intent.py",
-        "services/project-runtime/src/project_runtime/adapters/seats.py",
-        "services/project-runtime/src/project_runtime/transport/state.py",
+        "services/project-runtime/src/project_runtime/application/seats.py",
+        "services/project-runtime/src/project_runtime/api/dto/state.py",
         "packages/archflow/src/archflow/project/memo.py",
         "packages/archflow/src/archflow/project/watch.py"
       ],
@@ -2138,7 +2138,7 @@
         "project.repository"
       ],
       "used_by": [
-        "services/project-runtime/src/project_runtime/application/binding.py",
+        "services/project-runtime/src/project_runtime/binding.py",
         "packages/archflow/tests/test_project_location.py"
       ],
       "invariants": [
@@ -2227,7 +2227,7 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/project/repository.py",
-        "services/project-runtime/src/project_runtime/application/binding.py",
+        "services/project-runtime/src/project_runtime/binding.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
         "services/project-runtime/src/project_runtime/application/projection.py",
         "packages/archflow/src/archflow/project/watch.py"
@@ -2343,11 +2343,11 @@
         "project.watch"
       ],
       "used_by": [
-        "services/project-runtime/src/project_runtime/application/binding.py",
-        "services/project-runtime/src/project_runtime/application/index.py",
+        "services/project-runtime/src/project_runtime/binding.py",
+        "services/project-runtime/src/project_runtime/index.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/routes/index.py",
-        "services/project-runtime/src/project_runtime/transport/conditional.py"
+        "services/project-runtime/src/project_runtime/api/routes/index.py",
+        "services/project-runtime/src/project_runtime/api/conditional.py"
       ],
       "invariants": [
         "never a source of truth and never evidence: every row names the P036 record it was read from, and the index can be deleted at any time and rebuilt from P036",
@@ -2426,7 +2426,7 @@
         "project.repository"
       ],
       "used_by": [
-        "services/project-runtime/src/project_runtime/application/binding.py",
+        "services/project-runtime/src/project_runtime/binding.py",
         "packages/archflow/src/archflow/project/index/keeper.py"
       ],
       "invariants": [
@@ -2490,9 +2490,9 @@
         "packages/archflow/src/archflow/project/repository.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "services/project-runtime/src/project_runtime/adapters/harness.py",
+        "services/project-runtime/src/project_runtime/application/harness.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/application/binding.py",
+        "services/project-runtime/src/project_runtime/binding.py",
         "tools/project/freeze_project_stage_workflow.py",
         "tools/project/verify_state_record.py"
       ],
@@ -2559,10 +2559,10 @@
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/application/binding.py",
+        "services/project-runtime/src/project_runtime/binding.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
         "services/project-runtime/src/project_runtime/application/compare.py",
-        "services/project-runtime/src/project_runtime/adapters/harness.py",
+        "services/project-runtime/src/project_runtime/application/harness.py",
         "tools/project/freeze_project_stage_workflow.py",
         "tools/project/verify_state_record.py",
         "packages/archflow/tests/test_record_kinds.py",
@@ -2637,7 +2637,7 @@
         "project.version_refs"
       ],
       "used_by": [
-        "services/project-runtime/src/project_runtime/application/binding.py",
+        "services/project-runtime/src/project_runtime/binding.py",
         "services/project-runtime/src/project_runtime/application/validation.py",
         "packages/archflow/src/archflow/project/manifest.py",
         "packages/archflow/src/archflow/contracts/fields.py",
@@ -2900,10 +2900,10 @@
         "packages/archflow/src/archflow/project/issue.py",
         "packages/archflow/src/archflow/project/location.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "services/project-runtime/src/project_runtime/adapters/harness.py",
-        "services/project-runtime/src/project_runtime/adapters/seats.py",
+        "services/project-runtime/src/project_runtime/application/harness.py",
+        "services/project-runtime/src/project_runtime/application/seats.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/application/binding.py",
+        "services/project-runtime/src/project_runtime/binding.py",
         "tools/project/run_project.py",
         "tools/project/verify_state_record.py",
         "tools/project/freeze_project_stage_workflow.py",
@@ -3054,7 +3054,7 @@
         "tools/project/verify_state_record.py",
         "packages/archflow/src/archflow/state/state_record.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
-        "services/project-runtime/src/project_runtime/adapters/harness.py",
+        "services/project-runtime/src/project_runtime/application/harness.py",
         "tests/integration/test_project_runner.py",
         "tests/integration/test_state_record.py",
         "tools/project/open_stage_run.py"
@@ -3740,7 +3740,7 @@
         "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "services/project-runtime/src/project_runtime/adapters/harness.py",
+        "services/project-runtime/src/project_runtime/application/harness.py",
         "services/project-runtime/src/project_runtime/application/projection.py",
         "tools/project/run_project.py"
       ],
@@ -4346,7 +4346,7 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "services/project-runtime/src/project_runtime/adapters/harness.py",
+        "services/project-runtime/src/project_runtime/application/harness.py",
         "tools/project/run_project.py",
         "tools/project/freeze_project_stage_workflow.py",
         "tools/project/verify_state_record.py",
@@ -4637,19 +4637,19 @@
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
         "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/routes/artifacts.py",
-        "services/project-runtime/src/project_runtime/transport/artifacts.py",
+        "services/project-runtime/src/project_runtime/api/routes/artifacts.py",
+        "services/project-runtime/src/project_runtime/api/dto/artifacts.py",
         "services/project-runtime/src/project_runtime/application/drawings.py",
-        "services/project-runtime/src/project_runtime/routes/drawings.py",
-        "services/project-runtime/src/project_runtime/transport/drawings.py",
+        "services/project-runtime/src/project_runtime/api/routes/drawings.py",
+        "services/project-runtime/src/project_runtime/api/dto/drawings.py",
         "services/project-runtime/src/project_runtime/application/drawing_plans.py",
         "services/project-runtime/src/project_runtime/application/drawing_dimensions.py",
         "services/project-runtime/src/project_runtime/application/drawing_corrections.py",
         "services/project-runtime/src/project_runtime/application/model_exports.py",
-        "services/project-runtime/src/project_runtime/routes/model_exports.py",
+        "services/project-runtime/src/project_runtime/api/routes/model_exports.py",
         "services/project-runtime/src/project_runtime/application/projections.py",
-        "services/project-runtime/src/project_runtime/routes/projections.py",
-        "services/project-runtime/src/project_runtime/transport/projections.py"
+        "services/project-runtime/src/project_runtime/api/routes/projections.py",
+        "services/project-runtime/src/project_runtime/api/dto/projections.py"
       ]
     },
     {
@@ -4720,7 +4720,7 @@
         "project.index"
       ],
       "used_by": [
-        "services/project-runtime/src/project_runtime/routes/boards.py",
+        "services/project-runtime/src/project_runtime/api/routes/boards.py",
         "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
         "services/project-runtime/src/project_runtime/application/decisions.py",
         "services/project-runtime/src/project_runtime/application/drawings.py"
@@ -4761,7 +4761,7 @@
     },
     {
       "module_id": "studio.binding",
-      "owner_path": "services/project-runtime/src/project_runtime/application/binding.py",
+      "owner_path": "services/project-runtime/src/project_runtime/binding.py",
       "purpose": "Bind the process to one P036 project and one reference run, resolve which project a scoped path names, and project the exact State Record retained by that run into what a screen can read.",
       "owns": [
         "opening the located project on first use and holding that one binding for the process",
@@ -4937,10 +4937,10 @@
         "services/project-runtime/src/project_runtime/application/candidate.py",
         "services/project-runtime/src/project_runtime/application/compare.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/routes/health.py",
+        "services/project-runtime/src/project_runtime/api/routes/health.py",
         "services/project-runtime/tests/test_binding.py",
         "services/project-runtime/tests/test_projection.py",
-        "services/project-runtime/src/project_runtime/routes/projects.py"
+        "services/project-runtime/src/project_runtime/api/routes/projects.py"
       ],
       "invariants": [
         "the project root is never defaulted in code - it comes from the environment or --project-dir",
@@ -4980,25 +4980,25 @@
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
-        "services/project-runtime/src/project_runtime/application/binding.py",
+        "services/project-runtime/src/project_runtime/binding.py",
         "services/project-runtime/src/project_runtime/application/projection.py",
-        "services/project-runtime/src/project_runtime/routes/project.py",
-        "services/project-runtime/src/project_runtime/routes/projects.py",
-        "services/project-runtime/src/project_runtime/routes/state.py",
-        "services/project-runtime/src/project_runtime/transport/project.py",
-        "services/project-runtime/src/project_runtime/transport/state.py",
+        "services/project-runtime/src/project_runtime/api/routes/project.py",
+        "services/project-runtime/src/project_runtime/api/routes/projects.py",
+        "services/project-runtime/src/project_runtime/api/routes/state.py",
+        "services/project-runtime/src/project_runtime/api/dto/project.py",
+        "services/project-runtime/src/project_runtime/api/dto/state.py",
         "services/project-runtime/src/project_runtime/application/catalog.py",
         "services/project-runtime/src/project_runtime/application/conventions.py",
         "services/project-runtime/src/project_runtime/application/frame.py",
-        "services/project-runtime/src/project_runtime/application/synchronization.py",
-        "services/project-runtime/src/project_runtime/routes/synchronization.py",
+        "services/project-runtime/src/project_runtime/synchronization.py",
+        "services/project-runtime/src/project_runtime/api/routes/synchronization.py",
         "services/project-runtime/src/project_runtime/application/working_draft.py",
-        "services/project-runtime/src/project_runtime/routes/working_draft.py",
-        "services/project-runtime/src/project_runtime/transport/working_draft.py",
+        "services/project-runtime/src/project_runtime/api/routes/working_draft.py",
+        "services/project-runtime/src/project_runtime/api/dto/working_draft.py",
         "services/project-runtime/src/project_runtime/application/representation_dependencies.py",
-        "services/project-runtime/src/project_runtime/application/index.py",
-        "services/project-runtime/src/project_runtime/routes/index.py",
-        "services/project-runtime/src/project_runtime/transport/index.py"
+        "services/project-runtime/src/project_runtime/index.py",
+        "services/project-runtime/src/project_runtime/api/routes/index.py",
+        "services/project-runtime/src/project_runtime/api/dto/index.py"
       ]
     },
     {
@@ -5167,17 +5167,17 @@
       "notes": "The whole module is arrangement: the kernel runner does the work, this decides when and with what.",
       "files": [
         "services/project-runtime/src/project_runtime/application/candidate.py",
-        "services/project-runtime/src/project_runtime/application/jobs.py",
-        "services/project-runtime/src/project_runtime/application/events.py",
-        "services/project-runtime/src/project_runtime/adapters/harness.py",
-        "services/project-runtime/src/project_runtime/adapters/seats.py",
-        "services/project-runtime/src/project_runtime/routes/candidates.py",
-        "services/project-runtime/src/project_runtime/routes/events.py",
-        "services/project-runtime/src/project_runtime/transport/candidate.py",
-        "services/project-runtime/src/project_runtime/transport/events.py",
-        "services/project-runtime/src/project_runtime/application/runtime.py",
-        "services/project-runtime/src/project_runtime/routes/runtime.py",
-        "services/project-runtime/src/project_runtime/transport/runtime.py"
+        "services/project-runtime/src/project_runtime/jobs.py",
+        "services/project-runtime/src/project_runtime/events.py",
+        "services/project-runtime/src/project_runtime/application/harness.py",
+        "services/project-runtime/src/project_runtime/application/seats.py",
+        "services/project-runtime/src/project_runtime/api/routes/candidates.py",
+        "services/project-runtime/src/project_runtime/api/routes/events.py",
+        "services/project-runtime/src/project_runtime/api/dto/candidate.py",
+        "services/project-runtime/src/project_runtime/api/dto/events.py",
+        "services/project-runtime/src/project_runtime/status.py",
+        "services/project-runtime/src/project_runtime/api/routes/runtime.py",
+        "services/project-runtime/src/project_runtime/api/dto/runtime.py"
       ]
     },
     {
@@ -5615,22 +5615,22 @@
         "services/project-runtime/src/project_runtime/application/pick.py",
         "services/project-runtime/src/project_runtime/application/gestures.py",
         "services/project-runtime/src/project_runtime/application/proposals.py",
-        "services/project-runtime/src/project_runtime/routes/intents.py",
-        "services/project-runtime/src/project_runtime/routes/pick.py",
-        "services/project-runtime/src/project_runtime/routes/proposals.py",
-        "services/project-runtime/src/project_runtime/transport/intent.py",
-        "services/project-runtime/src/project_runtime/transport/pick.py",
-        "services/project-runtime/src/project_runtime/transport/proposal.py",
+        "services/project-runtime/src/project_runtime/api/routes/intents.py",
+        "services/project-runtime/src/project_runtime/api/routes/pick.py",
+        "services/project-runtime/src/project_runtime/api/routes/proposals.py",
+        "services/project-runtime/src/project_runtime/api/dto/intent.py",
+        "services/project-runtime/src/project_runtime/api/dto/pick.py",
+        "services/project-runtime/src/project_runtime/api/dto/proposal.py",
         "services/project-runtime/src/project_runtime/application/episodes.py",
-        "services/project-runtime/src/project_runtime/routes/episodes.py",
+        "services/project-runtime/src/project_runtime/api/routes/episodes.py",
         "services/project-runtime/src/project_runtime/application/design_history.py",
-        "services/project-runtime/src/project_runtime/transport/design_history.py",
+        "services/project-runtime/src/project_runtime/api/dto/design_history.py",
         "services/project-runtime/src/project_runtime/application/intent_context.py",
         "services/project-runtime/src/project_runtime/application/intent_requests.py",
         "services/project-runtime/src/project_runtime/application/intent_budget.py",
         "services/project-runtime/src/project_runtime/application/capability.py",
-        "services/project-runtime/src/project_runtime/routes/capabilities.py",
-        "services/project-runtime/src/project_runtime/transport/capability.py",
+        "services/project-runtime/src/project_runtime/api/routes/capabilities.py",
+        "services/project-runtime/src/project_runtime/api/dto/capability.py",
         "tools/benchmarks/benchmark_intent_context.py",
         "apps/monkeyhub/web/src/features/stage/modelDraft.ts",
         "apps/monkeyhub/web/src/features/stage/syncModelDraft.ts",
@@ -5639,8 +5639,8 @@
         "apps/monkeyhub/web/src/features/stage/ElevationPanel.tsx",
         "apps/monkeyhub/web/src/features/stage/ElevationPanel.css",
         "services/project-runtime/src/project_runtime/application/decisions.py",
-        "services/project-runtime/src/project_runtime/routes/decisions.py",
-        "services/project-runtime/src/project_runtime/transport/decisions.py",
+        "services/project-runtime/src/project_runtime/api/routes/decisions.py",
+        "services/project-runtime/src/project_runtime/api/dto/decisions.py",
         "services/project-runtime/src/project_runtime/application/visual_observation.py",
         "services/project-runtime/src/project_runtime/application/visual_reviews.py",
         "tools/benchmarks/benchmark_visual_observation.py",
@@ -5722,8 +5722,8 @@
       "notes": [],
       "files": [
         "services/project-runtime/src/project_runtime/application/memory.py",
-        "services/project-runtime/src/project_runtime/routes/memory.py",
-        "services/project-runtime/src/project_runtime/transport/memory.py"
+        "services/project-runtime/src/project_runtime/api/routes/memory.py",
+        "services/project-runtime/src/project_runtime/api/dto/memory.py"
       ],
       "reason": "Created, not extended (#252, owner decision 2026-09-28, boundary comment 5877462835): memory is its own layer - how the project works, not the Project State decisions studio.intent keeps under #185 - so it gets its own owner, records and routes, and reuses the decisions' revision and provenance machinery by import."
     },
@@ -5776,8 +5776,8 @@
       "files": [
         "services/project-runtime/src/project_runtime/application/rendering.py",
         "services/project-runtime/src/project_runtime/application/render_contract.py",
-        "services/project-runtime/src/project_runtime/routes/rendering.py",
-        "services/project-runtime/src/project_runtime/transport/rendering.py",
+        "services/project-runtime/src/project_runtime/api/routes/rendering.py",
+        "services/project-runtime/src/project_runtime/api/dto/rendering.py",
         "services/project-runtime/src/project_runtime/render_adapters/__init__.py",
         "services/project-runtime/src/project_runtime/render_adapters/gemini.py"
       ],
@@ -5840,8 +5840,8 @@
       ],
       "files": [
         "services/project-runtime/src/project_runtime/application/skills.py",
-        "services/project-runtime/src/project_runtime/routes/skills.py",
-        "services/project-runtime/src/project_runtime/transport/skills.py"
+        "services/project-runtime/src/project_runtime/api/routes/skills.py",
+        "services/project-runtime/src/project_runtime/api/dto/skills.py"
       ],
       "tests": [
         "services/project-runtime/tests/test_skills.py",
@@ -5955,7 +5955,7 @@
         "project.index"
       ],
       "used_by": [
-        "services/project-runtime/src/project_runtime/routes/",
+        "services/project-runtime/src/project_runtime/api/routes/",
         "services/project-runtime/tests/test_health.py",
         "services/project-runtime/tests/test_settings.py",
         "services/project-runtime/tests/test_errors.py",
@@ -5997,23 +5997,24 @@
         "services/project-runtime/tests/test_study_model.py",
         "services/project-runtime/tests/test_conditional_reads.py"
       ],
-      "notes": "Project Runtime contract: docs/architecture/project-runtime.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. transport/* carries wire shapes, so a DTO change is a shell change. docs/protocols/project-runtime-api.md records protocol.py; apps/monkeyhub/web/src/api/project-runtime/connection.ts is the client boundary. User preferences and the Hub's application settings - their files, DTOs and routes - belong to hub.shell, as do browser appearance, language catalogs and workspace composition; this process serves APIs only.",
+      "notes": "Project Runtime contract: docs/architecture/project-runtime.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. api/dto/* carries wire shapes, so a DTO change is a shell change. docs/protocols/project-runtime-api.md records protocol.py; apps/monkeyhub/web/src/api/project-runtime/connection.ts is the client boundary. User preferences and the Hub's application settings - their files, DTOs and routes - belong to hub.shell, as do browser appearance, language catalogs and workspace composition; this process serves APIs only.",
       "files": [
         "services/project-runtime/src/project_runtime/main.py",
         "services/project-runtime/src/project_runtime/settings.py",
         "services/project-runtime/src/project_runtime/protocol.py",
         "services/project-runtime/src/project_runtime/ports.py",
-        "services/project-runtime/src/project_runtime/routes/health.py",
-        "services/project-runtime/src/project_runtime/routes/protocol.py",
-        "services/project-runtime/src/project_runtime/routes/__init__.py",
-        "services/project-runtime/src/project_runtime/transport/errors.py",
-        "services/project-runtime/src/project_runtime/transport/health.py",
-        "services/project-runtime/src/project_runtime/transport/protocol.py",
-        "services/project-runtime/src/project_runtime/application/monitoring.py",
+        "services/project-runtime/src/project_runtime/api/routes/health.py",
+        "services/project-runtime/src/project_runtime/api/routes/protocol.py",
+        "services/project-runtime/src/project_runtime/api/routes/__init__.py",
+        "services/project-runtime/src/project_runtime/errors.py",
+        "services/project-runtime/src/project_runtime/api/dto/health.py",
+        "services/project-runtime/src/project_runtime/api/dto/protocol.py",
+        "services/project-runtime/src/project_runtime/monitoring.py",
+        "services/project-runtime/src/project_runtime/application/monitored_compiler.py",
         "scripts/dev/run-project-runtime.ps1",
-        "services/project-runtime/src/project_runtime/application/authentication.py",
-        "services/project-runtime/src/project_runtime/transport/synchronization.py",
-        "services/project-runtime/src/project_runtime/transport/conditional.py"
+        "services/project-runtime/src/project_runtime/authentication.py",
+        "services/project-runtime/src/project_runtime/api/dto/synchronization.py",
+        "services/project-runtime/src/project_runtime/api/conditional.py"
       ]
     },
     {
@@ -6087,8 +6088,8 @@
         "validation.model"
       ],
       "used_by": [
-        "services/project-runtime/src/project_runtime/routes/validation.py",
-        "services/project-runtime/src/project_runtime/routes/candidates.py",
+        "services/project-runtime/src/project_runtime/api/routes/validation.py",
+        "services/project-runtime/src/project_runtime/api/routes/candidates.py",
         "services/project-runtime/src/project_runtime/application/intent.py",
         "services/project-runtime/tests/test_validation.py",
         "services/project-runtime/tests/test_impact.py",
@@ -6114,10 +6115,10 @@
         "services/project-runtime/src/project_runtime/application/validation.py",
         "services/project-runtime/src/project_runtime/application/impact.py",
         "services/project-runtime/src/project_runtime/application/compare.py",
-        "services/project-runtime/src/project_runtime/routes/validation.py",
-        "services/project-runtime/src/project_runtime/transport/validation.py",
-        "services/project-runtime/src/project_runtime/transport/impact.py",
-        "services/project-runtime/src/project_runtime/transport/compare.py"
+        "services/project-runtime/src/project_runtime/api/routes/validation.py",
+        "services/project-runtime/src/project_runtime/api/dto/validation.py",
+        "services/project-runtime/src/project_runtime/api/dto/impact.py",
+        "services/project-runtime/src/project_runtime/api/dto/compare.py"
       ]
     },
     {
@@ -6651,7 +6652,7 @@
       "used_by": [
         "packages/archflow/src/archflow/validation/engine.py",
         "services/project-runtime/src/project_runtime/application/validation.py",
-        "services/project-runtime/src/project_runtime/transport/validation.py"
+        "services/project-runtime/src/project_runtime/api/dto/validation.py"
       ],
       "invariants": [
         "passed is true exactly when no ERROR finding exists",
@@ -6794,7 +6795,7 @@
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/options.py",
-        "services/project-runtime/src/project_runtime/transport/options.py"
+        "services/project-runtime/src/project_runtime/api/dto/options.py"
       ],
       "invariants": [
         "never writes the filesystem and decides nothing",
@@ -6872,8 +6873,8 @@
       "status": "provisional",
       "files": [
         "services/project-runtime/src/project_runtime/application/options.py",
-        "services/project-runtime/src/project_runtime/routes/options.py",
-        "services/project-runtime/src/project_runtime/transport/options.py"
+        "services/project-runtime/src/project_runtime/api/routes/options.py",
+        "services/project-runtime/src/project_runtime/api/dto/options.py"
       ],
       "tests": [
         "services/project-runtime/tests/test_options.py"
@@ -6939,8 +6940,8 @@
       "status": "provisional",
       "files": [
         "services/project-runtime/src/project_runtime/application/construction.py",
-        "services/project-runtime/src/project_runtime/routes/construction.py",
-        "services/project-runtime/src/project_runtime/transport/construction.py"
+        "services/project-runtime/src/project_runtime/api/routes/construction.py",
+        "services/project-runtime/src/project_runtime/api/dto/construction.py"
       ],
       "tests": [
         "services/project-runtime/tests/test_construction_routes.py",
@@ -6998,7 +6999,7 @@
       "used_by": [
         "packages/archflow/src/archflow/project/inputs.py",
         "services/project-runtime/src/project_runtime/application/program.py",
-        "services/project-runtime/src/project_runtime/routes/program.py"
+        "services/project-runtime/src/project_runtime/api/routes/program.py"
       ],
       "invariants": [
         "pure: no I/O, no run, no record written",
@@ -7058,9 +7059,9 @@
       ],
       "files": [
         "services/project-runtime/src/project_runtime/application/program.py",
-        "services/project-runtime/src/project_runtime/routes/program.py",
-        "services/project-runtime/src/project_runtime/transport/program.py",
-        "services/project-runtime/src/project_runtime/transport/semantics.py"
+        "services/project-runtime/src/project_runtime/api/routes/program.py",
+        "services/project-runtime/src/project_runtime/api/dto/program.py",
+        "services/project-runtime/src/project_runtime/api/dto/semantics.py"
       ],
       "tests": [
         "services/project-runtime/tests/test_program.py"
@@ -7247,7 +7248,7 @@
       ],
       "depends_on": [],
       "used_by": [
-        "services/project-runtime/src/project_runtime/application/monitoring.py",
+        "services/project-runtime/src/project_runtime/monitoring.py",
         "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
         "packages/monkeymonitor/src/monkeymonitor/__main__.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
@@ -8160,7 +8161,7 @@
         "studio.board"
       ],
       "used_by": [
-        "services/project-runtime/src/project_runtime/routes/study.py"
+        "services/project-runtime/src/project_runtime/api/routes/study.py"
       ],
       "invariants": [
         "Study writes only its named study run and retained records; it does not accept a DesignStage, advance a branch or issue canonical HEAD",
@@ -8184,8 +8185,8 @@
       "notes": "EXTEND the existing Study owner. Document canvas and source store are reused; true polygon computation lives in MonkeyDiagram under this same capability. Historical bounds archive/compare behavior is retained, while polygon research results are independently named. Family judgments and historical causation remain unvalidated. Competing retained heads still require explicit reconciliation; exact archived revisions remain readable.",
       "files": [
         "services/project-runtime/src/project_runtime/application/study.py",
-        "services/project-runtime/src/project_runtime/routes/study.py",
-        "services/project-runtime/src/project_runtime/transport/study.py",
+        "services/project-runtime/src/project_runtime/api/routes/study.py",
+        "services/project-runtime/src/project_runtime/api/dto/study.py",
         "services/project-runtime/src/project_runtime/application/study_model.py",
         "packages/monkeydiagram/src/monkeydiagram/study.py"
       ]
@@ -8224,8 +8225,8 @@
       "files": [
         "services/project-runtime/src/project_runtime/application/publications.py",
         "services/project-runtime/src/project_runtime/application/publication_output.py",
-        "services/project-runtime/src/project_runtime/routes/publications.py",
-        "services/project-runtime/src/project_runtime/transport/publications.py",
+        "services/project-runtime/src/project_runtime/api/routes/publications.py",
+        "services/project-runtime/src/project_runtime/api/dto/publications.py",
         "apps/monkeyhub/web/src/workspaces/publish/PublishWorkspace.tsx",
         "apps/monkeyhub/web/src/workspaces/publish/publicationSaveQueue.ts"
       ],
@@ -8435,13 +8436,13 @@
         "studio.shell"
       ],
       "used_by": [
-        "services/project-runtime/src/project_runtime/routes/domains.py",
-        "services/project-runtime/src/project_runtime/routes/__init__.py",
+        "services/project-runtime/src/project_runtime/api/routes/domains.py",
+        "services/project-runtime/src/project_runtime/api/routes/__init__.py",
         "services/project-runtime/tests/test_domains.py"
       ],
       "files": [
         "services/project-runtime/src/project_runtime/application/domains.py",
-        "services/project-runtime/src/project_runtime/routes/domains.py"
+        "services/project-runtime/src/project_runtime/api/routes/domains.py"
       ],
       "invariants": [
         "GET /api/domains never 404s: only the per-domain readiness route names an unknown domain",

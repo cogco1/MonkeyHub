@@ -30,7 +30,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import Entity, Parameter
 
 from project_runtime.application import clarification
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.clarification import (
     editable_descendants,
     kinds_in,

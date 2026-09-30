@@ -27,7 +27,7 @@ from fastapi.testclient import TestClient
 
 from archflow.adapters.occt_backend import occt_available
 from archflow.project.repository import FilesystemProjectRepository, ProjectHeadLocked
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.decisions import recipe_export
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings

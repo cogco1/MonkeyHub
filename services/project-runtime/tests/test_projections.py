@@ -27,7 +27,7 @@ from archflow.project.index import (
 )
 from project_runtime.application import projections
 from project_runtime.application.artifacts import ModelSource
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.projections import (
     CURRENT, DONE, ERROR, MODEL_LINES, PENDING, REST, TREE_RECIPE, BlobStore, ProjectionError, ProjectionQueue,
     RenderCancelled, RenderFailed, RenderRefused, RenderResult, StatusTable, SubprocessRenderer, projection_key,
@@ -35,7 +35,7 @@ from project_runtime.application.projections import (
 )
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.errors import StudioError
+from project_runtime.errors import StudioError
 
 from .support import PROJECT_ID, advance_head, make_empty_project
 
@@ -1241,7 +1241,7 @@ class RenderProcessTests(unittest.TestCase):
 
     def test_a_run_on_an_older_canonical_base_is_drawn_but_not_acted_on(self):
         from archflow.project.repository import FilesystemProjectRepository
-        from project_runtime.application.binding import ProjectBinding
+        from project_runtime.binding import ProjectBinding
         from project_runtime.application.drawings import draw_model_view
         from project_runtime.application.projection import project_state, require_actionable
 

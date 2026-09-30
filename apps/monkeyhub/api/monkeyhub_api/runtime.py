@@ -31,10 +31,10 @@ from project_runtime.application.artifacts import (
     document_bytes,
     list_document_work_copies,
 )
-from project_runtime.application.binding import ProjectBinding, ReadToken
-from project_runtime.application.events import StudioEvents
+from project_runtime.binding import ProjectBinding, ReadToken
+from project_runtime.events import StudioEvents
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.errors import StudioError
+from project_runtime.errors import StudioError
 
 from .chat import _NoRedirect, _project
 from .models import HubError, HubFailure
@@ -1031,8 +1031,8 @@ class ProjectRuntimeManager:
             workers=[worker_dto(row) for row in workers])
 
     def _read_retained(self, runtime: ProjectRuntime, *, worker=None) -> dict:
-        from project_runtime.application.runtime import inspect_runtime
-        from project_runtime.transport.runtime import runtime_dto
+        from project_runtime.status import inspect_runtime
+        from project_runtime.api.dto.runtime import runtime_dto
         ids = runtime.operations.candidate_ids()
         run_ids = runtime.binding.run_ids()
         candidates = {}

@@ -47,12 +47,12 @@ from .artifacts import (
     FORMAT_3DM, ArtifactRecord, ModelSource, SourceDocument, _document_pages, _document_source_lock, _unavailable,
     artifact_bytes, document_bytes, list_artifacts, list_documents, require_complete_model, require_model_source, save_document,
 )
-from .binding import retained_sources
-from .binding import ProjectBinding
-from .monitoring import StudioMonitor
+from ..binding import retained_sources
+from ..binding import ProjectBinding
+from ..monitoring import StudioMonitor
 from .projection import StateProjection, project_state, require_readable
 from .projections import DOCUMENT_PAGE, ELEVATION, SECTION_PERSPECTIVE, SHEET, ProjectionQueue, on_demand_spec
-from ..transport.errors import StudioError
+from ..errors import StudioError
 
 
 @dataclass(frozen=True)

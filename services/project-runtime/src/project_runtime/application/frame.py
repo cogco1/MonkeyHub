@@ -33,7 +33,7 @@ from monkeyarch.capabilities.reference_resolver import (
 from archflow.state.dependencies import PROPAGATING_EFFECTS, DependencyEdge
 from archflow.state.state_record import StateRecord
 
-from ..transport.errors import StudioError
+from ..errors import StudioError
 
 # The flat ``Element@1`` fields that name a ``Level@1`` outright. The record's
 # own reader treats these the same way (``base_level`` / ``top_level`` /

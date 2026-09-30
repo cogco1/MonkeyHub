@@ -30,11 +30,11 @@ from fastapi.testclient import TestClient
 from archflow.project.layout import FINGERPRINT_SETTLED_NS
 from archflow.project.record_kinds import STUDIO_BOARD_SCENE
 from archflow.project.refs import record_file_name
-from project_runtime.application.binding import MEMO_ENTRIES, ProjectBinding, bound_project
+from project_runtime.binding import MEMO_ENTRIES, ProjectBinding, bound_project
 from project_runtime.application.boards import BOARD_RUN_ID
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.conditional import CONDITIONAL_READS
+from project_runtime.api.conditional import CONDITIONAL_READS
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, retain_rhino_receipt
 from .test_documents import image_bytes
@@ -171,7 +171,7 @@ class ConditionalReadTests(unittest.TestCase):
 
     def test_the_memo_answers_the_same_bytes_without_reading_again(self) -> None:
         first = self.client.get("/api/design-history", params={"branchId": "main"})
-        with mock.patch("project_runtime.routes.episodes.read_design_history",
+        with mock.patch("project_runtime.api.routes.episodes.read_design_history",
                         side_effect=AssertionError("read again")):
             second = self.client.get("/api/design-history", params={"branchId": "main"})
 

@@ -9,7 +9,7 @@ from archflow.state.state_record import project_grids_of, project_levels_of
 from monkeyarch.capabilities.element_producers import ProductionContext, element_rows_of, produce_rows
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 
-from ..transport.errors import StudioError
+from ..errors import StudioError
 from .intent import component_edit_proposal
 from .projection import DRAWING_INPUT_ERRORS, drawing_context, elevation_reference, reference_value
 

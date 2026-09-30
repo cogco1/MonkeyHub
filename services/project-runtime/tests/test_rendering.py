@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.render_contract import RenderCapability, RenderOutput, RenderProviderError
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings, SettingsError

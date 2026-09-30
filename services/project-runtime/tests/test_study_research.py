@@ -17,12 +17,12 @@ from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.application import study as study_application
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.routes import study as study_routes
-from project_runtime.transport.errors import StudioError
-from project_runtime.transport.study import SaveStudyRequestDto
+from project_runtime.api.routes import study as study_routes
+from project_runtime.errors import StudioError
+from project_runtime.api.dto.study import SaveStudyRequestDto
 
 from .study_fixture import fixture_evidence, fixture_observations, fixture_png, fixture_research
 from .support import PROJECT_ID

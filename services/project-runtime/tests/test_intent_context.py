@@ -705,7 +705,7 @@ class StudyEvidenceContextRouteTests(DesignHistoryFixture):
         self.assertEqual(self.repository.read_head(), self.initial_head)
 
     def test_unrequested_studies_are_not_read(self):
-        from project_runtime.routes import intents
+        from project_runtime.api.routes import intents
         self.save_study()
         with patch.object(intents, "read_study", side_effect=AssertionError("unrequested study read")):
             answer = self.client.post("/api/intents/context", json=self.context_request())

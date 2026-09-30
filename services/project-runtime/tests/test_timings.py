@@ -22,7 +22,7 @@ from project_runtime.application.candidate import (
 )
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.candidate import timings_dto, to_dto
+from project_runtime.api.dto.candidate import timings_dto, to_dto
 
 from archflow.project.refs import ProjectVersionRef
 

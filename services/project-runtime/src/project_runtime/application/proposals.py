@@ -25,7 +25,7 @@ from archflow.state.state_record import (
 )
 from archflow.project.refs import ProjectRecordRef
 
-from ..transport.errors import StudioError
+from ..errors import StudioError
 from .impact import Impact
 
 if TYPE_CHECKING:  # the pending intent is a value, not a dependency
