@@ -239,7 +239,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
                      if f.code == "LAYER_AUTHORITY_VIOLATION")
 
     def test_the_runtime_application_layer_imports_no_route_and_not_the_middleware(self) -> None:
-        """The runtime imports itself relatively, so the rule holds on resolved names (#518)."""
+        """Nor a DTO (#519). The runtime imports itself relatively, so the rule holds on resolved names (#518)."""
 
         application = "services/project-runtime/src/project_runtime/application/example.py"
         for source in (
@@ -248,6 +248,10 @@ class WorkflowBoundaryTests(unittest.TestCase):
             "from ..api.conditional import ConditionalReads",
             "from project_runtime.api.routes import candidates",
             "def later():\n    from ..api.routes import candidates\n",
+            "from ..api.dto.working_draft import WorkingDraftDto",
+            "from ..api.dto import rendering",
+            "def later():\n    from ..api.dto.decisions import RecipeGraphicsDto\n",
+            "import project_runtime.api",
         ):
             with self.subTest(source=source):
                 self.assertTrue(self._layer_findings(application, source))

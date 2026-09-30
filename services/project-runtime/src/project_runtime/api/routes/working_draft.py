@@ -7,11 +7,11 @@ from ...application.artifacts import ModelSource
 from ...authentication import request_attribution
 from ...binding import bound_project
 from ...application.working_draft import (
-    read_working_draft, resolve_working_source, retain_local_draft, save_working_draft, select_working_draft,
-    working_revision,
+    WorkingDraftDto, read_working_draft, resolve_working_source, retain_local_draft, save_working_draft,
+    select_working_draft, working_revision,
 )
 from ..dto.working_draft import (
-    LocalDraftRequestDto, WorkingDraftDto, WorkingDraftSaveDto, WorkingDraftSelectionDto, WorkingRevisionDto,
+    LocalDraftRequestDto, WorkingDraftSaveDto, WorkingDraftSelectionDto, WorkingRevisionDto,
     WorkingSourceDto, working_source_dto,
 )
 from .proposals import _require_bound_project

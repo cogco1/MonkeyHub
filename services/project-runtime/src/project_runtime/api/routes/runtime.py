@@ -12,6 +12,7 @@ from archflow.project.repository import ProjectRepositoryError
 from ...binding import bound_project
 from ...status import inspect_runtime, worktree_graph
 from ...errors import StudioError
+from ..dto.rendering import render_job_dto
 from ..dto.runtime import RuntimeDto, WorktreeGraphDto, runtime_dto, worktree_graph_dto
 
 router = APIRouter(tags=["runtime"])
@@ -32,7 +33,7 @@ def read_worktrees(request: Request) -> WorktreeGraphDto:
     """Read-only: the Working Head, running work, other lines and whether they reconcile."""
     binding = bound_project(request.app.state)
     try:
-        renders, unread = request.app.state.render_jobs.list(binding), None
+        renders, unread = [render_job_dto(job) for job in request.app.state.render_jobs.list(binding)], None
     except (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError) as exc:
         # One unreadable render record must not hide the rest of the project's work.
         renders, unread = None, f"Render results could not be read: {getattr(exc, 'detail', exc)}"

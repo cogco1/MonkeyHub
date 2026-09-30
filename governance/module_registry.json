@@ -5845,6 +5845,9 @@
         "GET /api/render/jobs/{job_id}",
         "GET /api/render/jobs",
         "RenderJobRecords",
+        "RenderJob",
+        "RenderRequestDto",
+        "render_job_dto",
         "ImageRenderAdapter",
         "RenderInput",
         "RenderOutput",
@@ -5895,7 +5898,8 @@
         "No adapter receives a project path or writer; all result persistence uses save_document",
         "Uploaded images without models are valid and never acquire fabricated modelSource",
         "Source freshness follows retained input requests, explicit page replacements and Drawing read-set status; a prior revision alone is not a replacement decision",
-        "No render action changes Design HEAD or accepts a Stage; hidden UI does not cancel a running attempt"
+        "No render action changes Design HEAD or accepts a Stage; hidden UI does not cancel a running attempt",
+        "RenderJobRecords reads an attempt back as a RenderJob value and validates a retained request with the same RenderRequestDto the wire accepts; only api.dto.rendering shapes the wire (render_job_dto), and the application layer imports nothing from api (#519)"
       ]
     },
     {

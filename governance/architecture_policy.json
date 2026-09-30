@@ -1196,10 +1196,9 @@
     {
       "source": "services/project-runtime/src/project_runtime/application",
       "targets": [
-        "project_runtime.api.routes",
-        "project_runtime.api.conditional"
+        "project_runtime.api"
       ],
-      "reason": "The HTTP layer calls the application layer, never the reverse: api imports application, and application imports no route and not the conditional-read middleware. project_runtime.api.dto joins these targets once #519 gives application the record schemas it still reads through six DTO imports (decisions, rendering twice, representation_dependencies, study_model, working_draft)."
+      "reason": "The HTTP layer calls the application layer, never the reverse: api imports application, and application imports no route, no DTO and not the conditional-read middleware. The schemas of the records application reads back (the working position, a render request, a recipe's graphics, a Study's research) are application's own, and api.dto builds on them (#519)."
     },
     {
       "source": "services/project-runtime/src/project_runtime/api/dto",

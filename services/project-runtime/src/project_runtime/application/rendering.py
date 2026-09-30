@@ -10,12 +10,14 @@ import base64
 from io import BytesIO
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import re
 import threading
 from time import perf_counter
 from uuid import UUID, uuid4
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from archflow.contracts.canonical import canonical_json, canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -23,10 +25,10 @@ from archflow.project.record_kinds import STUDIO_RENDER_JOB
 from archflow.project.repository import ProjectRepositoryError
 from monkeymonitor.usage import TokenUsage
 
-from ..api.dto.artifacts import document_dto
 from ..errors import StudioError
-from ..api.dto.rendering import RenderCapabilityDto, RenderJobDto, RenderRequestDto
-from .artifacts import document_bytes, list_documents, replacement_cause, save_document, require_model_source, ModelSource
+from .artifacts import (
+    ModelSource, SourceDocument, document_bytes, list_documents, replacement_cause, require_model_source, save_document,
+)
 from .render_contract import (
     ImageRenderAdapter, RenderImage, RenderInput, RenderOutputOptions,
     RenderPageRef, RenderProviderError,
@@ -34,6 +36,63 @@ from .render_contract import (
 from .drawing_plans import plan_status
 from .working_draft import WorkingSources, model_is_current
 from .projection import project_state
+
+
+# The request a render attempt retains, read back through the same model that
+# accepted it on the wire; the HTTP layer takes requests and answers with it.
+class RenderPageRefDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    run_id: str = Field(alias="runId", min_length=1)
+    asset_sha256: str = Field(alias="assetSha256", pattern=r"^[0-9a-f]{64}$")
+    page_index: int = Field(alias="pageIndex", ge=0, strict=True)
+    revision_ref: str | None = Field(alias="revisionRef", default=None, min_length=1)
+
+
+class RenderOutputOptionsDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    size: str = Field(default="1K", min_length=1, max_length=32)
+    aspect_ratio: str = Field(alias="aspectRatio", default="source", min_length=1, max_length=32)
+
+
+class RenderRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    request_id: UUID = Field(alias="requestId")
+    provider_id: str = Field(alias="providerId", min_length=1, max_length=80)
+    source: RenderPageRefDto
+    references: list[RenderPageRefDto] = Field(default_factory=list, max_length=8)
+    direction: str = Field(min_length=1, max_length=16000)
+    output: RenderOutputOptionsDto = Field(default_factory=RenderOutputOptionsDto)
+
+
+@dataclass(frozen=True, slots=True)
+class RenderJob:
+    """One retained image attempt as read back: what was asked, how it stands and what it produced.
+
+    ``document`` is the registered result, when there is one; the HTTP layer
+    puts it on the wire as the document listing does (``api.dto.rendering``).
+    """
+
+    project_id: str
+    job_id: str
+    request_id: UUID
+    status: str
+    execution: str
+    provider_id: str
+    model: str | None
+    request: RenderRequestDto | None
+    created_at: str
+    source_state: str
+    finished_at: str | None = None
+    error: str | None = None
+    error_code: str | None = None
+    source_state_reason: str | None = None
+    document: SourceDocument | None = None
+    result_available: bool = False
+    provider_request_id: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cost_usd: float | None = None
 
 
 def _now():
@@ -188,7 +247,7 @@ class RenderJobRecords:
     def capabilities(self):
         if self.adapter is None:
             return []
-        return [RenderCapabilityDto(**asdict(self.adapter.capability()))]
+        return [self.adapter.capability()]
 
     def _record(self, binding, row):
         # Every submission and transition - running, finished, failed,
@@ -241,15 +300,15 @@ class RenderJobRecords:
             error = "The retained result registration is unavailable; this attempt will not be replayed."
         request = RenderRequestDto.model_validate(row["request"])
         source_state, reason = _freshness(binding, request, row["sourceSnapshots"], working)
-        return RenderJobDto(
-            projectId=binding.project_id, jobId=job_id, requestId=request.request_id,
-            status=status, execution=row["execution"], providerId=row["providerId"], model=row["model"],
-            request=request, createdAt=row["createdAt"], finishedAt=row.get("finishedAt"), error=error,
-            errorCode=row.get("errorCode") or ("runtime_interrupted" if status == "unknown" else None),
-            sourceState=source_state, sourceStateReason=reason,
-            document=document_dto(document) if document else None, resultAvailable=result_available,
-            providerRequestId=row.get("providerRequestId"), inputTokens=row.get("inputTokens"),
-            outputTokens=row.get("outputTokens"), costUsd=row.get("costUsd"),
+        return RenderJob(
+            project_id=binding.project_id, job_id=job_id, request_id=request.request_id,
+            status=status, execution=row["execution"], provider_id=row["providerId"], model=row["model"],
+            request=request, created_at=row["createdAt"], finished_at=row.get("finishedAt"), error=error,
+            error_code=row.get("errorCode") or ("runtime_interrupted" if status == "unknown" else None),
+            source_state=source_state, source_state_reason=reason,
+            document=document, result_available=result_available,
+            provider_request_id=row.get("providerRequestId"), input_tokens=row.get("inputTokens"),
+            output_tokens=row.get("outputTokens"), cost_usd=row.get("costUsd"),
         )
 
     def _legacy(self, binding, row):
@@ -266,12 +325,12 @@ class RenderJobRecords:
                 available = True
             except (StudioError, ProjectRepositoryError, OSError, ValueError):
                 error = "The retained native result bytes are unavailable."
-        return RenderJobDto(
-            projectId=binding.project_id, jobId=row["jobId"], requestId=UUID(row["jobId"][7:]),
-            status=status, execution="browser-native", providerId=row.get("renderer", "native"), model=None,
-            request=None, createdAt=row["createdAt"], finishedAt=row.get("finishedAt"), error=error,
-            sourceState="unavailable", sourceStateReason="This native history does not contain an AI source-page request.",
-            document=document_dto(document) if document else None, resultAvailable=available,
+        return RenderJob(
+            project_id=binding.project_id, job_id=row["jobId"], request_id=UUID(row["jobId"][7:]),
+            status=status, execution="browser-native", provider_id=row.get("renderer", "native"), model=None,
+            request=None, created_at=row["createdAt"], finished_at=row.get("finishedAt"), error=error,
+            source_state="unavailable", source_state_reason="This native history does not contain an AI source-page request.",
+            document=document, result_available=available,
         )
 
     def list(self, binding):
