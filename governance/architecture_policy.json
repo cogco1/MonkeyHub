@@ -173,7 +173,7 @@
       ],
       "kind": "rendered_docs",
       "owner": "tools.devctl",
-      "reason": "Renders SYSTEM_MAP and SEMANTIC_REGISTRY from the module registry and the semantic tables; the files are committed."
+      "reason": "Renders docs/architecture/system-map.md and semantic-registry.md from the module registry and the semantic tables; the files are committed."
     },
     {
       "path": "tools/run_project.py",

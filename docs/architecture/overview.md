@@ -66,7 +66,7 @@ building returns to design/modeling; presenting an analysis does not change its 
 Shared project state, exact source binding, model invocation, job execution, artifact
 storage, candidate continuation and formal issue serve all four areas. Development and
 research tooling remain cross-cutting, not additional architectural workflow stages.
-Detailed ownership stays in SYSTEM_MAP and the existing registries.
+Detailed ownership stays in the system map and the existing registries.
 
 Remaining work and its acceptance are tracked in GitHub Issues (#358).
 Delivered behavior is not reopened merely to fill a plan.

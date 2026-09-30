@@ -217,7 +217,7 @@ class RepositoryRootTests(unittest.TestCase):
         self.track()
         findings = self.findings()
         self.assertEqual([("scratch", "ROOT_ENTRY"), ("setup.py", "ROOT_ENTRY")], [item[:2] for item in findings])
-        self.assertIn("docs/REPO_LAYOUT.md", findings[0][2])
+        self.assertIn("docs/architecture/repository-layout.md", findings[0][2])
 
     def test_ignored_and_untracked_files_are_not_the_layout(self) -> None:
         for relative in ("archflow_v4.egg-info/PKG-INFO", ".pytest_cache/README.md", "error.log", "notes.txt"):

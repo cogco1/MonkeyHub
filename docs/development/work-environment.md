@@ -111,7 +111,7 @@ SKP 使用本机 SketchUp C API 独立读取，不打开 SketchUp：原 SKP 与�
 没有安装工具箱时仍可开发 ArchFlow；需要某项 Skill 时再按工具箱 README 安装或读取那一项 manifest。
 外部引用、入口已安装、命令可执行是不同状态，不能把登记项直接当作已接通的运行能力。
 
-这条流程不要求每次读取完整 SYSTEM_MAP、整个 registry、所有 SKILL.md 或历史会话。
+这条流程不要求每次读取完整 system map、整个 registry、所有 SKILL.md 或历史会话。
 例如修窗洞代码先 `module opening`，选定 owner 后读取具体契约与实现；不要先翻历史建模脚本。
 使用已有建模能力时直接调用已接通的 CLI / API，按需读调用契约；正常改稿不要求读取实现源码。
 工具返回“没有匹配”时，使用同一能力的其他关键词或已知 API/path 查询，仍从登记入口收窄。

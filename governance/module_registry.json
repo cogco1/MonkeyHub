@@ -1517,7 +1517,7 @@
         "tests/test_interface_datums.py",
         "tests/test_semantic_geometry_tree.py"
       ],
-      "notes": "Named canonical in CANONICAL_SPINE 2.2 'Program and compiler'; runtime/geometry_compiler.py is only its shim."
+      "notes": "Named canonical in ADR-001's record, section 2.2 'Program and compiler'; runtime/geometry_compiler.py is only its shim."
     },
     {
       "module_id": "contracts.authority",
@@ -3150,7 +3150,7 @@
         "tests/test_cad_backend_contract.py",
         "tests/test_blender_projection_runner.py"
       ],
-      "notes": "packages/archflow/src/archflow/state/state_record.py imports SchematicPack/bootstrap_developed_state from here - the state to runtime inversion CANONICAL_SPINE 2.2 folds away."
+      "notes": "packages/archflow/src/archflow/state/state_record.py imports SchematicPack/bootstrap_developed_state from here - the state to runtime inversion ADR-001's record (section 2.2) folds away."
     },
     {
       "module_id": "runtime.drawing_elevation",
@@ -5606,7 +5606,7 @@
         "services/project-runtime/tests/test_recipe_export.py",
         "tests/test_export_drawing_recipe.py"
       ],
-      "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
+      "notes": "ADR-001's record, section 2.1, makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
         "services/project-runtime/src/project_runtime/application/intent.py",
         "services/project-runtime/src/project_runtime/application/intent_agent.py",
@@ -6244,7 +6244,7 @@
       ],
       "does_not_own": [
         "architecture boundary enforcement - tools.archcheck",
-        "the module registry described in CANONICAL_SPINE 4, which is a separate file from work_registry.json",
+        "the module registry described in ADR-001's record, section 4, which is a separate file from work_registry.json",
         "any archflow behaviour: it reads the semantic tables and the phase ladder to render them and defines none of them",
         "the capability matching rule: it imports the one studio.intent serves at GET /api/capabilities so the CLI and the running service cannot disagree about what a goal finds"
       ],

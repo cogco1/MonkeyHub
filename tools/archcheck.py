@@ -652,7 +652,7 @@ def check_probe_boundary(root: Path, policy: dict[str, Any]) -> Iterator[PolicyF
 
 
 def check_repository_root(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
-    """The repository root holds only the entries docs/REPO_LAYOUT.md names.
+    """The repository root holds only the entries docs/architecture/repository-layout.md names.
 
     Read from Git's index, not the filesystem: a checkout also holds ignored
     caches, build output and private notes that belong to no layout. The root
@@ -673,7 +673,7 @@ def check_repository_root(root: Path, policy: dict[str, Any]) -> Iterator[Policy
         yield PolicyFinding(
             entry, 1, "ROOT_ENTRY",
             f"{entry!r} is not a repository root entry; put it under an existing "
-            "top-level directory (docs/REPO_LAYOUT.md) or add it to repository_root_entries",
+            "top-level directory (docs/architecture/repository-layout.md) or add it to repository_root_entries",
         )
     for entry in sorted(legacy - entries):
         yield PolicyFinding(
