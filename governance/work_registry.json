@@ -1,4 +1,49 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-522",
+      "status": "active",
+      "branch": "codex/523-module-ids",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-523-module-ids",
+      "base_ref": "91cc4b6e65fdf3e5b7e08339786c6c2f1102fdc2",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "monkeycad.execution",
+        "monkeycad.occt",
+        "monkeycad.rhino",
+        "monkeycad.blender",
+        "monkeycad.formats",
+        "monkeycad.integrations",
+        "capabilities.discipline_seats",
+        "capabilities.element_producers",
+        "capabilities.geometry_proposal",
+        "capabilities.opening_solver",
+        "capabilities.reference_resolver",
+        "capabilities.relation_checks",
+        "capabilities.wall_solver",
+        "compilers.geometry",
+        "contracts.canonical",
+        "ports.model",
+        "runtime.project_runner",
+        "semantics.facets",
+        "state.dependencies",
+        "state.developed_design",
+        "state.geometry_program",
+        "state.record",
+        "state.spatial",
+        "state.massing_metrics",
+        "studio.intent",
+        "tools.verify_state_record",
+        "construction.script"
+      ],
+      "write_scope": [
+        "docs/architecture/repository-layout.md",
+        "labs/candidate_evaluation/README.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
