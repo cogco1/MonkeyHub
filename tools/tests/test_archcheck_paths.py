@@ -185,7 +185,7 @@ class LayerTargetTests(unittest.TestCase):
         for relative in (
             "packages/archflow/src/archflow/contracts/canonical.py",
             "packages/archflow/src/archflow/project/repository.py",
-            "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+            "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
             "tools/check.py",
         ):
             _write(self.root, relative)
@@ -203,7 +203,7 @@ class LayerTargetTests(unittest.TestCase):
     def test_a_module_and_every_package_above_it_resolve(self) -> None:
         self.assertEqual([], self.findings(
             "archflow", "archflow.project", "archflow.project.repository",
-            "monkeyarch.runtime", "monkeyarch.runtime.project_runner", "tools", "tools.check",
+            "monkeyarch.application", "monkeyarch.application.project_runner", "tools", "tools.check",
         ))
 
     def test_a_target_whose_module_is_gone_is_a_finding(self) -> None:
@@ -232,8 +232,8 @@ class LayerTargetTests(unittest.TestCase):
 
     def test_a_module_is_named_as_it_is_imported_not_by_its_path(self) -> None:
         # A src layout's modules are named from their Python source root (#488).
-        self.assertEqual([], self.findings("monkeyarch.runtime"))
-        findings = self.findings("packages.monkeyarch.src.monkeyarch.runtime", "src.monkeyarch")
+        self.assertEqual([], self.findings("monkeyarch.application"))
+        findings = self.findings("packages.monkeyarch.src.monkeyarch.application", "src.monkeyarch")
         self.assertEqual(["POLICY_TARGET_MISSING"] * 2, [code for _, code, _ in findings])
 
     def test_a_directory_without_python_names_no_module(self) -> None:
@@ -533,7 +533,7 @@ class ImportNameTests(unittest.TestCase):
             ("archflow/state/state_record.py", "archflow.state.state_record"),
             ("packages/archflow/src/archflow/state/state_record.py", "archflow.state.state_record"),
             ("services/project-runtime/src/project_runtime/main.py", "project_runtime.main"),
-            ("monkeyarch/construction/__init__.py", "monkeyarch.construction"),
+            ("monkeyarch/authoring/construction/__init__.py", "monkeyarch.authoring.construction"),
             ("tools/governance/archcheck.py", "tools.governance.archcheck"),
             ("apps/monkeyhub/web/scripts/dump-openapi.py", None),
             ("apps/monkeyhub/desktop/", None),
@@ -562,7 +562,7 @@ class ImportNameTests(unittest.TestCase):
 
     def test_a_package_owner_is_the_package(self) -> None:
         self.assertEqual([], self.registry_findings(
-            ["."], "monkeyarch/construction/__init__.py", "construction.script", "monkeyarch.construction",
+            ["."], "monkeyarch/authoring/construction/__init__.py", "construction.script", "monkeyarch.authoring.construction",
         ))
 
 

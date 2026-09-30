@@ -18,12 +18,12 @@ class ModuleLookupTests(unittest.TestCase):
         registry_path = Path(self.temporary.name) / "modules.json"
         wall = {
             "module_id": "capabilities.wall_solver",
-            "owner_path": "monkeyarch/capabilities/wall_solver.py",
+            "owner_path": "monkeyarch/domain/wall_solver.py",
             "purpose": "Solve a wall from its authored line and height.",
             "owns": ["wall geometry"], "does_not_own": ["opening geometry"],
             "inputs": ["wall"], "outputs": ["geometry"],
             "public_api": ["solve_wall"], "depends_on": ["state.design"],
-            "files": ["monkeyarch/capabilities/wall_solver.py", "monkeyarch/capabilities/wall_helpers.py"],
+            "files": ["monkeyarch/domain/wall_solver.py", "monkeyarch/domain/wall_helpers.py"],
             "tests": ["tests/test_wall_solver.py"],
             "invariants": [f"wall condition {i}" for i in range(12)],
             "status": "canonical",
@@ -56,7 +56,7 @@ class ModuleLookupTests(unittest.TestCase):
         self.assertEqual(module["owns"], ["wall geometry"])
         self.assertEqual(module["does_not_own"], ["opening geometry"])
         self.assertEqual(module["depends_on"], ["state.design"])
-        self.assertEqual(module["source_paths"], ["monkeyarch/capabilities/wall_solver.py", "monkeyarch/capabilities/wall_helpers.py"])
+        self.assertEqual(module["source_paths"], ["monkeyarch/domain/wall_solver.py", "monkeyarch/domain/wall_helpers.py"])
         self.assertEqual(module["tests"], ["tests/test_wall_solver.py"])
         self.assertNotIn("private drawing contract", output)
         self.assertNotIn("candidates", result)
