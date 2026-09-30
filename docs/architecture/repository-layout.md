@@ -1,6 +1,6 @@
 # MonkeyHub 仓库：职责、目录与拓扑
 
-本文定义共享核心、建模、出图、Monitor、Control 和 Fab 模块的职责，说明当前目录与拓扑，并记录仓库拓扑重构
+本文定义共享核心、CAD、建模、出图、Monitor、Control 和 Fab 模块的职责，说明当前目录与拓扑，并记录仓库拓扑重构
 第一轮（milestone “Topology refactor round 1”）如何落地。当前 owner、路径和公开接口以
 [module registry](../../governance/module_registry.json) 为准；目录分离不表示所有规划能力已经实现。
 协作规则见 [AGENTS](../../AGENTS.md) 与 [CONTRIBUTING](../../CONTRIBUTING.md)。
@@ -13,6 +13,7 @@
 | 名称 | 负责 | 不承担 |
 | --- | --- | --- |
 | **ArchFlow** | 共享项目身份、文件与记录保存、版本引用、建筑事实与语义契约、真实共用的计算和外部工具接口、正式 issue | 具体建模方法、图纸布局、某一工作流的界面与交互 |
+| **MonkeyCAD** | 在 OCCT、Rhino 与 Blender 中执行编译好的几何程序并独立回读，对命名形体做投影、剖切与测量；读取与转换 3dm、STEP、GLB、SKP 等模型格式；发现本机 CAD 软件并组织集成包 | 设计决定与建筑状态、项目持久化与发布；它只依赖 ArchFlow 内核，不导入工作流、Runtime 或 Hub |
 | **MonkeyArch** | 3D 建模与空间修改：任务解释、构件与空间构造、模型候选、几何编译、关系检查、模型检查与续改 | 图纸字形、笔迹、二维图形、版面及图纸集组织 |
 | **MonkeyDiagram** | 图纸与图解：平立剖、家具与节点表达、PDF／图片批注、二维内容编辑、文字尺寸、视图与图形表达、排版及导出 | 隐式改变模型空间或构件；建立第二套项目保存与发布权威 |
 | **MonkeyMonitor** | 跨应用用量、费用估算、调用耗时与通用算法预算建议；保留 CLI/API，用量页面由 MonkeyHub 承载 | 建筑评价、执行候选、设计接受、正式发布及项目资产存储 |
@@ -23,8 +24,8 @@ MonkeyArch 和 MonkeyDiagram 是平行工作流。ArchFlow 提供它们共同依
 二维图纸可以表达新的设计想法；将该想法应用到三维模型是明确的跨工作流动作。
 模型派生的轴测图、透视图和截图放到图纸中时，表达工作属于 MonkeyDiagram。
 
-建模与出图执行已迁入 `packages/monkeyarch/` 和 `packages/monkeydiagram/`。`packages/archflow/` 保留共同的建筑事实、
-项目契约和技术适配。仅因代码可复用，不把某个工作流的业务算法放进公共核心。
+建模与出图执行已迁入 `packages/monkeyarch/` 和 `packages/monkeydiagram/`，CAD 执行在 `packages/monkeycad/`（#514）。`packages/archflow/` 保留共同的建筑事实、
+项目契约和外部调用接口。仅因代码可复用，不把某个工作流的业务算法放进公共核心。
 
 ## 2. 当前源码目录
 
@@ -39,8 +40,8 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 │     ├─ contracts/              共同值契约与规范化
 │     ├─ state/                  建筑事实、变更契约及共享几何值
 │     ├─ semantics/              建筑实体、角色与条件词汇
-│     ├─ ports/                  已有外部调用接口
-│     └─ adapters/               两条工作流实际共用的技术适配（含 CAD/OCCT 执行）
+│     └─ ports/                  已有外部调用接口
+├─ packages/monkeycad/           CAD 执行：后端中立协议与注册表，OCCT、Rhino、Blender 后端，模型格式与集成包：src/monkeycad/、pyproject.toml、本包 tests/
 ├─ packages/monkeyarch/          3D producer、solver、编译及运行编排：src/monkeyarch/、pyproject.toml、本包 tests/
 ├─ packages/monkeydiagram/       图纸投影编排、SVG 与 PNG 表达：src/monkeydiagram/、pyproject.toml、本包 tests/
 ├─ packages/monkeymonitor/       用量、计价、算法建议接口及诊断 CLI/API：src/monkeymonitor/、pyproject.toml、本包 tests/
@@ -81,7 +82,8 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 | `packages/monkeyarch/src/monkeyarch/` 的 `capabilities/`、`compilers/geometry.py`、`runtime/project_runner.py` | 3D 生成、求解、重建语义、关系检查、编译和运行。原 `archflow` 中的对应生产文件已退役，调用方直接导入新位置。 |
 | `packages/monkeydiagram/src/monkeydiagram/` 的 `drawing_elevation.py`、`drawing_svg.py` | 图纸来源核验、模型轴立面投影编排、SVG／PNG 表达。两位既有 owner 保持原 API 和记录语义，不复制 renderer。 |
 | `packages/archflow/src/archflow/state/geometry_program.py` 的 `CompiledGeometryProgram` 等值 | 三维编译器与共享 CAD 执行器共用的结果契约。数据值、已保留记录的读取器（`load_compiled_geometry_program`）和解析包围盒（`expected_object_bounds`）留在 ArchFlow，读取程序或预测包围盒不必导入 MonkeyArch 或 CAD 代码；生成这些值的编译算法归 MonkeyArch。 |
-| `adapters/cad_execution.py`、`three_dm_inspector.py`、`ports/model.py` | 已被两条链使用的技术部分留在 ArchFlow。模型生成与二维投影的领域规则分别归各工作流；按函数职责处理混合文件，不整份复制。 |
+| `packages/monkeycad/src/monkeycad/`（#514 之前是 `archflow/adapters/`） | CAD 执行与模型格式归 MonkeyCAD：两条工作流、Runtime 和 Hub 调用它，它只依赖 ArchFlow 内核。#514 整包平移、不改文件名，`cad_execution.py`、`occt_backend.py` 的拆分在 #515。模型生成与二维投影的领域规则分别归各工作流；按函数职责处理混合文件，不整份复制。 |
+| `packages/archflow/src/archflow/ports/model.py` | 两条链都用的模型调用端口留在 ArchFlow。 |
 | Web 的 `ThreeDmViewport`、Program／Options、模型 `Annotate`／`useModelAnnotations` | 归 `workspaces/monkeyarch/`；通用三维显示器若有实际共享消费者，可以继续共用。 |
 | Web 的 `DocumentCanvas`、`DocumentTextLayer`、`documentInk`、`documentVisualInput`、`useDocumentAnnotations` | 已在 `workspaces/monkeydiagram/`。模型修改提交仍是显式交给 MonkeyArch 的动作，不能误称为重新出图。 |
 | Hub 导航／聊天／设置、ProjectWorkspace 与生成 SDK | 归 `hub.shell`，同一前端直接渲染 Arch 和 Board；Diagram 是 Board 图页编辑。每项目 Provider 固定 API 地址与连接身份，工作区切换保留本地草稿。 |
@@ -90,26 +92,29 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 API 中的装配用例仍保留一位 owner；拆出混合文件中的具体方法，应随下一项真实用例进行，
 不能为目录对称复制 DTO、来源校验或保存流程。HTTP 接口及客户端契约保持不变。
 模块 ID 不因产品名而改名；每次搬迁把 `owner_path`、调用方和公开类型的路径同步到注册表。
+CAD 离开 ArchFlow 时（#514）按能力新建了六个 owner：`monkeycad.execution`、`monkeycad.occt`、`monkeycad.rhino`、`monkeycad.blender`、`monkeycad.formats`、`monkeycad.integrations`，取代原来四个 `adapters.*` CAD id。
 
 ## 4. 依赖方向与交接
 
 ```text
 MonkeyHub 前端       → Project Runtime API（经 Hub 转发路径）
-Project Runtime      → monkeyarch / monkeydiagram / archflow
+Project Runtime      → monkeyarch / monkeydiagram / monkeycad / archflow
 MonkeyArch 工作区    → monkeyarch    → archflow
 MonkeyDiagram 工作区 → monkeydiagram → archflow
                      MonkeyHub 负责界面装配
+MonkeyArch 的 runner、monkeydiagram、Runtime、Hub → monkeycad → archflow
 MonkeyHub Usage 页   → monkeymonitor ← Project Runtime 元数据适配器
 ```
 
 - ArchFlow 不导入两个工作流的内部代码；底座所需领域行为通过已有或实际需要的明确接口传入。
+- MonkeyCAD 只依赖 ArchFlow 内核：两个工作流、Runtime 和 Hub 调用它，它不导入这些调用方；内核也不导入它，CAD 记录的版本声明由 `archflow.project.version_ref_owners` 代为登记（#485）。MonkeyArch 只有 runner（`monkeyarch.runtime`）执行 CAD；domain、authoring 与 compilation 代码只用内核的 GeometryProgram 契约，包括解析包围盒（#513）。
 - MonkeyMonitor 不导入建筑核心或设计工作流；它读取用量值，返回估价与动作建议，由宿主决定执行。
 - MonkeyControl 只接收动作值，由 Hub 调用：它不导入两个工作流、Monitor、Fab、Runtime 或 Hub，核心与两个工作流也不导入它。
 - 两个工作流不直接导入对方内部模块。模型到图纸传递明确的模型来源与视图输入；图纸要求改模型时，
   通过 MonkeyArch 的公开动作提交。必要的新接口与首个真实消费者一起形成。
 - MonkeyDiagram 保存自己的图纸修订；查看某个模型不会悄悄替换图纸的来源。更新产生新图，旧图与批注仍可追溯。
 - 共享是由真实消费者证明的职责。只有一个工作流使用的业务逻辑留在该工作流，不为了“以后能共用”提前抽进核心。
-- archcheck 按 policy 的 `forbidden_layer_imports` 拒绝底座反向导入工作流、两个工作流互导，以及核心、两个工作流、
+- archcheck 按 policy 的 `forbidden_layer_imports` 拒绝底座反向导入工作流或 MonkeyCAD、MonkeyCAD 导入工作流、Runtime 与 Hub、两个工作流互导，以及核心、两个工作流、
   `apps/`、`tools/` 和 `tests/` 导入 `labs/`。
 
 ## 5. 项目数据、测试与发布文件
@@ -143,7 +148,8 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
 │  └─ web/                          单一源根：src/ test/ scripts/ tools/ assets/
 ├─ services/project-runtime/        src/project_runtime/{api/{routes,dto},application,render_adapters}  tests/  README.md  requirements.txt  pyproject.toml
 ├─ packages/
-│  ├─ archflow/                     src/archflow/{contracts,project,state,semantics,validation,submission,ports,adapters}
+│  ├─ archflow/                     src/archflow/{contracts,project,state,semantics,validation,submission,ports}
+│  ├─ monkeycad/                    src/monkeycad/（#514 从 archflow/adapters/ 平移，文件名不变）
 │  ├─ monkeyarch/                   src/monkeyarch/（第一轮保持原内部结构）
 │  ├─ monkeydiagram/                src/monkeydiagram/
 │  ├─ monkeymonitor/  monkeycontrol/  monkeyfab/    src/<包名>/
@@ -161,7 +167,7 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
 ```
 
 - 每个 Python 包是 `packages/<包名>/`，含 `src/<包名>/`、自己的 `pyproject.toml` 和只测本包的 `tests/`。
-  包的导入名没变：仍是 `archflow`、`monkeyarch`、`monkeydiagram`、`monkeymonitor`、`monkeycontrol`、`monkeyfab`。
+  包的导入名没变：仍是 `archflow`、`monkeyarch`、`monkeydiagram`、`monkeymonitor`、`monkeycontrol`、`monkeyfab`；第二轮的 CAD 包是 `monkeycad`（#514 之前是 `archflow.adapters`）。
   Runtime 的包名是 `project_runtime`（#491 之前是 `archflow_studio_api`）；tools 的导入路径是 `tools.<组>.<模块>`。
 - `src/` 布局的导入方式按场景区分（#488）：安装包里的位置见 6.2；
   CI 逐包 `pip install -e`（Runtime 的依赖仍由 `services/project-runtime/requirements.txt` 安装，它的 `pyproject.toml`
@@ -174,8 +180,8 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
   基准驱动在 `tools/benchmarks/`。
 - `docs/` 根目录只有 `README.md` 索引；其余文档在类别子目录里，决定记录是 `docs/decisions/NNN-*.md`。
 
-第二轮做内部拆分，每项另开 Issue、单独 PR，范围在开工前确认。候选项有：CAD 从
-`packages/archflow/src/archflow/adapters/` 抽成 `packages/monkeycad/`（第一轮的 Step 0，#485，先把 CAD 的版本声明移进内核）、
+第二轮做内部拆分，每项另开 Issue、单独 PR，范围在开工前确认。CAD 已从
+`packages/archflow/src/archflow/adapters/` 抽成 `packages/monkeycad/`（#514；第一轮的 Step 0，#485，先把 CAD 的版本声明移进了内核）；其余候选项有
 MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 owner、`hub.shell` 分组、模块 ID 规范化。
 第一轮不改模块 ID：R1-9（#495）分组后 `tools.*` 仍是原 ID（如 `tools.archcheck`），只更新 `owner_path` 等路径，随 ID 规范化一起调整。
 
@@ -201,13 +207,13 @@ Runtime 改名（R1-5）只替换了 `archflow_studio_api` 和 `apps/archflow-st
 
 | 仓库 | 安装包内 | 为什么 |
 | --- | --- | --- |
-| `packages/<包名>/src/<包名>/`：archflow、monkeyarch、monkeydiagram、monkeymonitor、monkeycontrol | 包根 `<包名>/`（`BUNDLED_PACKAGES`） | 内置解释器的 `python313._pth` 用 `..\..` 找到它们。第一轮只搬仓库、不动安装包布局，所以这些搬迁既没改 `._pth`，也没改已安装版本里这些文件的位置 |
+| `packages/<包名>/src/<包名>/`：archflow、monkeycad、monkeyarch、monkeydiagram、monkeymonitor、monkeycontrol | 包根 `<包名>/`（`BUNDLED_PACKAGES`） | 内置解释器的 `python313._pth` 用 `..\..` 找到它们。第一轮只搬仓库、不动安装包布局，所以这些搬迁既没改 `._pth`，也没改已安装版本里这些文件的位置；#514 的 `monkeycad` 同样放在包根，`._pth` 与已安装更新器的 `REQUIRED_FILES` 都不用改 |
 | `packages/monkeyfab/` | `apps/monkeyfab/`（`FAB_BUNDLE`） | 已安装更新器的 `REQUIRED_FILES`（`apps/monkeyhub/installer/patch.py`）和 `install.ps1` 的必需文件列出 `apps/monkeyfab/src/monkeyfab/__main__.py` 与 `apps/monkeyfab/pyproject.toml`，已装版本拒收缺了它们的安装包；`._pth` 也列出 `..\..\apps\monkeyfab\src`。Hub 在检出里用 `packages/monkeyfab/src`，在安装包里用 `apps/monkeyfab/src`（`monkeyhub_api/fabrication.py` 的 `FAB_SOURCES`） |
 
 Project Runtime 自 #491 起按仓库路径 `services/project-runtime/src/project_runtime` 进入安装包：`._pth` 为它加了
 `..\..\services\project-runtime\src`，随补丁送达，已安装更新器不检查 Runtime 的路径。Hub 的 `api/`、`installer/`、
 `assets/` 与随带的 `tools/project/{create_project,run_project}.py`、`tools/dev/source_roots.py` 也在仓库路径。
-让五个包回到仓库路径，要像 #491 那样改 `._pth` 并随补丁发出；MonkeyFab 则要先让已安装的更新器不再要求
+让这六个包回到仓库路径，要像 #491 那样改 `._pth` 并随补丁发出；MonkeyFab 则要先让已安装的更新器不再要求
 `apps/monkeyfab/`。两者都不属于第一轮。
 
 ### 6.3 archcheck 如何守住布局
@@ -217,7 +223,7 @@ Project Runtime 自 #491 起按仓库路径 `services/project-runtime/src/projec
 | 键 | 含义与改目录时要做的事 |
 | --- | --- |
 | `repository_root_entries` | 根目录的完整清单：第 6 节的目录加上根文件。`ROOT_ENTRY` 按 `git ls-files` 检查，被 git 忽略的本地文件不算；清单外的条目都是 finding，搬回根目录的包也一样 |
-| `python_source_roots` | 模块导入名从哪一级目录开始算，当前是 `.`、`services/project-runtime/src`、`apps/monkeyhub/api`、`packages/monkeyfab/src`、`packages/monkeydiagram/src`、`packages/archflow/src`、`packages/monkeyarch/src`、`packages/monkeymonitor/src`、`packages/monkeycontrol/src`。这是唯一的清单：本地开发的各入口按检出读它（第 6 节）。新的 src 布局包加上自己的 `packages/<包名>/src`；含受检 Python 的 `src` 目录不在表里时报 `POLICY_PATH_MISSING` |
+| `python_source_roots` | 模块导入名从哪一级目录开始算，当前是 `.`、`services/project-runtime/src`、`apps/monkeyhub/api`、`packages/monkeyfab/src`、`packages/monkeydiagram/src`、`packages/archflow/src`、`packages/monkeyarch/src`、`packages/monkeymonitor/src`、`packages/monkeycontrol/src`、`packages/monkeycad/src`。这是唯一的清单：本地开发的各入口按检出读它（第 6 节）。新的 src 布局包加上自己的 `packages/<包名>/src`；含受检 Python 的 `src` 目录不在表里时报 `POLICY_PATH_MISSING` |
 | `checked_source_roots`、`forbidden_layer_imports` 的 `source` | `packages/` 下的包：检查根写包根 `packages/<包名>`，包的层规则 `source` 写 `packages/<包名>/src/<包名>`，`packages/<包名>/tests` 另有一条不导入根 `tests`、`labs`、`archive` 的规则，也和根 `tests/` 一样列入 `shared_write_scope`。Runtime 是服务：检查根和层规则的 `source` 都写服务根 `services/project-runtime`，包与它的 `tests/` 同受一条规则约束，`services/project-runtime/tests/` 列入 `shared_write_scope`；包内分层（#518）的规则写到层目录，如 `services/project-runtime/src/project_runtime/application` 不导入 `project_runtime.api.routes`。`source` 为 `packages` 的一条规则让每个包和包自己的测试都不导入 `project_runtime`。相对导入先按所在文件的导入名解析成完整模块名再比对，`from x import y` 按 `x` 和 `x.y` 两个名字比对。路径不存在、检查根下没有 Python 源码、或层规则匹配不到任何受检文件时报 `POLICY_PATH_MISSING`；`allowed_write_sites` 与 `allowed_authority_symbols` 的文件缺失时 archcheck 直接以错误退出 |
 | `forbidden_layer_imports` 的 `targets` | 写导入名，不写路径。目标是 `python_source_roots` 下的模块或它上面的包，例如 `monkeyarch.runtime`、`archflow`；以本仓顶层包开头的名字只能这样解析，残留的 import 不能让已经删掉的模块继续算数。其他名字是第三方库，要有受检文件实际导入它，例如 `shapely`、`OCP`。另一类是 Git 忽略的目录，例如 `archive/`：退役 lane 只留在部分检出里，规则防止已提交的代码导入它。解析不了的目标报 `POLICY_TARGET_MISSING`（#511）；模块搬走或删除时，同一个 PR 把目标改到新位置或删掉 |
 

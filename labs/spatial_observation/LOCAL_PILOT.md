@@ -17,7 +17,7 @@ separate from measured geometry. Bounds overlap is a selection hint, never proof
 of collision, bearing, room membership or a traversable route.
 
 `exact_pairs` delegates true minimum distance and common volume to
-`adapters.cad_execution`'s existing OCCT implementation. It refuses another
+`monkeycad.occt`'s existing OCCT implementation. It refuses another
 revision's binding. The caller must obtain that binding from the actual retained
 candidate; this in-memory module cannot notice an external edit on its own.
 `changes` reports changed bounds and annotations. Equal

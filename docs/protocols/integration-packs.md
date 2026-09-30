@@ -6,12 +6,13 @@ does not make a capability ready.
 
 ## Ownership and contract
 
-This extends `adapters.cad_execution`, which already owns discovery,
-runtime-qualified conversion providers and the compiled CAD interface.
+This is `monkeycad.integrations`, which owns discovery, beside
+`monkeycad.formats` (runtime-qualified conversion providers) and
+`monkeycad.execution` (the compiled CAD interface).
 `hub.shell` exposes its read-only diagnostic view. There is no second CAD
 execution registry, project store or universal host lifecycle.
 
-`packages/archflow/src/archflow/adapters/integration_packs.py` defines `IntegrationPack`,
+`packages/monkeycad/src/monkeycad/integration_packs.py` defines `IntegrationPack`,
 `PackComponent`, `PackCapability`, `PackWorkflow` and `PackInstallation`.
 `IntegrationPack.manifest()` serializes `MonkeyIntegrationPack@1`.
 The manifest names product/component ids, version, bridge kind, installation

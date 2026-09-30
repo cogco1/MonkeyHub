@@ -5,7 +5,7 @@ authority. A verified OCCT STEP is cold-read and tessellated by the existing OCC
 adapter, then mirrored into Blender. Blender receives vertices and triangles; it
 does not interpret walls, openings, columns, lofts or architectural constraints.
 
-This extends `adapters.cad_execution` and `runtime.project_runner`. The existing
+This extends the CAD owner, today `monkeycad.blender`, and `runtime.project_runner`. The existing
 legacy Blender CAD backend remains available for its current consumers; selecting
 this projection never calls that builder. Rhino is not launched or required.
 The normal OCCT preview still uses the existing rhino3dm file library; that is
@@ -14,7 +14,7 @@ not a Rhino application dependency. Huaguoshan is reference evidence only:
 
 ## Run and read
 
-Install the existing `cad-occt` optional dependencies and an explicit Blender
+Install the `occt` and `blender` extras of `packages/monkeycad` and an explicit Blender
 executable. Blender 4.3.0 on Windows, OCCT binding `cadquery-ocp==7.9.3.1.1` and
 Pillow 12.3.0 were exercised. No GPU, Hunyuan model, network or Rhino host is
 needed after setup. Other Blender versions require a fresh acceptance run.
