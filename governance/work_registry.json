@@ -40,6 +40,8 @@
         "construction.script"
       ],
       "write_scope": [
+        ".codex/cloud/setup.sh",
+        "docs/architecture/repository-layout.md",
         "docs/audits/drawing-v0.md",
         "docs/audits/visual-observation.md",
         "docs/design/blender-projection.md",
