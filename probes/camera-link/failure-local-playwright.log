@@ -1,0 +1,19 @@
+FAILED: Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'playwright' imported from C:\Users\jiayu\OneDrive\文档\ChatGPT\Blender skill\projection-development\workspace\worktrees\codex-319-shared-camera\apps\monkeyhub\web\workspaces\test\designTree.browser.mjs
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:331:9)
+    at packageResolve (node:internal/modules/esm/resolve:784:25)
+    at moduleResolve (node:internal/modules/esm/resolve:873:18)
+    at defaultResolve (node:internal/modules/esm/resolve:1006:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:705:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:725:38)
+    at nextStep (node:internal/modules/customization_hooks:189:26)
+    at customizationHookResolve (file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-monkeyhub-current/apps/monkeyhub/web/node_modules/vite/dist/node/module-runner.js:1047:9)
+    at nextStep (node:internal/modules/customization_hooks:189:26)
+    at resolveWithHooks (node:internal/modules/customization_hooks:417:10) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+{
+ "errors": [],
+ "unexpected": [],
+ "external": [],
+ "writes": []
+}

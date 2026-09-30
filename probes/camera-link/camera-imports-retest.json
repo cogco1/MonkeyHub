@@ -1,0 +1,2460 @@
+{
+  "project-a": {
+    "sample": "actual-user-penguin",
+    "inputSha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+    "orbit": {
+      "time": 36855.5,
+      "model": "4f50f4d7-f28b-4690-98c8-69cfc4a91629",
+      "position": [
+        -1.5374094483649485,
+        -3.0437806240198517,
+        2.4954377216338455
+      ],
+      "quaternion": [
+        0.4839258417473494,
+        -0.11527971527020055,
+        -0.2010246380128397,
+        0.8438693393222363
+      ],
+      "target": [
+        0,
+        0,
+        0.5
+      ],
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "projection": "perspective",
+      "fov": 35,
+      "zoom": 1,
+      "near": 0.001,
+      "far": 100000,
+      "frustum": null,
+      "worldMatrix": [
+        0.8925993643180565,
+        -0.45085072343182664,
+        0,
+        0,
+        0.22770339043772037,
+        0.45080974920185224,
+        0.8630884867774162,
+        0,
+        -0.3891240686492786,
+        -0.770392234647755,
+        0.5050527338726818,
+        0,
+        -1.5374094483649485,
+        -3.0437806240198517,
+        2.4954377216338455,
+        1
+      ],
+      "projectionMatrix": [
+        2.057131628755028,
+        0,
+        0,
+        0,
+        0,
+        3.1715948023632126,
+        0,
+        0,
+        0,
+        0,
+        -1.0000000200000003,
+        -1,
+        0,
+        0,
+        -0.0020000000200000004,
+        0
+      ],
+      "rect": {
+        "x": 0,
+        "y": 88,
+        "width": 1440,
+        "height": 934,
+        "top": 88,
+        "right": 1440,
+        "bottom": 1022,
+        "left": 0
+      },
+      "renderSize": [
+        1440,
+        934
+      ],
+      "pixelRatio": 1,
+      "devicePixelRatio": 1
+    },
+    "pan": {
+      "time": 37131.5,
+      "model": "4f50f4d7-f28b-4690-98c8-69cfc4a91629",
+      "position": [
+        -1.6232502150542405,
+        -2.958130838745454,
+        2.5599482546918084
+      ],
+      "quaternion": [
+        0.48392584174734915,
+        -0.1152797152702013,
+        -0.20102463801284107,
+        0.843869339322236
+      ],
+      "target": [
+        -0.0858407666892924,
+        0.08564978527437356,
+        0.5645105330579743
+      ],
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "projection": "perspective",
+      "fov": 35,
+      "zoom": 1,
+      "near": 0.001,
+      "far": 100000,
+      "frustum": null,
+      "worldMatrix": [
+        0.8925993643180551,
+        -0.45085072343182947,
+        -8.326672684688674e-17,
+        0,
+        0.22770339043772186,
+        0.4508097492018517,
+        0.863088486777416,
+        0,
+        -0.38912406864928106,
+        -0.7703922346477536,
+        0.5050527338726818,
+        0,
+        -1.6232502150542405,
+        -2.958130838745454,
+        2.5599482546918084,
+        1
+      ],
+      "projectionMatrix": [
+        2.057131628755028,
+        0,
+        0,
+        0,
+        0,
+        3.1715948023632126,
+        0,
+        0,
+        0,
+        0,
+        -1.0000000200000003,
+        -1,
+        0,
+        0,
+        -0.0020000000200000004,
+        0
+      ],
+      "rect": {
+        "x": 0,
+        "y": 88,
+        "width": 1440,
+        "height": 934,
+        "top": 88,
+        "right": 1440,
+        "bottom": 1022,
+        "left": 0
+      },
+      "renderSize": [
+        1440,
+        934
+      ],
+      "pixelRatio": 1,
+      "devicePixelRatio": 1
+    },
+    "moved": {
+      "time": 37178,
+      "model": "4f50f4d7-f28b-4690-98c8-69cfc4a91629",
+      "position": [
+        -1.7462079375457293,
+        -3.2015639291893976,
+        2.7195378018268537
+      ],
+      "quaternion": [
+        0.48392584174734893,
+        -0.1152797152702013,
+        -0.20102463801284112,
+        0.8438693393222362
+      ],
+      "target": [
+        -0.0858407666892924,
+        0.08564978527437356,
+        0.5645105330579743
+      ],
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "projection": "perspective",
+      "fov": 35,
+      "zoom": 1,
+      "near": 0.001,
+      "far": 100000,
+      "frustum": null,
+      "worldMatrix": [
+        0.892599364318055,
+        -0.4508507234318296,
+        2.7755575615628914e-17,
+        0,
+        0.2277033904377221,
+        0.4508097492018519,
+        0.8630884867774159,
+        0,
+        -0.38912406864928106,
+        -0.7703922346477535,
+        0.5050527338726822,
+        0,
+        -1.7462079375457293,
+        -3.2015639291893976,
+        2.7195378018268537,
+        1
+      ],
+      "projectionMatrix": [
+        2.057131628755028,
+        0,
+        0,
+        0,
+        0,
+        3.1715948023632126,
+        0,
+        0,
+        0,
+        0,
+        -1.0000000200000003,
+        -1,
+        0,
+        0,
+        -0.0020000000200000004,
+        0
+      ],
+      "rect": {
+        "x": 0,
+        "y": 88,
+        "width": 1440,
+        "height": 934,
+        "top": 88,
+        "right": 1440,
+        "bottom": 1022,
+        "left": 0
+      },
+      "renderSize": [
+        1440,
+        934
+      ],
+      "pixelRatio": 1,
+      "devicePixelRatio": 1
+    },
+    "during": {
+      "time": 38737.60000000894,
+      "model": "4f50f4d7-f28b-4690-98c8-69cfc4a91629",
+      "position": [
+        -2.4256885353995767,
+        -1.1169580506127934,
+        3.923912635825384
+      ],
+      "quaternion": [
+        0.2783502315755733,
+        -0.16989993178092205,
+        -0.49251558883036584,
+        0.8068974882361084
+      ],
+      "target": [
+        -0.0858407666892924,
+        0.08564978527437356,
+        0.5645105330579743
+      ],
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "projection": "perspective",
+      "fov": 35,
+      "zoom": 1,
+      "near": 0.001,
+      "far": 100000,
+      "frustum": null,
+      "worldMatrix": [
+        0.4571248158798321,
+        -0.8894025538004877,
+        -5.551115123125783e-17,
+        0,
+        0.7002358123769128,
+        0.3598990866818055,
+        0.6165569353031781,
+        0,
+        -0.5483673128220488,
+        -0.2818434755298988,
+        0.7873103235253255,
+        0,
+        -2.4256885353995767,
+        -1.1169580506127934,
+        3.923912635825384,
+        1
+      ],
+      "projectionMatrix": [
+        2.057131628755028,
+        0,
+        0,
+        0,
+        0,
+        3.1715948023632126,
+        0,
+        0,
+        0,
+        0,
+        -1.0000000200000003,
+        -1,
+        0,
+        0,
+        -0.0020000000200000004,
+        0
+      ],
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "renderSize": [
+        1440,
+        934
+      ],
+      "pixelRatio": 1,
+      "devicePixelRatio": 1
+    },
+    "final": {
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "project-a",
+          "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        "format": "glb",
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "retained-import",
+        "label": "penguin-sample.glb",
+        "preview": {
+          "assetSha256": "e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1",
+          "runId": "studio-model-e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1"
+        },
+        "previewExportId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+        "projectId": "project-a",
+        "runId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 1
+      },
+      "projectId": "project-a",
+      "scene": {
+        "assignments": {
+          "0": "body"
+        },
+        "camera": {
+          "fov": 35,
+          "orthoScale": 1.3,
+          "position": [
+            -2.425688535399577,
+            -1.1169580506127943,
+            3.9239126358253857
+          ],
+          "projection": "perspective",
+          "target": [
+            -0.0858407666892924,
+            0.08564978527437356,
+            0.5645105330579743
+          ],
+          "up": [
+            0,
+            0,
+            1
+          ]
+        },
+        "environment": {
+          "background": null,
+          "color": "#c6d8e8",
+          "environmentMap": null,
+          "strength": 0.4
+        },
+        "exposure": 0,
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "lights": [
+          {
+            "color": "#fff0dd",
+            "id": "key",
+            "intensity": 120,
+            "position": [
+              1.5,
+              -2,
+              2.5
+            ],
+            "size": 1.5,
+            "target": [
+              0,
+              0,
+              0.5
+            ],
+            "type": "area"
+          },
+          {
+            "color": "#d5e8ff",
+            "id": "fill",
+            "intensity": 55,
+            "position": [
+              -2,
+              -1,
+              1.5
+            ],
+            "size": 2,
+            "target": [
+              0,
+              0,
+              0.5
+            ],
+            "type": "area"
+          }
+        ],
+        "materials": [
+          {
+            "baseColor": "#252b33",
+            "id": "body",
+            "metallic": 0,
+            "name": "Dark back / head",
+            "normalMap": null,
+            "roughness": 0.65,
+            "texture": null
+          },
+          {
+            "baseColor": "#ece4ce",
+            "id": "belly",
+            "metallic": 0,
+            "name": "White belly",
+            "normalMap": null,
+            "roughness": 0.78,
+            "texture": null
+          },
+          {
+            "baseColor": "#de922c",
+            "id": "beak",
+            "metallic": 0,
+            "name": "Beak",
+            "normalMap": null,
+            "roughness": 0.38,
+            "texture": null
+          },
+          {
+            "baseColor": "#fcf8ee",
+            "id": "eye",
+            "metallic": 0,
+            "name": "Eye white",
+            "normalMap": null,
+            "roughness": 0.22,
+            "texture": null
+          },
+          {
+            "baseColor": "#11151a",
+            "id": "pupil",
+            "metallic": 0,
+            "name": "Pupil",
+            "normalMap": null,
+            "roughness": 0.18,
+            "texture": null
+          },
+          {
+            "baseColor": "#403b35",
+            "id": "feet",
+            "metallic": 0,
+            "name": "Feet",
+            "normalMap": null,
+            "roughness": 0.55,
+            "texture": null
+          }
+        ],
+        "regions": [
+          {
+            "center": [
+              0,
+              -0.19,
+              0.39
+            ],
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "id": "belly",
+            "materialId": "belly",
+            "mesh": 0,
+            "name": "belly",
+            "radius": [
+              0.215,
+              0.21,
+              0.36
+            ],
+            "shape": "ellipsoid"
+          },
+          {
+            "center": [
+              0,
+              -0.29,
+              0.873
+            ],
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "id": "beak",
+            "materialId": "beak",
+            "mesh": 0,
+            "name": "beak",
+            "radius": [
+              0.15,
+              0.14,
+              0.04
+            ],
+            "shape": "box"
+          },
+          {
+            "center": [
+              0,
+              0,
+              0.025
+            ],
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "id": "feet",
+            "materialId": "feet",
+            "mesh": 0,
+            "name": "feet",
+            "radius": [
+              0.4,
+              0.4,
+              0.04
+            ],
+            "shape": "box"
+          },
+          {
+            "center": [
+              0.116,
+              0.001,
+              0.875
+            ],
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "id": "eye-right",
+            "materialId": "eye",
+            "mesh": 0,
+            "name": "eye-right",
+            "radius": [
+              0.032,
+              0.044,
+              0.038
+            ],
+            "shape": "ellipsoid"
+          },
+          {
+            "center": [
+              -0.116,
+              -0.001,
+              0.879
+            ],
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "id": "eye-left",
+            "materialId": "eye",
+            "mesh": 0,
+            "name": "eye-left",
+            "radius": [
+              0.032,
+              0.044,
+              0.038
+            ],
+            "shape": "ellipsoid"
+          },
+          {
+            "center": [
+              0.136,
+              -0.014,
+              0.886
+            ],
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "id": "pupil-right",
+            "materialId": "pupil",
+            "mesh": 0,
+            "name": "pupil-right",
+            "radius": [
+              0.024,
+              0.017,
+              0.019
+            ],
+            "shape": "ellipsoid"
+          },
+          {
+            "center": [
+              -0.136,
+              -0.016,
+              0.89
+            ],
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "id": "pupil-left",
+            "materialId": "pupil",
+            "mesh": 0,
+            "name": "pupil-left",
+            "radius": [
+              0.024,
+              0.017,
+              0.019
+            ],
+            "shape": "ellipsoid"
+          }
+        ],
+        "settings": {
+          "denoise": true,
+          "height": 1200,
+          "samples": 128,
+          "width": 1000
+        }
+      },
+      "sceneRevision": "2d3d67081d9c4e6b25dc4aba867cd0d0694015b9c4f07be13dca796e9a4677fa",
+      "schema": "StudioRenderScene@1",
+      "sequence": 3,
+      "status": "current",
+      "currentGeometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "project-a",
+          "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+        },
+        "format": "glb",
+        "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+        "kind": "retained-import",
+        "label": "penguin-sample.glb",
+        "preview": {
+          "assetSha256": "e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1",
+          "runId": "studio-model-e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1"
+        },
+        "previewExportId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+        "projectId": "project-a",
+        "runId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 1
+      },
+      "cyclesAvailable": false
+    },
+    "fixedDrawings": [
+      {
+        "document": {
+          "projectId": "project-a",
+          "runId": "mesh-view-138903693693ba730323652c88727c42c015c009",
+          "assetSha256": "8b01ab77300267068d8bf08345ca74f2cb3f7a9a902b032b0ebd798e0197f749",
+          "fileName": "isometric.png",
+          "mimeType": "image/png",
+          "sizeBytes": 19758,
+          "pageCount": 1,
+          "pages": [
+            {
+              "pageIndex": 0,
+              "width": 1024,
+              "height": 1480,
+              "rotation": 0
+            }
+          ],
+          "modelSource": null,
+          "modelSourceBindingRef": null,
+          "drawingId": "mesh-isometric",
+          "revisionRef": null,
+          "sourceStageRef": null,
+          "viewRecipe": {
+            "dimensions": [
+              {
+                "id": "overall-width",
+                "reference": {
+                  "axis": 0,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 0.5670857729570943
+              },
+              {
+                "id": "overall-height",
+                "reference": {
+                  "axis": 1,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 0.9526486164646444
+              }
+            ],
+            "drawingRevision": "138903693693ba730323652c88727c42c015c00967ab822c158dad90c9ebf74e",
+            "featureReferences": [],
+            "geometry": {
+              "artifact": {
+                "artifact_id": "source-model",
+                "media_type": "application/octet-stream",
+                "project_id": "project-a",
+                "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+                "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+              },
+              "format": "glb",
+              "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+              "kind": "retained-import",
+              "label": "penguin-sample.glb",
+              "preview": {
+                "assetSha256": "e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1",
+                "runId": "studio-model-e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1"
+              },
+              "previewExportId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+              "projectId": "project-a",
+              "runId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+              "schema": "StudioGeometrySelection@1",
+              "sequence": 1
+            },
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "kind": "mesh-orthographic",
+            "right": [
+              0.7071067811865475,
+              -0.7071067811865475,
+              0
+            ],
+            "scale": 5,
+            "svg": {
+              "artifact_id": "drawing-svg",
+              "media_type": "image/svg+xml",
+              "project_id": "project-a",
+              "relative_path": "runs/mesh-view-138903693693ba730323652c88727c42c015c009/workspaces/drawing.svg",
+              "sha256": "3e08851d85a500b837ea95ce5847daba62a9adf692da6946b05e0987f1755f90"
+            },
+            "up": [
+              0.4082482904638631,
+              0.4082482904638631,
+              0.8164965809277261
+            ],
+            "view": "isometric"
+          },
+          "generatedAt": "2026-09-29T23:40:46.975901+00:00",
+          "replacesPages": [],
+          "previousRevisionRef": null,
+          "attribution": null,
+          "reason": null,
+          "sourceKind": null
+        },
+        "recipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 0.5670857729570943
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 0.9526486164646444
+            }
+          ],
+          "drawingRevision": "138903693693ba730323652c88727c42c015c00967ab822c158dad90c9ebf74e",
+          "featureReferences": [],
+          "geometry": {
+            "artifact": {
+              "artifact_id": "source-model",
+              "media_type": "application/octet-stream",
+              "project_id": "project-a",
+              "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+              "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+            },
+            "format": "glb",
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "kind": "retained-import",
+            "label": "penguin-sample.glb",
+            "preview": {
+              "assetSha256": "e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1",
+              "runId": "studio-model-e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1"
+            },
+            "previewExportId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+            "projectId": "project-a",
+            "runId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+            "schema": "StudioGeometrySelection@1",
+            "sequence": 1
+          },
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "kind": "mesh-orthographic",
+          "right": [
+            0.7071067811865475,
+            -0.7071067811865475,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "project-a",
+            "relative_path": "runs/mesh-view-138903693693ba730323652c88727c42c015c009/workspaces/drawing.svg",
+            "sha256": "3e08851d85a500b837ea95ce5847daba62a9adf692da6946b05e0987f1755f90"
+          },
+          "up": [
+            0.4082482904638631,
+            0.4082482904638631,
+            0.8164965809277261
+          ],
+          "view": "isometric"
+        },
+        "status": "current",
+        "reason": null
+      },
+      {
+        "document": {
+          "projectId": "project-a",
+          "runId": "mesh-view-ecb3666b831953aed448b2c6b25cc95d1d668afc",
+          "assetSha256": "1075846ae20113d31eed48bca3d83f67ba2d6d07e0301b37c5837aa1cc792b25",
+          "fileName": "top.png",
+          "mimeType": "image/png",
+          "sizeBytes": 13211,
+          "pageCount": 1,
+          "pages": [
+            {
+              "pageIndex": 0,
+              "width": 1092,
+              "height": 1148,
+              "rotation": 0
+            }
+          ],
+          "modelSource": null,
+          "modelSourceBindingRef": null,
+          "drawingId": "mesh-top",
+          "revisionRef": null,
+          "sourceStageRef": null,
+          "viewRecipe": {
+            "dimensions": [
+              {
+                "id": "overall-width",
+                "reference": {
+                  "axis": 0,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 0.6242896914482117
+              },
+              {
+                "id": "overall-height",
+                "reference": {
+                  "axis": 1,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 0.6717120409011841
+              }
+            ],
+            "drawingRevision": "ecb3666b831953aed448b2c6b25cc95d1d668afcf25cc917a9787c9926d9b60f",
+            "featureReferences": [],
+            "geometry": {
+              "artifact": {
+                "artifact_id": "source-model",
+                "media_type": "application/octet-stream",
+                "project_id": "project-a",
+                "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+                "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+              },
+              "format": "glb",
+              "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+              "kind": "retained-import",
+              "label": "penguin-sample.glb",
+              "preview": {
+                "assetSha256": "e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1",
+                "runId": "studio-model-e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1"
+              },
+              "previewExportId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+              "projectId": "project-a",
+              "runId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+              "schema": "StudioGeometrySelection@1",
+              "sequence": 1
+            },
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "kind": "mesh-orthographic",
+            "right": [
+              1,
+              0,
+              0
+            ],
+            "scale": 5,
+            "svg": {
+              "artifact_id": "drawing-svg",
+              "media_type": "image/svg+xml",
+              "project_id": "project-a",
+              "relative_path": "runs/mesh-view-ecb3666b831953aed448b2c6b25cc95d1d668afc/workspaces/drawing.svg",
+              "sha256": "c94fe4ff25bb901b1770a0f35d79a55687011a2407cb30c3001dd6bb2d08a76e"
+            },
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "view": "top"
+          },
+          "generatedAt": "2026-09-29T23:40:41.375217+00:00",
+          "replacesPages": [],
+          "previousRevisionRef": null,
+          "attribution": null,
+          "reason": null,
+          "sourceKind": null
+        },
+        "recipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 0.6242896914482117
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 0.6717120409011841
+            }
+          ],
+          "drawingRevision": "ecb3666b831953aed448b2c6b25cc95d1d668afcf25cc917a9787c9926d9b60f",
+          "featureReferences": [],
+          "geometry": {
+            "artifact": {
+              "artifact_id": "source-model",
+              "media_type": "application/octet-stream",
+              "project_id": "project-a",
+              "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+              "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+            },
+            "format": "glb",
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "kind": "retained-import",
+            "label": "penguin-sample.glb",
+            "preview": {
+              "assetSha256": "e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1",
+              "runId": "studio-model-e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1"
+            },
+            "previewExportId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+            "projectId": "project-a",
+            "runId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+            "schema": "StudioGeometrySelection@1",
+            "sequence": 1
+          },
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "kind": "mesh-orthographic",
+          "right": [
+            1,
+            0,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "project-a",
+            "relative_path": "runs/mesh-view-ecb3666b831953aed448b2c6b25cc95d1d668afc/workspaces/drawing.svg",
+            "sha256": "c94fe4ff25bb901b1770a0f35d79a55687011a2407cb30c3001dd6bb2d08a76e"
+          },
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "view": "top"
+        },
+        "status": "current",
+        "reason": null
+      },
+      {
+        "document": {
+          "projectId": "project-a",
+          "runId": "mesh-view-99577ead29d3f249fcfe55f7b91a86860d9f7667",
+          "assetSha256": "8605b0b4719c2b73bdb132869fb2427c67d210def22e29de7f92df35c7fef008",
+          "fileName": "side.png",
+          "mimeType": "image/png",
+          "sizeBytes": 18791,
+          "pageCount": 1,
+          "pages": [
+            {
+              "pageIndex": 0,
+              "width": 1148,
+              "height": 1535,
+              "rotation": 0
+            }
+          ],
+          "modelSource": null,
+          "modelSourceBindingRef": null,
+          "drawingId": "mesh-side",
+          "revisionRef": null,
+          "sourceStageRef": null,
+          "viewRecipe": {
+            "dimensions": [
+              {
+                "id": "overall-width",
+                "reference": {
+                  "axis": 0,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 0.6717120409011841
+              },
+              {
+                "id": "overall-height",
+                "reference": {
+                  "axis": 1,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 1
+              }
+            ],
+            "drawingRevision": "99577ead29d3f249fcfe55f7b91a86860d9f7667a8a6586eb3599c76fbff4129",
+            "featureReferences": [],
+            "geometry": {
+              "artifact": {
+                "artifact_id": "source-model",
+                "media_type": "application/octet-stream",
+                "project_id": "project-a",
+                "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+                "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+              },
+              "format": "glb",
+              "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+              "kind": "retained-import",
+              "label": "penguin-sample.glb",
+              "preview": {
+                "assetSha256": "e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1",
+                "runId": "studio-model-e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1"
+              },
+              "previewExportId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+              "projectId": "project-a",
+              "runId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+              "schema": "StudioGeometrySelection@1",
+              "sequence": 1
+            },
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "kind": "mesh-orthographic",
+            "right": [
+              0,
+              1,
+              0
+            ],
+            "scale": 5,
+            "svg": {
+              "artifact_id": "drawing-svg",
+              "media_type": "image/svg+xml",
+              "project_id": "project-a",
+              "relative_path": "runs/mesh-view-99577ead29d3f249fcfe55f7b91a86860d9f7667/workspaces/drawing.svg",
+              "sha256": "9b68064e38a462ca3f1d47cc6e197c3d53c6c80319aa47e9efd29979cc15ef15"
+            },
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "view": "side"
+          },
+          "generatedAt": "2026-09-29T23:40:37.454350+00:00",
+          "replacesPages": [],
+          "previousRevisionRef": null,
+          "attribution": null,
+          "reason": null,
+          "sourceKind": null
+        },
+        "recipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 0.6717120409011841
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 1
+            }
+          ],
+          "drawingRevision": "99577ead29d3f249fcfe55f7b91a86860d9f7667a8a6586eb3599c76fbff4129",
+          "featureReferences": [],
+          "geometry": {
+            "artifact": {
+              "artifact_id": "source-model",
+              "media_type": "application/octet-stream",
+              "project_id": "project-a",
+              "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+              "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+            },
+            "format": "glb",
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "kind": "retained-import",
+            "label": "penguin-sample.glb",
+            "preview": {
+              "assetSha256": "e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1",
+              "runId": "studio-model-e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1"
+            },
+            "previewExportId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+            "projectId": "project-a",
+            "runId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+            "schema": "StudioGeometrySelection@1",
+            "sequence": 1
+          },
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "kind": "mesh-orthographic",
+          "right": [
+            0,
+            1,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "project-a",
+            "relative_path": "runs/mesh-view-99577ead29d3f249fcfe55f7b91a86860d9f7667/workspaces/drawing.svg",
+            "sha256": "9b68064e38a462ca3f1d47cc6e197c3d53c6c80319aa47e9efd29979cc15ef15"
+          },
+          "up": [
+            0,
+            0,
+            1
+          ],
+          "view": "side"
+        },
+        "status": "current",
+        "reason": null
+      },
+      {
+        "document": {
+          "projectId": "project-a",
+          "runId": "mesh-view-e4811cf060d808b56a6fe480734399e7e79ad6db",
+          "assetSha256": "e5acc15563ae122a53b79ef2164141ea5b2dc5decfd43aac4c5e536c84fb87f6",
+          "fileName": "front.png",
+          "mimeType": "image/png",
+          "sizeBytes": 18221,
+          "pageCount": 1,
+          "pages": [
+            {
+              "pageIndex": 0,
+              "width": 1092,
+              "height": 1535,
+              "rotation": 0
+            }
+          ],
+          "modelSource": null,
+          "modelSourceBindingRef": null,
+          "drawingId": "mesh-front",
+          "revisionRef": null,
+          "sourceStageRef": null,
+          "viewRecipe": {
+            "dimensions": [
+              {
+                "id": "overall-width",
+                "reference": {
+                  "axis": 0,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 0.6242896914482117
+              },
+              {
+                "id": "overall-height",
+                "reference": {
+                  "axis": 1,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 1
+              }
+            ],
+            "drawingRevision": "e4811cf060d808b56a6fe480734399e7e79ad6dbf1073bd3f34c75c73040c94f",
+            "featureReferences": [],
+            "geometry": {
+              "artifact": {
+                "artifact_id": "source-model",
+                "media_type": "application/octet-stream",
+                "project_id": "project-a",
+                "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+                "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+              },
+              "format": "glb",
+              "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+              "kind": "retained-import",
+              "label": "penguin-sample.glb",
+              "preview": {
+                "assetSha256": "e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1",
+                "runId": "studio-model-e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1"
+              },
+              "previewExportId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+              "projectId": "project-a",
+              "runId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+              "schema": "StudioGeometrySelection@1",
+              "sequence": 1
+            },
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "kind": "mesh-orthographic",
+            "right": [
+              1,
+              0,
+              0
+            ],
+            "scale": 5,
+            "svg": {
+              "artifact_id": "drawing-svg",
+              "media_type": "image/svg+xml",
+              "project_id": "project-a",
+              "relative_path": "runs/mesh-view-e4811cf060d808b56a6fe480734399e7e79ad6db/workspaces/drawing.svg",
+              "sha256": "ecbd92959771906ced4cd3e04ceae1f8ccee683b722e82e94a802d5dbe1589bc"
+            },
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "view": "front"
+          },
+          "generatedAt": "2026-09-29T23:40:32.184967+00:00",
+          "replacesPages": [],
+          "previousRevisionRef": null,
+          "attribution": null,
+          "reason": null,
+          "sourceKind": null
+        },
+        "recipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 0.6242896914482117
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 1
+            }
+          ],
+          "drawingRevision": "e4811cf060d808b56a6fe480734399e7e79ad6dbf1073bd3f34c75c73040c94f",
+          "featureReferences": [],
+          "geometry": {
+            "artifact": {
+              "artifact_id": "source-model",
+              "media_type": "application/octet-stream",
+              "project_id": "project-a",
+              "relative_path": "objects/sha256/b8/b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+              "sha256": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54"
+            },
+            "format": "glb",
+            "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+            "kind": "retained-import",
+            "label": "penguin-sample.glb",
+            "preview": {
+              "assetSha256": "e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1",
+              "runId": "studio-model-e2ec1f27f80500506b463af87740b4debc2bdbc4f0d0ff34d21554281b76a3f1"
+            },
+            "previewExportId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+            "projectId": "project-a",
+            "runId": "export-99364f69f81745e5a5e8c840bc2f7b34",
+            "schema": "StudioGeometrySelection@1",
+            "sequence": 1
+          },
+          "geometryRevision": "b8fac80bbbca66bd0ed0ab6f3544e46eab29ad840ceb21f71e9ab89d4e7a6c54",
+          "kind": "mesh-orthographic",
+          "right": [
+            1,
+            0,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "project-a",
+            "relative_path": "runs/mesh-view-e4811cf060d808b56a6fe480734399e7e79ad6db/workspaces/drawing.svg",
+            "sha256": "ecbd92959771906ced4cd3e04ceae1f8ccee683b722e82e94a802d5dbe1589bc"
+          },
+          "up": [
+            0,
+            0,
+            1
+          ],
+          "view": "front"
+        },
+        "status": "current",
+        "reason": null
+      }
+    ],
+    "runtimeRestart": true
+  },
+  "project-b": {
+    "sample": "architectural-facade",
+    "inputSha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+    "orbit": {
+      "time": 5745.79999999702,
+      "model": "9194a23b-2a35-4749-8682-fd30646bc58f",
+      "position": [
+        -4.149637793459799,
+        -12.07512249458929,
+        9.481750886535353
+      ],
+      "quaternion": [
+        0.4839258417473501,
+        -0.11527971527020081,
+        -0.20102463801283973,
+        0.8438693393222358
+      ],
+      "target": [
+        2,
+        0.10000000149011612,
+        1.5
+      ],
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "projection": "perspective",
+      "fov": 35,
+      "zoom": 1,
+      "near": 0.001,
+      "far": 100000,
+      "frustum": null,
+      "worldMatrix": [
+        0.8925993643180563,
+        -0.45085072343182697,
+        0,
+        0,
+        0.22770339043771984,
+        0.4508097492018509,
+        0.8630884867774171,
+        0,
+        -0.3891240686492793,
+        -0.7703922346477556,
+        0.5050527338726802,
+        0,
+        -4.149637793459799,
+        -12.07512249458929,
+        9.481750886535353,
+        1
+      ],
+      "projectionMatrix": [
+        2.057131628755028,
+        0,
+        0,
+        0,
+        0,
+        3.1715948023632126,
+        0,
+        0,
+        0,
+        0,
+        -1.0000000200000003,
+        -1,
+        0,
+        0,
+        -0.0020000000200000004,
+        0
+      ],
+      "rect": {
+        "x": 0,
+        "y": 88,
+        "width": 1440,
+        "height": 934,
+        "top": 88,
+        "right": 1440,
+        "bottom": 1022,
+        "left": 0
+      },
+      "renderSize": [
+        1440,
+        934
+      ],
+      "pixelRatio": 1,
+      "devicePixelRatio": 1
+    },
+    "pan": {
+      "time": 5899.70000000298,
+      "model": "9194a23b-2a35-4749-8682-fd30646bc58f",
+      "position": [
+        -4.493000860216961,
+        -11.732523353491727,
+        9.739793018767202
+      ],
+      "quaternion": [
+        0.4839258417473502,
+        -0.1152797152702013,
+        -0.20102463801284048,
+        0.8438693393222355
+      ],
+      "target": [
+        1.656636933242829,
+        0.44259914258760963,
+        1.7580421322318973
+      ],
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "projection": "perspective",
+      "fov": 35,
+      "zoom": 1,
+      "near": 0.001,
+      "far": 100000,
+      "frustum": null,
+      "worldMatrix": [
+        0.8925993643180555,
+        -0.4508507234318285,
+        -2.7755575615628914e-17,
+        0,
+        0.22770339043772045,
+        0.45080974920185,
+        0.8630884867774173,
+        0,
+        -0.38912406864928084,
+        -0.7703922346477552,
+        0.5050527338726798,
+        0,
+        -4.493000860216961,
+        -11.732523353491727,
+        9.739793018767202,
+        1
+      ],
+      "projectionMatrix": [
+        2.057131628755028,
+        0,
+        0,
+        0,
+        0,
+        3.1715948023632126,
+        0,
+        0,
+        0,
+        0,
+        -1.0000000200000003,
+        -1,
+        0,
+        0,
+        -0.0020000000200000004,
+        0
+      ],
+      "rect": {
+        "x": 0,
+        "y": 88,
+        "width": 1440,
+        "height": 934,
+        "top": 88,
+        "right": 1440,
+        "bottom": 1022,
+        "left": 0
+      },
+      "renderSize": [
+        1440,
+        934
+      ],
+      "pixelRatio": 1,
+      "devicePixelRatio": 1
+    },
+    "moved": {
+      "time": 5935,
+      "model": "9194a23b-2a35-4749-8682-fd30646bc58f",
+      "position": [
+        -4.984831750182918,
+        -12.706255715267508,
+        10.378151207307376
+      ],
+      "quaternion": [
+        0.48392584174735037,
+        -0.11527971527020137,
+        -0.20102463801284054,
+        0.8438693393222355
+      ],
+      "target": [
+        1.656636933242829,
+        0.44259914258760963,
+        1.7580421322318973
+      ],
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "projection": "perspective",
+      "fov": 35,
+      "zoom": 1,
+      "near": 0.001,
+      "far": 100000,
+      "frustum": null,
+      "worldMatrix": [
+        0.8925993643180554,
+        -0.45085072343182875,
+        -2.7755575615628914e-17,
+        0,
+        0.22770339043772048,
+        0.4508097492018497,
+        0.8630884867774176,
+        0,
+        -0.38912406864928106,
+        -0.7703922346477554,
+        0.5050527338726793,
+        0,
+        -4.984831750182918,
+        -12.706255715267508,
+        10.378151207307376,
+        1
+      ],
+      "projectionMatrix": [
+        2.057131628755028,
+        0,
+        0,
+        0,
+        0,
+        3.1715948023632126,
+        0,
+        0,
+        0,
+        0,
+        -1.0000000200000003,
+        -1,
+        0,
+        0,
+        -0.0020000000200000004,
+        0
+      ],
+      "rect": {
+        "x": 0,
+        "y": 88,
+        "width": 1440,
+        "height": 934,
+        "top": 88,
+        "right": 1440,
+        "bottom": 1022,
+        "left": 0
+      },
+      "renderSize": [
+        1440,
+        934
+      ],
+      "pixelRatio": 1,
+      "devicePixelRatio": 1
+    },
+    "during": {
+      "time": 6631.0999999940395,
+      "model": "9194a23b-2a35-4749-8682-fd30646bc58f",
+      "position": [
+        -7.702754141598328,
+        -4.367832200961062,
+        15.195650543301491
+      ],
+      "quaternion": [
+        0.27835023157557437,
+        -0.1698999317809228,
+        -0.49251558883036595,
+        0.8068974882361079
+      ],
+      "target": [
+        1.656636933242829,
+        0.44259914258760963,
+        1.7580421322318973
+      ],
+      "up": [
+        0,
+        0,
+        1
+      ],
+      "projection": "perspective",
+      "fov": 35,
+      "zoom": 1,
+      "near": 0.001,
+      "far": 100000,
+      "frustum": null,
+      "worldMatrix": [
+        0.45712481587983134,
+        -0.8894025538004882,
+        -5.551115123125783e-17,
+        0,
+        0.7002358123769117,
+        0.35989908668180404,
+        0.6165569353031802,
+        0,
+        -0.5483673128220508,
+        -0.2818434755298994,
+        0.7873103235253238,
+        0,
+        -7.702754141598328,
+        -4.367832200961062,
+        15.195650543301491,
+        1
+      ],
+      "projectionMatrix": [
+        2.057131628755028,
+        0,
+        0,
+        0,
+        0,
+        3.1715948023632126,
+        0,
+        0,
+        0,
+        0,
+        -1.0000000200000003,
+        -1,
+        0,
+        0,
+        -0.0020000000200000004,
+        0
+      ],
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "renderSize": [
+        1440,
+        934
+      ],
+      "pixelRatio": 1,
+      "devicePixelRatio": 1
+    },
+    "final": {
+      "geometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "project-b",
+          "relative_path": "objects/sha256/16/161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+          "sha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+        },
+        "format": "3dm",
+        "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+        "kind": "retained-import",
+        "label": "architectural-camera.3dm",
+        "preview": {
+          "assetSha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+          "runId": "studio-model-161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+        },
+        "previewExportId": "export-8037d847c93a465ba909cdb4a7e8296c",
+        "projectId": "project-b",
+        "runId": "export-8037d847c93a465ba909cdb4a7e8296c",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 3
+      },
+      "projectId": "project-b",
+      "scene": {
+        "assignments": {
+          "0": "neutral",
+          "1": "neutral",
+          "2": "neutral"
+        },
+        "camera": {
+          "fov": 35,
+          "orthoScale": 5.2,
+          "position": [
+            -7.7027541415983265,
+            -4.3678322009610655,
+            15.195650543301495
+          ],
+          "projection": "perspective",
+          "target": [
+            1.656636933242829,
+            0.44259914258760963,
+            1.7580421322318973
+          ],
+          "up": [
+            0,
+            0,
+            1
+          ]
+        },
+        "environment": {
+          "background": null,
+          "color": "#c6d8e8",
+          "environmentMap": null,
+          "strength": 0.4
+        },
+        "exposure": 0,
+        "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+        "lights": [
+          {
+            "color": "#fff0dd",
+            "id": "key",
+            "intensity": 120,
+            "position": [
+              8,
+              -7.899999998509884,
+              9.5
+            ],
+            "size": 6,
+            "target": [
+              2,
+              0.10000000149011612,
+              1.5
+            ],
+            "type": "area"
+          },
+          {
+            "color": "#d5e8ff",
+            "id": "fill",
+            "intensity": 55,
+            "position": [
+              -6,
+              -3.899999998509884,
+              5.5
+            ],
+            "size": 8,
+            "target": [
+              2,
+              0.10000000149011612,
+              1.5
+            ],
+            "type": "area"
+          }
+        ],
+        "materials": [
+          {
+            "baseColor": "#b9bec8",
+            "id": "neutral",
+            "metallic": 0,
+            "name": "Neutral",
+            "normalMap": null,
+            "roughness": 0.65,
+            "texture": null
+          }
+        ],
+        "regions": [],
+        "settings": {
+          "denoise": true,
+          "height": 1200,
+          "samples": 128,
+          "width": 1000
+        }
+      },
+      "sceneRevision": "8772d4fc22e38ae5339af6b62457a5a724b50b5b0330553e124875b47be8aeff",
+      "schema": "StudioRenderScene@1",
+      "sequence": 5,
+      "status": "current",
+      "currentGeometry": {
+        "artifact": {
+          "artifact_id": "source-model",
+          "media_type": "application/octet-stream",
+          "project_id": "project-b",
+          "relative_path": "objects/sha256/16/161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+          "sha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+        },
+        "format": "3dm",
+        "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+        "kind": "retained-import",
+        "label": "architectural-camera.3dm",
+        "preview": {
+          "assetSha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+          "runId": "studio-model-161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+        },
+        "previewExportId": "export-8037d847c93a465ba909cdb4a7e8296c",
+        "projectId": "project-b",
+        "runId": "export-8037d847c93a465ba909cdb4a7e8296c",
+        "schema": "StudioGeometrySelection@1",
+        "sequence": 3
+      },
+      "cyclesAvailable": false
+    },
+    "fixedDrawings": [
+      {
+        "document": {
+          "projectId": "project-b",
+          "runId": "mesh-view-817afd6f4ae224d5374e459ed132bb6f003f6e62",
+          "assetSha256": "eb9d59ba1311f304a73a43d7f4b94a820dfc51ce62939f0eece9668a6f0c2eb7",
+          "fileName": "isometric.png",
+          "mimeType": "image/png",
+          "sizeBytes": 93991,
+          "pageCount": 1,
+          "pages": [
+            {
+              "pageIndex": 0,
+              "width": 4983,
+              "height": 6394,
+              "rotation": 0
+            }
+          ],
+          "modelSource": null,
+          "modelSourceBindingRef": null,
+          "drawingId": "mesh-isometric",
+          "revisionRef": null,
+          "sourceStageRef": null,
+          "viewRecipe": {
+            "dimensions": [
+              {
+                "id": "overall-width",
+                "reference": {
+                  "axis": 0,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 2.969848483090842
+              },
+              {
+                "id": "overall-height",
+                "reference": {
+                  "axis": 1,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 4.164132563948078
+              }
+            ],
+            "drawingRevision": "817afd6f4ae224d5374e459ed132bb6f003f6e623b15e0e8e8cf3b14910d2a58",
+            "featureReferences": [],
+            "geometry": {
+              "artifact": {
+                "artifact_id": "source-model",
+                "media_type": "application/octet-stream",
+                "project_id": "project-b",
+                "relative_path": "objects/sha256/16/161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+                "sha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+              },
+              "format": "3dm",
+              "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+              "kind": "retained-import",
+              "label": "architectural-camera.3dm",
+              "preview": {
+                "assetSha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+                "runId": "studio-model-161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+              },
+              "previewExportId": "export-8037d847c93a465ba909cdb4a7e8296c",
+              "projectId": "project-b",
+              "runId": "export-8037d847c93a465ba909cdb4a7e8296c",
+              "schema": "StudioGeometrySelection@1",
+              "sequence": 3
+            },
+            "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+            "kind": "mesh-orthographic",
+            "right": [
+              0.7071067811865475,
+              -0.7071067811865475,
+              0
+            ],
+            "scale": 5,
+            "svg": {
+              "artifact_id": "drawing-svg",
+              "media_type": "image/svg+xml",
+              "project_id": "project-b",
+              "relative_path": "runs/mesh-view-817afd6f4ae224d5374e459ed132bb6f003f6e62/workspaces/drawing.svg",
+              "sha256": "8b1a7d2857bed5b91479d202fc429c7e619f32d8ac2267a70b60adf0e1141c8b"
+            },
+            "up": [
+              0.4082482904638631,
+              0.4082482904638631,
+              0.8164965809277261
+            ],
+            "view": "isometric"
+          },
+          "generatedAt": "2026-09-29T23:41:12.773444+00:00",
+          "replacesPages": [],
+          "previousRevisionRef": null,
+          "attribution": null,
+          "reason": null,
+          "sourceKind": null
+        },
+        "recipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 2.969848483090842
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 4.164132563948078
+            }
+          ],
+          "drawingRevision": "817afd6f4ae224d5374e459ed132bb6f003f6e623b15e0e8e8cf3b14910d2a58",
+          "featureReferences": [],
+          "geometry": {
+            "artifact": {
+              "artifact_id": "source-model",
+              "media_type": "application/octet-stream",
+              "project_id": "project-b",
+              "relative_path": "objects/sha256/16/161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+              "sha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+            },
+            "format": "3dm",
+            "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+            "kind": "retained-import",
+            "label": "architectural-camera.3dm",
+            "preview": {
+              "assetSha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+              "runId": "studio-model-161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+            },
+            "previewExportId": "export-8037d847c93a465ba909cdb4a7e8296c",
+            "projectId": "project-b",
+            "runId": "export-8037d847c93a465ba909cdb4a7e8296c",
+            "schema": "StudioGeometrySelection@1",
+            "sequence": 3
+          },
+          "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+          "kind": "mesh-orthographic",
+          "right": [
+            0.7071067811865475,
+            -0.7071067811865475,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "project-b",
+            "relative_path": "runs/mesh-view-817afd6f4ae224d5374e459ed132bb6f003f6e62/workspaces/drawing.svg",
+            "sha256": "8b1a7d2857bed5b91479d202fc429c7e619f32d8ac2267a70b60adf0e1141c8b"
+          },
+          "up": [
+            0.4082482904638631,
+            0.4082482904638631,
+            0.8164965809277261
+          ],
+          "view": "isometric"
+        },
+        "status": "current",
+        "reason": null
+      },
+      {
+        "document": {
+          "projectId": "project-b",
+          "runId": "mesh-view-cffc4950c0e45c4ae2d1932ef31d64e48e5063d2",
+          "assetSha256": "b724e61d471eb0c465036bdada154905637b9342dad85c577d6e0dbd1f11f89a",
+          "fileName": "top.png",
+          "mimeType": "image/png",
+          "sizeBytes": 15630,
+          "pageCount": 1,
+          "pages": [
+            {
+              "pageIndex": 0,
+              "width": 6142,
+              "height": 1654,
+              "rotation": 0
+            }
+          ],
+          "modelSource": null,
+          "modelSourceBindingRef": null,
+          "drawingId": "mesh-top",
+          "revisionRef": null,
+          "sourceStageRef": null,
+          "viewRecipe": {
+            "dimensions": [
+              {
+                "id": "overall-width",
+                "reference": {
+                  "axis": 0,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 4
+              },
+              {
+                "id": "overall-height",
+                "reference": {
+                  "axis": 1,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 0.20000000298023224
+              }
+            ],
+            "drawingRevision": "cffc4950c0e45c4ae2d1932ef31d64e48e5063d218a853863b85c544924668a7",
+            "featureReferences": [],
+            "geometry": {
+              "artifact": {
+                "artifact_id": "source-model",
+                "media_type": "application/octet-stream",
+                "project_id": "project-b",
+                "relative_path": "objects/sha256/16/161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+                "sha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+              },
+              "format": "3dm",
+              "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+              "kind": "retained-import",
+              "label": "architectural-camera.3dm",
+              "preview": {
+                "assetSha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+                "runId": "studio-model-161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+              },
+              "previewExportId": "export-8037d847c93a465ba909cdb4a7e8296c",
+              "projectId": "project-b",
+              "runId": "export-8037d847c93a465ba909cdb4a7e8296c",
+              "schema": "StudioGeometrySelection@1",
+              "sequence": 3
+            },
+            "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+            "kind": "mesh-orthographic",
+            "right": [
+              1,
+              0,
+              0
+            ],
+            "scale": 5,
+            "svg": {
+              "artifact_id": "drawing-svg",
+              "media_type": "image/svg+xml",
+              "project_id": "project-b",
+              "relative_path": "runs/mesh-view-cffc4950c0e45c4ae2d1932ef31d64e48e5063d2/workspaces/drawing.svg",
+              "sha256": "5f13d3a63f738daeb1648807eca1d393518793ba0feeadeaa19a47afd3276b35"
+            },
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "view": "top"
+          },
+          "generatedAt": "2026-09-29T23:41:11.648032+00:00",
+          "replacesPages": [],
+          "previousRevisionRef": null,
+          "attribution": null,
+          "reason": null,
+          "sourceKind": null
+        },
+        "recipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 4
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 0.20000000298023224
+            }
+          ],
+          "drawingRevision": "cffc4950c0e45c4ae2d1932ef31d64e48e5063d218a853863b85c544924668a7",
+          "featureReferences": [],
+          "geometry": {
+            "artifact": {
+              "artifact_id": "source-model",
+              "media_type": "application/octet-stream",
+              "project_id": "project-b",
+              "relative_path": "objects/sha256/16/161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+              "sha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+            },
+            "format": "3dm",
+            "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+            "kind": "retained-import",
+            "label": "architectural-camera.3dm",
+            "preview": {
+              "assetSha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+              "runId": "studio-model-161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+            },
+            "previewExportId": "export-8037d847c93a465ba909cdb4a7e8296c",
+            "projectId": "project-b",
+            "runId": "export-8037d847c93a465ba909cdb4a7e8296c",
+            "schema": "StudioGeometrySelection@1",
+            "sequence": 3
+          },
+          "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+          "kind": "mesh-orthographic",
+          "right": [
+            1,
+            0,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "project-b",
+            "relative_path": "runs/mesh-view-cffc4950c0e45c4ae2d1932ef31d64e48e5063d2/workspaces/drawing.svg",
+            "sha256": "5f13d3a63f738daeb1648807eca1d393518793ba0feeadeaa19a47afd3276b35"
+          },
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "view": "top"
+        },
+        "status": "current",
+        "reason": null
+      },
+      {
+        "document": {
+          "projectId": "project-b",
+          "runId": "mesh-view-eb9c4fc6154827be42c702ecb44c5d6880fe36a1",
+          "assetSha256": "535a9c560cae31fc025b94fdca9bebf39df0c1591e150ba136be815bd40be8f7",
+          "fileName": "side.png",
+          "mimeType": "image/png",
+          "sizeBytes": 15341,
+          "pageCount": 1,
+          "pages": [
+            {
+              "pageIndex": 0,
+              "width": 1299,
+              "height": 4606,
+              "rotation": 0
+            }
+          ],
+          "modelSource": null,
+          "modelSourceBindingRef": null,
+          "drawingId": "mesh-side",
+          "revisionRef": null,
+          "sourceStageRef": null,
+          "viewRecipe": {
+            "dimensions": [
+              {
+                "id": "overall-width",
+                "reference": {
+                  "axis": 0,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 0.20000000298023224
+              },
+              {
+                "id": "overall-height",
+                "reference": {
+                  "axis": 1,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 3
+              }
+            ],
+            "drawingRevision": "eb9c4fc6154827be42c702ecb44c5d6880fe36a1c2139c38190976feca86ec9a",
+            "featureReferences": [],
+            "geometry": {
+              "artifact": {
+                "artifact_id": "source-model",
+                "media_type": "application/octet-stream",
+                "project_id": "project-b",
+                "relative_path": "objects/sha256/16/161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+                "sha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+              },
+              "format": "3dm",
+              "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+              "kind": "retained-import",
+              "label": "architectural-camera.3dm",
+              "preview": {
+                "assetSha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+                "runId": "studio-model-161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+              },
+              "previewExportId": "export-8037d847c93a465ba909cdb4a7e8296c",
+              "projectId": "project-b",
+              "runId": "export-8037d847c93a465ba909cdb4a7e8296c",
+              "schema": "StudioGeometrySelection@1",
+              "sequence": 3
+            },
+            "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+            "kind": "mesh-orthographic",
+            "right": [
+              0,
+              1,
+              0
+            ],
+            "scale": 5,
+            "svg": {
+              "artifact_id": "drawing-svg",
+              "media_type": "image/svg+xml",
+              "project_id": "project-b",
+              "relative_path": "runs/mesh-view-eb9c4fc6154827be42c702ecb44c5d6880fe36a1/workspaces/drawing.svg",
+              "sha256": "f125cc29515b60628e632cae07cbe96568d8c1959b8e96be68ef08b24b275b77"
+            },
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "view": "side"
+          },
+          "generatedAt": "2026-09-29T23:41:11.278054+00:00",
+          "replacesPages": [],
+          "previousRevisionRef": null,
+          "attribution": null,
+          "reason": null,
+          "sourceKind": null
+        },
+        "recipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 0.20000000298023224
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 3
+            }
+          ],
+          "drawingRevision": "eb9c4fc6154827be42c702ecb44c5d6880fe36a1c2139c38190976feca86ec9a",
+          "featureReferences": [],
+          "geometry": {
+            "artifact": {
+              "artifact_id": "source-model",
+              "media_type": "application/octet-stream",
+              "project_id": "project-b",
+              "relative_path": "objects/sha256/16/161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+              "sha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+            },
+            "format": "3dm",
+            "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+            "kind": "retained-import",
+            "label": "architectural-camera.3dm",
+            "preview": {
+              "assetSha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+              "runId": "studio-model-161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+            },
+            "previewExportId": "export-8037d847c93a465ba909cdb4a7e8296c",
+            "projectId": "project-b",
+            "runId": "export-8037d847c93a465ba909cdb4a7e8296c",
+            "schema": "StudioGeometrySelection@1",
+            "sequence": 3
+          },
+          "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+          "kind": "mesh-orthographic",
+          "right": [
+            0,
+            1,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "project-b",
+            "relative_path": "runs/mesh-view-eb9c4fc6154827be42c702ecb44c5d6880fe36a1/workspaces/drawing.svg",
+            "sha256": "f125cc29515b60628e632cae07cbe96568d8c1959b8e96be68ef08b24b275b77"
+          },
+          "up": [
+            0,
+            0,
+            1
+          ],
+          "view": "side"
+        },
+        "status": "current",
+        "reason": null
+      },
+      {
+        "document": {
+          "projectId": "project-b",
+          "runId": "mesh-view-d40f6b079a6e34d406ddbf2535273952b5060afd",
+          "assetSha256": "0815d5291315ecaf6cba6859dd0453012731eef9f8cbb57eadb79ca15ebd396b",
+          "fileName": "front.png",
+          "mimeType": "image/png",
+          "sizeBytes": 43098,
+          "pageCount": 1,
+          "pages": [
+            {
+              "pageIndex": 0,
+              "width": 6142,
+              "height": 4961,
+              "rotation": 0
+            }
+          ],
+          "modelSource": null,
+          "modelSourceBindingRef": null,
+          "drawingId": "mesh-front",
+          "revisionRef": null,
+          "sourceStageRef": null,
+          "viewRecipe": {
+            "dimensions": [
+              {
+                "id": "overall-width",
+                "reference": {
+                  "axis": 0,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 4
+              },
+              {
+                "id": "overall-height",
+                "reference": {
+                  "axis": 1,
+                  "kind": "projected-extent"
+                },
+                "status": "resolved",
+                "valueMeters": 3
+              }
+            ],
+            "drawingRevision": "d40f6b079a6e34d406ddbf2535273952b5060afdb0d09851720f1c829877c918",
+            "featureReferences": [],
+            "geometry": {
+              "artifact": {
+                "artifact_id": "source-model",
+                "media_type": "application/octet-stream",
+                "project_id": "project-b",
+                "relative_path": "objects/sha256/16/161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+                "sha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+              },
+              "format": "3dm",
+              "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+              "kind": "retained-import",
+              "label": "architectural-camera.3dm",
+              "preview": {
+                "assetSha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+                "runId": "studio-model-161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+              },
+              "previewExportId": "export-8037d847c93a465ba909cdb4a7e8296c",
+              "projectId": "project-b",
+              "runId": "export-8037d847c93a465ba909cdb4a7e8296c",
+              "schema": "StudioGeometrySelection@1",
+              "sequence": 3
+            },
+            "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+            "kind": "mesh-orthographic",
+            "right": [
+              1,
+              0,
+              0
+            ],
+            "scale": 5,
+            "svg": {
+              "artifact_id": "drawing-svg",
+              "media_type": "image/svg+xml",
+              "project_id": "project-b",
+              "relative_path": "runs/mesh-view-d40f6b079a6e34d406ddbf2535273952b5060afd/workspaces/drawing.svg",
+              "sha256": "8b32fd88ce046e51aa7c5936a8ff0bb25e6fc9041675ebd6ffb4842dd19115b0"
+            },
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "view": "front"
+          },
+          "generatedAt": "2026-09-29T23:41:10.996449+00:00",
+          "replacesPages": [],
+          "previousRevisionRef": null,
+          "attribution": null,
+          "reason": null,
+          "sourceKind": null
+        },
+        "recipe": {
+          "dimensions": [
+            {
+              "id": "overall-width",
+              "reference": {
+                "axis": 0,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 4
+            },
+            {
+              "id": "overall-height",
+              "reference": {
+                "axis": 1,
+                "kind": "projected-extent"
+              },
+              "status": "resolved",
+              "valueMeters": 3
+            }
+          ],
+          "drawingRevision": "d40f6b079a6e34d406ddbf2535273952b5060afdb0d09851720f1c829877c918",
+          "featureReferences": [],
+          "geometry": {
+            "artifact": {
+              "artifact_id": "source-model",
+              "media_type": "application/octet-stream",
+              "project_id": "project-b",
+              "relative_path": "objects/sha256/16/161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+              "sha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+            },
+            "format": "3dm",
+            "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+            "kind": "retained-import",
+            "label": "architectural-camera.3dm",
+            "preview": {
+              "assetSha256": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+              "runId": "studio-model-161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d"
+            },
+            "previewExportId": "export-8037d847c93a465ba909cdb4a7e8296c",
+            "projectId": "project-b",
+            "runId": "export-8037d847c93a465ba909cdb4a7e8296c",
+            "schema": "StudioGeometrySelection@1",
+            "sequence": 3
+          },
+          "geometryRevision": "161d170bc56d6a44104b1637b5f45497352059a704704425528d0937c2efd89d",
+          "kind": "mesh-orthographic",
+          "right": [
+            1,
+            0,
+            0
+          ],
+          "scale": 5,
+          "svg": {
+            "artifact_id": "drawing-svg",
+            "media_type": "image/svg+xml",
+            "project_id": "project-b",
+            "relative_path": "runs/mesh-view-d40f6b079a6e34d406ddbf2535273952b5060afd/workspaces/drawing.svg",
+            "sha256": "8b32fd88ce046e51aa7c5936a8ff0bb25e6fc9041675ebd6ffb4842dd19115b0"
+          },
+          "up": [
+            0,
+            0,
+            1
+          ],
+          "view": "front"
+        },
+        "status": "current",
+        "reason": null
+      }
+    ],
+    "runtimeRestart": true
+  }
+}

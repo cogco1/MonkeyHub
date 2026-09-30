@@ -1,0 +1,34 @@
+✔ camera link converts millimetres and preserves the output gate instead of copying viewport FOV (3.7076ms)
+✔ orthographic zoom and viewport margin map to one world-space output height (0.5075ms)
+✔ resize restores the retained composition without writing another scene revision (0.4597ms)
+✔ camera link refuses unknownUnits rather than overwriting the retained scene (0.357ms)
+✔ camera link refuses negativeUnits rather than overwriting the retained scene (0.2421ms)
+✔ camera link refuses loading rather than overwriting the retained scene (0.2206ms)
+✔ camera link refuses unsaved rather than overwriting the retained scene (0.223ms)
+✔ camera link refuses foreignModel rather than overwriting the retained scene (0.2463ms)
+✔ stale geometry and a detached project cannot publish to an earlier scene (0.3897ms)
+✔ retained external files link without fabricating an OCCT modelSource (0.6121ms)
+✔ projection transfer preserves apparent vertical scale (3.7822ms)
+✔ orthographic resize changes width but not vertical world scale (0.3346ms)
+✔ top fit keeps equal plan lengths equal at different depths (1.1357ms)
+✔ standard view frames follow the Z-up model coordinates (1.1971ms)
+✔ isometric fit has equal axis scale and no depth-dependent perspective (1.6591ms)
+✔ framing selected bounds preserves perspective view direction (0.7162ms)
+✔ framing selected bounds reuses orthographic zoom framing (0.4206ms)
+(node:31348) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ the whole model is inside the frame at every panel shape (1.8582ms)
+✔ a narrower panel stands the camera further back, a wider one no further than needed (0.2422ms)
+✔ an empty or tiny model still gets a usable distance (0.2958ms)
+✔ selection-panel resize never moves a camera, even immediately after Fit (11.9093ms)
+✔ a hand-placed view keeps target, up and lens through workspace resizing (4.4324ms)
+✔ initial and explicitly requested Fit still frame the model after a layout change (3.5784ms)
+✔ hiding Modeling for Render preserves the last visible aspect and projection (3.6286ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 327.8426

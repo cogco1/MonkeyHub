@@ -1,3 +1,4 @@
+import type { CameraLink } from "./cameraLink";
 import ModelPreview from "./ModelPreview";
 import PhysicalWorkspace from "./PhysicalWorkspace";
 import { renderViewImage, type RenderView } from "../monkeyarch/viewer/renderView";
@@ -11,7 +12,8 @@ import RenderResults, { ImageThumbnail, renderStatus } from "./RenderResults";
 import "./render.css";
 
 /** One mounted draft. Entering another workspace only suspends reads. */
-export default function RenderWorkspace({ projectId, active, refreshKey, onBoard, readModelView, onModeling }: {
+export default function RenderWorkspace({ projectId, active, refreshKey, onBoard, readModelView, onModeling, cameraLink }: {
+  cameraLink?: CameraLink;
   readModelView?: () => RenderView | null; onModeling?: () => void;
   projectId: string; active: boolean; refreshKey: number | string; onBoard(source: PageSource): void;
 }) {
@@ -190,7 +192,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
     </header>
     {mode === "ai" && <ModelPreview active={active} readView={readModelView} onModeling={onModeling} onCapture={() => void captureModelView()} capturing={uploading || sending} zh={zh} />}
     {error && <div className="render-error" role="alert">{error}</div>}
-    <div hidden={mode !== "physical"}><PhysicalWorkspace key={projectId} projectId={projectId} refreshKey={refreshKey} active={active && mode === "physical"} zh={zh} /></div>
+    <div hidden={mode !== "physical"}><PhysicalWorkspace cameraLink={cameraLink} key={projectId} projectId={projectId} refreshKey={refreshKey} active={active && mode === "physical"} zh={zh} /></div>
     <div className="render-ai-body" hidden={mode !== "ai"}>
       <form className="render-inputs" onSubmit={(event) => void generate(event)} hidden={mode !== "ai"}>
         <fieldset disabled={sending || uploading}>

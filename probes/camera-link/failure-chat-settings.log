@@ -1,0 +1,36 @@
+{"toolbar":940,"layout":{"width":582,"height":50,"overflow":false,"groups":[{"height":48,"overflow":false},{"height":48,"overflow":false},{"height":48,"overflow":false}]}}
+{"toolbar":620,"layout":{"width":500,"height":44,"overflow":false,"groups":[{"height":42,"overflow":false},{"height":42,"overflow":false},{"height":42,"overflow":false}]}}
+{"toolbar":332,"layout":{"width":304,"height":86,"overflow":false,"groups":[{"height":42,"overflow":false},{"height":42,"overflow":false},{"height":42,"overflow":false}]}}
+{"screenshotComparison":"the chosen camera view survives Board/model switches","name":"after-switch-overlay","required":false,"dimensions":{"actual":[620,801],"expected":[620,801]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+{"screenshotComparison":"the chosen camera view survives Board/model switches","name":"after-switch-canvas","required":true,"dimensions":{"actual":[620,801],"expected":[620,801]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+{"screenshotComparison":"refreshing keeps the camera chosen after the candidate appeared","name":"after-refresh-960-overlay","required":false,"dimensions":{"actual":[755,801],"expected":[755,801]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+{"screenshotComparison":"refreshing keeps the camera chosen after the candidate appeared","name":"after-refresh-960-canvas","required":true,"dimensions":{"actual":[755,801],"expected":[755,801]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+{"screenshotComparison":"refreshing keeps the camera chosen after the candidate appeared","name":"after-refresh-1079-overlay","required":false,"dimensions":{"actual":[755,920],"expected":[755,920]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+{"screenshotComparison":"refreshing keeps the camera chosen after the candidate appeared","name":"after-refresh-1079-canvas","required":true,"dimensions":{"actual":[755,920],"expected":[755,920]},"differentPixels":0,"maxChannelDelta":0,"samples":[]}
+{"screenshots":"C:\\Users\\jiayu\\AppData\\Local\\Temp\\monkeyhub-chat-ui-HFWoKd","errors":[],"workspaceRequests":[{"runtimeId":"3d2c59a0-398f-4fe9-8514-0cbd82d6275d","projectId":"A","name":"/api/state","method":"GET","body":null,"query":{"run":"cand-A-1"}},{"runtimeId":"3d2c59a0-398f-4fe9-8514-0cbd82d6275d","projectId":"A","name":"/api/artifacts","method":"GET","body":null,"query":{}},{"runtimeId":"3d2c59a0-398f-4fe9-8514-0cbd82d6275d","projectId":"A","name":"/api/render/scene","method":"GET","body":null,"query":{}},{"runtimeId":"3d2c59a0-398f-4fe9-8514-0cbd82d6275d","projectId":"A","name":"/api/documents","method":"GET","body":null,"query":{}},{"runtimeId":"3d2c59a0-398f-4fe9-8514-0cbd82d6275d","projectId":"A","name":"/api/render/drawings","method":"GET","body":null,"query":{}},{"runtimeId":"3d2c59a0-398f-4fe9-8514-0cbd82d6275d","projectId":"A","name":"/api/render/jobs","method":"GET","body":null,"query":{}},{"runtimeId":"3d2c59a0-398f-4fe9-8514-0cbd82d6275d","projectId":"A","name":"/api/artifacts/0b8a32dd5c82f0af5582e29cd55a9540e21604de1983f1c87d5d88329932adb2/bytes","method":"GET","body":null,"query":{},"runId":"cand-A-1"},{"runtimeId":"3d2c59a0-398f-4fe9-8514-0cbd82d6275d","projectId":"A","name":"/api/protocol","method":"GET","body":null,"query":{}},{"runtimeId":"3d2c59a0-398f-4fe9-8514-0cbd82d6275d","projectId":"A","name":"/api/project","method":"GET","body":null,"query":{}},{"runtimeId":"3d2c59a0-398f-4fe9-8514-0cbd82d6275d","projectId":"A","name":"/api/project","method":"GET","body":null,"query":{}},{"runtimeId":"194da05e-6584-4c1a-a874-df8e95023f94","projectId":"B","name":"/api/project","method":"GET","body":null,"query":{}},{"runtimeId":"194da05e-6584-4c1a-a874-df8e95023f94","projectId":"B","name":"/api/protocol","method":"GET","body":null,"query":{}},{"runtimeId":"194da05e-6584-4c1a-a874-df8e95023f94","projectId":"B","name":"/api/project","method":"GET","body":null,"query":{}},{"runtimeId":"194da05e-6584-4c1a-a874-df8e95023f94","projectId":"B","name":"/api/project","method":"GET","body":null,"query":{}},{"runtimeId":"194da05e-6584-4c1a-a874-df8e95023f94","projectId":"B","name":"/api/state","method":"GET","body":null,"query":{}}]}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: late launch settings retain the loaded external conversation while its reread is pending
++ actual - expected
+
+  {
++   inputs: 1,
++   notice: false
+-   inputs: 0,
+-   notice: true
+  }
+
+    at file:///C:/Users/jiayu/OneDrive/%E6%96%87%E6%A1%A3/ChatGPT/Blender%20skill/projection-development/workspace/worktrees/codex-319-shared-camera/apps/monkeyhub/web/test/chatShell.browser.mjs:2646:10
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:541:9) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: { inputs: 1, notice: false },
+  expected: { inputs: 0, notice: true },
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.21.0

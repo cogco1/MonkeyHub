@@ -21,7 +21,8 @@ const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-render-browser-")
 const python = process.env.PYTHON ?? "python";
 const pythonEnv = { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [repoRoot, apiRoot].join(path.delimiter) };
 const errors = [], requests = [], processes = [], passed = [];
-let browser, page, server, current, hubOrigin;
+let browser, page, server, current, hubOrigin, failurePage;
+const coldTrace=[];
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(read, accepts, label) {
   const deadline = Date.now() + 20000; let value;
@@ -182,11 +183,24 @@ async function api(project, route, method = "GET", body) {
   assert.ok(response.ok, `${method} ${route}: ${response.status} ${response.ok ? "" : await response.text()}`);
   return response.json();
 }
+async function saveLinkedScene(panel) {
+  const response=panel.page().waitForResponse(r=>r.url().endsWith('/api/render/scene') && r.request().method()==='PUT');
+  await panel.getByRole('button',{name:'Save scene',exact:true}).click();
+  const saved=await response;assert.ok(saved.ok(),await saved.text());
+  await until(()=>panel.getByRole('button',{name:'Save scene',exact:true}).isEnabled(),Boolean,'scene save completed');
+}
+async function generateLinkedDrawings(panel) {
+  const response=panel.page().waitForResponse(r=>r.url().endsWith('/api/render/drawings') && r.request().method()==='POST');
+  await panel.getByRole('button',{name:'Generate / update four views',exact:true}).click();
+  const generated=await response;assert.ok(generated.ok(),await generated.text());
+}
 async function step(name, action) {
   if (process.argv.includes("--capture-only") && !name.startsWith("perspective and orthographic")) return;
   if (process.argv.includes("--regions-only") && !name.startsWith("Physical real geometry") && !name.startsWith("model-driven region")) return;
   if (process.argv.includes("--working-only") && !name.startsWith("Physical follows real OCCT")) return;
   if (process.argv.includes("--physical-only") && !name.startsWith("Physical real geometry")) return;
+  if (process.argv.includes("--camera-link-only") && !name.startsWith("Modeling and Physical exchange")) return;
+  if (process.argv.includes("--cold-only") && !name.startsWith("cold real Hub")) return;
   current = name; await action(); passed.push(name); console.log(`PASS ${name}`);
 }
 const fixture = `
@@ -241,13 +255,18 @@ window.captureFixture={source,setProjection,setIssue:value=>{sourceIssue=value;}
 createRoot(document.getElementById('root')).render(<UserPreferencesProvider baseUrl={location.origin+'/capture'}><RenderWorkspace projectId={source.projectId} active={true} refreshKey={0} onBoard={()=>{}} readModelView={readView} onModeling={()=>{}}/></UserPreferencesProvider>);
 `;
 const nativeFixture = `
-import React from 'react';
+import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {ProjectWorkspace} from '/src/app/ProjectWorkspace';
 import {UserPreferencesProvider} from '/test/TestProviders';
 import '/src/styles.css';
+import '/@fs/${path.resolve(repoRoot, "apps/shared-web/src/base.css").replaceAll("\\", "/")}';
 import '/src/workspaces/render/render.css';
-createRoot(document.getElementById('root')).render(<UserPreferencesProvider baseUrl={location.origin+'/native'}><ProjectWorkspace expectedProjectId="demo-project" workspace="render" active={true} onWorkspaceChange={()=>{}}/></UserPreferencesProvider>);
+const fixtureId=new URLSearchParams(location.search).get('project') || 'native';
+const source=await fetch('/'+fixtureId+'/api/render/geometry').then(r=>r.ok?r.json():null);
+const selected=source?.source?.preview ?? (source?.source?.kind === 'working-head' ? null : source?.source);
+function LinkedProject(){const [workspace,setWorkspace]=useState(new URLSearchParams(location.search).get('workspace') || 'render');return <><nav>{['arch','render'].map(w=><button key={w} onClick={()=>setWorkspace(w)}>{w}</button>)}</nav><div style={{height:'calc(100% - 44px)'}}><ProjectWorkspace expectedProjectId={fixtureId==='native'?'demo-project':fixtureId} candidateRunId={selected?.runId ?? null} workspace={workspace} active onWorkspaceChange={setWorkspace}/></div></>;}
+createRoot(document.getElementById('root')).render(<UserPreferencesProvider baseUrl={location.origin+'/'+fixtureId}><LinkedProject/></UserPreferencesProvider>);
 `;
 try {
   for (const id of ["project-a", "project-b", "capture", "native"]) {
@@ -266,8 +285,9 @@ try {
       load(id) { if (id === path.join(webRoot, "working-fixture.tsx").replaceAll("\\", "/")) return nativeFixture; if (id === path.join(webRoot, "render-fixture.tsx").replaceAll("\\", "/")) return fixture;
         if (id === path.join(webRoot, "camera-fixture.tsx").replaceAll("\\", "/")) return captureFixture; },
       configureServer(vite) { vite.middlewares.use((request, response, next) => {
-        if (request.url !== "/" && request.url !== "/camera" && request.url !== "/working") return next();
-        response.setHeader("content-type", "text/html"); response.end('<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><style>html,body,#root{height:100%;margin:0}nav{height:44px;display:flex;gap:8px}*{box-sizing:border-box}</style></head><body><div id="root" class="project-workspace"></div><script type="module" src="/'+(request.url === '/working' ? 'working' : request.url === '/camera' ? 'camera' : 'render')+'-fixture.tsx"></script></body></html>');
+        const fixturePath=request.url?.split("?")[0];
+        if (fixturePath !== "/" && fixturePath !== "/camera" && fixturePath !== "/working") return next();
+        response.setHeader("content-type", "text/html"); response.end('<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><style>html,body,#root{height:100%;margin:0}nav{height:44px;display:flex;gap:8px}*{box-sizing:border-box}</style></head><body><div id="root" class="project-workspace"></div><script type="module" src="/'+(fixturePath === '/working' ? 'working' : fixturePath === '/camera' ? 'camera' : 'render')+'-fixture.tsx"></script></body></html>');
       }); },
     }],
   });
@@ -847,6 +867,165 @@ try {
     await writeFile(path.join(temporary,'region-isolation.json'),JSON.stringify({sample:process.env.PENGUIN_TEST_GLB?'actual-user-penguin':'architecture-with-retained-sample-config',inputSha256:createHash('sha256').update(sourceBytes).digest('hex'),savedA,savedB,geometryUnchanged:true,runtimeRestart:true},null,2));
     await regionPage.close();assert.deepEqual(errors,[]);
   });
+  await step("Modeling and Physical exchange the actual Working Head camera", async () => {
+    const linkedPage=await browser.newPage({viewport:{width:1440,height:1050}});
+    linkedPage.on('pageerror',e=>errors.push(String(e)));
+    try {
+      await linkedPage.goto(origin+'working');
+      const panel=linkedPage.getByRole('region',{name:'Physical Render Scene',exact:true});
+      await panel.locator('canvas').waitFor();
+      await linkedPage.getByRole('button',{name:'arch',exact:true}).click();
+      const canvas=linkedPage.locator('canvas[aria-label="3DM model viewport"]');
+      await canvas.waitFor();
+      await linkedPage.locator('[data-render-gate]').waitFor({timeout:60000});
+      await canvas.evaluate(el=>{el.setAttribute('data-observe-render','');window.cameraEvents=[];el.addEventListener('monkeyarch:rendered',e=>window.cameraEvents.push(e.detail));});
+      const box=await canvas.boundingBox();
+      await linkedPage.mouse.move(box.x+box.width*.5,box.y+box.height*.5);
+      await linkedPage.mouse.down();await linkedPage.mouse.move(box.x+box.width*.6,box.y+box.height*.55,{steps:12});await linkedPage.mouse.up();
+      const modelCamera=await linkedPage.evaluate(()=>window.cameraEvents.at(-1));
+      assert.ok(modelCamera,'actual Modeling camera diagnostics');
+      await linkedPage.getByRole('button',{name:'render',exact:true}).click();
+      await panel.getByText('Camera linked to Modeling',{exact:true}).waitFor();
+      await saveLinkedScene(panel);
+      const saved=await until(()=>api('native','/api/render/scene'),v=>v.status==='current','linked camera saved');
+      assert.deepEqual(saved.scene.camera.target,modelCamera.target);
+      for(let i=0;i<3;i++)assert.ok(Math.abs(saved.scene.camera.position[i]-modelCamera.position[i])<1e-7,'same position in metres');
+      const cameraEvidence=[];
+      await panel.locator('summary').filter({hasText:'Camera and quality'}).click();
+      for(const projection of ['orthographic','perspective']){
+        await panel.getByRole('combobox',{name:'Projection',exact:true}).selectOption(projection);
+        await panel.getByRole('spinbutton',{name:'Camera target X',exact:true}).fill('0.375');
+        await panel.getByRole('spinbutton',{name:'FOV',exact:true}).fill('51');
+        await panel.getByRole('spinbutton',{name:'Orthographic height',exact:true}).fill('9');
+        await saveLinkedScene(panel);
+        const expected=await until(()=>api('native','/api/render/scene'),v=>v.scene.camera.projection===projection && v.scene.camera.target[0]===.375,'Physical camera saved');
+        await linkedPage.getByRole('button',{name:'arch',exact:true}).click();
+        await canvas.waitFor();await linkedPage.setViewportSize({width:1430,height:1040});
+        const actual=await until(()=>linkedPage.evaluate(()=>window.cameraEvents.at(-1)),v=>v?.projection===projection && Math.abs(v.target[0]-.375)<1e-8,'Physical camera rendered in Modeling');
+        for(let i=0;i<3;i++)assert.ok(Math.abs(actual.position[i]-expected.scene.camera.position[i])<1e-7);
+        const margin=Math.max(1,expected.scene.settings.width/expected.scene.settings.height/(actual.rect.width/actual.rect.height));
+        if(projection==='orthographic')assert.ok(Math.abs((actual.frustum[2]-actual.frustum[3])/actual.zoom/margin-9)<1e-7);
+        else assert.ok(Math.abs(2*Math.atan(Math.tan(actual.fov*Math.PI/360)/margin)*180/Math.PI-51)<1e-7);
+        cameraEvidence.push({expected,actual});
+        await linkedPage.getByRole('button',{name:'render',exact:true}).click();
+        await linkedPage.setViewportSize({width:1440,height:1050});
+      }
+      await linkedPage.getByRole('button',{name:'arch',exact:true}).click();
+      await linkedPage.getByRole('button',{name:'View tools',exact:true}).click();
+      for(const preset of ['Top','Front','Right','Isometric','Perspective']){
+        await linkedPage.getByRole('button',{name:preset,exact:true}).click();
+        const actual=await linkedPage.evaluate(()=>window.cameraEvents.at(-1));
+        await linkedPage.getByRole('button',{name:'render',exact:true}).click();
+        await saveLinkedScene(panel);
+        const expected=await until(()=>api('native','/api/render/scene'),v=>v.scene.camera.projection===actual.projection && v.scene.camera.up.every((n,i)=>Math.abs(n-actual.up[i])<1e-8),'preset camera saved');
+        cameraEvidence.push({preset,actual,expected});
+        await linkedPage.getByRole('button',{name:'arch',exact:true}).click();
+      }
+      await linkedPage.getByRole('button',{name:'render',exact:true}).click();
+      let releaseSave,held=false;
+      const saveGate=new Promise(resolve=>{releaseSave=resolve;});
+      await linkedPage.route('**/native/api/render/scene',async route=>{
+        if(route.request().method()!=='PUT'){await route.continue();return;}
+        const response=await route.fetch();held=true;await saveGate;await route.fulfill({response});
+      });
+      try {
+        await panel.getByRole('button',{name:'Save scene',exact:true}).click();
+        await until(()=>held,Boolean,'actual saved response held');
+        await linkedPage.getByRole('button',{name:'arch',exact:true}).click();
+        const before=await linkedPage.evaluate(()=>window.cameraEvents.at(-1));
+        const box=await canvas.boundingBox();await linkedPage.mouse.move(box.x+box.width/2,box.y+box.height/2);await linkedPage.mouse.wheel(0,180);
+        const newer=await until(()=>linkedPage.evaluate(()=>window.cameraEvents.at(-1)),v=>JSON.stringify(v.position)!==JSON.stringify(before.position),'newer camera while save reply is in flight');
+        await linkedPage.getByRole('button',{name:'render',exact:true}).click();releaseSave();
+        await until(()=>panel.getByRole('button',{name:'Save scene',exact:true}).isEnabled(),Boolean,'held scene write reply applied');
+        const after=await linkedPage.evaluate(()=>window.cameraEvents.at(-1));
+        for(let i=0;i<3;i++)assert.ok(Math.abs(after.position[i]-newer.position[i])<1e-7,JSON.stringify({before,newer,after}));
+        await panel.getByText('Unsaved scene edits',{exact:false}).waitFor();
+        cameraEvidence.push({delayedSave:{before,newer,after}});
+      } finally {releaseSave();await linkedPage.unroute('**/native/api/render/scene');}
+      await saveLinkedScene(panel);
+      const final=await api('native','/api/render/scene');
+      await linkedPage.reload();await panel.locator('canvas').waitFor();
+      assert.deepEqual((await api('native','/api/render/scene')).scene.camera,final.scene.camera);
+      await linkedPage.getByRole('button',{name:'arch',exact:true}).click();await linkedPage.locator('[data-render-gate]').waitFor();
+      await writeFile(path.join(temporary,'camera-link.json'),JSON.stringify({modelCamera,saved,cameraEvidence},null,2));
+      await linkedPage.screenshot({path:path.join(temporary,'camera-link.png'),fullPage:true});
+      assert.deepEqual(errors,[]);
+    } catch(error){console.error(await linkedPage.locator('body').innerText());await linkedPage.screenshot({path:path.join(temporary,'camera-link-failure.png'),fullPage:true});throw error;}
+    finally{await linkedPage.close();}
+  });
+  await step("Modeling and Physical exchange imported sample and architectural cameras independently", async () => {
+    const imported=await browser.newPage({viewport:{width:1440,height:1050}});
+    imported.on('pageerror',e=>errors.push(String(e)));
+    const retained={};
+    try {
+      for(const id of ['project-a','project-b']){
+        const sample=id==='project-a' && process.env.PENGUIN_TEST_GLB;
+        const bytes=sample?await readFile(process.env.PENGUIN_TEST_GLB):Buffer.from(await (await fetch(origins[id]+'/fixture/facade-model')).arrayBuffer());
+        const started=await api(id,'/api/exports','POST',{targetFormat:'3dm',upload:{fileName:sample?'penguin-camera.glb':'architectural-camera.3dm',contentBase64:bytes.toString('base64')}});
+        await until(()=>api(id,started.statusPath),v=>v.status==='succeeded','camera sample converted');
+        const previous=await api(id,'/api/render/scene');
+        await api(id,'/api/render/geometry','PUT',{exportId:started.exportId,expectedRevision:previous.scene?.geometryRevision ?? null});
+        // Prepare the empty fixture's normal Modeling workspace; imported assets stay read-only.
+        await api(id,'/api/project/modeling','POST',{projectId:id});
+        await imported.goto(origin+'working?project='+id);
+        const panel=imported.getByRole('region',{name:'Physical Render Scene',exact:true});
+        const rebind=panel.getByRole('button',{name:'Rebind with neutral materials; clear old regions',exact:true});
+        await until(async()=>await rebind.isVisible() || await panel.locator('canvas').isVisible(),Boolean,'loaded imported scene');
+        if(await rebind.isVisible())await rebind.click();
+        await panel.locator('canvas').waitFor();
+        await saveLinkedScene(panel);
+        await until(()=>api(id,'/api/render/scene'),v=>v.status==='current','initial camera saved');
+        await generateLinkedDrawings(panel);
+        const fixedDrawings=await until(()=>api(id,'/api/render/drawings'),v=>v.filter(d=>d.status==='current').length===4,'fixed engineering drawings generated');
+        await imported.getByRole('button',{name:'arch',exact:true}).click();
+        const canvas=imported.locator('canvas[aria-label="3DM model viewport"]');
+        await imported.locator('[data-render-gate]').waitFor({timeout:60000});
+        await canvas.evaluate(el=>{el.setAttribute('data-observe-render','');window.cameraEvents=[];el.addEventListener('monkeyarch:rendered',e=>window.cameraEvents.push(e.detail));});
+        let box=await canvas.boundingBox();
+        await imported.mouse.move(box.x+box.width*.5,box.y+box.height*.5);await imported.mouse.down();
+        await imported.mouse.move(box.x+box.width*.62,box.y+box.height*.56,{steps:10});await imported.mouse.up();
+        const orbit=await imported.evaluate(()=>window.cameraEvents.at(-1));assert.ok(orbit);
+        await imported.mouse.down({button:'right'});await imported.mouse.move(box.x+box.width*.65,box.y+box.height*.59,{steps:8});await imported.mouse.up({button:'right'});
+        const pan=await imported.evaluate(()=>window.cameraEvents.at(-1));assert.notDeepEqual(pan.target,orbit.target);
+        await imported.mouse.wheel(0,150);
+        const moved=await until(()=>imported.evaluate(()=>window.cameraEvents.at(-1)),v=>JSON.stringify(v?.position)!==JSON.stringify(pan.position),'Modeling dolly');
+        await imported.getByRole('button',{name:'render',exact:true}).click();
+        await panel.getByText('Camera linked to Modeling',{exact:true}).waitFor();
+        await saveLinkedScene(panel);
+        const saved=await until(()=>api(id,'/api/render/scene'),v=>v.status==='current','sample camera saved');
+        for(let i=0;i<3;i++)assert.ok(Math.abs(saved.scene.camera.position[i]-moved.position[i])<1e-7);
+        const physical=panel.locator('canvas');await physical.scrollIntoViewIfNeeded();box=await physical.boundingBox();
+        await imported.mouse.move(box.x+box.width*.5,box.y+box.height*.5);await imported.mouse.down();
+        await imported.mouse.move(box.x+box.width*.62,box.y+box.height*.56,{steps:10});
+        const during=await imported.evaluate(()=>window.cameraEvents.at(-1));assert.notDeepEqual(during.position,moved.position,'hidden Modeling follows Physical before release');
+        await imported.mouse.up();
+        await saveLinkedScene(panel);
+        const final=await until(()=>api(id,'/api/render/scene'),v=>v.sceneRevision!==saved.sceneRevision,'Physical camera saved');
+        assert.equal(final.scene.geometryRevision,saved.scene.geometryRevision);
+        assert.deepEqual(await api(id,'/api/render/drawings'),fixedDrawings,'camera-only edits preserve fixed drawing revisions and current status');
+        retained[id]={sample:sample?'actual-user-penguin':'architectural-facade',inputSha256:createHash('sha256').update(bytes).digest('hex'),orbit,pan,moved,during,final,fixedDrawings};
+        await imported.getByRole('button',{name:'arch',exact:true}).click();await imported.locator('[data-render-gate]').waitFor();
+        await imported.screenshot({path:path.join(temporary,'camera-link-'+id+'.png'),fullPage:true});
+        await imported.reload();await panel.locator('canvas').waitFor();
+        assert.deepEqual((await api(id,'/api/render/scene')).scene,final.scene);
+      }
+      for(const id of ['project-a','project-b']){
+        const owner=processes.findLast(p=>p.id===id && p.child.exitCode===null);
+        await api(id,'/fixture/shutdown','POST');await until(()=>owner.child.exitCode,n=>n!==null,'camera Runtime stopped');assert.equal(owner.child.exitCode,0);
+        const child=spawn(python,['-c',pythonSource,temporary,id,String(owner.port)],{cwd:apiRoot,env:pythonEnv,stdio:['ignore','pipe','pipe'],windowsHide:true});
+        const restarted={child,log:'',id,port:owner.port};processes.push(restarted);
+        child.stdout.on('data',x=>{restarted.log=(restarted.log+x).slice(-5000);});child.stderr.on('data',x=>{restarted.log=(restarted.log+x).slice(-5000);});
+        await until(()=>fetch(origins[id]+'/api/health').then(r=>r.ok).catch(()=>false),Boolean,'camera Runtime reopened');
+        assert.deepEqual((await api(id,'/api/render/scene')).scene,retained[id].final.scene,'cold project preserves its scene');
+        assert.deepEqual(await api(id,'/api/render/drawings'),retained[id].fixedDrawings,'cold project preserves drawing revisions');
+        await imported.goto(origin+'working?project='+id+'&workspace=arch');await imported.locator('[data-render-gate]').waitFor();
+        retained[id].runtimeRestart=true;
+      }
+      await writeFile(path.join(temporary,'camera-link-imports.json'),JSON.stringify(retained,null,2));
+      assert.deepEqual(errors,[]);
+    }catch(error){console.error(await imported.locator('body').innerText());await imported.screenshot({path:path.join(temporary,'camera-link-import-failure.png'),fullPage:true});throw error;}
+    finally{await imported.close();}
+  });
   await step("Physical follows real OCCT Working Head and marks derived drawings stale", async () => {
     const nativePage=await browser.newPage({viewport:{width:1440,height:1050}});
     nativePage.on('pageerror',e=>errors.push(String(e)));
@@ -857,7 +1036,7 @@ try {
     assert.match(await panel.innerText(),/Following the current Working Head/);
     await panel.getByRole('button',{name:'Save scene',exact:true}).click();
     await until(()=>api('native','/api/render/scene'),s=>s.status==='current','native appearance saved');
-    await panel.getByRole('button',{name:'Generate / update four views',exact:true}).click();
+    await generateLinkedDrawings(panel);
     await until(()=>api('native','/api/render/drawings'),r=>r.length===4,'native drawings');
     const source=(await api('native','/api/render/geometry')).source;
     const proposal=await api('native','/api/proposals','POST',{utterance:'set height to 1.1',elementId:'portico-base',targetComponentId:'portico',sourceRunId:source.runId,stateDigest:source.modelSource.stateDigest});
@@ -868,7 +1047,7 @@ try {
     await api('native','/api/working-draft','PUT',{projectId:'demo-project',runId:started.candidateId,baseRevisionSha256:position.revisionSha256});
     await panel.getByText('Geometry changed. Material regions and camera require review. Old regions are unresolved.',{exact:true}).waitFor();
     const stale=await api('native','/api/render/drawings');assert.ok(stale.every(r=>r.status==='outdated'));
-    await panel.getByRole('button',{name:'Generate / update four views',exact:true}).click();
+    await generateLinkedDrawings(panel);
     await until(()=>api('native','/api/render/drawings'),r=>r.length===8 && r.filter(d=>d.status==='current').length===4,'regenerated current native drawings');
     await nativePage.reload();
     await panel.getByText('Geometry changed. Material regions and camera require review. Old regions are unresolved.',{exact:true}).waitFor();
@@ -888,6 +1067,9 @@ try {
     child.stderr.on('data', (chunk) => { process.log = (process.log + chunk).slice(-5000); });
     await until(() => fetch(hubOrigin + '/api/health').then((r) => r.ok).catch(() => false), Boolean, 'real Hub ready');
     const hubPage = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
+    failurePage=hubPage;
+    hubPage.on('request',r=>{if(r.method()==='POST')coldTrace.push({time:Date.now(),request:r.url(),body:r.postData()});});
+    hubPage.on('response',r=>{if(r.request().method()==='POST')coldTrace.push({time:Date.now(),response:r.url(),status:r.status()});});
     const posts = [];
     hubPage.on('request', (request) => { if (request.method() === 'POST') posts.push(request.url()); });
     await hubPage.goto(hubOrigin);
@@ -898,24 +1080,32 @@ try {
     let metrics = await read();
     assert.deepEqual(metrics.current, metrics.baseline, 'Runtime and Render must not add authored inputs or any project content');
     assert.equal(posts.some((url) => url.includes('/api/project/modeling')), false);
+    const preparedRender=hubPage.waitForResponse(r=>r.request().method()==='POST' && r.url().includes('/api/project/modeling') && r.request().postDataJSON()?.projectId==='cold-render');
     await hubPage.getByRole('button', { name: 'Modeling', exact: true }).click();
+    assert.ok((await preparedRender).ok(),'Render-first Modeling preparation completed');
     metrics = await until(read, (m) => JSON.stringify(m.current['cold-render']) !== JSON.stringify(m.baseline['cold-render']), 'Runtime-first to Arch seeds author inputs');
     assert.equal(posts.filter((url) => url.includes('/api/project/modeling')).length, 1);
     assert.ok(Object.keys(metrics.current['cold-render']).some((name) => name.startsWith('input/')), 'explicit Arch creates authored input');
     await hubPage.getByRole('button', { name: 'Render', exact: true }).click();
     await hubPage.getByRole('button', { name: 'Modeling', exact: true }).click();
     assert.equal(posts.filter((url) => url.includes('/api/project/modeling')).length, 1, 'shared readiness does not repeat Arch seed');
+    coldTrace.push({time:Date.now(),beforeSwitch:await hubPage.locator('body').innerText()});
     await hubPage.getByRole('button', { name: 'cold-arch', exact: true }).first().click();
+    coldTrace.push({time:Date.now(),afterSwitch:await hubPage.locator('body').innerText()});
+    const preparedArch=hubPage.waitForResponse(r=>r.request().method()==='POST' && r.url().includes('/api/project/modeling') && r.request().postDataJSON()?.projectId==='cold-arch');
     await hubPage.getByRole('button', { name: 'Modeling', exact: true }).click();
+    assert.ok((await preparedArch).ok(),'Arch-first Modeling preparation completed');
     metrics = await until(read, (m) => JSON.stringify(m.current['cold-arch']) !== JSON.stringify(m.baseline['cold-arch']), 'Arch-first still seeds author inputs');
     assert.ok(Object.keys(metrics.current['cold-arch']).some((name) => name.startsWith('input/')));
-    await hubPage.close();
+    await writeFile(path.join(temporary,'cold-trace.json'),JSON.stringify({coldTrace,metrics},null,2));
+    await hubPage.close();failurePage=undefined;
     await fetch(hubOrigin + '/fixture/shutdown', { method: 'POST' });
     await until(() => child.exitCode, (code) => code !== null, 'Hub and owned workers stop'); hubOrigin = undefined;
   });
   console.log(JSON.stringify({ passed, screenshots: temporary, actualProvider: false, requests: requests.length }));
 } catch (error) {
-  await page?.screenshot({ path: path.join(temporary, "failure.png"), fullPage: true }).catch(() => {});
+  await (failurePage??page)?.screenshot({ path: path.join(temporary, "failure.png"), fullPage: true }).catch(() => {});
+  await writeFile(path.join(temporary,"cold-trace.json"),JSON.stringify({coldTrace,body:await failurePage?.locator("body").innerText()},null,2));
   console.error(`FAIL ${current}; ${temporary}`); console.error(errors); throw error;
 } finally {
   await browser?.close(); await server?.close();
