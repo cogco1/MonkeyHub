@@ -40,9 +40,11 @@ import sys
 from typing import Any, Mapping, Sequence
 
 REPO = Path(__file__).resolve().parents[1]
-for path in (REPO, REPO / "apps/archflow-studio/api"):
-    if str(path) not in sys.path:
-        sys.path.insert(0, str(path))
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+from tools import source_roots  # noqa: E402
+
+source_roots.put_first(REPO)
 
 from archflow.project.repository import ProjectRepositoryError  # noqa: E402
 from archflow_studio_api.application.authentication import ActorAttribution  # noqa: E402

@@ -14,6 +14,9 @@ const screenshots = await mkdtemp(join(tmpdir(), "archflow-drawing-canvas-"));
 // line's component and material, and a poché cut. The fixture's later revisions are written in the same shape.
 const [assets, retainedSvg] = JSON.parse(execFileSync(process.env.PYTHON ?? "python", ["-c", [
   "import json",
+  "from pathlib import Path",
+  "from tools import source_roots",
+  "source_roots.put_first(Path.cwd())",
   "from archflow.adapters.occt_backend import OcctDrawingPolyline as Line, OcctDrawingRegion as Region",
   "from monkeydiagram.drawing_svg import dressing_assets, drawing_svg",
   "wall = ((1, 1), (9, 1), (9, 5), (1, 5), (1, 1))",

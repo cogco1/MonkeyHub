@@ -11,9 +11,13 @@ from dataclasses import dataclass, replace
 from io import BytesIO
 from math import ceil, isfinite
 from pathlib import Path
-import sys
 from time import perf_counter
 from typing import Any
+
+from tools import source_roots
+
+# ``python -m labs...`` puts only the checkout on the path; the lab imports from its other source roots too.
+source_roots.put_first(Path(__file__).resolve().parents[2])
 
 from archflow.adapters.cad_execution import CadProgramBinding, execute_occt_export
 from archflow.adapters.occt_backend import classify_point, measure_occt_solid_pairs, measure_shape
@@ -106,10 +110,6 @@ def authored_record(*, variant="base", scale=1.0) -> StateRecord:
 
 def _drawing_recipe(receipt, view):
     # Import the actual application recipe, not a separately maintained camera.
-    # The Studio API is a source workspace package, not installed in every venv.
-    api = str(Path(__file__).resolve().parents[2] / "apps" / "archflow-studio" / "api")
-    if api not in sys.path:
-        sys.path.insert(0, api)
     from archflow_studio_api.application.drawings import _elevation_view
     recipe = _elevation_view(receipt, view, hidden_lines=False, scale_denominator=1)
     u0, v0, u1, v1 = recipe.crop_uv

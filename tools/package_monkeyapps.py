@@ -70,7 +70,7 @@ SOURCE_PATHS = (
     "apps/archflow-studio/api",
     "apps/monkeyhub", "apps/monkeyfab", "packages/web-shared", "OPEN_MONKEYHUB.cmd",
     "README.md", "SECURITY.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
-    "governance/module_registry.json",
+    "tools/source_roots.py", "governance/module_registry.json",
 )
 
 
@@ -285,7 +285,9 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
                      # The security-reporting route travels with the distributed bundle,
                      # not only with a checkout of the public repository.
                      "governance/module_registry.json", "SECURITY.md",
-                     "tools/create_project.py", "tools/run_project.py"):
+                     # Both tools put a checkout's source roots first through source_roots;
+                     # the bundle ships no architecture policy, so there it does nothing.
+                     "tools/create_project.py", "tools/run_project.py", "tools/source_roots.py"):
         target = bundle / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source / relative, target)

@@ -628,6 +628,13 @@ The spine's entry point: open a project, take its authored State Record and seat
 - api: `main`, `_seat`
 - invariants: every input is a retained record loaded by ref; the tool authors no design content; the stage guard is assembled before the runner is called, so a run cannot acquire a stage by side effect
 
+### tools.source_roots — `tools/source_roots.py`
+Put a checkout's Python source roots, as its architecture policy lists them, in front of sys.path, so each of many worktrees imports its own code without an editable install into a shared interpreter.
+- owns: Reading python_source_roots relative to one checkout and putting the roots sys.path lacks in front of it, in policy order, for tools, the root test suite (tests/__init__.py) and pytest (the root conftest.py); Doing nothing where no architecture policy ships, as in an installed bundle whose python313._pth lists the roots
+- does not own: Choosing the roots: governance/architecture_policy.json lists them and tools.archcheck checks them; The production entry points' setup: apps/monkeyhub/run.py, the monkeyhub_api.chat MCP start and the archflow_studio_api package read the same list themselves, because they run before anything in the checkout is importable and the runtime may not import tools; The bundle's python313._pth (tools.package_monkeyapps) and CI's per-package editable installs
+- api: `roots`, `put_first`
+- invariants: A root already on sys.path keeps its place; a missing one goes before everything else, so neither an installed copy nor another checkout answers in its name; Only this checkout's policy is read; nothing is installed and no environment variable is required
+
 ### tools.verify_state_record — `tools/verify_state_record.py`
 Prove a State Record reproduces a reference runner run, recording both checks in a fresh run as state-record-equivalence.
 - owns: the equivalence command line (project, reference run, target run, object renames and explicit CAD export backend selection); building a self-contained harness StageExecutionGuard so the equivalence run opens its own stage; comparing the record-driven run's compiled programs and analytic object bounds against the reference run's; the state-record-equivalence receipt this run retains

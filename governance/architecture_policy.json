@@ -46,6 +46,7 @@
     "OPEN_MONKEYHUB.cmd",
     "README.md",
     "SECURITY.md",
+    "conftest.py",
     "pyproject.toml"
   ],
   "legacy_root_packages": [

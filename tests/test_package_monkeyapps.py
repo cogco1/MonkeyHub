@@ -157,7 +157,7 @@ class PackageAdapterTests(unittest.TestCase):
             "apps/monkeyhub/run.py", "apps/monkeyhub/assets/monkeyarch.ico",
             "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "pyproject.toml",
             "governance/module_registry.json", "tools/create_project.py", "tools/run_project.py",
-            "SECURITY.md",
+            "tools/source_roots.py", "SECURITY.md",
             "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml",
             "apps/monkeyfab/tests/test_cli.py",
             "monkeycontrol/__init__.py", "monkeycontrol/hosts/execution_host.ps1",
@@ -220,6 +220,11 @@ class PackageAdapterTests(unittest.TestCase):
         # A user holding only the ZIP can still find the security-reporting route.
         self.assertEqual((self.bundle / "SECURITY.md").read_text(), "fixture")
         self.assertIn("SECURITY.md", builder.SOURCE_PATHS)
+        # The bundled tools reach their source roots through this; with no architecture
+        # policy in the bundle it leaves the paths python313._pth lists alone.
+        self.assertEqual((self.bundle / "tools/source_roots.py").read_text(), "fixture")
+        self.assertIn("tools/source_roots.py", builder.SOURCE_PATHS)
+        self.assertNotIn("governance/architecture_policy.json", builder.SOURCE_PATHS)
         self.assertEqual((self.bundle / "apps/monkeyfab/src/monkeyfab/__main__.py").read_text(), "fixture")
         self.assertEqual((self.bundle / "apps/monkeyfab/pyproject.toml").read_text(), "fixture")
         self.assertFalse((self.bundle / "apps/monkeyfab/tests").exists())
