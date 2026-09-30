@@ -1,4 +1,33 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-496",
+      "status": "active",
+      "branch": "codex/496-close-round-1",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-496-close-round-1",
+      "base_ref": "26dadd1e47283ca35bb653b75295f22da3cc7e70",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "tools.archcheck",
+        "project.record_kinds",
+        "state.record",
+        "monkeycontrol"
+      ],
+      "write_scope": [
+        ".github/workflows/verify.yml",
+        "tools/governance/archcheck.py",
+        "tools/benchmarks/projection_check.py",
+        "docs/README.md",
+        "docs/architecture/overview.md",
+        "docs/architecture/repository-layout.md",
+        "docs/development/projection-check.md",
+        "packages/archflow/src/archflow/project/record_kinds.py",
+        "packages/archflow/src/archflow/state/state_record.py"
+      ],
+      "depends_on": []
+    }
+  ]
 }
