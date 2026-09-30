@@ -1,44 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-488",
-      "status": "active",
-      "branch": "codex/integration-488-492",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-488-492",
-      "base_ref": "4e9694ec61704340fe0185625c97a4d51b6ceeaa",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "runtime.drawing_elevation",
-        "adapters.drawing_svg",
-        "adapters.mesh_views",
-        "documentation.drawings",
-        "studio.study",
-        "studio.shell",
-        "studio.intent",
-        "hub.shell",
-        "tools.package_monkeyapps",
-        "tools.create_project",
-        "tools.run_project",
-        "tools.devctl",
-        "tools.freeze_project_stage_workflow",
-        "tools.issue_project",
-        "tools.open_stage_run",
-        "tools.rehearse_project_archive",
-        "tools.reindex_project",
-        "tools.verify_state_record"
-      ],
-      "write_scope": [
-        ".github/workflows/verify.yml",
-        "apps/monkeyhub/web/test/drawingCanvas.browser.mjs",
-        "docs/DRAWING_V0_AUDIT.md",
-        "docs/REPO_LAYOUT.md",
-        "docs/STAGE_BRANCH_CANDIDATE_PLAN.md",
-        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
