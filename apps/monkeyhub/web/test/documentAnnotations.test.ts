@@ -4,7 +4,7 @@ import test, { type TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { createServer } from "vite";
-import type { DocumentAnnotationsDto, DocumentAnnotationsRequestDto, DocumentGestureDto } from "../src/api/generated/index.ts";
+import type { DocumentAnnotationsDto, DocumentAnnotationsRequestDto, DocumentGestureDto } from "../src/api/project-runtime/generated/index.ts";
 import type { DocumentAnnotationsOptions } from "../src/workspaces/monkeydiagram/useDocumentAnnotations.ts";
 
 const scope = { projectId: "project-a", runId: "run-a", assetSha256: "a".repeat(64), pageIndex: 0 };
@@ -71,8 +71,8 @@ async function harness(t: TestContext) {
   });
   t.after(() => vite.close());
   const { createDocumentAnnotationsController } = await vite.ssrLoadModule("/src/workspaces/monkeydiagram/useDocumentAnnotations.ts");
-  const { createStudioClient, StudioApiError, NETWORK_ERROR } = await vite.ssrLoadModule("/src/api/client.ts");
-  const { ServerConnection } = await vite.ssrLoadModule("/src/api/connection.ts");
+  const { createStudioClient, StudioApiError, NETWORK_ERROR } = await vite.ssrLoadModule("/src/api/project-runtime/client.ts");
+  const { ServerConnection } = await vite.ssrLoadModule("/src/api/project-runtime/connection.ts");
   const studio = createStudioClient(new ServerConnection("http://studio.test"));
   const createController = () => createDocumentAnnotationsController(studio);
   return { controller: createController(), createController, studio, StudioApiError, NETWORK_ERROR };

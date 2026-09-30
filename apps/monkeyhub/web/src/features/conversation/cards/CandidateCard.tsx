@@ -1,4 +1,4 @@
-import { useConnection } from "../../../api/ProjectRuntimeContext";
+import { useConnection } from "../../../api/project-runtime/ProjectRuntimeContext";
 /**
  * One candidate run, read by the shell even while this card is not mounted.
  */
@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import type {
   CandidateDto,
   ProjectArtifactDto,
-} from "../../../api/generated";
+} from "../../../api/project-runtime/generated";
 import { ErrorPanel } from "../../../app/ErrorPanel";
 import type { EvidenceTab } from "../../../app/evidence";
 import { IN_FLIGHT } from "../../../app/jobs";

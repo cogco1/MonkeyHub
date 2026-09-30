@@ -9,7 +9,7 @@
  * Working Head and its lineage; `GET /api/worktrees` names the running and
  * queued work and each line's admission verdict.
  */
-import type { DesignHistoryDto, WorkingSourceDto, WorktreeGraphDto } from "../../api/generated";
+import type { DesignHistoryDto, WorkingSourceDto, WorktreeGraphDto } from "../../api/project-runtime/generated";
 
 /** Everything one tree is built from, read together. */
 export interface DesignTreeSource {

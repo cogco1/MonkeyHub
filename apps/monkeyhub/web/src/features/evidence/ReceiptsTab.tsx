@@ -4,7 +4,7 @@
  * kernel's validation receipt unedited.
  */
 
-import type { CandidateDto, ValidationDto } from "../../api/generated";
+import type { CandidateDto, ValidationDto } from "../../api/project-runtime/generated";
 import { BilingualText } from "../../i18n/BilingualText";
 import { useT } from "../../i18n/useT";
 import { artifactKindKey } from "../artifacts/artifactSelection";

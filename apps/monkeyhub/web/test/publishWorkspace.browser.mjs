@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
-const root = fileURLToPath(new URL("..", import.meta.url)), repo = path.resolve(root, "../../../..");
+const root = fileURLToPath(new URL("..", import.meta.url)), repo = path.resolve(root, "../../..");
 const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-publish-browser-"));
 const processes = [], origins = {}, errors = [], passed = [];
 let browser, vite, page, current;
@@ -59,7 +59,7 @@ uvicorn.run(app,host='127.0.0.1',port=port,log_level='warning')
 const fixture = `
 import React,{useState} from 'react';import{createRoot}from'react-dom/client';
 import{ProjectWorkspace}from'/src/app/ProjectWorkspace';import{UserPreferencesProvider}from'/test/TestProviders';
-import'/src/styles.css';import'/@fs/${path.resolve(repo, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
+import'/src/app/styles.css';import'/@fs/${path.resolve(repo, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
 function Project({id}){const[workspace,setWorkspace]=useState('publish');
 return <UserPreferencesProvider baseUrl={location.origin+'/'+id}><nav>{['publish','board','render'].map(w=><button key={w} onClick={()=>setWorkspace(w)}>{w}</button>)}</nav><main style={{height:'calc(100% - 40px)'}}><ProjectWorkspace expectedProjectId={id} workspace={workspace} onWorkspaceChange={setWorkspace}/></main></UserPreferencesProvider>}
 function App(){const[id,setId]=useState('pub-a');return <><button id="project-switch" onClick={()=>setId(id==='pub-a'?'pub-b':'pub-a')}>{id}</button><div style={{height:'calc(100% - 30px)'}}><Project key={id} id={id}/></div></>}
@@ -75,7 +75,7 @@ async function startRuntime(id, port = null) {
 }
 try {
   for (const id of ["pub-a", "pub-b"]) await startRuntime(id);
-  vite = await createServer({ root, configFile: false, publicDir: "../.generated/public", cacheDir: path.join(temporary, "vite"), logLevel: "error",
+  vite = await createServer({ root, configFile: false, publicDir: ".generated/public", cacheDir: path.join(temporary, "vite"), logLevel: "error",
     resolve: { dedupe: ["react", "react-dom"] }, optimizeDeps: { include: ["react", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"] },
     server: { host: "127.0.0.1", port: 0, proxy: Object.fromEntries(Object.entries(origins).map(([id, target]) => [`/${id}`, { target, rewrite: (url) => url.slice(id.length + 1) }])) },
     plugins: [{ name: "publication-fixture", resolveId(id) { if (id === "/fixture.tsx") return path.join(root, "fixture.tsx").replaceAll("\\", "/"); }, load(id) { if (id === path.join(root, "fixture.tsx").replaceAll("\\", "/")) return fixture; },

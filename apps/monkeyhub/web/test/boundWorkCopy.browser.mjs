@@ -15,7 +15,7 @@ import { workspaceFixture } from "./workspaceFixture.mjs";
 // Only the component entry and access to Excalidraw's public API are transformed.
 // API traffic is never mocked and no existing app or browser is contacted.
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const root = path.resolve(webRoot, "../../../..");
+const root = path.resolve(webRoot, "../../..");
 const cacheDir = await mkdtemp(path.join(tmpdir(), "bound-work-copy-board-"));
 const fixture = spawn(process.env.PYTHON ?? "python", [path.join(root, "apps/monkeyhub/api/tests/work_copy_browser_fixture.py")],
   { cwd: root, windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, PYTHONUTF8: "1" } });
@@ -58,16 +58,16 @@ try {
   };
   http = createHttpServer();
   vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir,
-    publicDir: "../.generated/public", define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") },
+    publicDir: ".generated/public", define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") },
     plugins: [workspaceFixture(), { name: "bound-work-copy-fixture", enforce: "pre", transform(source, id) {
       const filename = id.split("?")[0].replaceAll("\\", "/"), base = webRoot.replaceAll("\\", "/");
       if (filename === `${base}/test/workspace-fixture.tsx`) return { code: `
         import { createRoot } from "react-dom/client";
         import { convertToExcalidrawElements, newElementWith, CaptureUpdateAction } from "@excalidraw/excalidraw";
         import Board from "/src/workspaces/monkeyboard/Board";
-        import { relayHubStream } from "/src/api/projectStore";
+        import { relayHubStream } from "/src/api/project-runtime/projectStore";
         import { UserPreferencesProvider } from "/test/TestProviders.tsx";
-        import "/src/styles.css";
+        import "/src/app/styles.css";
         window.__boardHelpers = { convertToExcalidrawElements, newElementWith, CaptureUpdateAction };
         // The Hub's one stream, followed as the Hub page does (#366): the Board learns of the saves through it.
         relayHubStream(new EventSource("/api/runtime/events"));

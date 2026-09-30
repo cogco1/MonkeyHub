@@ -40,7 +40,7 @@ import {
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
-const web = dirname(dirname(here));
+const web = dirname(here);
 const loaderPath = join(web, "node_modules", "three", "examples", "jsm", "loaders", "3DMLoader.js");
 const rhinoDir = join(web, "node_modules", "rhino3dm");
 

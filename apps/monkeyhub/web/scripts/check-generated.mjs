@@ -3,8 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-const workspace = dirname(dirname(fileURLToPath(import.meta.url)));
-const web = dirname(workspace);
+const web = dirname(dirname(fileURLToPath(import.meta.url)));
 const write = process.argv.includes("--write");
 function run(command, args, cwd = web) {
   const result = spawnSync(command, args, { cwd, stdio: "inherit" });
@@ -16,14 +15,17 @@ function files(root) {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) =>
     entry.isDirectory() ? files(join(root, entry.name)).map((path) => `${entry.name}/${path}`) : [entry.name]);
 }
-run(process.env.PYTHON ?? "python", [resolve(workspace, "scripts/dump-openapi.py")]);
+run(process.env.PYTHON ?? "python", [resolve(web, "scripts/dump-openapi.py")]);
 const drift = [];
-for (const root of [workspace, web]) {
-  const committed = resolve(root, "src/api/generated");
-  const scratch = resolve(root, ".generated/api-check");
+// Each client beside the directory of its schema. The project-runtime schema names no
+// server, so its client's default baseUrl comes from the input path's first segment:
+// both schemas stay under .generated/.
+for (const [schemas, client] of [[".generated/project-runtime", "src/api/project-runtime/generated"], [".generated", "src/api/generated"]]) {
+  const committed = resolve(web, client);
+  const scratch = resolve(web, schemas, "api-check");
   if (!write) rmSync(scratch, { recursive: true, force: true });
-  const generator = resolve(workspace, "tools/openapi-ts/node_modules/@hey-api/openapi-ts/bin/run.js");
-  run(process.execPath, [generator, "-i", ".generated/openapi.json", "-o", write ? "src/api/generated" : ".generated/api-check"], root);
+  const generator = resolve(web, "tools/openapi-ts/node_modules/@hey-api/openapi-ts/bin/run.js");
+  run(process.execPath, [generator, "-i", `${schemas}/openapi.json`, "-o", write ? client : `${schemas}/api-check`]);
   if (write) continue;
   const expected = files(committed), actual = files(scratch);
   for (const path of new Set([...expected, ...actual])) {

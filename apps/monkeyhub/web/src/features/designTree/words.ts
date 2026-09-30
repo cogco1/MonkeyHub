@@ -3,8 +3,8 @@
  * chip, the canvas, the list and the inspector name a node the same way,
  * and no raw id or hash reaches the main copy.
  */
-import { translateMessage, type MessageParameters } from "../../../../../../../packages/web-shared/src/i18n.js";
-import type { StudioApiError } from "../../api/client";
+import { translateMessage, type MessageParameters } from "../../../../../../packages/web-shared/src/i18n.js";
+import type { StudioApiError } from "../../api/project-runtime/client";
 import type { TFunction } from "../../i18n/useT";
 import type { Language } from "../settings/preferences";
 import { DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED } from "./continueUndo";

@@ -14,9 +14,9 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { StudioApiError, asStudioApiError, type StudioClient } from "../api/client";
-import { useStudio, useConnection } from "../api/ProjectRuntimeContext";
-import type { DesignHistoryDto, ModelSourceDto, ProjectBindingDto, StateProjectionDto, WorkingCopyDto, WorkingDraftDto } from "../api/generated";
+import { StudioApiError, asStudioApiError, type StudioClient } from "../api/project-runtime/client";
+import { useStudio, useConnection } from "../api/project-runtime/ProjectRuntimeContext";
+import type { DesignHistoryDto, ModelSourceDto, ProjectBindingDto, StateProjectionDto, WorkingCopyDto, WorkingDraftDto } from "../api/project-runtime/generated";
 import { editingBasePreferences } from "../features/settings/preferences";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 

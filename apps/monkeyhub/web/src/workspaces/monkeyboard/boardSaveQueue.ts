@@ -1,4 +1,4 @@
-import type { BoardDto, BoardRequestDto } from "../../api/generated";
+import type { BoardDto, BoardRequestDto } from "../../api/project-runtime/generated";
 import { imageSource, isBoardConflict, type BoardDraft } from "./boardScene";
 
 const object = (value: unknown): value is Record<string, unknown> =>

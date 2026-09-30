@@ -1,5 +1,5 @@
 import type { ExcalidrawElement, ExcalidrawImageElement } from "@excalidraw/excalidraw/element/types";
-import type { DocumentGestureDto, DocumentPageDto, SourceDocumentDto } from "../../api/generated";
+import type { DocumentGestureDto, DocumentPageDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { findSource, imageSource, type PageSource } from "./boardScene";
 
 type Point = [number, number];

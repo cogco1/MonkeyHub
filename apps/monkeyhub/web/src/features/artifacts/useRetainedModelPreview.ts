@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { useStudio } from "../../api/ProjectRuntimeContext";
-import type { StudioClient } from "../../api/client";
-import type { ModelSourceDto } from "../../api/generated";
+import { useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import type { StudioClient } from "../../api/project-runtime/client";
+import type { ModelSourceDto } from "../../api/project-runtime/generated";
 
 /** A viewport screenshot of this model was retained (the versions strip, candidate cards and chat follow it; the Design Tree does not). */
 export const MODEL_PREVIEW_RETAINED = "monkeyhub:model-preview-retained";

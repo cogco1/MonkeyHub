@@ -13,8 +13,8 @@
 
 import { useState, useSyncExternalStore } from "react";
 
-import type { StudioApiError } from "../api/client";
-import type { AgentReadingDto, CompareDto, ProposalDto } from "../api/generated";
+import type { StudioApiError } from "../api/project-runtime/client";
+import type { AgentReadingDto, CompareDto, ProposalDto } from "../api/project-runtime/generated";
 
 export type SystemTextPart =
   | { readonly kind: "prose"; readonly text: string }

@@ -3,7 +3,7 @@ import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createServer, type ViteDevServer } from "vite";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
-import type { SourceDocumentDto } from "../src/api/generated/index.ts";
+import type { SourceDocumentDto } from "../src/api/project-runtime/generated/index.ts";
 
 type Geometry = typeof import("../src/workspaces/monkeyboard/boardFeedbackGeometry.ts");
 let geometry: Geometry;

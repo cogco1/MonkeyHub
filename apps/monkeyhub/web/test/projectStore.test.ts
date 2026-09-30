@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { movedAt, ProjectStore, ProjectStores, relayHubStream, type IndexAnswer, type IndexEntity } from "../src/api/projectStore.ts";
+import { movedAt, ProjectStore, ProjectStores, relayHubStream, type IndexAnswer, type IndexEntity } from "../src/api/project-runtime/projectStore.ts";
 
 type Since = { epoch: string; revision: number } | null;
 

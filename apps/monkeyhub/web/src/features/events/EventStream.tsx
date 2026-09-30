@@ -47,11 +47,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { useConnection, useRuntimeKey } from "../../api/ProjectRuntimeContext";
-import { projectStores } from "../../api/projectStore";
-import type { StudioEventDto } from "../../api/generated";
+import { useConnection, useRuntimeKey } from "../../api/project-runtime/ProjectRuntimeContext";
+import { projectStores } from "../../api/project-runtime/projectStore";
+import type { StudioEventDto } from "../../api/project-runtime/generated";
 import { BilingualText } from "../../i18n/BilingualText";
-import type { MessageKey } from "../../../../src/i18n/messages.en";
+import type { MessageKey } from "../../i18n/messages.en";
 import { useT, type MessageParameters } from "../../i18n/useT";
 
 /** The event names the API documents on `StudioEventDto.type`. */

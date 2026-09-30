@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useStudio } from "../../api/ProjectRuntimeContext";
-import { asStudioApiError } from "../../api/client";
-import type { StudySourceRequestDto, StudyViewDto } from "../../api/generated";
+import { useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import { asStudioApiError } from "../../api/project-runtime/client";
+import type { StudySourceRequestDto, StudyViewDto } from "../../api/project-runtime/generated";
 import { createStudyDraft, studyDraftFromView, studyMatchesSource, studyResearchInput,
   type StudyDraft } from "./documentStudy";
 

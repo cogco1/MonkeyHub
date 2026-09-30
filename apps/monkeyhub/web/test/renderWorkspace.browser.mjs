@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
-const repoRoot = path.resolve(webRoot, "../../../..");
+const repoRoot = path.resolve(webRoot, "../../..");
 const apiRoot = path.join(repoRoot, "apps/archflow-studio/api");
 const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-render-browser-"));
 const python = process.env.PYTHON ?? "python";
@@ -165,7 +165,7 @@ import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {ProjectWorkspace} from '/src/app/ProjectWorkspace';
 import {UserPreferencesProvider,usePreferences} from '/test/TestProviders';
-import '/src/styles.css';
+import '/src/app/styles.css';
 import '/@fs/${path.resolve(repoRoot, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
 function Project({id,active}){
  const [workspace,setWorkspace]=useState('render');
@@ -190,7 +190,7 @@ import {Rhino3dmLoader} from 'three/examples/jsm/loaders/3DMLoader.js';
 import RenderWorkspace from '/src/workspaces/render/RenderWorkspace';
 import {captureRenderView} from '/src/workspaces/monkeyarch/viewer/renderView';
 import {UserPreferencesProvider} from '/test/TestProviders';
-import '/src/styles.css';
+import '/src/app/styles.css';
 import '/@fs/${path.resolve(repoRoot, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
 const source=await fetch('/capture/fixture/model').then(response=>response.json());
 const loader=new Rhino3dmLoader(); loader.setLibraryPath('/rhino3dm/');
@@ -221,7 +221,7 @@ try {
     origins[id] = `http://127.0.0.1:${port}`;
     await until(() => fetch(origins[id] + "/api/health").then((r) => r.ok).catch(() => false), Boolean, `${id} Runtime ready`);
   }
-  server = await createServer({ root: webRoot, configFile: false, publicDir: "../.generated/public", cacheDir: path.join(temporary, "vite"), logLevel: "error",
+  server = await createServer({ root: webRoot, configFile: false, publicDir: ".generated/public", cacheDir: path.join(temporary, "vite"), logLevel: "error",
     resolve: { dedupe: ["react", "react-dom"] }, optimizeDeps: { include: ["react", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"] },
     server: { host: "127.0.0.1", port: 0, strictPort: true, proxy: Object.fromEntries(Object.entries(origins).map(([id, target]) => [`/${id}`, { target, rewrite: (url) => url.slice(id.length + 1) }])) },
     plugins: [{ name: "render-fixture", resolveId(id) { if (["/render-fixture.tsx", "/camera-fixture.tsx"].includes(id)) return path.join(webRoot, id.slice(1)).replaceAll("\\", "/"); },

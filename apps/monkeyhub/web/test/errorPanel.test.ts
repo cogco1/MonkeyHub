@@ -18,7 +18,7 @@ test("a refusal says what happened and the next step, with the server's words fo
   t.after(() => vite.close());
   const { ErrorPanel } = await vite.ssrLoadModule("/src/app/ErrorPanel.tsx");
   const { UserPreferencesProvider } = await vite.ssrLoadModule("/src/features/settings/preferences.tsx");
-  const { StudioApiError } = await vite.ssrLoadModule("/src/api/error.ts");
+  const { StudioApiError } = await vite.ssrLoadModule("/src/api/project-runtime/error.ts");
   const render = (refusal: Refusal, language = "en", what?: string) => renderToStaticMarkup(
     createElement(UserPreferencesProvider, { appearance: { language, theme: "light", fontScale: 1 } },
       createElement(ErrorPanel, { error: new StudioApiError(refusal), what })));

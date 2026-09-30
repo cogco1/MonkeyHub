@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useStudio } from "../../api/ProjectRuntimeContext";
-import { asStudioApiError } from "../../api/client";
-import type { DecisionDto, RecipeGraphicsDto, RecipeInspectDto } from "../../api/generated";
+import { useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import { asStudioApiError } from "../../api/project-runtime/client";
+import type { DecisionDto, RecipeGraphicsDto, RecipeInspectDto } from "../../api/project-runtime/generated";
 import { usePreferences } from "../../features/settings/preferences";
 import { DrawingMenu } from "./DrawingMenu";
 import "./RecipeTransfer.css";

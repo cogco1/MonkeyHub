@@ -1,4 +1,4 @@
-import { useConnection } from "../../api/ProjectRuntimeContext";
+import { useConnection } from "../../api/project-runtime/ProjectRuntimeContext";
 /**
  * Every honesty line the server has said in this tab, and the identities it
  * said them about. Nothing is summarised; an empty list says so, because an
@@ -9,12 +9,12 @@ import { useConnection } from "../../api/ProjectRuntimeContext";
  * server and which mode answered, and everyone else never has to look.
  */
 
-import { connectionLine, type ServerIdentity } from "../../api/connection";
+import { connectionLine, type ServerIdentity } from "../../api/project-runtime/connection";
 import type {
   CandidateDto,
   StateProjectionDto,
   ValidationDto,
-} from "../../api/generated";
+} from "../../api/project-runtime/generated";
 import { BilingualText } from "../../i18n/BilingualText";
 import { useT } from "../../i18n/useT";
 

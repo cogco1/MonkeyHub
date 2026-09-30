@@ -16,8 +16,7 @@ import { deflateSync } from "node:zlib";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 
-const webRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const workspacesRoot = path.join(webRoot, "workspaces");
+const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const slash = (value) => value.replaceAll("\\", "/");
 const cacheDir = await mkdtemp(path.join(tmpdir(), "design-tree-"));
 const shots = process.env.DESIGN_TREE_SCREENSHOTS ? path.resolve(process.env.DESIGN_TREE_SCREENSHOTS) : null;
@@ -244,7 +243,7 @@ try {
   vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir,
     publicDir: ".generated/public", define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") },
     plugins: [{ name: "design-tree-fixture", enforce: "pre", transform(source, id) {
-      const file = slash(id.split("?")[0]), root = slash(workspacesRoot);
+      const file = slash(id.split("?")[0]), root = slash(webRoot);
       if (file === `${root}/src/app/App.tsx`) return { code: `
         import { useEffect } from "react";
         export default function App(props) {
@@ -273,14 +272,14 @@ try {
       }
     } }, react()],
     server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null } });
-  fixtureModule = await vite.ssrLoadModule("/workspaces/src/features/designTree/fixture.ts");
+  fixtureModule = await vite.ssrLoadModule("/src/features/designTree/fixture.ts");
   fixture = fixtureModule.createDesignTreeFixture();
   for (const [run, source] of modelsByRun()) if (PREVIEWED.has(run)) drawThumbnail(run, source.assetSha256, 1);
   const handle = async (request, response) => {
     const url = new URL(request.url, "http://fixture.test");
     if (url.pathname === "/tree-workspace") {
       response.setHeader("content-type", "text/html");
-      response.end(await vite.transformIndexHtml(url.pathname, page("/workspaces/test/workspace-fixture.tsx"))); return;
+      response.end(await vite.transformIndexHtml(url.pathname, page("/test/workspace-fixture.tsx"))); return;
     }
     if (url.pathname === "/" && !url.searchParams.has("raw")) {
       response.setHeader("content-type", "text/html");

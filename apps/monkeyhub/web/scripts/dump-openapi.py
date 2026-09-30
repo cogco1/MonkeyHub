@@ -5,8 +5,7 @@ from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
 
-WORKSPACE_DIR = Path(__file__).resolve().parent.parent
-WEB_DIR = WORKSPACE_DIR.parent
+WEB_DIR = Path(__file__).resolve().parent.parent
 ROOT = WEB_DIR.parents[2]
 
 def main() -> None:
@@ -16,11 +15,11 @@ def main() -> None:
     from monkeyhub_api.main import create_app as hub_app, HubSettings
     with TemporaryDirectory(prefix="monkeyhub-schema-") as directory:
         applications = (
-            (runtime_app(StudioSettings(project_dir=Path(directory) / "unbound")), WORKSPACE_DIR),
-            (hub_app(HubSettings(runtime_root=Path(directory))), WEB_DIR),
+            (runtime_app(StudioSettings(project_dir=Path(directory) / "unbound")), WEB_DIR / ".generated/project-runtime"),
+            (hub_app(HubSettings(runtime_root=Path(directory))), WEB_DIR / ".generated"),
         )
         for app, target in applications:
-            output = target / ".generated/openapi.json"
+            output = target / "openapi.json"
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(json.dumps(app.openapi(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
             print(f"Dumped {app.title} OpenAPI to {output}")

@@ -10,10 +10,10 @@
  * Loaded on demand with the two viewports it opens.
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { CompareDto } from "../../../api/generated";
-import { asStudioApiError, type StudioApiError } from "../../../api/client";
-import { useStudio } from "../../../api/ProjectRuntimeContext";
-import type { MessageKey } from "../../../../../src/i18n/messages.en";
+import type { CompareDto } from "../../../api/project-runtime/generated";
+import { asStudioApiError, type StudioApiError } from "../../../api/project-runtime/client";
+import { useStudio } from "../../../api/project-runtime/ProjectRuntimeContext";
+import type { MessageKey } from "../../../i18n/messages.en";
 import { viewableArtifacts } from "../../../features/artifacts/artifactSelection";
 import { MenuCommand, MenuSeparator, SurfaceMenus } from "../../../features/chrome/SurfaceChrome";
 import { useT } from "../../../i18n/useT";

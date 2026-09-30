@@ -15,7 +15,7 @@ import { createServer } from "vite";
 //   powershell -File scripts/dev/run-project-runtime.ps1 -ProjectDir <copy>\<projectId> -Port 8791
 // then, from apps/monkeyhub/web (PLAYWRIGHT_MODULE only when playwright is not installed here):
 //   $env:STUDIO_AB_URL = "http://127.0.0.1:8791"; $env:STUDIO_AB_PROJECT_ROOT = "<copy>\<projectId>"
-//   $env:PLAYWRIGHT_MODULE = "<node_modules>\playwright\index.mjs"; node workspaces/test/workingCopy.browser.mjs
+//   $env:PLAYWRIGHT_MODULE = "<node_modules>\playwright\index.mjs"; node test/workingCopy.browser.mjs
 // The copy must hold the retained Exploration m-upper-cabinets (A and B, B selected), the
 // run and drawing named below with no linked model; only the owner's project holds them.
 // Stale on main (#355), checked against an isolated API on a project built from the API's

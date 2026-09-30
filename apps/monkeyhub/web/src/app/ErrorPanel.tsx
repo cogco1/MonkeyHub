@@ -9,8 +9,8 @@
  * and never as an empty list.
  */
 
-import type { StudioApiError } from "../api/client";
-import { MISSING_EDITABLE_CONTROL, NETWORK_ERROR, TRANSPORT_ERROR, UNSUPPORTED_REQUEST } from "../api/error";
+import type { StudioApiError } from "../api/project-runtime/client";
+import { MISSING_EDITABLE_CONTROL, NETWORK_ERROR, TRANSPORT_ERROR, UNSUPPORTED_REQUEST } from "../api/project-runtime/error";
 import { BilingualText } from "../i18n/BilingualText";
 import { useT } from "../i18n/useT";
 import { usePreferences, type Language } from "../features/settings/preferences";

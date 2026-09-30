@@ -3,7 +3,7 @@
  * with the route that answered.
  */
 
-import type { StudioApiError } from "../../../api/client";
+import type { StudioApiError } from "../../../api/project-runtime/client";
 import { ErrorPanel } from "../../../app/ErrorPanel";
 import { useT } from "../../../i18n/useT";
 

@@ -16,7 +16,7 @@ import { createServer } from "vite";
 // Running it: start a Studio API on a disposable copy of the project, alone, on a free
 // port that is not 5187, 5188, 60616 or 60617, as workingCopy's header shows, then from
 // apps/monkeyhub/web set STUDIO_AB_URL, STUDIO_AB_PROJECT_ROOT (and PLAYWRIGHT_MODULE when
-// playwright is not installed here) and run node workspaces/test/versionNotifications.browser.mjs.
+// playwright is not installed here) and run node test/versionNotifications.browser.mjs.
 // The copy must hold the retained Exploration m-upper-cabinets with options A and B, a
 // second exact 3dm in B's run and state, and A's own native 3dm export in A's run and state;
 // only the owner's project holds them.
@@ -239,7 +239,7 @@ async function refreshFrom(value, options) {
 
 try {
   vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir,
-    publicDir: "../.generated/public", plugins: [workspaceFixture(), {
+    publicDir: ".generated/public", plugins: [workspaceFixture(), {
       name: "observe-workspace-source", enforce: "pre",
       transform(source, id) {
         if (id.split("?")[0].replaceAll("\\", "/") !== `${webRoot.replaceAll("\\", "/")}/src/app/App.tsx`) return;

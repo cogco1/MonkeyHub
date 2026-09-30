@@ -179,13 +179,13 @@ async function sendText(utterance, clarification = false, expectedToken = null) 
 }
 
 try {
-  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir, publicDir: "../.generated/public",
+  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir, publicDir: ".generated/public",
     define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") },
     plugins: [workspaceFixture(), { name: "observe-actual-viewport-methods", enforce: "pre",
       transform(source, id) {
         const modulePath = id.split("?")[0].replaceAll("\\", "/");
         if (modulePath === `${webRoot.replaceAll("\\", "/")}/test/workspace-fixture.tsx`) {
-          return { code: `import "/@fs/${path.resolve(webRoot, "../../../../packages/web-shared/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
+          return { code: `import "/@fs/${path.resolve(webRoot, "../../../packages/web-shared/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
         }
         if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeydiagram/documentVisualInput.ts`) {
           const marker = "  if (!Number.isFinite(maxEdge)";

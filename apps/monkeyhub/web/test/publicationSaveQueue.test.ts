@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { createPublicationSaveQueue } from "../src/workspaces/publish/publicationSaveQueue.ts";
-import type { PublicationDto, PublicationRequestDto } from "../src/api/generated/index.ts";
+import type { PublicationDto, PublicationRequestDto } from "../src/api/project-runtime/generated/index.ts";
 
 const initial = (): PublicationDto => ({ projectId: "review", revisionSha256: "a".repeat(64), title: "Original",
   spec: { width: 960, height: 540, template: "hero" }, pages: [], sources: [] });

@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
-import { messagesEn } from "../../src/i18n/messages.en.ts";
-import { messagesZhCN } from "../../src/i18n/messages.zh-CN.ts";
+import { messagesEn } from "../src/i18n/messages.en.ts";
+import { messagesZhCN } from "../src/i18n/messages.zh-CN.ts";
 
 type Model = typeof import("../src/features/designTree/model.ts");
 type Layout = typeof import("../src/features/designTree/layout.ts");

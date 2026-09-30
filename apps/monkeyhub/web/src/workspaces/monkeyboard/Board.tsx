@@ -3,9 +3,9 @@ import { CaptureUpdateAction, convertToExcalidrawElements, MainMenu, newElementW
 import type { ExcalidrawElement, FileId } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, DataURL, ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 
-import { useProjectRevision, useStudio } from "../../api/ProjectRuntimeContext";
-import type { StudioClient } from "../../api/client";
-import type { BoardDto, FrameLevelDto, SourceDocumentDto } from "../../api/generated";
+import { useProjectRevision, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import type { StudioClient } from "../../api/project-runtime/client";
+import type { BoardDto, FrameLevelDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer, useWheelZoom } from "../../features/canvas/ProjectCanvas";
 import { usePreferences } from "../../features/settings/preferences";
 import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";

@@ -15,7 +15,7 @@ import { createServer } from "vite";
 import rhino3dm from "rhino3dm";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const repoRoot = path.resolve(webRoot, "../../../..");
+const repoRoot = path.resolve(webRoot, "../../..");
 const apiRoot = path.resolve(repoRoot, "apps/archflow-studio/api");
 const python = process.env.PYTHON ?? "python";
 const rhino = await rhino3dm();
@@ -166,7 +166,7 @@ assert.ok((await exported(seedRun)).has("obj-seed-block"), "the seed candidate e
 
 // ---- the app, served by vite, talking to that API through this origin
 
-vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", publicDir: "../.generated/public",
+vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", publicDir: ".generated/public",
   define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") }, cacheDir: path.join(root, "vite-cache"),
   plugins: [workspaceFixture(), { name: "manual-sync-probe", enforce: "pre", transform(source, id) {
     const module = id.split("?")[0].replaceAll("\\", "/");

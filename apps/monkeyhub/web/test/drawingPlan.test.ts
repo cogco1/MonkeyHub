@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { defaultPlanForm, drawingDocumentKey, isVerticalSection, keptOnChosenVersion, latestRevisions, liveAction, planFormFromDocument,
   planRequestFields } from "../src/workspaces/monkeydiagram/drawingPlan.ts";
-import type { SourceDocumentDto } from "../src/api/generated";
+import type { SourceDocumentDto } from "../src/api/project-runtime/generated";
 
 test("a retained cut-plan restores its actual frame and keeps dimension identity, placement and hidden intent", () => {
   const dimension = { id: "door-dimension", entityRef: "entity:wall", openingId: "door", placement: { offsetMm: -12 } };

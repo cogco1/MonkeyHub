@@ -1,9 +1,9 @@
 import ModelPreview from "./ModelPreview";
 import { renderViewImage, type RenderView } from "../monkeyarch/viewer/renderView";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { useProjectRevision, useStudio } from "../../api/ProjectRuntimeContext";
-import { asStudioApiError } from "../../api/client";
-import type { RenderCapabilityDto, RenderJobDto, SourceDocumentDto } from "../../api/generated";
+import { useProjectRevision, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import { asStudioApiError } from "../../api/project-runtime/client";
+import type { RenderCapabilityDto, RenderJobDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { usePreferences } from "../../features/settings/preferences";
 import { documentKey, documentMime, findSource, pageKey, pageReplacements, pageSource, type PageSource } from "../monkeyboard/boardScene";
 import RenderResults, { ImageThumbnail, renderStatus } from "./RenderResults";

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createServer, type ViteDevServer } from "vite";
-import type { SourceDocumentDto, SourceDocumentListDto } from "../src/api/generated/index.ts";
+import type { SourceDocumentDto, SourceDocumentListDto } from "../src/api/project-runtime/generated/index.ts";
 
 // Pure Board-side checks for handing a render discussion to the Hub (#253). The
 // studio client is a local stand-in that answers one document listing; nothing

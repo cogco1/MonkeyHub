@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createServer } from "vite";
-import type { CandidateAcceptedDto, FrameDto, ProposalDto, RuntimeDto } from "../src/api/generated/types.gen.ts";
+import type { CandidateAcceptedDto, FrameDto, ProposalDto, RuntimeDto } from "../src/api/project-runtime/generated/types.gen.ts";
 import type { DraftCommand, DraftSnapshot } from "../src/features/stage/modelDraft.ts";
 import { createModelDraftSyncAttempt, createLocalDraftWriter, syncModelDraft,
   type ModelDraftSource, type ModelDraftSyncApi } from "../src/features/stage/syncModelDraft.ts";
@@ -271,8 +271,8 @@ test("client keeps the explicit Sync idempotency key, diagnostic trace and targe
   const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
     logLevel: "silent", server: { middlewareMode: true, watch: null } });
   t.after(() => vite.close());
-  const { createStudioClient } = await vite.ssrLoadModule("/src/api/client.ts");
-  const { ServerConnection } = await vite.ssrLoadModule("/src/api/connection.ts");
+  const { createStudioClient } = await vite.ssrLoadModule("/src/api/project-runtime/client.ts");
+  const { ServerConnection } = await vite.ssrLoadModule("/src/api/project-runtime/connection.ts");
   const studio = createStudioClient(new ServerConnection("http://127.0.0.1:18180/api/runtime/projects/12345678-1234-1234-1234-123456789abc/studio"));
   const requests: Request[] = [];
   t.mock.method(globalThis, "fetch", async (request: Request) => { requests.push(request); return Response.json(accepted); });

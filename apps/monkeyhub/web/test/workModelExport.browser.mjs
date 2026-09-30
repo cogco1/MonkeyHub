@@ -74,11 +74,11 @@ import { createRoot } from "react-dom/client";
 import { Stage } from "/src/features/stage/Stage.tsx";
 import { VersionsStrip } from "/src/features/stage/VersionsStrip.tsx";
 import { UserPreferencesProvider } from "/test/TestProviders.tsx";
-import { createStudioClient } from "/src/api/client.ts";
-import { ServerConnection } from "/src/api/connection.ts";
+import { createStudioClient } from "/src/api/project-runtime/client.ts";
+import { ServerConnection } from "/src/api/project-runtime/connection.ts";
 const studio = createStudioClient(new ServerConnection(window.location.origin));
 import { useWorkModelExport } from "/src/features/artifacts/useWorkModelExport.ts";
-import "/src/styles.css";
+import "/src/app/styles.css";
 
 const state = window.__workModel = { reloads: 0, opened: [] };
 const noop = () => {};
@@ -127,7 +127,7 @@ test("the shipped export control and versions panel answer for the model on scre
   const cacheDir = await mkdtemp(join(tmpdir(), "monkeyarch-work-model-test-"));
   const http = createHttpServer();
   const vite = await createServer({
-    root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, cacheDir, publicDir: "../.generated/public", logLevel: "silent",
+    root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, cacheDir, publicDir: ".generated/public", logLevel: "silent",
     plugins: [react()], server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null },
   });
   let browser;

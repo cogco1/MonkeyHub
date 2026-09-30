@@ -13,7 +13,7 @@ import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const repoRoot = path.resolve(webRoot, "../../../..");
+const repoRoot = path.resolve(webRoot, "../../..");
 const apiRoot = path.resolve(repoRoot, "apps/archflow-studio/api");
 const python = process.env.PYTHON ?? "python";
 const pythonEnv = { ...process.env, PYTHONUTF8: "1",
@@ -32,7 +32,7 @@ import { createRoot } from "react-dom/client";
 import Board from "/src/workspaces/monkeyboard/Board.tsx";
 import { UserPreferencesProvider } from "/test/TestProviders.tsx";
 import "/@fs/${path.join(repoRoot, "packages/web-shared/src/base.css").replaceAll("\\", "/")}";
-import "/src/styles.css";
+import "/src/app/styles.css";
 createRoot(document.getElementById("root")).render(React.createElement(UserPreferencesProvider, null,
   React.createElement(Board, { onSubmit: (request) => window.receiveBoardRequest(request) })));
 </script></body></html>`;
@@ -98,7 +98,7 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
     assert.fail(message);
   }
 
-  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", publicDir: "../.generated/public",
+  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", publicDir: ".generated/public",
     cacheDir: path.join(root, "vite-cache"), define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") },
     plugins: [react()], server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null } });
   http.on("request", async (request, response) => {

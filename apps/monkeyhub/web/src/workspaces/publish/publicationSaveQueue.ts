@@ -1,4 +1,4 @@
-import type { PublicationDto, PublicationRequestDto } from "../../api/generated";
+import type { PublicationDto, PublicationRequestDto } from "../../api/project-runtime/generated";
 
 /** Publication CAS saves acknowledge the sent snapshot, never newer typing. */
 export function createPublicationSaveQueue(initial: PublicationDto,

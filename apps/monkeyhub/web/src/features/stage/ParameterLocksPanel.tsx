@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { asStudioApiError } from "../../api/client";
-import type { ParameterDto } from "../../api/generated";
+import { asStudioApiError } from "../../api/project-runtime/client";
+import type { ParameterDto } from "../../api/project-runtime/generated";
 import { useT } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";
 import "./ModelEditPanel.css";

@@ -19,8 +19,8 @@ import {Vector3} from "three";
 import {Stage} from "/src/features/stage/Stage.tsx";
 import {UserPreferencesProvider} from "/test/TestProviders.tsx";
 import {createModelDraft,currentDraft,applyDraftCommand,undoDraft,redoDraft,elevationOf} from "/src/features/stage/modelDraft.ts";
-import "/src/styles.css";
-import "/@fs/${fileURLToPath(new URL("../../src/styles.css", import.meta.url)).replaceAll("\\", "/")}";
+import "/src/app/styles.css";
+import "/@fs/${fileURLToPath(new URL("../src/styles.css", import.meta.url)).replaceAll("\\", "/")}";
 const noop=()=>{};
 const mass=(id,x,base,height)=>({elementId:id,componentId:"model",created:true,originalObjectNames:[],
  spec:{profile:[[x,0],[x+4,0],[x+4,3],[x,3]],base,height}});
@@ -47,7 +47,7 @@ window.projectPoint=point=>{const r=document.querySelector("canvas").getBounding
 </script></body></html>`;
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 try {
-  vite = await createServer({root:webRoot,configFile:false,resolve:{dedupe:["react","react-dom"]},cacheDir,publicDir:"../.generated/public",logLevel:"silent",
+  vite = await createServer({root:webRoot,configFile:false,resolve:{dedupe:["react","react-dom"]},cacheDir,publicDir:".generated/public",logLevel:"silent",
     plugins:[{name:"read-only-elevation-probe",enforce:"pre",transform(source,id){
       if(!id.replaceAll("\\","/").endsWith("/viewer/ThreeDmViewport.tsx"))return;
       const marker="  const pickAt = useCallback(";

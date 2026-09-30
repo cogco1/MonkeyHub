@@ -19,8 +19,8 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { CaptureUpdateAction, convertToExcalidrawElements, FONT_FAMILY } from "@excalidraw/excalidraw";
 import type { AppState, BinaryFileData, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, UIOptions } from "@excalidraw/excalidraw/types";
-import { useProjectStore, useProjectStoreInstance, useStudio } from "../../api/ProjectRuntimeContext";
-import type { ModelSourceDto } from "../../api/generated";
+import { useProjectStore, useProjectStoreInstance, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import type { ModelSourceDto } from "../../api/project-runtime/generated";
 import { askThumbnail, canvasThumbnail, thumbnailBlobs, thumbnailsMoved, type CanvasThumbnail } from "../artifacts/modelThumbnails";
 import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer, useWheelZoom, type ZoomRange } from "../canvas/ProjectCanvas";
 import { topmostAt } from "../canvas/sceneHit";

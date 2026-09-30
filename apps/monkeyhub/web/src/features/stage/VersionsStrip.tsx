@@ -1,4 +1,4 @@
-import { useConnection } from "../../api/ProjectRuntimeContext";
+import { useConnection } from "../../api/project-runtime/ProjectRuntimeContext";
 /**
  * The version panel lists working-copy choices first, followed by the other
  * assets in each run. Real file names and export kinds identify every model;
@@ -6,7 +6,7 @@ import { useConnection } from "../../api/ProjectRuntimeContext";
  */
 
 import { useState } from "react";
-import type { DesignHistoryDto, DesignStageDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto, WorkingDraftDto } from "../../api/generated";
+import type { DesignHistoryDto, DesignStageDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto, WorkingDraftDto } from "../../api/project-runtime/generated";
 import { sha8 } from "../../app/format";
 import { useT } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";

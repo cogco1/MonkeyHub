@@ -16,8 +16,8 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
-import type { GestureDto, GestureHitDto, ModelAnnotationsDto } from "../../api/generated";
-import type { MessageKey } from "../../../../src/i18n/messages.en";
+import type { GestureDto, GestureHitDto, ModelAnnotationsDto } from "../../api/project-runtime/generated";
+import type { MessageKey } from "../../i18n/messages.en";
 import { useT } from "../../i18n/useT";
 import type { CameraState, SampleHit, Vec3, ViewportController } from "./viewer/ThreeDmViewport";
 

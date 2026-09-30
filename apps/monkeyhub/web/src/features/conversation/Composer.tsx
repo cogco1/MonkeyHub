@@ -11,7 +11,7 @@
 
 import { useState, type FormEvent } from "react";
 
-import type { GestureDto, StateProjectionDto } from "../../api/generated";
+import type { GestureDto, StateProjectionDto } from "../../api/project-runtime/generated";
 import { designObjectLabel } from "../../app/format";
 import { useT, type TFunction } from "../../i18n/useT";
 import { CapabilityPanel } from "./CapabilityPanel";

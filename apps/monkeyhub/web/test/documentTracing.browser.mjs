@@ -14,8 +14,8 @@ import { createServer } from "vite";
 import { workspaceFixture } from "./workspaceFixture.mjs";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const repoRoot = path.resolve(webRoot, "../../../..");
-const apiRoot = path.resolve(webRoot, "../../../archflow-studio/api");
+const repoRoot = path.resolve(webRoot, "../../..");
+const apiRoot = path.resolve(webRoot, "../../archflow-studio/api");
 const python = process.env.PYTHON ?? "python";
 const pythonEnv = { ...process.env, PYTHONUTF8: "1",
   PYTHONPATH: [repoRoot, apiRoot, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) };
@@ -98,13 +98,13 @@ print(json.dumps({"png": base64.b64encode(data.getvalue()).decode()}))
   const board = () => call("GET", "/api/board");
 
   vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error",
-    publicDir: "../.generated/public", cacheDir: path.join(root, "vite-cache"),
+    publicDir: ".generated/public", cacheDir: path.join(root, "vite-cache"),
     define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") }, plugins: [react(), workspaceFixture(), {
       name: "document-tracing-host-appearance",
       // The production Hub supplies these shared tokens to its embedded workspace.
       transform(code, id) {
         if (id.replaceAll("\\", "/").endsWith("/test/workspace-fixture.tsx"))
-          return `import "../../../../../packages/web-shared/src/base.css";\n${code}`;
+          return `import "../../../../packages/web-shared/src/base.css";\n${code}`;
       },
     }],
     server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null } });

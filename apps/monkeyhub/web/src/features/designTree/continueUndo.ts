@@ -11,7 +11,7 @@
  * default, `runId: null`), so no Undo is offered rather than a guess.
  * Pure, with no copy.
  */
-import type { WorkingDraftDto, WorkingDraftSelectionDto } from "../../api/generated";
+import type { WorkingDraftDto, WorkingDraftSelectionDto } from "../../api/project-runtime/generated";
 
 /** A retained local draft belongs to its exact source; Continue waits until it is recorded or undone. */
 export const DESIGN_TREE_UNSYNCED = "DESIGN_TREE_UNSYNCED_EDITS";

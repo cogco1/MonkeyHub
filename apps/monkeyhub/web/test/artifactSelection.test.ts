@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ProjectArtifactDto } from "../src/api/generated";
+import type { ProjectArtifactDto } from "../src/api/project-runtime/generated";
 import {
   artifactKindKey,
   isViewable,

@@ -74,7 +74,7 @@ and look-development implementation into its Physical mode.
 - **Runtime:** `studio.render` owns attempts and history in the existing project
   Runtime. `application/render_contract.py` defines the image-provider seam;
   `routes/rendering.py` and `transport/rendering.py` define its HTTP contract.
-  See [Render protocol](../../../../../../../docs/PROTOCOL.md#render-image-attempts)
+  See [Render protocol](../../../../../../docs/PROTOCOL.md#render-image-attempts)
   for configuration, source binding and recovery behavior.
 - **Persistence:** reuse P036 and `studio.artifacts.save_document`. Keep source,
   editable representation choices and output artifacts distinct. A render does

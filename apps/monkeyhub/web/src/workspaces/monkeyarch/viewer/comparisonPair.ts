@@ -13,7 +13,7 @@
  * Nothing here reads or writes the project.
  */
 
-import type { CompareDto, ProjectArtifactDto, RuntimeDto } from "../../../api/generated";
+import type { CompareDto, ProjectArtifactDto, RuntimeDto } from "../../../api/project-runtime/generated";
 import type { CameraState, ViewBounds, ViewportStatus } from "./ThreeDmViewport";
 
 /** A listed model the viewer can be handed: servable and a `.3dm` (see artifactSelection.viewableArtifacts). */

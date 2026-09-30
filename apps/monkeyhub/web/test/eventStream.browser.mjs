@@ -201,7 +201,7 @@ import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { UserPreferencesProvider } from "/test/TestProviders.tsx";
 import { useStudioEvents } from "/src/features/events/EventStream.tsx";
-import { relayHubStream } from "/src/api/projectStore.ts";
+import { relayHubStream } from "/src/api/project-runtime/projectStore.ts";
 import { refreshesVersions } from "/src/app/versionEvents.ts";
 
 // The Hub's one stream, which the page follows as ChatShell does; no project stream is opened.

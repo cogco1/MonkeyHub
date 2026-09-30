@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createServer } from "vite";
-import type { DocumentGestureDto } from "../src/api/generated/types.gen.ts";
+import type { DocumentGestureDto } from "../src/api/project-runtime/generated/types.gen.ts";
 
 const gesture = (kind: DocumentGestureDto["kind"], points: DocumentGestureDto["points"], id: string = kind, lineWidth = 0.002): DocumentGestureDto => ({
   id, kind, points, color: "#2f80ed", lineWidth,

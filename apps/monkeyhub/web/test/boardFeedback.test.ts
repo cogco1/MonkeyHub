@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
-import type { DocumentAnnotationsDto, DocumentGestureDto, SourceDocumentDto } from "../src/api/generated/index.ts";
+import type { DocumentAnnotationsDto, DocumentGestureDto, SourceDocumentDto } from "../src/api/project-runtime/generated/index.ts";
 import type { BoardFeedbackSelection } from "../src/workspaces/monkeyboard/boardFeedbackGeometry.ts";
 
 const model = { runId: "model-run", stateDigest: "s".repeat(64), assetSha256: "m".repeat(64) };
@@ -38,8 +38,8 @@ async function harness(t: TestContext) {
   });
   t.after(() => vite.close());
   const module = await vite.ssrLoadModule("/src/workspaces/monkeyboard/boardFeedback.ts") as typeof import("../src/workspaces/monkeyboard/boardFeedback.ts");
-  const { createStudioClient } = await vite.ssrLoadModule("/src/api/client.ts") as typeof import("../src/api/client.ts");
-  const { ServerConnection } = await vite.ssrLoadModule("/src/api/connection.ts");
+  const { createStudioClient } = await vite.ssrLoadModule("/src/api/project-runtime/client.ts") as typeof import("../src/api/project-runtime/client.ts");
+  const { ServerConnection } = await vite.ssrLoadModule("/src/api/project-runtime/connection.ts");
   const studio = createStudioClient(new ServerConnection(""));
   let listed = structuredClone(document);
   let current: DocumentAnnotationsDto = { projectId: "project-a", runId: source.runId, assetSha256: source.assetSha256,

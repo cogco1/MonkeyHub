@@ -4,7 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 
-import type { BoardDto, BoardRequestDto } from "../src/api/generated/index.ts";
+import type { BoardDto, BoardRequestDto } from "../src/api/project-runtime/generated/index.ts";
 import type { BoardDraft } from "../src/workspaces/monkeyboard/boardScene.ts";
 import type { BoardSaveState } from "../src/workspaces/monkeyboard/boardSaveQueue.ts";
 

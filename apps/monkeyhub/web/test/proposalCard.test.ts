@@ -19,7 +19,7 @@ test("design cards distinguish component edits from scalar controls and fold com
   const { Composer } = await vite.ssrLoadModule("/src/features/conversation/Composer.tsx");
   const { ErrorPanel } = await vite.ssrLoadModule("/src/app/ErrorPanel.tsx");
   const { UserPreferencesProvider } = await vite.ssrLoadModule("/src/features/settings/preferences.tsx");
-  const { StudioApiError } = await vite.ssrLoadModule("/src/api/error.ts");
+  const { StudioApiError } = await vite.ssrLoadModule("/src/api/project-runtime/error.ts");
   const base = {
     proposalId: "proposal-wall-opening",
     status: "proposed",

@@ -13,7 +13,7 @@
  * clarification stopped advancing. Same shape, no draft.
  */
 
-import { MISSING_EDITABLE_CONTROL, type StudioApiError } from "../../../api/client";
+import { MISSING_EDITABLE_CONTROL, type StudioApiError } from "../../../api/project-runtime/client";
 import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";
 

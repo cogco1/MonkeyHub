@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
-const repoRoot = path.resolve(webRoot, "../../../..");
+const repoRoot = path.resolve(webRoot, "../../..");
 const apiRoot = path.join(repoRoot, "apps/archflow-studio/api");
 const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-model-preview-browser-"));
 const pythonEnv = { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [repoRoot, apiRoot].join(path.delimiter) };
@@ -59,7 +59,7 @@ import {ProjectWorkspace} from '/src/app/ProjectWorkspace';
 import {ModelThumbnail} from '/src/features/artifacts/ModelThumbnail';
 import {retainModelPreview} from '/src/features/artifacts/useRetainedModelPreview';
 import {UserPreferencesProvider} from '/test/TestProviders';
-import '/src/styles.css';
+import '/src/app/styles.css';
 import '/@fs/${path.resolve(repoRoot, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
 window.captureRace = async (phase) => {
  const calls=[]; let current=phase!=='dirty';
@@ -101,7 +101,7 @@ try {
   assert.ok(a?.modelSource && b?.modelSource && c?.modelSource);
   const head = await api('/fixture/head');
   assert.equal(await preview(a.modelSource), null); assert.equal(await preview(b.modelSource), null);
-  server = await createServer({ root: webRoot, configFile: false, publicDir: '../.generated/public', cacheDir: path.join(temporary, 'vite'), logLevel: 'error',
+  server = await createServer({ root: webRoot, configFile: false, publicDir: '.generated/public', cacheDir: path.join(temporary, 'vite'), logLevel: 'error',
     resolve: { dedupe: ['react','react-dom'] }, optimizeDeps: { include: ['react','react-dom/client','react/jsx-runtime','react/jsx-dev-runtime'] },
     server: { host: '127.0.0.1', port: 0, strictPort: true, proxy: { '/api': origin, '/fixture': origin } },
     plugins: [{ name: 'model-previews-fixture', resolveId(id) { if (id === '/model-previews-fixture.tsx') return path.join(webRoot,'model-previews-fixture.tsx').replaceAll('\\','/'); },

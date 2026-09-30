@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ProjectRuntimeProvider } from "../src/api/ProjectRuntimeContext";
+import { ProjectRuntimeProvider } from "../src/api/project-runtime/ProjectRuntimeContext";
 import { UserPreferencesProvider as ControlledPreferences, usePreferences as useWorkspacePreferences } from "../src/features/settings/preferences";
-import { applyAppearance, appearanceFromSearch, resolveAppearance, type AppearancePreferences, type Language, type ThemePreference } from "../../../../../packages/web-shared/src/appearance.js";
+import { applyAppearance, appearanceFromSearch, resolveAppearance, type AppearancePreferences, type Language, type ThemePreference } from "../../../../packages/web-shared/src/appearance.js";
 
-export { useStudio, useConnection } from "../src/api/ProjectRuntimeContext";
+export { useStudio, useConnection } from "../src/api/project-runtime/ProjectRuntimeContext";
 
 function storedFixturePreferences() {
   try { return JSON.parse(window.localStorage.getItem("archflow-studio.user-preferences") ?? "{}"); }

@@ -9,13 +9,13 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 
-import type { StudioApiError } from "../../api/client";
+import type { StudioApiError } from "../../api/project-runtime/client";
 import type {
   CompareDto,
   GestureDto,
   ProjectArtifactDto,
   StateProjectionDto,
-} from "../../api/generated";
+} from "../../api/project-runtime/generated";
 import type { EvidenceTab } from "../../app/evidence";
 import type { Entry } from "../../app/transcript";
 import { EMPTY_CANDIDATE_READBACK, type CandidateReadback } from "../../app/useCandidateRuns";

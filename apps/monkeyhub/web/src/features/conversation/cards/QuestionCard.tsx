@@ -14,8 +14,8 @@
  */
 
 import { useState } from "react";
-import type { PendingIntentDto } from "../../../api/generated";
-import type { StudioApiError } from "../../../api/client";
+import type { PendingIntentDto } from "../../../api/project-runtime/generated";
+import type { StudioApiError } from "../../../api/project-runtime/client";
 import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";
 

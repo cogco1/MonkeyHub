@@ -5,9 +5,9 @@
  * the Runtime now supplies task identity, source freshness and exact outputs.
  */
 import { useEffect, useRef, useState } from "react";
-import { useStudio } from "../../api/ProjectRuntimeContext";
-import { asStudioApiError } from "../../api/client";
-import type { RenderJobDto, SourceDocumentDto } from "../../api/generated";
+import { useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import { asStudioApiError } from "../../api/project-runtime/client";
+import type { RenderJobDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { usePreferences } from "../../features/settings/preferences";
 import { findSource, pageSource, type PageSource } from "../monkeyboard/boardScene";
 

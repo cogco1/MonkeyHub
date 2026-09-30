@@ -19,7 +19,7 @@
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
-import { StudioApiError } from "../api/client";
+import { StudioApiError } from "../api/project-runtime/client";
 import { useT } from "../i18n/useT";
 import { ErrorPanel } from "./ErrorPanel";
 

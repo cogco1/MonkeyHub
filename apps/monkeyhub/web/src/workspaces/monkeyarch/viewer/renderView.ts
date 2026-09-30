@@ -1,7 +1,7 @@
 import type { Scene, Vector3 } from "three";
 import { ACESFilmicToneMapping, SRGBColorSpace, WebGLRenderer } from "three";
 import type { ViewCamera } from "./cameraProjection";
-import type { ModelSourceDto, RenderCameraDto } from "../../../api/generated";
+import type { ModelSourceDto, RenderCameraDto } from "../../../api/project-runtime/generated";
 
 /** A borrowed display scene, never a second model or persistent project state. */
 export interface RenderView {

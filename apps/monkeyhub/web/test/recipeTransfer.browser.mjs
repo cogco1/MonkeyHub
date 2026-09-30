@@ -14,8 +14,8 @@ import {createRoot} from 'react-dom/client';
 import {useRecipeTransfer} from '/src/workspaces/monkeydiagram/RecipeTransfer';
 import {ProjectBar,StatusLine,SurfaceMenus} from '/src/features/chrome/SurfaceChrome';
 import {UserPreferencesProvider,usePreferences} from '/test/TestProviders.tsx';
-import '/src/styles.css';
-import '/@fs/${root}/../../../../packages/web-shared/src/base.css';
+import '/src/app/styles.css';
+import '/@fs/${root}/../../../packages/web-shared/src/base.css';
 // As the Drawing places it (#337): the menu in the project bar, a file to confirm in the row above the drawing, the note on the status line.
 function Transfer({projectId}){
  const recipes=useRecipeTransfer(projectId);

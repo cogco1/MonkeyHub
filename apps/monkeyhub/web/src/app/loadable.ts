@@ -7,7 +7,7 @@
  * more confident — statement than "the server said no".
  */
 
-import type { StudioApiError } from "../api/client";
+import type { StudioApiError } from "../api/project-runtime/client";
 
 export type Loadable<T> =
   | { readonly status: "idle" }

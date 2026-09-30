@@ -12,7 +12,7 @@
  * The verdict is asked for only when the server says the job `succeeded`.
  */
 
-import type { ValidationDto } from "../../../api/generated";
+import type { ValidationDto } from "../../../api/project-runtime/generated";
 import { ErrorPanel } from "../../../app/ErrorPanel";
 import type { EvidenceTab } from "../../../app/evidence";
 import { RelationChips } from "../../../app/RelationChips";

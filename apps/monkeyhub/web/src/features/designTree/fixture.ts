@@ -11,7 +11,7 @@
  * unit tests can serve it from a stubbed runtime. Everything in it is invented.
  */
 import type { DesignBranchDto, DesignCandidateDto, DesignHistoryDto, DesignStageDto, DesignStudyDto, WorkingDraftDto, WorkingHeadDto,
-  WorkingSourceDto, WorktreeGraphDto, WorktreeLineDto } from "../../api/generated";
+  WorkingSourceDto, WorktreeGraphDto, WorktreeLineDto } from "../../api/project-runtime/generated";
 
 export const FIXTURE_PROJECT = "riverside-library";
 const ref = (run: string, record = "design-stage") => `project://${FIXTURE_PROJECT}/runs/${run}/review/${record}.json`;

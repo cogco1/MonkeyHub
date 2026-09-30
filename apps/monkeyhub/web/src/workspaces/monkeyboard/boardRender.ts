@@ -1,5 +1,5 @@
-import type { StudioClient } from "../../api/client";
-import type { RenderPageRefDto, SourceDocumentDto } from "../../api/generated";
+import type { StudioClient } from "../../api/project-runtime/client";
+import type { RenderPageRefDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { findSource, imageSource, pageKey, pageSource, type PageSource } from "./boardScene";
 
 /**

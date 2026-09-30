@@ -7,7 +7,7 @@
  * Loaded on demand with the canvas it draws on.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MessageKey } from "../../../../src/i18n/messages.en";
+import type { MessageKey } from "../../i18n/messages.en";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { MenuCommand, MenuSeparator, MenuTabs, StatusLine, SurfaceMenus } from "../chrome/SurfaceChrome";
 import { usePreferences } from "../settings/preferences";

@@ -1,5 +1,5 @@
-import type { StudioClient } from "../../api/client";
-import type { DocumentAnnotationRefDto, DocumentAnnotationsDto, DocumentGestureDto, DocumentVisualInputDto, ModelSourceDto } from "../../api/generated";
+import type { StudioClient } from "../../api/project-runtime/client";
+import type { DocumentAnnotationRefDto, DocumentAnnotationsDto, DocumentGestureDto, DocumentVisualInputDto, ModelSourceDto } from "../../api/project-runtime/generated";
 import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
 import { findSource, type PageSource } from "./boardScene";
 import type { BoardFeedbackSelection } from "./boardFeedbackGeometry";

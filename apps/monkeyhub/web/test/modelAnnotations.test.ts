@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import test, { type TestContext } from "node:test";
 
 import { createServer } from "vite";
-import type { ModelAnnotationsDto, ModelAnnotationsRequestDto, ModelGestureDto, ModelSourceDto } from "../src/api/generated/index.ts";
+import type { ModelAnnotationsDto, ModelAnnotationsRequestDto, ModelGestureDto, ModelSourceDto } from "../src/api/project-runtime/generated/index.ts";
 import type { ModelAnnotationsOptions } from "../src/workspaces/monkeyarch/useModelAnnotations.ts";
 
 const source: ModelSourceDto = { runId: "run-a", stateDigest: "d".repeat(64), assetSha256: "a".repeat(64) };
@@ -32,8 +32,8 @@ async function harness(t: TestContext) {
     logLevel: "silent", server: { middlewareMode: true, watch: null } });
   t.after(() => vite.close());
   const { createModelAnnotationsController } = await vite.ssrLoadModule("/src/workspaces/monkeyarch/useModelAnnotations.ts");
-  const { createStudioClient, StudioApiError, NETWORK_ERROR } = await vite.ssrLoadModule("/src/api/client.ts");
-  const { ServerConnection } = await vite.ssrLoadModule("/src/api/connection.ts");
+  const { createStudioClient, StudioApiError, NETWORK_ERROR } = await vite.ssrLoadModule("/src/api/project-runtime/client.ts");
+  const { ServerConnection } = await vite.ssrLoadModule("/src/api/project-runtime/connection.ts");
   const studio = createStudioClient(new ServerConnection("http://studio.test"));
   const createController = () => createModelAnnotationsController(studio);
   return { controller: createController(), createController, studio, StudioApiError, NETWORK_ERROR };

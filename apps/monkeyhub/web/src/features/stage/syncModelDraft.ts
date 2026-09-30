@@ -1,6 +1,6 @@
 /** Submit one frozen local edit prefix. Only its final proposal becomes a run. */
-import type { CandidateAcceptedDto, FrameDto, WorkingDraftDto, LocalDraftInputDto, LocalDraftSourceDto } from "../../api/generated/types.gen";
-import type { StudioClient } from "../../api/client";
+import type { CandidateAcceptedDto, FrameDto, WorkingDraftDto, LocalDraftInputDto, LocalDraftSourceDto } from "../../api/project-runtime/generated/types.gen";
+import type { StudioClient } from "../../api/project-runtime/client";
 import type { DraftCommand, DraftSnapshot } from "./modelDraft";
 
 export interface ModelDraftSource {

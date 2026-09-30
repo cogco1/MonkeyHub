@@ -10,7 +10,7 @@
  * itself is the shared thumbnail cache (`modelThumbnails`), which the
  * inspector's thumbnail uses too. Nothing polls (ADR-008).
  */
-import type { ModelSourceDto } from "../../api/generated";
+import type { ModelSourceDto } from "../../api/project-runtime/generated";
 import type { DesignTreeSource } from "./contract";
 import type { Box, GrowthLayout } from "./layout";
 import type { TreeNode } from "./model";

@@ -23,7 +23,7 @@ const [assets, retainedSvg] = JSON.parse(execFileSync(process.env.PYTHON ?? "pyt
     + " graphics={'cutLineMm': .35, 'visibleLineMm': .18, 'hatchSpacingMm': 2, 'hatch': {'byMaterial': {'Concrete': {'poche': True}}}},"
     + " semantics={'obj-wall': {'component': 'Wall', 'material': 'Concrete'}, 'obj-table': {'component': 'Table', 'material': 'Oak'}})",
   "print(json.dumps([dressing_assets(), svg.decode('utf-8')]))",
-].join("; ")], { cwd: resolve(root, "../../../.."), encoding: "utf8" }));
+].join("; ")], { cwd: resolve(root, "../../.."), encoding: "utf8" }));
 const modelA = { runId: "model-A", stateDigest: "a".repeat(64), assetSha256: "b".repeat(64) };
 const modelB = { runId: "model-B", stateDigest: "c".repeat(64), assetSha256: "d".repeat(64) };
 const externalAsset = { runId: "imported-model", assetSha256: "e".repeat(64) };
@@ -51,8 +51,8 @@ import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import DrawingCanvas from '/src/workspaces/monkeydiagram/DrawingCanvas';
 import {UserPreferencesProvider,useStudio,usePreferences} from '/test/TestProviders.tsx';
-import '/src/styles.css';
-import '/@fs/${root}/../../../../packages/web-shared/src/base.css';
+import '/src/app/styles.css';
+import '/@fs/${root}/../../../packages/web-shared/src/base.css';
 const modelA=${JSON.stringify(modelA)},modelB=${JSON.stringify(modelB)};
 const metrics=window.drawingFixture={requests:[],documents:[${JSON.stringify(legacyDocument)}],artifacts:[${JSON.stringify(externalArtifact)},${JSON.stringify(unsupportedExact)}],uploads:[],handoffs:[],head:'stage-A',revision:0,headDrawable:true,recipe:{hatchSpacingMm:3}};
 const stages=[{stageRef:'stage-A',label:'Accepted A',branchId:'main',modelSource:modelA}, {stageRef:'stage-B',label:'Accepted B',branchId:'main',modelSource:modelB}];

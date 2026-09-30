@@ -19,8 +19,8 @@ import { createServer } from "vite";
 import { workspaceFixture } from "./workspaceFixture.mjs";
 
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const repoRoot = path.resolve(webRoot, "../../../..");
-const apiRoot = path.resolve(webRoot, "../../../archflow-studio/api");
+const repoRoot = path.resolve(webRoot, "../../..");
+const apiRoot = path.resolve(webRoot, "../../archflow-studio/api");
 const python = process.env.PYTHON ?? "python";
 const pythonEnv = { ...process.env, PYTHONUTF8: "1",
   PYTHONPATH: [repoRoot, apiRoot, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) };
@@ -97,7 +97,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
     assert.fail(message);
   }
 
-  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", publicDir: "../.generated/public",
+  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", publicDir: ".generated/public",
     cacheDir: path.join(root, "vite-cache"), define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") },
     plugins: [react(), workspaceFixture()], server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null } });
   http.on("request", (request, response) => {

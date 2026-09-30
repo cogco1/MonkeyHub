@@ -4,8 +4,8 @@ import test, { type TestContext } from "node:test";
 
 import { createServer } from "vite";
 
-type Client = typeof import("../src/api/client.ts");
-type Connection = typeof import("../src/api/connection.ts");
+type Client = typeof import("../src/api/project-runtime/client.ts");
+type Connection = typeof import("../src/api/project-runtime/connection.ts");
 type DesignTree = typeof import("../src/features/designTree/useDesignTree.ts");
 
 async function harness(t: TestContext) {
@@ -13,8 +13,8 @@ async function harness(t: TestContext) {
     logLevel: "silent", server: { middlewareMode: true, watch: null } });
   t.after(() => vite.close());
   return {
-    ...await vite.ssrLoadModule("/src/api/client.ts") as Client,
-    ...await vite.ssrLoadModule("/src/api/connection.ts") as Connection,
+    ...await vite.ssrLoadModule("/src/api/project-runtime/client.ts") as Client,
+    ...await vite.ssrLoadModule("/src/api/project-runtime/connection.ts") as Connection,
     ...await vite.ssrLoadModule("/src/features/designTree/useDesignTree.ts") as DesignTree,
   };
 }

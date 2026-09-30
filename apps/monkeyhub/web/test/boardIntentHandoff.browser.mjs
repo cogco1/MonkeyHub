@@ -99,7 +99,7 @@ async function until(read, test, message, timeout = 10_000) {
 let browser, vite, currentCase, page;
 const http = createHttpServer(), failures = [], escaped = [], passed = [], failed = [];
 try {
-  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir, publicDir: "../.generated/public",
+  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir, publicDir: ".generated/public",
     define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") }, plugins: [workspaceFixture(), { name: "saved-board-request-fixture", enforce: "pre",
       transform(_source, id) {
         if (id.split("?")[0].replaceAll("\\", "/") !== `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeyboard/Board.tsx`) return;

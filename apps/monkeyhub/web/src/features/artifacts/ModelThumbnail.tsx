@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useProjectStore, useStudio } from "../../api/ProjectRuntimeContext";
-import type { ModelSourceDto } from "../../api/generated";
+import { useProjectStore, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import type { ModelSourceDto } from "../../api/project-runtime/generated";
 import { MODEL_PREVIEW_RETAINED, previewSourceKey, readModelPreview } from "./useRetainedModelPreview";
 import { askThumbnail, askedThumbnail, thumbnailBlobs, thumbnailImage, thumbnailsMoved } from "./modelThumbnails";
 import "./modelThumbnail.css";

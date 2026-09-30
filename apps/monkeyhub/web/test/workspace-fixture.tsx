@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { ProjectWorkspace, type ProjectWorkspaceProps, type WorkspaceDesignContext } from "../src/app/ProjectWorkspace";
 import { ErrorBoundary } from "../src/app/ErrorBoundary";
 import { UserPreferencesProvider, usePreferences } from "./TestProviders";
-import "../src/styles.css";
+import "../src/app/styles.css";
 
 const receiveDesignContext = (context: WorkspaceDesignContext | null) => {
   Object.assign(window, { __workspaceDesignContext: context });

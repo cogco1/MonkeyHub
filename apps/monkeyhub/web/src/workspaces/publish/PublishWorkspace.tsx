@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import { useConnection, useStudio } from "../../api/ProjectRuntimeContext";
-import { publicationClient } from "../../api/publication";
-import { asStudioApiError } from "../../api/client";
-import type { PublicationDto, PublicationElementDto, SourceDocumentDto } from "../../api/generated";
+import { useConnection, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import { publicationClient } from "../../api/project-runtime/publication";
+import { asStudioApiError } from "../../api/project-runtime/client";
+import type { PublicationDto, PublicationElementDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { pageSource, documentKey } from "../monkeyboard/boardScene";
 import { usePreferences } from "../../features/settings/preferences";
 import { createPublicationSaveQueue } from "./publicationSaveQueue";

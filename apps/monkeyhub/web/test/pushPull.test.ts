@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { DrawnShapeDto } from "../src/api/generated/types.gen.ts";
+import type { DrawnShapeDto } from "../src/api/project-runtime/generated/types.gen.ts";
 import { preparePushPull } from "../src/features/stage/pushPull.ts";
 import { pointFromPlane } from "../src/features/stage/sketch.ts";
 

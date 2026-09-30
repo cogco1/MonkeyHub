@@ -46,7 +46,7 @@ import { Box3, BoxGeometry, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, S
 import { Preselection } from "/src/workspaces/monkeyarch/viewer/preselection.ts";
 import { Stage } from "/src/features/stage/Stage.tsx";
 import { UserPreferencesProvider } from "/test/TestProviders.tsx";
-import "/src/styles.css";
+import "/src/app/styles.css";
 const add = Scene.prototype.add;
 window.previewGroups = [];
 window.previewUpdates = 0;
@@ -175,7 +175,7 @@ window.projectPoint = (point) => {
 
 try {
   vite = await createServer({
-    root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, cacheDir, publicDir: "../.generated/public", logLevel: "silent",
+    root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, cacheDir, publicDir: ".generated/public", logLevel: "silent",
     plugins: [{ name: "interaction-session-probe", enforce: "pre", transform(source, id) {
       if (id.replaceAll("\\", "/").endsWith("/viewer/ThreeDmViewport.tsx")) {
         const marker = "  const pickAt = useCallback(";

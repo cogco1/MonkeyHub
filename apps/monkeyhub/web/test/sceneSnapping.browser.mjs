@@ -44,8 +44,8 @@ import { Stage } from "/src/features/stage/Stage.tsx";
 import { UserPreferencesProvider } from "/test/TestProviders.tsx";
 import { applyDraftCommand, createModelDraft, currentDraft, drawnShapeFromSpec, undoDraft, redoDraft } from "/src/features/stage/modelDraft.ts";
 import { constrainedTranslation } from "/src/workspaces/monkeyarch/viewer/translationGizmo.ts";
-import "/src/styles.css";
-import "/@fs/${fileURLToPath(new URL("../../src/styles.css", import.meta.url)).replaceAll("\\", "/")}";
+import "/src/app/styles.css";
+import "/@fs/${fileURLToPath(new URL("../src/styles.css", import.meta.url)).replaceAll("\\", "/")}";
 const noop = () => {};
 let initial = createModelDraft([{ elementId: "source", componentId: "fixture", created: true, originalObjectNames: [],
   spec: { profile: [[0,0],[4,0],[4,3],[0,3]], base: 0, height: 3 } }]);
@@ -120,7 +120,7 @@ window.handlePoint = axis => {
 </script></body></html>`;
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 try {
-  vite = await createServer({ root:webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, cacheDir, publicDir:"../.generated/public", logLevel:"silent",
+  vite = await createServer({ root:webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, cacheDir, publicDir:".generated/public", logLevel:"silent",
     plugins:[{ name:"read-only-viewport-probe", enforce:"pre", transform(source,id) {
       if (id.replaceAll("\\", "/").endsWith("/viewer/featureEdges.ts")) {
         return {code:source.replace("  const { positions } = soup;", "  (window as any).featureBuilds = ((window as any).featureBuilds ?? 0) + 1;\n  const { positions } = soup;"),map:null};

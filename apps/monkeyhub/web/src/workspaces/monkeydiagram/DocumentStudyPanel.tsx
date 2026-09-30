@@ -1,5 +1,5 @@
 import { cloneElement, useId, useState, type ReactElement } from "react";
-import type { DocumentGestureDto, StudySourceRequestDto, StudyViewDto } from "../../api/generated";
+import type { DocumentGestureDto, StudySourceRequestDto, StudyViewDto } from "../../api/project-runtime/generated";
 import { usePreferences } from "../../features/settings/preferences";
 import {
   addStudyTrace, newStudyItemId, studyComparisonDefinitionKey, studyDraftChanged, studyResearchResult, studyTraceIsClosed,

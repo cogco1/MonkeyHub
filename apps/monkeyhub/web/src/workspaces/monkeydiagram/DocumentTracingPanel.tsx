@@ -1,5 +1,5 @@
 import { useContext, useEffect, useState } from "react";
-import { asStudioApiError } from "../../api/client";
+import { asStudioApiError } from "../../api/project-runtime/client";
 import { useT } from "../../i18n/useT";
 import type { DocumentAnnotationsHandle } from "./useDocumentAnnotations";
 import { DocumentTracingContext } from "./DocumentTracingContext";

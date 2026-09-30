@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 
-import type { DocumentGestureDto } from "../../api/generated";
+import type { DocumentGestureDto } from "../../api/project-runtime/generated";
 import { useT } from "../../i18n/useT";
 import "./DocumentTextLayer.css";
 

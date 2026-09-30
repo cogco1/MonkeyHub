@@ -1,4 +1,4 @@
-import type { StudioEventDto } from "../api/generated";
+import type { StudioEventDto } from "../api/project-runtime/generated";
 
 /**
  * The Studio events after which Modeling reads its versions again (artifacts, working

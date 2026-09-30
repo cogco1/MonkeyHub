@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { useStudio } from "../../api/ProjectRuntimeContext";
-import { asStudioApiError, type StudioApiError } from "../../api/client";
-import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, ProjectArtifactDto, RecipeSuggestionDto, SectionLineDto, SourceDocumentDto, WorkingSourceDto } from "../../api/generated";
+import { useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import { asStudioApiError, type StudioApiError } from "../../api/project-runtime/client";
+import type { DesignStageDto, ModelSourceDto, PlanDimensionChoicesDto, PlanStatusDto, PlanVectorDto, PlanDressingDto, ProjectArtifactDto, RecipeSuggestionDto, SectionLineDto, SourceDocumentDto, WorkingSourceDto } from "../../api/project-runtime/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { MenuSeparator, StatusLine, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
 import { usePreferences } from "../../features/settings/preferences";

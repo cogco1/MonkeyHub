@@ -1,4 +1,4 @@
-import type { DocumentGestureDto, StudySourceRequestDto, StudyViewDto } from "../../api/generated";
+import type { DocumentGestureDto, StudySourceRequestDto, StudyViewDto } from "../../api/project-runtime/generated";
 
 export type StudyEvidenceKind = "envelope" | "mass" | "void" | "floor_plate";
 export interface StudyEvidence {

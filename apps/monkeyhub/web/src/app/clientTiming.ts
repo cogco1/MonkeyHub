@@ -1,5 +1,5 @@
-import type { StudioClient, OperationTrace } from "../api/client";
-import type { ClientTimingDetailsDto, ClientTimingDto } from "../api/generated";
+import type { StudioClient, OperationTrace } from "../api/project-runtime/client";
+import type { ClientTimingDetailsDto, ClientTimingDto } from "../api/project-runtime/generated";
 
 export type TimingBinding = Pick<ClientTimingDto, "projectId" | "runId" | "sourceRef">;
 export type TimingStatus = Exclude<ClientTimingDto["status"], "running">;

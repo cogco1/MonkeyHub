@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "vite";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
-const repoRoot = path.resolve(webRoot, "../../../..");
+const repoRoot = path.resolve(webRoot, "../../..");
 const apiRoot = path.join(repoRoot, "apps/archflow-studio/api");
 const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-external-import-browser-"));
 const pythonEnv = { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [repoRoot, apiRoot].join(path.delimiter) };
@@ -48,7 +48,7 @@ import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {ProjectWorkspace} from '/src/app/ProjectWorkspace';
 import {UserPreferencesProvider} from '/test/TestProviders';
-import '/src/styles.css';
+import '/src/app/styles.css';
 import '/@fs/${path.resolve(repoRoot, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
 function App(){const [workspace,setWorkspace]=useState('arch');
  return <UserPreferencesProvider baseUrl={location.origin}>
@@ -93,7 +93,7 @@ async function shown(sha) {
 }
 try {
   for (const relative of ['rhino3dm/rhino3dm.js', 'rhino3dm/rhino3dm.wasm', 'nurbsFallback.worker.js']) {
-    assert.ok((await stat(path.join(webRoot, '../.generated/public', relative))).size > 0,
+    assert.ok((await stat(path.join(webRoot, '.generated/public', relative))).size > 0,
       `${relative} is missing; run npm run sync before this browser smoke`);
   }
   const port = await freePort(); origin = `http://127.0.0.1:${port}`;
@@ -101,7 +101,7 @@ try {
     { cwd: apiRoot, env: pythonEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { runtimeLog = (runtimeLog + chunk).slice(-8000); });
   await until(() => fetch(origin + '/api/health').then(r => r.ok).catch(() => false), Boolean, 'Runtime ready');
-  server = await createServer({ root: webRoot, configFile: false, publicDir: '../.generated/public', cacheDir: path.join(temporary, 'vite'), logLevel: 'error',
+  server = await createServer({ root: webRoot, configFile: false, publicDir: '.generated/public', cacheDir: path.join(temporary, 'vite'), logLevel: 'error',
     resolve: { dedupe: ['react','react-dom'] }, optimizeDeps: { include: ['react','react-dom/client','react/jsx-runtime','react/jsx-dev-runtime'] },
     server: { host: '127.0.0.1', port: 0, strictPort: true, proxy: { '/api': origin, '/fixture': origin } },
     plugins: [{ name: 'external-import-fixture', resolveId(id) { if (id === '/external-import-fixture.tsx') return path.join(webRoot,'external-import-fixture.tsx').replaceAll('\\','/'); },

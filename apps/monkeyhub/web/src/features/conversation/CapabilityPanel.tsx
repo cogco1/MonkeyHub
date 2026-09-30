@@ -21,7 +21,7 @@
 
 import { useMemo, useState } from "react";
 
-import type { CapabilityDto, StateProjectionDto } from "../../api/generated";
+import type { CapabilityDto, StateProjectionDto } from "../../api/project-runtime/generated";
 import { useT, type TFunction } from "../../i18n/useT";
 import type { Selection } from "./Composer";
 

@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { DocumentTracingSourceDto, FrameLevelDto } from "../../api/generated";
+import type { DocumentTracingSourceDto, FrameLevelDto } from "../../api/project-runtime/generated";
 
 /** The page editor hands exact saved ink to the existing application candidate flow. */
 export const DocumentTracingContext = createContext<{

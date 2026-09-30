@@ -23,7 +23,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
-import { createProjectWorkspaceFixture } from "../../test/projectWorkspaceFixture.mjs";
+import { createProjectWorkspaceFixture } from "./projectWorkspaceFixture.mjs";
 import { workspaceFixture } from "./workspaceFixture.mjs";
 
 const webRoot = path.resolve(process.env.MODELING_OPEN_WEB_ROOT ?? fileURLToPath(new URL("..", import.meta.url)));
@@ -39,7 +39,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 try {
   vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir,
-    publicDir: "../.generated/public",
+    publicDir: ".generated/public",
     plugins: [workspaceFixture(), {
       name: "modeling-open-probe", enforce: "pre",
       transform(source, id) {

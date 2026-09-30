@@ -242,14 +242,14 @@ async function launch(candidate) {
 async function step(name, action) { await action(); passed.push(name); console.log(`PASS ${name}`); }
 
 try {
-  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir, publicDir: "../.generated/public",
+  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir, publicDir: ".generated/public",
     define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") }, plugins: [workspaceFixture(), {
       name: "observe-actual-candidate-shell", enforce: "pre",
       transform(source, id) {
         const modulePath = id.split("?")[0].replaceAll("\\", "/");
         if ((viewBaseOnly || process.env.BOARD_NOTE_SCREENSHOTS) && modulePath === `${webRoot.replaceAll("\\", "/")}/test/workspace-fixture.tsx`) {
           // The footer layout is checked against the real Hub theme.
-          return { code: `import "/@fs/${path.resolve(webRoot, "../../../../packages/web-shared/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
+          return { code: `import "/@fs/${path.resolve(webRoot, "../../../packages/web-shared/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
         }
         if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeyboard/Board.tsx`) {
           return { code: `export default function Board({onOpenDocument, onSubmit}) {

@@ -3,7 +3,7 @@ import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
-import type { DocumentAnnotationsDto, SourceDocumentDto } from "../src/api/generated/index.ts";
+import type { DocumentAnnotationsDto, SourceDocumentDto } from "../src/api/project-runtime/generated/index.ts";
 import type { BoardFeedbackSelection } from "../src/workspaces/monkeyboard/boardFeedbackGeometry.ts";
 
 const digest = (letter: string) => letter.repeat(64);
@@ -208,8 +208,8 @@ async function handoffHarness(t: TestContext) {
   });
   t.after(() => vite.close());
   const module = await vite.ssrLoadModule("/src/workspaces/monkeyboard/boardFeedback.ts") as typeof import("../src/workspaces/monkeyboard/boardFeedback.ts");
-  const { createStudioClient } = await vite.ssrLoadModule("/src/api/client.ts") as typeof import("../src/api/client.ts");
-  const { ServerConnection } = await vite.ssrLoadModule("/src/api/connection.ts");
+  const { createStudioClient } = await vite.ssrLoadModule("/src/api/project-runtime/client.ts") as typeof import("../src/api/project-runtime/client.ts");
+  const { ServerConnection } = await vite.ssrLoadModule("/src/api/project-runtime/connection.ts");
   const studio = createStudioClient(new ServerConnection(""));
   const calls: { method: string; args: unknown[] }[] = [];
   const snapshots = new Map<string, DocumentAnnotationsDto>([

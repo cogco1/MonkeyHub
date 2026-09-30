@@ -1,8 +1,8 @@
 import type { RenderView } from "../workspaces/monkeyarch/viewer/renderView";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { asStudioApiError, StudioApiError } from "../api/client";
-import { useConnection, useStudio } from "../api/ProjectRuntimeContext";
-import type { ServerIdentity } from "../api/connection";
+import { asStudioApiError, StudioApiError } from "../api/project-runtime/client";
+import { useConnection, useStudio } from "../api/project-runtime/ProjectRuntimeContext";
+import type { ServerIdentity } from "../api/project-runtime/connection";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
 import type { PageSource } from "../workspaces/monkeyboard/boardScene";
 import type { BoardPageRequest } from "../workspaces/monkeyboard/Board";
@@ -19,7 +19,7 @@ import { currentView, DesignTreeBar, type DesignTreeView } from "../features/des
 import { useDesignTree, useSeenCandidates } from "../features/designTree/useDesignTree";
 import { treeWords } from "../features/designTree/words";
 import { useT } from "../i18n/useT";
-import type { MessageKey } from "../../../src/i18n/messages.en";
+import type { MessageKey } from "../i18n/messages.en";
 import { createComparisonHost, type HostedComparison } from "../workspaces/monkeyarch/viewer/comparisonPair";
 
 const Drawing = lazy(() => import("../workspaces/monkeydiagram/DrawingCanvas"));

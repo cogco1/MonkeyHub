@@ -19,10 +19,10 @@
  * tree again on an unchanged project asks for nothing; nothing reads on a timer.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { asStudioApiError, StudioApiError, type StudioClient } from "../../api/client";
-import { useProjectMoved, useProjectStoreInstance, useRuntimeKey } from "../../api/ProjectRuntimeContext";
-import { movedAt, projectStores, type ProjectStoreState } from "../../api/projectStore";
-import type { DesignHistoryDto, WorkingDraftDto, WorkingDraftSelectionDto, WorktreeGraphDto } from "../../api/generated";
+import { asStudioApiError, StudioApiError, type StudioClient } from "../../api/project-runtime/client";
+import { useProjectMoved, useProjectStoreInstance, useRuntimeKey } from "../../api/project-runtime/ProjectRuntimeContext";
+import { movedAt, projectStores, type ProjectStoreState } from "../../api/project-runtime/projectStore";
+import type { DesignHistoryDto, WorkingDraftDto, WorkingDraftSelectionDto, WorktreeGraphDto } from "../../api/project-runtime/generated";
 import type { DesignTreeSource } from "./contract";
 import { continueRequest, continueUndo, DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED, undoRequest, type ContinueUndo,
   type HeadTarget } from "./continueUndo";

@@ -12,7 +12,7 @@
  * can exercise them without a bundler.
  */
 
-import type { ProjectArtifactDto } from "../../api/generated";
+import type { ProjectArtifactDto } from "../../api/project-runtime/generated";
 
 /** An artifact whose bytes can be asked for: the listing said it is there and named its digest. */
 export type ServableArtifact = ProjectArtifactDto & { sha256: string };

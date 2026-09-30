@@ -18,7 +18,7 @@
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
-import type { CatalogComponentDto, StateProjectionDto } from "../../api/generated";
+import type { CatalogComponentDto, StateProjectionDto } from "../../api/project-runtime/generated";
 import { BilingualText } from "../../i18n/BilingualText";
 import { useT, type TFunction } from "../../i18n/useT";
 

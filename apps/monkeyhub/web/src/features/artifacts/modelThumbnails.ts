@@ -17,9 +17,9 @@
  * images are kept in a bounded cache, least recently used first out. The canvas draws a
  * copy scaled to its cells (`canvasThumbnail`), kept with the image.
  */
-import type { StudioClient } from "../../api/client";
-import type { ModelSourceDto } from "../../api/generated";
-import type { IndexEntity, ProjectStoreState } from "../../api/projectStore";
+import type { StudioClient } from "../../api/project-runtime/client";
+import type { ModelSourceDto } from "../../api/project-runtime/generated";
+import type { IndexEntity, ProjectStoreState } from "../../api/project-runtime/projectStore";
 
 /** The size the server draws the Design Tree's thumbnails at (its `TREE_RECIPE`): about twice a close card. */
 export const THUMBNAIL_SIZE = 256;

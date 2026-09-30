@@ -10,10 +10,10 @@ import type {
   CandidateDto,
   StateProjectionDto,
   ValidationDto,
-} from "../../api/generated";
-import type { ServerIdentity } from "../../api/connection";
+} from "../../api/project-runtime/generated";
+import type { ServerIdentity } from "../../api/project-runtime/connection";
 import type { EvidenceTab } from "../../app/evidence";
-import type { MessageKey } from "../../../../src/i18n/messages.en";
+import type { MessageKey } from "../../i18n/messages.en";
 import { usePreferences } from "../settings/preferences";
 import { useT } from "../../i18n/useT";
 import { EventStream, type StreamLine } from "../events/EventStream";

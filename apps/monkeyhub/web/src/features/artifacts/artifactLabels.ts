@@ -3,7 +3,7 @@
  * can say about itself — both taken off the receipt that certified the bytes.
  */
 
-import type { ProjectArtifactDto } from "../../api/generated";
+import type { ProjectArtifactDto } from "../../api/project-runtime/generated";
 import { sha8 } from "../../app/format";
 
 /** The seat name an export's stage id ends with, or the file when it has none. */

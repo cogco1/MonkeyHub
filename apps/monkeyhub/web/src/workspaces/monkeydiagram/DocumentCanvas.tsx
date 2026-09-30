@@ -2,9 +2,9 @@ import { memo, useCallback, useEffect, useRef, useState, type KeyboardEvent as R
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-import { useStudio } from "../../api/ProjectRuntimeContext";
-import { asStudioApiError, type StudioApiError } from "../../api/client";
-import type { DocumentAnnotationRefDto, DocumentCommentDto, DocumentGestureDto, DocumentPageDto, DocumentTracingCalibrationDto, DocumentVisualInputDto, ModelSourceDto, SourceDocumentDto } from "../../api/generated";
+import { useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import { asStudioApiError, type StudioApiError } from "../../api/project-runtime/client";
+import type { DocumentAnnotationRefDto, DocumentCommentDto, DocumentGestureDto, DocumentPageDto, DocumentTracingCalibrationDto, DocumentVisualInputDto, ModelSourceDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { startClientTiming, type ClientTimingSpan } from "../../app/clientTiming";
 import { useT } from "../../i18n/useT";

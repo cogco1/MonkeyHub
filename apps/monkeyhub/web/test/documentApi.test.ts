@@ -6,7 +6,7 @@ import { createServer } from "vite";
 import type {
   DocumentAnnotationsRequestDto,
   SourceDocumentDto,
-} from "../src/api/generated/index.ts";
+} from "../src/api/project-runtime/generated/index.ts";
 
 const projectId = "project-a";
 const runId = "candidate-a";
@@ -29,8 +29,8 @@ async function documentApi(t: TestContext) {
     if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
     else Reflect.deleteProperty(globalThis, "window");
   });
-  const { createStudioClient, StudioApiError } = await vite.ssrLoadModule("/src/api/client.ts");
-  const { ServerConnection } = await vite.ssrLoadModule("/src/api/connection.ts");
+  const { createStudioClient, StudioApiError } = await vite.ssrLoadModule("/src/api/project-runtime/client.ts");
+  const { ServerConnection } = await vite.ssrLoadModule("/src/api/project-runtime/connection.ts");
   const studio = createStudioClient(new ServerConnection("http://studio.test", "document-test-token"));
   return { studio, StudioApiError };
 }

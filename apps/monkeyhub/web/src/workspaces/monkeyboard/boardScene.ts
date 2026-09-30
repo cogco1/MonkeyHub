@@ -1,4 +1,4 @@
-import type { BoardDto, SourceDocumentDto } from "../../api/generated";
+import type { BoardDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 
 export type BoardDraft = Pick<BoardDto, "projectId" | "title" | "elements" | "seenDocuments">;
 export type PageSource = Pick<SourceDocumentDto, "runId" | "assetSha256"> & {

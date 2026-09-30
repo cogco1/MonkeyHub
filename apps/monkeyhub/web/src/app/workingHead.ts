@@ -7,7 +7,7 @@
  * taking work away from the person using it.
  */
 
-import type { WorkingSourceDto } from "../api/generated";
+import type { WorkingSourceDto } from "../api/project-runtime/generated";
 
 export interface HeadRef {
   readonly runId: string;

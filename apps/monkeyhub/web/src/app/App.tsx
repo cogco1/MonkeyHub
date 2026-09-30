@@ -31,11 +31,11 @@ import {
   UNSUPPORTED_REQUEST,
   asStudioApiError,
   type StudioApiError,
-} from "../api/client";
-import { useProjectMoved, useStudio } from "../api/ProjectRuntimeContext";
+} from "../api/project-runtime/client";
+import { useProjectMoved, useStudio } from "../api/project-runtime/ProjectRuntimeContext";
 import { refreshesVersions } from "./versionEvents";
 import type { PageSource } from "../workspaces/monkeyboard/boardScene";
-import type { ServerIdentity } from "../api/connection";
+import type { ServerIdentity } from "../api/project-runtime/connection";
 import type {
   ArtifactListDto,
   CatalogDto,
@@ -55,7 +55,7 @@ import type {
   FrameLevelDto,
   DocumentTracingSourceDto,
   ValidationDto,
-} from "../api/generated";
+} from "../api/project-runtime/generated";
 import { renderTracingPaperSnapshotPng, captureTracingPaperReview, type GestureTool } from "../workspaces/monkeyarch/Annotate";
 import { createModelAnnotationsController, useModelAnnotations } from "../workspaces/monkeyarch/useModelAnnotations";
 import { createDocumentAnnotationsController } from "../workspaces/monkeydiagram/useDocumentAnnotations";

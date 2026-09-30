@@ -14,7 +14,7 @@
  * before admission never do. This module is pure and has no copy: the
  * surfaces word it.
  */
-import type { AdmissionActorDto, DesignCandidateDto, DesignStageDto, DesignStudyDto, ReviewJudgementDto, WorkingHeadDto, WorktreeLineDto } from "../../api/generated";
+import type { AdmissionActorDto, DesignCandidateDto, DesignStageDto, DesignStudyDto, ReviewJudgementDto, WorkingHeadDto, WorktreeLineDto } from "../../api/project-runtime/generated";
 import type { DesignTreeSource } from "./contract";
 
 export type TreeNodeKind = "origin" | "stage" | "candidate" | "pending" | "current";

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ChatSummary, OperationRecord } from "../src/api/generated";
-import type { WorktreeGraphDto, WorktreeLineDto } from "../workspaces/src/api/generated";
+import type { WorktreeGraphDto, WorktreeLineDto } from "../src/api/project-runtime/generated";
 import { ownerOf, projectStatus, refLabel, workRows } from "../src/worktreeGraph.ts";
 
 const line = (overrides: Partial<WorktreeLineDto>): WorktreeLineDto => ({

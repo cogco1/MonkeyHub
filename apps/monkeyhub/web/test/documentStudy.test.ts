@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createServer } from "vite";
-import type { StudyViewDto } from "../src/api/generated/types.gen.ts";
+import type { StudyViewDto } from "../src/api/project-runtime/generated/types.gen.ts";
 
 const source = { runId: "drawing", assetSha256: "a".repeat(64), revisionRef: null, pageIndex: 1 };
 const evidence = [{ evidenceId: "trace-a", kind: "void", status: "confirmed", origin: "user", confidence: 1,

@@ -4,14 +4,14 @@ import test, { type TestContext } from "node:test";
 
 import { createServer } from "vite";
 
-import type { WorkingCopyDto, WorkingDraftDto } from "../src/api/generated/index.ts";
+import type { WorkingCopyDto, WorkingDraftDto } from "../src/api/project-runtime/generated/index.ts";
 
 test("concurrent project clients retain their runtime, token, exact source and responses", async (t) => {
   const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
     logLevel: "silent", server: { middlewareMode: true, watch: null } });
   t.after(() => vite.close());
-  const { ServerConnection } = await vite.ssrLoadModule("/src/api/connection.ts");
-  const { createStudioClient, StudioApiError } = await vite.ssrLoadModule("/src/api/client.ts");
+  const { ServerConnection } = await vite.ssrLoadModule("/src/api/project-runtime/connection.ts");
+  const { createStudioClient, StudioApiError } = await vite.ssrLoadModule("/src/api/project-runtime/client.ts");
   const baseA = "http://127.0.0.1:18180/api/runtime/projects/12345678-1234-1234-1234-123456789abc/studio";
   const baseB = "http://127.0.0.1:18180/api/runtime/projects/12345678-1234-1234-1234-123456789def/studio";
   const connectionA = new ServerConnection(baseA, "project-a-token");
@@ -67,7 +67,7 @@ test("sibling project providers expose independent clients and require an explic
   t.after(() => vite.close());
   const { createElement, Fragment } = await import("react");
   const { renderToStaticMarkup } = await import("react-dom/server");
-  const { ProjectRuntimeProvider, useStudio, useConnection } = await vite.ssrLoadModule("/src/api/ProjectRuntimeContext.tsx");
+  const { ProjectRuntimeProvider, useStudio, useConnection } = await vite.ssrLoadModule("/src/api/project-runtime/ProjectRuntimeContext.tsx");
   const mounted: { studio: unknown; baseUrl: string; authenticated: boolean }[] = [];
   function Workspace() {
     const studio = useStudio(), connection = useConnection();
@@ -90,7 +90,7 @@ test("only Hub forwarding adds idempotency keys while retries preserve supplied 
   const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
     logLevel: "silent", server: { middlewareMode: true, watch: null } });
   t.after(() => vite.close());
-  const { ServerConnection } = await vite.ssrLoadModule("/src/api/connection.ts");
+  const { ServerConnection } = await vite.ssrLoadModule("/src/api/project-runtime/connection.ts");
   const base = "http://127.0.0.1:18180/api/runtime/projects/12345678-1234-1234-1234-123456789abc/studio";
   const { client } = new ServerConnection(base);
   const requests: Request[] = [];
@@ -123,8 +123,8 @@ test("candidate requests carry their explicit source without changing default re
     server: { middlewareMode: true, watch: null },
   });
   t.after(() => vite.close());
-  const { createStudioClient } = await vite.ssrLoadModule("/src/api/client.ts");
-  const { ServerConnection } = await vite.ssrLoadModule("/src/api/connection.ts");
+  const { createStudioClient } = await vite.ssrLoadModule("/src/api/project-runtime/client.ts");
+  const { ServerConnection } = await vite.ssrLoadModule("/src/api/project-runtime/connection.ts");
   const studio = createStudioClient(new ServerConnection("http://studio.test"));
 
   const requests: { path: string; body: unknown }[] = [];
@@ -224,8 +224,8 @@ async function editingSessionHarness(t: TestContext) {
     else Reflect.deleteProperty(globalThis, "window");
   });
   const sessionModule = await vite.ssrLoadModule("/src/app/useSession.ts");
-  const { createStudioClient } = await vite.ssrLoadModule("/src/api/client.ts");
-  const { ServerConnection } = await vite.ssrLoadModule("/src/api/connection.ts");
+  const { createStudioClient } = await vite.ssrLoadModule("/src/api/project-runtime/client.ts");
+  const { ServerConnection } = await vite.ssrLoadModule("/src/api/project-runtime/connection.ts");
   const { editingBasePreferences } = await vite.ssrLoadModule("/src/features/settings/preferences.tsx");
   const studio = createStudioClient(new ServerConnection("http://studio.test"));
   const requests: string[] = [];
@@ -1002,7 +1002,7 @@ test("the protocol handshake accepts major 2 and refuses major 1", async (t) => 
   });
   t.after(() => vite.close());
   const { ServerConnection, ProtocolRefusal, PROTOCOL_MISMATCH } =
-    await vite.ssrLoadModule("/src/api/connection.ts");
+    await vite.ssrLoadModule("/src/api/project-runtime/connection.ts");
 
   for (const major of [2, 1]) {
     await t.test(`archflow/${major}`, async (t) => {

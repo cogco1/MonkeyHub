@@ -9,7 +9,7 @@
  * the card says when it does not.
  */
 
-import type { CompareDto, CompareObjectDto } from "../../../api/generated";
+import type { CompareDto, CompareObjectDto } from "../../../api/project-runtime/generated";
 import type { TFunction } from "../../../i18n/useT";
 import { useT } from "../../../i18n/useT";
 

@@ -3,7 +3,7 @@ import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 
-import type { SourceDocumentDto } from "../src/api/generated/index.ts";
+import type { SourceDocumentDto } from "../src/api/project-runtime/generated/index.ts";
 
 function document(overrides: Partial<SourceDocumentDto> = {}): SourceDocumentDto {
   return {

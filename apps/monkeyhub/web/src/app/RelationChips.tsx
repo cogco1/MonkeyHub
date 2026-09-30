@@ -11,7 +11,7 @@
  * chip may wear.
  */
 
-import type { RelationChecksDto } from "../api/generated";
+import type { RelationChecksDto } from "../api/project-runtime/generated";
 import { useT } from "../i18n/useT";
 
 /** Whether the held count has earned green. Colour only; never a verdict. */

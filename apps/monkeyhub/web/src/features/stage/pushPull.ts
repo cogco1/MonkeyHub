@@ -1,6 +1,6 @@
 /** Local previews of the existing drawn-element push/pull action. */
 
-import type { DrawnShapeDto } from "../../api/generated/types.gen";
+import type { DrawnShapeDto } from "../../api/project-runtime/generated/types.gen";
 import type { SketchPreview } from "../../workspaces/monkeyarch/viewer/ThreeDmViewport";
 import type { PlanPoint, SketchPlane, SketchVector } from "./sketch";
 

@@ -28,8 +28,8 @@ import {
   syncFeatureEdgeOverlay,
 } from "../src/workspaces/monkeyarch/viewer/modelDisplay.ts";
 import { featureEdges } from "../src/workspaces/monkeyarch/viewer/featureEdges.ts";
-import { messagesEn } from "../../src/i18n/messages.en.ts";
-import { messagesZhCN } from "../../src/i18n/messages.zh-CN.ts";
+import { messagesEn } from "../src/i18n/messages.en.ts";
+import { messagesZhCN } from "../src/i18n/messages.zh-CN.ts";
 
 const palette = modelingPalette(false);
 const edgesOf = (mesh: Mesh) => featureEdges({

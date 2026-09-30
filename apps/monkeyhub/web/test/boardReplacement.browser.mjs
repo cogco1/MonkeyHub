@@ -136,7 +136,7 @@ async function untilSaved(accepts, label) {
 
 try {
   vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error", cacheDir,
-    publicDir: "../.generated/public", define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") },
+    publicDir: ".generated/public", define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") },
     plugins: [workspaceFixture(), { name: "board-replacement-fixture", enforce: "pre", transform(source, id) {
       const filename = id.split("?")[0].replaceAll("\\", "/"), root = webRoot.replaceAll("\\", "/");
       if (filename === `${root}/test/workspace-fixture.tsx`) return { code: `
@@ -144,7 +144,7 @@ try {
         import { convertToExcalidrawElements, newElementWith, CaptureUpdateAction, FONT_FAMILY } from "@excalidraw/excalidraw";
         import Board from "/src/workspaces/monkeyboard/Board";
         import { UserPreferencesProvider } from "/test/TestProviders.tsx";
-        import "/src/styles.css";
+        import "/src/app/styles.css";
         window.__boardHelpers = { convertToExcalidrawElements, newElementWith, CaptureUpdateAction, FONT_FAMILY };
         window.__boardInitialElements = convertToExcalidrawElements(${JSON.stringify(seeds)}, { regenerateIds: false });
         createRoot(document.getElementById("root")).render(<UserPreferencesProvider><Board onSubmit={() => { throw new Error("Unexpected design handoff"); }} /></UserPreferencesProvider>);

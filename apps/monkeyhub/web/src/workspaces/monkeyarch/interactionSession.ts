@@ -1,6 +1,6 @@
 import { IDLE, type SketchState } from "../../features/stage/sketch";
 import type { LocalHit } from "./viewer/preselection";
-import type { DrawnShapeDto } from "../../api/generated";
+import type { DrawnShapeDto } from "../../api/project-runtime/generated";
 import type { NormalDragController } from "./viewer/normalDrag";
 import type { PreparedPushPull } from "../../features/stage/pushPull";
 import type { PlanPoint, SketchPlane, SnapCandidate } from "../../features/stage/sketch";

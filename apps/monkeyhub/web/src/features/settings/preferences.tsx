@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import type { AppearancePreferences } from "../../../../../../../packages/web-shared/src/appearance.js";
-export type { Language, ThemePreference, FontScale } from "../../../../../../../packages/web-shared/src/appearance.js";
+import type { AppearancePreferences } from "../../../../../../packages/web-shared/src/appearance.js";
+export type { Language, ThemePreference, FontScale } from "../../../../../../packages/web-shared/src/appearance.js";
 
 export interface UserPreferences extends AppearancePreferences {
   readonly eventStreamVisible: boolean;

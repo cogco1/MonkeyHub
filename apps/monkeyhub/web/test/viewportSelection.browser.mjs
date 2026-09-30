@@ -74,7 +74,7 @@ window.projectPoint = (point) => {
 </script></body></html>`;
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 try {
-  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, cacheDir, publicDir: "../.generated/public",
+  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, cacheDir, publicDir: ".generated/public",
     logLevel: "silent", plugins: [react()], server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null } });
   http.on("request", async (request, response) => {
     if (request.url === "/selection-test") {

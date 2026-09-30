@@ -4,7 +4,7 @@ import { stripTypeScriptTypes } from "node:module";
 import test from "node:test";
 import { Box3, BoxGeometry, Group, Mesh, MeshBasicMaterial, OrthographicCamera, PerspectiveCamera, Sphere, Vector3, type Object3D } from "three";
 
-import type { CompareDto, ModelSourceDto, ProjectArtifactDto, RuntimeCandidateDto, RuntimeDto } from "../src/api/generated";
+import type { CompareDto, ModelSourceDto, ProjectArtifactDto, RuntimeCandidateDto, RuntimeDto } from "../src/api/project-runtime/generated";
 import type { CameraState, ViewBounds } from "../src/workspaces/monkeyarch/viewer/ThreeDmViewport";
 import { viewableArtifacts } from "../src/features/artifacts/artifactSelection.ts";
 import { fitOrthographicBox, frameBoxKeepingView, projectionMode } from "../src/workspaces/monkeyarch/viewer/cameraProjection.ts";

@@ -1,5 +1,5 @@
 /** Disposable, local model edits. Only Sync may submit these commands to Studio. */
-import type { DrawnShapeDto, ElementElevationDto } from "../../api/generated/types.gen";
+import type { DrawnShapeDto, ElementElevationDto } from "../../api/project-runtime/generated/types.gen";
 import type { SketchPreview } from "../../workspaces/monkeyarch/viewer/ThreeDmViewport";
 import type { DirectModelAction } from "./ModelEditPanel";
 import type { FinishedSketch, PlanPoint, SketchPlane, SketchVector } from "./sketch";

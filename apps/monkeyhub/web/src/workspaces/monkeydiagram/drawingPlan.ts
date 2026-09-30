@@ -1,4 +1,4 @@
-import type { DecisionDto, DecisionRequestDto, PlanRequestDto, PlanStatusDto, SourceDocumentDto } from "../../api/generated";
+import type { DecisionDto, DecisionRequestDto, PlanRequestDto, PlanStatusDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 
 /** The paper pens and hatch spacing of a cut plan, in paper millimetres. */
 export const PAPER_PENS = ["cutLineMm", "visibleLineMm", "hatchSpacingMm"] as const;

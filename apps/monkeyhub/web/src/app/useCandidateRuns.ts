@@ -1,9 +1,9 @@
 /** Candidate reads belong to the shell, so closing the conversation cannot stop them. */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { asStudioApiError } from "../api/client";
-import { useStudio } from "../api/ProjectRuntimeContext";
-import type { CandidateDto, JobDto, ValidationDto } from "../api/generated";
+import { asStudioApiError } from "../api/project-runtime/client";
+import { useStudio } from "../api/project-runtime/ProjectRuntimeContext";
+import type { CandidateDto, JobDto, ValidationDto } from "../api/project-runtime/generated";
 import { IN_FLIGHT } from "./jobs";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { startClientTiming, type ClientTimingSpan } from "./clientTiming";

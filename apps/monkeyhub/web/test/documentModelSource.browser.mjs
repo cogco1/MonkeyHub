@@ -46,7 +46,7 @@ import {flushSync} from 'react-dom';
 import {DocumentCanvas} from '/src/workspaces/monkeydiagram/DocumentCanvas.tsx';
 import {createDocumentAnnotationsController} from '/src/workspaces/monkeydiagram/useDocumentAnnotations.ts';
 import {UserPreferencesProvider} from '/test/TestProviders.tsx';
-import {useStudio} from '/src/api/ProjectRuntimeContext';
+import {useStudio} from '/src/api/project-runtime/ProjectRuntimeContext';
 const modelA=${JSON.stringify(modelA)},modelB=${JSON.stringify(modelB)},storageRun=${JSON.stringify(storageRun)},documentSha=${JSON.stringify(documentSha)};
 const markedReferenceSha=${JSON.stringify(markedReferenceSha)},emptyReferenceSha=${JSON.stringify(emptyReferenceSha)},pdfSha=${JSON.stringify(pdfSha)};
 async function imageFile(name,width,height){

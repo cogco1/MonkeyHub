@@ -14,7 +14,7 @@ import React from 'react';
 import {createRoot} from 'react-dom/client';
 import {ErrorBoundary} from '/src/app/ErrorBoundary';
 import {UserPreferencesProvider} from '/test/TestProviders';
-import '/src/styles.css';
+import '/src/app/styles.css';
 function Crash() { throw new Error('fixture render failure'); }
 function App() {
   const crash = new URLSearchParams(location.search).has('crash');

@@ -1,8 +1,8 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 
-import { StudioApiError, TRANSPORT_ERROR, UNSUPPORTED_REQUEST, asStudioApiError, type StudioClient } from "../../api/client";
-import { useStudio } from "../../api/ProjectRuntimeContext";
-import type { DocumentAnnotationRefDto, DocumentGestureDto, DocumentTracingCalibrationDto } from "../../api/generated";
+import { StudioApiError, TRANSPORT_ERROR, UNSUPPORTED_REQUEST, asStudioApiError, type StudioClient } from "../../api/project-runtime/client";
+import { useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import type { DocumentAnnotationRefDto, DocumentGestureDto, DocumentTracingCalibrationDto } from "../../api/project-runtime/generated";
 
 export interface DocumentAnnotationsOptions {
   projectId: string;

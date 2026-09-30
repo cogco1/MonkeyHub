@@ -5,12 +5,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createProjectWorkspaceFixture } from "../../test/projectWorkspaceFixture.mjs";
+import { createProjectWorkspaceFixture } from "./projectWorkspaceFixture.mjs";
 
 // GH-302: the project canvas keeps its chrome (zoom, undo) inside its own
 // surface. The real built Hub with Board mounted in it; the Hub API and the
 // project runtime are local synthetic fixtures.
-const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new URL("../../dist/", import.meta.url)));
+const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new URL("../dist/", import.meta.url)));
 const screenshots = process.env.CANVAS_CHROME_SCREENSHOTS ?? await mkdtemp(path.join(tmpdir(), "monkeyhub-canvas-chrome-"));
 // CANVAS_CHROME_LANG=zh-CN runs the same checks in the Chinese UI.
 const language = process.env.CANVAS_CHROME_LANG === "zh-CN" ? "zh-CN" : "en";

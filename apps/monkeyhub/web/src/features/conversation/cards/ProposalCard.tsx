@@ -8,7 +8,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { AgentReadingDto, ProposalDto } from "../../../api/generated";
+import type { AgentReadingDto, ProposalDto } from "../../../api/project-runtime/generated";
 import type { EvidenceTab } from "../../../app/evidence";
 import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";

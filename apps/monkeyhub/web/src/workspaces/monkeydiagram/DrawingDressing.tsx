@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import type { PlanDressingDto, PlanStatusDto, PlanVectorDto } from "../../api/generated";
+import type { PlanDressingDto, PlanStatusDto, PlanVectorDto } from "../../api/project-runtime/generated";
 
 const copy = {
   en: { title: "Drawing entourage", person: "Person", tree: "Tree", addPerson: "Add person", addTree: "Add tree", select: "Selected object", none: "Choose an object", anchor: "Position follows", fixed: "Fixed drawing coordinates", x: "Horizontal position / offset", y: "Vertical position / offset", size: "Symbol size", flip: "Mirror horizontally", remove: "Delete object", hint: "Drag symbols or use arrow keys. Save appearance to retain edits. These symbols do not change the building.", missing: "Anchor missing", outside: "Outside drawing crop", source: "Generate a cut plan first.", empty: "No entourage yet." },

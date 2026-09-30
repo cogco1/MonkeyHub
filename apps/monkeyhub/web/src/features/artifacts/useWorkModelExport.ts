@@ -16,7 +16,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import type { ProjectArtifactDto } from "../../api/generated";
+import type { ProjectArtifactDto } from "../../api/project-runtime/generated";
 import { workModelOf, workModelSourceOf, type ViewedModel, type WorkModelSourceRefusal } from "./artifactSelection";
 
 /** Why the control cannot act right now; `busy-elsewhere` is the one Rhino. */

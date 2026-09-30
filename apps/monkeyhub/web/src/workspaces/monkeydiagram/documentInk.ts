@@ -1,4 +1,4 @@
-import type { DocumentGestureDto } from "../../api/generated";
+import type { DocumentGestureDto } from "../../api/project-runtime/generated";
 
 export type PagePoint = [number, number];
 export type PageView = { x: number; y: number; scale: number };

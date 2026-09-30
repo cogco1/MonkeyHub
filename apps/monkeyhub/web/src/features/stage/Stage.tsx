@@ -1,4 +1,4 @@
-import { useConnection } from "../../api/ProjectRuntimeContext";
+import { useConnection } from "../../api/project-runtime/ProjectRuntimeContext";
 /**
  * The model, and the few facts that sit over it.
  *
@@ -9,8 +9,8 @@ import { useConnection } from "../../api/ProjectRuntimeContext";
 
 import { createRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent } from "react";
 
-import type { StudioApiError } from "../../api/client";
-import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
+import type { StudioApiError } from "../../api/project-runtime/client";
+import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/project-runtime/generated";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { designObjectLabel } from "../../app/format";

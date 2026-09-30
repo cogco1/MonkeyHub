@@ -1,7 +1,7 @@
 import type { PDFDocumentLoadingTask, PDFPageProxy } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-import type { DocumentGestureDto, DocumentPageDto } from "../../api/generated";
+import type { DocumentGestureDto, DocumentPageDto } from "../../api/project-runtime/generated";
 import { inkPath } from "./documentInk";
 
 /** The saved visible page and its saved marks, independent of the editor viewport. */
