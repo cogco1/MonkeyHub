@@ -1772,7 +1772,7 @@ class ChatTests(unittest.TestCase):
             request.assert_not_called()
 
     def test_the_agent_contract_names_no_producer_classification_or_backend(self):
-        """The layer rule for every tool text; "wall" appears only as a facet value in MEANING/CAPABILITIES."""
+        """The layer rule for every tool text, domain guide and prompt note; "wall" appears only as a facet value in MEANING/CAPABILITIES."""
 
         from monkeyarch.construction.vocabulary import layer_rule_violations
         from monkeyhub_api.models import ChatPresentationBindRequest
@@ -1810,9 +1810,12 @@ class ChatTests(unittest.TestCase):
                 self.assertEqual(layer_rule_violations(text), (), text[:160])
             for name in names:
                 self.assertEqual(layer_rule_violations(name), (), name)
-        # The domain guides studio_schema answers with are tool text too.
-        for prefix, guide in chat._GUIDES.items():
-            self.assertEqual(layer_rule_violations(guide), (), prefix)
+        # What studio_schema answers beside a domain's actions, and the notes a turn's prompt carries.
+        read = {**{f"guide {prefix}": text for prefix, text in chat._GUIDES.items()},
+                "context note": chat._CONTEXT_NOTE, "memory note": chat._MEMORY_NOTE, "render note": chat._RENDER_NOTE}
+        self.assertIn("guide /api/render", read)
+        for name, text in read.items():
+            self.assertEqual(layer_rule_violations(text), (), name)
 
     def test_the_inline_script_and_verbs_are_the_interpreters_own(self):
         """The guide's example runs as written and names the ids it promises; its verbs exist."""

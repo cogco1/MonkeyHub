@@ -345,7 +345,9 @@ class ChatPresentationTests(unittest.TestCase):
             self.assertEqual(response["code"], code)
         self.assertEqual(len(self.saved()["messages"]), 1)
         result = self.present(content="Registered source", documents=[reference])
-        self.assertEqual(result["messages"][-1]["documents"], [{**reference, "fileName": document.file_name, "mimeType": "image/png"}])
+        # A presented result plays no role in an image discussion (#253).
+        self.assertEqual(result["messages"][-1]["documents"], [{**reference, "fileName": document.file_name, "mimeType": "image/png",
+                                                                "role": None}])
         client = self.new_client(self.new_store())
         prefix = f"/api/chat/sessions/{self.bound['chatId']}/documents/{self.assistant_id}/0"
         inline, download = client.get(prefix), client.get(prefix + "?download=true")
@@ -381,7 +383,7 @@ class ChatPresentationTests(unittest.TestCase):
         result = self.present(content="", documents=[reference])
         shown = result["messages"][-1]
         self.assertEqual(shown["role"], "assistant")
-        self.assertEqual(shown["documents"], [{**reference, "fileName": "North elevation-p2.png", "mimeType": "image/png"}],
+        self.assertEqual(shown["documents"], [{**reference, "fileName": "North elevation-p2.png", "mimeType": "image/png", "role": None}],
                          "the transcript keeps the exact document run, asset, revision and page")
         self.assertEqual(self.saved()["messages"][-1]["documents"][0]["pageIndex"], 1)
         page = self.new_client(self.new_store()).get(f"/api/chat/sessions/{self.bound['chatId']}/documents/{self.assistant_id}/0")

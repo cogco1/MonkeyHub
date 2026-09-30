@@ -19,7 +19,7 @@ export type StepKey =
   | "planDrawing" | "drawingStyles" | "exportModel" | "exportStatus" | "artifacts" | "annotationsRead"
   | "annotationsUpdate" | "semantics" | "optionsRead" | "optionsUpdate" | "studies" | "combine" | "closure"
   | "projectRead" | "projectWrite" | "projectStep" | "fabProfiles" | "fabCheck" | "present" | "attachment" | "bind"
-  | "desktopStep" | "readFiles" | "editFiles" | "command" | "planSteps" | "webFetch" | "generic";
+  | "desktopStep" | "readFiles" | "editFiles" | "command" | "planSteps" | "webFetch" | "renderRead" | "renderStart" | "generic";
 
 /** A step as a person reads it: a plain action, one wrapping another, or an action with its own words. */
 export type Step =
@@ -84,6 +84,9 @@ const ROUTES: ReadonlyArray<readonly [RegExp, RegExp, StepKey]> = [
   [/^GET$/, /^\/studies(\/.*)?$/, "studies"],
   [/^POST$/, /^\/candidates\/combine$/, "combine"],
   [/^POST$/, /^\/state\/closure$/, "closure"],
+  // #253: an image attempt may be paid, so it is named as what it is.
+  [/^POST$/, /^\/render\/jobs$/, "renderStart"],
+  [/^GET$/, /^\/render(\/.*)?$/, "renderRead"],
 ];
 
 /** A request to a bound tool, named for what it did; unknown routes say only read or write. */

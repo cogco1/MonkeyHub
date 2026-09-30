@@ -6,6 +6,7 @@ import type { ServerIdentity } from "../api/connection";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
 import type { PageSource } from "../workspaces/monkeyboard/boardScene";
 import type { BoardPageRequest } from "../workspaces/monkeyboard/Board";
+import { BoardRenderError, type BoardRenderChatRequest } from "../workspaces/monkeyboard/boardRender";
 import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
 import App, { type WorkspaceDesignContext } from "./App";
 export type { WorkspaceDesignContext } from "./App";
@@ -53,6 +54,12 @@ export interface ProjectWorkspaceProps {
   onComparisonClose?: () => void;
   onWorkspaceChange(workspace: "arch" | "board" | "drawing" | "render" | "publish" | "tree"): void;
   onChatRequest?: () => void;
+  /**
+   * #253: an image discussion from this project's Board, for the host's conversation composer.
+   * Only a request naming this workspace's own project is passed on; nothing is sent from here.
+   * A host that cannot take it throws a BoardRenderError, which the Board's dialog shows.
+   */
+  onRenderChatRequest?: (request: BoardRenderChatRequest) => void;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
   /** Where a chat message lands (#285): the position the Stage chip states, as it states it. */
   onPositionChange?: (position: WorkspacePosition | null) => void;
@@ -70,7 +77,7 @@ export interface WorkspacePosition {
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
 export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, candidateFollowsHead = false, treeFocus = null, active = true, refreshKey = 0, documentRequest = null,
-  comparisonRequest = null, onComparisonClose, onWorkspaceChange, onChatRequest, onDesignContextChange, onPositionChange }: ProjectWorkspaceProps) {
+  comparisonRequest = null, onComparisonClose, onWorkspaceChange, onChatRequest, onRenderChatRequest, onDesignContextChange, onPositionChange }: ProjectWorkspaceProps) {
   const renderReader = useRef<(() => RenderView | null) | null>(null);
   const registerRenderReader = useCallback((reader: (() => RenderView | null) | null) => { renderReader.current = reader; }, []);
   const readRenderView = useCallback(() => renderReader.current?.() ?? null, []);
@@ -246,6 +253,14 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     setDocumentIntent(undefined); setSketchRequest(request); setVisit(null);
     onWorkspaceChange("arch");
   }, [onWorkspaceChange]);
+  // #253: the Board stays on screen; the conversation composer receives the draft. A request
+  // naming another project is refused back to the Board's dialog rather than dropped.
+  const renderChat = useMemo(() => onRenderChatRequest && ((request: BoardRenderChatRequest) => {
+    if (boundProjectId.current === undefined || request.projectId !== boundProjectId.current) {
+      throw new BoardRenderError("PROJECT_CHANGED", "The Board's request names a project this workspace is not bound to.");
+    }
+    onRenderChatRequest(request);
+  }), [onRenderChatRequest]);
   useEffect(() => {
     if (!active || server.status !== "ready" || !documentRequest ||
         openedDocumentRequest.current === documentRequest.requestId) return;
@@ -309,7 +324,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={shown !== "board" || pageOpen} inert={!active || shown !== "board" || pageOpen}
         style={{ height: "100%", minHeight: 0, display: shown === "board" && !pageOpen ? "block" : "none" }}>
         <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}>
-          <Board onPublish={(revision, ids) => { setPublishRequest({ revision, ids, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); }} expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt + boardRefresh} active={active && shown === "board" && !pageOpen} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} pageRequest={boardPage} />
+          <Board onPublish={(revision, ids) => { setPublishRequest({ revision, ids, requestId: crypto.randomUUID() }); onWorkspaceChange("publish"); }} expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt + boardRefresh} active={active && shown === "board" && !pageOpen} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} onRenderChatRequest={renderChat} pageRequest={boardPage} />
         </Suspense>
       </div>}
       {(treeVisited || workspace === "tree") && <div data-project-surface="tree" hidden={shown !== "tree"} inert={!active || shown !== "tree"}
