@@ -1,46 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-513",
-      "status": "active",
-      "branch": "codex/512-513-kernel-contracts",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-512-513-kernel-contracts",
-      "base_ref": "6556fbed2995d793dc9a70f0e1663eb7e4852e24",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "state.geometry_program",
-        "capabilities.geometry_proposal",
-        "adapters.cad_program",
-        "adapters.cad_patch",
-        "adapters.cad_execution",
-        "construction.script",
-        "runtime.project_runner",
-        "studio.artifacts",
-        "studio.candidate",
-        "tools.verify_state_record"
-      ],
-      "write_scope": [
-        "packages/archflow/src/archflow/state/geometry_program.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "packages/monkeyarch/src/monkeyarch/construction/shapes.py",
-        "packages/monkeyarch/src/monkeyarch/construction/lowering.py",
-        "packages/archflow/src/archflow/adapters/cad_program.py",
-        "packages/archflow/src/archflow/adapters/cad_patch.py",
-        "packages/archflow/src/archflow/adapters/cad_execution.py",
-        "packages/archflow/src/archflow/adapters/cad_backend.py",
-        "packages/archflow/src/archflow/adapters/occt_backend.py",
-        "packages/archflow/src/archflow/adapters/blender_cad.py",
-        "services/project-runtime/src/project_runtime/application/drawing_plans.py",
-        "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/application/candidate.py",
-        "tools/project/verify_state_record.py",
-        "docs/architecture/repository-layout.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
