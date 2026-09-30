@@ -190,7 +190,7 @@ class OwnerLoadingTests(unittest.TestCase):
     def test_a_workflow_owner_declares_itself_when_it_is_loaded(self) -> None:
         """The boundary is where the declaration is loaded, not whether it exists."""
 
-        import monkeydiagram.drawing_elevation as drawing
+        import monkeydiagram.drawing_runs as drawing
 
         self.assertEqual(
             drawing.VERSION_REF_POINTERS,

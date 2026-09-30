@@ -8,7 +8,7 @@ import unittest
 from io import BytesIO
 from xml.etree import ElementTree
 
-from monkeydiagram.drawing_svg import (
+from monkeydiagram.rendering.svg import (
     CleanupReport,
     DrawingSvgError,
     clean_drawing,

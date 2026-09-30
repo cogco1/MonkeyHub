@@ -8,7 +8,7 @@ import unittest
 from monkeycad import occt_backend
 from monkeycad.cad_execution import OcctDrawingPolyline, project_occt_lines
 from monkeydiagram.documentation.styles import compose_review_sheet, drawing_style, list_drawing_styles
-from monkeydiagram.drawing_output import render_dxf, render_pdf
+from monkeydiagram.rendering.paper import render_dxf, render_pdf
 
 
 def fonts():
@@ -111,7 +111,7 @@ MM = 25.4 / 72
 
 
 def _mark(points, *, polygon=False, stroke_mm=0.25, dash_mm=(), grey=0, group="visible"):
-    from monkeydiagram.drawing_svg import DrawingMark
+    from monkeydiagram.rendering.svg import DrawingMark
     return DrawingMark(polygon, group, "object", tuple(points), 0.0 if polygon else stroke_mm, tuple(dash_mm), grey)
 
 
@@ -198,7 +198,7 @@ class ViewSheetTests(unittest.TestCase):
         import ezdxf
         from io import StringIO
         from xml.etree import ElementTree
-        from monkeydiagram.drawing_output import render_svg
+        from monkeydiagram.rendering.paper import render_svg
         canvas = self.compose()
         svg = ElementTree.fromstring(render_svg(canvas))
         self.assertEqual((svg.get("width"), svg.get("height")), ("420mm", "297mm"))

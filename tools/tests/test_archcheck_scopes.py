@@ -141,12 +141,12 @@ class WorkflowBoundaryTests(unittest.TestCase):
     def test_core_and_peer_workflow_reverse_imports_are_refused(self) -> None:
         for source, target in (
             ("packages/archflow/src/archflow/state/example.py", "monkeyarch.capabilities.element_producers"),
-            ("packages/monkeycad/src/monkeycad/example.py", "monkeydiagram.drawing_svg"),
+            ("packages/monkeycad/src/monkeycad/example.py", "monkeydiagram.rendering.svg"),
             ("packages/monkeycad/src/monkeycad/example.py", "monkeyarch.runtime.project_runner"),
             ("packages/monkeycad/src/monkeycad/example.py", "project_runtime.binding"),
             ("packages/archflow/src/archflow/project/example.py", "monkeycad.cad_backend"),
             ("packages/monkeyarch/src/monkeyarch/construction/example.py", "monkeycad.occt_backend"),
-            ("packages/monkeyarch/src/monkeyarch/example.py", "monkeydiagram.drawing_svg"),
+            ("packages/monkeyarch/src/monkeyarch/example.py", "monkeydiagram.rendering.svg"),
             ("packages/monkeydiagram/src/monkeydiagram/example.py", "monkeyarch.compilers.geometry"),
         ):
             with self.subTest(source=source, target=target):
@@ -172,7 +172,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
                                                    _index_tree(ast.parse(f"import {target}")), self.policy))
                     self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
         findings = tuple(check_imports("packages/monkeydiagram/tests/test_example.py", _index_tree(ast.parse(
-            "from monkeydiagram.drawing_svg import drawing_svg\nfrom monkeycad import occt_backend"
+            "from monkeydiagram.rendering.svg import drawing_svg\nfrom monkeycad import occt_backend"
         )), self.policy))
         self.assertEqual((), findings)
 

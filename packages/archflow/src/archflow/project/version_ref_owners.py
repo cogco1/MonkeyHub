@@ -52,7 +52,7 @@ OWNER_MODULES = (
 # entry point above both layers loads them; the names live here so there is
 # still one list of owners rather than one per caller.
 WORKFLOW_OWNER_MODULES = (
-    "monkeydiagram.drawing_elevation",
+    "monkeydiagram.drawing_runs",
 )
 
 
