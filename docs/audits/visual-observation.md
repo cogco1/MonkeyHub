@@ -340,5 +340,5 @@ An exec round is one proposal → candidate → readback cycle. Wall time is the
   - the receipt phase;
   - the Monitor span nests its model request and carries no prompt text.
 - Affected suites: `test_monitoring.py`, `test_study_model.py`, `test_model_usage.py`, `packages/monkeymonitor/tests/test_trace.py` and `tests/integration/test_production_policy.py`.
-- `python tools/archcheck.py` and `python tools/archcheck.py --changed origin/main`.
-- The benchmark tool: `python tools/benchmark_visual_observation.py --help`. Its functions drove the live runs.
+- `python tools/governance/archcheck.py` and `python tools/governance/archcheck.py --changed origin/main`.
+- The benchmark tool: `python tools/benchmarks/benchmark_visual_observation.py --help`. Its functions drove the live runs.

@@ -3,7 +3,7 @@ Internal development only. MonkeyHub is the sole production launcher.
 
 Rehearse one project archive on this machine, end to end: export the given
 project, restore it under -RestoreParent, start one project runtime on the
-restored copy, ask tools/rehearse_project_archive.py to compare the restored
+restored copy, ask tools/project/rehearse_project_archive.py to compare the restored
 identities and continue one bounded candidate from the restored base, then stop
 the runtime again. The summary block on stdout is the driver's, printed in the
 order GH-56 asks for, and this script adds nothing to it.
@@ -30,7 +30,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$driver = Join-Path $repoRoot 'tools\rehearse_project_archive.py'
+$driver = Join-Path $repoRoot 'tools\project\rehearse_project_archive.py'
 $runtimeScript = Join-Path $repoRoot 'scripts\dev\run-project-runtime.ps1'
 # Every path the caller named is made absolute against the location this
 # shell is standing in, before anything is created or handed on. .NET and the

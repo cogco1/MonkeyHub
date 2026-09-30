@@ -77,7 +77,7 @@ from archflow.state.stage_workflow import (
     StageRunEnvelope,
 )
 from archflow.project.version_ref_owners import load_workflow_owners
-from tools.create_project import _scan_legacy_version_references, main
+from tools.project.create_project import _scan_legacy_version_references, main
 
 # This module builds a drawing receipt, whose owner is a workflow module:
 # load that tier the way the command line does.
@@ -1919,7 +1919,7 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         """
 
         probe = (
-            "import tools.create_project as cli;"
+            "import tools.project.create_project as cli;"
             "cli.load_workflow_owners();"
             "from archflow.project.version_refs import declared_pointers;"
             "print(declared_pointers('DrawingProjectionReceipt@1'))"

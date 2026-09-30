@@ -145,7 +145,7 @@ before this correction and matches under both `true` and `false` afterward.
 ```powershell
 python -m unittest labs.checkpoint_critique.test_fixture labs.checkpoint_critique.test_provider labs.checkpoint_critique.test_harness
 python -m labs.checkpoint_critique.benchmark --project probes/checkpoint-critique --batch live-v1 --replay
-python tools/archcheck.py
+python tools/governance/archcheck.py
 ```
 
 Earlier deterministic development output is retained, not substituted into the

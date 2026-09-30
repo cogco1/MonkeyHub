@@ -7,13 +7,13 @@ created: 2026-09-26
 **Issue:** [#303](https://github.com/cogco1/MonkeyHub/issues/303), lane `GH-303/drawing-benchmark` (slice 303-S3).
 **Base:** `b55d1484` (batch H2 and the batch I claim).
 **Scope:** measures the Drawing consumer of the visual observation channel in the owner's order: exact drawing checks, then the representation recipe, then one visual review, then a typed representation repair, then at most one re-check. The change is a benchmark mode of an existing tool and this document. No product code changed; the module registry now declares the drawing SVG owner the tool imports.
-**Method:** `tools/benchmark_visual_observation.py --drawing` against one project runtime. Smoke run only: a synthetic fixture project, three cut plans, four looks. Images, raw results, Monitor rows and logs stay outside the repository ("local evidence").
+**Method:** `tools/benchmarks/benchmark_visual_observation.py --drawing` against one project runtime. Smoke run only: a synthetic fixture project, three cut plans, four looks. Images, raw results, Monitor rows and logs stay outside the repository ("local evidence").
 
 **Path abbreviations**
 
 | Short | Path |
 | --- | --- |
-| `TOOL` | `tools/benchmark_visual_observation.py` |
+| `TOOL` | `tools/benchmarks/benchmark_visual_observation.py` |
 | `API` | `services/project-runtime/src/project_runtime` |
 
 ## 0. Summary
@@ -314,7 +314,7 @@ The full run is one tool invocation over a spec of real cut plans. It makes at m
    ```bat
    cd /d D:\MONKEYHUB_DEV\temp\drawing-benchmark\full
    set PYTHONPATH=<repo>;<repo>\services\project-runtime\src
-   start /b /low /wait python <repo>\tools\benchmark_visual_observation.py --drawing --runtime http://127.0.0.1:8765 --spec drawings.json --tag full1 > result.json 2> progress.log
+   start /b /low /wait python <repo>\tools\benchmarks\benchmark_visual_observation.py --drawing --runtime http://127.0.0.1:8765 --spec drawings.json --tag full1 > result.json 2> progress.log
    ```
 
 5. **Stop the runtime** (Ctrl+C in its console). Read `result.json`: its `summary` has one row per plan and arm. Judge the perceptual criteria on the B and D pages: open the benchmark project, or export the pages with `POST /api/board/export` (one page, PNG, `maxEdge` 1600, as the look saw it).
@@ -328,5 +328,5 @@ The full run is one tool invocation over a spec of real cut plans. It makes at m
   - the metrics with and without the second look;
   - the four arms against a fake runtime: request order and bodies, the allowance carried between looks, no repair or second look without an actionable finding, no look at an unbound page, and a refused look that ends the loop;
   - argument handling for both modes, a bad spec refused before any request, and a runtime that never answers.
-- `python tools/archcheck.py` and `python tools/archcheck.py --changed origin/main`.
+- `python tools/governance/archcheck.py` and `python tools/governance/archcheck.py --changed origin/main`.
 - The in-process dry run and the smoke run above.

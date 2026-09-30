@@ -14,7 +14,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-from tools import source_roots
+from tools.dev import source_roots
 
 # ``python -m labs...`` puts only the checkout on the path; the lab imports from its other source roots too.
 source_roots.put_first(Path(__file__).resolve().parents[2])

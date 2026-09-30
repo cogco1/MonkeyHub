@@ -28,8 +28,8 @@ MonkeyHub 的第一方代码以 **AGPL-3.0-only** 发布，同时保留未来提
 
 提交前也请确认没有把雇主/学校的保密材料、私有项目数据、API key、个人数据、受限模型/数据集或未经授权的第三方代码带入仓库。第三方内容必须明确标注来源和许可。
 
-1. **先取基线，再查 Issue 与 owner。** `git fetch origin main` 后记录约定的提交（如 `git rev-parse origin/main`），先读 GitHub Issue，再运行 `python tools/devctl.py work` 和 `module <目标>`。用返回的精确 module id 查契约、真实调用方及相关测试，确认当前路径重叠后再改代码。
-2. **一个 Issue、短分支和独立 worktree。** 新工作先开/选 GitHub Issue；需要源码并发协调时才进入 `work_registry`。新 worktree 使用 `python tools/workspace.py create --branch codex/<issue号>-<简短名称> --base <约定提交>`；继续任务复用原检出，不共用脏 worktree，不吸收别人的 WIP。
+1. **先取基线，再查 Issue 与 owner。** `git fetch origin main` 后记录约定的提交（如 `git rev-parse origin/main`），先读 GitHub Issue，再运行 `python tools/governance/devctl.py work` 和 `module <目标>`。用返回的精确 module id 查契约、真实调用方及相关测试，确认当前路径重叠后再改代码。
+2. **一个 Issue、短分支和独立 worktree。** 新工作先开/选 GitHub Issue；需要源码并发协调时才进入 `work_registry`。新 worktree 使用 `python tools/dev/workspace.py create --branch codex/<issue号>-<简短名称> --base <约定提交>`；继续任务复用原检出，不共用脏 worktree，不吸收别人的 WIP。
 3. **按任务的窄路径修改。** 开工前写明本次 `write_scope`；policy 的 `shared_write_scope` 仍可共享，不是运行权限。共享测试、生成视图及治理文件按 policy 处理，不自动视为生产路径冲突。提交标题写 `GH-<n>` 或 `GH-<n>/<lane>`；不写 claim 的提交只能改 policy 的 `shared_write_scope` 与 `unclaimed_write_scope`。
 4. **给独立功能合适的位置。** 先查现有公开函数和调用方；新的分析或出图算法可以有独立目录或外部包，通过函数、CLI、API 或 adapter 接入。不要强迫每个功能改 core 或塞进已有大文件；不要复制已有状态、持久化或发布权威。实验与接入方式见 [`labs/README.md`](labs/README.md) 和指南第 7 节。
 5. **按数据用途保存。** 活跃项目使用显式外部项目根，持久数据经 `archflow.project` 的现有接口保存；只有明确晋升的输入和证据进入 `probes/`。用户设置、临时文件和 adapter workspace 沿各自已有边界。确实新增持久记录或受检查的写入点时，更新现有 kind 表或 policy，不为普通内部函数新增登记。
@@ -73,8 +73,8 @@ MonkeyHub 的第一方代码以 **AGPL-3.0-only** 发布，同时保留未来提
 ```
 
 ```powershell
-python tools/devctl.py work
-python tools/devctl.py work --json
+python tools/governance/devctl.py work
+python tools/governance/devctl.py work --json
 ```
 
 查看一项时写精确 id：`work GH-<issue>`、`work GH-<issue>/<lane>`。这些命令只读已登记的当前 claim、基线、责任与重叠，不联网确认合并，不创建 worktree 或改 registry。

@@ -168,7 +168,7 @@
       "reason": "Creates one numbered attempt directory below the run's existing export workspace for an explicitly requested work-model export; nothing canonical is written, nothing is deleted, and a previous attempt is left where it can be read."
     },
     {
-      "path": "tools/devctl.py",
+      "path": "tools/governance/devctl.py",
       "function": "main",
       "operations": [
         "write_text"
@@ -178,7 +178,7 @@
       "reason": "Renders docs/architecture/system-map.md and semantic-registry.md from the module registry and the semantic tables; the files are committed."
     },
     {
-      "path": "tools/run_project.py",
+      "path": "tools/project/run_project.py",
       "function": "main",
       "operations": [
         "mkdir"
@@ -188,7 +188,7 @@
       "reason": "Creates the run's speculative workspace directory under the layout's run root before handing it to the runner."
     },
     {
-      "path": "tools/rehearse_project_archive.py",
+      "path": "tools/project/rehearse_project_archive.py",
       "function": "_write_evidence",
       "operations": [
         "write_text"
@@ -198,7 +198,7 @@
       "reason": "Hands the content-free source-side identities of one archive rehearsal to its later verify phase, beside the restored project and never inside a project the repository owns."
     },
     {
-      "path": "tools/verify_state_record.py",
+      "path": "tools/project/verify_state_record.py",
       "function": "main",
       "operations": [
         "mkdir"
@@ -208,7 +208,7 @@
       "reason": "Creates the output directory the verification writes its receipts into."
     },
     {
-      "path": "tools/projection_check.py",
+      "path": "tools/benchmarks/projection_check.py",
       "function": "_write",
       "operations": [
         "mkdir",
@@ -219,7 +219,152 @@
       "reason": "Writes the response bodies and side results of one base/candidate comparison under the caller's scratch --work directory, and the JSON result and Markdown summary a person names with --out and --summary. The project it is given is only copied; every read and the one review write go to that scratch copy."
     },
     {
-      "path": "tools/export_drawing_recipe.py",
+      "path": "tools/benchmarks/run_turn_benchmark.py",
+      "function": "write_json",
+      "operations": [
+        "write_text"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_turn_benchmark",
+      "reason": "The one JSON writer the benchmark drivers share: the requests, chats, traces, readbacks and reports of one explicitly requested run, under the absolute --output directory a person names outside the repository and every user project."
+    },
+    {
+      "path": "tools/benchmarks/run_turn_benchmark.py",
+      "function": "paired_benchmark",
+      "operations": [
+        "mkdir",
+        "open_write"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_turn_benchmark",
+      "reason": "Creates a paired measurement's --output directory and each arm's run.log beside that arm's restored, disposable copy of the fixture project; a pair that already ran is refused, never reused."
+    },
+    {
+      "path": "tools/benchmarks/run_turn_benchmark.py",
+      "function": "main",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_turn_benchmark",
+      "reason": "Creates one measured turn's --output directory and writes its connection.json and trace.json there; the project and services it drives are disposable, under that directory or a temporary one."
+    },
+    {
+      "path": "tools/benchmarks/run_design_loop.py",
+      "function": "spatial_readback",
+      "operations": [
+        "write_bytes"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_design_loop",
+      "reason": "Writes the top and front views of a read-back candidate beside that turn's evidence under --output."
+    },
+    {
+      "path": "tools/benchmarks/run_design_loop.py",
+      "function": "run_turn",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_design_loop",
+      "reason": "Creates one turn's evidence directory under --output and refuses one that already exists."
+    },
+    {
+      "path": "tools/benchmarks/run_design_loop.py",
+      "function": "main",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_design_loop",
+      "reason": "Creates the new absolute --output directory a person names; an existing one is refused, so a failed run is never overwritten."
+    },
+    {
+      "path": "tools/benchmarks/run_feedback_loop.py",
+      "function": "turn",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_feedback_loop",
+      "reason": "Creates one turn's evidence directory under --output, which only --resume reopens."
+    },
+    {
+      "path": "tools/benchmarks/run_feedback_loop.py",
+      "function": "observed_sheet",
+      "operations": [
+        "write_bytes",
+        "write_text"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_feedback_loop",
+      "reason": "Writes the sheet the provider observed, as PDF, image and extracted text, beside that turn's evidence under --output."
+    },
+    {
+      "path": "tools/benchmarks/run_feedback_loop.py",
+      "function": "main",
+      "operations": [
+        "mkdir",
+        "write_bytes"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_feedback_loop",
+      "reason": "Creates the absolute --output directory a person names and writes the build's source diff into it."
+    },
+    {
+      "path": "tools/benchmarks/run_native_baseline.py",
+      "function": "main",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_native_baseline",
+      "reason": "Creates the --output directory a person names outside the repository and the working directory the native modeller's agent exports its STEP file into, and writes the CLI's event stream, its stderr and the report there."
+    },
+    {
+      "path": "tools/benchmarks/run_stage_handoff_benchmark.py",
+      "function": "impact_probe",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_stage_handoff_benchmark",
+      "reason": "Creates the upstream-impact probe's directory under --output; only the disposable clone it restores there is changed."
+    },
+    {
+      "path": "tools/benchmarks/run_stage_handoff_benchmark.py",
+      "function": "prepare",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_stage_handoff_benchmark",
+      "reason": "Creates the prepared comparison's --output directory, which main() requires under the configured temp root."
+    },
+    {
+      "path": "tools/benchmarks/run_stage_handoff_benchmark.py",
+      "function": "provider_turn",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_stage_handoff_benchmark",
+      "reason": "Creates one arm's turn directory under --output and keeps every attempted turn."
+    },
+    {
+      "path": "tools/benchmarks/run_stage_handoff_benchmark.py",
+      "function": "main",
+      "operations": [
+        "open_write"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.run_stage_handoff_benchmark",
+      "reason": "Opens each arm's run.log under --output to retain its subprocess's output."
+    },
+    {
+      "path": "tools/project/export_drawing_recipe.py",
       "function": "_write_export",
       "operations": [
         "open_write"
@@ -236,7 +381,7 @@
       ],
       "kind": "cli_workspace",
       "owner": "studio.candidate",
-      "reason": "Creates the per-seat export workspace under the layout's run root, the same way tools/run_project.py does. It is one function so that a proposal's candidate and a selected massing option's run under the same harness; execute_candidate and execute_option_candidate both reach the workspace through it."
+      "reason": "Creates the per-seat export workspace under the layout's run root, the same way tools/project/run_project.py does. It is one function so that a proposal's candidate and a selected massing option's run under the same harness; execute_candidate and execute_option_candidate both reach the workspace through it."
     },
     {
       "path": "services/project-runtime/src/project_runtime/application/intent_agent.py",
@@ -395,7 +540,7 @@
       "reason": "Records the leftover Claude skills a library chat's init event listed (#463), atomically, only in the nonproject Hub runtime cache/skill-plugins/leftover-skills.json; never in a project."
     },
     {
-      "path": "tools/workspace.py",
+      "path": "tools/dev/workspace.py",
       "function": "create_worktree",
       "operations": [
         "mkdir"
@@ -405,7 +550,7 @@
       "reason": "Prepares the configured task worktree parent after checking Git branch registration and destination conflicts; Git creates the checkout. No project data or existing worktree is moved, reset or deleted."
     },
     {
-      "path": "tools/package_monkeyapps.py",
+      "path": "tools/release/package_monkeyapps.py",
       "function": "fetch_runtime",
       "operations": [
         "mkdir",
@@ -416,7 +561,7 @@
       "reason": "Downloads and verifies the fixed embedded runtime only in the caller-selected external cache; an incomplete download is atomically replaced after its checksum matches."
     },
     {
-      "path": "tools/package_monkeyapps.py",
+      "path": "tools/release/package_monkeyapps.py",
       "function": "prepare_runtime",
       "operations": [
         "mkdir",
@@ -427,7 +572,7 @@
       "reason": "Prepares the embedded interpreter, its import paths and dependency lock only inside the external candidate bundle and cache selected by package()."
     },
     {
-      "path": "tools/package_monkeyapps.py",
+      "path": "tools/release/package_monkeyapps.py",
       "function": "collect_application",
       "operations": [
         "mkdir",
@@ -439,7 +584,7 @@
       "reason": "Assembles the committed application snapshot, locked ACP adapter, selected Node runtime and its upstream license only in the external candidate bundle supplied by package()."
     },
     {
-      "path": "tools/package_monkeyapps.py",
+      "path": "tools/release/package_monkeyapps.py",
       "function": "package",
       "operations": [
         "mkdir",
@@ -450,7 +595,7 @@
       "reason": "Creates explicit external staging/output paths, build metadata and the finalized archive checksum after external() rejects paths inside the selected source checkout."
     },
     {
-      "path": "tools/package_monkeyapps.py",
+      "path": "tools/release/package_monkeyapps.py",
       "function": "collect_web_notices",
       "operations": [
         "open_write"
@@ -460,7 +605,7 @@
       "reason": "Retains the locked ACP dependency release notices only under the external candidate bundle third-party directory."
     },
     {
-      "path": "tools/package_monkeyapps.py",
+      "path": "tools/release/package_monkeyapps.py",
       "function": "_unpacked_release",
       "operations": [
         "mkdir"
@@ -470,7 +615,7 @@
       "reason": "Extracts one verified published candidate archive only into its own new subdirectory of the external work directory update_index() created; it is removed after its patch is written."
     },
     {
-      "path": "tools/package_monkeyapps.py",
+      "path": "tools/release/package_monkeyapps.py",
       "function": "update_index",
       "operations": [
         "mkdir",

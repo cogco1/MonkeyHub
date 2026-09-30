@@ -47,7 +47,7 @@ against it.
 
 The output is data: a ``ComponentCatalog@1`` payload and, optionally, the
 typed StateRecord operator for the drafted axes, rows and derived relations.
-Writing them anywhere is the caller's (tools/reindex_project.py through the
+Writing them anywhere is the caller's (tools/project/reindex_project.py through the
 repository); this module touches no file.
 """
 

@@ -8,7 +8,7 @@ revise and hand over, not more editable objects or more infrastructure layers.
 One production spine. Who owns what is in [the system map](system-map.md) (generated from
 `governance/module_registry.json`); why it is one spine is in
 [decision 001](../decisions/001-one-spine.md); the decisions a later session would be tempted to
-reverse are in [decisions/](../decisions/README.md). Who is editing which paths now is `python tools/devctl.py work`. What the
+reverse are in [decisions/](../decisions/README.md). Who is editing which paths now is `python tools/governance/devctl.py work`. What the
 Studio serves on the wire, and what a second client or a remote server may rely on, is
 [project-runtime-api.md](../protocols/project-runtime-api.md) — the open ArchFlow protocol, version 2.
 
@@ -108,8 +108,8 @@ branch by exact Stage compare-and-swap. Formal issue alone advances canonical
 `HEAD`. [The Stage plan](../design/design-history.md) records this convergence
 and its remaining product validation.
 
-Entry points: `tools/run_project.py` (a run of one project), `tools/verify_state_record.py`
-(replay equivalence), `tools/freeze_project_stage_workflow.py`, `tools/issue_project.py`, and MonkeyHub.
+Entry points: `tools/project/run_project.py` (a run of one project), `tools/project/verify_state_record.py`
+(replay equivalence), `tools/project/freeze_project_stage_workflow.py`, `tools/project/issue_project.py`, and MonkeyHub.
 Its single frontend at `apps/monkeyhub/web/` renders Arch and Board directly; Diagram opens a
 Board page. The API-only Project Runtime is `services/project-runtime/` (package
 `project_runtime`), with one process and one client binding per open project.

@@ -20,7 +20,7 @@ from .support import PROJECT_ID, RECORD_PAYLOAD, SEATS_PAYLOAD
 
 class ProjectCreationTests(unittest.TestCase):
     def create_project(self, *args: str) -> None:
-        command = Path(__file__).resolve().parents[3] / "tools/create_project.py"
+        command = Path(__file__).resolve().parents[3] / "tools/project/create_project.py"
         result = subprocess.run([sys.executable, str(command), *args], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 

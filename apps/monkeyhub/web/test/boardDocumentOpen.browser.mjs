@@ -38,7 +38,7 @@ try {
   const fixture = spawnSync(python, ["-c", `
 import base64, json, sys
 from pathlib import Path
-from tools import source_roots
+from tools.dev import source_roots
 source_roots.put_first(Path(sys.argv[2]))
 import archflow
 from tests.support import make_empty_project

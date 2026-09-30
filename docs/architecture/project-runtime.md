@@ -266,7 +266,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-project-runt
 or directly `python -m project_runtime.main --project-dir <dir> --host 127.0.0.1 --port 8000`
 with the checkout and `services/project-runtime/src` on `PYTHONPATH`. Configuration is the
 `ARCHFLOW_STUDIO_*` environment of that shell; there is no launch window, tray, configuration
-file or default project (#126). Fixtures: `tools/create_project.py --project <dir>` for an
+file or default project (#126). Fixtures: `tools/project/create_project.py --project <dir>` for an
 empty project; `services/project-runtime/tests/support.py` (`make_empty_project`) inside tests.
 
 "Independently runnable" is not "independent product entry": a runtime started this way is a

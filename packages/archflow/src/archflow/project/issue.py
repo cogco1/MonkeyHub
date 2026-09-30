@@ -70,7 +70,7 @@ identity is a third place for it to disagree.
 ``prepare_transition`` compares the decision receipt's key set against an exact
 set of six, so a ``PromotionDecision@1`` carrying either would be refused as
 schema drift, and that schema is bound by retained digests (ADR-004). They are
-checked and printed by whoever ran the issue - ``tools/issue_project.py`` puts
+checked and printed by whoever ran the issue - ``tools/project/issue_project.py`` puts
 both on the console - and they are on no record. Retaining them needs a
 ``PromotionDecision@2`` and a change to the repository's promotion gate, which
 is a separate decision. Until then, do not read a project's history for who

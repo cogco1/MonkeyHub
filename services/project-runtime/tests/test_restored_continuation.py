@@ -32,7 +32,7 @@ from .test_cad_export import NEEDS_OCCT, no_process, no_rhino
 JOB_DEADLINE = 180.0
 # The Studio API may not import ``tools``, and #56's rehearsal contract names
 # the CLI anyway, so export and restore go through the landed command itself.
-CREATE_PROJECT = Path(__file__).resolve().parents[3] / "tools/create_project.py"
+CREATE_PROJECT = Path(__file__).resolve().parents[3] / "tools/project/create_project.py"
 
 
 def create_project_cli(*args: str) -> str:

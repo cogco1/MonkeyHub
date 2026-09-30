@@ -40,7 +40,7 @@ from uuid import UUID, uuid4
 
 # A CLI starts this same file as its stdio MCP connection, which does not
 # inherit the launcher's sys.path. A checkout lists where import names begin in
-# its architecture policy and its roots go first (tools/source_roots.py); a
+# its architecture policy and its roots go first (tools/dev/source_roots.py); a
 # packaged interpreter ships no policy, and its python313._pth lists the roots.
 if __package__ in {None, ""}:
     _source = Path(__file__).resolve().parents[4]
@@ -212,7 +212,7 @@ def _workspace(runtime_root: Path, settings) -> Path:
 def _new_project(workspace: Path, name: str) -> Path:
     """Create one empty P036 project in that workspace, as the tool entry does.
 
-    The same initialization `tools/create_project.py` performs: a project at
+    The same initialization `tools/project/create_project.py` performs: a project at
     version 0 with an empty authored record, no run and no design content. A
     name that is not a project id, an escape out of the workspace, or a folder
     that already holds anything is refused with its own reason.

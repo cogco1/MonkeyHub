@@ -68,9 +68,9 @@ from archflow.state.stage_workflow import (
 )
 from archflow.project.inputs import load_authored_record
 from archflow.project.refs import BranchRef, record_ref_from_uri
-from tools.freeze_project_stage_workflow import freeze_workflow
-from tools.open_stage_run import StageRunError, open_stage_run
-from tools.run_project import _stage_guard as tool_stage_guard
+from tools.project.freeze_project_stage_workflow import freeze_workflow
+from tools.project.open_stage_run import StageRunError, open_stage_run
+from tools.project.run_project import _stage_guard as tool_stage_guard
 
 EVIDENCE = "evidence:demo-survey"
 BASIS = (EVIDENCE,)
@@ -953,7 +953,7 @@ def _ladder_project(root: Path, phases: tuple[DesignPhase, ...], workflow_id: st
 
 
 def _run_opened_stage(root: Path, workflow_ref: str, opened: dict) -> dict:
-    """Execute a stage ``tools/open_stage_run`` opened, in the phase its retained envelope states."""
+    """Execute a stage ``tools/project/open_stage_run`` opened, in the phase its retained envelope states."""
 
     repository = FilesystemProjectRepository.open(root)
     run = repository.load_run(str(opened["run_id"]))
@@ -966,8 +966,8 @@ class StageLadderRunTests(unittest.TestCase):
     """Stage 0 closes; stage 1 opens against that close and closes too.
 
     The whole ladder of ADR-007 with nothing hand-built: the workflow is
-    frozen by ``tools/freeze_project_stage_workflow.py``, each stage is opened
-    by ``tools/open_stage_run.py`` from the project's own work-in-progress
+    frozen by ``tools/project/freeze_project_stage_workflow.py``, each stage is opened
+    by ``tools/project/open_stage_run.py`` from the project's own work-in-progress
     record, and each run is executed by the runner, which writes the closure
     and derives the exit binding the next stage is allowed to cite.
     """
@@ -1038,7 +1038,7 @@ class StageLadderRunTests(unittest.TestCase):
 
 
 class StagePhaseLadderTests(unittest.TestCase):
-    """``tools/open_stage_run`` binds each envelope to the record projected in that stage's own phase (P112).
+    """``tools/project/open_stage_run`` binds each envelope to the record projected in that stage's own phase (P112).
 
     A schematic stage followed by a development stage: the opener used to
     project every stage in design_development, so a schematic envelope bound a
@@ -2342,7 +2342,7 @@ class CadBackendSelectionTests(unittest.TestCase):
 
 
 class RunProjectCliTests(unittest.TestCase):
-    """``tools/run_project.py --export`` goes to OCCT unless ``--cad-backend rhino`` is named."""
+    """``tools/project/run_project.py --export`` goes to OCCT unless ``--cad-backend rhino`` is named."""
 
     def _opened(self) -> tuple[Path, str, dict]:
         temporary = tempfile.TemporaryDirectory()
@@ -2369,7 +2369,7 @@ class RunProjectCliTests(unittest.TestCase):
     @NEEDS_OCCT
     def test_export_defaults_to_occt_and_leaves_step_and_preview_in_the_run_workspaces(self) -> None:
         from unittest.mock import patch
-        from tools.run_project import main
+        from tools.project.run_project import main
 
         root, workflow_ref, opened = self._opened()
         patchers = _no_rhino()
@@ -2388,7 +2388,7 @@ class RunProjectCliTests(unittest.TestCase):
 
     def test_the_rhino_backend_is_an_explicit_choice(self) -> None:
         from unittest.mock import patch
-        import tools.run_project as cli
+        import tools.project.run_project as cli
 
         root, workflow_ref, opened = self._opened()
         seen = []

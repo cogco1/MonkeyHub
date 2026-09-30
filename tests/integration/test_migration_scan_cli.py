@@ -10,7 +10,7 @@ from archflow.project.record_kinds import STATE_RECORD
 from archflow.project.refs import record_file_name
 from archflow.project.repository import _json_bytes, _sha256, _write_immutable
 from tests.integration import test_project_format_migration as format_tests
-from tools.create_project import (
+from tools.project.create_project import (
     RetainedVersionReference,
     UnreadableVersionReference,
     _collect_legacy_version_references,

@@ -1,4 +1,4 @@
-"""tools/export_drawing_recipe.py: one project's confirmed drawing correction starts another's new drawings (#252).
+"""tools/project/export_drawing_recipe.py: one project's confirmed drawing correction starts another's new drawings (#252).
 
 Both projects are disposable P036 fixtures under their own project ids,
 authored with the Studio test record. No provider or user CAD application is
@@ -31,7 +31,7 @@ from project_runtime.application.binding import bound_project
 from project_runtime.application.decisions import recipe_export
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from tools.export_drawing_recipe import ATTRIBUTION, main
+from tools.project.export_drawing_recipe import ATTRIBUTION, main
 
 # Load API fixtures by their full package so they do not shadow kernel tests.
 support = import_module("services.project-runtime.tests.support")
@@ -166,7 +166,7 @@ class ExportDrawingRecipeToolTests(unittest.TestCase):
 
         # A project whose lock a runtime holds past the repository's wait is
         # refused as such, with nothing written.
-        with patch("tools.export_drawing_recipe.import_recipe",
+        with patch("tools.project.export_drawing_recipe.import_recipe",
                    side_effect=ProjectHeadLocked("another process holds the project head lock")):
             code, _, err = self.import_(None, "--confirm")
         self.assertEqual(code, 1)

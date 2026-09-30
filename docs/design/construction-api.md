@@ -223,7 +223,7 @@ rounds, wall time, first-result time and human corrections:
 2. **Hub, producer path** (origin/main).
 3. **Hub, construction path** (this branch).
 
-Harness: `tests/monkeymonitor/run_turn_benchmark.py` (paths 2 and 3), `tests/monkeymonitor/run_native_baseline.py` (path 1).
+Harness: `tools/benchmarks/run_turn_benchmark.py` (paths 2 and 3), `tools/benchmarks/run_native_baseline.py` (path 1).
 Results: §7, filled from the retained outputs.
 
 ## 5. Acceptance
@@ -274,7 +274,7 @@ block at plan (20, 0); a 10 × 8 × 3 m block on top of it, flush at x = 20 and 
 0.3 m roof slab overhanging that block by 0.5 m; four 1.2 × 1.5 m window recesses 0.3 m deep in the
 ground block's face, sill 0.9 m. Success is judged on the exported STEP whatever the objects are
 called: total visible volume 574.74 m³, the overall extent, and nine sample points in material or in
-the recesses (`tests/monkeymonitor/massing_check.py`). Codex CLI with the user's default model,
+the recesses (`tools/benchmarks/massing_check.py`). Codex CLI with the user's default model,
 2026-09-28. Metrics come from the Hub's turn trace (`run_turn_benchmark.py`) and from Codex's own
 event stream (`run_native_baseline.py`).
 

@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tools import source_roots
+from tools.dev import source_roots
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -54,7 +54,7 @@ class SourceRootsTests(unittest.TestCase):
     def test_a_process_started_elsewhere_imports_this_checkouts_packages(self) -> None:
         # Neither PYTHONPATH nor a package installed from another checkout decides.
         script = ("import sys; from pathlib import Path; checkout = Path(sys.argv[1]); "
-                  "sys.path.insert(0, str(checkout)); from tools import source_roots; "
+                  "sys.path.insert(0, str(checkout)); from tools.dev import source_roots; "
                   "source_roots.put_first(checkout); import archflow, monkeydiagram; "
                   "print(archflow.__file__); print(monkeydiagram.__file__)")
         environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}

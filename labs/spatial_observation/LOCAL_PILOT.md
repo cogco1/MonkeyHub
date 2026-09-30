@@ -40,7 +40,7 @@ Run with the repository CAD dependency environment:
 
 ```console
 python -m unittest labs.spatial_observation.test_observation
-python tools/archcheck.py
+python tools/governance/archcheck.py
 ```
 
 ## Research choice and criticism

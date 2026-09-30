@@ -38,7 +38,7 @@ from archflow.state.stage_workflow import (
     StageClosureStatus,
     StageExitBinding,
 )
-from tools.issue_project import main
+from tools.project.issue_project import main
 
 
 PROJECT_ID = "demo"

@@ -1370,7 +1370,7 @@ def benchmark_prompt(scenario: str) -> str:
     """
 
     root = Path(__file__).resolve().parents[3]
-    config = json.loads((root / "tests/monkeymonitor/benchmarks.json").read_text(encoding="utf-8"))
+    config = json.loads((root / "tools/benchmarks/benchmarks.json").read_text(encoding="utf-8"))
     return next(row["prompt"] for row in config["scenarios"] if row["id"] == scenario)
 
 

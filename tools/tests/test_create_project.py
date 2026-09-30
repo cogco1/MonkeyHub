@@ -15,7 +15,7 @@ from unittest.mock import patch
 from archflow.project.inputs import load_authored_record, load_program_sheet_file, load_seat_pack_file, write_program_sheet_file
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import Entity, StateRecord
-from tools.create_project import main
+from tools.project.create_project import main
 
 
 class CreateProjectTests(unittest.TestCase):
@@ -37,7 +37,7 @@ class CreateProjectTests(unittest.TestCase):
     def test_cli_creates_and_reopens_empty_external_project(self) -> None:
         self.root = Path(self.temp.name) / "工作 space" / "project-new"
         result = subprocess.run(
-            [sys.executable, "-X", "utf8", str(Path(__file__).resolve().parents[2] / "tools/create_project.py"),
+            [sys.executable, "-X", "utf8", str(Path(__file__).resolve().parents[2] / "tools/project/create_project.py"),
              "--project", str(self.root)],
             cwd=self.temp.name, capture_output=True, text=True, encoding="utf-8",
         )

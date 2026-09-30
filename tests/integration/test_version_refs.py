@@ -15,7 +15,7 @@ import subprocess
 import sys
 import unittest
 
-from tools import source_roots
+from tools.dev import source_roots
 
 # Both owner tiers, loaded the way an entry point loads them. Relying on a
 # sibling test having imported an owner first is the bug this module exists to

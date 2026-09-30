@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from tools import package_monkeyapps as builder
+from tools.release import package_monkeyapps as builder
 
 
 class PackageWorkspaceTests(unittest.TestCase):
@@ -155,8 +155,8 @@ class PackageAdapterTests(unittest.TestCase):
             "apps/monkeyhub/installer/INSTALL_MONKEYHUB.cmd",
             "apps/monkeyhub/run.py", "apps/monkeyhub/assets/monkeyarch.ico",
             "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "pyproject.toml",
-            "governance/module_registry.json", "tools/create_project.py", "tools/run_project.py",
-            "tools/source_roots.py", "SECURITY.md",
+            "governance/module_registry.json", "tools/project/create_project.py", "tools/project/run_project.py",
+            "tools/dev/source_roots.py", "tools/dev/__init__.py", "tools/project/__init__.py", "SECURITY.md",
             "packages/monkeyfab/src/monkeyfab/__main__.py", "packages/monkeyfab/pyproject.toml",
             "packages/monkeyfab/tests/test_cli.py",
             "packages/monkeycontrol/src/monkeycontrol/__init__.py",
@@ -260,8 +260,12 @@ class PackageAdapterTests(unittest.TestCase):
         self.assertIn("SECURITY.md", builder.SOURCE_PATHS)
         # The bundled tools reach their source roots through this; with no architecture
         # policy in the bundle it leaves the paths python313._pth lists alone.
-        self.assertEqual((self.bundle / "tools/source_roots.py").read_text(), "fixture")
-        self.assertIn("tools/source_roots.py", builder.SOURCE_PATHS)
+        self.assertEqual((self.bundle / "tools/dev/source_roots.py").read_text(), "fixture")
+        self.assertIn("tools/dev/source_roots.py", builder.SOURCE_PATHS)
+        # The tools keep their repository paths, where their tools.<group> imports resolve.
+        for relative in ("tools/dev/__init__.py", "tools/project/__init__.py",
+                         "tools/project/create_project.py", "tools/project/run_project.py"):
+            self.assertEqual((self.bundle / relative).read_text(), "fixture")
         self.assertNotIn("governance/architecture_policy.json", builder.SOURCE_PATHS)
         # Fab keeps the bundle path installed updaters require, wherever the repository keeps it.
         self.assertEqual((self.bundle / "apps/monkeyfab/src/monkeyfab/__main__.py").read_text(), "fixture")

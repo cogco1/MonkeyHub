@@ -713,7 +713,7 @@ def freeze_workflow(
     run_id: str = "workflow-001",
     workflow_id: str = "demo-stage-ladder",
 ) -> str:
-    """Freeze a one-stage project ladder, the way ``tools/freeze_project_stage_workflow`` does.
+    """Freeze a one-stage project ladder, the way ``tools/project/freeze_project_stage_workflow`` does.
 
     A run holding the workflow record and nothing else: no runner receipt, so
     the reference-run survey still finds no run that answers for the project,

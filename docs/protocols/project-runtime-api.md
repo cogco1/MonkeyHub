@@ -833,7 +833,7 @@ sha256}`. `graphics` holds only the values the recipe sets, `strength` is the ho
 `revisionSha256` is the exact revision exported, and `sha256` is the SHA-256 of the
 canonical JSON (sorted keys, no whitespace, ASCII escapes) of every other field: the
 export's identity, so one revision always exports to the same content. No page, path,
-run, project id, actor or wording travels. `tools/export_drawing_recipe.py export
+run, project id, actor or wording travels. `tools/project/export_drawing_recipe.py export
 --project <dir> --decision <id> --out <file>` writes one active recipe decision and
 never replaces a file; `import --project <dir> --file <file>` refuses a file with any
 other field, a value a cut-plan request would refuse or content that does not hash to

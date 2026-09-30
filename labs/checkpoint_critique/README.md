@@ -107,7 +107,7 @@ already authenticated Claude CLI; the harness does not configure credentials.
 
 ```powershell
 python -m unittest labs.checkpoint_critique.test_fixture labs.checkpoint_critique.test_provider labs.checkpoint_critique.test_harness
-python tools/archcheck.py
+python tools/governance/archcheck.py
 python -m labs.checkpoint_critique.benchmark --project probes/checkpoint-critique --batch YOUR-UNIQUE-CONTROL --repeats 1
 python -m labs.checkpoint_critique.benchmark --project probes/checkpoint-critique --batch YOUR-UNIQUE-LIVE --real --repeats 3 --parallel-blocks 3
 python -m labs.checkpoint_critique.benchmark --project probes/checkpoint-critique --batch live-v1 --replay

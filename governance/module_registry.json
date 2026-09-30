@@ -3,10 +3,10 @@
   "spine": {
     "spec": "docs/decisions/001-one-spine.md",
     "entry_points": [
-      "tools/run_project.py",
-      "tools/verify_state_record.py",
-      "tools/freeze_project_stage_workflow.py",
-      "tools/open_stage_run.py",
+      "tools/project/run_project.py",
+      "tools/project/verify_state_record.py",
+      "tools/project/freeze_project_stage_workflow.py",
+      "tools/project/open_stage_run.py",
       "services/project-runtime/src/project_runtime/main.py"
     ],
     "rule": "One owner per capability. EXTEND the owner; CREATE only with a written reason; a second implementation exists only behind an interface declared here."
@@ -542,7 +542,7 @@
         "packages/archflow/src/archflow/adapters/cad_execution.py",
         "packages/archflow/src/archflow/adapters/cad_patch.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "tools/verify_state_record.py",
+        "tools/project/verify_state_record.py",
         "tests/integration/test_cad_program.py",
         "tests/integration/test_cad_patch.py",
         "tests/integration/test_element_producers.py"
@@ -807,7 +807,7 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
-        "tools/run_project.py",
+        "tools/project/run_project.py",
         "services/project-runtime/src/project_runtime/adapters/seats.py",
         "tests/integration/test_discipline_seats.py",
         "tests/integration/test_project_runner.py"
@@ -841,7 +841,7 @@
         "running the rounds, exporting or writing seat records - runtime.project_runner",
         "the declaration contract and its gate - capabilities.declaration",
         "who is authorized to write canonically - archflow.contracts.authority (seats carry no_authority)",
-        "reading the project's authored seat pack from disk - studio.candidate's seats adapter and tools/run_project.py"
+        "reading the project's authored seat pack from disk - studio.candidate's seats adapter and tools/project/run_project.py"
       ],
       "inputs": [
         "SeatSpec",
@@ -895,7 +895,7 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "tools/run_project.py",
+        "tools/project/run_project.py",
         "services/project-runtime/src/project_runtime/adapters/seats.py",
         "tests/integration/test_discipline_seats.py",
         "tests/integration/test_project_runner.py"
@@ -1116,8 +1116,8 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "tools/run_project.py",
-        "tools/verify_state_record.py",
+        "tools/project/run_project.py",
+        "tools/project/verify_state_record.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
         "tests/integration/test_production_policy.py",
         "tests/integration/test_element_producers.py",
@@ -1549,8 +1549,8 @@
         "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "tools/freeze_project_stage_workflow.py",
-        "tools/verify_state_record.py"
+        "tools/project/freeze_project_stage_workflow.py",
+        "tools/project/verify_state_record.py"
       ],
       "invariants": [
         "every returned flag is exactly False",
@@ -1944,8 +1944,8 @@
         "state.program_sheet"
       ],
       "used_by": [
-        "tools/run_project.py",
-        "tools/verify_state_record.py",
+        "tools/project/run_project.py",
+        "tools/project/verify_state_record.py",
         "services/project-runtime/src/project_runtime/application/projection.py",
         "services/project-runtime/src/project_runtime/adapters/seats.py"
       ],
@@ -2010,7 +2010,7 @@
         "project.version_refs"
       ],
       "used_by": [
-        "tools/issue_project.py",
+        "tools/project/issue_project.py",
         "tools/tests/test_issue_project.py"
       ],
       "invariants": [
@@ -2495,8 +2495,8 @@
         "services/project-runtime/src/project_runtime/adapters/harness.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
         "services/project-runtime/src/project_runtime/application/binding.py",
-        "tools/freeze_project_stage_workflow.py",
-        "tools/verify_state_record.py"
+        "tools/project/freeze_project_stage_workflow.py",
+        "tools/project/verify_state_record.py"
       ],
       "invariants": [
         "a run-scoped area requires run_id and a project-scoped area forbids it",
@@ -2565,8 +2565,8 @@
         "services/project-runtime/src/project_runtime/application/candidate.py",
         "services/project-runtime/src/project_runtime/application/compare.py",
         "services/project-runtime/src/project_runtime/adapters/harness.py",
-        "tools/freeze_project_stage_workflow.py",
-        "tools/verify_state_record.py",
+        "tools/project/freeze_project_stage_workflow.py",
+        "tools/project/verify_state_record.py",
         "packages/archflow/tests/test_record_kinds.py",
         "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
@@ -2653,8 +2653,8 @@
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/state_record.py",
         "packages/archflow/tests/test_project_repository.py",
-        "tools/run_project.py",
-        "tools/verify_state_record.py"
+        "tools/project/run_project.py",
+        "tools/project/verify_state_record.py"
       ],
       "invariants": [
         "never touches the filesystem; PurePosixPath only",
@@ -2676,7 +2676,7 @@
       "purpose": "Load every shared-core module that declares where its records keep a project-version identity, so no reader depends on which modules a caller happened to import.",
       "owns": [
         "the list of shared-core owner modules, loaded by importing this module, and the separate list of workflow-owned ones (WORKFLOW_OWNER_MODULES) that load_workflow_owners() imports on request",
-        "the boundary between the two tiers: the shared core may not import a workflow package, so an entry point above both layers - tools/create_project.py - calls load_workflow_owners(), and a process that loads only the core tier refuses a project holding a workflow-owned identity by name instead of guessing at it",
+        "the boundary between the two tiers: the shared core may not import a workflow package, so an entry point above both layers - tools/project/create_project.py - calls load_workflow_owners(), and a process that loads only the core tier refuses a project holding a workflow-owned identity by name instead of guessing at it",
         "RunnerRunReceipt@3's declaration, stated as borrowed: it derives nothing from the canonical base it carries, and its owner module belongs to another lane",
         "the CAD records' declarations, stated as borrowed from their writers archflow.adapters.cad_execution and archflow.adapters.three_dm_inspector, which the core does not import although a core-only migration has to restate those records: RhinoCadProgramBinding@1 keeps its base at /base, ThreeDmInspectionSummary@4 at the value of its archflow:base_state_sha256 document user-string row, and neither they nor the six CAD receipt and export-identity kinds derive anything from it"
       ],
@@ -2707,7 +2707,7 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/project/repository.py",
-        "tools/create_project.py"
+        "tools/project/create_project.py"
       ],
       "invariants": [
         "holds no rule of its own: it names owners and loads them, and each declaration it makes is borrowed and says so; it imports no CAD adapter, so a core-only process sees the CAD declarations without loading CAD code",
@@ -2907,12 +2907,12 @@
         "services/project-runtime/src/project_runtime/adapters/seats.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
         "services/project-runtime/src/project_runtime/application/binding.py",
-        "tools/run_project.py",
-        "tools/verify_state_record.py",
-        "tools/freeze_project_stage_workflow.py",
-        "tools/issue_project.py",
+        "tools/project/run_project.py",
+        "tools/project/verify_state_record.py",
+        "tools/project/freeze_project_stage_workflow.py",
+        "tools/project/issue_project.py",
         "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
-        "tools/create_project.py",
+        "tools/project/create_project.py",
         "packages/archflow/src/archflow/project/watch.py"
       ],
       "invariants": [
@@ -3116,14 +3116,14 @@
         "archflow.adapters.blender_projection"
       ],
       "used_by": [
-        "tools/run_project.py",
-        "tools/verify_state_record.py",
+        "tools/project/run_project.py",
+        "tools/project/verify_state_record.py",
         "packages/archflow/src/archflow/state/state_record.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
         "services/project-runtime/src/project_runtime/adapters/harness.py",
         "tests/integration/test_project_runner.py",
         "tests/integration/test_state_record.py",
-        "tools/open_stage_run.py"
+        "tools/project/open_stage_run.py"
       ],
       "invariants": [
         "the record is the only design input; seats arrive beside it and are never part of state",
@@ -3375,7 +3375,7 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/state/state_record.py",
-        "tools/devctl.py"
+        "tools/governance/devctl.py"
       ],
       "invariants": [
         "a string that resolves to nothing never enters canonical state",
@@ -3719,7 +3719,7 @@
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "services/project-runtime/src/project_runtime/adapters/harness.py",
         "services/project-runtime/src/project_runtime/application/projection.py",
-        "tools/run_project.py"
+        "tools/project/run_project.py"
       ],
       "invariants": [
         "no candidate or execution authority",
@@ -4165,8 +4165,8 @@
         "services/project-runtime/src/project_runtime/application/program.py",
         "packages/archflow/src/archflow/state/program_sheet.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/element_reindex.py",
-        "tools/reindex_project.py",
-        "tools/verify_state_record.py"
+        "tools/project/reindex_project.py",
+        "tools/project/verify_state_record.py"
       ],
       "invariants": [
         "never writes the filesystem",
@@ -4346,10 +4346,10 @@
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "services/project-runtime/src/project_runtime/adapters/harness.py",
-        "tools/run_project.py",
-        "tools/freeze_project_stage_workflow.py",
-        "tools/verify_state_record.py",
-        "tools/open_stage_run.py"
+        "tools/project/run_project.py",
+        "tools/project/freeze_project_stage_workflow.py",
+        "tools/project/verify_state_record.py",
+        "tools/project/open_stage_run.py"
       ],
       "invariants": [
         "these records are guards only: they never select design, accept a stage, mutate geometry, persist state, promote a candidate or write canonical state",
@@ -5227,7 +5227,7 @@
         "scoped project decisions: one architect judgement with its raw wording, disposition, strength, target, explicit scope, applicability and the exact source evidence it was said against, as an immutable revision chain in the fixed explicit studio-decisions P036 run",
         "compiling the decisions that still apply to one next turn - the domain it names, or design and drawing together when it names none, exact Stage, intersection with relevant task targets, applicability and current parameter binding - into the existing ContextPack",
         "the project recipe as a scoped decision (correction capture, option A): a person's confirmed require decision in the drawing domain whose typedBinding kind recipe holds closed paper-space graphics values, and project_recipe, the one per-key read of it a new drawing takes between its own previous revision and the code default",
-        "a recipe travelling between projects (#252): recipe_export, the one DrawingRecipeExport@1 form of an active recipe decision (values, target, hold, decision id, revision sha256 and its own canonical sha256; nothing else of the project), read_recipe_export, its closed and digest-checked reading, and import_recipe, which retains one as a person's soft_preference for the whole project citing the export's sha256; tools/export_drawing_recipe.py is its command line; the Runtime exports a selected revision, inspects a file without writes and imports on explicit confirmation through the same functions",
+        "a recipe travelling between projects (#252): recipe_export, the one DrawingRecipeExport@1 form of an active recipe decision (values, target, hold, decision id, revision sha256 and its own canonical sha256; nothing else of the project), read_recipe_export, its closed and digest-checked reading, and import_recipe, which retains one as a person's soft_preference for the whole project citing the export's sha256; tools/project/export_drawing_recipe.py is its command line; the Runtime exports a selected revision, inspects a file without writes and imports on explicit confirmation through the same functions",
         "Composing explicitly selected exact Study evidence revisions into ContextPack separately from design facts and applicable decisions; no implicit Study scan, acceptance or project write.",
         "the source-bound, read-only visual observation channel (GH-303): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners, the strict VisualObservation answer and provider seam, and the Harness allowance; POST /api/visual-reviews defaults to structured observation and also delivers exact rendered frames to the caller without another provider or fabricated findings; different documents may share a page index while exact sources and generated frame names stay distinct",
         "candidate admission: one CandidateAdmission@1 per closed loop (a task, one worktree of it, or one person's act) in the fixed explicit studio-admissions P036 run, written only through the completion gate Stage acceptance shares, with the boundary's actor, the stated task, Study and bound message, each result's outcome, pinned model, receipt and superseded attempts",
@@ -5262,7 +5262,7 @@
         "ModelInvocationRequest and structured schema/images from Study for the existing configured transport",
         "One scoped decision as the caller states it: rawLanguage, optional messageSource claim, disposition, strength, targetRef, scope, exact source evidence union (board revision + live element ids / document run+asset+revision+page / design run+stateDigest+optional Stage), applicability, sourceKind and an optional typedBinding: a design parameter whose value the server reads, or a project recipe's paper-space graphics (cutLineMm, visibleLineMm, hatchSpacingMm) bounded as a cut-plan request bounds them",
         "Optional decisionContext on POST /api/intents/context: the domain this turn is about, and for a drawing or copy turn its own representation evidence",
-        "A DrawingRecipeExport@1 document, the importing person's confirmed words and sourceKind, and the boundary's attribution (tools/export_drawing_recipe.py import --confirm)",
+        "A DrawingRecipeExport@1 document, the importing person's confirmed words and sourceKind, and the boundary's attribution (tools/project/export_drawing_recipe.py import --confirm)",
         "VisualReviewRequest with exact SourceRef values, criteria, preserve conditions and the Harness allowance, and owner-produced EvidenceFrame PNGs (model-view answers, registered page exports)",
         "POST /api/visual-reviews: projectId, domain, delivery (observation by default, or frames), 1-4 distinct exact sourceRefs, viewRecipe, task, criteria, preserve, priorObservations, up to 8 knownFacts, reason with any addressedFindingIds, and caller-held budgetState (taskClass, allowed, used, lastFindingIds); no request field carries pixels",
         "an admission request: task kind and opaque ids, an optional Study (id, label, exact base run), an optional bound chat message and the user's words, and each result's outcome, superseded attempts, label, summary and reason"
@@ -5281,7 +5281,7 @@
         "retained StudioScopedDecision@1 revisions and their DTOs",
         "scopedDecisions on ContextPack@1: the applicable decisions in the architect's own words with their exact provenance, never a transcript",
         "the project recipe layer for one drawing's Stage: one RecipeValue per paper-space key with the decision and revision it came from",
-        "a DrawingRecipeExport@1 file of one active recipe decision (tools/export_drawing_recipe.py export), and in the importing project one retained soft_preference recipe decision whose source is {kind: recipe-export, exportSha256}",
+        "a DrawingRecipeExport@1 file of one active recipe decision (tools/project/export_drawing_recipe.py export), and in the importing project one retained soft_preference recipe decision whose source is {kind: recipe-export, exportSha256}",
         "VisualObservation bound to the frames actually sent, with ObservationUsage and a visual_observation MonkeyMonitor span over the provider's model_request row",
         "the visual-review answer: observation, provider usage and next budgetState by default, or delivery=frames with verified PNG data/source/view/digest/dimensions, null observation/usage and next budgetState; existing source/budget/order refusals spend nothing before delivery/provider invocation; VISUAL_PROVIDER_UNAVAILABLE applies only to observation, and VISUAL_PROVIDER_FAILED carries spent budgetState and usage",
         "retained CandidateAdmission@1 records and their DTOs",
@@ -5413,7 +5413,7 @@
         "read_recipe_export",
         "import_recipe",
         "RecipeExport",
-        "tools/export_drawing_recipe.py export --project --decision --out | import --project --file [--confirm]",
+        "tools/project/export_drawing_recipe.py export --project --decision --out | import --project --file [--confirm]",
         "GET /api/decisions/{decision_id}/recipe-export?expectedRevisionRef=...",
         "POST /api/drawing-recipes/inspect",
         "POST /api/drawing-recipes/import",
@@ -5630,7 +5630,7 @@
         "services/project-runtime/src/project_runtime/application/capability.py",
         "services/project-runtime/src/project_runtime/routes/capabilities.py",
         "services/project-runtime/src/project_runtime/transport/capability.py",
-        "tools/benchmark_intent_context.py",
+        "tools/benchmarks/benchmark_intent_context.py",
         "apps/monkeyhub/web/src/features/stage/modelDraft.ts",
         "apps/monkeyhub/web/src/features/stage/syncModelDraft.ts",
         "apps/monkeyhub/web/src/api/project-runtime/client.ts",
@@ -5642,8 +5642,8 @@
         "services/project-runtime/src/project_runtime/transport/decisions.py",
         "services/project-runtime/src/project_runtime/application/visual_observation.py",
         "services/project-runtime/src/project_runtime/application/visual_reviews.py",
-        "tools/benchmark_visual_observation.py",
-        "tools/export_drawing_recipe.py"
+        "tools/benchmarks/benchmark_visual_observation.py",
+        "tools/project/export_drawing_recipe.py"
       ]
     },
     {
@@ -6171,7 +6171,7 @@
     },
     {
       "module_id": "tools.archcheck",
-      "owner_path": "tools/archcheck.py",
+      "owner_path": "tools/governance/archcheck.py",
       "purpose": "Policy-as-code architecture boundary checks over the source roots, driven by governance/architecture_policy.json.",
       "owns": [
         "loading and validating ArchFlowArchitecturePolicy@1",
@@ -6234,7 +6234,7 @@
     },
     {
       "module_id": "tools.devctl",
-      "owner_path": "tools/devctl.py",
+      "owner_path": "tools/governance/devctl.py",
       "purpose": "Read governance registries through bounded module, capability and live-work lookups, and render the generated system and semantic maps.",
       "owns": [
         "loading the live work registry (ArchFlowDevelopmentRegistry@3, GitHub Issue claims only) for the work lookup",
@@ -6294,7 +6294,7 @@
     },
     {
       "module_id": "tools.freeze_project_stage_workflow",
-      "owner_path": "tools/freeze_project_stage_workflow.py",
+      "owner_path": "tools/project/freeze_project_stage_workflow.py",
       "purpose": "Validate and retain a ProjectStageWorkflow@1 through the P036 repository, and prove that freezing it issued nothing.",
       "owns": [
         "the freeze command line (project root, run id, workflow path, create-run)",
@@ -6347,7 +6347,7 @@
     },
     {
       "module_id": "tools.issue_project",
-      "owner_path": "tools/issue_project.py",
+      "owner_path": "tools/project/issue_project.py",
       "purpose": "The command that issues one run as the project's published design, and prints the issue it made or the typed reason it refused.",
       "owns": [
         "the issue command line (project root, run id, who decided, an optional note)",
@@ -6392,7 +6392,7 @@
     },
     {
       "module_id": "tools.open_stage_run",
-      "owner_path": "tools/open_stage_run.py",
+      "owner_path": "tools/project/open_stage_run.py",
       "purpose": "Create a run and retain the StageRunEnvelope@1 that binds it to one stage of the project's frozen workflow (ADR-007 rule 2).",
       "owns": [
         "the open-stage command line (project root, workflow ref, stage index, run id, predecessor run)",
@@ -6453,13 +6453,13 @@
     },
     {
       "module_id": "tools.run_project",
-      "owner_path": "tools/run_project.py",
+      "owner_path": "tools/project/run_project.py",
       "purpose": "The spine's entry point: open a project, take its authored State Record and seat pack from project.inputs with the retained workflow and envelope, and hand them to run_project.",
       "owns": [
         "the run-project command line (project root, run id, workflow ref, stage envelope ref, export, explicit CAD backend, workspace, powershell)",
         "parsing a project:// record URI into a ProjectRecordRef",
         "assembling the StageExecutionGuard from retained workflow, envelope, predecessor exit and predecessor closure records",
-        "reading an authored seat payload into a SeatSpec (_seat, reused by tools/verify_state_record.py)",
+        "reading an authored seat payload into a SeatSpec (_seat, reused by tools/project/verify_state_record.py)",
         "--record-ref: running a state-record record held in a run (a candidate successor) in place of the authored record, which is left untouched",
         "--seats-file: partitioning a run by an explicit seat pack (a compile partition for a candidate) instead of input/runner/seats.json, which is left untouched"
       ],
@@ -6498,7 +6498,7 @@
         "state.record"
       ],
       "used_by": [
-        "tools/verify_state_record.py"
+        "tools/project/verify_state_record.py"
       ],
       "invariants": [
         "every input is a retained record loaded by ref; the tool authors no design content",
@@ -6512,7 +6512,7 @@
     },
     {
       "module_id": "tools.verify_state_record",
-      "owner_path": "tools/verify_state_record.py",
+      "owner_path": "tools/project/verify_state_record.py",
       "purpose": "Prove a State Record reproduces a reference runner run, recording both checks in a fresh run as state-record-equivalence.",
       "owns": [
         "the equivalence command line (project, reference run, target run, object renames and explicit CAD export backend selection)",
@@ -6681,7 +6681,7 @@
       "does_not_own": [
         "producing geometry from a row - capabilities.element_producers",
         "resolving a reference - capabilities.reference_resolver",
-        "applying or writing any successor - state.record and tools/reindex_project.py through project.repository",
+        "applying or writing any successor - state.record and tools/project/reindex_project.py through project.repository",
         "the studio's derived catalog of an authored record - studio.binding"
       ],
       "public_api": [
@@ -6714,7 +6714,7 @@
     },
     {
       "module_id": "tools.reindex_project",
-      "owner_path": "tools/reindex_project.py",
+      "owner_path": "tools/project/reindex_project.py",
       "purpose": "CLI: re-index a project's authored record against named inspection records, apply the typed reindex operator, and write a component-catalog and draft state-record successor into a new run through the repository.",
       "owns": [
         "the --source <uri>@<precedence> vocabulary",
@@ -6739,7 +6739,7 @@
         "state.record"
       ],
       "files": [
-        "tools/reindex_project.py"
+        "tools/project/reindex_project.py"
       ],
       "tests": [
         "packages/monkeyarch/tests/test_element_reindex.py"
@@ -7069,7 +7069,7 @@
     },
     {
       "module_id": "tools.create_project",
-      "owner_path": "tools/create_project.py",
+      "owner_path": "tools/project/create_project.py",
       "purpose": "Create one explicitly located external P036 project from empty or supplied authored inputs, before any run.",
       "owns": [
         "the create-project command line: external project root and optional authored StateRecord/seat-pack input files",
@@ -7126,7 +7126,7 @@
     },
     {
       "module_id": "tools.rehearse_project_archive",
-      "owner_path": "tools/rehearse_project_archive.py",
+      "owner_path": "tools/project/rehearse_project_archive.py",
       "purpose": "Rehearse one project archive end to end: capture the source project identities, export and restore through the landed create-project command, re-read the restored copy with normal readers, and continue one bounded candidate from the restored base.",
       "owns": [
         "the fresh-environment archive rehearsal: the content-free source-side evidence file, the restored-copy comparison and the acceptance summary block GH-56 receives",
@@ -7273,7 +7273,7 @@
       "tests": [
         "packages/monkeymonitor/tests/test_core.py",
         "packages/monkeymonitor/tests/test_trace.py",
-        "tests/monkeymonitor/test_design_loop.py",
+        "tools/tests/test_design_loop.py",
         "apps/monkeyhub/api/tests/test_chat_trace.py",
         "packages/monkeymonitor/tests/test_server.py",
         "services/project-runtime/tests/test_monitoring.py",
@@ -7736,7 +7736,7 @@
         "apps/monkeyhub/web/test/preferences.test.ts",
         "apps/monkeyhub/web/test/boundWorkCopy.browser.mjs",
         "apps/monkeyhub/api/tests/test_stage_handoff.py",
-        "tests/monkeymonitor/test_stage_handoff_benchmark.py",
+        "tools/tests/test_stage_handoff_benchmark.py",
         "apps/monkeyhub/api/tests/test_chat_presentation.py",
         "apps/monkeyhub/api/tests/test_working_draft_cleanup.py",
         "apps/monkeyhub/api/tests/test_chat_feedback.py",
@@ -7789,7 +7789,7 @@
     },
     {
       "module_id": "tools.workspace",
-      "owner_path": "tools/workspace.py",
+      "owner_path": "tools/dev/workspace.py",
       "status": "canonical",
       "purpose": "Reuse one personal development root for task Git worktrees and packaging directories; create or reopen a source checkout through Git without moving existing work.",
       "owns": [
@@ -7835,7 +7835,7 @@
     },
     {
       "module_id": "tools.source_roots",
-      "owner_path": "tools/source_roots.py",
+      "owner_path": "tools/dev/source_roots.py",
       "status": "canonical",
       "purpose": "Put a checkout's Python source roots, as its architecture policy lists them, in front of sys.path, so each of many worktrees imports its own code without an editable install into a shared interpreter.",
       "owns": [
@@ -7884,7 +7884,7 @@
     },
     {
       "module_id": "tools.package_monkeyapps",
-      "owner_path": "tools/package_monkeyapps.py",
+      "owner_path": "tools/release/package_monkeyapps.py",
       "status": "canonical",
       "purpose": "Build a complete Windows Hub distribution, including Fab, from one exact Hub Git commit in external directories. This CLI owns packaging; project and app lifecycle owners retain their existing authority.",
       "owns": [
@@ -7945,7 +7945,7 @@
         "apps/monkeyhub/installer/README.md"
       ],
       "files": [
-        "tools/package_monkeyapps.py",
+        "tools/release/package_monkeyapps.py",
         "OPEN_MONKEYHUB.cmd",
         "apps/monkeyhub/installer/INSTALL_MONKEYHUB.cmd",
         "apps/monkeyhub/installer/install.ps1",
@@ -8076,7 +8076,7 @@
       "depends_on": [],
       "used_by": [
         "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
-        "tools/package_monkeyapps.py"
+        "tools/release/package_monkeyapps.py"
       ],
       "invariants": [
         "Source geometry and existing outputs are preserved",

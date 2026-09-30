@@ -15,7 +15,7 @@ const screenshots = await mkdtemp(join(tmpdir(), "archflow-drawing-canvas-"));
 const [assets, retainedSvg] = JSON.parse(execFileSync(process.env.PYTHON ?? "python", ["-c", [
   "import json",
   "from pathlib import Path",
-  "from tools import source_roots",
+  "from tools.dev import source_roots",
   "source_roots.put_first(Path.cwd())",
   "from archflow.adapters.occt_backend import OcctDrawingPolyline as Line, OcctDrawingRegion as Region",
   "from monkeydiagram.drawing_svg import dressing_assets, drawing_svg",

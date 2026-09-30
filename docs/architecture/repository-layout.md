@@ -59,8 +59,8 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 ├─ services/project-runtime/     Project Runtime：API-only，src/project_runtime/、tests/、requirements.txt、pyproject.toml；每项目一个进程，由 Hub 管理
 ├─ labs/                         兴趣驱动的探索；可以导入核心，核心不反向导入
 ├─ scripts/dev/                  仅供开发的薄启动脚本（显式 --project-dir）；生产入口只有 MonkeyHub
-├─ tools/                        对应既有能力的 CLI 与治理命令
-├─ tests/                        跨 owner 的测试：integration/、packaging/；monkeymonitor/ 的基准驱动随 #495 移到 tools/benchmarks/
+├─ tools/                        对应既有能力的 CLI 与治理命令，按用途分为 dev/、project/、governance/、release/、benchmarks/，测试在 tools/tests/
+├─ tests/                        跨 owner 的测试：integration/、packaging/
 ├─ probes/                       明确晋升的项目输入与回归证据
 ├─ governance/                   现有模块、工作、策略三类来源
 └─ docs/                         README.md 索引；architecture、product、protocols、development、design、
@@ -161,13 +161,13 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
   包的导入名不变：仍是 `archflow`、`monkeyarch`、`monkeydiagram`、`monkeymonitor`、`monkeycontrol`、`monkeyfab`。
   Runtime 改名为 `project_runtime`（原 `archflow_studio_api`）；tools 分组后导入路径变为 `tools.<组>.<模块>`。
 - `src/` 布局的导入方式按场景区分（#488，已随 MonkeyDiagram 落地）：安装包把 `packages/<包名>/src/<包名>` 复制到包根
-  （`tools/package_monkeyapps.py` 的 `BUNDLED_PACKAGES`），`python313._pth` 不变（Runtime 按仓库相对路径
+  （`tools/release/package_monkeyapps.py` 的 `BUNDLED_PACKAGES`），`python313._pth` 不变（Runtime 按仓库相对路径
   `services/project-runtime/src/project_runtime` 放入安装包，`._pth` 为它改了一行 `..\..\services\project-runtime\src`；
   MonkeyFab 在安装包内仍是已安装更新器要求的 `apps/monkeyfab/`，Hub 按检出或安装包各自的位置调用它）；
   CI 逐包 `pip install -e`（Runtime 的依赖仍由 `services/project-runtime/requirements.txt` 安装，它的 `pyproject.toml`
   从同一文件读依赖），根 `pyproject.toml` 只剩开发与测试配置；本地开发按检出读取 policy 的 `python_source_roots`，把本检出的源码根放到
   `sys.path` 最前：根 `conftest.py`、`tests/__init__.py`、导入领域包的 tools、Hub 的测试以及测试与浏览器测试另起的
-  Python 进程调用 `tools/source_roots.py`（只测一个包的子进程直接用本包的 `src`），`apps/monkeyhub/run.py`、MCP 启动与
+  Python 进程调用 `tools/dev/source_roots.py`（只测一个包的子进程直接用本包的 `src`），`apps/monkeyhub/run.py`、MCP 启动与
   Runtime 包在能导入任何东西之前自己读同一张表；Runtime 的测试包先把服务的 `src` 放上 `sys.path`，再导入 Runtime 包。不在共享解释器上做
   editable install，否则几十个 worktree 会互相串用代码。安装包不带 policy，生产入口在那里不改 `sys.path`，只由 `._pth` 决定。
 - 根 `tests/` 只保留跨 owner 的测试；只属于一个包或服务的测试随它搬走，基准驱动去 `tools/benchmarks/`。
@@ -176,7 +176,7 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
 第二轮做内部拆分，在第一轮之后每项另开 Issue、单独 PR，范围在开工前确认。候选项有：CAD 从
 `packages/archflow/src/archflow/adapters/` 抽成 `packages/monkeycad/`（第一轮的 Step 0，#485，先把 CAD 的版本声明移进内核）、
 MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 owner、`hub.shell` 分组、模块 ID 规范化。
-第一轮只有 R1-9 随 tools 分组更新 `tools.*` 模块 ID（#495），其他模块 ID 不变。
+第一轮不改模块 ID：R1-9（#495）分组后 `tools.*` 仍是原 ID（如 `tools.archcheck`），只更新 `owner_path` 等路径，随 ID 规范化一起调整。
 
 ### 6.1 命名规则
 
@@ -217,11 +217,11 @@ MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 
 | `apps/monkeyhub/web/workspaces/src/`、`workspaces/test/` | `apps/monkeyhub/web/src/`、`web/test/`，按子树平移，不改文件名；会与 Hub 自己的文件同名的放进各自目录：`api/` → `src/api/project-runtime/`，`styles.css` → `src/app/styles.css` | #492（已落地） |
 | `apps/monkeyhub/web/workspaces/{scripts,tools,assets}/` | `apps/monkeyhub/web/{scripts,tools,assets}/`；Runtime 的 OpenAPI schema 生成到 `web/.generated/project-runtime/` | #492（已落地） |
 | 根 `tests/` 中只测一个包、且不借用其他测试 helper 的文件（含 `tests/monkeycontrol/`） | `packages/<包名>/tests/`，随该包搬迁 | #488–#490（已落地） |
-| 根 `tests/` 中其余测试 | 只属于一个 owner 的去该 owner 的 `tests/`；互相借用 helper 的一组整体进 `tests/integration/`；测 tools 的进 `tools/tests/`；打包测试进 `tests/packaging/`；基准驱动与数据进 `tools/benchmarks/` | #493 |
+| 根 `tests/` 中其余测试 | 只属于一个 owner 的去该 owner 的 `tests/`；互相借用 helper 的一组整体进 `tests/integration/`；测 tools 的进 `tools/tests/`；打包测试进 `tests/packaging/`；基准驱动与数据随 #495 进 `tools/benchmarks/` | #493 |
 | `docs/` 根目录的大写与日期前缀文件、`docs/testing/` | `docs/{architecture,product,protocols,development,design,research,audits}/`，小写 kebab 文件名；新增 `docs/README.md` | #494（已落地） |
 | `docs/adr/ADR-NNN-*.md`、`docs/CANONICAL_SPINE.md` | `docs/decisions/NNN-*.md`；`CANONICAL_SPINE` 并入 `001` | #494（已落地） |
 | `docs/REPO_LAYOUT.md`（本文） | `docs/architecture/repository-layout.md`；policy 的 `unclaimed_write_scope` 与 archcheck 的 `ROOT_ENTRY` 提示同步 | #494（已落地） |
-| `tools/*.py` | `archcheck`、`devctl` → `tools/governance/`；`workspace` → `tools/dev/`；`package_monkeyapps` → `tools/release/`；项目 CLI → `tools/project/`；`benchmark_*`、`projection_check` → `tools/benchmarks/` | #495 |
+| `tools/*.py`、`tests/monkeymonitor/` | `archcheck`、`devctl` → `tools/governance/`；`workspace`、`source_roots` → `tools/dev/`；`package_monkeyapps` → `tools/release/`；项目 CLI → `tools/project/`；`benchmark_*`、`projection_check` 与 `tests/monkeymonitor/` 的基准驱动、场景数据 → `tools/benchmarks/`，驱动的测试 → `tools/tests/`。安装包随带的 `create_project`、`run_project` 与 `source_roots` 也按新路径放在 `tools/project/`、`tools/dev/`，它们的 `tools.<组>` 导入在包内同样成立；这三个文件不在 `REQUIRED_FILES` 中 | #495（已落地） |
 
 不变：`apps/monkeyhub/{api,desktop,installer,run.py,launch-hub.ps1}`、`labs/`、`probes/`、`scripts/dev/`、
 `governance/`、`.github/`、`.claude/`、`.codex/` 与根文件。
@@ -244,11 +244,11 @@ MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 
 | R1-6 | #492 | Hub web 单一源根。已落地 | R1-1b |
 | R1-7 | #493 | 测试随 owner：单一 owner 的测试进该 owner 的 `tests/`，测 tools 的进 `tools/tests/`，互借 helper 的一组整体进 `tests/integration/`，打包测试进 `tests/packaging/`。已落地 | R1-4、R1-5：测试要进的包和服务目录已存在 |
 | R1-8 | #494 | docs 分类与命名，打开 docs 检查。已落地 | R1-2 至 R1-5，免得指向代码的链接改两遍 |
-| R1-9 | #495 | tools 按用途分组 | R1-5 |
+| R1-9 | #495 | tools 按用途分组：`tools/{dev,project,governance,release,benchmarks}/`，`tests/monkeymonitor/` 的基准驱动进 `tools/benchmarks/`。已落地 | R1-5 |
 | R1-10 | #496 | 去掉 `legacy_root_packages` 棘轮，确认没有遗留目录和引用，发布第一轮报告 | 以上全部 |
 
 archflow 搬迁（R1-3）和 Runtime 改名（R1-5）这两个 PR 里，CI 的 projection-parity 检查用 base 的旧布局和候选的新布局
-同时运行，需要临时识别两种布局：R1-3 起 `tools/projection_check.py` 的 `_kernel_source` 与 verify.yml 生成 base
+同时运行，需要临时识别两种布局：R1-3 起 `tools/benchmarks/projection_check.py` 的 `_kernel_source` 与 verify.yml 生成 base
 项目的那一步都认 archflow 在代码根或在 `packages/archflow/src`，R1-5 起两处也认 Runtime 在 `apps/archflow-studio/api`
 （`archflow_studio_api`）或在 `services/project-runtime/src`（`project_runtime`，`_runtime_source`）；所有 base 都是
 新布局之后，下一个 PR 删除这段逻辑。

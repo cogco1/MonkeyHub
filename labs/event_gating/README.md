@@ -122,8 +122,8 @@ Use the existing Python environment with OCCT and Studio fixture dependencies.
 No package installation or application restart is needed.
 
 ```powershell
-python -m pytest labs/event_gating labs/spatial_observation tests/monkeymonitor/test_design_loop.py packages/monkeymonitor/tests/test_trace.py packages/monkeymonitor/tests/test_core.py -q
-python tools/archcheck.py
+python -m pytest labs/event_gating labs/spatial_observation tools/tests/test_design_loop.py packages/monkeymonitor/tests/test_trace.py packages/monkeymonitor/tests/test_core.py -q
+python tools/governance/archcheck.py
 python -m labs.event_gating.benchmark --output <new-absolute-external-diagnostic-root> --claude <existing-claude-executable>
 ```
 

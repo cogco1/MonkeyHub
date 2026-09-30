@@ -107,7 +107,7 @@ Hub 的启动和退出统一由包内 `apps/monkeyhub/launch-hub.ps1` 与 `run.p
 两个已经构建完成的桌面版本可以生成文件级补丁，不必重新下载相同的 Python、Node 和几何依赖：
 
 ```powershell
-python tools/package_monkeyapps.py --patch-from '<完整旧版本目录>' --patch-to '<完整新版本目录>' --patch-output '<外部输出目录>\MonkeyHub.patch.zip'
+python tools/release/package_monkeyapps.py --patch-from '<完整旧版本目录>' --patch-to '<完整新版本目录>' --patch-output '<外部输出目录>\MonkeyHub.patch.zip'
 ```
 
 输入必须包含完整提交号、对应的 `build-info.json` 和桌面主程序。补丁 ZIP 保存完整旧／新文件表、
@@ -133,12 +133,12 @@ python tools/package_monkeyapps.py --patch-from '<完整旧版本目录>' --patc
 ### 完整构建
 
 安装流程是本轮新增的分发工作；仓库原有启动器继续负责进程，项目存储继续由 ArchFlow 管理。
-`tools/package_monkeyapps.py` 只从指定 Git 提交导出白名单源码、构建 Web 成品、安装完整 Windows wheels
+`tools/release/package_monkeyapps.py` 只从指定 Git 提交导出白名单源码、构建 Web 成品、安装完整 Windows wheels
 并生成候选 ZIP。它不会把 working tree、凭据、用户项目或 node_modules 打入成品；用户运行配置只保存在 Hub 运行根目录的 `config/` 下，从不进入源码树。
 构建机需要 Git、Python 3.12+（含 pip）和 Node.js 24/npm；这些工具不是安装后的运行依赖。
 
 ```powershell
-python tools/package_monkeyapps.py --source-ref <三条线集成后的完整提交> --staging-dir 'D:\ExampleRuntime\temp\package' --output-dir 'D:\ExampleRuntime\packages'
+python tools/release/package_monkeyapps.py --source-ref <三条线集成后的完整提交> --staging-dir 'D:\ExampleRuntime\temp\package' --output-dir 'D:\ExampleRuntime\packages'
 ```
 
 构建器从同一个 Hub 提交收集 `packages/monkeyfab/`，放在包内 `apps/monkeyfab/`，默认安装其基础与 `send` 依赖，
@@ -176,7 +176,7 @@ python tools/package_monkeyapps.py --source-ref <三条线集成后的完整提�
 校验已下载的发行目录：
 
 ```powershell
-python tools/package_monkeyapps.py --verify '<候选名>-candidate.zip.release-manifest.json'
+python tools/release/package_monkeyapps.py --verify '<候选名>-candidate.zip.release-manifest.json'
 ```
 
 校验做三件事，逐条报错并以非零退出：分发文件的大小与 SHA-256 必须与封闭表一致；本次发行前缀下

@@ -20,7 +20,7 @@ from unittest.mock import patch
 from urllib.error import URLError
 from urllib.parse import parse_qs, urlsplit
 
-from tools import benchmark_visual_observation as bench
+from tools.benchmarks import benchmark_visual_observation as bench
 
 TOLERANCE = 0.0025
 CLEANUP = {"tolerance": TOLERANCE, "input_lines": 12, "output_lines": 8, "micro": 0, "collinear": 1,
