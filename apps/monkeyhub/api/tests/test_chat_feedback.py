@@ -16,7 +16,7 @@ from test_monkeyhub_lifecycle import project_fixture
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from monkeyhub_api.chat import store as chat
+from monkeyhub_api.chat import guides, preparation, tool_calls, transport
 from monkeyhub_api.models import HubFailure
 
 
@@ -42,8 +42,8 @@ class ChatFeedbackTests(unittest.TestCase):
                                 "stateDigest": self.state["stateDigest"]}, "applicability": "scope"}
         self.user("底座保留原样，后续不要修改它。")
         self.addCleanup(patch.stopall)
-        patch.object(chat, "_bound_studio", side_effect=lambda *a, **k: (self.base, deepcopy(self.session))).start()
-        patch.object(chat, "_request_json", side_effect=self.request).start()
+        patch.object(preparation, "_bound_studio", side_effect=lambda *a, **k: (self.base, deepcopy(self.session))).start()
+        patch.object(transport, "_request_json", side_effect=self.request).start()
 
     def user(self, content):
         message = {"id": str(uuid4()), "role": "user", "content": content, "status": "complete"}
@@ -75,7 +75,7 @@ class ChatFeedbackTests(unittest.TestCase):
         args = {"method": method, "path": path, **options}
         if body is not None:
             args["body"] = body
-        return chat.call_tool(self.hub, self.session["id"], name, args)
+        return tool_calls.call_tool(self.hub, self.session["id"], name, args)
 
     def save(self):
         return self.tool("/api/decisions", deepcopy(self.body))
@@ -241,9 +241,9 @@ class ChatFeedbackTests(unittest.TestCase):
             if project_id == "skill-library":
                 return self.library_base, {}
             return self.base, deepcopy(self.session)
-        patch.object(chat, "_bound_studio", side_effect=bound_studio).start()
+        patch.object(preparation, "_bound_studio", side_effect=bound_studio).start()
         prepared = []
-        patch.object(chat, "_prepare_studio", side_effect=lambda hub, session, budget: prepared.append(session)).start()
+        patch.object(preparation, "_prepare_studio", side_effect=lambda hub, session, budget: prepared.append(session)).start()
 
         # A library without that skill: refused, naming what it holds.
         self.library.post("/api/skills", json={"projectId": "skill-library", "name": "section-sheet",
@@ -296,14 +296,14 @@ class ChatFeedbackTests(unittest.TestCase):
             self.assertFalse(hidden.intersection(schema["properties"]))
             self.assertFalse(hidden.intersection(schema.get("required", [])))
         self.assertEqual(schema["properties"]["action"]["enum"], ["revoke"])
-        self.assertIn("/api/memory/locate", chat._GUIDES["/api/memory"])
+        self.assertIn("/api/memory/locate", guides._GUIDES["/api/memory"])
 
     def test_runtime_authorization_refusal_is_not_bypassed_or_retried(self):
         def deny(base, path, *args, **kwargs):
             if base == self.hub and "/studio/" in path:
                 raise HubFailure(403, "ACTION_FORBIDDEN", "actor lacks accept")
             return self.request(base, path, *args, **kwargs)
-        with patch.object(chat, "_request_json", side_effect=deny) as sent, self.assertRaises(HubFailure) as refused:
+        with patch.object(transport, "_request_json", side_effect=deny) as sent, self.assertRaises(HubFailure) as refused:
             self.save()
         self.assertEqual(refused.exception.error.code, "ACTION_FORBIDDEN")
         self.assertEqual(sent.call_count, 1)

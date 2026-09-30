@@ -19,7 +19,7 @@ from tools.dev import source_roots  # noqa: E402 - this checkout's tools, found 
 
 # The checkout's Python source roots, as its architecture policy lists them, go first.
 source_roots.put_first(ROOT)
-from monkeyhub_api.chat import store as chat
+from monkeyhub_api.chat import mcp_server, preparation, tool_calls, transport
 from monkeyhub_api.models import HubFailure
 
 
@@ -31,8 +31,8 @@ class ModelingErrorTests(unittest.TestCase):
     def refused(self, status, body):
         opener = Mock()
         opener.open.side_effect = HTTPError("http://127.0.0.1:8791/api/proposals", status, "refused", {}, io.BytesIO(body))
-        with patch.object(chat, "_SERVICE_OPENER", opener), self.assertRaises(HubFailure) as result:
-            chat._request_json("http://127.0.0.1:8791", "/api/proposals", "POST", {})
+        with patch.object(transport, "_SERVICE_OPENER", opener), self.assertRaises(HubFailure) as result:
+            transport._request_json("http://127.0.0.1:8791", "/api/proposals", "POST", {})
         opener.open.assert_called_once()
         return result.exception
 
@@ -55,8 +55,8 @@ class ModelingErrorTests(unittest.TestCase):
     def test_mcp_preserves_class_and_status_while_remaining_an_error(self):
         incoming=Stream(json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"studio_request","arguments":{"method":"POST","path":"/api/proposals"}}})+"\n")
         outgoing=Stream()
-        with patch.object(chat.sys,"stdin",incoming),patch.object(chat.sys,"stdout",outgoing),patch.object(chat,"call_tool",side_effect=HubFailure(409,"STALE_BASE","Re-read the exact source")) as call:
-            chat._mcp("http://127.0.0.1:8790","fixture-chat")
+        with patch.object(mcp_server.sys,"stdin",incoming),patch.object(mcp_server.sys,"stdout",outgoing),patch.object(tool_calls,"call_tool",side_effect=HubFailure(409,"STALE_BASE","Re-read the exact source")) as call:
+            mcp_server._mcp("http://127.0.0.1:8790","fixture-chat")
         result=json.loads(outgoing.getvalue())["result"]
         self.assertTrue(result["isError"])
         self.assertEqual(json.loads(result["content"][0]["text"]),{"code":"STALE_BASE","detail":"Re-read the exact source","httpStatus":409})
@@ -69,9 +69,9 @@ class ModelingErrorTests(unittest.TestCase):
         incoming=Stream(json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"studio_request",
             "arguments":{"method":"POST","path":"/api/proposals","body":body}}})+"\n")
         outgoing=Stream()
-        with patch.object(chat.sys,"stdin",incoming),patch.object(chat.sys,"stdout",outgoing), \
-                patch.object(chat,"_request_json") as request,patch.object(chat,"_bound_studio") as studio:
-            chat._mcp("http://127.0.0.1:8790","fixture-chat")
+        with patch.object(mcp_server.sys,"stdin",incoming),patch.object(mcp_server.sys,"stdout",outgoing), \
+                patch.object(transport,"_request_json") as request,patch.object(preparation,"_bound_studio") as studio:
+            mcp_server._mcp("http://127.0.0.1:8790","fixture-chat")
         result=json.loads(outgoing.getvalue())["result"]
         self.assertTrue(result["isError"])
         failure=json.loads(result["content"][0]["text"])
@@ -122,9 +122,9 @@ class ServiceCallTests(unittest.TestCase):
         with _serving() as base, patch.object(ssl.SSLContext, "load_default_certs",
                                               side_effect=AssertionError("certificate store loaded")):
             for _ in range(2):
-                self.assertEqual(chat._request_json(base, "/api/protocol", timeout=5), {"ok": True})
+                self.assertEqual(transport._request_json(base, "/api/protocol", timeout=5), {"ok": True})
 
     def test_a_redirecting_service_is_still_refused(self):
         with _serving() as base, self.assertRaises(HubFailure) as refused:
-            chat._request_json(base, "/moved", timeout=5)
+            transport._request_json(base, "/moved", timeout=5)
         self.assertEqual((refused.exception.status, refused.exception.error.code), (409, "CHAT_SERVICE_CHANGED"))

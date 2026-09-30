@@ -34,7 +34,9 @@ from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from project_runtime.api.dto.runtime import runtime_dto
 from monkeyhub_api.models import HubFailure
-from monkeyhub_api.runtime.manager import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager
+from monkeyhub_api.runtime.manager import ProjectRuntime, ProjectRuntimeManager
+from monkeyhub_api.runtime.operations import OperationManager
+from monkeyhub_api.runtime.worker_http import HttpResult
 
 from test_monkeyhub_lifecycle import project_fixture
 
@@ -211,7 +213,7 @@ class OperationRecoveryTests(unittest.TestCase):
         coordinator = ProjectRuntimeManager(None, None)
         runtime = ProjectRuntime("journal-runtime", self.fixture.PROJECT_ID, str(self.settings.project_dir),
             self.manager, ProjectBinding.open(self.settings), retained=self.snapshot())
-        with patch("monkeyhub_api.runtime.manager.os.replace", side_effect=OSError("disk write failed")), \
+        with patch("monkeyhub_api.runtime.operations.os.replace", side_effect=OSError("disk write failed")), \
              patch("monkeyhub_api.runtime.manager.request_http", side_effect=AssertionError("dispatch without durable identity")) as forwarded:
             with self.assertRaises(HubFailure) as failure:
                 coordinator.forward(runtime, "/api/program", "POST", b"{}", {"idempotency-key": str(uuid4())})
@@ -485,7 +487,7 @@ class OperationRecoveryTests(unittest.TestCase):
         self.manager = self.durable_manager()
         admission, _ = self.admission("/api/drawings/sheets", {})
         self.manager.replied(admission, HttpResult(500, b'{"detail":"failed"}', {}))
-        with patch("monkeyhub_api.runtime.manager.os.replace", side_effect=OSError("disk write failed")), \
+        with patch("monkeyhub_api.runtime.operations.os.replace", side_effect=OSError("disk write failed")), \
              self.assertRaises(HubFailure) as failure:
             self.manager.acknowledge(admission.record.operationId)
         self.assertEqual(failure.exception.error.code, "OPERATION_LOG_UNAVAILABLE")
@@ -518,8 +520,8 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertEqual(refusal.exception.error.code, "OPERATION_NOT_ACKNOWLEDGEABLE")
 
     def test_dismiss_route_is_bound_to_its_runtime_and_project(self):
-        from monkeyhub_api.chat.store import _project
-        from monkeyhub_api.main import HubSettings, create_app as create_hub
+        from monkeyhub_api.projects import _project
+        from monkeyhub_api.app.composition import HubSettings, create_app as create_hub
         hub = create_hub(HubSettings(runtime_root=self.root / "hub-app-runtime"))
         client = TestClient(hub, base_url="http://127.0.0.1:8790")  # Without its lifespan, nothing is started.
         self.addCleanup(client.close)

@@ -16,9 +16,9 @@ from fastapi.testclient import TestClient
 
 import test_chat
 from test_chat import wait_for
-from monkeyhub_api.chat import store as chat
+from monkeyhub_api.chat import store as chat, tool_calls, transport
 from monkeyhub_api.chat.turn_trace import HubTurnObserver
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeymonitor.store import BUSY_NOTICE, UsageLog
 from monkeymonitor.trace import build_traces
 
@@ -232,15 +232,15 @@ class HubTraceTests(unittest.TestCase):
         thread.start()
         try:
             base = f"http://127.0.0.1:{server.server_port}"
-            token = chat._trace_headers.set({"X-Monkey-Turn-Id": "turn", "X-Monkey-Parent-Span-Id": "hub:turn:turn"})
+            token = transport._trace_headers.set({"X-Monkey-Turn-Id": "turn", "X-Monkey-Parent-Span-Id": "hub:turn:turn"})
             try:
-                chat._together({"a": (base, "/a"), "b": (base, "/b")}, 2)
+                transport._together({"a": (base, "/a"), "b": (base, "/b")}, 2)
                 def actual(*_):
-                    return chat._request_json(base, "/c")
-                with patch.object(chat, "_call_tool", side_effect=actual):
-                    chat.call_tool(base, "chat", "studio_request", {})
+                    return transport._request_json(base, "/c")
+                with patch.object(tool_calls, "_call_tool", side_effect=actual):
+                    tool_calls.call_tool(base, "chat", "studio_request", {})
             finally:
-                chat._trace_headers.reset(token)
+                transport._trace_headers.reset(token)
             self.assertEqual(captured[:2], [("turn", "hub:turn:turn")] * 2)
             self.assertEqual(captured[2], (None, None))
         finally:
@@ -332,7 +332,7 @@ class CliTraceTests(unittest.TestCase):
 
     def test_held_journal_neither_delays_nor_repeats_a_real_hub_turn(self):
         holder = self.hold_journal()
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             created = client.post("/api/chat/sessions", json={"projectDir": str(self.project), "provider": "codex"})

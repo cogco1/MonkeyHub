@@ -28,8 +28,8 @@ from fastapi.testclient import TestClient
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.main import create_app as create_studio
 from project_runtime.settings import StudioSettings
-from monkeyhub_api.chat import skill_plugins, store as chat
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.chat import preparation, providers, skill_plugins, store as chat, transport
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest
 from monkeyhub_api.settings.models import ApplicationSettingsDto
 from monkeyhub_api.settings.store import save_application_settings
@@ -80,7 +80,7 @@ class SkillLibraryTest(unittest.TestCase):
         return self.studio.get(f"/api/skills/{skill_id}", params={"version": version}).json()
 
     def request_json(self, base, path, method="GET", body=None, timeout=180, **_):
-        """The library Runtime's API, as chat._request_json reaches it."""
+        """The library Runtime's API, as transport._request_json reaches it."""
         self.assertEqual((base, method), ("http://127.0.0.1:9001", "GET"))
         if path.startswith("/api/skills/"):
             self.fetched.append(path)
@@ -144,7 +144,7 @@ class SkillLibraryTest(unittest.TestCase):
         self.add(HATCH)
 
         # No library: nothing is read, and the chat has no Skill tool at all (#463).
-        with patch.object(chat, "_request_json", side_effect=AssertionError("no library, no call")):
+        with patch.object(transport, "_request_json", side_effect=AssertionError("no library, no call")):
             plain = self.claude_command(store)
         self.assertIn("--disable-slash-commands", plain)
         # No user settings either: installed plugins' hooks would still inject their text (#463).
@@ -156,9 +156,9 @@ class SkillLibraryTest(unittest.TestCase):
         save_application_settings(self.runtime, ApplicationSettingsDto(libraryDir=str(self.library)))
         projects = snapshot(self.project), snapshot(self.library)
         prepared = []
-        with patch.object(chat, "_prepare_studio", side_effect=lambda hub, session, budget: prepared.append(session)), \
-                patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:9001", {})), \
-                patch.object(chat, "_request_json", side_effect=self.request_json):
+        with patch.object(preparation, "_prepare_studio", side_effect=lambda hub, session, budget: prepared.append(session)), \
+                patch.object(preparation, "_bound_studio", return_value=("http://127.0.0.1:9001", {})), \
+                patch.object(transport, "_request_json", side_effect=self.request_json):
             loaded = self.claude_command(store)
             again = self.claude_command(store)
         self.assertEqual(prepared[0], {"projectId": LIBRARY_ID, "projectDir": str(self.library.resolve())})
@@ -183,7 +183,7 @@ class SkillLibraryTest(unittest.TestCase):
         self.assertEqual((snapshot(self.project), snapshot(self.library)), projects)
 
         # A library that cannot be read says so; the turn does not go without it.
-        with patch.object(chat, "_prepare_studio", side_effect=chat.HubFailure(503, "CHAT_STUDIO_UNAVAILABLE", "Not ready.")):
+        with patch.object(preparation, "_prepare_studio", side_effect=chat.HubFailure(503, "CHAT_STUDIO_UNAVAILABLE", "Not ready.")):
             with self.assertRaises(chat.HubFailure) as refused:
                 self.claude_command(store)
         self.assertEqual(refused.exception.error.code, "CHAT_SKILL_LIBRARY_UNAVAILABLE")
@@ -202,7 +202,7 @@ class SkillLibraryTest(unittest.TestCase):
         library = skill_plugins.Library(self.index(), self.fetch)
         plan = {"ANTHROPIC_BASE_URL": "https://fixture.example.invalid", "ANTHROPIC_AUTH_TOKEN": "fixture-plan-token"}
         for provider in ("claude", "coding-plan"):
-            with self.subTest(provider=provider), patch.object(chat, "_coding_plan_env", return_value=plan):
+            with self.subTest(provider=provider), patch.object(providers, "_coding_plan_env", return_value=plan):
                 self.session = store.create(ChatCreateRequest(projectDir=str(self.project), provider=provider))
                 with store._lock:
                     command, _ = store._command(store._sessions[self.session.id], library=lambda: library)
@@ -224,7 +224,7 @@ class SkillLibraryTest(unittest.TestCase):
         self.addCleanup(store.shutdown)
         plan = {"ANTHROPIC_BASE_URL": "https://fixture.example.invalid", "ANTHROPIC_AUTH_TOKEN": "fixture-plan-token"}
         for provider, expected in (("claude", "1"), ("coding-plan", "1"), ("codex", None)):
-            with self.subTest(provider=provider), patch.object(chat, "_coding_plan_env", return_value=plan),                     patch.dict(os.environ, {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": ""}):
+            with self.subTest(provider=provider), patch.object(providers, "_coding_plan_env", return_value=plan),                     patch.dict(os.environ, {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": ""}):
                 os.environ.pop("CLAUDE_CODE_DISABLE_AUTO_MEMORY")
                 session = store.create(ChatCreateRequest(projectDir=str(self.project), provider=provider))
                 with store._lock, patch.object(store, "_codex_mcp", return_value={}):

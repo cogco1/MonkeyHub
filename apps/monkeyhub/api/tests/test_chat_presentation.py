@@ -33,9 +33,9 @@ from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.application.artifacts import save_document
 from project_runtime.binding import ProjectBinding
 from project_runtime.settings import StudioSettings
-from monkeyhub_api.chat import store as chat
+from monkeyhub_api.chat import guides, mcp_server
 from monkeyhub_api.chat.store import ChatStore
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatDocumentRef, ChatPostRequest, ChatProvider
 
 
@@ -108,7 +108,7 @@ class ChatPresentationTests(unittest.TestCase):
         return store
 
     def new_client(self, store, host="127.0.0.1"):
-        with patch("monkeyhub_api.main.ChatStore", return_value=store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         # No lifespan is needed: these operations must not start a runtime or provider.
         client = TestClient(app, base_url="http://127.0.0.1:8790", client=(host, 42000))
@@ -150,7 +150,7 @@ class ChatPresentationTests(unittest.TestCase):
         listener = socket.socket()
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime, port=port))
         server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port,
                                                lifespan="off", log_level="error", ws="none"))
@@ -172,7 +172,7 @@ class ChatPresentationTests(unittest.TestCase):
             self.assertFalse(thread.is_alive(), "Loopback Hub did not stop")
 
     def mcp(self, requests, *, connection=None, expected_errors=()):
-        connection = connection or {"command": sys.executable, "args": [str(Path(chat.__file__)), "--mcp",
+        connection = connection or {"command": sys.executable, "args": [str(Path(mcp_server.__file__)), "--mcp",
             "--hub-url", self.store.hub_url, "--project-dir", str(self.project),
             "--source-session-id", self.bound["sourceSessionId"]]}
         environment = {**os.environ, "PYTHONUTF8": "1", **connection.get("env", {})}
@@ -396,12 +396,14 @@ class ChatPresentationTests(unittest.TestCase):
         with Image.open(BytesIO(page.content)) as image:
             self.assertEqual(image.format, "PNG")
             self.assertLess(image.width, image.height, "the second, portrait page is the one shown")
-        self.assertIn("chat_present kind=assistant", chat._GUIDES["/api/drawings"])
-        self.assertIn("documents:[{runId, assetSha256, revisionRef, pageIndex}]", chat._GUIDES["/api/drawings"])
+        self.assertIn("chat_present kind=assistant", guides._GUIDES["/api/drawings"])
+        self.assertIn("documents:[{runId, assetSha256, revisionRef, pageIndex}]", guides._GUIDES["/api/drawings"])
 
     def test_external_turn_that_made_a_candidate_gets_the_study_card(self):
         """#404 F15: an external turn's requests through the Hub give it the same result card."""
-        from monkeyhub_api.runtime.manager import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager
+        from monkeyhub_api.runtime.manager import ProjectRuntime, ProjectRuntimeManager
+        from monkeyhub_api.runtime.operations import OperationManager
+        from monkeyhub_api.runtime.worker_http import HttpResult
 
         runtimes = ProjectRuntimeManager(None, self.store)
         self.assertEqual(self.store.turn_results, runtimes.turn_results)

@@ -149,7 +149,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
             ("packages/monkeyarch/src/monkeyarch/example.py", "monkeydiagram.rendering.svg"),
             ("packages/monkeydiagram/src/monkeydiagram/example.py", "monkeyarch.compilation.geometry"),
             # MonkeyArch imports neither the Hub nor the Runtime, and its layers depend one way (#516).
-            ("packages/monkeyarch/src/monkeyarch/example.py", "monkeyhub_api.main"),
+            ("packages/monkeyarch/src/monkeyarch/example.py", "monkeyhub_api.app.main"),
             ("packages/monkeyarch/src/monkeyarch/domain/example.py", "archflow.project.repository"),
             ("packages/monkeyarch/src/monkeyarch/authoring/example.py", "archflow.project.ports"),
             ("packages/monkeyarch/src/monkeyarch/compilation/example.py", "monkeycad.cad_backend"),

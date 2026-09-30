@@ -26,7 +26,7 @@ source_roots.put_first(ROOT)
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from monkeyhub_api.main import HubSettings, create_app  # noqa: E402
+from monkeyhub_api.app.composition import HubSettings, create_app  # noqa: E402
 from monkeyhub_api.settings.models import ApplicationSettingsDto, UserSettingsDto  # noqa: E402
 from monkeyhub_api.settings.store import (  # noqa: E402
     SettingsError,

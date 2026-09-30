@@ -24,7 +24,7 @@ source_roots.put_first(ROOT)
 from fastapi.testclient import TestClient
 
 from monkeyhub_api.fabrication import ACCESS_CODE_ENV, Fabrication, available
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import FabSendRequest
 
 

@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from test_monkeyhub_lifecycle import ROOT, LocalHubCase, free_ports, http_json, port_open, project_fixture, wait_for
 from monkeyhub_api.runtime.applications import Applications
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import HubFailure
 from monkeyhub_api.runtime.workers import (
     _ACTIVE_PROBE_S, _STABLE_PROBE_S, _UNAVAILABLE_AFTER_S, WorkerLaunch, WorkerSupervisor, _Child,
