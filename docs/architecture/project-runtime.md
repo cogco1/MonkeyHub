@@ -8,7 +8,7 @@ it. This document is that runtime's contract: what the Hub gives it, what it own
 must not own, how it is identified and reached, and how a developer starts one alone.
 
 Code: `services/project-runtime/src/project_runtime`, with its tests in `services/project-runtime/tests`;
-registry module `studio.shell` (module ids do not follow product names, [repository layout §3](repository-layout.md#3-文件归属)).
+registry module `project_runtime.shell` (a module id begins with the namespace of the service or package that holds its owner, [repository layout §3](repository-layout.md#3-文件归属)).
 Inside the package (#518), `api/` is the HTTP layer: `routes/`, which `main.create_app` mounts, the wire
 shapes in `dto/` and the conditional-read middleware `conditional.py`. `application/` holds the
 project-scoped use cases and their composition. The package root holds the process (`main`,
@@ -87,24 +87,24 @@ Every project-scoped responsibility the product needs, behind `/api` (`api/route
 
 | Concern | Routes | Owner module(s) |
 | --- | --- | --- |
-| Project binding and preparation | `GET /api/project`, `POST /api/project/modeling`, `GET /api/projects*` | `studio.binding` |
-| Canonical state, frame, volumes, closure | `GET /api/state`, `/state/frame`, `/state/volumes`, `POST /api/state/closure` | state owners in `packages/archflow/src/archflow/state`, projection in `studio.binding`, frame and closure in `monkeyarch.authoring.frame` |
-| Program sheet and semantics | `GET`\|`POST /api/program`, `GET /api/semantics` | `studio.program`, `state.program_sheet`, `semantics.registry` |
-| Massing options | `POST`\|`GET /api/options`, `POST /api/options/{id}/select` | `studio.options`, the moves in `monkeyarch.domain.massing_transforms` |
-| Proposals and picking | `POST /api/proposals*`, `POST /api/pick/resolve`, `GET /api/proposals/{id}`, decisions | `studio.intent`, geometry owners in `monkeyarch` |
-| Candidates, jobs, validation | `POST /api/proposals/{id}/candidate`, `POST /api/candidates/combine`, `GET /api/jobs/{id}`, `GET /api/candidates/{id}*` | `studio.candidate`, `studio.validation`, `runtime.project_runner` |
-| Runtime status of this process | `GET /api/runtime` — live jobs and retained candidate outcomes, read-only; `limit` / `offset` page recent runs in descending name order, while explicit `candidateId` values remain visible outside that window | `studio.candidate` |
-| Working Head and concurrent work | `GET /api/working-source` — the current working source each workspace follows; `GET /api/working-draft/revision` — a cheap poll of the position's revision; `GET /api/worktrees` — the read-only Worktree Graph of the head, running work, other lines and reconcile state | `studio.binding`, `studio.candidate` |
-| Stages, branches, working copies, episodes | `GET /api/design-history`, `POST /api/design-stages/initialize`, `POST /api/candidates/{id}/accept`, `/api/design-branches`, `/api/working-copies*`, `/api/episodes*` | `studio.intent` |
-| Documents, artifacts, captures, drawings, board, studies | `/api/documents*`, `/api/artifacts*`, `/api/model-assets`, `/api/captures`, `/api/drawings*`, `/api/board*`, `/api/studies*` | `studio.artifacts`, `studio.board`, `studio.study`, `documentation.drawings` |
-| Annotations and intents | `/api/model-annotations`, `/api/document-annotations`, `/api/document-comments`, `/api/intents*` | `studio.intent` |
-| Capabilities | `/api/capabilities*` | `studio.intent` |
-| Events | `GET /api/events`, `POST /api/events/*` | `studio.candidate`, `studio.shell` |
-| Skills | `POST /api/skills`, `GET /api/skills` (index, no bodies), `GET /api/skills/{skill_id}` (`?version=`) | `studio.skills` |
-| Shared-project role | `/api/sync/*` | `studio.binding` |
+| Project binding and preparation | `GET /api/project`, `POST /api/project/modeling`, `GET /api/projects*` | `project_runtime.binding` |
+| Canonical state, frame, volumes, closure | `GET /api/state`, `/state/frame`, `/state/volumes`, `POST /api/state/closure` | state owners in `packages/archflow/src/archflow/state`, projection in `project_runtime.binding`, frame and closure in `monkeyarch.authoring.frame` |
+| Program sheet and semantics | `GET`\|`POST /api/program`, `GET /api/semantics` | `project_runtime.program`, `archflow.state.program_sheet`, `archflow.semantics.registry` |
+| Massing options | `POST`\|`GET /api/options`, `POST /api/options/{id}/select` | `project_runtime.options`, the moves in `monkeyarch.domain.massing_transforms` |
+| Proposals and picking | `POST /api/proposals*`, `POST /api/pick/resolve`, `GET /api/proposals/{id}`, decisions | `project_runtime.intent`, geometry owners in `monkeyarch` |
+| Candidates, jobs, validation | `POST /api/proposals/{id}/candidate`, `POST /api/candidates/combine`, `GET /api/jobs/{id}`, `GET /api/candidates/{id}*` | `project_runtime.candidate`, `project_runtime.validation`, `monkeyarch.application.project_runner` |
+| Runtime status of this process | `GET /api/runtime` — live jobs and retained candidate outcomes, read-only; `limit` / `offset` page recent runs in descending name order, while explicit `candidateId` values remain visible outside that window | `project_runtime.candidate` |
+| Working Head and concurrent work | `GET /api/working-source` — the current working source each workspace follows; `GET /api/working-draft/revision` — a cheap poll of the position's revision; `GET /api/worktrees` — the read-only Worktree Graph of the head, running work, other lines and reconcile state | `project_runtime.binding`, `project_runtime.candidate` |
+| Stages, branches, working copies, episodes | `GET /api/design-history`, `POST /api/design-stages/initialize`, `POST /api/candidates/{id}/accept`, `/api/design-branches`, `/api/working-copies*`, `/api/episodes*` | `project_runtime.intent` |
+| Documents, artifacts, captures, drawings, board, studies | `/api/documents*`, `/api/artifacts*`, `/api/model-assets`, `/api/captures`, `/api/drawings*`, `/api/board*`, `/api/studies*` | `project_runtime.documents`, `project_runtime.board`, `project_runtime.study`, `monkeydiagram.documentation.styles` |
+| Annotations and intents | `/api/model-annotations`, `/api/document-annotations`, `/api/document-comments`, `/api/intents*` | `project_runtime.intent` |
+| Capabilities | `/api/capabilities*` | `project_runtime.intent` |
+| Events | `GET /api/events`, `POST /api/events/*` | `project_runtime.candidate`, `project_runtime.shell` |
+| Skills | `POST /api/skills`, `GET /api/skills` (index, no bodies), `GET /api/skills/{skill_id}` (`?version=`) | `project_runtime.skills` |
+| Shared-project role | `/api/sync/*` | `project_runtime.binding` |
 
 The two remaining route files answer about the process, not about the project:
-`api/routes/health.py` and `api/routes/protocol.py` are its identity (§5). Both belong to `studio.shell`.
+`api/routes/health.py` and `api/routes/protocol.py` are its identity (§5). Both belong to `project_runtime.shell`.
 
 Also: the CAD/OCCT/Rhino execution and inspection package (`packages/monkeycad/src/monkeycad`), selected by
 `ARCHFLOW_STUDIO_CAD_EXPORT`; the evaluator/generator jobs; and every retained-record write
@@ -133,7 +133,7 @@ gate its `Skill` tool under `dontAsk`, so an allow rule restricts nothing, and d
 plugins and the CLI's bundled skills. So the Hub removes them where they come from:
 
 - Claude Code's own auto-memory is off in every Claude and Coding Plan chat (`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`):
-  project memory has one owner, `studio.memory` (#252), and the CLI would otherwise keep agent-written notes
+  project memory has one owner, `project_runtime.memory` (#252), and the CLI would otherwise keep agent-written notes
   under `~/.claude/projects/<folder>/memory/` and, in a source checkout, hand the chat the developer's `MEMORY.md`.
 - With no library set, the chat starts with `--disable-slash-commands`: no skills are listed and there is no
   `Skill` tool. It also gets `--setting-sources project,local` (with only `env` and `apiKeyHelper` carried in

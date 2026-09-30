@@ -502,7 +502,7 @@ export const messagesEn = {
     "nothing — no clause refused, no finding, nothing confessed",
   "verdict.refused": "refused",
   "verdict.serverSource":
-    "review readiness is the server's result, read once per candidate and issue; project.issue alone can issue the run",
+    "review readiness is the server's result, read once per candidate and issue; archflow.project.issue alone can issue the run",
   "verdict.readReceipt": "Read the receipt",
   "verdict.held": "held",
 

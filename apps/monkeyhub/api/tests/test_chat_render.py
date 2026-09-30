@@ -318,7 +318,7 @@ class RenderContextTests(unittest.TestCase):
 
 
 class RenderRoutesTests(unittest.TestCase):
-    """The existing studio.render routes as the chat reaches them: allow-list, guide, admission and refusal."""
+    """The existing project_runtime.render routes as the chat reaches them: allow-list, guide, admission and refusal."""
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="MonkeyHub render routes ")

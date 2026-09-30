@@ -198,7 +198,7 @@ owner is MonkeyHub. Do not add a second launcher, configuration file, tray icon 
 shortcut for a service the Hub already starts, monitors and stops.
 
 MonkeyHub is the application. The Project Runtime (`docs/architecture/project-runtime.md`, module
-`studio.shell`) is the project-scoped backend it starts per open project; Board, Arch and
+`project_runtime.shell`) is the project-scoped backend it starts per open project; Board, Arch and
 Diagram are workspace modules. Product behaviour — navigation, settings authority, chat,
 lifecycle — goes to `hub.shell`; project-scoped computation and record access go to the
 runtime; workspace behaviour goes to `workspaces/*`. Board and Arch render directly in the single Hub frontend; Diagram is the Board page editor.

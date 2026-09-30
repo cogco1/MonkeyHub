@@ -79,7 +79,7 @@ existing design content digest, not the run-bound file digest.
 ## Ownership and storage
 
 Implementation and tests stay here under `labs/`. Registered production owners
-are consumed without edits: `state.record`, `state.massing_metrics`, P036 project
+are consumed without edits: `archflow.state.state_record`, `monkeyarch.domain.massing_metrics`, P036 project
 repository, Hub CLI discovery/process cleanup and MonkeyMonitor `TokenUsage`.
 The #123 lab is read-only. There is no general agent framework or new record kind.
 

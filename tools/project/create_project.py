@@ -127,7 +127,7 @@ def _collect_legacy_version_references(
 ) -> tuple[RetainedVersionReference | UnreadableVersionReference, ...]:
     """Name every version-identity location in one retained payload.
 
-    The walk itself belongs to ``project.repository`` and is shared with the
+    The walk itself belongs to ``archflow.project.repository`` and is shared with the
     migration, so this dry run and the migration receipt cannot disagree about
     what a project embeds. This only says which rows read completely.
     """

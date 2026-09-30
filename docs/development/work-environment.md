@@ -373,7 +373,7 @@ work registry 只登记进行中的源码 claim；模块的 `canonical` 标签�
 ### 3.1 record、receipt、ref 和物理文件
 
 - **record** 是项目保留的结构化事实。`put_json` 只接收
-  [`project.record_kinds`](../../packages/archflow/src/archflow/project/record_kinds.py) 已登记的 kind，并返回
+  [`archflow.project.record_kinds`](../../packages/archflow/src/archflow/project/record_kinds.py) 已登记的 kind，并返回
   `ProjectRecordRef`。
 - **receipt** 只证明一次跨边界行为，例如持久化写入、外部调用、CAD 导出、验收决定或 issue；
   receipt 保留时通常也是 `records/` 中的一种 record。确定性内存转换不自造 receipt。

@@ -137,11 +137,11 @@ user's Hub, projects or CAD session.
 
 ## Existing owners and reusable identity
 
-The inspected `studio.shell` `RetrievalProvider.retrieve(query, stage, limit)` is
+The inspected `project_runtime.shell` `RetrievalProvider.retrieve(query, stage, limit)` is
 a reserved protocol with no callers/implementation. This lab's replaceable
 `EvidenceRanker.rank` is consumed only by its CLI and is **not** connected to the
 reserved production port. Production source/ledger reads belong to
-`studio.study`/`studio.artifacts`; persistence/ref identity belongs to P036.
+`project_runtime.study`/`project_runtime.documents`; persistence/ref identity belongs to P036.
 
 An integration can carry existing `StudySource.basis_ref`, document asset SHA,
 page/revision, exact `ProjectRecordRef.uri`, ledger ref, evidence id and separate

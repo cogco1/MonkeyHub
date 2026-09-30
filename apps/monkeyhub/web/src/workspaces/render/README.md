@@ -1,6 +1,6 @@
 # Render workspace reuse
 
-The AI workspace consumes `studio.render` on the existing project Runtime.
+The AI workspace consumes `project_runtime.render` on the existing project Runtime.
 Its results remain `SourceDocument` pages shared with Board; switching workspace
 does not accept a model, issue a Stage, or cancel a running generation.
 
@@ -71,7 +71,7 @@ and look-development implementation into its Physical mode.
 
 - **Workspace:** extend `RenderWorkspace.tsx` and reuse `RenderResults.tsx` for
   saved results, download, comparison and the exact-page Board handoff.
-- **Runtime:** `studio.render` owns attempts and history in the existing project
+- **Runtime:** `project_runtime.render` owns attempts and history in the existing project
   Runtime. `application/render_contract.py` defines the image-provider seam;
   `api/routes/rendering.py` and `api/dto/rendering.py` define its HTTP contract.
   See [Render protocol](../../../../../../docs/protocols/project-runtime-api.md#render-image-attempts)

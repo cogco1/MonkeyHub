@@ -11,7 +11,7 @@
       "reviewer": null,
       "handoff": null,
       "modules": [
-        "tools.archcheck"
+        "tools.governance.archcheck"
       ],
       "write_scope": [
         "tools/governance/archcheck.py",

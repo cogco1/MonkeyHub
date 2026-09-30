@@ -2681,7 +2681,7 @@ export type ContextPackDto = {
     /**
      * Memory
      *
-     * the project's memory this utterance is about (studio.memory): locators, each target re-read now and a stale one kept with its reason, and source policies saying where to look first for its topic. Found by scope, then appliesWhen, then the words; it is how the project works, not a decision, and it copies no content it names
+     * the project's memory this utterance is about (project_runtime.memory): locators, each target re-read now and a stale one kept with its reason, and source policies saying where to look first for its topic. Found by scope, then appliesWhen, then the words; it is how the project works, not a decision, and it copies no content it names
      */
     memory?: Array<MemoryMatchDto>;
     /**

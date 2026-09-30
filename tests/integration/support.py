@@ -5,7 +5,7 @@ The spine's design state is a ``StateRecord@1`` and its constructor is
 the "Design state" row of its record). ``initialize_developed_design`` — the portfolio
 ceremony that used to build the fixture state for these tests — left with
 that lane, so the fixture is authored here as a record and projected the
-way ``runtime.project_runner`` and the Studio project it, with the same
+way ``monkeyarch.application.project_runner`` and the Studio project it, with the same
 three constants.
 
 Nothing here is a mock: ``bound_state`` initializes a real P036 project,
@@ -71,7 +71,7 @@ RUN_ID = "run-1"
 EVIDENCE = "evidence:geometry-compiler"
 COMMITMENT = "commitment:maintain-egress"
 
-# The kwargs ``runtime.project_runner`` and the Studio pass to
+# The kwargs ``monkeyarch.application.project_runner`` and the Studio pass to
 # ``developed_design_view``; a projection built with any other three names
 # a different state and its digest cites nothing.
 VIEW_KWARGS = {
@@ -387,7 +387,7 @@ def coordination_obligations(
     """One coordination duty per discipline, resolved unless named open.
 
     A developed-design state carries the duties its disciplines still owe
-    each other; ``capabilities.discipline_seats`` reads them when it
+    each other; ``monkeyarch.domain.discipline_seats`` reads them when it
     compiles a handover. The fixture state itself carries none, so a test
     that is about obligations says which of them are still open.
     """

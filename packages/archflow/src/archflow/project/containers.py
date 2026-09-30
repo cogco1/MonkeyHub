@@ -129,7 +129,7 @@ def work_in_progress(
 
     With no ``author`` this is the single slot ADR-007 fixed,
     ``input/runner/state-record.json`` beside ``input/runner/seats.json`` -
-    the two paths ``project.layout`` names and ``project.inputs`` reads. With
+    the two paths ``archflow.project.layout`` names and ``archflow.project.inputs`` reads. With
     an ``author`` the slot is ``input/<author>/state-record.json``: the
     reserved seam for parallel development, many work in progress and one
     published. Nothing here creates that directory, and an absent slot is an
@@ -137,7 +137,7 @@ def work_in_progress(
     error.
 
     Only the file's existence and the digest of its bytes are read. Parsing an
-    authored record is ``project.inputs``'s job and stays there; this module
+    authored record is ``archflow.project.inputs``'s job and stays there; this module
     would learn nothing from the parse that it reports.
     """
 

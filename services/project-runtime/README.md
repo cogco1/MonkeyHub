@@ -447,7 +447,7 @@ was given.
 
 The chips follow it literally: held is green only when `held > 0 && violated == 0 &&
 unchecked == 0`; violated is red; unchecked is amber. The review-ready badge is the server's
-boolean and nothing else. It does not issue the run or advance the stage; only `project.issue`
+boolean and nothing else. It does not issue the run or advance the stage; only `archflow.project.issue`
 has that authority.
 
 **Browser law**, verbatim:

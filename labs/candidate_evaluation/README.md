@@ -81,14 +81,14 @@ There is no filesystem lookup, automatic acceptance, or new persistence owner.
 
 ## Owners and limits
 
-- **Reused:** `state.record` owns `StateRecord`, binding/content identities and
-  `volume_boxes_of`; `state.massing_metrics` owns all four measurements and the
+- **Reused:** `archflow.state.state_record` owns `StateRecord`, binding/content identities and
+  `volume_boxes_of`; `monkeyarch.domain.massing_metrics` owns all four measurements and the
   existing `envelope_check` arithmetic. No formulas are copied into a second
   geometry implementation. The adapter checks input availability and finiteness
   before calling them, and never rounds an unsupported plan coordinate.
-- **Existing consumer:** `studio.options` already calls these owners to measure
+- **Existing consumer:** `project_runtime.options` already calls these owners to measure
   candidate options. This lab does not change that application path.
-- **Existing hard validation:** `validation.engine` validates a different input
+- **Existing hard validation:** `archflow.validation.engine` validates a different input
   (`CanonicalState` plus `CandidateSubmission`) and remains the production gate.
   This lab does not construct or claim its receipts, Stage checks or acceptance.
 - **New research code:** no registered owner provides generic sample statistics,

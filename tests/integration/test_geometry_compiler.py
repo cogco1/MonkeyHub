@@ -1,7 +1,7 @@
 """P089: the geometry compiler over the spine's own design state.
 
 The state is the projection of an authored ``StateRecord@1``
-(``tests/integration/support.py``), which is what ``runtime.project_runner`` hands the
+(``tests/integration/support.py``), which is what ``monkeyarch.application.project_runner`` hands the
 compiler. The frozen digests below are that state's, computed once.
 """
 from __future__ import annotations

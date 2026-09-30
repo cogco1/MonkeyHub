@@ -124,7 +124,7 @@ class MigrationScanCliTests(unittest.TestCase):
     def test_collector_names_the_two_key_and_flat_digest_shapes(self) -> None:
         """The shapes real writers retain besides the exact three-key mapping.
 
-        ``state.spatial`` keeps a branch base as ``{version, state_sha256}``
+        ``archflow.state.spatial`` keeps a branch base as ``{version, state_sha256}``
         and a CAD receipt keeps one as ``base_version``/``base_state_sha256``.
         A scan that knew only the exact mapping would call a project surveyed
         while those sat unlisted.

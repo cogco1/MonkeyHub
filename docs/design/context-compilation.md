@@ -10,7 +10,7 @@ design context. All provider requests must fit the application text budget befor
 they can be sent. The existing deterministic compiler still makes no model call.
 
 Development lookup and runtime requests have separate costs. Use
-`python tools/governance/devctl.py module studio.intent` to find an owner's responsibilities,
+`python tools/governance/devctl.py module project_runtime.intent` to find an owner's responsibilities,
 interfaces, dependencies, source paths and tests without reading the full registry.
 `python tools/governance/devctl.py module wall` searches ownership when a module id is not known.
 These development commands do not affect student API requests.
@@ -47,7 +47,7 @@ Request + explicit selection + exact StateRecord
     -> existing proposal and candidate validation
 ```
 
-The implementation extends `studio.intent` in
+The implementation extends `project_runtime.intent` in
 [`intent_context.py`](../../services/project-runtime/src/project_runtime/application/intent_context.py),
 [`intent_requests.py`](../../services/project-runtime/src/project_runtime/application/intent_requests.py)
 and [`intent_agent.py`](../../services/project-runtime/src/project_runtime/application/intent_agent.py).
@@ -266,7 +266,7 @@ has no changes or review items, then changing only the entrance Reading puts
 the unchanged wall review into the review list. The measured project's wall
 candidate remains unaccepted.
 
-This extends the current `studio.intent` and `hub.shell` owners. The UI sends
+This extends the current `project_runtime.intent` and `hub.shell` owners. The UI sends
 `contextMode=stage` only with its verified editing projection. API callers can
 still use `continue` for accumulated history or `project` for an explicit fresh
 session. An absent/unsynchronized editing projection, a candidate's inherited
@@ -997,7 +997,7 @@ already carried `target/change/kept`. The experimental MCP description told the
 agent to reuse those covered facts while retaining candidate authored-state,
 visual, missing-context and changed-scope checks. It added no cache, scheduler,
 store, DTO or execution path. This was an EXTEND of `hub.shell` guidance over the
-existing `studio.intent`/P036 readers, not a change to their ownership.
+existing `project_runtime.intent`/P036 readers, not a change to their ownership.
 
 [Anthropic's tool-engineering guidance](https://www.anthropic.com/engineering/writing-tools-for-agents)
 motivates testing tool descriptions and response content against actual tool,

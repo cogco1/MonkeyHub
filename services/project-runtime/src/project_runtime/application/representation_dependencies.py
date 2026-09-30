@@ -2,9 +2,9 @@
 
 A drawing, an AI render, a captured model view and an uploaded page each keep
 their content with their own owner: the cut-plan recipe and its receipt
-(studio.artifacts), the render request and its source snapshots
-(studio.render), the registered page and its explicit replacements
-(studio.artifacts). What a page was made from, and whether that still holds,
+(project_runtime.documents), the render request and its source snapshots
+(project_runtime.render), the registered page and its explicit replacements
+(project_runtime.documents). What a page was made from, and whether that still holds,
 is derived here on every read from those retained facts. Nothing here writes,
 stores a status or copies a dependency edge: this is the project-level
 dependency as a projection, not a second state beside the Design State.

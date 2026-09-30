@@ -7,7 +7,7 @@
 Each ``--source`` is a 3dm inspection record the repository holds, with a
 precedence after ``@``: 0 is the base, a higher number re-realizes the base
 for the components and sides it carries. The tool reads the authored record
-and the sources, drafts the elements (capabilities.element_reindex), and
+and the sources, drafts the elements (monkeyarch.authoring.element_reindex), and
 writes two records into the run named by ``--out-run`` through the
 repository: a ``component-catalog`` (objects, drafts, coverage, ambiguities)
 and a draft ``state-record`` successor. It writes nothing else: not the

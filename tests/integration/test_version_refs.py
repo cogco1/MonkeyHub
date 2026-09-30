@@ -156,7 +156,7 @@ class OwnerLoadingTests(unittest.TestCase):
             "the shared core may not load a workflow module",
         )
         # PromotionDecision@1 is the case that motivated this: a command that
-        # never imported project.issue would refuse every promoted project.
+        # never imported archflow.project.issue would refuse every promoted project.
         self.assertEqual(declared_pointers("PromotionDecision@1"), ("/checked_state",))
 
     def test_the_core_tier_declares_the_cad_records_without_loading_cad(self) -> None:

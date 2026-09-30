@@ -150,7 +150,7 @@ In both refused cases, every vertex of the host survives the cut, so the bounds 
 - **`COMP._validate_assemblies`.** A `host_cut` member is accepted when it is related to its host by construction, in either of two ways:
   - it is produced from the host (the wall solver's aperture);
   - one operation consumes it together with the host (a void region).
-- **The runner is unchanged.** Producers keep binding every operation to a component, as today: normally the component of the element that produced it; for a wall opening, the opening's component. The grouping in `runtime.project_runner` therefore needs no change. Unbound intermediates are available to provider-authored programs and to later producers.
+- **The runner is unchanged.** Producers keep binding every operation to a component, as today: normally the component of the element that produced it; for a wall opening, the opening's component. The grouping in `monkeyarch.application.project_runner` therefore needs no change. Unbound intermediates are available to provider-authored programs and to later producers.
 
 ### 3.2 `voids`
 
@@ -253,7 +253,7 @@ The model-axis elevation (`ELEV`) and the review sheet (`drawings.py`) exclude h
 - **StateRecord** identity, dependency closure and provenance. The only change is that `references.voids` names entities.
 - **Exact STEP, preview and cold readback**: the same checks, tolerances and failures. Both lowering strategies are read back against the same predicted bounds.
 - **Typed openings** (`wall.openings` with `kind` and `type_id`), their assemblies, and the wall solver's aperture evidence.
-- **`runtime.project_runner`**, and the booleans of the Rhino and Blender exporters.
+- **`monkeyarch.application.project_runner`**, and the booleans of the Rhino and Blender exporters.
 - **Direct transforms** (move, rotate, scale) still refuse an element that has dependents, and an element used as a void has one: its host (§6).
 
 ## 5. Acceptance and tests

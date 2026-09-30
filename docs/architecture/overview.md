@@ -102,7 +102,7 @@ P036 repository                   packages/archflow/src/archflow/project/reposit
 the published design              the one issue a project stands at; canonical `HEAD` is its file
 ```
 
-The design history uses `state.design_portfolio` and the same P036 repository:
+The design history uses `archflow.state.design_portfolio` and the same P036 repository:
 an accepted `DesignStage@1` pins one complete materialized model and StateRecord;
 `design/branches.json` holds each sustained history line's fork and head refs.
 Generate and preview leave candidates; explicit acceptance advances the design

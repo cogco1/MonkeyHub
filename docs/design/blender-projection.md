@@ -5,7 +5,7 @@ authority. A verified OCCT STEP is cold-read and tessellated by the existing OCC
 adapter, then mirrored into Blender. Blender receives vertices and triangles; it
 does not interpret walls, openings, columns, lofts or architectural constraints.
 
-This extends the CAD owner, today `monkeycad.blender`, and `runtime.project_runner`. The existing
+This extends the CAD owner, today `monkeycad.blender`, and `monkeyarch.application.project_runner`. The existing
 legacy Blender CAD backend remains available for its current consumers; selecting
 this projection never calls that builder. Rhino is not launched or required.
 The normal OCCT preview still uses the existing rhino3dm file library; that is

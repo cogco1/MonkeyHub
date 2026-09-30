@@ -1,6 +1,6 @@
 """Compile a bounded output vocabulary and check it before proposal authoring.
 
-These are helpers of studio.intent, not another authoring or validation owner.
+These are helpers of project_runtime.intent, not another authoring or validation owner.
 Reading another dependency never gives an edit permission on that dependency.
 """
 from __future__ import annotations

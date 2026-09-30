@@ -96,7 +96,7 @@ def _continue_body(chat_id: str, session: dict, body: dict, quote: str | None = 
 
 # The two judgments a chat saves from the user's words: avoid/keep feedback
 # (decisions) and project memory (a locator, a source policy or a recipe,
-# studio.memory).
+# project_runtime.memory).
 _FEEDBACK_PATHS = ("/api/decisions", "/api/memory")
 
 
