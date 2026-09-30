@@ -1,4 +1,49 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-494",
+      "status": "active",
+      "branch": "codex/494-docs-categories",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-494-docs-categories",
+      "base_ref": "c08ce6ea8e1fd229167979be0690af40e3c3b808",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "tools.archcheck",
+        "tools.devctl"
+      ],
+      "write_scope": [
+        "docs/",
+        "AGENTS.md",
+        "CONTRIBUTING.md",
+        "README.md",
+        ".github/workflows/nightly.yml",
+        "tools/archcheck.py",
+        "tools/devctl.py",
+        "labs/README.md",
+        "labs/candidate_evaluation/README.md",
+        "probes/blender-projection-v1/README.md",
+        "apps/monkeyhub/README.md",
+        "apps/monkeyhub/web/src/workspaces/render/README.md",
+        "services/project-runtime/README.md",
+        "services/project-runtime/src/project_runtime/__init__.py",
+        "services/project-runtime/src/project_runtime/protocol.py",
+        "services/project-runtime/src/project_runtime/application/domains.py",
+        "packages/archflow/src/archflow/adapters/README.md",
+        "packages/archflow/src/archflow/project/README.md",
+        "packages/archflow/src/archflow/semantics/facets.py",
+        "packages/archflow/src/archflow/state/README.md",
+        "packages/archflow/src/archflow/submission/README.md",
+        "packages/archflow/src/archflow/validation/README.md",
+        "packages/monkeyarch/src/monkeyarch/README.md",
+        "packages/monkeyarch/src/monkeyarch/capabilities/README.md",
+        "packages/monkeyarch/src/monkeyarch/capabilities/domain_readiness.py",
+        "packages/monkeydiagram/src/monkeydiagram/README.md",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py"
+      ],
+      "depends_on": []
+    }
+  ]
 }
