@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..protocol import PROTOCOL, SERVER_NAME, SERVER_VERSION, server_capabilities
-from ..settings import StudioSettings
+from ...protocol import PROTOCOL, SERVER_NAME, SERVER_VERSION, server_capabilities
+from ...settings import StudioSettings
 
 
 class ServerIdentityDto(BaseModel):

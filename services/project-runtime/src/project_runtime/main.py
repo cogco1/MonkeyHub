@@ -32,25 +32,25 @@ import uvicorn
 
 from archflow.project.index import IndexCommit, add_commit_listener
 
-from . import routes
-from .routes import memory as memory_routes
-from .routes import projections as projection_routes
-from .routes import skills as skill_routes
-from .application.authentication import ActorAuthorizationMiddleware, read_actor_credentials, request_action
+from .api import routes
+from .api.routes import memory as memory_routes
+from .api.routes import projections as projection_routes
+from .api.routes import skills as skill_routes
+from .authentication import ActorAuthorizationMiddleware, read_actor_credentials, request_action
 from .application.clarification import PendingIntentStore
 from .application.episodes import EpisodeStore
-from .application.events import StudioEvents
+from .events import StudioEvents
 from .application.intent_agent import compiler_from_settings
-from .application.jobs import JobRegistry
+from .jobs import JobRegistry
 from .application.rendering import RenderJobRecords
-from .application.monitoring import MonitoredCompiler, StudioMonitor
+from .monitoring import MonitoredCompiler, StudioMonitor
 from .application.options import OptionStore
 from .application.proposals import ProposalStore
 from .application.validation import ValidationStore
 from .protocol import SERVER_VERSION
 from .settings import BIND_ENV, PROJECT_DIR_ENV, REMOTE_MODE, SHARED_PROJECT_ROLE, StudioSettings
-from .transport.conditional import CONDITIONAL_READS, ConditionalReads
-from .transport.errors import StudioError
+from .api.conditional import CONDITIONAL_READS, ConditionalReads
+from .errors import StudioError
 
 DEFAULT_PORT = 8000
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
@@ -584,7 +584,7 @@ def _prepare_first_reads(app: FastAPI) -> None:
     unmatched = {"type": "http", "method": "GET", "path": "/api/\0", "raw_path": b"/api/%00",
                  "root_path": "", "query_string": b"", "headers": [], "app": app}
     try:
-        from .application.binding import prepare_bound_project
+        from .binding import prepare_bound_project
 
         binding = prepare_bound_project(app.state)
         for route in app.router.routes:

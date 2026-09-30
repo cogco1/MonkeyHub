@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from archflow.state.design_portfolio import DesignBranch
 
-from ..application.design_history import (
+from ...application.design_history import (
     AcceptanceEvidence,
     AdmissionRecord,
     AdmittedBy,

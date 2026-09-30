@@ -64,9 +64,9 @@ from archflow.project.record_kinds import STATE_RECORD
 from archflow.project.repository import ProjectRepositoryError
 
 from ..ports import StudioEventSink
-from ..transport.errors import StudioError, error_sentence
+from ..errors import StudioError, error_sentence
 from .artifacts import ArtifactRecord
-from .binding import ProjectBinding, ReferenceRun
+from ..binding import ProjectBinding, ReferenceRun
 from .candidate import CandidateRun, RelationTotals, SeatOutcome
 
 # The claim a candidate makes about itself: this run happened, and here is the

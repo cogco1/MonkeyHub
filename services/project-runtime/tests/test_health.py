@@ -20,7 +20,7 @@ from urllib.request import urlopen
 
 from fastapi.testclient import TestClient
 
-from project_runtime.application.binding import ProjectBinding
+from project_runtime.binding import ProjectBinding
 from project_runtime.main import _source_revision, _watch_managed_stdin, create_app, main
 from project_runtime.protocol import SERVER_VERSION
 from project_runtime.settings import REMOTE_MODE, StudioSettings

@@ -28,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
-from ..transport.errors import StudioError
+from ..errors import StudioError
 from .artifacts import _text
 from .projection import StateProjection
 

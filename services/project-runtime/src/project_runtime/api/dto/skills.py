@@ -11,7 +11,7 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..application.skills import MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH, SkillVersion
+from ...application.skills import MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH, SkillVersion
 
 _Item = Annotated[str, Field(min_length=1, max_length=200)]
 

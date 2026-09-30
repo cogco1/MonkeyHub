@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..application.compare import Comparison, ComponentChange, ObjectChange
+from ...application.compare import Comparison, ComponentChange, ObjectChange
 
 Vector3 = tuple[float, float, float]
 

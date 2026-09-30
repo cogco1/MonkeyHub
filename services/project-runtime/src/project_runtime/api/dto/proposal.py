@@ -19,8 +19,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ..application.episodes import DeliberationEpisode, EpisodeProposal, WorkingCopy, WorkingCopyOption
-from ..application.proposals import PERSISTENCE, Proposal
+from ...application.episodes import DeliberationEpisode, EpisodeProposal, WorkingCopy, WorkingCopyOption
+from ...application.proposals import PERSISTENCE, Proposal
 from .impact import ImpactDto
 from .impact import to_dto as impact_dto
 from .artifacts import ModelSourceDto, model_source_dto, model_source_from

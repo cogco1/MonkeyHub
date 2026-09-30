@@ -6,7 +6,7 @@ from typing import Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..application.study import StudyView
+from ...application.study import StudyView
 
 
 IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"

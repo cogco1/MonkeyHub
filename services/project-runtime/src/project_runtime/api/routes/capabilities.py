@@ -15,8 +15,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
-from ..application.binding import bound_project
-from ..application.capability import (
+from ...binding import bound_project
+from ...application.capability import (
     capability,
     capability_index,
     describe_capability,
@@ -24,10 +24,10 @@ from ..application.capability import (
     initialization_description,
     require_runnable,
 )
-from ..application.intent import merge_keep
-from ..application.projection import project_state
-from ..transport.errors import StudioError
-from ..transport.capability import (
+from ...application.intent import merge_keep
+from ...application.projection import project_state
+from ...errors import StudioError
+from ..dto.capability import (
     CapabilityDetailDto,
     CapabilityIndexDto,
     CapabilityRunDto,

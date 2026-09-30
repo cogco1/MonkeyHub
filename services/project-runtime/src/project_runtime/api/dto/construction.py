@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from archflow.state.state_record import _EPISTEMIC
 from monkeyarch.construction.vocabulary import LIMITS
 
-from ..application.projection import StateProjection
+from ...application.projection import StateProjection
 from .project import ProjectVersionDto, ReferenceRunDto, project_version_dto, reference_run_dto
 from .proposal import STATE_DIGEST_PATTERN, ProposalDto
 

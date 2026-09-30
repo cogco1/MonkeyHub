@@ -15,10 +15,10 @@ from archflow.project.repository import ProjectRepositoryError
 from archflow.state.design_portfolio import DesignBranch
 from archflow.state.state_record import StateRecord, StateRecordError, changed_refs, combine_component_changes
 
-from .artifacts import ModelSource, list_artifacts, require_complete_model
+from .application.artifacts import ModelSource, list_artifacts, require_complete_model
 from .binding import ProjectBinding, ReferenceRun, record_kind
-from .candidate import _receipt
-from .design_history import (
+from .application.candidate import _receipt
+from .application.design_history import (
     StageView,
     _exact_runner,
     _retained_acceptance_attribution,
@@ -26,11 +26,11 @@ from .design_history import (
     read_acceptance,
 )
 from .jobs import FAILED, QUEUED, RUNNING, Job, JobRegistry
-from .representation_dependencies import (
+from .application.representation_dependencies import (
     CURRENT, FROZEN, OUTDATED, UNAVAILABLE, ReplacementCycle, RepresentationReads, representation_status,
 )
-from .working_draft import WorkingHead, lineage_of, read_working_draft, resolve_working_source
-from ..transport.errors import StudioError
+from .application.working_draft import WorkingHead, lineage_of, read_working_draft, resolve_working_source
+from .errors import StudioError
 
 
 @dataclass(frozen=True, slots=True)

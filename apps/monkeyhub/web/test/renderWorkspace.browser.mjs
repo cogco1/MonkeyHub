@@ -45,7 +45,7 @@ source_roots.put_first(Path.cwd().parents[1])
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_RENDER_JOB
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.artifacts import save_document
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings

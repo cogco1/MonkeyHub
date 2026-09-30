@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..application.capability import Description, EditableField, KeepScope, summary
+from ...application.capability import Description, EditableField, KeepScope, summary
 from .proposal import ProposalRequestDto
 
 

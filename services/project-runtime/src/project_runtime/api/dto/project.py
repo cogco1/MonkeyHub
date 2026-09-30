@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from archflow.project.refs import ProjectVersionRef
 
-from ..application.binding import ProjectBinding, ReferenceRun
+from ...binding import ProjectBinding, ReferenceRun
 
 
 class ProjectVersionDto(BaseModel):

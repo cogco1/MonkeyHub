@@ -20,29 +20,29 @@ from archflow.project.refs import ProjectRecordRef
 
 from dataclasses import replace
 
-from ..application import clarification
-from ..application.binding import ProjectBinding, bound_project
-from ..application.artifacts import ModelSource, require_model_source
-from ..application.catalog import catalog_of
-from ..application.conventions import project_conventions
-from ..application.clarification import PendingIntentStore, Resolution
-from ..application.construction import kept_refs
-from ..application.gestures import (
+from ...application import clarification
+from ...binding import ProjectBinding, bound_project
+from ...application.artifacts import ModelSource, require_model_source
+from ...application.catalog import catalog_of
+from ...application.conventions import project_conventions
+from ...application.clarification import PendingIntentStore, Resolution
+from ...application.construction import kept_refs
+from ...application.gestures import (
     DocumentAnnotationRef, GestureReading, list_document_comments, read_document_annotations, read_gestures,
     retain_document_comment, save_document_annotations,
     prepare_document_visuals,
     require_document_model_sources, require_document_comment_source,
     read_model_annotations, save_model_annotations,
 )
-from ..application.intent import (
+from ...application.intent import (
     DeterministicIntentProvider,
     merge_keep,
     parse_utterance,
 )
-from ..application.capability import capability, describe_capability
-from ..application.decisions import compile_scoped_decisions, decision_context_for, focus_refs
-from ..application.memory import memory_for
-from ..application.intent_agent import (
+from ...application.capability import capability, describe_capability
+from ...application.decisions import compile_scoped_decisions, decision_context_for, focus_refs
+from ...application.memory import memory_for
+from ...application.intent_agent import (
     AGENT_FAILED,
     DETERMINISTIC,
     DeterministicCompiler,
@@ -53,19 +53,19 @@ from ..application.intent_agent import (
     context_refs,
     record_sheet,
 )
-from ..application.intent_context import compile_task_context, confirmed_stage_context, pack_context
-from ..application.intent_requests import action_preflight
-from ..application.study import read_study, study_evidence_context
-from ..application.projection import StateProjection, project_state, require_actionable
-from ..application.proposals import proposal_from
-from ..application.visual_reviews import deliver_frames, review_sources, visual_provider
-from ..transport.errors import (
+from ...application.intent_context import compile_task_context, confirmed_stage_context, pack_context
+from ...application.intent_requests import action_preflight
+from ...application.study import read_study, study_evidence_context
+from ...application.projection import StateProjection, project_state, require_actionable
+from ...application.proposals import proposal_from
+from ...application.visual_reviews import deliver_frames, review_sources, visual_provider
+from ...errors import (
     BlockedNeedsHuman,
     MissingEditableControl,
     StudioError,
     UnsupportedRequest,
 )
-from ..transport.intent import (
+from ..dto.intent import (
     ContextPackDto,
     ContextPackRequestDto,
     DocumentAnnotationsDto,
@@ -89,9 +89,9 @@ from ..transport.intent import (
     pending_body,
     pending_dto,
 )
-from ..transport.construction import ConstructionOutcomeDto
-from ..transport.proposal import ProposalScopeDto, to_dto
-from ..transport.artifacts import model_source_from, model_source_dto
+from ..dto.construction import ConstructionOutcomeDto
+from ..dto.proposal import ProposalScopeDto, to_dto
+from ..dto.artifacts import model_source_from, model_source_dto
 from .proposals import _require_bound_project, _stale_base
 
 router = APIRouter(tags=["intents"])

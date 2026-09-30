@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from archflow.state.program_sheet import PROGRAM_SHEET_SCHEMA, REQUIREMENTS
 
-from ..application.program import ProgramCandidate, ProgramView
+from ...application.program import ProgramCandidate, ProgramView
 from .artifacts import ModelSourceDto
 
 

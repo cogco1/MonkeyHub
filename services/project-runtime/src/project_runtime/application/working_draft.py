@@ -26,12 +26,12 @@ from archflow.state.design_portfolio import DesignBranch
 from .artifacts import (
     FORMAT_3DM, ModelSource, artifact_model_source, list_artifacts, require_complete_model, require_model_source,
 )
-from .authentication import ActorAttribution, LOCAL_ACTOR_ID, ORIGIN_HUB, ORIGIN_HUB_AGENT, ORIGIN_STUDIO
-from .binding import retained_sources
-from .binding import ProjectBinding
+from ..authentication import ActorAttribution, LOCAL_ACTOR_ID, ORIGIN_HUB, ORIGIN_HUB_AGENT, ORIGIN_STUDIO
+from ..binding import retained_sources
+from ..binding import ProjectBinding
 from .projection import StateProjection, project_state
-from ..transport.errors import StudioError
-from ..transport.working_draft import LocalDraftDto, LocalDraftInputDto, LocalDraftSourceDto, WorkingDraftDto, WorkingDraftEntryDto
+from ..errors import StudioError
+from ..api.dto.working_draft import LocalDraftDto, LocalDraftInputDto, LocalDraftSourceDto, WorkingDraftDto, WorkingDraftEntryDto
 
 
 def _now() -> str:

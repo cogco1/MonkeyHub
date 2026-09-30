@@ -5,10 +5,10 @@ from __future__ import annotations
 from fastapi import APIRouter
 from starlette.requests import Request
 
-from ..application.binding import bound_project
-from ..settings import LOCAL_MODE
-from ..transport.errors import StudioError
-from ..transport.health import StudioHealth
+from ...binding import bound_project
+from ...settings import LOCAL_MODE
+from ...errors import StudioError
+from ..dto.health import StudioHealth
 
 router = APIRouter(tags=["health"])
 

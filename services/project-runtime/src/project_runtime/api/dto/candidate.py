@@ -14,11 +14,11 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..adapters.harness import HARNESS_STATEMENT
-from ..application.artifacts import _text, _whole
-from ..application.candidate import CandidateRun, RelationTotals, SeatOutcome
-from ..application.compare import Shape
-from ..application.jobs import PERSISTENCE, Job
+from ...application.harness import HARNESS_STATEMENT
+from ...application.artifacts import _text, _whole
+from ...application.candidate import CandidateRun, RelationTotals, SeatOutcome
+from ...application.compare import Shape
+from ...jobs import PERSISTENCE, Job
 from .artifacts import ProjectArtifactDto, artifact_dto
 from .compare import BoxDto
 from .project import ProjectVersionDto

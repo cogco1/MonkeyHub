@@ -744,7 +744,7 @@ class DirectSemanticProposalTests(ProposalTestCase):
 
     def test_existing_entity_metadata_upserts_preserve_omitted_fields(self):
         from archflow.state.state_record import apply_state_record_operator
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         from project_runtime.application.projection import project_state
 
         base = project_state(bound_project(self.client.app.state)).record

@@ -29,7 +29,7 @@ from unittest import mock
 from fastapi.testclient import TestClient
 
 from project_runtime.application import candidate as candidate_module
-from project_runtime.application.binding import record_kind
+from project_runtime.binding import record_kind
 from project_runtime.main import create_app
 from project_runtime.settings import (
     CAD_EXPORT_ENV,

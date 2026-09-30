@@ -16,21 +16,21 @@ from typing import Annotated, Any, Literal, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
-from ..application.clarification import (
+from ...application.clarification import (
     AuthoredControlDraft,
     CandidateOption,
     PendingIntent,
     ScopeOption,
 )
-from ..application.gestures import (
+from ...application.gestures import (
     DocumentAnnotationPage, DocumentAnnotationRef, DocumentGesture, DocumentTracingCalibration, Gesture, GestureHit,
 )
-from ..application.intent_agent import Compilation
-from ..application.visual_observation import (
+from ...application.intent_agent import Compilation
+from ...application.visual_observation import (
     MAX_CRITERIA, MAX_FACT_TEXT, MAX_FACTS, MAX_FINDINGS, MAX_FRAMES, MAX_PRESERVE, MAX_PRIOR, MAX_TEXT, POLISH_CAP,
     Criterion, EvidenceFrame, PriorFinding, SourceRef, VisualReviewBudget, VisualReviewRequest, VisualReviewResult,
 )
-from ..application.visual_reviews import planned_frames
+from ...application.visual_reviews import planned_frames
 from .capability import CapabilitySourceDto, CapabilityTargetDto, KeepScopeDto, detail_dto
 from .construction import ConstructionOutcomeDto
 from .decisions import DecisionContextDto, DecisionDto, decision_dto

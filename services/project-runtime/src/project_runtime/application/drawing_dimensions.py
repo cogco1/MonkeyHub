@@ -21,9 +21,9 @@ from monkeydiagram.drawing_elevation import ElevationView, VerifiedElevationSour
 from monkeydiagram.drawing_svg import dimension_placement_fits
 
 from .artifacts import ModelSource, require_complete_model, require_model_source
-from .binding import ProjectBinding
+from ..binding import ProjectBinding
 from .projection import project_state
-from ..transport.errors import StudioError
+from ..errors import StudioError
 
 
 _METRES = {"meter": 1.0, "millimeter": 0.001, "inch": 0.0254, "foot": 0.3048}

@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.benchmarks import run_turn_benchmark as bench
 from project_runtime.application.artifacts import ModelSource, list_artifacts
-from project_runtime.application.binding import ProjectBinding
+from project_runtime.binding import ProjectBinding
 from project_runtime.application.drawings import _complete_source, model_view
 from project_runtime.settings import StudioSettings
 from monkeydiagram.drawing_elevation import read_elevation_source

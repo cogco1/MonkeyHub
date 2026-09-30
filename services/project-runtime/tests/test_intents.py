@@ -34,10 +34,10 @@ from project_runtime.application.intent_agent import (
 )
 from project_runtime.application.construction import in_construction_words
 from project_runtime.application.projection import project_state
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.errors import StudioError
+from project_runtime.errors import StudioError
 
 from .support import (
     PROJECT_ID,
@@ -1399,7 +1399,7 @@ class ContextPackTests(IntentTestCase):
 
     def test_advertised_reading_edit_survives_candidate_and_cold_task_context(self) -> None:
         from jsonschema import Draft202012Validator
-        from project_runtime.transport.proposal import SemanticEditRequestDto
+        from project_runtime.api.dto.proposal import SemanticEditRequestDto
 
         reading = {
             "entity_id": "entry-condition", "schema": "Reading@1", "parent_id": "portico",
@@ -1723,7 +1723,7 @@ class ContextPackTests(IntentTestCase):
     def test_an_obstacle_the_record_already_answers_advertises_no_runnable_request(self) -> None:
         from unittest.mock import patch
 
-        from project_runtime.routes import intents as route
+        from project_runtime.api.routes import intents as route
 
         # The shape the record's own preflight answers a locked control with.
         # No fixture here binds an element field to a locked or derived

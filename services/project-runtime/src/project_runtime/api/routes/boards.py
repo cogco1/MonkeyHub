@@ -4,10 +4,10 @@ from fastapi import APIRouter
 from fastapi.responses import Response
 from starlette.requests import Request
 
-from ..application import boards
-from ..application.binding import bound_project
-from ..transport.boards import BoardDto, BoardExportPageDto, BoardExportRequestDto, BoardRequestDto, board_dto
-from ..transport.errors import StudioError
+from ...application import boards
+from ...binding import bound_project
+from ..dto.boards import BoardDto, BoardExportPageDto, BoardExportRequestDto, BoardRequestDto, board_dto
+from ...errors import StudioError
 from .artifacts import _content_disposition
 
 router = APIRouter(tags=["board"])

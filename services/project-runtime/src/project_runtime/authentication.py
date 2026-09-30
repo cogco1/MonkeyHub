@@ -12,8 +12,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from ..settings import SettingsError, SHARED_PROJECT_ROLE
-from ..transport.errors import StudioError
+from .settings import SettingsError, SHARED_PROJECT_ROLE
+from .errors import StudioError
 from .binding import bound_project
 
 _ACTIONS = frozenset({"read", "propose", "accept", "release"})

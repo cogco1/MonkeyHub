@@ -65,8 +65,8 @@ from monkeyarch.capabilities.element_producers import (
 )
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 
-from ..transport.errors import StudioError, error_sentence
-from .binding import ProjectBinding, ReferenceRun, STUDIO_RUN_ID
+from ..errors import StudioError, error_sentence
+from ..binding import ProjectBinding, ReferenceRun, STUDIO_RUN_ID
 
 # The project runner's own view kwargs. Changing any of them turns
 # ``stateDigest`` into a number no receipt carries.

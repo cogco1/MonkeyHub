@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..application.pick import PickRequest, PickResolution
+from ...application.pick import PickRequest, PickResolution
 
 # The digest as it travels: 64 lowercase hex, the form the kernel writes. A
 # wrongly shaped one never reaches the resolver — it is a malformed request,

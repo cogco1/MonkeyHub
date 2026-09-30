@@ -79,7 +79,7 @@ class SketchTestCase(unittest.TestCase):
 
         closed = [*SQUARE, SQUARE[0]]
 
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         from project_runtime.application.intent import sketch_prism_proposal
         from project_runtime.application.projection import project_state
 
@@ -552,9 +552,9 @@ class SketchNewComponentTestCase(unittest.TestCase):
         that produced nothing of its own change has to say so.
         """
 
-        from project_runtime.application.binding import ProjectBinding
+        from project_runtime.binding import ProjectBinding
         from project_runtime.application.candidate import run_operator
-        from project_runtime.transport.errors import StudioError
+        from project_runtime.errors import StudioError
         from archflow.state.state_record import Entity, StateRecordEditKind, StateRecordOperator
 
         settings = StudioSettings(cad_export="occt", project_dir=self.project)
@@ -638,7 +638,7 @@ class SketchDirectGeometryTestCase(unittest.TestCase):
         return job["candidateId"]
 
     def record(self, run: str):
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         from project_runtime.application.projection import project_state
 
         return project_state(bound_project(self.client.app.state), run).record
@@ -892,7 +892,7 @@ class ProposalCheckpointTestCase(unittest.TestCase):
         elements = {row["elementId"]: row for row in self.client.get(f"/api/state?run={run_id}").json()["elements"]}
         self.assertTrue({"chain-a", "chain-b", "chain-copy"} <= set(elements))
         self.assertNotIn("chain-temp", elements)
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         from project_runtime.application.candidate import replay_candidate
         from project_runtime.application.projection import project_state
 
@@ -1060,7 +1060,7 @@ class PlanarCompressionProposalTestCase(unittest.TestCase):
 
     def proposed_record(self, proposal):
         from archflow.state.state_record import apply_state_record_operator
-        from project_runtime.application.binding import bound_project
+        from project_runtime.binding import bound_project
         from project_runtime.application.projection import project_state
         from project_runtime.application.proposals import operator_of
 

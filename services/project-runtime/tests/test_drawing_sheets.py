@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from archflow.adapters.occt_backend import occt_available
 from archflow.project.refs import record_ref_from_uri
 from project_runtime.application.artifacts import save_document
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project

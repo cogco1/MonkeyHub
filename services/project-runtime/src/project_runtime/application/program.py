@@ -55,8 +55,8 @@ from archflow.state.state_record import (
 )
 
 from ..settings import LOCAL_MODE, StudioSettings
-from ..transport.errors import StudioError
-from .binding import ProjectBinding
+from ..errors import StudioError
+from ..binding import ProjectBinding
 from .projection import (
     BRANCH_ID,
     PORTFOLIO_ID,

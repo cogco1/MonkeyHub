@@ -72,7 +72,7 @@ def create_public_massing_fixture(project_root: Path) -> tuple[RetainedCandidate
     """
 
     options = import_module("services.project-runtime.src.project_runtime.application.options")
-    binding_module = import_module("services.project-runtime.src.project_runtime.application.binding")
+    binding_module = import_module("services.project-runtime.src.project_runtime.binding")
     settings_module = import_module("services.project-runtime.src.project_runtime.settings")
     repository = FilesystemProjectRepository.initialize(
         project_root, project_id=PROJECT_ID, initial_state={"fixture": EVIDENCE},

@@ -62,8 +62,8 @@ from archflow.project.refs import ProjectRecordRef
 from archflow.state.state_record import component_semantics
 from .artifacts import ModelSource
 
-from ..transport.errors import StudioError
-from .binding import ProjectBinding
+from ..errors import StudioError
+from ..binding import ProjectBinding
 from .construction import ConstructionProposal, design_proposal, kept_refs, modelling_root
 from .intent import ACCEPTED_FORMS, component_edit_proposal, parse_utterance
 from .intent_agent import AGENT_FAILED, DETERMINISTIC, Compilation, DocumentVisual, Selection

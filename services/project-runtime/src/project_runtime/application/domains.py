@@ -22,9 +22,9 @@ from typing import Any
 
 from monkeyarch.capabilities.domain_readiness import DOMAINS, DomainUnknown, describe, readiness
 
-from .binding import ProjectBinding
+from ..binding import ProjectBinding
 from .projection import project_state
-from ..transport.errors import StudioError
+from ..errors import StudioError
 
 
 def domains_index() -> dict[str, Any]:

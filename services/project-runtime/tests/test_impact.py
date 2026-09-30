@@ -13,7 +13,7 @@ import shutil
 import tempfile
 import unittest
 
-from project_runtime.application.binding import ProjectBinding
+from project_runtime.binding import ProjectBinding
 from project_runtime.application.impact import impact
 from project_runtime.application.projection import project_state
 from project_runtime.settings import StudioSettings

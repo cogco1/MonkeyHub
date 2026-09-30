@@ -30,8 +30,8 @@ from starlette.requests import Request
 import uvicorn
 from archflow.adapters.integration_packs import IntegrationPackManager
 
-from project_runtime.transport.errors import StudioError
-from project_runtime.transport.project import ModelingInitializeDto, ModelingInitializeRequestDto
+from project_runtime.errors import StudioError
+from project_runtime.api.dto.project import ModelingInitializeDto, ModelingInitializeRequestDto
 
 from . import chat as chat_tools
 from . import credentials

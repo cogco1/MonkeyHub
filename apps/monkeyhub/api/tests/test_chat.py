@@ -3708,7 +3708,7 @@ class ChatTests(unittest.TestCase):
 
         self.enterContext(patch.object(chat, "_request_json", side_effect=request))
         self.enterContext(patch.object(chat, "_SERVICE_OPENER")).open.side_effect = open_request
-        self.enterContext(patch("project_runtime.routes.intents.visual_provider", return_value=Provider()))
+        self.enterContext(patch("project_runtime.api.routes.intents.visual_provider", return_value=Provider()))
         return session, page, sent
 
     def say(self, session, content):

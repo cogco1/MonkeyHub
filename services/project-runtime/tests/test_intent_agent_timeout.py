@@ -30,7 +30,7 @@ import project_runtime  # noqa: F401
 from archflow.contracts.canonical import canonical_digest
 from archflow.ports.model import ModelInvocationStatus, ModelPhase
 
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.intent_agent import (
     AGENT_FAILED,
     CODEX_DEFAULT_MODEL_ID,
@@ -42,7 +42,7 @@ from project_runtime.application.intent_agent import (
 from project_runtime.application.projection import project_state
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.errors import StudioError
+from project_runtime.errors import StudioError
 
 from .support import CODEX_SHIM_VERSION, PROJECT_ID, make_project, write_codex_shim
 

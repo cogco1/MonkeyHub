@@ -42,11 +42,11 @@ from starlette.requests import Request
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 
-from ..application.binding import bound_project
-from ..transport.errors import StudioError
-from ..transport.events import ClientTimingDto, ModelLoadTimingDto, MonitorWriteDto, StudioEventDto
-from ..transport.events import to_dto as event_dto
-from ..transport.index import IndexEventDto
+from ...binding import bound_project
+from ...errors import StudioError
+from ..dto.events import ClientTimingDto, ModelLoadTimingDto, MonitorWriteDto, StudioEventDto
+from ..dto.events import to_dto as event_dto
+from ..dto.index import IndexEventDto
 
 router = APIRouter(tags=["events"])
 

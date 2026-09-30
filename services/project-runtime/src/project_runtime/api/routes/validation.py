@@ -20,13 +20,13 @@ from starlette.requests import Request
 
 from archflow.project.refs import ProjectRecordRef
 
-from ..application.binding import bound_project
-from ..application.candidate import describe
-from ..application.jobs import QUEUED, RUNNING, SUCCEEDED, Job
-from ..application.validation import validate_candidate, validate_design_candidate, validation_key
-from ..transport.errors import StudioError
-from ..transport.validation import ValidationDto
-from ..transport.validation import to_dto as validation_dto
+from ...binding import bound_project
+from ...application.candidate import describe
+from ...jobs import QUEUED, RUNNING, SUCCEEDED, Job
+from ...application.validation import validate_candidate, validate_design_candidate, validation_key
+from ...errors import StudioError
+from ..dto.validation import ValidationDto
+from ..dto.validation import to_dto as validation_dto
 
 router = APIRouter(tags=["validation"])
 

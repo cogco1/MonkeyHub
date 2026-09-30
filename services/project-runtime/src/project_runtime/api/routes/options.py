@@ -19,28 +19,28 @@ import secrets
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
-from ..application.binding import ProjectBinding, bound_project
-from ..application.artifacts import require_model_source
-from ..application.candidate import execute_option_candidate
-from ..application.jobs import JobRegistry
-from ..application.monitoring import projection_source_ref
-from ..application.options import (
+from ...binding import ProjectBinding, bound_project
+from ...application.artifacts import require_model_source
+from ...application.candidate import execute_option_candidate
+from ...jobs import JobRegistry
+from ...monitoring import projection_source_ref
+from ...application.options import (
     MassingOption,
     OptionStore,
     OptionsTable,
     make_option,
     record_massing,
 )
-from ..application.projection import (
+from ...application.projection import (
     StateProjection,
     project_state,
     require_actionable,
 )
-from ..settings import StudioSettings
-from ..transport.candidate import CandidateAcceptedDto, accepted_dto
-from ..transport.errors import StudioError
-from ..transport.artifacts import model_source_from
-from ..transport.options import (
+from ...settings import StudioSettings
+from ..dto.candidate import CandidateAcceptedDto, accepted_dto
+from ...errors import StudioError
+from ..dto.artifacts import model_source_from
+from ..dto.options import (
     MassingOptionDto,
     MassingOptionRequestDto,
     OptionsDto,

@@ -37,7 +37,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from archflow.project.index import IndexState
 
-from ..application.binding import ProjectBinding, ReadToken, bound_project
+from ..binding import ProjectBinding, ReadToken, bound_project
 
 # The in-process state a listed route reads beside the project's files.
 VERSIONS: dict[str, Callable[[State], Any]] = {

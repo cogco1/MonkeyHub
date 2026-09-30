@@ -21,8 +21,8 @@ from archflow.project.record_kinds import (
     SEAT_RELATION_CHECK,
     STUDIO_WORKING_COPY,
 )
-from project_runtime.application.authentication import request_action
-from project_runtime.application.binding import ProjectBinding, bound_project
+from project_runtime.authentication import request_action
+from project_runtime.binding import ProjectBinding, bound_project
 from project_runtime.main import create_app
 from project_runtime.protocol import BASE_CAPABILITIES
 from monkeyarch.capabilities.relation_checks import RelationCheck, RelationCheckReport

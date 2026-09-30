@@ -13,7 +13,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from starlette.requests import Request
 
-from ..transport.protocol import ServerIdentityDto, server_identity_dto
+from ..dto.protocol import ServerIdentityDto, server_identity_dto
 
 router = APIRouter(tags=["protocol"])
 

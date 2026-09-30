@@ -2,10 +2,10 @@
 from fastapi import APIRouter
 from starlette.requests import Request
 
-from ..application.binding import bound_project
-from ..transport.rendering import RenderCapabilitiesDto, RenderJobDto, RenderJobListDto, RenderRequestDto, RenderViewSourceRequestDto
-from ..transport.artifacts import SourceDocumentDto, document_dto
-from ..application.rendering import save_render_view
+from ...binding import bound_project
+from ..dto.rendering import RenderCapabilitiesDto, RenderJobDto, RenderJobListDto, RenderRequestDto, RenderViewSourceRequestDto
+from ..dto.artifacts import SourceDocumentDto, document_dto
+from ...application.rendering import save_render_view
 
 router = APIRouter(prefix="/render", tags=["render"])
 

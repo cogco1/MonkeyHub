@@ -38,10 +38,10 @@ from pathlib import Path
 from urllib.parse import urlencode
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
-from ..transport.errors import StudioError
+from ..errors import StudioError
 
 if TYPE_CHECKING:  # pragma: no cover - imported for types only
-    from .binding import ProjectBinding
+    from ..binding import ProjectBinding
     from .catalog import Capability
     from .projection import StateProjection
 

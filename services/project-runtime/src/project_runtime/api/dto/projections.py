@@ -5,8 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..application.artifacts import ModelSource
-from ..application.projections import DONE, ProjectionStatus
+from ...application.artifacts import ModelSource
+from ...application.projections import DONE, ProjectionStatus
 from .artifacts import ModelSourceDto
 
 

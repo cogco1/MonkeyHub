@@ -13,7 +13,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import Response
 from starlette.requests import Request
 
-from ..application.artifacts import (
+from ...application.artifacts import (
     artifact_bytes,
     export_rhino_work_model,
     bind_document_model_source,
@@ -30,10 +30,10 @@ from ..application.artifacts import (
     require_model_source,
     save_viewport_capture,
 )
-from ..application.binding import bound_project
-from ..application.gestures import read_model_annotations
-from ..application.projection import project_state
-from ..transport.artifacts import (
+from ...binding import bound_project
+from ...application.gestures import read_model_annotations
+from ...application.projection import project_state
+from ..dto.artifacts import (
     ArtifactListDto,
     DocumentWorkCopyDto,
     DocumentWorkCopyRequestDto,
@@ -56,7 +56,7 @@ from ..transport.artifacts import (
     to_dto,
     work_copy_dto,
 )
-from ..transport.errors import StudioError
+from ...errors import StudioError
 
 router = APIRouter(tags=["artifacts"])
 

@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..application.runtime import RuntimeSnapshot, WorktreeGraph
+from ...status import RuntimeSnapshot, WorktreeGraph
 from .candidate import JobDto, job_dto
 from .design_history import DesignBranchDto, DesignStageDto, branch_dto, stage_dto
 from .project import ProjectVersionDto

@@ -20,8 +20,8 @@ from fastapi import APIRouter
 from starlette.datastructures import State
 from starlette.requests import Request
 
-from ..application.binding import ProjectBinding, bound_project, resolve_project
-from ..transport.project import (
+from ...binding import ProjectBinding, bound_project, resolve_project
+from ..dto.project import (
     ProjectBindingDto,
     ProjectListDto,
     project_binding_dto,

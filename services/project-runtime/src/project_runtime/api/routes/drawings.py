@@ -7,21 +7,21 @@ from fastapi import APIRouter, Path, Query
 from fastapi.responses import Response
 from starlette.requests import Request
 
-from ..application.authentication import request_attribution
-from ..application.binding import bound_project
-from ..application.drawings import drawing_file, generate_elevation, generate_section_perspective, generate_sheet, model_view
-from ..application.drawing_corrections import drawing_corrections
-from ..application.drawing_plans import generate_plan, plan_status, plan_dimension_choices, dimension_proposal, plan_vector
-from ..transport.artifacts import ModelSourceDto, SourceDocumentDto, document_dto, model_source_from
-from ..transport.drawings import (
+from ...authentication import request_attribution
+from ...binding import bound_project
+from ...application.drawings import drawing_file, generate_elevation, generate_section_perspective, generate_sheet, model_view
+from ...application.drawing_corrections import drawing_corrections
+from ...application.drawing_plans import generate_plan, plan_status, plan_dimension_choices, dimension_proposal, plan_vector
+from ..dto.artifacts import ModelSourceDto, SourceDocumentDto, document_dto, model_source_from
+from ..dto.drawings import (
     DrawingCorrectionsDto, DrawingFileFormat, DrawingStylesDto, ElevationDrawingDto, ElevationRequestDto, ModelViewDto,
     ModelViewName, SheetRequestDto, SheetViewDto,
     PlanDrawingDto, PlanRequestDto, PlanStatusRequestDto, PlanStatusDto,
     PlanDimensionChoicesDto, PlanDimensionProposalRequestDto, PlanVectorDto, SectionPerspectiveDrawingDto,
     SectionPerspectiveRequestDto,
 )
-from ..transport.errors import StudioError
-from ..transport.proposal import ProposalDto, to_dto as proposal_dto
+from ...errors import StudioError
+from ..dto.proposal import ProposalDto, to_dto as proposal_dto
 from .artifacts import IMMUTABLE, _content_disposition
 from .projections import ready_projections
 

@@ -3,9 +3,9 @@ from fastapi import APIRouter
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.requests import Request
-from ..application.binding import bound_project
-from ..application import model_exports
-from ..transport.errors import StudioError
+from ...binding import bound_project
+from ...application import model_exports
+from ...errors import StudioError
 
 router = APIRouter(tags=["model exports"])
 

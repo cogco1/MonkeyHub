@@ -5,11 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
-from ..application import memory
-from ..application.authentication import request_attribution
-from ..application.binding import bound_project
-from ..transport.errors import StudioError
-from ..transport.memory import (
+from ...application import memory
+from ...authentication import request_attribution
+from ...binding import bound_project
+from ...errors import StudioError
+from ..dto.memory import (
     MemoryAboutDto,
     MemoryAboutRequestDto,
     MemoryDto,

@@ -10,11 +10,11 @@ from typing import Any, Mapping
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
-from ..application import study as study_application
-from ..application.binding import bound_project
-from ..application.study import StudyView, list_studies, read_study, save_study
-from ..transport.errors import StudioError
-from ..transport.study import (
+from ...application import study as study_application
+from ...binding import bound_project
+from ...application.study import StudyView, list_studies, read_study, save_study
+from ...errors import StudioError
+from ..dto.study import (
     CompareStudiesRequestDto,
     ProposeStudyRequestDto,
     SaveStudyRequestDto,
@@ -367,7 +367,7 @@ def reopen_study(
 
 @router.post("/studies/propose", response_model=StudyViewDto, response_model_by_alias=True)
 def propose_study(request: Request, payload: ProposeStudyRequestDto) -> StudyViewDto:
-    from ..application.study_model import propose_study as propose
+    from ...application.study_model import propose_study as propose
 
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:

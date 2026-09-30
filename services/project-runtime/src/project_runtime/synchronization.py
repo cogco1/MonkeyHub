@@ -20,9 +20,9 @@ from archflow.project.repository import (
 )
 
 from .binding import bound_project, release_bound_project
-from ..protocol import PROTOCOL_MAJOR
-from ..transport.errors import StudioError
-from ..transport.synchronization import ProjectTransferDto, SynchronizationDto
+from .protocol import PROTOCOL_MAJOR
+from .errors import StudioError
+from .api.dto.synchronization import ProjectTransferDto, SynchronizationDto
 
 
 class _NoRedirect(HTTPRedirectHandler):

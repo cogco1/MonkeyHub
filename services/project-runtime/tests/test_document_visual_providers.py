@@ -23,7 +23,7 @@ import project_runtime  # noqa: F401
 from archflow.contracts.canonical import canonical_digest
 from archflow.ports.model import ModelInvocationStatus
 from project_runtime.application import intent_agent
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.intent_agent import (
     AnthropicCompiler,
     CodexCompiler,

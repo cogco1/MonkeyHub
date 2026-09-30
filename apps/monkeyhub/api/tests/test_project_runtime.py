@@ -24,7 +24,7 @@ from uuid import uuid4
 
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, project_fixture, wait_for
 from archflow.project.repository import FilesystemProjectRepository
-from project_runtime.application.binding import ProjectBinding
+from project_runtime.binding import ProjectBinding
 from project_runtime.settings import StudioSettings
 from monkeyhub_api import runtime as runtime_module
 from monkeyhub_api.models import ChatSummary, HubError, HubFailure
@@ -822,7 +822,7 @@ for _ in range(5):
         fault_script.write_text(
             "import os, runpy, sys\n"
             f"sys.path[:0] = {[str(ROOT / 'services/project-runtime/src'), str(ROOT)]!r}\n"
-            "from project_runtime.routes import candidates\n"
+            "from project_runtime.api.routes import candidates\n"
             "def exit_before_candidate(*args, **kwargs):\n    os._exit(73)\n"
             "candidates.execute_candidate = exit_before_candidate\n"
             f"sys.argv[0] = {str(launcher)!r}\n"

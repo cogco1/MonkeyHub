@@ -16,7 +16,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ..application.artifacts import (
+from ...application.artifacts import (
     artifact_model_source,
     ArtifactListing,
     ArtifactRecord,

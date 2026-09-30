@@ -20,12 +20,12 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Sequence
 
-from ..transport.errors import StudioError
+from ..errors import StudioError
 from .artifacts import ModelSource
-from .binding import ProjectBinding
+from ..binding import ProjectBinding
 from .boards import BoardExportPage, export_board_pages
 from .drawings import model_view
-from .monitoring import StudioMonitor
+from ..monitoring import StudioMonitor
 from .visual_observation import (
     MODEL_VIEWS, EvidenceFrame, ObservationUsage, ReviewReason, SourceRef, StudioModelVisualProvider,
     VisualBudgetRefused, VisualObservationProvider, VisualProviderFailed, VisualReviewBudget, VisualReviewInvalid,

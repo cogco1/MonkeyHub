@@ -2,11 +2,11 @@
 from fastapi import APIRouter
 from fastapi.responses import Response
 from starlette.requests import Request
-from ..application import publications
-from ..application.publication_output import export_publication
-from ..application.binding import bound_project
-from ..transport.publications import PublicationDto, PublicationRequestDto, PublicationExportRequestDto, PublicationBoardRequestDto
-from ..transport.errors import StudioError
+from ...application import publications
+from ...application.publication_output import export_publication
+from ...binding import bound_project
+from ..dto.publications import PublicationDto, PublicationRequestDto, PublicationExportRequestDto, PublicationBoardRequestDto
+from ...errors import StudioError
 from .artifacts import _content_disposition
 from .projections import ready_projections
 

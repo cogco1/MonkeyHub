@@ -15,7 +15,7 @@ from typing import Annotated, Any, Literal, Mapping, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ..application.decisions import DecisionRevision
+from ...application.decisions import DecisionRevision
 from .drawings import PlanRequestDto
 
 SHA256 = r"^[0-9a-f]{64}$"

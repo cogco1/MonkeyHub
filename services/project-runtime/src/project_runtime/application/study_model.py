@@ -10,8 +10,8 @@ from pydantic import ValidationError
 from archflow.contracts.canonical import canonical_digest
 from archflow.ports.model import ModelInvocationRequest, ModelPhase
 
-from ..transport.errors import StudioError
-from ..transport.study import StudyResearchRequestDto
+from ..errors import StudioError
+from ..api.dto.study import StudyResearchRequestDto
 from . import study
 from .artifacts import _registered_document_bytes
 from .boards import _page_raster

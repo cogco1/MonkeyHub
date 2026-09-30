@@ -14,8 +14,8 @@ from monkeymonitor.pricing import billing_plan
 from monkeymonitor.store import UsageLog
 from monkeymonitor.usage import TokenUsage, UsageEvent
 
-from .intent_agent import IntentCompiler, Compilation, Selection, invoke_structured
-from .projection import StateProjection
+from .application.intent_agent import IntentCompiler, Compilation, Selection, invoke_structured
+from .application.projection import StateProjection
 
 log = logging.getLogger(__name__)
 

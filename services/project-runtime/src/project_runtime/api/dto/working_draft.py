@@ -10,7 +10,7 @@ from .artifacts import ModelSourceDto, model_source_dto
 from .decisions import MessageSourceDto
 
 if TYPE_CHECKING:
-    from ..application.working_draft import WorkingSource
+    from ...application.working_draft import WorkingSource
 
 
 class WorkingDraftEntryDto(BaseModel):

@@ -47,10 +47,10 @@ from archflow.project.record_kinds import STUDIO_MEMORY_RECORD
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 
-from ..transport.errors import StudioError
+from ..errors import StudioError
 from .artifacts import artifact_bytes, document_bytes
-from .authentication import ActorAttribution
-from .binding import ProjectBinding, retained_sources
+from ..authentication import ActorAttribution
+from ..binding import ProjectBinding, retained_sources
 from .boards import read_board
 from .decisions import _message_source, fixed_run, revision_chains
 from .skills import MAX_NAME_LENGTH, SKILL_NAME

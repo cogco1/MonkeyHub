@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.errors import BlockedNeedsHuman, StudioError
+from project_runtime.errors import BlockedNeedsHuman, StudioError
 
 from .support import (
     PROJECT_ID,

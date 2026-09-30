@@ -21,7 +21,7 @@ from archflow.project.refs import record_ref_from_uri
 from monkeydiagram.drawing_elevation import read_model_axis_elevation
 from project_runtime.application import drawing_plans
 from project_runtime.application.artifacts import _chain_head, _page_replacements, list_documents, replacement_cause
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.decisions import RECIPE_KEYS
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings

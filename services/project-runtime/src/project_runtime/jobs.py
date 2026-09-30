@@ -32,8 +32,8 @@ import time
 from typing import Any, Callable, Iterable, Mapping
 from uuid import uuid4
 
-from ..ports import StudioEventSink
-from ..transport.errors import StudioError
+from .ports import StudioEventSink
+from .errors import StudioError
 from .monitoring import StudioMonitor, candidate_event_id
 
 QUEUED = "queued"

@@ -5,12 +5,12 @@ from starlette.requests import Request
 
 from archflow.project.repository import ProjectRepositoryError
 
-from ..application.authentication import require_actor
-from ..application.binding import bound_project
-from ..application.synchronization import pull_shared_project, push_shared_candidate, transfer_error
-from ..settings import SHARED_PROJECT_ROLE
-from ..transport.errors import StudioError
-from ..transport.synchronization import ProjectTransferDto, SynchronizationDto
+from ...authentication import require_actor
+from ...binding import bound_project
+from ...synchronization import pull_shared_project, push_shared_candidate, transfer_error
+from ...settings import SHARED_PROJECT_ROLE
+from ...errors import StudioError
+from ..dto.synchronization import ProjectTransferDto, SynchronizationDto
 
 router = APIRouter(prefix="/sync", tags=["synchronization"])
 

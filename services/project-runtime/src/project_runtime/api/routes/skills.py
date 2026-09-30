@@ -9,11 +9,11 @@ manifest declares are not enforced by anything.
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
-from ..application import skills
-from ..application.authentication import request_attribution
-from ..application.binding import bound_project
-from ..transport.errors import StudioError
-from ..transport.skills import (
+from ...application import skills
+from ...authentication import request_attribution
+from ...binding import bound_project
+from ...errors import StudioError
+from ..dto.skills import (
     SkillDto,
     SkillIndexDto,
     SkillRequestDto,

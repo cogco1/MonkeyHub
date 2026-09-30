@@ -40,8 +40,8 @@ from archflow.project.record_kinds import STUDIO_BOARD_SCENE, STUDIO_DOCUMENT_AN
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 
-from ..transport.errors import StudioError
-from .artifacts import (
+from .errors import StudioError
+from .application.artifacts import (
     _candidate_stage_source,
     _run_artifacts,
     _run_documents,
@@ -66,7 +66,8 @@ _UNREADABLE = (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueEr
 
 
 def _projector_version() -> str:
-    from . import artifacts, binding
+    from .application import artifacts
+    from . import binding
 
     digest = hashlib.sha256()
     for module in (Path(__file__), Path(artifacts.__file__), Path(binding.__file__)):

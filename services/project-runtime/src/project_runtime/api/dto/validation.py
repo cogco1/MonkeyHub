@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..application.validation import (
+from ...application.validation import (
     EFFECTIVE_CHECKS,
     VALIDATOR_NAMES,
     VALIDATOR_NOTE,

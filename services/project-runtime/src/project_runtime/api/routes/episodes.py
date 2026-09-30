@@ -19,28 +19,28 @@ from typing import Literal
 from fastapi import APIRouter, Query, Response
 from starlette.requests import Request
 
-from ..transport.proposal import EpisodeDto, episode_dto
-from ..application.binding import bound_project
-from ..application.authentication import ActorAttribution, request_attribution
-from ..application.synchronization import accept_shared_candidate, fork_shared_branch
-from ..transport.errors import StudioError
-from ..application.monitoring import candidate_event_id
-from ..application.design_history import (
+from ..dto.proposal import EpisodeDto, episode_dto
+from ...binding import bound_project
+from ...authentication import ActorAttribution, request_attribution
+from ...synchronization import accept_shared_candidate, fork_shared_branch
+from ...errors import StudioError
+from ...monitoring import candidate_event_id
+from ...application.design_history import (
     accept_design_candidate, admit_results, fork_design_branch, initialize_design_stage,
     list_admissions, read_design_history, save_review_judgement, stage_ref_from,
 )
-from ..application.episodes import (
+from ...application.episodes import (
     add_working_copy_option, list_working_copies,
     read_working_copy, select_working_copy_option,
 )
-from ..transport.artifacts import model_source_from
-from ..transport.design_history import (
+from ..dto.artifacts import model_source_from
+from ..dto.design_history import (
     AcceptDesignCandidateRequestDto, AdmissionListDto, AdmissionRequestDto, CandidateAdmissionDto,
     DesignBranchDto, DesignHistoryDto, DesignStageDto, ReviewJudgementDto, ReviewJudgementRequestDto,
     ForkDesignBranchRequestDto, InitializeDesignStageRequestDto,
     admission_dto, branch_dto, history_dto, review_dto, stage_dto,
 )
-from ..transport.proposal import (
+from ..dto.proposal import (
     WorkingCopyDto, WorkingCopyListDto,
     WorkingCopySelectionRequestDto, WorkingCopyOptionRequestDto,
     working_copy_dto, working_option_from,

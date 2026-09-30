@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from monkeyarch.capabilities.massing_metrics import EnvelopeFinding, MassingMetrics
 
-from ..application.options import (
+from ...application.options import (
     PERSISTENCE,
     TRANSFORMS,
     MassingOption,

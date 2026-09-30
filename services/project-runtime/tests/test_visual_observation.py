@@ -14,7 +14,7 @@ import zlib
 from archflow.ports.model import ModelPhase
 from project_runtime.application import intent_agent
 from project_runtime.application.intent_agent import CodexCompiler
-from project_runtime.application.monitoring import MonitoredCompiler, StudioMonitor
+from project_runtime.monitoring import MonitoredCompiler, StudioMonitor
 from project_runtime.application.visual_observation import (
     Criterion, EvidenceFrame, ObservationUsage, ProviderAnswer, ProviderCapability, ReviewReason, SourceRef,
     StudioModelVisualProvider, TaskClass, VisualBudgetRefused, VisualObservationInvalid, VisualProviderFailed,

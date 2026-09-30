@@ -28,11 +28,11 @@ from fastapi.testclient import TestClient
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, RUNNER_RUN_RECEIPT
 from archflow.project.refs import record_ref_from_uri
-from project_runtime.application.binding import ProjectBinding, bound_project
-from project_runtime.application.runtime import inspect_runtime
+from project_runtime.binding import ProjectBinding, bound_project
+from project_runtime.status import inspect_runtime
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.transport.runtime import runtime_dto
+from project_runtime.api.dto.runtime import runtime_dto
 from monkeyhub_api.models import HubFailure
 from monkeyhub_api.runtime import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager
 
@@ -142,7 +142,7 @@ class OperationRecoveryTests(unittest.TestCase):
         admission, _ = self.admission(path, session_id=session_id)
         # Allocate the exact run before dispatch, then lose the HTTP reply.
         # Only id allocation is controlled; Studio executes and retains the run.
-        with patch("project_runtime.routes.candidates._run_id", return_value=admission.record.candidateId):
+        with patch("project_runtime.api.routes.candidates._run_id", return_value=admission.record.candidateId):
             accepted = self.client.post(path)
         self.assertEqual(accepted.status_code, 202, accepted.text)
         self.manager.interrupted(admission, "injected lost candidate response")

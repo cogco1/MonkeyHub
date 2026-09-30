@@ -17,7 +17,7 @@ import queue
 import threading
 import unittest
 
-from project_runtime.application.events import BUFFER_SIZE, StudioEvents
+from project_runtime.events import BUFFER_SIZE, StudioEvents
 
 
 class EventSinkTestCase(unittest.TestCase):

@@ -177,7 +177,7 @@ def _worker(code_root: Path, project_dir: Path, mode: str, bodies: Path,
     with TestClient(app) as client:
         binding = None
         if index_dir is not None:
-            from project_runtime.application.binding import bound_project
+            from project_runtime.binding import bound_project
 
             started = time.perf_counter()
             binding = bound_project(app.state)

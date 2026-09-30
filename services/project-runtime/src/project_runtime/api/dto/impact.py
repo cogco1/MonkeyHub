@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..application.impact import Impact
+from ...application.impact import Impact
 
 
 class ImpactLockDto(BaseModel):

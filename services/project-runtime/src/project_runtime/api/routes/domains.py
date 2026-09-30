@@ -15,8 +15,8 @@ from typing import Any
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
-from ..application import domains
-from ..application.binding import bound_project
+from ...application import domains
+from ...binding import bound_project
 
 router = APIRouter(tags=["domains"])
 

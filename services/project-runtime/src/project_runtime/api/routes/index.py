@@ -30,9 +30,9 @@ from starlette.responses import Response
 
 from archflow.project.index import QUERYABLE, IndexUnavailable
 
-from ..application.binding import bound_project
-from ..transport.errors import StudioError
-from ..transport.index import IndexChangesDto, IndexEntityDto, IndexRowsDto
+from ...binding import bound_project
+from ...errors import StudioError
+from ..dto.index import IndexChangesDto, IndexEntityDto, IndexRowsDto
 
 router = APIRouter(tags=["index"])
 

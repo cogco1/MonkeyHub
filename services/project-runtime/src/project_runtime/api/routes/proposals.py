@@ -37,13 +37,13 @@ from starlette.requests import Request
 from archflow.project.repository import ProjectRepositoryError
 from archflow.state.state_record import StateRecordError, apply_state_record_operator
 
-from ..application import clarification, episodes
-from ..application.authentication import request_attribution
-from ..application.construction import kept_refs
-from ..application.elevation import elevation_proposal
-from ..application.binding import ProjectBinding, bound_project
-from ..adapters.seats import SeatsError, load_seat_pack, seats_of
-from ..application.intent import (
+from ...application import clarification, episodes
+from ...authentication import request_attribution
+from ...application.construction import kept_refs
+from ...application.elevation import elevation_proposal
+from ...binding import ProjectBinding, bound_project
+from ...application.seats import SeatsError, load_seat_pack, seats_of
+from ...application.intent import (
     DeterministicIntentProvider,
     buildable_components,
     component_edit_proposal,
@@ -54,18 +54,18 @@ from ..application.intent import (
     delete_element_proposal,
     sketch_prism_proposal,
 )
-from ..application.intent_agent import DeterministicCompiler, Selection, context_refs as compiled_context_refs
-from ..application.jobs import SUCCEEDED, Job
-from ..application.projection import (
+from ...application.intent_agent import DeterministicCompiler, Selection, context_refs as compiled_context_refs
+from ...jobs import SUCCEEDED, Job
+from ...application.projection import (
     StateProjection,
     project_state,
     project_proposed_record,
     require_actionable,
 )
-from ..application.proposals import Proposal, continue_proposal, operator_of, proposal_from, sentences_of
-from ..application.gestures import DocumentAnnotationRef, read_document_tracing
-from ..transport.errors import BlockedNeedsHuman, StudioError
-from ..transport.proposal import (
+from ...application.proposals import Proposal, continue_proposal, operator_of, proposal_from, sentences_of
+from ...application.gestures import DocumentAnnotationRef, read_document_tracing
+from ...errors import BlockedNeedsHuman, StudioError
+from ..dto.proposal import (
     EpisodeDto,
     ProposalDecisionRequestDto,
     ProposalDto,

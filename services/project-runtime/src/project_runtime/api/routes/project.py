@@ -11,9 +11,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
-from ..application.binding import bound_project, initialize_modeling, resolve_project
-from ..application.projection import project_state
-from ..transport.project import (
+from ...binding import bound_project, initialize_modeling, resolve_project
+from ...application.projection import project_state
+from ..dto.project import (
     ModelingBaseDto,
     ModelingComponentDto,
     ModelingInitializeDto,

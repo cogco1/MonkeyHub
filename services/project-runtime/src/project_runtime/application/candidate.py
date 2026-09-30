@@ -56,17 +56,17 @@ from archflow.state.state_record import (
     developed_design_view,
 )
 
-from ..adapters.harness import HARNESS_PHASE, STAGE_ID, harness_guard
-from ..adapters.seats import candidate_seats, load_seat_pack
+from .harness import HARNESS_PHASE, STAGE_ID, harness_guard
+from .seats import candidate_seats, load_seat_pack
 from ..settings import StudioSettings
-from ..transport.errors import StudioError
+from ..errors import StudioError
 from .artifacts import (
     ArtifactRecord, ModelSource, _text, _whole, artifact_bytes, list_artifacts,
     register_model_asset, require_model_source,
 )
-from .monitoring import StudioMonitor, candidate_event_id
-from .binding import ProjectBinding, ReferenceRun, record_kind
-from .jobs import FAILED, QUEUED, RUNNING
+from ..monitoring import StudioMonitor, candidate_event_id
+from ..binding import ProjectBinding, ReferenceRun, record_kind
+from ..jobs import FAILED, QUEUED, RUNNING
 from .projection import (
     BRANCH_ID,
     PORTFOLIO_ID,

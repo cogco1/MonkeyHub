@@ -34,19 +34,19 @@ from starlette.requests import Request
 
 from archflow.project.repository import ProjectRepositoryError
 
-from ..application.binding import ProjectBinding, bound_project
-from ..application.candidate import CandidateRun, describe, execute_candidate, prepare_combined_candidate, run_operator
-from ..application.compare import compare_runs, shapes_of
-from ..application.jobs import FAILED, QUEUED, RUNNING, SUCCEEDED, Job, JobRegistry
-from ..application.monitoring import projection_source_ref
-from ..application.projection import (
+from ...binding import ProjectBinding, bound_project
+from ...application.candidate import CandidateRun, describe, execute_candidate, prepare_combined_candidate, run_operator
+from ...application.compare import compare_runs, shapes_of
+from ...jobs import FAILED, QUEUED, RUNNING, SUCCEEDED, Job, JobRegistry
+from ...monitoring import projection_source_ref
+from ...application.projection import (
     StateProjection,
     project_state,
     require_actionable,
 )
-from ..application.proposals import read_refs_of, sentences_of, write_refs_of, Proposal
-from ..settings import StudioSettings
-from ..transport.candidate import (
+from ...application.proposals import read_refs_of, sentences_of, write_refs_of, Proposal
+from ...settings import StudioSettings
+from ..dto.candidate import (
     CandidateAcceptedDto,
     CombineCandidatesRequestDto,
     CandidateDto,
@@ -54,9 +54,9 @@ from ..transport.candidate import (
     accepted_dto,
     job_dto,
 )
-from ..transport.candidate import to_dto as candidate_dto
-from ..transport.compare import CompareDto, compare_dto
-from ..transport.errors import StudioError
+from ..dto.candidate import to_dto as candidate_dto
+from ..dto.compare import CompareDto, compare_dto
+from ...errors import StudioError
 
 router = APIRouter(tags=["candidates"])
 

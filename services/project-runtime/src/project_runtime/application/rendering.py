@@ -23,9 +23,9 @@ from archflow.project.record_kinds import STUDIO_RENDER_JOB
 from archflow.project.repository import ProjectRepositoryError
 from monkeymonitor.usage import TokenUsage
 
-from ..transport.artifacts import document_dto
-from ..transport.errors import StudioError
-from ..transport.rendering import RenderCapabilityDto, RenderJobDto, RenderRequestDto
+from ..api.dto.artifacts import document_dto
+from ..errors import StudioError
+from ..api.dto.rendering import RenderCapabilityDto, RenderJobDto, RenderRequestDto
 from .artifacts import document_bytes, list_documents, replacement_cause, save_document, require_model_source, ModelSource
 from .render_contract import (
     ImageRenderAdapter, RenderImage, RenderInput, RenderOutputOptions,

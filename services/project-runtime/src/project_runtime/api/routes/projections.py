@@ -7,14 +7,14 @@ from starlette.requests import Request
 
 from archflow.project.index import IndexUnavailable
 
-from ..application.artifacts import ModelSource, document_bytes
-from ..application.boards import cached_page
-from ..application.binding import bound_project
-from ..application.projections import (
+from ...application.artifacts import ModelSource, document_bytes
+from ...application.boards import cached_page
+from ...binding import bound_project
+from ...application.projections import (
     MODEL_LINES, PNG_MEDIA_TYPE, ProjectionError, ProjectionQueue, open_projections, projection_spec,
 )
-from ..transport.errors import StudioError
-from ..transport.projections import ProjectionStatusDto, projection_status_dto
+from ...errors import StudioError
+from ..dto.projections import ProjectionStatusDto, projection_status_dto
 
 router = APIRouter(prefix="/projections", tags=["projections"])
 

@@ -21,11 +21,11 @@ from starlette.requests import Request
 
 from archflow.state.program_sheet import totals_of
 
-from ..application.binding import bound_project
-from ..application.artifacts import require_model_source
-from ..application.candidate import run_operator
-from ..application.jobs import JobRegistry
-from ..application.program import (
+from ...binding import bound_project
+from ...application.artifacts import require_model_source
+from ...application.candidate import run_operator
+from ...jobs import JobRegistry
+from ...application.program import (
     ProgramCandidate,
     candidate_honesty,
     candidate_run_id,
@@ -35,12 +35,12 @@ from ..application.program import (
     semantic_terms,
     operator_for,
 )
-from ..application.projection import project_state, require_actionable
-from ..application.monitoring import projection_source_ref
-from ..settings import StudioSettings
-from ..transport.errors import StudioError
-from ..transport.artifacts import model_source_from
-from ..transport.program import (
+from ...application.projection import project_state, require_actionable
+from ...monitoring import projection_source_ref
+from ...settings import StudioSettings
+from ...errors import StudioError
+from ..dto.artifacts import model_source_from
+from ..dto.program import (
     ProgramApplyRequestDto,
     ProgramCandidateDto,
     ProgramDto,
@@ -48,7 +48,7 @@ from ..transport.program import (
     program_dto,
     sheet_payload,
 )
-from ..transport.semantics import SemanticsDto, semantics_dto
+from ..dto.semantics import SemanticsDto, semantics_dto
 
 router = APIRouter(tags=["program"])
 

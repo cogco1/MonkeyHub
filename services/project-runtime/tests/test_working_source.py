@@ -7,7 +7,7 @@ from unittest import mock
 from fastapi.testclient import TestClient
 
 from project_runtime.application import publications
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import bound_project
 from project_runtime.application.working_draft import resolve_working_source
 from project_runtime.protocol import BASE_CAPABILITIES
 

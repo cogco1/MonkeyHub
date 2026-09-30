@@ -13,7 +13,7 @@ from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ..application.memory import MemoryMatch, MemoryRevision
+from ...application.memory import MemoryMatch, MemoryRevision
 from .decisions import DecisionAttributionDto, MessageSourceDto
 
 SHA256 = r"^[0-9a-f]{64}$"

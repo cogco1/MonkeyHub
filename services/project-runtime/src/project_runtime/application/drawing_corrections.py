@@ -19,7 +19,7 @@ from typing import Any, Callable, Iterable, Mapping
 from archflow.contracts.canonical import canonical_digest
 
 from .artifacts import SourceDocument, list_documents, replacement_cause
-from .binding import ProjectBinding
+from ..binding import ProjectBinding
 from .decisions import RECIPE_KEYS, RecipeValue, project_recipe
 
 # What a correction can be, in the order ``classify`` asks. Only a recipe

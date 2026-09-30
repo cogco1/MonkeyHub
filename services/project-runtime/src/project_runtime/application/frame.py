@@ -33,7 +33,7 @@ from monkeyarch.capabilities.reference_resolver import (
 from archflow.state.operational_state import DependencyEdge, DependencyEffect
 from archflow.state.state_record import StateRecord
 
-from ..transport.errors import StudioError
+from ..errors import StudioError
 
 # The two effects ``StateRecord.closure`` walks. Named here so the edges this
 # module reports back are the ones that actually carried the closure and not

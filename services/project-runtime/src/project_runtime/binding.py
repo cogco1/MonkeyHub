@@ -53,8 +53,8 @@ from archflow.state.stage_workflow import HARNESS_WORKFLOW_IDS
 from archflow.state.design_portfolio import DesignBranch, DesignStage
 from archflow.state.state_record import Entity, StateRecord, StateRecordError
 
-from ..settings import PROJECT_DIR_ENV, REFERENCE_RUN_ENV, StudioSettings
-from ..transport.errors import StudioError, error_sentence
+from .settings import PROJECT_DIR_ENV, REFERENCE_RUN_ENV, StudioSettings
+from .errors import StudioError, error_sentence
 
 STAGE_WORKFLOW_SCHEMA = "ProjectStageWorkflow@1"
 STAGE_ENVELOPE_SCHEMA = "StageRunEnvelope@1"
@@ -1131,7 +1131,7 @@ def initialize_modeling(binding: ProjectBinding) -> bool:
         AuthoredRecordMissing,
         load_authored_record,
     )
-    from ..adapters.harness import HARNESS_PHASE
+    from .application.harness import HARNESS_PHASE
 
     repository = binding.repository
     head = repository.read_head()

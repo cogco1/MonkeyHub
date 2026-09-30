@@ -18,8 +18,8 @@ from fastapi.testclient import TestClient
 from archflow.adapters.three_dm_inspector import ThreeDmInspectionError, ThreeDmInspectionErrorCode
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT, STUDIO_WORKING_COPY
-from project_runtime.application.binding import record_kind
-from project_runtime.application.binding import bound_project
+from project_runtime.binding import record_kind
+from project_runtime.binding import bound_project
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from .support import PROJECT_ID, REFERENCE_RUN_ID, RECORD_PAYLOAD, make_project, retain_runner_receipt, runner_state_digest
