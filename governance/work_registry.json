@@ -1,4 +1,48 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-492",
+      "status": "active",
+      "branch": "codex/492-web-single-root",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-492-web-single-root",
+      "base_ref": "cc3df5eac9b5b2838d014ffb8c7b222a2aa482f3",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "hub.shell",
+        "studio.artifacts",
+        "studio.board",
+        "studio.candidate",
+        "studio.intent",
+        "studio.publication",
+        "studio.render",
+        "studio.shell",
+        "studio.study"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/web/",
+        ".github/workflows/verify.yml",
+        ".gitignore",
+        "apps/archflow-studio/README.md",
+        "apps/monkeyhub/installer/third-party/excalidraw-fonts/README.md",
+        "docs/REPO_LAYOUT.md",
+        "docs/2026-09-04-monkeyarch-ai-native-workbench-research.md",
+        "docs/2026-09-24-monkeyhub-interaction-proposal.md",
+        "docs/2026-09-24-monkeyhub-ui-reality-audit.md",
+        "docs/2026-09-25-candidate-admission-audit.md",
+        "docs/2026-09-25-candidate-graph-interaction.md",
+        "docs/2026-09-25-monkeyhub-ux-review.md",
+        "docs/2026-09-25-visual-observation.md",
+        "docs/DRAWING_V0_AUDIT.md",
+        "docs/STAGE_BRANCH_CANDIDATE_PLAN.md",
+        "docs/TEAM_ONBOARDING.md",
+        "docs/VILLA_DEMO_SCRIPT.md",
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+        "docs/adr/ADR-008-one-tree-many-projections.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
