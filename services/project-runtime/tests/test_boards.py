@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from pypdf import PdfReader
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
 from archflow.project import repository as project_repository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.repository import FilesystemProjectRepository
@@ -50,7 +50,7 @@ class BoardTests(unittest.TestCase):
     def test_empty_board_project_can_create_its_first_real_model_and_drawing(self) -> None:
         import time
         import json
-        from monkeycad.occt_backend import occt_available
+        from monkeycad.backends.occt.kernel import occt_available
         from archflow.state.state_record import StateRecord
 
         if not occt_available():
@@ -374,7 +374,7 @@ class BoardTests(unittest.TestCase):
                 self.assertEqual(self.files(), before)
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class BoardDrawingTests(CandidateTestCase):
     def test_generated_revision_must_be_exact_and_reopens_without_changing_stage(self) -> None:
         self.client.close()

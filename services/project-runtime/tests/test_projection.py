@@ -204,7 +204,7 @@ class StateProjectionTests(unittest.TestCase):
                          {"kind": "element-top", "id": "portico-base", "offset": 0})
         self.assertIsNone(elements["portico-cornice"]["drawnShapeReason"])
         before = self.repository.read_head()
-        with patch("monkeyarch.capabilities.element_producers.produce_rows", side_effect=AssertionError("state reads must not produce geometry")):
+        with patch("monkeyarch.authoring.element_producers.produce_rows", side_effect=AssertionError("state reads must not produce geometry")):
             after = self.client.get("/api/state").json()
         self.assertEqual(after, self.payload)
         self.assertEqual(self.repository.read_head(), before)
@@ -906,7 +906,7 @@ class BoundElementTests(unittest.TestCase):
         elevation = {item["elementId"]: item["elevation"] for item in state["elements"]}
         self.assertIsNone(elevation["portico-wall"], "the elevation controls stay the drawn prism's")
         self.assertIsNone(elevation["portico-plate"], "a tilted plate has no horizontal elevation controls")
-        with patch("monkeyarch.capabilities.element_producers.produce_rows",
+        with patch("monkeyarch.authoring.element_producers.produce_rows",
                    side_effect=AssertionError("state reads must not produce geometry")):
             self.assertEqual(client.get("/api/state").json(), state)
 

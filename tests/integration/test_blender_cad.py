@@ -16,9 +16,12 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from monkeycad import cad_backend, cad_execution
-from monkeycad.cad_backend import CadExecutionRequest, CadExecutionSource
-from monkeycad.cad_execution import CadExecutionError
+from monkeycad.backends.occt import export as occt_export
+from monkeycad.backends.occt.backend import OcctBackend
+from monkeycad.backends.rhino import export as rhino_export
+from monkeycad.backends.rhino.backend import RhinoBackend
+from monkeycad.execution import CadExecutionError, CadExecutionRequest, CadExecutionSource
+from monkeycad.registry import cad_backend_ids, get_cad_backend
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.geometry_program import (
@@ -73,10 +76,10 @@ def _request(workspace, *, program=None, **changes):
 
 @contextmanager
 def _without_other_backends():
-    with patch.object(cad_backend.OcctBackend, "execute", side_effect=AssertionError("unexpected OCCT fallback")), \
-         patch.object(cad_backend.RhinoBackend, "execute", side_effect=AssertionError("unexpected Rhino fallback")), \
-         patch.object(cad_execution, "execute_occt_export", side_effect=AssertionError("unexpected native OCCT export")), \
-         patch.object(cad_execution, "execute_rhino_three_dm_export", side_effect=AssertionError("unexpected native Rhino export")):
+    with patch.object(OcctBackend, "execute", side_effect=AssertionError("unexpected OCCT fallback")), \
+         patch.object(RhinoBackend, "execute", side_effect=AssertionError("unexpected Rhino fallback")), \
+         patch.object(occt_export, "execute_occt_export", side_effect=AssertionError("unexpected native OCCT export")), \
+         patch.object(rhino_export, "execute_rhino_three_dm_export", side_effect=AssertionError("unexpected native Rhino export")):
         yield
 
 
@@ -90,10 +93,10 @@ def _without_processes():
 class BlenderRequestTests(unittest.TestCase):
     def test_selection_uses_the_public_registry_and_rejects_foreign_options(self):
         with _without_processes(), _without_other_backends():
-            self.assertIn("blender", cad_backend.cad_backend_ids())
+            self.assertIn("blender", cad_backend_ids())
             self.assertEqual(_options(cad_backend="blender").cad_backend, "blender")
             self.assertEqual(_options(cad_backend="blender", powershell=Path("C:/legacy/powershell.exe")).cad_backend, "blender")
-            backend = cad_backend.get_cad_backend("blender")
+            backend = get_cad_backend("blender")
             for options in ({"preview": True}, {"patch_oracle": True}, {"timeout_seconds": 0}, {"timeout_seconds": -1}, {"blender_executable": []}):
                 with self.subTest(options=options), self.assertRaises(CadExecutionError):
                     backend.validate_options(options)
@@ -105,7 +108,7 @@ class BlenderRequestTests(unittest.TestCase):
             keep = workspace / "keep.txt"
             keep.write_text("existing workspace content", encoding="utf-8")
             request = _request(workspace, program=program)
-            result = cad_backend.get_cad_backend("blender").execute(request)
+            result = get_cad_backend("blender").execute(request)
             result.validate(request, "blender")
             self.assertEqual(result.status, "unsupported")
             self.assertFalse(result.readback_verified)
@@ -120,7 +123,7 @@ class BlenderRequestTests(unittest.TestCase):
                 workspace = Path(temporary)
                 request = _request(workspace, program=_program_of(operation))
                 try:
-                    result = cad_backend.get_cad_backend("blender").execute(request)
+                    result = get_cad_backend("blender").execute(request)
                 except CadExecutionError:
                     pass
                 else:
@@ -151,7 +154,7 @@ class BlenderHostTests(unittest.TestCase):
         cls.addClassCleanup(cls.temporary.cleanup)
         cls.workspace = Path(cls.temporary.name)
         cls.executable = Path(BLENDER_EXECUTABLE).resolve(strict=True)
-        cls.backend = cad_backend.get_cad_backend("blender")
+        cls.backend = get_cad_backend("blender")
         cls.request = _request(
             cls.workspace, backend_options={"blender_executable": cls.executable, "timeout_seconds": 60},
             provenance={"source": "blender-acceptance"},
@@ -344,7 +347,7 @@ class BlenderHostTests(unittest.TestCase):
         result.validate(request, "blender")
 
     def test_cold_read_rejects_changed_face_connections_but_accepts_equivalent_loop_order(self):
-        from monkeycad import blender_cad
+        from monkeycad.backends.blender import backend as blender_backend
 
         extrusion = _extrusion(vector=(0, 1, 0))
         parameters = {
@@ -386,7 +389,7 @@ class BlenderHostTests(unittest.TestCase):
                 retained = self.backend.read_receipt(request, payload)
                 retained.validate(request, "blender")
 
-        real_worker = blender_cad._run_worker
+        real_worker = blender_backend._run_worker
         changed_plans = []
 
         def change_connections(executable, workspace, timeout, *arguments):
@@ -407,7 +410,7 @@ class BlenderHostTests(unittest.TestCase):
             return real_worker(executable, workspace, timeout, *arguments)
 
         changed_request = replace(request, artifact_stem="concave-changed-connections")
-        with _without_other_backends(), patch.object(blender_cad, "_run_worker", side_effect=change_connections):
+        with _without_other_backends(), patch.object(blender_backend, "_run_worker", side_effect=change_connections):
             result = self.backend.execute(changed_request)
         self.assertEqual(len(changed_plans), 1)
         actual = result.receipt_payload["readback"]["objects"][0]
@@ -475,7 +478,7 @@ class BlenderRunnerTests(unittest.TestCase):
 
         project.repository = FilesystemProjectRepository.open(project.repository.layout.root)
         project.run = project.repository.load_run(project.run.run_id)
-        backend = cad_backend.get_cad_backend("blender")
+        backend = get_cad_backend("blender")
         with _without_other_backends(), patch.object(type(backend), "execute", side_effect=AssertionError("exact retained export reopened Blender")):
             restarted = seats(project.run_once())
         for seat_id, cad in restarted.items():

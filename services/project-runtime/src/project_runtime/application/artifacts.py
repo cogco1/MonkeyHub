@@ -56,8 +56,8 @@ from archflow.project.record_kinds import (
     RUNNER_RUN_RECEIPT, SEAT_OCCT_EXECUTION, SEAT_RHINO_EXECUTION, STUDIO_SOURCE_DOCUMENT, STUDIO_MODEL_ASSET,
     STUDIO_DOCUMENT_MODEL_SOURCE,
 )
-from monkeycad.three_dm_inspector import inspect_three_dm_contents, inspect_three_dm_index, ThreeDmInspectionError
-from monkeycad.cad_program import ROOT_LAYER
+from monkeycad.formats.three_dm_inspector import inspect_three_dm_contents, inspect_three_dm_index, ThreeDmInspectionError
+from monkeycad.program import ROOT_LAYER
 from archflow.project.index import IndexUnavailable
 from archflow.project.layout import cad_workspace_path
 from archflow.project.memo import ContentMemo, PathStamps
@@ -469,7 +469,8 @@ def document_bytes(
 def _registered_document_bytes(binding: ProjectBinding, document: SourceDocument) -> bytes:
     run_id, asset_sha256 = document.run_id, document.asset_sha256
     if document.revision_ref is not None:
-        from monkeydiagram.drawing_elevation import DrawingElevationError, read_model_axis_elevation
+        from monkeydiagram.drawing_runs import read_model_axis_elevation
+        from monkeydiagram.sources import DrawingElevationError
 
         try:
             drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(document.revision_ref, binding.project_id))
@@ -1626,13 +1627,16 @@ def export_rhino_work_model(
     own directory behind and never blocks the next one.
     """
 
-    from monkeycad.cad_execution import (  # imported late: the CAD package
-        WORK_MODEL_EXPORT_PATH, CadExecutionError, CadProgramBinding, StepImportSource,
+    from monkeycad.backends.rhino.export import (  # imported late: the CAD package
         discover_powershell, discover_rhino_executables, execute_rhino_three_dm_export,
-        prepare_rhino_three_dm_export, split_step_objects, verify_work_model_geometry,
+        prepare_rhino_three_dm_export,
+    )
+    from monkeycad.backends.rhino.step_import import (
+        WORK_MODEL_EXPORT_PATH, StepImportSource, split_step_objects, verify_work_model_geometry,
         work_model_workspace,
     )
-    from monkeycad.cad_program import CadTranslationError
+    from monkeycad.execution import CadExecutionError, CadProgramBinding
+    from monkeycad.program import CadTranslationError
     from archflow.project.refs import BranchRef
     from archflow.state.geometry_program import GeometryBoundsError, load_compiled_geometry_program
 
@@ -2049,8 +2053,8 @@ def register_model_asset(
 
 
 def _register_external_skp(binding, file_name, content_base64, monitor, event_sink):
-    from monkeycad.model_formats import ConversionError, ThreeDM
-    from monkeycad.sketchup_reader import read_skp
+    from monkeycad.formats.meshes import ConversionError, ThreeDM
+    from monkeycad.formats.sketchup_reader import read_skp
 
     if len(file_name) > 240 or any(char in file_name for char in "/\\\r\n\x00"):
         raise StudioError(422, "MODEL_ASSET_INVALID", "Provide a model file name, not a server path.")

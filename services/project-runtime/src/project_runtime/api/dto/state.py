@@ -13,7 +13,7 @@ from typing import Any, Literal, Mapping
 from pydantic import BaseModel, ConfigDict, Field
 
 from archflow.state.state_record import component_semantics, parameter_bindings_of
-from monkeyarch.capabilities.element_producers import element_vertical_extent
+from monkeyarch.authoring.element_producers import element_vertical_extent
 
 from ...application.catalog import Catalog
 from ...application.frame import ClosureAnswer, RecordFrame

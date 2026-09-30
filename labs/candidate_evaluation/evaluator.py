@@ -11,7 +11,7 @@ from typing import Literal, Mapping, Protocol, Sequence
 from archflow.contracts.canonical import canonical_json
 from archflow.project.refs import RunRef
 from archflow.state.state_record import StateRecord, volume_boxes_of
-from monkeyarch.capabilities.massing_metrics import (
+from monkeyarch.domain.massing_metrics import (
     FAR_EXCEEDED,
     HEIGHT_EXCEEDED,
     VOLUME_OUTSIDE_ENVELOPE,

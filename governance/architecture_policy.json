@@ -150,7 +150,7 @@
       "reason": "The durable project repository is the sole project-document filesystem writer."
     },
     {
-      "path": "packages/monkeycad/src/monkeycad/cad_execution.py",
+      "path": "packages/monkeycad/src/monkeycad/backends/rhino/export.py",
       "function": "prepare_rhino_three_dm_export",
       "operations": [
         "open_write"
@@ -160,7 +160,7 @@
       "reason": "Exclusively creates a deterministic Rhino script inside the explicitly supplied non-symlink speculative workspace; saved 3DM output remains non-canonical."
     },
     {
-      "path": "packages/monkeycad/src/monkeycad/cad_execution.py",
+      "path": "packages/monkeycad/src/monkeycad/backends/rhino/step_import.py",
       "function": "work_model_workspace",
       "operations": [
         "mkdir"
@@ -628,7 +628,7 @@
       "reason": "Creates the external --update-output and --update-work directories main() validated outside the source checkout, and writes one new MonkeyHub-<version>-update-index.json beside the patches create_patch wrote there."
     },
     {
-      "path": "packages/monkeycad/src/monkeycad/blender_cad.py",
+      "path": "packages/monkeycad/src/monkeycad/backends/blender/backend.py",
       "function": "execute",
       "operations": [
         "open_write"
@@ -671,7 +671,7 @@
       "reason": "Existing frontend SDK generation writes only disposable OpenAPI schema inputs under .generated/ (the Hub's, and the project runtime's in project-runtime/); never project data."
     },
     {
-      "path": "packages/monkeycad/src/monkeycad/blender_projection.py",
+      "path": "packages/monkeycad/src/monkeycad/backends/blender/projection.py",
       "function": "execute_blender_projection",
       "operations": [
         "write_text"
@@ -1050,9 +1050,11 @@
         "archive",
         "monkeymonitor",
         "monkeyfab",
-        "monkeycontrol"
+        "monkeycontrol",
+        "project_runtime",
+        "monkeyhub_api"
       ],
-      "reason": "The 3D workflow uses ArchFlow contracts and ports; the host coordinates drawing handoffs. Project-specific data and tooling are not runtime dependencies."
+      "reason": "The 3D workflow uses ArchFlow contracts and ports; the host coordinates drawing handoffs. Project-specific data and tooling are not runtime dependencies, and the Runtime and the Hub compose MonkeyArch: it never imports them."
     },
     {
       "source": "packages/monkeydiagram/src/monkeydiagram",
@@ -1069,39 +1071,74 @@
       "reason": "The drawing workflow consumes retained source contracts through ArchFlow; it cannot import 3D workflow internals or project-specific code."
     },
     {
-      "source": "packages/monkeyarch/src/monkeyarch/capabilities",
+      "source": "packages/monkeyarch/src/monkeyarch/domain",
       "targets": [
-        "archflow.project.repository"
+        "archflow.project.repository",
+        "archflow.project.ports"
       ],
-      "reason": "Detached modeling capabilities cannot acquire persistence or promotion authority."
+      "reason": "MonkeyArch's domain, authoring and compilation layers compute plain values and hold no project writer or record sink, so none of them can acquire persistence or promotion authority. Only the application layer (project_runner, geometry_proposal) writes, through the P036 ports its caller supplies."
     },
     {
-      "source": "packages/monkeyarch/src/monkeyarch/compilers",
+      "source": "packages/monkeyarch/src/monkeyarch/authoring",
       "targets": [
-        "archflow.project.repository"
+        "archflow.project.repository",
+        "archflow.project.ports"
       ],
-      "reason": "Geometry compilation returns a domain value and has no project writer."
+      "reason": "MonkeyArch's domain, authoring and compilation layers compute plain values and hold no project writer or record sink, so none of them can acquire persistence or promotion authority. Only the application layer (project_runner, geometry_proposal) writes, through the P036 ports its caller supplies."
     },
     {
-      "source": "packages/monkeyarch/src/monkeyarch/capabilities",
+      "source": "packages/monkeyarch/src/monkeyarch/compilation",
+      "targets": [
+        "archflow.project.repository",
+        "archflow.project.ports"
+      ],
+      "reason": "MonkeyArch's domain, authoring and compilation layers compute plain values and hold no project writer or record sink, so none of them can acquire persistence or promotion authority. Only the application layer (project_runner, geometry_proposal) writes, through the P036 ports its caller supplies."
+    },
+    {
+      "source": "packages/monkeyarch/src/monkeyarch/domain",
       "targets": [
         "monkeycad"
       ],
-      "reason": "MonkeyArch's domain, authoring and compilation code (capabilities/, construction/ and compilers/ until #516 layers them) works on the neutral GeometryProgram contract in archflow.state.geometry_program, its bounds included, and never executes CAD: only the runner (monkeyarch.runtime) calls a backend."
+      "reason": "MonkeyArch's domain, authoring and compilation layers work on the neutral GeometryProgram contract in archflow.state.geometry_program, its bounds included, and never execute CAD: only the runner (monkeyarch.application.project_runner) calls a backend."
     },
     {
-      "source": "packages/monkeyarch/src/monkeyarch/construction",
+      "source": "packages/monkeyarch/src/monkeyarch/authoring",
       "targets": [
         "monkeycad"
       ],
-      "reason": "MonkeyArch's domain, authoring and compilation code (capabilities/, construction/ and compilers/ until #516 layers them) works on the neutral GeometryProgram contract in archflow.state.geometry_program, its bounds included, and never executes CAD: only the runner (monkeyarch.runtime) calls a backend."
+      "reason": "MonkeyArch's domain, authoring and compilation layers work on the neutral GeometryProgram contract in archflow.state.geometry_program, its bounds included, and never execute CAD: only the runner (monkeyarch.application.project_runner) calls a backend."
     },
     {
-      "source": "packages/monkeyarch/src/monkeyarch/compilers",
+      "source": "packages/monkeyarch/src/monkeyarch/compilation",
       "targets": [
         "monkeycad"
       ],
-      "reason": "MonkeyArch's domain, authoring and compilation code (capabilities/, construction/ and compilers/ until #516 layers them) works on the neutral GeometryProgram contract in archflow.state.geometry_program, its bounds included, and never executes CAD: only the runner (monkeyarch.runtime) calls a backend."
+      "reason": "MonkeyArch's domain, authoring and compilation layers work on the neutral GeometryProgram contract in archflow.state.geometry_program, its bounds included, and never execute CAD: only the runner (monkeyarch.application.project_runner) calls a backend."
+    },
+    {
+      "source": "packages/monkeyarch/src/monkeyarch/domain",
+      "targets": [
+        "monkeyarch.authoring",
+        "monkeyarch.compilation",
+        "monkeyarch.application"
+      ],
+      "reason": "MonkeyArch's layers depend one way: application may import authoring, compilation and domain, and authoring may import domain; domain and compilation import no other layer. A solver, a seat rule or a relation check never depends on how rows are authored or a run is orchestrated, and the compiler's operation order and program digest rest on the kernel's GeometryProgram contract alone."
+    },
+    {
+      "source": "packages/monkeyarch/src/monkeyarch/authoring",
+      "targets": [
+        "monkeyarch.application"
+      ],
+      "reason": "MonkeyArch's layers depend one way: application may import authoring, compilation and domain, and authoring may import domain; domain and compilation import no other layer. A solver, a seat rule or a relation check never depends on how rows are authored or a run is orchestrated, and the compiler's operation order and program digest rest on the kernel's GeometryProgram contract alone."
+    },
+    {
+      "source": "packages/monkeyarch/src/monkeyarch/compilation",
+      "targets": [
+        "monkeyarch.domain",
+        "monkeyarch.authoring",
+        "monkeyarch.application"
+      ],
+      "reason": "MonkeyArch's layers depend one way: application may import authoring, compilation and domain, and authoring may import domain; domain and compilation import no other layer. A solver, a seat rule or a relation check never depends on how rows are authored or a run is orchestrated, and the compiler's operation order and program digest rest on the kernel's GeometryProgram contract alone."
     },
     {
       "source": "packages/monkeymonitor/src/monkeymonitor",
@@ -1136,6 +1173,7 @@
     {
       "source": "packages/monkeycontrol/src/monkeycontrol",
       "targets": [
+        "monkeycad",
         "monkeyarch",
         "monkeydiagram",
         "monkeymonitor",
@@ -1147,7 +1185,7 @@
         "tests",
         "labs"
       ],
-      "reason": "Desktop automation receives plain action values and writes only receipts under a caller-supplied diagnostics directory; the spine, both workflows and the Hub never become its dependencies."
+      "reason": "Desktop automation receives plain action values and writes only receipts under a caller-supplied diagnostics directory; the spine, both workflows, CAD and the Hub never become its dependencies."
     },
     {
       "source": "packages",

@@ -5,7 +5,7 @@ import struct
 import unittest
 from uuid import UUID
 from unittest.mock import patch
-from monkeycad.model_formats import GLB, ThreeDM, Mesh, Scene, convert, ConversionError
+from monkeycad.formats.meshes import GLB, ThreeDM, Mesh, Scene, convert, ConversionError
 
 def fixture():
     return Scene([Mesh("Offset triangle", [(1, 2, 3), (2, 2, 3), (1, 3, 3)], [(0, 1, 2)], "Structure")], "Meters", [])
@@ -232,7 +232,7 @@ class FormatTests(unittest.TestCase):
         self.assertEqual(info["warnings"], [])
 
     def test_glb_invalid_references_are_refused_before_same_format_delivery(self):
-        from monkeycad.model_providers import InProcessMeshProvider
+        from monkeycad.formats.conversion import InProcessMeshProvider
         paths = [
             ("scene",), ("scenes", 0, "nodes", 0), ("nodes", 0, "mesh"),
             ("meshes", 0, "primitives", 0, "attributes", "POSITION"),
@@ -249,7 +249,7 @@ class FormatTests(unittest.TestCase):
                                 providers=(InProcessMeshProvider(),))
 
     def test_glb_numeric_fields_are_typed_and_bounded(self):
-        from monkeycad.model_providers import InProcessMeshProvider
+        from monkeycad.formats.conversion import InProcessMeshProvider
         cases = [
             (("buffers", 0, "byteLength"), (-1, False, 48.0, 0, 47, 49)),
             (("bufferViews", 0, "byteOffset"), (-1, False, 0.0, 48)),
@@ -306,7 +306,7 @@ class FormatTests(unittest.TestCase):
             convert(base64.b64decode(model.Encode()), "3dm", "glb")
 
     def test_all_ten_unavailable_routes_are_explicit(self):
-        from monkeycad.model_providers import ConversionCoordinator, NO_EXECUTOR
+        from monkeycad.formats.conversion import ConversionCoordinator, NO_EXECUTOR
         routes = ConversionCoordinator().capabilities()
         self.assertEqual(len(routes), 12)
         blocked = [r for r in routes if not r["available"]]

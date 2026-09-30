@@ -37,13 +37,15 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from monkeycad import occt_backend
-from monkeycad.three_dm_inspector import inspect_three_dm_index
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.backends.occt.measure import measure_shape
+from monkeycad.backends.occt.step import read_step
+from monkeycad.formats.three_dm_inspector import inspect_three_dm_index
 from archflow.contracts.canonical import canonical_json_bytes
 from archflow.state.state_record import StateRecord, component_facets
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from monkeyarch.construction.vocabulary import layer_rule_violations
+from monkeyarch.authoring.construction.vocabulary import layer_rule_violations
 
 from .support import PROJECT_ID, RECORD_PAYLOAD, make_empty_project, write_runner_record
 from .test_construction_routes import _exported
@@ -97,7 +99,7 @@ def _element_rows(record: StateRecord) -> list[bytes]:
     return [canonical_json_bytes(entity.to_dict()) for entity in record.entities_of("Element@1")]
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class ConstructionFirstAuthoringTestCase(HostedOpeningTestCase):
     """One project, authored only through the agent's routes, from Stage A to Stage E."""
 
@@ -136,8 +138,8 @@ class ConstructionFirstAuthoringTestCase(HostedOpeningTestCase):
         step, preview = (next(artifact for artifact in artifacts if artifact["format"] == kind) for kind in ("step", "3dm"))
         path = self.root / f"{run}.step"
         path.write_bytes(self.artifact_bytes(step))
-        entries = occt_backend.read_step(path, length_unit=step["lengthUnit"])
-        volumes = {entry.name: occt_backend.measure_shape(entry.shape).volume for entry in entries}
+        entries = read_step(path, length_unit=step["lengthUnit"])
+        volumes = {entry.name: measure_shape(entry.shape).volume for entry in entries}
         visible = {entry.name: entry.visible for entry in entries}
         shown = {row["name"]: row["visible"] for row in inspect_three_dm_index(self.artifact_bytes(preview))["objects"]}
         self.assertEqual(shown, visible, "the preview shows what the exact STEP shows")

@@ -12,13 +12,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from monkeycad.cad_execution import CadExecutionError, RhinoPatchBase, patch_composed_three_dm, prepare_rhino_three_dm_export
-from monkeycad.cad_patch import CadPatchError, PatchSelection, build_patch_prelude, select_patch_operations
-from monkeycad.cad_program import expected_object_semantics, translate_to_rhino_python
+from monkeycad.backends.rhino.export import RhinoPatchBase, prepare_rhino_three_dm_export
+from monkeycad.backends.rhino.script import build_patch_prelude, translate_to_rhino_python
+from monkeycad.execution import CadExecutionError
+from monkeycad.formats.three_dm_compose import patch_composed_three_dm
+from monkeycad.patch import CadPatchError, PatchSelection, select_patch_operations
+from monkeycad.program import expected_object_semantics
 from archflow.state.geometry_program import delivered_object_ids
-from monkeyarch.capabilities.element_producers import ProductionContext, produce_rows
-from monkeyarch.capabilities.reference_resolver import ReferenceContext
-from monkeyarch.compilers.geometry import compile_geometry_program
+from monkeyarch.authoring.element_producers import ProductionContext, produce_rows
+from monkeyarch.domain.reference_resolver import ReferenceContext
+from monkeyarch.compilation.geometry import compile_geometry_program
 from tests.integration.test_cad_execution import _binding
 from tests.integration.test_element_producers import _grids, _levels, _rows
 from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
@@ -494,7 +497,8 @@ class ComposedThreeDmPatchTests(unittest.TestCase):
             GeometryOperation, GeometryOperationKind, GeometryParameter,
             GeometryParameterKind, LengthUnit,
         )
-        from monkeycad.cad_execution import CadExecutionStatus, execute_occt_export
+        from monkeycad.backends.occt.export import execute_occt_export
+        from monkeycad.execution import CadExecutionStatus
         from archflow.state.geometry_program import expected_object_bounds
 
         r = self.rhino

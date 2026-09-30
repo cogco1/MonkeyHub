@@ -34,7 +34,7 @@ from archflow.state.state_record import (
     compile_component_edit,
     compile_parameter_locks,
 )
-from monkeyarch.construction import made_by_construction
+from monkeyarch.authoring.construction.identity import made_by_construction
 
 from ..errors import BlockedNeedsHuman, StudioError
 from .impact import impact
@@ -507,8 +507,8 @@ def direct_element_proposal(projection: StateProjection, *, element_id: str, kin
                             **action: Any) -> Mapping[str, Any]:
     """One direct modeling action on the record's element, through the existing typed edit."""
 
-    from monkeyarch.capabilities.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
-    from monkeyarch.capabilities.reference_resolver import ReferenceContext
+    from monkeyarch.authoring.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
+    from monkeyarch.domain.reference_resolver import ReferenceContext
     from archflow.state.state_record import project_grids_of, project_levels_of
 
     record = projection.record
@@ -546,8 +546,8 @@ def compress_above_proposal(projection: StateProjection, *, threshold: float, fa
                             keep_refs: Sequence[str] = ()) -> Mapping[str, Any]:
     """One atomic planar-surface edit, computed at the selected exact source."""
 
-    from monkeyarch.capabilities.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
-    from monkeyarch.capabilities.reference_resolver import ReferenceContext
+    from monkeyarch.authoring.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
+    from monkeyarch.domain.reference_resolver import ReferenceContext
     from archflow.state.state_record import project_grids_of, project_levels_of
 
     record = projection.record
@@ -600,7 +600,7 @@ def _levels_left_above(record, rows, context, *, threshold: float, factor: float
     lies above the threshold.
     """
 
-    from monkeyarch.capabilities.reference_resolver import parse_reference, resolve_elevation
+    from monkeyarch.domain.reference_resolver import parse_reference, resolve_elevation
     from archflow.state.state_record import project_levels_of
 
     above = [level for level in project_levels_of(record).levels if level.elevation > threshold + 1e-9]
@@ -762,7 +762,8 @@ def component_edit_proposal(
     neither the transport nor the model supplies a geometry program.
     """
 
-    from monkeyarch.capabilities.element_producers import producer_signatures, validate_element_contract
+    from monkeyarch.authoring.element_producers import validate_element_contract
+    from monkeyarch.authoring.producer_signatures import producer_signatures
 
     allowed = {
         "summary", "entities", "parameters", "relations", "removeEntityIds",
@@ -979,7 +980,7 @@ def _canonical_profile(payload: object, existing: Mapping[str, Entity]) -> objec
     spelling was sent (#404 F8); the producer still reads retained rows either way.
     """
 
-    from monkeyarch.capabilities.element_producers import canonical_params
+    from monkeyarch.authoring.element_producers import canonical_params
 
     fields = payload.get("fields") if isinstance(payload, Mapping) else None
     if not isinstance(fields, Mapping) or not isinstance(fields.get("params"), Mapping):
@@ -1279,7 +1280,7 @@ class DeterministicIntentProvider:
                     )
                 ),
             )
-        from monkeyarch.capabilities.element_producers import parameter_unit
+        from monkeyarch.authoring.producer_signatures import parameter_unit
 
         declared = parameter_unit(element.producer, key)
         number = self._stated_in(parsed, declared, f"{key} on {element.element_id}")

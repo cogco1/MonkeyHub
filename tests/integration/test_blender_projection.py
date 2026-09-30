@@ -8,8 +8,10 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from monkeycad import cad_backend, cad_execution as cad, blender_projection as projection
-from monkeycad.occt_backend import occt_available
+from monkeycad.backends.occt.backend import OcctBackend
+from monkeycad.execution import CadExecutionError, CadExecutionRequest
+from monkeycad.backends.blender import projection
+from monkeycad.backends.occt.kernel import occt_available
 from tests.integration.test_occt_execution import _box, _program_of
 from tests.integration.test_cad_execution import _binding
 
@@ -24,22 +26,22 @@ class ProjectionTests(unittest.TestCase):
         self.workspace = Path(temporary.name)
         program = _program_of(_box("floor", [0, 0, 0], [6, 0.2, 4]),
                               _box("wall", [0, 0.2, 0], [6, 3, 0.2]))
-        self.request = cad_backend.CadExecutionRequest(program, _binding(program), self.workspace,
+        self.request = CadExecutionRequest(program, _binding(program), self.workspace,
                                                        "pavilion", backend_options={"preview": False},
                                                        material_by_component={"body-component": "concrete"},
                                                        material_colors={"concrete": (160, 170, 180)})
-        self.source = cad_backend.OcctBackend().execute(self.request)
+        self.source = OcctBackend().execute(self.request)
         self.assertEqual(self.source.status, "succeeded", self.source.failures)
 
     def test_binding_and_source_bytes_refused_before_process(self):
         with patch.object(projection, "_run_worker", side_effect=AssertionError("unexpected Blender")):
             wrong = deepcopy(self.source.receipt_payload)
             wrong["identity"]["binding"]["run_id"] = "different"
-            with self.assertRaises(cad.CadExecutionError):
+            with self.assertRaises(CadExecutionError):
                 projection.execute_blender_projection(self.request, replace(self.source, receipt_payload=wrong), blender_executable="missing")
             exact = next(a for a in self.source.artifacts if a.name == "exact")
             (self.workspace / exact.relative_path).write_bytes(b"modified source")
-            with self.assertRaises(cad.CadExecutionError):
+            with self.assertRaises(CadExecutionError):
                 projection.execute_blender_projection(self.request, self.source, blender_executable="missing")
 
     def test_failure_has_no_success_artifacts(self):
@@ -76,17 +78,17 @@ class ProjectionTests(unittest.TestCase):
         for row in results[0]["readback"]["objects"]:
             self.assertEqual(row["user_text"]["archflow:material"], "concrete")
             self.assertEqual(row["material"]["name"], "concrete")
-        with self.assertRaisesRegex(cad.CadExecutionError, "overwrite"):
+        with self.assertRaisesRegex(CadExecutionError, "overwrite"):
             projection.execute_blender_projection(replace(self.request, artifact_stem="first"), self.source,
                                                    blender_executable=BLENDER, presentation=settings)
         # Retained proof must still bind exactly, even when no new host starts.
         bad = deepcopy(results[0])
         bad["source_artifact"]["sha256"] = "0" * 64
-        with self.assertRaises(cad.CadExecutionError):
+        with self.assertRaises(CadExecutionError):
             projection.verify_projection_artifacts(self.request, self.source, bad)
         image = self.workspace / results[0]["artifacts"][1]["relative_path"]
         image.write_bytes(b"tampered PNG")
-        with self.assertRaises(cad.CadExecutionError):
+        with self.assertRaises(CadExecutionError):
             projection.verify_projection_artifacts(self.request, self.source, results[0])
 
     @unittest.skipUnless(BLENDER, "set ARCHFLOW_BLENDER_EXECUTABLE for real Blender")
@@ -106,7 +108,7 @@ class ProjectionTests(unittest.TestCase):
                         "--python-expr", expression], capture_output=True, check=True, timeout=120,
                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         changed = projection._readback(projection._run_worker(BLENDER, self.workspace, 120, "inspect", edited))
-        with self.assertRaisesRegex(cad.CadExecutionError, "reconcile"):
+        with self.assertRaisesRegex(CadExecutionError, "reconcile"):
             projection._verify_scene(plan, changed)
         projection.verify_projection_artifacts(request, self.source, result)
 

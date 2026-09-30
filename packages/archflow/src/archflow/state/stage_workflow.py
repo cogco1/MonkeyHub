@@ -630,7 +630,7 @@ def require_measurable(workflow: ProjectStageWorkflow) -> ProjectStageWorkflow:
     """A workflow may require only checks the spine can measure (ADR-007 r3).
 
     ``required_checks`` name ids in ``state_record.CHECK_KINDS`` — the ids
-    ``capabilities.relation_checks.CHECKERS`` is keyed by — because the runner
+    ``monkeyarch.domain.relation_checks.CHECKERS`` is keyed by — because the runner
     writes the closure from its own measurements: a required kind nothing can
     measure is a stage that never closes, and the closure could only ever say
     ``missing_check`` about it. So the workflow is refused where it is frozen

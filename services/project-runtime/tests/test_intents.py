@@ -20,7 +20,9 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.backends.occt.measure import ShapeMeasure, measure_shape
+from monkeycad.backends.occt.step import read_step
 
 from project_runtime.application.intent_agent import (
     CODEX,
@@ -689,7 +691,7 @@ class ConstructionIntentTests(IntentTestCase):
 
     def test_a_modified_decision_changes_the_proposal_on_top_of_it(self) -> None:
         from archflow.state.state_record import apply_state_record_operator
-        from monkeyarch.construction.vocabulary import layer_rule_violations
+        from monkeyarch.authoring.construction.vocabulary import layer_rule_violations
 
         self.app.state.intent_compiler = scripted(script=TWO_BLOCKS, why="Two stacked masses.")
         status, body = self.ask("Add two stacked masses beside the portico.", targetComponentId=None)
@@ -774,7 +776,7 @@ class ConstructionIntentTests(IntentTestCase):
 
     def test_the_model_schema_is_the_construction_contract(self) -> None:
         from archflow.semantics.facets import FACETS
-        from monkeyarch.construction.vocabulary import LIMITS, layer_rule_violations
+        from monkeyarch.authoring.construction.vocabulary import LIMITS, layer_rule_violations
 
         from project_runtime.application.intent_agent import SYSTEM_PROMPT
 
@@ -1182,7 +1184,7 @@ class SemanticCandidateChainTests(IntentTestCase):
         # Nothing above left a run behind.
         self.assertEqual(sorted(p.name for p in self.repository.layout.runs.iterdir()), sorted([REFERENCE_RUN_ID, run_a]))
 
-    @unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+    @unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
     def test_the_exported_solids_follow_the_chain(self) -> None:
         """The same two candidates with the process's default export: the STEP aperture is the opening the chain says."""
 
@@ -1193,7 +1195,7 @@ class SemanticCandidateChainTests(IntentTestCase):
         run_a, state_a = self.candidate_a(app, client)
         run_b, _ = self.candidate_b(app, client, run_a, state_a)
 
-        def solids(run_id: str) -> dict[str, occt_backend.ShapeMeasure]:
+        def solids(run_id: str) -> dict[str, ShapeMeasure]:
             candidate = client.get(f"/api/candidates/{run_id}").json()
             exact = next(row for row in candidate["artifacts"] if row["representation"] == "exact")
             self.assertEqual((exact["format"], exact["status"], exact["readbackVerified"]), ("step", "succeeded", True))
@@ -1201,7 +1203,7 @@ class SemanticCandidateChainTests(IntentTestCase):
             self.assertEqual(fetched.status_code, 200, fetched.text)
             path = self.root / f"{run_id}.step"
             path.write_bytes(fetched.content)
-            return {entry.name: occt_backend.measure_shape(entry.shape) for entry in occt_backend.read_step(path, length_unit="meter")}
+            return {entry.name: measure_shape(entry.shape) for entry in read_step(path, length_unit="meter")}
 
         measured = {run_a: solids(run_a), run_b: solids(run_b)}
         for run_id, width, head in ((run_a, 2.0, 2.5), (run_b, 1.6, 2.3)):

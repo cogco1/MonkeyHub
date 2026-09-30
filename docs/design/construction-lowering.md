@@ -31,13 +31,13 @@ created: 2026-09-28
 | --- | --- |
 | `GP` | `packages/archflow/src/archflow/state/geometry_program.py` |
 | `SR` | `packages/archflow/src/archflow/state/state_record.py` |
-| `COMP` | `packages/monkeyarch/src/monkeyarch/compilers/geometry.py` |
-| `PROP` | `packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py` |
-| `PROD` | `packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py` |
-| `WALL` | `packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py` |
-| `CADP` | `packages/monkeycad/src/monkeycad/cad_program.py` |
-| `CADX` | `packages/monkeycad/src/monkeycad/cad_execution.py` |
-| `OCCT` | `packages/monkeycad/src/monkeycad/occt_backend.py` |
+| `COMP` | `packages/monkeyarch/src/monkeyarch/compilation/geometry.py` |
+| `PROP` | `packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py` |
+| `PROD` | `packages/monkeyarch/src/monkeyarch/authoring/element_producers.py` |
+| `WALL` | `packages/monkeyarch/src/monkeyarch/domain/wall_solver.py` |
+| `CADP` | `packages/monkeycad/src/monkeycad/program.py`, `packages/monkeycad/src/monkeycad/backends/rhino/script.py` |
+| `CADX` | `packages/monkeycad/src/monkeycad/execution.py`, `packages/monkeycad/src/monkeycad/backends/{occt,rhino}/export.py` |
+| `OCCT` | `packages/monkeycad/src/monkeycad/backends/occt/` |
 | `ELEV` | `packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py` |
 
 ## 0. Answer
@@ -141,7 +141,7 @@ In both refused cases, every vertex of the host survives the cut, so the bounds 
   - no operation consumes it (curves only when they state `retain_for_inspection`);
   - its operation states `retain_for_inspection: true`.
 
-  It replaces `CADP._physical_ids`. `CADP`, `monkeycad.cad_patch`, `CADX` and `OCCT` import it, so the compiler, the exporters, incremental rebuild and the predictor share one definition. Existing programs keep the same delivered set, because only curves may state `retain_for_inspection` today.
+  It replaces `CADP._physical_ids`. `CADP`, `monkeycad.patch`, `CADX` and `OCCT` import it, so the compiler, the exporters, incremental rebuild and the predictor share one definition. Existing programs keep the same delivered set, because only curves may state `retain_for_inspection` today.
 - **Empty bindings allowed.** `GeometryOperation.semantic_binding_ids` may be empty. An operation's serialization does not change, so retained digests do not move.
 - **`COMP._operation_graph`:**
   - `UNOWNED_OBJECT` applies only to delivered objects: "delivered geometry object has no design identity binding".
@@ -199,7 +199,7 @@ In both refused cases, every vertex of the host survives the cut, so the bounds 
 
 ### 3.4 Prism rectangular cutouts (D-419-2)
 
-Their output does not change. Partitioning keeps every piece's bounds analytic, and `monkeycad.cad_patch` can reuse unchanged pieces. A difference would hit the predictor limit in §3.5 whenever a cutout crosses the panel edge. The prism signature's description points new openings to `voids`. #437 migrates retained cutouts.
+Their output does not change. Partitioning keeps every piece's bounds analytic, and `monkeycad.patch` can reuse unchanged pieces. A difference would hit the predictor limit in §3.5 whenever a cutout crosses the panel edge. The prism signature's description points new openings to `voids`. #437 migrates retained cutouts.
 
 ### 3.5 Bounds predictor (D-419-3)
 
@@ -283,7 +283,7 @@ Additional tests:
 
 ## 7. Write scope
 
-The lane claims these paths (`governance/work_registry.json`): `GP`, `SR`, `COMP`, `PROP`, `PROD`, `WALL`, `packages/monkeyarch/src/monkeyarch/capabilities/opening_solver.py`, `CADP`, `packages/monkeycad/src/monkeycad/cad_patch.py`, `CADX`, `OCCT`, `ELEV`, and in `services/project-runtime/src/project_runtime/application/`, `drawing_plans.py` and `drawings.py`. Tests fall under the shared scope.
+The lane claims these paths (`governance/work_registry.json`): `GP`, `SR`, `COMP`, `PROP`, `PROD`, `WALL`, `packages/monkeyarch/src/monkeyarch/domain/opening_solver.py`, `CADP`, `packages/monkeycad/src/monkeycad/patch.py`, `CADX`, `OCCT`, `ELEV`, and in `services/project-runtime/src/project_runtime/application/`, `drawing_plans.py` and `drawings.py`. Tests fall under the shared scope.
 
 Open pull requests touch some of the same files in other functions:
 - #420 (GH-402): `COMP`, `PROP` and `SR`;

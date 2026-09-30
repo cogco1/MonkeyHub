@@ -19,8 +19,7 @@ from dataclasses import replace
 from pathlib import PurePosixPath
 from typing import Any, Mapping
 
-from monkeyarch.capabilities.declaration import DeclarationQuadrant
-from monkeyarch.capabilities.discipline_seats import SeatSpec
+from monkeyarch.domain.discipline_seats import DeclarationQuadrant, SeatSpec
 from archflow.project.inputs import (
     SeatPackInvalid,
     SeatPackMissing,

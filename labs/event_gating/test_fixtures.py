@@ -5,7 +5,7 @@ from pathlib import Path
 from PIL import Image
 import pytest
 
-from monkeycad.occt_backend import occt_available
+from monkeycad.backends.occt.kernel import occt_available
 from labs.event_gating.fixtures import MINIMUM_TWIN_DISTANCE, prepare
 
 

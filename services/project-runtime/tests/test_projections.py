@@ -20,7 +20,7 @@ from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 from PIL import Image, PngImagePlugin
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
 from archflow.project.index import (
     ArtifactRow, CandidateRow, IndexCommit, IndexStamp, IndexUnavailable, ProjectIndex, RunRows, StageRow, TreeRows,
     add_commit_listener,
@@ -138,7 +138,7 @@ def changed_renderer(change):
     the renderer version, computed once per process, is computed again inside and after."""
 
     if isinstance(change, str):
-        change = patch("monkeydiagram.mesh_views.RENDERER_VERSION", change)
+        change = patch("monkeydiagram.projection.mesh_views.RENDERER_VERSION", change)
     projections.forget_renderer()
     try:
         with change:
@@ -197,7 +197,7 @@ class KeyTests(unittest.TestCase):
 
     def test_every_pipeline_input_reaches_the_key(self):
         from project_runtime.application import drawings
-        from monkeydiagram import mesh_views
+        from monkeydiagram.projection import mesh_views
 
         before = projection_spec(SOURCE)
         right, up, look = drawings._VIEW_FRAMES["axon"]
@@ -1141,7 +1141,7 @@ class RouteTests(unittest.TestCase):
         self.assertEqual((refused.status_code, refused.json()["code"]), (503, "PROJECTION_INDEX_UNAVAILABLE"))
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class RenderProcessTests(unittest.TestCase):
     """The real renderer: a low-priority process drawing one exact committed model."""
 

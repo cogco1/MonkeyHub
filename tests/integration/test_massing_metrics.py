@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import unittest
 
-from monkeyarch.capabilities.massing_metrics import (
+from monkeyarch.domain.massing_metrics import (
     FAR_EXCEEDED,
     HEIGHT_EXCEEDED,
     VOLUME_OUTSIDE_ENVELOPE,

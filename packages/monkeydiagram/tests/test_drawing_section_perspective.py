@@ -15,26 +15,32 @@ from dataclasses import asdict
 from pathlib import Path
 from io import BytesIO
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.backends.occt.section import section_occt_regions
+from monkeycad.backends.occt.step import StepObject, read_step, write_step
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import SEAT_OCCT_EXECUTION, STUDIO_MODEL_ASSET
 from archflow.project.repository import FilesystemProjectRepository
-from monkeydiagram.drawing_elevation import (
-    SECTION_PERSPECTIVE_KIND,
-    ElevationSource,
-    NativeModelSource,
-    SectionPerspectiveError,
-    SectionPerspectiveView,
+from monkeydiagram.drawing_runs import (
     freeze_section_perspective,
     list_model_axis_elevations,
-    object_semantics,
-    project_section_perspective,
-    read_elevation_source,
     read_model_axis_elevation,
 )
-from monkeydiagram.drawing_svg import svg_objects
+from monkeydiagram.projection.views import (
+    SECTION_PERSPECTIVE_KIND,
+    SectionPerspectiveError,
+    SectionPerspectiveView,
+    project_section_perspective,
+)
+from monkeydiagram.rendering.svg import svg_objects
+from monkeydiagram.sources import (
+    ElevationSource,
+    NativeModelSource,
+    object_semantics,
+    read_elevation_source,
+)
 
-NEEDS_OCCT = unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+NEEDS_OCCT = unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 SOURCE_RUN = "source-run"
 STEP_NAME = "room@abc123.step"
 WORKSPACE = "cad-room"
@@ -148,9 +154,9 @@ class SectionPerspectiveGeometryTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         cls.addClassCleanup(temporary.cleanup)
         path = Path(temporary.name) / STEP_NAME
-        occt_backend.write_step(path, tuple(occt_backend.StepObject(name, shape, "layer") for name, shape in _room().items()),
+        write_step(path, tuple(StepObject(name, shape, "layer") for name, shape in _room().items()),
                                 length_unit="meter")
-        cls.entries = occt_backend.read_step(path, length_unit="meter")
+        cls.entries = read_step(path, length_unit="meter")
         cls.default = cls.project()
         cls.moved = cls.project(camera={"eye": [4.5, 4.0 - FOCUS, 1.3], "target": [3.0, 4.0, 1.5]})
 
@@ -169,7 +175,7 @@ class SectionPerspectiveGeometryTests(unittest.TestCase):
                 self.assertAlmostEqual(actual, expected, places=9, msg=region.object_id)
         self.assertEqual(perspective.cut_object_ids, tuple(sorted(CUT_BOXES)))
         # The picture plane is the cut: projecting the loops changed nothing, and moving the eye moves no cut.
-        orthographic = occt_backend.section_occt_regions(self.entries, object_ids=DRAWN, origin=(0, 4, 0), right=(1, 0, 0),
+        orthographic = section_occt_regions(self.entries, object_ids=DRAWN, origin=(0, 4, 0), right=(1, 0, 0),
                                                          up=(0, 0, 1), linear_deflection=0.0001)
         for pair in ((perspective.regions, orthographic), (perspective.regions, self.moved.perspective.regions)):
             for left, right in zip(*pair):
@@ -382,8 +388,8 @@ class FreezeSectionPerspectiveTests(unittest.TestCase):
         self.source_run = self.repository.create_run(SOURCE_RUN)
         workspace = self.repository.layout.run(SOURCE_RUN).workspaces / WORKSPACE
         workspace.mkdir()
-        occt_backend.write_step(workspace / STEP_NAME,
-                                tuple(occt_backend.StepObject(name, shape, "layer") for name, shape in _room().items()),
+        write_step(workspace / STEP_NAME,
+                                tuple(StepObject(name, shape, "layer") for name, shape in _room().items()),
                                 length_unit="meter")
         self.step_sha = hashlib.sha256((workspace / STEP_NAME).read_bytes()).hexdigest()
         self.receipt_ref = self.repository.put_json(

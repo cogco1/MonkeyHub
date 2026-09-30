@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from monkeycad import cad_execution
-from monkeycad import local_cad_discovery as discovery
+from monkeycad.backends.rhino import export as rhino_export
+from monkeycad import discovery
 
 
 class SoftwareDiscoveryTests(unittest.TestCase):
@@ -126,16 +126,16 @@ class SoftwareDiscoveryTests(unittest.TestCase):
     def test_rhino_wrapper_keeps_newest_version_preference(self):
         expected = tuple(self.file(f"Rhino {version}/System/Rhino.exe") for version in (9, 8, 7, 6))
         registry = self.registry()
-        with patch.object(cad_execution, "SoftwareDiscoveryRegistry", return_value=registry):
-            self.assertEqual(cad_execution.discover_rhino_executables(), expected)
+        with patch.object(rhino_export, "SoftwareDiscoveryRegistry", return_value=registry):
+            self.assertEqual(rhino_export.discover_rhino_executables(), expected)
 
     def test_rhino_wrapper_reports_only_the_windows_com_host(self):
         # A Rhino for Mac bundle is software evidence, not the supervised COM host.
         self.file("Rhino 8.app/Contents/MacOS/Rhinoceros")
         mac = self.registry(system="Darwin", application_roots=(self.root,))
         self.assertEqual(len(mac.discover("rhino").installations), 1)
-        with patch.object(cad_execution, "SoftwareDiscoveryRegistry", return_value=mac):
-            self.assertEqual(cad_execution.discover_rhino_executables(), ())
+        with patch.object(rhino_export, "SoftwareDiscoveryRegistry", return_value=mac):
+            self.assertEqual(rhino_export.discover_rhino_executables(), ())
 
     def test_blender_path_precedes_standard_installs_then_newest_version(self):
         command = self.file("commands/blender.exe")
@@ -189,15 +189,15 @@ class SoftwareDiscoveryTests(unittest.TestCase):
             self.assertEqual(discovery.resolve_blender_executable(), str(command))
 
     def test_blender_backend_uses_shared_selection_before_its_worker(self):
-        from monkeycad import blender_cad
+        from monkeycad.backends.blender import backend as blender_backend
         from tests.integration.test_blender_cad import _request
 
         selected = "configured-blender"
         command = str(self.root / "selected" / "blender.exe")
         request = _request(self.root, backend_options={"blender_executable": selected})
-        with patch.object(blender_cad, "resolve_blender_executable", return_value=command) as resolve, \
-             patch.object(blender_cad, "_run_worker", side_effect=subprocess.TimeoutExpired(command, 1)) as worker:
-            result = blender_cad.BlenderBackend().execute(request)
+        with patch.object(blender_backend, "resolve_blender_executable", return_value=command) as resolve, \
+             patch.object(blender_backend, "_run_worker", side_effect=subprocess.TimeoutExpired(command, 1)) as worker:
+            result = blender_backend.BlenderBackend().execute(request)
         resolve.assert_called_once_with(selected)
         self.assertEqual(worker.call_args.args[0], command)
         self.assertEqual(result.status, "failed")

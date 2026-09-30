@@ -6,10 +6,11 @@ from io import BytesIO
 from math import sqrt
 import unittest
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.backends.occt.step import StepEntry
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class MeshLineViewTests(unittest.TestCase):
     # Looking along +Y: u = x, v = z.
     FRONT = {"right": (1, 0, 0), "up": (0, 0, 1)}
@@ -18,11 +19,11 @@ class MeshLineViewTests(unittest.TestCase):
         from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
         from OCP.gp import gp_Pnt
 
-        return tuple(occt_backend.StepEntry(name, (), None, BRepPrimAPI_MakeBox(gp_Pnt(*corner), *size).Shape())
+        return tuple(StepEntry(name, (), None, BRepPrimAPI_MakeBox(gp_Pnt(*corner), *size).Shape())
                      for name, corner, size in boxes)
 
     def draw(self, entries, *, crop=(-1, -1, 11, 11), size=240, **frame):
-        from monkeydiagram.mesh_views import mesh_line_view, pixel_size, triangulate
+        from monkeydiagram.projection.mesh_views import mesh_line_view, pixel_size, triangulate
 
         meshes, skipped = triangulate(entries, [entry.name for entry in entries],
                                       linear_deflection=pixel_size(crop, size) / 2)
@@ -70,9 +71,9 @@ class MeshLineViewTests(unittest.TestCase):
         from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
         from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
 
-        from monkeydiagram.mesh_views import mesh_line_view, pixel_size, triangulate
+        from monkeydiagram.projection.mesh_views import mesh_line_view, pixel_size, triangulate
 
-        entries = (occt_backend.StepEntry("column", (), None, BRepPrimAPI_MakeCylinder(
+        entries = (StepEntry("column", (), None, BRepPrimAPI_MakeCylinder(
             gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), 1.0, 6.0).Shape()),)
         right = (1 / sqrt(2), -1 / sqrt(2), 0)
         up = (1 / sqrt(6), 1 / sqrt(6), 2 / sqrt(6))
@@ -92,9 +93,9 @@ class MeshLineViewTests(unittest.TestCase):
         from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
         from OCP.gp import gp_Pnt
 
-        from monkeydiagram.mesh_views import triangulate
+        from monkeydiagram.projection.mesh_views import triangulate
 
-        curve = occt_backend.StepEntry("rail", (), None, BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, 0), gp_Pnt(1, 0, 0)).Edge())
+        curve = StepEntry("rail", (), None, BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, 0), gp_Pnt(1, 0, 0)).Edge())
         meshes, skipped = triangulate((curve, *self.entries(("wall", (0, 0, 0), (1, 1, 1)))), ["rail", "wall"],
                                       linear_deflection=0.01)
         self.assertEqual(([mesh.object_id for mesh in meshes], skipped), (["wall"], ("rail",)))
@@ -106,7 +107,7 @@ class MeshLineViewMemoryTests(unittest.TestCase):
     def test_large_overlapping_faces_are_drawn_in_bounded_memory(self):
         import tracemalloc
 
-        from monkeydiagram.mesh_views import ObjectMesh, mesh_line_view
+        from monkeydiagram.projection.mesh_views import ObjectMesh, mesh_line_view
 
         # Twelve slabs, each filling the whole 1024 px view at its own depth: about
         # 50 million candidate pixels, which used to be expanded a few hundred

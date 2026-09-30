@@ -1782,7 +1782,7 @@ class ChatTests(unittest.TestCase):
     def test_the_agent_contract_names_no_producer_classification_or_backend(self):
         """The layer rule for every tool text, domain guide and prompt note; "wall" appears only as a facet value in MEANING/CAPABILITIES."""
 
-        from monkeyarch.construction.vocabulary import layer_rule_violations
+        from monkeyarch.authoring.construction.vocabulary import layer_rule_violations
         from monkeyhub_api.models import ChatPresentationBindRequest
 
         external = ChatPresentationBindRequest(projectDir=str(self.project), sourceSessionId="external-session")
@@ -1830,7 +1830,8 @@ class ChatTests(unittest.TestCase):
 
         from archflow.project.refs import ProjectVersionRef
         from archflow.state.state_record import Entity, StateRecord
-        from monkeyarch.construction import compile_construction_script, vocabulary
+        from monkeyarch.authoring.construction.lowering import compile_construction_script
+        from monkeyarch.authoring.construction.vocabulary import vocabulary
 
         modelling = next(tool for tool in _tools_of(mcp_server) if tool["name"] == "studio_request")["description"]
         lines = modelling.splitlines()

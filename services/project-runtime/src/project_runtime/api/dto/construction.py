@@ -3,7 +3,7 @@
 An agent authors geometry with one construction script and reads the model
 back in the same words; meaning arrives later as facets on the same identity.
 Every description here is agent-facing text: it keeps the layer rule
-(``monkeyarch.construction.vocabulary.LAYER_RULE_TOKENS``) and names no way
+(``monkeyarch.authoring.construction.vocabulary.LAYER_RULE_TOKENS``) and names no way
 the runtime realises a shape; the Stage C hosted-opening request says ``wall``
 only as the facet value it needs. What a script produced is returned as the
 ordinary proposal, plus what the script itself reported.
@@ -16,7 +16,7 @@ from typing import Any, Literal, Mapping
 from pydantic import BaseModel, ConfigDict, Field
 
 from archflow.state.state_record import _EPISTEMIC
-from monkeyarch.construction.vocabulary import LIMITS
+from monkeyarch.authoring.construction.vocabulary import LIMITS
 
 from ...application.projection import StateProjection
 from .project import ProjectVersionDto, ReferenceRunDto, project_version_dto, reference_run_dto

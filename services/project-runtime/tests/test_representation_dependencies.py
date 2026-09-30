@@ -6,7 +6,7 @@ from copy import deepcopy
 from fastapi.testclient import TestClient
 import pytest
 
-from monkeycad.occt_backend import occt_available
+from monkeycad.backends.occt.kernel import occt_available
 from project_runtime.application.artifacts import ModelSource, _page_replacements, list_documents, save_document
 from project_runtime.binding import bound_project
 from project_runtime.application.representation_dependencies import RepresentationReads, representation_status

@@ -98,8 +98,8 @@ CHECK_KINDS: Mapping[str, str] = MappingProxyType({
 
 A ``ValidatorBinding`` names one of these and nothing else. A kind the record
 accepts but no checker measures reports ``unchecked`` forever, which reads as
-verification and is not; ``capabilities.relation_checks.CHECKERS`` is keyed by
-exactly these ids and says so at import.
+verification and is not; ``monkeyarch.domain.relation_checks.CHECKERS`` is
+keyed by exactly these ids and says so at import.
 """
 
 _INTERVAL_KINDS = frozenset({"clearance_interval"})   # these take interval_m; every other kind takes a tolerance
@@ -1863,7 +1863,7 @@ def schematic_pack_of(record: StateRecord, *, option_id: str | None = None, evid
     The one reader of ``MassingLevel@1`` / ``Volume@1`` / ``Space@1`` /
     ``Connection@1`` *as a spatial option*. ``developed_design_view`` builds its
     view from this, and so does anything that measures the massing
-    (``monkeyarch.capabilities.massing_metrics``) or offers a variant of it. A record is said to
+    (``monkeyarch.domain.massing_metrics``) or offers a variant of it. A record is said to
     declare massing when it carries volumes, zones and massing levels together;
     with any of the three absent this answers ``None`` rather than half a
     pack, and nothing stands in for the missing massing (#402).

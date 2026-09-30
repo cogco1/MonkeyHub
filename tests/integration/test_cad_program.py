@@ -7,11 +7,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from monkeycad.cad_program import (
-    CadTranslationError,
-    expected_object_semantics,
-    translate_to_rhino_python,
-)
+from monkeycad.backends.rhino.script import translate_to_rhino_python
+from monkeycad.program import CadTranslationError, expected_object_semantics
 from archflow.state.geometry_program import (
     DifferenceBoundsError,
     GeometryBoundsError,
@@ -882,7 +879,7 @@ class LayerSchemeTests(unittest.TestCase):
     def test_a_caller_supplied_scheme_renames_the_category_and_keeps_identity(self) -> None:
         """P108 numbered layers: <category>::<component>; unmapped components stay on the historical path."""
 
-        from monkeycad.cad_program import _component_layer, expected_object_semantics
+        from monkeycad.program import _component_layer, expected_object_semantics
 
         self.assertEqual(_component_layer((), None), "archflow")
         self.assertEqual(_component_layer(("portico-columns",), None), "archflow::portico-columns")
@@ -898,7 +895,7 @@ BASIS = ("reading:plate",)
 
 
 def _reference_context():
-    from monkeyarch.capabilities.reference_resolver import ReferenceContext
+    from monkeyarch.domain.reference_resolver import ReferenceContext
     from archflow.state.geometry_program import (
         ProjectGridAxis,
         ProjectGrids,
@@ -923,7 +920,7 @@ def _reference_context():
 def _produced_program(*rows):
     """The real producers' operations, wrapped as the program the translator reads."""
 
-    from monkeyarch.capabilities.element_producers import ProductionContext, produce_rows
+    from monkeyarch.authoring.element_producers import ProductionContext, produce_rows
 
     context = ProductionContext(references=_reference_context(), published={})
     operations = [
@@ -941,7 +938,7 @@ def _produced_program(*rows):
 
 
 def _wedge_row(line=None, **params):
-    from monkeyarch.capabilities.element_producers import ElementRow
+    from monkeyarch.authoring.element_producers import ElementRow
 
     start, end = line or (0.0, 4.0)          # metres along the W axis, which runs +x
     return ElementRow(
@@ -959,7 +956,7 @@ def _wedge_row(line=None, **params):
 
 
 def _shell_row(**params):
-    from monkeyarch.capabilities.element_producers import ElementRow
+    from monkeyarch.authoring.element_producers import ElementRow
 
     return ElementRow(
         "rotunda-shell",
@@ -982,7 +979,7 @@ def _shell_row(**params):
 
 
 def _prism_row():
-    from monkeyarch.capabilities.element_producers import ElementRow
+    from monkeyarch.authoring.element_producers import ElementRow
 
     return ElementRow(
         "plinth",
