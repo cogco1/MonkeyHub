@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ...application.decisions import CutLineMm, HatchSpacingMm, VisibleLineMm
 from .artifacts import ModelSourceDto
 
 
@@ -203,9 +204,9 @@ class PlanDrawingDto(BaseModel):
     crop_uv: tuple[float, float, float, float] | None = Field(alias="cropUv", default=None, description=(
         "The drawn window (u_min, v_min, u_max, v_max) in the source length unit: X/Y for a plan, the section's u/v for "
         "a vertical section. Omitted, a rebuild keeps its own; a new drawing frames the model."))
-    cut_line_mm: float | None = Field(alias="cutLineMm", default=None, gt=0, le=2, allow_inf_nan=False)
-    visible_line_mm: float | None = Field(alias="visibleLineMm", default=None, gt=0, le=2, allow_inf_nan=False)
-    hatch_spacing_mm: float | None = Field(alias="hatchSpacingMm", default=None, ge=0.5, le=20, allow_inf_nan=False)
+    cut_line_mm: CutLineMm | None = Field(alias="cutLineMm", default=None)
+    visible_line_mm: VisibleLineMm | None = Field(alias="visibleLineMm", default=None)
+    hatch_spacing_mm: HatchSpacingMm | None = Field(alias="hatchSpacingMm", default=None)
     hatch: PlanHatchDto | None = Field(default=None, description=(
         "Material hatch and poché rules on paper, beside the pens and hatchSpacingMm. Omitted keeps the previous "
         "revision's rules; an empty byMaterial removes them."))

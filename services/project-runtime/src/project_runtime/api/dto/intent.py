@@ -37,7 +37,8 @@ from .decisions import DecisionContextDto, DecisionDto, decision_dto
 from .memory import MemoryMatchDto, memory_match_dto
 from .proposal import STATE_DIGEST_PATTERN, ProposalDto
 from .artifacts import ModelSourceDto, model_source_dto
-from .study import StudyRevisionRequestDto, study_evidence_dto
+from ...application.study import StudyRevisionRequestDto
+from .study import study_evidence_dto
 
 Vector3 = tuple[float, float, float]
 

@@ -13,9 +13,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
+from monkeyarch.authoring.frame import closure_of_refs, frame_of
+
 from ...binding import bound_project
 from ...application.catalog import catalog_of
-from ...application.frame import closure_of_refs, frame_of
 from ...application.options import record_massing
 from ...application.projection import project_state
 from ..dto.options import VolumesDto, volumes_dto

@@ -1,6 +1,6 @@
 """L4 domain readiness: a domain reads only the semantics it needs.
 
-``monkeyarch.capabilities.domain_readiness`` is the honest entry gate every
+``monkeyarch.domain.domain_readiness`` is the honest entry gate every
 technical domain calls before it runs (spec docs/design/construction-api.md
 §3.6): it never infers ``architectural.role``, ``structural.role``,
 ``architectural.enclosure`` or ``material.name`` from an entity's shape,
@@ -14,7 +14,7 @@ import unittest
 
 from archflow.semantics.facets import FACETS
 from archflow.state.state_record import Entity, StateRecord
-from monkeyarch.capabilities.domain_readiness import DOMAINS, DomainUnknown, describe, readiness
+from monkeyarch.domain.domain_readiness import DOMAINS, DomainUnknown, describe, readiness
 
 _NO_ELEMENT = object()
 

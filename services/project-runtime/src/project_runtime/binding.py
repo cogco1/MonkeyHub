@@ -6,6 +6,12 @@ is the only judgement here, and it is made in the open: the request may name a
 run, the operator may configure one, and otherwise the newest run that actually
 finished design work wins. The choice and its source both travel on the wire so
 no client has to guess which run a number belongs to.
+
+``ProjectBinding`` and ``ReadToken`` are also the Runtime's public read API:
+MonkeyHub opens a project with ``ProjectBinding.unconfigured`` to read it while
+no Runtime answers for it (#519). So nothing here imports a web framework; the
+functions at the end keep the process's one binding on its state object, which
+they read structurally (``ProcessState``).
 """
 
 from __future__ import annotations
@@ -17,11 +23,9 @@ import logging
 import os
 from pathlib import Path, PurePosixPath
 import threading
-from typing import Any, Callable, Mapping, TypeVar
+from typing import Any, Callable, Mapping, Protocol, TypeVar
 from uuid import uuid4
 import weakref
-
-from starlette.datastructures import State
 
 from archflow.project.index import IndexKeeper, IndexState, ProjectIndex
 from archflow.project.location import open_located_project
@@ -368,6 +372,23 @@ class ProjectBinding:
             self._memo.move_to_end(entry)
             while len(self._memo) > MEMO_ENTRIES:
                 self._memo.popitem(last=False)
+
+    @classmethod
+    def unconfigured(cls, project_dir: Path, *, project_id: str) -> ProjectBinding:
+        """A project read by a process that is not its Runtime: MonkeyHub's in-process reads (#519).
+
+        It carries none of a Runtime's configuration: no configured reference
+        run, so the rule alone chooses one, and nothing exported. The caller
+        has verified that ``project_dir`` holds ``project_id``.
+        """
+
+        root = Path(project_dir)
+        return cls(
+            FilesystemProjectRepository.open(root),
+            project_id=project_id,
+            project_dir=root,
+            settings=StudioSettings(project_dir=root, cad_export="off"),
+        )
 
     @classmethod
     def open(cls, settings: StudioSettings) -> ProjectBinding:
@@ -1034,7 +1055,13 @@ class ProjectBinding:
             return None
 
 
-def bound_project(state: State) -> ProjectBinding:
+class ProcessState(Protocol):
+    """Where a Runtime process keeps its settings and, once opened, its one ``binding`` (``app.state``)."""
+
+    settings: StudioSettings
+
+
+def bound_project(state: ProcessState) -> ProjectBinding:
     """The process's one binding, opened on first use and kept.
 
     A failed open is not remembered: a project that appears after the service
@@ -1047,7 +1074,7 @@ def bound_project(state: State) -> ProjectBinding:
     return _open_bound_project(state)
 
 
-def prepare_bound_project(state: State) -> ProjectBinding:
+def prepare_bound_project(state: ProcessState) -> ProjectBinding:
     """Open the process's binding ahead of its first request and read every run once (#449).
 
     A cold process's first reads - the working source, worktrees, artifacts
@@ -1082,7 +1109,7 @@ def prepare_bound_project(state: State) -> ProjectBinding:
     return binding
 
 
-def _open_bound_project(state: State) -> ProjectBinding:
+def _open_bound_project(state: ProcessState) -> ProjectBinding:
     # Two first requests must not open two bindings, each with an index of its
     # own: the one that lost ``index.lock`` could be the one kept.
     with _BINDING_LOCK:
@@ -1103,7 +1130,7 @@ def _open_bound_project(state: State) -> ProjectBinding:
     return binding
 
 
-def release_bound_project(state: State) -> None:
+def release_bound_project(state: ProcessState) -> None:
     """Close the process's binding, if any, so that the next request opens the project again.
 
     For whoever changed the project under it wholesale (a shared-project
@@ -1238,7 +1265,7 @@ def _reference_state_not_exact(
     )
 
 
-def resolve_project(state: State, project_id: str) -> ProjectBinding:
+def resolve_project(state: ProcessState, project_id: str) -> ProjectBinding:
     """The binding a project-scoped path names, or a 404 that repeats the name.
 
     ``/api/projects/{project_id}/…`` is the general form of every resource in

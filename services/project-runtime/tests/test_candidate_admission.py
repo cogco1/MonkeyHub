@@ -25,7 +25,7 @@ from project_runtime.authentication import request_action
 from project_runtime.binding import ProjectBinding, bound_project
 from project_runtime.main import create_app
 from project_runtime.protocol import BASE_CAPABILITIES
-from monkeyarch.capabilities.relation_checks import RelationCheck, RelationCheckReport
+from monkeyarch.domain.relation_checks import RelationCheck, RelationCheckReport
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_working_copies import register_model

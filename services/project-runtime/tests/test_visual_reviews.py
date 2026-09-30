@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.application import intent_agent
 from project_runtime.binding import bound_project
@@ -425,7 +425,7 @@ class PageReviewTests(unittest.TestCase):
                                             "lastFindingIds": ["f1"]})
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class ModelReviewTests(CandidateTestCase):
     """A modeling review draws each orthographic view of one exact retained model."""
 

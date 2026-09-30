@@ -13,6 +13,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
+from monkeydiagram import study as drawing_study
 from project_runtime.application import study as study_application
 from project_runtime.binding import bound_project, record_kind
 from project_runtime.main import create_app
@@ -255,14 +256,14 @@ class StudyTests(unittest.TestCase):
             payload=legacy,
         )
 
-        exact_hypotheses = study_application._hypotheses
-        study_application._hypotheses = lambda *_: (_ for _ in ()).throw(
+        exact_hypotheses = drawing_study._hypotheses
+        drawing_study._hypotheses = lambda *_: (_ for _ in ()).throw(
             AssertionError("an archived ledger must not run the current hypothesis method")
         )
         try:
             reopened = self.client.get("/api/studies/legacy-house")
         finally:
-            study_application._hypotheses = exact_hypotheses
+            drawing_study._hypotheses = exact_hypotheses
         self.assertEqual(reopened.status_code, 200, reopened.text)
         self.assertEqual(reopened.json()["hypotheses"], [])
         self.assertEqual(reopened.json()["ledgerRef"], legacy_ref.uri)
@@ -276,7 +277,7 @@ class StudyTests(unittest.TestCase):
         current_payload = binding.repository.load_json(current_ref)
         self.assertEqual(
             current_payload["derivation_method"],
-            study_application.CURRENT_DERIVATION_METHOD,
+            drawing_study.CURRENT_DERIVATION_METHOD,
         )
         self.assertIn("document_ref", current_payload["source"])
         old = self.client.get(
@@ -351,7 +352,7 @@ class StudyTests(unittest.TestCase):
         self.assertEqual(second.status_code, 201, second.text)
         current = second.json()
 
-        exact_hypotheses = study_application._hypotheses
+        exact_hypotheses = drawing_study._hypotheses
 
         def without_void_centrality(evidence, graph):
             return [
@@ -359,7 +360,7 @@ class StudyTests(unittest.TestCase):
                 if row["rule"] != "void_centrality"
             ]
 
-        study_application._hypotheses = without_void_centrality
+        drawing_study._hypotheses = without_void_centrality
         try:
             reopened = self.client.get("/api/studies/furniture-house")
             self.assertEqual(reopened.status_code, 200, reopened.text)
@@ -379,7 +380,7 @@ class StudyTests(unittest.TestCase):
                 {row["rule"] for row in repaired.json()["hypotheses"]},
             )
         finally:
-            study_application._hypotheses = exact_hypotheses
+            drawing_study._hypotheses = exact_hypotheses
         self.assertEqual(self.repository.read_head(), self.head)
 
     def retain_variant(self, template: dict, study_id: str, **fields) -> str:
@@ -485,7 +486,7 @@ class StudyTests(unittest.TestCase):
         self.assertEqual(first.status_code, 201, first.text)
         self.assertEqual(
             first.json()["derivationMethod"],
-            study_application.CURRENT_DERIVATION_METHOD,
+            drawing_study.CURRENT_DERIVATION_METHOD,
         )
 
         # A cold read replays the retained findings instead of deriving them
@@ -638,6 +639,9 @@ class StudyTests(unittest.TestCase):
             "status": "confirmed",
         }])
         self.assertEqual(invalid.status_code, 422, invalid.text)
+        # The method's refusal (monkeydiagram.study) answers in the body the Runtime's own did (#519).
+        self.assertEqual(invalid.json(), {"code": "STUDY_EVIDENCE_INVALID",
+                                          "detail": "Evidence 'bad' points must be finite normalized page coordinates."})
         self.assertFalse((self.repository.layout.runs / "study-furniture-house").exists())
         self.assertEqual(self.repository.read_head(), self.head)
 

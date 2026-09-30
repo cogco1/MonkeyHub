@@ -100,7 +100,7 @@ def plan_model(revised: bool=False):
     # An imported model to draw, and the same file with one object removed: another source.
     data = (Path.cwd()/'tests/fixtures/model-source-a.3dm').read_bytes()
     if revised:
-        from monkeycad.model_formats import ThreeDM
+        from monkeycad.formats.meshes import ThreeDM
         adapter = ThreeDM(); model = adapter.read(data); model.meshes = model.meshes[1:]; data = adapter.write(model)
     return Response(data, media_type='application/octet-stream')
 @app.get('/fixture/metrics')
@@ -126,7 +126,8 @@ import uvicorn
 from tools.dev import source_roots
 source_roots.put_first(Path(sys.argv[2]))
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyhub_api.main import create_app, HubSettings, HubServer
+from monkeyhub_api.app.composition import create_app, HubSettings
+from monkeyhub_api.app.main import HubServer
 from monkeyhub_api.settings.models import ApplicationSettingsDto, UserSettingsDto
 from monkeyhub_api.settings.store import save_application_settings, save_user_settings
 from fastapi.staticfiles import StaticFiles

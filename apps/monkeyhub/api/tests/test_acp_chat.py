@@ -15,8 +15,8 @@ from test_chat import FAKE_CLI, wait_for
 from test_acp_session import FAKE_AGENT, PNG_IMAGE
 from fastapi.testclient import TestClient
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyhub_api.chat import store as chat
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.chat import providers, store as chat, turn_context
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, ChatDesignContext
 
 
@@ -110,11 +110,11 @@ class AcpCommandTests(unittest.TestCase):
             (r"\\server\share\MonkeyHub", r"\\server\share\MonkeyHub"),
         ):
             with self.subTest(root=root):
-                source = Path(root) / "apps/monkeyhub/api/monkeyhub_api/chat/store.py"
-                with patch.object(chat.Path, "resolve", return_value=source), \
-                     patch.object(chat.Path, "is_file", return_value=True), \
-                     patch.object(chat.importlib.util, "find_spec", return_value=object()):
-                    command = chat._codex_acp_command()
+                source = Path(root) / "apps/monkeyhub/api/monkeyhub_api/chat/providers.py"
+                with patch.object(providers.Path, "resolve", return_value=source), \
+                     patch.object(providers.Path, "is_file", return_value=True), \
+                     patch.object(providers.importlib.util, "find_spec", return_value=object()):
+                    command = providers._codex_acp_command()
                 self.assertEqual(command, (
                     str(Path(root) / "_runtime/node/node.exe"),
                     str(Path(expected) / "apps/monkeyhub/node_modules/@agentclientprotocol/codex-acp/dist/index.js"),
@@ -125,14 +125,14 @@ class AcpCommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="Hub ACP 入口 ") as directory:
             root = Path(directory).resolve()
             hub = root / "apps/monkeyhub"
-            source = hub / "api/monkeyhub_api/chat/store.py"
+            source = hub / "api/monkeyhub_api/chat/providers.py"
             source.parent.mkdir(parents=True)
             source.touch()
             adapter = hub / "node_modules/@agentclientprotocol/codex-acp/dist/index.js"
             adapter.parent.mkdir(parents=True)
             adapter.write_text("console.log('adapter entrypoint loaded');", encoding="utf-8")
-            with patch.object(chat, "__file__", "\\\\?\\" + str(source)):
-                command = chat._codex_acp_command()
+            with patch.object(providers, "__file__", "\\\\?\\" + str(source)):
+                command = providers._codex_acp_command()
             self.assertIsNotNone(command)
             checked = subprocess.run([command[0], "--check", command[1]], capture_output=True, text=True, timeout=10)
             self.assertEqual(checked.returncode, 0, checked.stderr)
@@ -220,7 +220,7 @@ class AcpChatTests(unittest.TestCase):
         self.assertEqual(before, {str(p): p.read_bytes() for p in self.project.rglob("*") if p.is_file()})
 
     def test_http_permission_requires_current_project_option_and_single_decision(self):
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             session = self.create()
@@ -248,7 +248,7 @@ class AcpChatTests(unittest.TestCase):
         self.post(session, "OLD_TRANSCRIPT_185")
         self.finished(session)
         old_client = self.store._acp_sessions[session.id]
-        with patch.object(chat, "_prepared_context", return_value={"stateDigest": "retained-source", "keep": ["entity:mass"]}):
+        with patch.object(turn_context, "_prepared_context", return_value={"stateDigest": "retained-source", "keep": ["entity:mass"]}):
             self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="Design facade",
                 contextMode="project", designContext=ChatDesignContext(sourceRunId="run-1", stateDigest="retained-source")))
             result = self.finished(session)
@@ -306,7 +306,7 @@ class AcpChatTests(unittest.TestCase):
         self.store = self.open_store()
         restored = self.store.get(session.id)
         self.assertEqual(restored.messages[0].attachments, metadata)
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             other = self.create()
@@ -379,7 +379,7 @@ class AcpChatTests(unittest.TestCase):
                                               initial_state={"project_id": "other-project", "version": 0})
         before = {str(p): p.read_bytes() for root in (self.project, other_project)
                   for p in root.rglob("*") if p.is_file()}
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             session = self.create()

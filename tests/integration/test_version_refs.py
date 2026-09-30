@@ -42,8 +42,8 @@ from archflow.project.version_refs import (
     structural_child,
 )
 from archflow.project.refs import BranchRef, ProjectRecordRef, ProjectVersionRef, RunRef
-from monkeycad.cad_execution import RhinoCadProgramBinding
-from monkeycad.three_dm_inspector import ThreeDmInspection
+from monkeycad.execution import RhinoCadProgramBinding
+from monkeycad.formats.three_dm_inspector import ThreeDmInspection
 from archflow.state.spatial import (
     SchematicOption,
     SchematicOptionSet,
@@ -190,7 +190,7 @@ class OwnerLoadingTests(unittest.TestCase):
     def test_a_workflow_owner_declares_itself_when_it_is_loaded(self) -> None:
         """The boundary is where the declaration is loaded, not whether it exists."""
 
-        import monkeydiagram.drawing_elevation as drawing
+        import monkeydiagram.drawing_runs as drawing
 
         self.assertEqual(
             drawing.VERSION_REF_POINTERS,

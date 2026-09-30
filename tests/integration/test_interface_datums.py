@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from monkeyarch.compilers.geometry import (
+from monkeyarch.compilation.geometry import (
     GeometryCompileStatus,
     GeometryIssueCode,
     compile_geometry_program,

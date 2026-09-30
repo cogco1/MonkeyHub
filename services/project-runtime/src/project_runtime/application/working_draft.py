@@ -13,8 +13,10 @@ the newest file.
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Mapping
+from typing import Any, Mapping
 from uuid import uuid4
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from archflow.contracts.canonical import canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -31,7 +33,48 @@ from ..binding import retained_sources
 from ..binding import ProjectBinding
 from .projection import StateProjection, project_state
 from ..errors import StudioError
-from ..api.dto.working_draft import LocalDraftDto, LocalDraftInputDto, LocalDraftSourceDto, WorkingDraftDto, WorkingDraftEntryDto
+
+
+# The retained working position's own shapes. Each entry of the position and the
+# local recovery draft is read back through these, and the HTTP layer answers
+# with them unchanged (api.dto.working_draft builds its requests on them).
+class WorkingDraftEntryDto(BaseModel):
+    runId: str
+    sourceStageRef: str | None = None
+    branchId: str | None = None
+    updatedAt: str
+    label: str | None = None
+
+
+class LocalDraftSourceDto(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    projectId: str
+    stateDigest: str
+    sourceRunId: str | None = None
+    sourceStageRef: str | None = None
+
+
+class LocalDraftInputDto(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: LocalDraftSourceDto
+    commands: list[dict[str, Any]] = Field(max_length=10000)
+    # The client retains both its synced prefix and the frozen pending request.
+    # This is recovery data only; the server never executes these mappings.
+    attempt: dict[str, Any] | None = None
+
+
+class LocalDraftDto(LocalDraftInputDto):
+    updatedAt: str
+
+
+class WorkingDraftDto(BaseModel):
+    projectId: str
+    revisionSha256: str | None = None
+    current: WorkingDraftEntryDto | None = None
+    recovery: list[WorkingDraftEntryDto] = Field(default_factory=list)
+    saved: list[WorkingDraftEntryDto] = Field(default_factory=list)
+    managedRunIds: list[str] = Field(default_factory=list)
+    localDraft: LocalDraftDto | None = None
 
 
 def _now() -> str:

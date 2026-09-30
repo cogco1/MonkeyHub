@@ -37,16 +37,15 @@ from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 
-from monkeyarch.capabilities.declaration import DeclarationQuadrant  # noqa: E402
-from monkeyarch.capabilities.discipline_seats import SeatSpec  # noqa: E402
-from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity  # noqa: E402
+from monkeyarch.domain.discipline_seats import DeclarationQuadrant, SeatSpec  # noqa: E402
+from monkeyarch.application.geometry_proposal import GeometryProposalProviderIdentity  # noqa: E402
 from archflow.state.stage_workflow import CompositeStageClosureReceipt
 from archflow.project.inputs import load_authored_record, load_seat_pack_file  # noqa: E402
 from archflow.project.layout import cad_workspace_path
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.refs import record_ref_from_uri  # noqa: E402
 from archflow.state.state_record import StateRecord  # noqa: E402
-from monkeyarch.runtime.project_runner import (  # noqa: E402
+from monkeyarch.application.project_runner import (  # noqa: E402
     CAD_BACKEND_OCCT,
     CAD_BACKENDS,
     RunOptions,

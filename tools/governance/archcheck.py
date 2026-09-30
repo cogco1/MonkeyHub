@@ -254,6 +254,22 @@ def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
             raise ArchitecturePolicyError(
                 f"forbidden_layer_imports[{index}].reason is invalid"
             )
+        allowed = rule.get("allowed")
+        if allowed is not None:
+            if (
+                not isinstance(allowed, list)
+                or not allowed
+                or any(not isinstance(item, str) or not item for item in allowed)
+            ):
+                raise ArchitecturePolicyError(
+                    f"forbidden_layer_imports[{index}].allowed is invalid"
+                )
+            for item in allowed:
+                if not any(_module_matches(item, target) for target in targets):
+                    raise ArchitecturePolicyError(
+                        f"forbidden_layer_imports[{index}].allowed entry {item!r} is under none of its "
+                        "targets, so it excepts nothing"
+                    )
 
     authorities = policy.get("allowed_authority_symbols")
     if not isinstance(authorities, list):
@@ -360,6 +376,26 @@ def _import_targets(
 
 def _module_matches(target: str, prefix: str) -> bool:
     return target == prefix or target.startswith(prefix + ".")
+
+
+def _outside(names: tuple[str, ...], allowed: Iterable[str]) -> str | None:
+    """The first name an import statement takes that no allowed entry covers; None when every one is.
+
+    ``names`` is what ``_import_targets`` yields for one statement: the module
+    first, then each member a ``from`` import takes. An entry is a module or a
+    module's member. The statement is covered when its module is an allowed
+    module or inside one, or when each member it takes is: so ``from x import y``
+    needs ``x`` or ``x.y`` allowed, while ``import x`` and ``from x import *``
+    take the whole module and need ``x`` itself.
+    """
+
+    module, members = names[0], names[1:]
+    entries = tuple(allowed)
+    if any(_module_matches(module, entry) for entry in entries):
+        return None
+    if not members:
+        return module
+    return next((member for member in members if not any(_module_matches(member, entry) for entry in entries)), None)
 
 
 def _source_matches(relative: str, prefix: str) -> bool:
@@ -552,6 +588,33 @@ def _git_ignored(root: Path, paths: Iterable[str]) -> frozenset[str]:
     return frozenset(line for line in completed.stdout.splitlines() if line)
 
 
+def _module_definitions(root: Path, python_source_roots: Iterable[str], module: str) -> frozenset[str] | None:
+    """The top-level names one module defines (functions, classes, assignments), or None without its file."""
+
+    roots = tuple(python_source_roots)
+    for python_root in roots:
+        base = root / python_root / Path(*module.split("."))
+        for candidate in (base.with_suffix(".py"), base / "__init__.py"):
+            if not candidate.is_file():
+                continue
+            if _module_name(candidate.relative_to(root).as_posix(), roots) != module:
+                continue
+            try:
+                tree = ast.parse(candidate.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, SyntaxError):
+                return frozenset()
+            names: set[str] = set()
+            for node in tree.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    names.add(node.name)
+                elif isinstance(node, ast.Assign):
+                    names.update(target.id for target in node.targets if isinstance(target, ast.Name))
+                elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                    names.add(node.target.id)
+            return frozenset(names)
+    return None
+
+
 def check_layer_targets(
     root: Path,
     policy: dict[str, Any],
@@ -570,7 +633,9 @@ def check_layer_targets(
     Python source root, such as ``archive/``, where retired lanes are kept
     outside the public tree: its modules exist only in the checkouts that keep
     them, and the rule is what stops committed code from reaching for them.
-    Every other target is reported once for each rule that names it.
+    Every other target is reported once for each rule that names it. A rule's
+    ``allowed`` exceptions resolve too: each names a module under the roots or
+    a member one module defines at its top level.
     """
 
     python_roots = policy["python_source_roots"]
@@ -607,6 +672,22 @@ def check_layer_targets(
             ARCHITECTURE_POLICY, 1, "POLICY_TARGET_MISSING",
             f"forbidden_layer_imports[{index}] target {target!r} {detail}; the rule guards nothing against it",
         )
+    # An exception names a module or one member a module defines; one that names
+    # neither lets nothing through and would hide the rename that emptied it.
+    for index, rule in enumerate(policy["forbidden_layer_imports"]):
+        for entry in rule.get("allowed", ()):
+            if entry in modules:
+                continue
+            parent, _, member = entry.rpartition(".")
+            defined = _module_definitions(root, python_roots, parent) if parent in modules else None
+            if defined is not None and member in defined:
+                continue
+            detail = (f"names no module, and {parent} defines no {member}" if defined is not None
+                      else "names no module and no member of one")
+            yield PolicyFinding(
+                ARCHITECTURE_POLICY, 1, "POLICY_TARGET_MISSING",
+                f"forbidden_layer_imports[{index}] allowed {entry!r} {detail}; the exception lets nothing through",
+            )
 
 
 def check_imports(
@@ -631,6 +712,8 @@ def check_imports(
                 continue
             for forbidden in rule["targets"]:
                 target = next((name for name in names if _module_matches(name, forbidden)), None)
+                if target is not None and rule.get("allowed"):
+                    target = _outside(names, rule["allowed"])
                 if target is not None:
                     yield PolicyFinding(
                         relative,

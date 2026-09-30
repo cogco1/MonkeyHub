@@ -20,8 +20,8 @@ source_roots.put_first(ROOT)
 
 from fastapi.testclient import TestClient
 from monkeycad.integration_packs import IntegrationPackManager
-from monkeycad.local_cad_discovery import Discovery, Installation
-from monkeyhub_api.main import HubSettings, create_app
+from monkeycad.discovery import Discovery, Installation
+from monkeyhub_api.app.composition import HubSettings, create_app
 
 
 class IntegrationApiTests(unittest.TestCase):

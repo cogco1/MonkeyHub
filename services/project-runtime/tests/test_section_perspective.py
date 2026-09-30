@@ -14,11 +14,12 @@ from xml.etree import ElementTree
 
 from fastapi.testclient import TestClient
 
-from monkeycad.occt_backend import occt_available
+from monkeycad.backends.occt.kernel import occt_available
 from archflow.project.refs import record_ref_from_uri
 from project_runtime.binding import bound_project
 from project_runtime.application.drawings import generate_section_perspective
-from monkeydiagram.drawing_elevation import SECTION_PERSPECTIVE_KIND, read_model_axis_elevation
+from monkeydiagram.drawing_runs import read_model_axis_elevation
+from monkeydiagram.projection.views import SECTION_PERSPECTIVE_KIND
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 
@@ -114,7 +115,7 @@ class SectionPerspectiveApiTests(CandidateTestCase):
         self.assertIn("obj-room-floor", cut)
         # The Studio room's export names no materials; its floor is given one as a CAD program's user text would.
         binding = bound_project(self.app.state)
-        with patch("monkeydiagram.drawing_elevation.object_semantics", return_value={"obj-room-floor": {"material": "concrete"}}):
+        with patch("monkeydiagram.drawing_runs.object_semantics", return_value={"obj-room-floor": {"material": "concrete"}}):
             document = generate_section_perspective(
                 binding, source_stage_ref=self.stage["stageRef"], model_source=None,
                 section={"line": [[0, 2.5], [4, 2.5]], "keep": "right"}, scale_denominator=50,
@@ -141,7 +142,7 @@ class SectionPerspectiveApiTests(CandidateTestCase):
 
     def test_the_route_passes_material_hatch_and_beyond_fade_through(self):
         svg_ns = "{http://www.w3.org/2000/svg}"
-        with patch("monkeydiagram.drawing_elevation.object_semantics", return_value={"obj-room-floor": {"material": "concrete"}}):
+        with patch("monkeydiagram.drawing_runs.object_semantics", return_value={"obj-room-floor": {"material": "concrete"}}):
             ruled = self.post(hatch={"byMaterial": {"concrete": {"poche": True}}}, beyond={"fade": 0.5})
         self.assertEqual(ruled.status_code, 201, ruled.text)
         drawing = read_model_axis_elevation(self.repository, record_ref_from_uri(ruled.json()["revisionRef"], PROJECT_ID))

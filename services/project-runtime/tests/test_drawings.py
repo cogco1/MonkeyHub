@@ -16,9 +16,9 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
 from archflow.project.refs import record_ref_from_uri
-from monkeydiagram.drawing_elevation import read_model_axis_elevation
+from monkeydiagram.drawing_runs import read_model_axis_elevation
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from project_runtime.application.artifacts import ModelSource
@@ -33,7 +33,7 @@ from .test_documents import image_bytes
 from .test_working_copies import register_model
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class DrawingTests(CandidateTestCase):
     def setUp(self) -> None:
         super().setUp()
@@ -66,8 +66,8 @@ class DrawingTests(CandidateTestCase):
         })
 
     def test_model_view_projects_the_exact_step_without_writing_a_drawing(self):
-        from monkeydiagram.drawing_elevation import project_model_axis_elevation
-        from monkeydiagram.mesh_views import mesh_line_view
+        from monkeydiagram.projection.views import project_model_axis_elevation
+        from monkeydiagram.projection.mesh_views import mesh_line_view
 
         project_root = self.repository.layout.root
         before = {path.relative_to(project_root): path.read_bytes() for path in project_root.rglob("*") if path.is_file()}
@@ -94,8 +94,8 @@ class DrawingTests(CandidateTestCase):
         self.assertEqual(after, before, "observation creates no project files or records and does not change HEAD")
 
     def test_axon_reads_the_top_view_source_and_bounds_and_a_repeat_is_not_projected_again(self):
-        from monkeydiagram.drawing_elevation import project_model_axis_elevation
-        from monkeydiagram.mesh_views import mesh_line_view
+        from monkeydiagram.projection.views import project_model_axis_elevation
+        from monkeydiagram.projection.mesh_views import mesh_line_view
 
         def read(client, view):
             response = client.get("/api/drawings/model-view", params={**self.model, "view": view})
@@ -195,7 +195,7 @@ class DrawingTests(CandidateTestCase):
 
     def test_sheet_styles_generate_scaled_pdfs_on_source_run_and_reuse_after_restart(self):
         from pypdf import PdfReader
-        from monkeycad.cad_execution import project_occt_lines
+        from monkeycad.backends.occt.projection import project_occt_lines
 
         self.enable_monitor()
         styles = self.client.get("/api/drawings/styles")
@@ -245,7 +245,7 @@ class DrawingTests(CandidateTestCase):
                 self.assertTrue(any(len(layout) for layout in dxf.layouts if layout.name != "Model"))
                 with TestClient(create_app(self.settings)) as reopened, patch(
                     "project_runtime.application.drawings.project_occt_lines", side_effect=AssertionError("cached sheet cannot run HLR"),
-                ), patch("monkeydiagram.drawing_output.render_pdf", side_effect=AssertionError("cached PDF cannot be rerendered")):
+                ), patch("monkeydiagram.rendering.paper.render_pdf", side_effect=AssertionError("cached PDF cannot be rerendered")):
                     repeated = reopened.post("/api/drawings/sheets", json={
                         "projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"], "styleId": style_id,
                         "scaleDenominator": scale, "notes": ["Review dimensions on the retained model."],
@@ -260,7 +260,7 @@ class DrawingTests(CandidateTestCase):
         self.assertEqual(self.repository.read_head(), self.head)
 
     def test_sheet_hidden_objects_are_removed_before_visibility_and_recipe_changes_keep_old_pdf(self):
-        from monkeycad.cad_execution import project_occt_lines
+        from monkeycad.backends.occt.projection import project_occt_lines
 
         receipt = self.repository.load_json(record_ref_from_uri(self.step["receiptRef"], PROJECT_ID))
         physical = set(receipt["physical_object_ids"])
@@ -692,7 +692,7 @@ class DrawingTests(CandidateTestCase):
                 self.assertEqual(reopened.get("/api/documents", params={"runId": self.model["runId"]}).json()["documents"], docs)
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class DrawingProjectionTests(CandidateTestCase):
     """Issued drawings are projections (#368): one drawing per content and recipe, retained byte for byte."""
 
@@ -734,10 +734,10 @@ class DrawingProjectionTests(CandidateTestCase):
         return [row for row in self.app.state.projections.store.rows() if row.spec.kind == kind]
 
     def test_the_same_recipe_is_drawn_once_and_issued_from_the_cached_bytes(self) -> None:
-        from monkeydiagram import drawing_elevation
+        from monkeydiagram import drawing_runs
 
-        with patch.object(drawing_elevation, "project_model_axis_elevation",
-                          wraps=drawing_elevation.project_model_axis_elevation) as drawn:
+        with patch.object(drawing_runs, "project_model_axis_elevation",
+                          wraps=drawing_runs.project_model_axis_elevation) as drawn:
             first = self.elevation("front-a")
             # Another registered drawing of the same content and view: the document list has no
             # match (another drawing id), the projection does.
@@ -770,13 +770,13 @@ class DrawingProjectionTests(CandidateTestCase):
 
     def test_deleting_the_cache_draws_again_and_leaves_p036_as_it_was(self) -> None:
         import shutil
-        from monkeydiagram import drawing_elevation
+        from monkeydiagram import drawing_runs
 
         first = self.elevation("front-a")
         before = self.retained(first)
         shutil.rmtree(self.cache / "projections")
-        with patch.object(drawing_elevation, "project_model_axis_elevation",
-                          wraps=drawing_elevation.project_model_axis_elevation) as drawn:
+        with patch.object(drawing_runs, "project_model_axis_elevation",
+                          wraps=drawing_runs.project_model_axis_elevation) as drawn:
             again = self.elevation("front-b")
         self.assertEqual(drawn.call_count, 1, "the lost drawing is drawn again")
         self.assertEqual(again["assetSha256"], first["assetSha256"], "drawing is deterministic")
@@ -786,11 +786,11 @@ class DrawingProjectionTests(CandidateTestCase):
         self.assertEqual(row.status, "done")
 
     def test_a_drawing_is_issued_without_a_cache(self) -> None:
-        from monkeydiagram import drawing_elevation
+        from monkeydiagram import drawing_runs
 
         self.app.state.projections_closed = True  # the index no longer answers
-        with patch.object(drawing_elevation, "project_model_axis_elevation",
-                          wraps=drawing_elevation.project_model_axis_elevation) as drawn:
+        with patch.object(drawing_runs, "project_model_axis_elevation",
+                          wraps=drawing_runs.project_model_axis_elevation) as drawn:
             first = self.elevation("front-a")
             second = self.elevation("front-b")
         self.assertEqual(drawn.call_count, 2)
@@ -830,12 +830,12 @@ class DrawingProjectionTests(CandidateTestCase):
         self.assertEqual(self.retained(second).receipt["view"], self.retained(first).receipt["view"])
 
     def test_a_section_perspective_is_drawn_once(self) -> None:
-        from monkeydiagram import drawing_elevation
+        from monkeydiagram import drawing_runs
 
         body = {"projectId": PROJECT_ID, "modelSource": self.model,
                 "section": {"line": [[-5, 0.5], [5, 0.5]], "keep": "right"}, "scaleDenominator": 100}
-        with patch.object(drawing_elevation, "project_section_perspective",
-                          wraps=drawing_elevation.project_section_perspective) as drawn:
+        with patch.object(drawing_runs, "project_section_perspective",
+                          wraps=drawing_runs.project_section_perspective) as drawn:
             first = self.client.post("/api/drawings/section-perspectives", json=body)
             self.assertEqual(first.status_code, 201, first.text)
             second = self.client.post("/api/drawings/section-perspectives", json={

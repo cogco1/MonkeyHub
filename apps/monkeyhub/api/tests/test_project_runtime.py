@@ -26,9 +26,11 @@ from test_monkeyhub_lifecycle import LocalHubCase, ROOT, project_fixture, wait_f
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.binding import ProjectBinding
 from project_runtime.settings import StudioSettings
-from monkeyhub_api.runtime import manager as runtime_module
+from monkeyhub_api.runtime import manager as runtime_module, worker_http
 from monkeyhub_api.models import ChatSummary, HubError, HubFailure
-from monkeyhub_api.runtime.manager import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager, _WorkCopyObservation
+from monkeyhub_api.runtime.manager import ProjectRuntime, ProjectRuntimeManager, _WorkCopyObservation
+from monkeyhub_api.runtime.operations import OperationManager
+from monkeyhub_api.runtime.worker_http import HttpResult
 from monkeyhub_api.runtime.workers import WorkerSnapshot
 
 
@@ -898,7 +900,7 @@ for _ in range(5):
             self.assertEqual(self.project_bytes(self.project), before)
 
     def test_same_worker_recovers_readiness_without_rebuilding_unchanged_projection(self):
-        from monkeyhub_api.runtime.manager import request_http
+        from monkeyhub_api.runtime.worker_http import request_http
 
         with self.hub() as client:
             runtime_id = self.open_project(client)
@@ -1179,7 +1181,7 @@ class RuntimeCostTests(unittest.TestCase):
         return repository
 
     def manager(self, workers=(), sessions=()):
-        from monkeyhub_api.runtime.manager import project_key
+        from monkeyhub_api.runtime.workers import project_key
 
         def worker_snapshots(*, project_dir=None):
             # The supervisor's selection: launches naming this project directory.
@@ -1448,13 +1450,13 @@ class RuntimeCostTests(unittest.TestCase):
         with _serving() as worker, patch.object(ssl.SSLContext, "load_default_certs",
                                                 side_effect=AssertionError("certificate store loaded")):
             for _ in range(2):
-                self.assertEqual(runtime_module.request_http(worker, "/api/protocol").status, 200)
+                self.assertEqual(worker_http.request_http(worker, "/api/protocol").status, 200)
 
     def test_a_worker_request_connects_at_once_and_its_timeout_bounds_the_exchange(self):
         # A timed connect waits in select(), which Windows wakes a timer tick (about 15 ms)
         # late even when the local worker accepted at once.
         with _serving() as worker, patch("socket.create_connection", wraps=socket.create_connection) as connect:
-            self.assertEqual(runtime_module.request_http(worker, "/api/protocol", timeout=7).status, 200)
+            self.assertEqual(worker_http.request_http(worker, "/api/protocol", timeout=7).status, 200)
         connect.assert_called_once()
         self.assertIsNone(connect.call_args.args[1])
 
@@ -1465,7 +1467,7 @@ class RuntimeCostTests(unittest.TestCase):
 
         def read():
             try:
-                runtime_module.request_http(f"http://127.0.0.1:{listener.getsockname()[1]}", "/api/protocol", timeout=0.5)
+                worker_http.request_http(f"http://127.0.0.1:{listener.getsockname()[1]}", "/api/protocol", timeout=0.5)
             except OSError as error:
                 outcome.append(error)
         reader = threading.Thread(target=read, daemon=True)

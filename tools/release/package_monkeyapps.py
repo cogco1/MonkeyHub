@@ -331,7 +331,7 @@ def smoke_runtime(bundle: Path) -> None:
     run([str(python), "-B", "-c", (
         "import sys,ssl,fastapi,uvicorn,pydantic,pypdf,rhino3dm; "
         "from PIL import Image; from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox; "
-        "import archflow,monkeycad,monkeyarch,monkeydiagram,monkeymonitor,monkeycontrol,project_runtime; "
+        "import archflow,monkeycad.registry,monkeyarch,monkeydiagram,monkeymonitor,monkeycontrol,project_runtime; "
         "assert sys.version_info[:3]==(3,13,15); "
         "assert not BRepPrimAPI_MakeBox(1,2,3).Shape().IsNull(); "
         "assert Image.new('RGB',(2,2)).size==(2,2); "
@@ -340,7 +340,7 @@ def smoke_runtime(bundle: Path) -> None:
     )], cwd=bundle)
     run([str(python), "-B", str(bundle / "apps/monkeyhub/run.py"), "--help"], cwd=bundle)
     run([str(python), "-B", "-c", (
-        "from pathlib import Path; from monkeyhub_api.chat.store import _codex_acp_command; "
+        "from pathlib import Path; from monkeyhub_api.chat.providers import _codex_acp_command; "
         "root=Path.cwd(); command=_codex_acp_command(); "
         "assert command and Path(command[0])==root/'_runtime/node/node.exe'; "
         "assert Path(command[1]).is_relative_to(root); "

@@ -5,10 +5,11 @@ from io import BytesIO
 from pathlib import Path
 import unittest
 
-from monkeycad import occt_backend
-from monkeycad.cad_execution import OcctDrawingPolyline, project_occt_lines
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.backends.occt.step import StepEntry
+from monkeycad.backends.occt.projection import OcctDrawingPolyline, project_occt_lines
 from monkeydiagram.documentation.styles import compose_review_sheet, drawing_style, list_drawing_styles
-from monkeydiagram.drawing_output import render_dxf, render_pdf
+from monkeydiagram.rendering.paper import render_dxf, render_pdf
 
 
 def fonts():
@@ -17,14 +18,14 @@ def fonts():
     return {"normal": root / "Vera.ttf", "bold": root / "VeraBd.ttf"}
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class DrawingStyleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
         from OCP.gp import gp_Pnt
         shape = BRepPrimAPI_MakeBox(gp_Pnt(-.8, -.19, 0), 1.6, .38, .8).Shape()
-        entry = occt_backend.StepEntry("body", (), None, shape)
+        entry = StepEntry("body", (), None, shape)
         cls.views = {name: project_occt_lines((entry,), object_ids=("body",), origin=(0, 0, 0), right=right, up=up, linear_deflection=.0001)
                      for name, right, up in (("front", (1, 0, 0), (0, 0, 1)),
                                               ("right", (0, 1, 0), (0, 0, 1)),
@@ -111,7 +112,7 @@ MM = 25.4 / 72
 
 
 def _mark(points, *, polygon=False, stroke_mm=0.25, dash_mm=(), grey=0, group="visible"):
-    from monkeydiagram.drawing_svg import DrawingMark
+    from monkeydiagram.rendering.svg import DrawingMark
     return DrawingMark(polygon, group, "object", tuple(points), 0.0 if polygon else stroke_mm, tuple(dash_mm), grey)
 
 
@@ -198,7 +199,7 @@ class ViewSheetTests(unittest.TestCase):
         import ezdxf
         from io import StringIO
         from xml.etree import ElementTree
-        from monkeydiagram.drawing_output import render_svg
+        from monkeydiagram.rendering.paper import render_svg
         canvas = self.compose()
         svg = ElementTree.fromstring(render_svg(canvas))
         self.assertEqual((svg.get("width"), svg.get("height")), ("420mm", "297mm"))

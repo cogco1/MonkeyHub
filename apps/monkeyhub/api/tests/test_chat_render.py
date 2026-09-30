@@ -38,8 +38,8 @@ from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.application.render_contract import RenderCapability, RenderOutput
 from project_runtime.main import create_app as studio_app
 from project_runtime.settings import StudioSettings
-from monkeyhub_api.chat import store as chat
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.chat import guides, mcp_server, media, preparation, store as chat, studio_tool, tool_calls, transport, turn_context
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, ChatPresentationBindRequest, HubFailure
 
 from test_chat import FAKE_CLI, _tools_of, wait_for
@@ -104,7 +104,7 @@ class RenderContextTests(unittest.TestCase):
         self.store = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=self.commands)
         self.addCleanup(self.close_store)
         # Project memory is read over the Hub's own HTTP; no Hub runs here.
-        memory = patch.object(chat, "_project_memory", return_value=[])
+        memory = patch.object(turn_context, "_project_memory", return_value=[])
         memory.start()
         self.addCleanup(memory.stop)
         self.source = self.register(self.project, "chat-project", "Courtyard-A.png", "image/png", _image("PNG", "blue"))
@@ -145,7 +145,7 @@ class RenderContextTests(unittest.TestCase):
 
         self.assertIsNone(self.source["modelSource"], "the source is a plain image with no model")
         session = self.create()
-        with patch.object(chat, "_prepared_context", side_effect=AssertionError("no design context is prepared")):
+        with patch.object(turn_context, "_prepared_context", side_effect=AssertionError("no design context is prepared")):
             posted = self.store.post(session.id, ChatPostRequest(
                 projectId=session.projectId, content="参考右边这张的材料感觉，屋顶和视角别动。",
                 renderContext=self.context(references=[self.reference])))
@@ -158,11 +158,11 @@ class RenderContextTests(unittest.TestCase):
                          [_page(self.source), _page(self.reference)])
         prompt = self.calls()[-1]["prompt"]
         self.assertIn("参考右边这张的材料感觉，屋顶和视角别动。", prompt)
-        facts = json.loads(prompt.split(chat._RENDER_NOTE, 1)[1].strip().splitlines()[0])
+        facts = json.loads(prompt.split(turn_context._RENDER_NOTE, 1)[1].strip().splitlines()[0])
         self.assertEqual([(row["role"], row["fileName"], row["page"]) for row in facts],
                          [("source", "Courtyard-A.png", _page(self.source)), ("reference", "AI-Result.jpg", _page(self.reference))])
-        self.assertIn("POST /api/board/export", chat._RENDER_NOTE)
-        self.assertIn("pathPrefix /api/render", chat._RENDER_NOTE)
+        self.assertIn("POST /api/board/export", turn_context._RENDER_NOTE)
+        self.assertIn("pathPrefix /api/render", turn_context._RENDER_NOTE)
         # The transcript serves the exact bound original for its preview.
         document, data = self.store.presentation_document(session.id, asked.id, 0)
         self.assertEqual((document.file_name, document.mime_type), ("Courtyard-A.png", "image/png"))
@@ -245,7 +245,7 @@ class RenderContextTests(unittest.TestCase):
                  ("an archived conversation", archived.id, "CHAT_ARCHIVED", False),
                  ("a closing Hub", closing.id, "CHAT_CLOSING", True))
         for label, chat_id, code, shutting in cases:
-            with self.subTest(label), patch.object(chat, "_render_images", side_effect=AssertionError("no image is read")), \
+            with self.subTest(label), patch.object(media, "_render_images", side_effect=AssertionError("no image is read")), \
                     patch.object(self.store, "_closing", shutting):
                 with self.assertRaises(HubFailure) as refused:
                     self.store.post(chat_id, ChatPostRequest(projectId="chat-project", content="warmer concrete",
@@ -270,7 +270,7 @@ class RenderContextTests(unittest.TestCase):
                                    renderContext={"source": _page(self.source), "references": pages})
         self.assertEqual([row.assetSha256 for row in accepted.renderContext.references], [row["assetSha256"] for row in pages])
         # The Hub route answers the same refusal as a request error, before anything runs.
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         session = self.create()
         with patch.object(app.state.applications, "start"), TestClient(app, base_url=self.store.hub_url) as client:
@@ -297,7 +297,7 @@ class RenderContextTests(unittest.TestCase):
         self.assertEqual(continued["args"][continued["args"].index("--resume") + 1], native,
                          "the correction continues the same native CLI conversation")
         self.assertIn("不是改光，是混凝土太冷。", continued["prompt"])
-        self.assertIn(chat._RENDER_NOTE, continued["prompt"])
+        self.assertIn(turn_context._RENDER_NOTE, continued["prompt"])
         asked = [row for row in second.messages if row.role == "user"]
         self.assertEqual([[row.role for row in message.documents] for message in asked],
                          [["source", "reference"], ["source", "reference"]])
@@ -361,9 +361,9 @@ class RenderRoutesTests(unittest.TestCase):
         return forward
 
     def call(self, client, name, arguments):
-        with patch.object(chat, "_bound_studio", return_value=(self.base, dict(self.session))), \
-                patch.object(chat, "_request_json", side_effect=self.route(client)):
-            return chat.call_tool(self.hub, self.session["id"], name, arguments)
+        with patch.object(preparation, "_bound_studio", return_value=(self.base, dict(self.session))), \
+                patch.object(transport, "_request_json", side_effect=self.route(client)):
+            return tool_calls.call_tool(self.hub, self.session["id"], name, arguments)
 
     def register(self, client, name="Courtyard-A.png"):
         response = client.post("/api/documents", json={
@@ -374,22 +374,22 @@ class RenderRoutesTests(unittest.TestCase):
 
     def test_render_routes_join_the_allow_lists_and_discovery_with_their_guide(self):
         for path in ("/api/render/capabilities", "/api/render/jobs", "/api/render/jobs/render-" + "a" * 32):
-            self.assertIsNotNone(chat._READ.fullmatch(path), path)
-        self.assertIsNotNone(chat._POST.fullmatch("/api/render/jobs"))
+            self.assertIsNotNone(studio_tool._READ.fullmatch(path), path)
+        self.assertIsNotNone(studio_tool._POST.fullmatch("/api/render/jobs"))
         # Freezing a Modeling camera view is the browser's own act, never the chat's.
-        self.assertIsNone(chat._POST.fullmatch("/api/render/views"))
-        self.assertTrue(chat._schema_allowed("GET", "/api/render/jobs/{job_id}"))
+        self.assertIsNone(studio_tool._POST.fullmatch("/api/render/views"))
+        self.assertTrue(studio_tool._schema_allowed("GET", "/api/render/jobs/{job_id}"))
         client = self.studio()
         listing = self.call(client, "studio_schema", {"pathPrefix": "/api/render"})
         self.assertEqual({(row["method"], row["path"]) for row in listing["actions"]}, {
             ("GET", "/api/render/capabilities"), ("GET", "/api/render/jobs"),
             ("GET", "/api/render/jobs/{job_id}"), ("POST", "/api/render/jobs")})
-        self.assertEqual(listing["guide"], chat._GUIDES["/api/render"])
+        self.assertEqual(listing["guide"], guides._GUIDES["/api/render"])
         contract = self.call(client, "studio_schema", {"method": "POST", "path": "/api/render/jobs"})
         self.assertEqual(contract["path"], "/api/render/jobs")
-        tools = {tool["name"]: tool for tool in _tools_of(chat)}
+        tools = {tool["name"]: tool for tool in _tools_of(mcp_server)}
         self.assertIn("pathPrefix /api/render", tools["studio_request"]["description"])
-        guide = chat._GUIDES["/api/render"]
+        guide = guides._GUIDES["/api/render"]
         for words in ("POST /api/board/export", "explicit", "infer", "count", "different viewpoint",
                       "correction replaces", "never an accepted design decision", "GET /api/render/capabilities",
                       "placeholder providerId", "requestId", "chat_present"):

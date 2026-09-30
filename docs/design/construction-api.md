@@ -63,7 +63,7 @@ An interface belongs to the layer that owns its information. A producer name is 
 ### 3.1 L1: the construction script
 
 The agent sends one bounded **construction script**: a small Python subset, interpreted (never
-executed) by `packages/monkeyarch/src/monkeyarch/construction`. It is parsed with `ast` and walked by a whitelist interpreter.
+executed) by `packages/monkeyarch/src/monkeyarch/authoring/construction`. It is parsed with `ast` and walked by a whitelist interpreter.
 
 **World.** Metres. Y is up. A plan point is `(x, z)`; a 3D point is `(x, y, z)`. This is the Hub's
 existing convention (`plan points are [x, z], with Y up`), unchanged.

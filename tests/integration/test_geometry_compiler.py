@@ -13,7 +13,7 @@ import unittest
 from archflow.state.geometry_program import (
     AssetSubstitutionReceipt,
 )
-from monkeyarch.compilers.geometry import (
+from monkeyarch.compilation.geometry import (
     GeometryCompileStatus,
     GeometryIssueCode,
     compile_geometry_program,

@@ -53,8 +53,10 @@ import uuid
 
 from archflow.contracts.canonical import canonical_digest
 
+from .. import projects
 from ..models import HubFailure
 from ..settings.store import read_application_settings
+from . import preparation, transport
 
 PLUGIN_NAME = "monkeyhub-library"
 # Skills --setting-sources and disableBundledSkills leave in place, on Claude
@@ -265,21 +267,18 @@ def read_library(library_dir: str | None, hub_url: str) -> Library | None:
 
     if not library_dir:
         return None
-    # chat reaches this module from its CLI launch; the reverse import is late.
-    from . import store as chat
-
     deadline = time.monotonic() + LIBRARY_BUDGET_S
     try:
-        project_id, project_dir = chat._project(library_dir)
-        chat._prepare_studio(hub_url, {"projectId": project_id, "projectDir": project_dir}, LIBRARY_BUDGET_S)
-        base, _ = chat._bound_studio(hub_url, None, project_id=project_id, project_dir=project_dir,
-                                     deadline=deadline)
-        index = chat._request_json(base, "/api/skills", timeout=max(1.0, deadline - time.monotonic()))
+        project_id, project_dir = projects._project(library_dir)
+        preparation._prepare_studio(hub_url, {"projectId": project_id, "projectDir": project_dir}, LIBRARY_BUDGET_S)
+        base, _ = preparation._bound_studio(hub_url, None, project_id=project_id, project_dir=project_dir,
+                                            deadline=deadline)
+        index = transport._request_json(base, "/api/skills", timeout=max(1.0, deadline - time.monotonic()))
         if index.get("projectId") != project_id:
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The library's Runtime answered for another project.")
     except (HubFailure, OSError) as failure:
         raise _unavailable(failure) from failure
-    return Library(index, lambda skill_id, version: chat._request_json(
+    return Library(index, lambda skill_id, version: transport._request_json(
         base, f"/api/skills/{skill_id}?version={version}", timeout=max(1.0, deadline - time.monotonic())))
 
 

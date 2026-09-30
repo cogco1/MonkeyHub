@@ -30,7 +30,7 @@ from project_runtime.application.artifacts import ModelSource, list_artifacts
 from project_runtime.binding import ProjectBinding
 from project_runtime.application.drawings import _complete_source, model_view
 from project_runtime.settings import StudioSettings
-from monkeydiagram.drawing_elevation import read_elevation_source
+from monkeydiagram.sources import read_elevation_source
 from monkeymonitor.store import UsageLog
 from monkeymonitor.trace import build_traces
 

@@ -4,8 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from monkeycad import cad_backend, cad_execution as cad
-from monkeycad.occt_backend import occt_available
+from monkeycad.backends.blender.backend import BlenderBackend
+from monkeycad.backends.rhino.backend import RhinoBackend
+from monkeycad.execution import _require_file_digest
+from monkeycad.backends.occt.kernel import occt_available
 BLENDER = os.environ.get("ARCHFLOW_BLENDER_EXECUTABLE")
 
 @unittest.skipUnless(occt_available(), "cadquery-ocp is optional")
@@ -16,7 +18,7 @@ class ProjectionRunnerTests(unittest.TestCase):
         from archflow.project.repository import FilesystemProjectRepository
         from archflow.project.refs import record_ref_from_uri
         from archflow.state.stage_workflow import DesignPhase
-        from monkeyarch.runtime.project_runner import run_project
+        from monkeyarch.application.project_runner import run_project
         from archflow.project.layout import cad_workspace_path
 
         demo = os.environ.get("ARCHFLOW_PROJECTION_DEMO_ROOT")
@@ -41,8 +43,8 @@ class ProjectionRunnerTests(unittest.TestCase):
                 if not seat.reviewer:
                     cad_workspace_path(options.workspace_root, "stage-0-test-production-" + seat.seat_id).mkdir(parents=True, exist_ok=True)
             guard = _stage_guard(repository, run, record, options)
-            with patch.object(cad_backend.RhinoBackend, "execute", side_effect=AssertionError("Rhino must not run")), \
-                    patch.object(cad_backend.BlenderBackend, "execute", side_effect=AssertionError("Blender must not model")):
+            with patch.object(RhinoBackend, "execute", side_effect=AssertionError("Rhino must not run")), \
+                    patch.object(BlenderBackend, "execute", side_effect=AssertionError("Blender must not model")):
                 result = run_project(repository, run=run, stage_guard=guard, record=record, seats=seats, options=options)
             self.assertTrue(result["seat_execution_complete"], result["seat_results"])
             repository = FilesystemProjectRepository.open(root)
@@ -58,7 +60,7 @@ class ProjectionRunnerTests(unittest.TestCase):
                 by_seat[seat["seat_id"]] = retained
                 workspace = cad_workspace_path(options.workspace_root, retained["binding"]["stage_id"])
                 for artifact in retained["artifacts"]:
-                    cad._require_file_digest(workspace / artifact["relative_path"], artifact["sha256"], "retained render artifact")
+                    _require_file_digest(workspace / artifact["relative_path"], artifact["sha256"], "retained render artifact")
             records.append(by_seat)
             self.assertEqual(repository.read_head(), original_head)
         before, after = (r["seat-envelope"] for r in records)

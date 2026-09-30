@@ -1,12 +1,14 @@
 """AI Render HTTP contract; results use the existing Board document identity."""
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .artifacts import SourceDocumentDto, ModelSourceDto
+from ...application.rendering import RenderJob, RenderRequestDto
+from .artifacts import SourceDocumentDto, ModelSourceDto, document_dto
 
 
 class RenderCameraDto(BaseModel):
@@ -32,31 +34,6 @@ class RenderViewSourceRequestDto(BaseModel):
         if any(value < 1 or value > 4096 for value in self.screen_size):
             raise ValueError("screenSize must contain two pixel dimensions between 1 and 4096")
         return self
-
-
-class RenderPageRefDto(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
-    run_id: str = Field(alias="runId", min_length=1)
-    asset_sha256: str = Field(alias="assetSha256", pattern=r"^[0-9a-f]{64}$")
-    page_index: int = Field(alias="pageIndex", ge=0, strict=True)
-    revision_ref: str | None = Field(alias="revisionRef", default=None, min_length=1)
-
-
-class RenderOutputOptionsDto(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
-    size: str = Field(default="1K", min_length=1, max_length=32)
-    aspect_ratio: str = Field(alias="aspectRatio", default="source", min_length=1, max_length=32)
-
-
-class RenderRequestDto(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
-    project_id: str = Field(alias="projectId", min_length=1)
-    request_id: UUID = Field(alias="requestId")
-    provider_id: str = Field(alias="providerId", min_length=1, max_length=80)
-    source: RenderPageRefDto
-    references: list[RenderPageRefDto] = Field(default_factory=list, max_length=8)
-    direction: str = Field(min_length=1, max_length=16000)
-    output: RenderOutputOptionsDto = Field(default_factory=RenderOutputOptionsDto)
 
 
 class RenderCapabilityDto(BaseModel):
@@ -104,3 +81,23 @@ class RenderJobListDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
     project_id: str = Field(alias="projectId")
     jobs: list[RenderJobDto]
+
+
+def render_capability_dto(capability) -> RenderCapabilityDto:
+    """One image adapter's capability (``render_contract.RenderCapability``) on the wire."""
+
+    return RenderCapabilityDto(**asdict(capability))
+
+
+def render_job_dto(job: RenderJob) -> RenderJobDto:
+    """One retained image attempt, as ``RenderJobRecords`` reads it back, on the wire."""
+
+    return RenderJobDto(
+        projectId=job.project_id, jobId=job.job_id, requestId=job.request_id,
+        status=job.status, execution=job.execution, providerId=job.provider_id, model=job.model,
+        request=job.request, createdAt=job.created_at, finishedAt=job.finished_at, error=job.error,
+        errorCode=job.error_code, sourceState=job.source_state, sourceStateReason=job.source_state_reason,
+        document=document_dto(job.document) if job.document else None, resultAvailable=job.result_available,
+        providerRequestId=job.provider_request_id, inputTokens=job.input_tokens,
+        outputTokens=job.output_tokens, costUsd=job.cost_usd,
+    )

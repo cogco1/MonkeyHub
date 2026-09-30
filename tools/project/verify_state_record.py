@@ -44,7 +44,7 @@ from tools.dev import source_roots  # noqa: E402
 source_roots.put_first(REPO)
 
 from archflow.state.geometry_program import expected_object_bounds, load_compiled_geometry_program  # noqa: E402
-from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity  # noqa: E402
+from monkeyarch.application.geometry_proposal import GeometryProposalProviderIdentity  # noqa: E402
 from archflow.contracts.authority import no_authority  # noqa: E402
 from archflow.project.inputs import load_authored_record, load_seat_pack_file  # noqa: E402
 from archflow.project.repository import FilesystemProjectRepository
@@ -56,7 +56,7 @@ from archflow.project.record_kinds import (  # noqa: E402
     STATE_RECORD_EQUIVALENCE,
 )
 from archflow.project.refs import parse_record_file_name, record_ref_from_uri  # noqa: E402
-from monkeyarch.runtime.project_runner import (  # noqa: E402
+from monkeyarch.application.project_runner import (  # noqa: E402
     CAD_BACKEND_OCCT,
     CAD_BACKEND_RHINO,
     CAD_BACKENDS,

@@ -16,14 +16,16 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import urllib.request
 
-from monkeycad import blender_cad, cad_backend
-from monkeycad.cad_execution import CadExecutionError
+from monkeycad.registry import CAD_BACKEND_REGISTRY
+from monkeycad.backends.blender import backend as blender_backend
+from monkeycad.backends.blender.worker import READBACK_PREFIX, UNIT_SETTINGS
+from monkeycad.execution import CadExecutionError
 from monkeycad.integration_packs import (
     IntegrationPack, IntegrationPackManager, IntegrationUnavailable,
     PackCapability, PackComponent, PackInstallation, PackWorkflow,
 )
-from monkeycad.local_cad_discovery import Discovery, Installation, SoftwareDiscoveryRegistry
-from monkeycad.model_formats import ConversionError, Mesh, Scene
+from monkeycad.discovery import Discovery, Installation, SoftwareDiscoveryRegistry
+from monkeycad.formats.meshes import ConversionError, Mesh, Scene
 from tests.integration.test_blender_cad import _request as _blender_request
 from tests.integration.test_cad_backend_contract import _controlled_rhino, _request as _rhino_request
 
@@ -72,13 +74,13 @@ def _controlled_blender(*, mode="valid"):
                 "material": row.get("material"),
             })
         readback = {**plan, "objects": rows, "blender_version": "controlled-test-host",
-                    "unit_scale": blender_cad.UNIT_SETTINGS[plan["length_unit"]][1]}
+                    "unit_scale": UNIT_SETTINGS[plan["length_unit"]][1]}
         if mode == "wrong-binding":
             readback["binding_json"] = "{}"
-        return SimpleNamespace(returncode=0, stdout=blender_cad.READBACK_PREFIX + json.dumps(readback))
+        return SimpleNamespace(returncode=0, stdout=READBACK_PREFIX + json.dumps(readback))
 
-    with patch.object(blender_cad, "resolve_blender_executable", return_value="controlled-blender"), \
-         patch.object(blender_cad, "_run_worker", side_effect=worker), \
+    with patch.object(blender_backend, "resolve_blender_executable", return_value="controlled-blender"), \
+         patch.object(blender_backend, "_run_worker", side_effect=worker), \
          patch.object(subprocess, "Popen", side_effect=AssertionError("unexpected CAD launch")), \
          patch.object(subprocess, "run", side_effect=AssertionError("unexpected CAD launch")):
         yield calls
@@ -168,7 +170,7 @@ class IntegrationStatusTests(unittest.TestCase):
             self.assertEqual(_pack(status, "blender")["capabilities"][0]["status"], "not-qualified")
 
     def test_future_revit_addin_contract_is_representable_without_registering_a_backend(self):
-        before = tuple(cad_backend.CAD_BACKEND_REGISTRY)
+        before = tuple(CAD_BACKEND_REGISTRY)
         pack = IntegrationPack("revit", "Revit", "1", (
             PackComponent("revit-addin", "dotnet-addin", "optional-payload", "application-extension",
                           protocol="local-http", events=("document.changed",)),
@@ -178,14 +180,14 @@ class IntegrationStatusTests(unittest.TestCase):
         manifest = pack.manifest()
         self.assertEqual(manifest["components"][0]["bridge"], "dotnet-addin")
         self.assertEqual(manifest["workflows"][0]["requires"], ["document.observe"])
-        self.assertEqual(tuple(cad_backend.CAD_BACKEND_REGISTRY), before)
+        self.assertEqual(tuple(CAD_BACKEND_REGISTRY), before)
         self.assertNotIn("revit", IntegrationPackManager(discovery=_Discovery()).packs)
 
 
 class IntegrationQualificationTests(unittest.TestCase):
     def test_blender_uses_registered_background_worker_and_qualifies_only_its_executed_capability(self):
         manager = IntegrationPackManager(discovery=_Discovery())
-        self.assertIs(manager.backend("blender"), cad_backend.CAD_BACKEND_REGISTRY["blender"])
+        self.assertIs(manager.backend("blender"), CAD_BACKEND_REGISTRY["blender"])
         pack = _pack(manager.status(), "blender")
         self.assertEqual(pack["installation"]["components"], ["blender-worker"])
         self.assertEqual(pack["manifest"]["components"][0]["installTarget"], "monkeyhub")
@@ -251,7 +253,7 @@ class IntegrationQualificationTests(unittest.TestCase):
     def test_rhino_uses_registered_backend_and_retains_existing_host_readback_requirements(self):
         # A standard Rhino 7 folder cannot rule out a separately installed COM8 host.
         manager = IntegrationPackManager(discovery=_Discovery(rhino_version="7"))
-        self.assertIs(manager.backend("rhino"), cad_backend.CAD_BACKEND_REGISTRY["rhino"])
+        self.assertIs(manager.backend("rhino"), CAD_BACKEND_REGISTRY["rhino"])
         for bad_inspection in (False, True):
             with self.subTest(bad_inspection=bad_inspection), tempfile.TemporaryDirectory() as temporary:
                 root, plans = Path(temporary), []
@@ -265,7 +267,7 @@ class IntegrationQualificationTests(unittest.TestCase):
                 self.assertEqual(manager.capability_status("rhino", "model.patch")["status"], "not-qualified")
 
     def test_sketchup_reader_version_refusal_propagates_and_source_success_does_not_enable_live_capabilities(self):
-        from monkeycad import sketchup_reader
+        from monkeycad.formats import sketchup_reader
 
         manager = IntegrationPackManager(discovery=_Discovery())
         data, sdk_path = b"controlled SKP source", "configured-SketchUpAPI.dll"
@@ -285,7 +287,7 @@ class IntegrationQualificationTests(unittest.TestCase):
         self.assertEqual(manager.capability_status("sketchup", "source.read")["status"], "failed")
 
     def test_projection_wrapper_preserves_existing_failure_and_does_not_qualify_a_sibling(self):
-        from monkeycad import blender_projection
+        from monkeycad.backends.blender import projection as blender_projection
 
         manager = IntegrationPackManager(discovery=_Discovery())
         request, source = object(), object()

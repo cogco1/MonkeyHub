@@ -11,8 +11,8 @@ from archflow.contracts.canonical import canonical_digest
 from archflow.ports.model import ModelInvocationRequest, ModelPhase
 
 from ..errors import StudioError
-from ..api.dto.study import StudyResearchRequestDto
 from . import study
+from .study import StudyResearchRequestDto
 from .artifacts import _registered_document_bytes
 from .boards import _page_raster
 from .intent_agent import invoke_structured

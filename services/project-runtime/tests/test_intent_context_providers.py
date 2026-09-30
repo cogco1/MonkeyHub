@@ -20,7 +20,7 @@ from archflow.state.state_record import Entity, Parameter
 from project_runtime.application import intent_agent
 from project_runtime.application.intent_agent import AnthropicCompiler, CodexCompiler, IntentAgentFailed, Selection
 from project_runtime.application.projection import _elements
-from monkeyarch.construction import vocabulary
+from monkeyarch.authoring.construction.vocabulary import vocabulary
 
 from .test_intent_context import fixture
 
@@ -67,7 +67,7 @@ def construction_projection():
 
     from archflow.project.refs import ProjectVersionRef
     from archflow.state.state_record import StateRecord, apply_state_record_operator, compile_component_edit
-    from monkeyarch.construction import compile_construction_script
+    from monkeyarch.authoring.construction.lowering import compile_construction_script
 
     base = StateRecord("neutral-project", "run-neutral", entities=(
         Entity("model", "Component@1", {"intent": "the model"}),
@@ -531,7 +531,7 @@ class ConstructionContractProviderTests(unittest.TestCase):
         return provider.compiler.compile(message=message, selection=selection, projection=self.projection)
 
     def test_the_schema_prompt_and_sheet_a_model_reads_keep_the_layer_rule(self):
-        from monkeyarch.construction.vocabulary import layer_rule_violations
+        from monkeyarch.authoring.construction.vocabulary import layer_rule_violations
 
         answer = construction_answer(script="block = get('block')\nset_height(block, 3)", targetId="block",
                                      why="Raise the block on the mass.")
@@ -632,7 +632,7 @@ class ConstructionContractProviderTests(unittest.TestCase):
     def test_a_local_script_whose_writes_cannot_be_checked_is_malformed(self):
         # #419 C7 round 2: the scope check fails closed, with the compile's reason.
         from project_runtime.application.construction import ConstructionRefused
-        from monkeyarch.construction import ConstructionError
+        from monkeyarch.authoring.construction.script import ConstructionError
 
         answer = construction_answer(script="b = get('block')\nset_height(b, 3)", targetId="block",
                                      why="Raise the block.")

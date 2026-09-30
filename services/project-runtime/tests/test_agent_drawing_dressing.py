@@ -18,7 +18,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi.testclient import TestClient
 
-from monkeycad.occt_backend import occt_available
+from monkeycad.backends.occt.kernel import occt_available
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 
@@ -34,9 +34,10 @@ def hub_chat():
     """The Hub's chat adapter, which lives beside this API rather than inside it."""
 
     with patch.object(sys, "path", [str(Path(__file__).resolve().parents[3] / "apps/monkeyhub/api"), *sys.path]):
-        from monkeyhub_api.chat import store as chat
+        from monkeyhub_api import projects
+        from monkeyhub_api.chat import tool_calls, transport
         from monkeyhub_api.models import HubFailure
-    return chat, HubFailure
+    return projects, tool_calls, transport, HubFailure
 
 
 def files(root: Path) -> dict[str, bytes]:
@@ -62,8 +63,8 @@ class AgentDressingTests(CandidateTestCase):
         accepted = self.client.post("/api/design-stages/initialize", json={"projectId": PROJECT_ID, "modelSource": model})
         self.assertEqual(accepted.status_code, 201, accepted.text)
         self.stage = accepted.json()
-        self.chat, self.HubFailure = hub_chat()
-        project_id, project_dir = self.chat._project(str(self.project))
+        self.projects, self.tools, self.transport, self.HubFailure = hub_chat()
+        project_id, project_dir = self.projects._project(str(self.project))
         self.session = {"id": str(uuid4()), "status": "running", "projectId": project_id, "projectDir": project_dir,
                         "messages": [{"id": str(uuid4()), "role": "user", "content": "Add people and a tree to the plan."}]}
         runtime = uuid5(NAMESPACE_URL, f"{project_id}:{os.path.normcase(str(Path(project_dir).resolve()))}")
@@ -98,9 +99,9 @@ class AgentDressingTests(CandidateTestCase):
     def agent(self, method, path, body=None):
         """One studio_request exactly as the Agent's CLI makes it."""
 
-        with patch.object(self.chat, "_request_json", side_effect=self.forward):
-            return self.chat.call_tool(HUB, self.session["id"], "studio_request",
-                                       {"method": method, "path": path, **({} if body is None else {"body": body})})
+        with patch.object(self.transport, "_request_json", side_effect=self.forward):
+            return self.tools.call_tool(HUB, self.session["id"], "studio_request",
+                                        {"method": method, "path": path, **({} if body is None else {"body": body})})
 
     def test_three_objects_the_agent_places_stay_editable_and_a_refused_batch_writes_nothing(self):
         plan = {"projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"], "drawingId": "room-plan",

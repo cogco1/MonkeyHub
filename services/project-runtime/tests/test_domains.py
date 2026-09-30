@@ -1,7 +1,7 @@
 """``/api/domains``: the registry's own description, and one bound readiness answer.
 
 ``GET /api/domains`` needs no project at all: it is
-``monkeyarch.capabilities.domain_readiness.DOMAINS``, described.
+``monkeyarch.domain.domain_readiness.DOMAINS``, described.
 ``GET /api/domains/{domain}/readiness`` asks whether a domain can evaluate the
 bound project's geometry-bearing components now; the fixture's ``portico``
 component owns two elements and starts with no facets at all, so the default

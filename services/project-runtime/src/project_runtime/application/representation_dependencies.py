@@ -35,11 +35,10 @@ from typing import Any, Mapping
 from archflow.project.repository import ProjectRepositoryError
 
 from ..errors import StudioError
-from ..api.dto.rendering import RenderRequestDto
 from .artifacts import SourceDocument, _page_replacements, document_bytes, list_documents, require_model_source
 from ..binding import ProjectBinding
 from .drawing_plans import plan_status
-from .rendering import _freshness
+from .rendering import RenderRequestDto, _freshness
 from .working_draft import WorkingSources, model_is_current
 
 CURRENT = "current"

@@ -18,7 +18,7 @@ from dataclasses import replace
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
-from monkeyarch.construction import vocabulary
+from monkeyarch.authoring.construction.vocabulary import vocabulary
 
 from ...binding import bound_project
 from ...application.construction import (

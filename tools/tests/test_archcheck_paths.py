@@ -147,7 +147,7 @@ class PolicyPathTests(unittest.TestCase):
 
     def test_a_moved_package_needs_its_src_directory_as_a_python_source_root(self) -> None:
         for relative in (
-            "packages/monkeydiagram/src/monkeydiagram/drawing_svg.py",
+            "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py",
             "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
             "services/project-runtime/src/project_runtime/main.py",
         ):
@@ -187,7 +187,7 @@ class LayerTargetTests(unittest.TestCase):
         for relative in (
             "packages/archflow/src/archflow/contracts/canonical.py",
             "packages/archflow/src/archflow/project/repository.py",
-            "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+            "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
             "tools/check.py",
         ):
             _write(self.root, relative)
@@ -205,7 +205,7 @@ class LayerTargetTests(unittest.TestCase):
     def test_a_module_and_every_package_above_it_resolve(self) -> None:
         self.assertEqual([], self.findings(
             "archflow", "archflow.project", "archflow.project.repository",
-            "monkeyarch.runtime", "monkeyarch.runtime.project_runner", "tools", "tools.check",
+            "monkeyarch.application", "monkeyarch.application.project_runner", "tools", "tools.check",
         ))
 
     def test_a_target_whose_module_is_gone_is_a_finding(self) -> None:
@@ -234,8 +234,8 @@ class LayerTargetTests(unittest.TestCase):
 
     def test_a_module_is_named_as_it_is_imported_not_by_its_path(self) -> None:
         # A src layout's modules are named from their Python source root (#488).
-        self.assertEqual([], self.findings("monkeyarch.runtime"))
-        findings = self.findings("packages.monkeyarch.src.monkeyarch.runtime", "src.monkeyarch")
+        self.assertEqual([], self.findings("monkeyarch.application"))
+        findings = self.findings("packages.monkeyarch.src.monkeyarch.application", "src.monkeyarch")
         self.assertEqual(["POLICY_TARGET_MISSING"] * 2, [code for _, code, _ in findings])
 
     def test_a_directory_without_python_names_no_module(self) -> None:
@@ -267,6 +267,85 @@ class LayerTargetTests(unittest.TestCase):
         self.assertIn("Git ignores no directory of that name", findings[0][2])
         _write(self.root, "archive/lanes/example.py")  # a checkout that keeps the retired lanes
         self.assertEqual([], self.findings("archive", "archive.lanes.example"))
+
+
+class LayerExceptionTests(unittest.TestCase):
+    """A rule may let its source reach a target through named modules and members only (#519).
+
+    MonkeyHub reads the Runtime in process through a declared read API, and
+    nothing else of it: the rule forbids the package and lists what gets
+    through. An exception that names nothing any more lets nothing through,
+    so it is reported like a dead target.
+    """
+
+    PYTHON_SOURCE_ROOTS = [".", "services/runtime/src"]
+
+    def setUp(self) -> None:
+        self.root = _temporary_root(self, "repo")
+        _git(self.root, "init", "-q")
+        _write(self.root, "services/runtime/src/runtime_pkg/binding.py",
+               "class ProjectBinding:\n    pass\n\n\ndef bound_project(state):\n    return state\n\n\n"
+               "READ_EPOCH = 'epoch'\n")
+        _write(self.root, "services/runtime/src/runtime_pkg/errors.py", "class StudioError(Exception):\n    pass\n")
+        _write(self.root, "services/runtime/src/runtime_pkg/settings.py")
+        _write(self.root, "tools/check.py")
+
+    def policy(self, *allowed: str) -> dict[str, object]:
+        rule = {"source": "tools", "targets": ["runtime_pkg"], "allowed": list(allowed),
+                "reason": "Tools read the runtime through its read API."}
+        return _policy(python_source_roots=self.PYTHON_SOURCE_ROOTS, forbidden_layer_imports=[rule])
+
+    def violations(self, source: str, *allowed: str) -> list[str]:
+        import ast
+
+        from tools.governance.archcheck import _index_tree, check_imports
+
+        policy = self.policy(*allowed)
+        return [item.message for item in check_imports("tools/check.py", _index_tree(ast.parse(source)), policy)
+                if item.code == "LAYER_AUTHORITY_VIOLATION"]
+
+    def test_an_exception_is_a_list_of_names_under_the_rules_targets(self) -> None:
+        with self.assertRaisesRegex(ArchitecturePolicyError, r"forbidden_layer_imports\[0\]\.allowed is invalid"):
+            self.policy()
+        with self.assertRaisesRegex(ArchitecturePolicyError, "'archflow.state' is under none of its targets"):
+            self.policy("runtime_pkg.errors", "archflow.state")
+
+    def test_a_module_or_a_member_it_defines_gets_through_and_nothing_else(self) -> None:
+        allowed = ("runtime_pkg.errors", "runtime_pkg.binding.ProjectBinding")
+        for source in (
+            "from runtime_pkg.errors import StudioError",
+            "import runtime_pkg.errors",
+            "from runtime_pkg import errors",
+            "from runtime_pkg.binding import ProjectBinding",
+            "def later():\n    from runtime_pkg.binding import ProjectBinding as Binding\n",
+        ):
+            with self.subTest(source=source):
+                self.assertEqual([], self.violations(source, *allowed))
+        for source, named in (
+            ("from runtime_pkg.binding import ProjectBinding, bound_project", "runtime_pkg.binding.bound_project"),
+            ("import runtime_pkg.binding", "runtime_pkg.binding"),
+            ("from runtime_pkg import binding", "runtime_pkg.binding"),
+            ("from runtime_pkg.binding import *", "runtime_pkg.binding"),
+            ("from runtime_pkg.settings import VALUE", "runtime_pkg.settings.VALUE"),
+            ("import runtime_pkg", "runtime_pkg"),
+        ):
+            with self.subTest(source=source):
+                messages = self.violations(source, *allowed)
+                self.assertEqual(1, len(messages), messages)
+                self.assertTrue(messages[0].startswith(f"{named!r} is forbidden here"), messages[0])
+
+    def test_an_exception_resolves_to_a_module_or_a_member_it_defines(self) -> None:
+        def findings(*allowed: str) -> list[str]:
+            return [item.message for item in check_layer_targets(self.root, self.policy(*allowed), ())]
+
+        self.assertEqual([], findings("runtime_pkg.errors", "runtime_pkg.binding.ProjectBinding",
+                                      "runtime_pkg.binding.READ_EPOCH", "runtime_pkg"))
+        dead = findings("runtime_pkg.binding.ReadToken", "runtime_pkg.status", "runtime_pkg.status.inspect")
+        self.assertEqual(3, len(dead), dead)
+        self.assertIn("allowed 'runtime_pkg.binding.ReadToken' names no module, and runtime_pkg.binding defines "
+                      "no ReadToken; the exception lets nothing through", dead[0])
+        self.assertIn("allowed 'runtime_pkg.status' names no module and no member of one", dead[1])
+        self.assertIn("allowed 'runtime_pkg.status.inspect' names no module and no member of one", dead[2])
 
 
 class LayerTargetRunTests(unittest.TestCase):
@@ -667,7 +746,7 @@ class ImportNameTests(unittest.TestCase):
             ("archflow/state/state_record.py", "archflow.state.state_record"),
             ("packages/archflow/src/archflow/state/state_record.py", "archflow.state.state_record"),
             ("services/project-runtime/src/project_runtime/main.py", "project_runtime.main"),
-            ("monkeyarch/construction/__init__.py", "monkeyarch.construction"),
+            ("monkeyarch/authoring/construction/__init__.py", "monkeyarch.authoring.construction"),
             ("tools/governance/archcheck.py", "tools.governance.archcheck"),
             ("apps/monkeyhub/web/scripts/dump-openapi.py", None),
             ("apps/monkeyhub/desktop/", None),
@@ -696,7 +775,7 @@ class ImportNameTests(unittest.TestCase):
 
     def test_a_package_owner_is_the_package(self) -> None:
         self.assertEqual([], self.registry_findings(
-            ["."], "monkeyarch/construction/__init__.py", "construction.script", "monkeyarch.construction",
+            ["."], "monkeyarch/authoring/construction/__init__.py", "construction.script", "monkeyarch.authoring.construction",
         ))
 
 

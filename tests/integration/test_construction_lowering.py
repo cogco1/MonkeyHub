@@ -25,21 +25,17 @@ from archflow.state.state_record import (
     project_grids_of,
     project_levels_of,
 )
-from monkeyarch.capabilities.element_producers import (
+from monkeyarch.authoring.element_producers import (
     ProductionContext,
     element_rows_of,
     produce_rows,
     validate_element_contract,
 )
-from monkeyarch.capabilities.reference_resolver import ReferenceContext
-from monkeyarch.construction import (
-    ELEMENT_SUFFIX,
-    ConstructionError,
-    compile_construction_script,
-    geometry_view,
-    vocabulary,
-)
-from monkeyarch.construction.vocabulary import layer_rule_violations
+from monkeyarch.domain.reference_resolver import ReferenceContext
+from monkeyarch.authoring.construction.identity import ELEMENT_SUFFIX
+from monkeyarch.authoring.construction.lowering import compile_construction_script, geometry_view
+from monkeyarch.authoring.construction.script import ConstructionError
+from monkeyarch.authoring.construction.vocabulary import layer_rule_violations, vocabulary
 
 EVIDENCE = "input:monkeyarch-modeling-setup"
 PARAMETERS = (
@@ -597,7 +593,7 @@ class IdentityTests(ConstructionTestCase):
     def test_construction_made_geometry_is_a_component_whose_one_element_is_its_body(self) -> None:
         # The one test of what a script made (#419 C7 round 2): lowering reuses such a component, and a keep
         # on the component a shape is placed under does not reach it.
-        from monkeyarch.construction import made_by_construction
+        from monkeyarch.authoring.construction.identity import made_by_construction
 
         self.assertTrue(made_by_construction("mass", ["mass" + ELEMENT_SUFFIX]))
         for component, elements in (("pair", ["pair-a", "pair-b"]), ("single", ["single-line"]), ("model", []),
@@ -1091,15 +1087,17 @@ class RecessTests(ConstructionTestCase):
     def volumes(self, record: StateRecord, result) -> dict[str, float] | None:
         """The successor applied and checked, its program compiled as the runner does, then built with OCCT."""
 
-        from monkeycad import occt_backend
+        from monkeycad.backends.occt.build import build_program_shapes
+        from monkeycad.backends.occt.kernel import occt_available
+        from monkeycad.backends.occt.measure import measure_shape
         from tests.integration.test_occt_execution import _compile as compile_program
 
         successor = _apply(record, result)
         program = compile_program(successor)
-        if not occt_backend.occt_available():  # pragma: no cover - the OCCT build is the evidence when it is installed
+        if not occt_available():  # pragma: no cover - the OCCT build is the evidence when it is installed
             return None
-        build = occt_backend.build_program_shapes(program)
-        return {object_id: occt_backend.measure_shape(build.objects[object_id].shape).volume
+        build = build_program_shapes(program)
+        return {object_id: measure_shape(build.objects[object_id].shape).volume
                 for object_id in build.physical_object_ids}
 
     def test_a_cutter_standing_on_its_host_is_produced_and_removed(self) -> None:

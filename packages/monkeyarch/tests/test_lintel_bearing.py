@@ -6,7 +6,7 @@ import json
 import unittest
 
 from archflow.state.state_record import Entity, Relation, StateRecord, StateRecordError, ValidatorBinding
-from monkeyarch.capabilities.relation_checks import check_relations
+from monkeyarch.domain.relation_checks import check_relations
 
 
 PARAMETERS = {

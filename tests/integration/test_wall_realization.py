@@ -21,7 +21,7 @@ from dataclasses import replace
 
 from archflow.state.geometry_program import expected_object_bounds
 from archflow.state.state_record import project_grids_of, project_levels_of
-from monkeyarch.capabilities.element_producers import (
+from monkeyarch.authoring.element_producers import (
     ElementProducerError,
     ElementRow,
     ProductionContext,
@@ -33,9 +33,9 @@ from monkeyarch.capabilities.element_producers import (
     wall_fields_from_block,
     with_void_hosts,
 )
-from monkeyarch.capabilities.geometry_proposal import GeometryProposalStatus
-from monkeyarch.capabilities.reference_resolver import ReferenceContext
-from monkeyarch.compilers.geometry import compile_geometry_program
+from monkeyarch.application.geometry_proposal import GeometryProposalStatus
+from monkeyarch.domain.reference_resolver import ReferenceContext
+from monkeyarch.compilation.geometry import compile_geometry_program
 from tests.integration.support import ProducerFixture, authored_record
 from tests.integration.test_element_producers import BASIS, PN, _grids, _levels
 from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
@@ -268,7 +268,7 @@ class ScriptOnARealisedBlockTests(unittest.TestCase):
     """A construction script still stands shapes on the block after it is realised as a wall, moved or not."""
 
     def test_top_of_the_realised_block_is_a_base_before_and_after_a_move(self) -> None:
-        from monkeyarch.construction import compile_construction_script
+        from monkeyarch.authoring.construction.lowering import compile_construction_script
         from tests.integration.test_construction_lowering import _apply, _compile, _record
 
         record = _apply(_record(), _compile("block = extrude(rect(0, 0, 6, 0.3), 3)"))
@@ -350,7 +350,7 @@ class HostedDoorTests(unittest.TestCase):
                                      {op.op_id for op in produced["block-1-body"].operations})
 
     def test_the_model_view_keeps_the_bounds_of_a_block_with_a_door(self) -> None:
-        from monkeyarch.construction import geometry_view
+        from monkeyarch.authoring.construction.lowering import geometry_view
         from tests.integration.test_construction_lowering import _apply, _compile, _record
 
         record = _apply(_record(), _compile("block = extrude(rect(0, 0, 6, 0.3), 3)"))
@@ -368,7 +368,7 @@ class OpeningInterfaceTests(ProducerFixture):
     """An assembly cites only the interfaces its record states (R17): none is invented, an undeclared one is refused."""
 
     async def _produced_with(self, interface_refs: tuple[str, ...]):
-        from monkeyarch.capabilities.geometry_proposal import proposal_authoring_output
+        from monkeyarch.application.geometry_proposal import proposal_authoring_output
         from tests.integration.support import ScriptedProvider
 
         [assembly] = self.proposal.assemblies

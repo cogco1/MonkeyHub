@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from project_runtime.binding import bound_project
-from monkeycad.model_formats import GLB, ThreeDM, Mesh, Scene, convert, ConversionError
+from monkeycad.formats.meshes import GLB, ThreeDM, Mesh, Scene, convert, ConversionError
 from .support import make_project, PROJECT_ID, REFERENCE_RUN_ID
 
 
@@ -92,7 +92,7 @@ class ExportJobTests(unittest.TestCase):
             self.assertEqual(cold.get('/api/exports/' + result['exportId']).json(), result)
 
     def test_provider_validation_failure_persists_and_blocks_download(self):
-        from monkeycad.model_providers import InProcessMeshProvider, Validation
+        from monkeycad.formats.conversion import InProcessMeshProvider, Validation
         with patch.object(InProcessMeshProvider, 'validate', return_value=Validation(False, reason='Bounds mismatch')):
             result = self.finish(self.submit())
         self.assertEqual(result['status'], 'failed')

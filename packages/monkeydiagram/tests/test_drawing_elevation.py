@@ -15,27 +15,30 @@ from pathlib import Path
 from unittest.mock import patch
 from xml.etree import ElementTree
 
-from monkeycad import occt_backend
-from monkeydiagram import drawing_elevation
-from monkeydiagram.drawing_svg import render_svg_png, svg_objects
+from monkeycad.backends.occt.errors import OcctBackendError
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.backends.occt.step import StepObject, read_step, write_step
+from monkeydiagram.projection import views
+from monkeydiagram.rendering.svg import render_svg_png, svg_objects
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DRAWING_PROJECTION_RECEIPT, SEAT_OCCT_EXECUTION
 from archflow.project.repository import FilesystemProjectRepository
-from monkeydiagram.drawing_elevation import (
-    DrawingElevationError,
-    ElevationSource,
-    ElevationView,
-    current_object_id,
+from monkeydiagram.drawing_runs import (
     freeze_model_axis_elevation,
     freeze_cut_plan,
-    inspection_witness_ids,
     list_model_axis_elevations,
-    project_model_axis_elevation,
     read_model_axis_elevation,
     resolve_plan_dressing,
 )
+from monkeydiagram.projection.views import ElevationView, project_model_axis_elevation
+from monkeydiagram.sources import (
+    DrawingElevationError,
+    ElevationSource,
+    current_object_id,
+    inspection_witness_ids,
+)
 
-NEEDS_OCCT = unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+NEEDS_OCCT = unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 PROJECT_ID = "drawing-project"
 SOURCE_RUN = "source-run"
 STAGE = "seat-demo"
@@ -104,9 +107,9 @@ class ProjectionValueTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.temporary = tempfile.TemporaryDirectory()
         path = Path(cls.temporary.name) / STEP_NAME
-        occt_backend.write_step(path, tuple(occt_backend.StepObject(name, shape, "layer") for name, shape in _shapes().items()),
+        write_step(path, tuple(StepObject(name, shape, "layer") for name, shape in _shapes().items()),
                                 length_unit="meter")
-        cls.entries = occt_backend.read_step(path, length_unit="meter")
+        cls.entries = read_step(path, length_unit="meter")
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -181,8 +184,8 @@ class FreezeElevationTests(unittest.TestCase):
         # The CAD adapter writes the STEP into the run's speculative workspace itself; mirror that placement.
         workspace = self.repository.layout.run(SOURCE_RUN).workspaces / WORKSPACE
         workspace.mkdir()
-        occt_backend.write_step(workspace / STEP_NAME,
-                                tuple(occt_backend.StepObject(name, shape, "layer") for name, shape in _shapes().items()),
+        write_step(workspace / STEP_NAME,
+                                tuple(StepObject(name, shape, "layer") for name, shape in _shapes().items()),
                                 length_unit="meter")
         self.step_sha = hashlib.sha256((workspace / STEP_NAME).read_bytes()).hexdigest()
         self.receipt_ref = self.repository.put_json(
@@ -258,7 +261,7 @@ class FreezeElevationTests(unittest.TestCase):
         self.assertEqual(reopened.load_run("drawing-run").base, self.source_run.base)
         self.assertEqual(reopened.read_head(), self.head)
 
-        with patch.object(drawing_elevation, "project_occt_lines", wraps=drawing_elevation.project_occt_lines) as project:
+        with patch.object(views, "project_occt_lines", wraps=views.project_occt_lines) as project:
             again = freeze_model_axis_elevation(reopened, source=self.source, view=_view(), drawing_run_id="drawing-run",
                                                 operation_observer=observations.append, parent_event_id="repeated-operation")
         self.assertEqual(project.call_count, 1)
@@ -268,7 +271,7 @@ class FreezeElevationTests(unittest.TestCase):
         self.assertEqual(len(list_model_axis_elevations(reopened, "drawing-run")), 1)
 
     def test_an_axonometric_is_a_parallel_view_from_any_non_vertical_direction_retained_like_an_elevation(self) -> None:
-        from monkeydiagram.drawing_elevation import axonometric_frame
+        from monkeydiagram.projection.views import axonometric_frame
 
         right, up, look = axonometric_frame((1, -1, 1))
         root2, root6, root3 = math.sqrt(2), math.sqrt(6), math.sqrt(3)
@@ -313,10 +316,10 @@ class FreezeElevationTests(unittest.TestCase):
         self.assertFalse((self.root / "runs" / "refused-run").exists())
 
     def test_failed_or_cancelled_projection_records_no_render_or_write_that_did_not_run(self) -> None:
-        for error in (occt_backend.OcctBackendError("projection stopped"), asyncio.CancelledError()):
+        for error in (OcctBackendError("projection stopped"), asyncio.CancelledError()):
             with self.subTest(error=type(error).__name__):
                 observations = []
-                with patch.object(drawing_elevation, "project_occt_lines", side_effect=error) as project:
+                with patch.object(views, "project_occt_lines", side_effect=error) as project:
                     with self.assertRaises(asyncio.CancelledError if isinstance(error, asyncio.CancelledError) else DrawingElevationError):
                         freeze_model_axis_elevation(self.repository, source=self.source, view=_view(), drawing_run_id="failed-run",
                                                     operation_observer=observations.append)
@@ -342,7 +345,7 @@ class FreezeElevationTests(unittest.TestCase):
         self.assertEqual(first.cleanup["duplicate"], 0)
         visible = [segment for _, points in _group_lines(second.svg, "visible") for segment in zip(points, points[1:])]
         for object_id, points in _group_lines(second.svg, "hidden"):
-            self.assertFalse(_lies_on(points, visible, drawing_elevation.CLEANUP_TOLERANCE_MM * 100 / 1000), object_id)
+            self.assertFalse(_lies_on(points, visible, views.CLEANUP_TOLERANCE_MM * 100 / 1000), object_id)
         self.assertEqual(len(list_model_axis_elevations(self.repository, "drawing-run")), 2)
         self.assertNotEqual(first.svg_ref.relative_path, second.svg_ref.relative_path)
 
@@ -424,7 +427,7 @@ def _room_plan_source(root, *, hidden_witnesses=False, user_text=None):
     workspace = repository.layout.run(SOURCE_RUN).workspaces / WORKSPACE
     workspace.mkdir()
     step = workspace / STEP_NAME
-    occt_backend.write_step(step, tuple(occt_backend.StepObject(name, shape, "room") for name, shape in shapes.items()),
+    write_step(step, tuple(StepObject(name, shape, "room") for name, shape in shapes.items()),
                             length_unit="meter")
     digest = hashlib.sha256(step.read_bytes()).hexdigest()
     receipt = repository.put_json(
@@ -484,7 +487,7 @@ class CutPlanTests(unittest.TestCase):
         self.assertEqual(drawing.run.base, self.repository.load_run(SOURCE_RUN).base)
         self.assertEqual(self.repository.read_head(), self.head)
         # The cut edge is drawn once, by the section: no visible line lies on it within 0.05 mm on the sheet.
-        tolerance = drawing_elevation.CLEANUP_TOLERANCE_MM * 50 / 1000
+        tolerance = views.CLEANUP_TOLERANCE_MM * 50 / 1000
         section = [segment for _, points in _group_lines(drawing.svg, "section") for segment in zip(points, points[1:])]
         for object_id, points in _group_lines(drawing.svg, "visible"):
             self.assertFalse(_lies_on(points, section, tolerance), (object_id, points))
@@ -719,7 +722,7 @@ class CutPlanTests(unittest.TestCase):
         self.assertFalse(self.repository.layout.run("tilted-section").manifest.exists())
 
     def test_a_model_axis_section_is_a_plan_line_or_a_plane_and_any_other_plane_is_refused_by_name(self):
-        from monkeydiagram.drawing_elevation import SectionPerspectiveError, model_axis_section
+        from monkeydiagram.projection.views import SectionPerspectiveError, model_axis_section
 
         # Walking +X keeps the left (+Y): the viewer stands at -Y and looks +Y, the sheet's right is +X.
         self.assertEqual(model_axis_section({"line": [[-1, 1.5], [5, 1.5]], "keep": "left"}),
@@ -743,7 +746,7 @@ class CutPlanTests(unittest.TestCase):
             self.assertEqual(caught.exception.code, code)
 
     def test_a_vertical_section_through_nothing_is_refused_before_anything_is_written(self):
-        from monkeydiagram.drawing_elevation import SectionPerspectiveError, model_axis_section
+        from monkeydiagram.projection.views import SectionPerspectiveError, model_axis_section
 
         # X = 6 lies beside the room: looking -X the whole room is beyond it, but nothing is cut.
         origin, look, right = model_axis_section({"line": [[6, 4], [6, -1]], "keep": "right"})
@@ -783,7 +786,7 @@ class RetainedReferenceTests(unittest.TestCase):
         self.assertEqual(current_object_id("obj-w", {"obj-w-cut"}), "obj-w")
 
     def test_a_retained_anchor_on_a_cut_wall_follows_the_wall(self) -> None:
-        from monkeydiagram.drawing_svg import dressing_assets
+        from monkeydiagram.rendering.svg import dressing_assets
 
         receipt = {"physical_object_ids": ["obj-w"], "expected_semantics": {"objects": {"obj-w": {"visible": True}}},
                    "readback": {"obj-w": {"bbox": {"min": [0.0, 0.0, 0.0], "max": [2.0, 4.0, 3.0]}}}}

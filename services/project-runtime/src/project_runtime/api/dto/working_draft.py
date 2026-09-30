@@ -2,54 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ...application.working_draft import LocalDraftInputDto, LocalDraftSourceDto
 from .artifacts import ModelSourceDto, model_source_dto
 from .decisions import MessageSourceDto
 
 if TYPE_CHECKING:
     from ...application.working_draft import WorkingSource
-
-
-class WorkingDraftEntryDto(BaseModel):
-    runId: str
-    sourceStageRef: str | None = None
-    branchId: str | None = None
-    updatedAt: str
-    label: str | None = None
-
-
-class LocalDraftSourceDto(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    projectId: str
-    stateDigest: str
-    sourceRunId: str | None = None
-    sourceStageRef: str | None = None
-
-
-class LocalDraftInputDto(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    source: LocalDraftSourceDto
-    commands: list[dict[str, Any]] = Field(max_length=10000)
-    # The client retains both its synced prefix and the frozen pending request.
-    # This is recovery data only; the server never executes these mappings.
-    attempt: dict[str, Any] | None = None
-
-
-class LocalDraftDto(LocalDraftInputDto):
-    updatedAt: str
-
-
-class WorkingDraftDto(BaseModel):
-    projectId: str
-    revisionSha256: str | None = None
-    current: WorkingDraftEntryDto | None = None
-    recovery: list[WorkingDraftEntryDto] = Field(default_factory=list)
-    saved: list[WorkingDraftEntryDto] = Field(default_factory=list)
-    managedRunIds: list[str] = Field(default_factory=list)
-    localDraft: LocalDraftDto | None = None
 
 
 class WorkingDraftSelectionDto(BaseModel):

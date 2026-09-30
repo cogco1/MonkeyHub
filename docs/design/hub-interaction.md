@@ -204,7 +204,7 @@ Agent：已把主入口移到南立面中段，加了 3 m 深的雨棚；东侧�
 
 | 字段 | 来源 | 处理 |
 |---|---|---|
-| 摘要（Agent 结果） | Hub 对话记录中带 `candidateId` 的消息及其前一条用户消息（[chat/store.py:1871](../../apps/monkeyhub/api/monkeyhub_api/chat/store.py#L1871)） | Hub 向工作区传「Candidate → 摘要」映射【仅 UI】 |
+| 摘要（Agent 结果） | Hub 对话记录中带 `candidateId` 的消息及其前一条用户消息（[chat/store.py:1854](../../apps/monkeyhub/api/monkeyhub_api/chat/store.py#L1854)） | Hub 向工作区传「Candidate → 摘要」映射【仅 UI】 |
 | 摘要（手动修改） | 工作草稿的命令列表 | 汇总为「推拉 ×2」一类【仅 UI】 |
 | 时间 | Stage：`acceptance.occurredAt`；草稿：`updatedAt`；Agent 结果：对话消息时间 | Candidate 本身没有时间戳；无对话记录的只显示先后顺序 |
 | 作者 | Candidate = Agent；草稿 = 你；Stage = `acceptance.actorId` | 已有 |

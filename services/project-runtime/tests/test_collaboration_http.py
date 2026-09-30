@@ -22,7 +22,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from monkeycad import occt_backend
+from monkeycad.backends.occt.kernel import occt_available
+from monkeycad.backends.occt.measure import measure_shape
+from monkeycad.backends.occt.step import read_step
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 
@@ -130,7 +132,7 @@ class _Service:
         return status, data if binary else json.loads(data)
 
 
-@unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
 class CollaborationHttpTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="archflow-collaboration-http-")
@@ -289,8 +291,8 @@ class CollaborationHttpTests(unittest.TestCase):
         step = next(item for item in final["artifacts"] if item["format"] == "step")
         step_path = self.shared.project / step["relativePath"]
         self.assertEqual(hashlib.sha256(step_path.read_bytes()).hexdigest(), step["sha256"])
-        shapes = {entry.name: occt_backend.measure_shape(entry.shape)
-                  for entry in occt_backend.read_step(step_path, length_unit="meter")}
+        shapes = {entry.name: measure_shape(entry.shape)
+                  for entry in read_step(step_path, length_unit="meter")}
         self.assertEqual(set(shapes), {"obj-portico-base", "obj-portico-cornice"})
         for shape in shapes.values():
             self.assertTrue(shape.valid and shape.closed)

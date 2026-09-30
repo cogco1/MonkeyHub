@@ -22,7 +22,7 @@ from project_runtime.jobs import JobRegistry
 from project_runtime.application.monitored_compiler import MonitoredCompiler
 from project_runtime.monitoring import StudioMonitor, candidate_event_id
 from archflow.project.refs import record_ref_from_uri
-from monkeyarch.runtime import project_runner
+from monkeyarch.application import project_runner
 from monkeymonitor.store import BUSY_NOTICE, UsageLog
 from monkeymonitor.trace import build_traces
 from monkeymonitor.usage import TokenUsage

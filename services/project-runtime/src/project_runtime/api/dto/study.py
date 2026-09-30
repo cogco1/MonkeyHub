@@ -6,10 +6,14 @@ from typing import Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ...application.study import StudyView
+from ...application.study import (
+    IDENTIFIER_PATTERN,
+    StudyResearchRequestDto,
+    StudyRevisionRequestDto,
+    StudyView,
+)
 
 
-IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
 
@@ -29,102 +33,6 @@ class TraceEvidenceRequestDto(BaseModel):
     status: Literal["proposed", "confirmed", "rejected"] = "proposed"
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     origin: Literal["machine", "user", "imported"] = "user"
-
-
-class StudyResearchInputDto(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
-
-
-class StudyRevisionRequestDto(StudyResearchInputDto):
-    """One exact retained Study revision; comparison never guesses a current head."""
-
-    study_id: str = Field(alias="studyId", pattern=IDENTIFIER_PATTERN)
-    ledger_ref: str = Field(alias="ledgerRef", min_length=1)
-
-
-class StudyResearchComparisonDto(StudyResearchInputDto):
-    studies: list[StudyRevisionRequestDto] = Field(min_length=2, max_length=6)
-
-
-class StudyHistoricalSourceDto(StudyResearchInputDto):
-    source_id: str = Field(alias="sourceId", pattern=IDENTIFIER_PATTERN)
-    citation: str = Field(max_length=4000)
-    url: str = Field(default="", max_length=4000)
-    locator: str = Field(default="", max_length=2000)
-    summary: str = Field(default="", max_length=8000)
-
-
-class StudyHypothesisDto(StudyResearchInputDto):
-    hypothesis_id: str = Field(alias="hypothesisId", pattern=IDENTIFIER_PATTERN)
-    statement: str = Field(max_length=8000)
-    evidence_ids: list[str] = Field(default_factory=list, alias="evidenceIds", max_length=200)
-    counter_evidence_ids: list[str] = Field(default_factory=list, alias="counterEvidenceIds", max_length=200)
-    historical_source_ids: list[str] = Field(default_factory=list, alias="historicalSourceIds", max_length=40)
-    assumptions: list[str] = Field(default_factory=list, max_length=40)
-    falsification: str = Field(default="", max_length=8000)
-    competes_with: list[str] = Field(default_factory=list, alias="competesWith", max_length=20)
-    status: Literal["open", "revised", "rejected"] = "open"
-
-
-class StudyEvidenceGapDto(StudyResearchInputDto):
-    gap_id: str = Field(alias="gapId", pattern=IDENTIFIER_PATTERN)
-    description: str = Field(max_length=8000)
-    evidence_ids: list[str] = Field(default_factory=list, alias="evidenceIds", max_length=200)
-
-
-class StudyInterventionParametersDto(StudyResearchInputDto):
-    dx: float = Field(default=0.0, ge=-1.0, le=1.0, allow_inf_nan=False)
-    dy: float = Field(default=0.0, ge=-1.0, le=1.0, allow_inf_nan=False)
-    scale: float = Field(default=1.0, gt=0.0, le=4.0, allow_inf_nan=False)
-
-
-class StudyInterventionDto(StudyResearchInputDto):
-    counterfactual_id: str = Field(alias="counterfactualId", pattern=IDENTIFIER_PATTERN)
-    hypothesis_ids: list[str] = Field(default_factory=list, alias="hypothesisIds", max_length=20)
-    target_evidence_id: str = Field(alias="targetEvidenceId", pattern=IDENTIFIER_PATTERN)
-    operation: Literal["translate", "scale", "remove"]
-    parameters: StudyInterventionParametersDto = Field(default_factory=StudyInterventionParametersDto)
-    conditions: list[str] = Field(default_factory=list, max_length=40)
-    prediction: str = Field(default="", max_length=8000)
-    execute: bool = False
-
-
-class CompositionPatternDto(StudyResearchInputDto):
-    pattern_id: str = Field(alias="patternId", pattern=IDENTIFIER_PATTERN)
-    name: str = Field(max_length=2000)
-    rule: str = Field(max_length=8000)
-    evidence_ids: list[str] = Field(default_factory=list, alias="evidenceIds", max_length=200)
-    conditions: list[str] = Field(default_factory=list, max_length=40)
-    exceptions: list[str] = Field(default_factory=list, max_length=40)
-
-
-class StudyChangedContextDto(StudyResearchInputDto):
-    changed_conditions: list[str] = Field(default_factory=list, alias="changedConditions", max_length=40)
-    decision: Literal["unresolved", "retain", "revise", "reject"] = "unresolved"
-    reason: str = Field(default="", max_length=8000)
-    revised_statement: str = Field(default="", alias="revisedStatement", max_length=8000)
-
-
-class DesignPriorDto(StudyResearchInputDto):
-    prior_id: str = Field(alias="priorId", pattern=IDENTIFIER_PATTERN)
-    statement: str = Field(max_length=8000)
-    pattern_id: str = Field(alias="patternId", pattern=IDENTIFIER_PATTERN)
-    hypothesis_ids: list[str] = Field(default_factory=list, alias="hypothesisIds", max_length=20)
-    conditions: list[str] = Field(default_factory=list, max_length=40)
-    preference: str = Field(default="", max_length=8000)
-    preference_status: Literal["unresolved", "stated"] = Field(default="unresolved", alias="preferenceStatus")
-    changed_context: StudyChangedContextDto | None = Field(default=None, alias="changedContext")
-
-
-class StudyResearchRequestDto(StudyResearchInputDto):
-    question: str = Field(default="", max_length=8000)
-    historical_sources: list[StudyHistoricalSourceDto] = Field(default_factory=list, alias="historicalSources", max_length=40)
-    hypotheses: list[StudyHypothesisDto] = Field(default_factory=list, max_length=20)
-    gaps: list[StudyEvidenceGapDto] = Field(default_factory=list, max_length=40)
-    counterfactuals: list[StudyInterventionDto] = Field(default_factory=list, max_length=5)
-    comparisons: list[StudyResearchComparisonDto] = Field(default_factory=list, max_length=6)
-    composition_pattern: CompositionPatternDto | None = Field(default=None, alias="compositionPattern")
-    design_prior: DesignPriorDto | None = Field(default=None, alias="designPrior")
 
 
 class SaveStudyRequestDto(BaseModel):

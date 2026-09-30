@@ -14,17 +14,19 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from pathlib import PurePath
 
-from monkeycad.cad_patch import select_patch_operations
+from monkeycad.patch import select_patch_operations
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 from archflow.state.geometry_program import load_compiled_geometry_program
-from monkeydiagram.drawing_elevation import (
-    DrawingElevationError, ElevationView, NativeModelSource, SectionPerspectiveError, current_object_id, freeze_cut_plan,
-    inspection_witness_ids, model_axis_section, read_elevation_source, read_model_axis_elevation, plan_dressing_anchors,
-    resolve_plan_dressing,
+from monkeydiagram.drawing_runs import (
+    freeze_cut_plan, plan_dressing_anchors, read_model_axis_elevation, resolve_plan_dressing,
+)
+from monkeydiagram.projection.views import ElevationView, SectionPerspectiveError, model_axis_section
+from monkeydiagram.sources import (
+    DrawingElevationError, NativeModelSource, current_object_id, inspection_witness_ids, read_elevation_source,
 )
 
 from .artifacts import (
@@ -195,7 +197,7 @@ def _edit_dressing(objects, operations):
 
 def plan_vector(binding, *, run_id, asset_sha256, revision_ref):
     """Retained SVG, its exact-source anchor choices and cleanup report; no regeneration or write."""
-    from monkeydiagram.drawing_svg import dressing_assets
+    from monkeydiagram.rendering.svg import dressing_assets
     document = _plan_document(binding, run_id, asset_sha256, revision_ref)
     drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(revision_ref, binding.project_id))
     _, receipt = _complete_source(binding, _document_source(document), None if document.source_stage_ref is None else record_ref_from_uri(document.source_stage_ref, binding.project_id))

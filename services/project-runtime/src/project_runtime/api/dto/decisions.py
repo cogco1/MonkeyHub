@@ -15,8 +15,7 @@ from typing import Annotated, Any, Literal, Mapping, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ...application.decisions import DecisionRevision
-from .drawings import PlanRequestDto
+from ...application.decisions import DecisionRevision, RecipeGraphicsDto
 
 SHA256 = r"^[0-9a-f]{64}$"
 
@@ -117,30 +116,6 @@ class ParameterBindingRequestDto(_Frozen):
 
     kind: Literal["parameter"]
     parameter_key: str = Field(alias="parameterKey", min_length=1, max_length=128)
-
-
-# A drawing request's own bounds on the same paper-space values, so a recipe
-# never holds a value a drawing request would refuse.
-_PLAN = PlanRequestDto.model_fields
-_CutLineMm = Annotated[float, *_PLAN["cut_line_mm"].metadata]
-_VisibleLineMm = Annotated[float, *_PLAN["visible_line_mm"].metadata]
-_HatchSpacingMm = Annotated[float, *_PLAN["hatch_spacing_mm"].metadata]
-
-
-class RecipeGraphicsDto(_Frozen):
-    """The paper-space values one project recipe sets; a key it leaves out is null.
-
-    Closed to the drawing's own graphics keys, each bounded exactly as a cut-plan
-    request bounds it. No object, material or model is looked up: a recipe is
-    what a new drawing starts from, not a claim about one model.
-    """
-
-    cut_line_mm: _CutLineMm | None = Field(
-        alias="cutLineMm", default=None, description="cut line weight on paper; set under drawing:lineweight")
-    visible_line_mm: _VisibleLineMm | None = Field(
-        alias="visibleLineMm", default=None, description="visible line weight on paper; set under drawing:lineweight")
-    hatch_spacing_mm: _HatchSpacingMm | None = Field(
-        alias="hatchSpacingMm", default=None, description="section hatch spacing on paper; set under drawing:hatch")
 
 
 class RecipeBindingRequestDto(_Frozen):

@@ -1,6 +1,6 @@
 """L4 domain readiness, served: the registry's own description, and one bound answer.
 
-Two thin reads over ``monkeyarch.capabilities.domain_readiness``, the honest
+Two thin reads over ``monkeyarch.domain.domain_readiness``, the honest
 entry gate every technical domain calls before it runs (spec
 docs/design/construction-api.md §3.6). ``domains_index`` needs no bound
 project at all — it is the registry's own description of what each domain
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from monkeyarch.capabilities.domain_readiness import DOMAINS, DomainUnknown, describe, readiness
+from monkeyarch.domain.domain_readiness import DOMAINS, DomainUnknown, describe, readiness
 
 from ..binding import ProjectBinding
 from .projection import project_state

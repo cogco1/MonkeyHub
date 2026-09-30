@@ -153,7 +153,7 @@ def _complete_sheet(sheet: Mapping[str, Any], record: StateRecord | None) -> dic
     if record is None:
         return result
     from archflow.state.state_record import component_semantics
-    from monkeyarch.capabilities.element_producers import producer_signatures
+    from monkeyarch.authoring.producer_signatures import producer_signatures
 
     entities = {item.entity_id: item for item in record.entities}
     for row in result.get("components", ()):
@@ -613,7 +613,7 @@ def control_unit(context: IntentContext, row: Mapping[str, Any], field: str) -> 
     # The advertised producer declares the unit of its numeric parameters
     # (every length it reads is metres); a producer or field that declares
     # none gets none here, never a guess (#404 F17).
-    from monkeyarch.capabilities.element_producers import parameter_unit
+    from monkeyarch.authoring.producer_signatures import parameter_unit
 
     producer = row.get("producer")
     return parameter_unit(producer, field) if isinstance(producer, str) else None

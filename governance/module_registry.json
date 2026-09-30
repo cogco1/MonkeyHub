@@ -15,33 +15,33 @@
     {
       "interface_id": "compiled-cad-execution",
       "owner": "monkeycad.execution",
-      "contract": "CadBackend.execute(CadExecutionRequest) returns CadExecutionResult for an exact CompiledGeometryProgram and public CadProgramBinding inside the caller-supplied speculative workspace. monkeycad.cad_backend.CAD_BACKEND_REGISTRY is the single execution registration point. Native receipt schemas/evidence remain intact; the runner retains them through P036.",
+      "contract": "CadBackend.execute(CadExecutionRequest) returns CadExecutionResult for an exact CompiledGeometryProgram and public CadProgramBinding inside the caller-supplied speculative workspace. monkeycad.registry.CAD_BACKEND_REGISTRY is the single execution registration point. Native receipt schemas/evidence remain intact; the runner retains them through P036.",
       "implementations": [
         {
           "backend": "occt",
           "entry_points": [
-            "monkeycad.cad_backend.OcctBackend.execute",
-            "monkeycad.cad_execution.execute_occt_export"
+            "monkeycad.backends.occt.backend.OcctBackend.execute",
+            "monkeycad.backends.occt.export.execute_occt_export"
           ],
-          "implementation_file": "packages/monkeycad/src/monkeycad/occt_backend.py",
+          "implementation_file": "packages/monkeycad/src/monkeycad/backends/occt/backend.py",
           "output": "OcctExecutionReceipt@1: exact STEP B-rep and optional mesh .3dm preview from the same model; unsupported operations fail explicitly"
         },
         {
           "backend": "rhino",
           "entry_points": [
-            "monkeycad.cad_backend.RhinoBackend.execute",
-            "monkeycad.cad_execution.prepare_rhino_three_dm_export",
-            "monkeycad.cad_execution.execute_rhino_three_dm_export"
+            "monkeycad.backends.rhino.backend.RhinoBackend.execute",
+            "monkeycad.backends.rhino.export.prepare_rhino_three_dm_export",
+            "monkeycad.backends.rhino.export.execute_rhino_three_dm_export"
           ],
-          "implementation_file": "packages/monkeycad/src/monkeycad/cad_execution.py",
+          "implementation_file": "packages/monkeycad/src/monkeycad/backends/rhino/backend.py",
           "output": "RhinoCadExecutionReceipt@4: explicit Rhino compatibility export with host supervision and saved .3dm readback"
         },
         {
           "backend": "blender",
           "entry_points": [
-            "monkeycad.blender_cad.BlenderBackend.execute"
+            "monkeycad.backends.blender.backend.BlenderBackend.execute"
           ],
-          "implementation_file": "packages/monkeycad/src/monkeycad/blender_cad.py",
+          "implementation_file": "packages/monkeycad/src/monkeycad/backends/blender/backend.py",
           "output": "BlenderExecutionReceipt@1: closed mesh .blend for solid/straight-extrusion programs, independently read in a fresh process; unsupported operations fail explicitly"
         }
       ]
@@ -220,23 +220,26 @@
   "modules": [
     {
       "module_id": "monkeycad.execution",
-      "owner_path": "packages/monkeycad/src/monkeycad/cad_execution.py",
-      "purpose": "The backend-neutral half of CAD execution: the compiled-cad-execution interface (one CadBackend protocol, its request and result values and the single registry every backend is registered in), the exact P036 binding an export carries, the status and errors every backend reports, the speculative-workspace rules every backend writes under, and the operation diff that decides what an incremental export rebuilds.",
+      "owner_path": "packages/monkeycad/src/monkeycad/execution.py",
+      "purpose": "The backend-neutral half of CAD execution: the compiled-cad-execution interface (one CadBackend protocol, its request and result values and the single registry every backend is registered in), the exact P036 binding an export carries, the status and errors every backend reports, the speculative-workspace rules every backend writes under, the object semantics every backend's saved document must carry, and the operation diff that decides what an incremental export rebuilds.",
       "owns": [
         "the neutral CadBackend protocol, CadExecutionRequest, CadExecutionSource, CadArtifact and CadExecutionResult values, and the single CAD_BACKEND_REGISTRY; native evidence and retained receipt readers stay backend-specific",
         "CadProgramBinding and backend export identities: the exact P036 record/branch/stage identity an export is bound to; RhinoCadProgramBinding remains a compatibility alias with unchanged serialization",
         "the execution status and errors every backend reports (CadExecutionStatus, CadExecutionError, CadCapabilityError)",
         "the speculative-workspace rules shared by the OCCT, Rhino and Blender backends: an existing absolute caller-supplied directory, workspace-relative portable artifact paths and their SHA-256",
+        "the layer path and layer colour tables derived from components and material assignment",
+        "the archflow:* object user text each physical object must carry (expected_object_semantics)",
+        "writing each of an operation's statements through as an archflow:<key> user string, verbatim, and the reserved identity keys a statement may not take",
         "per-object structural digests of what the CAD script actually emits",
         "the diff into changed / added / retired / kept object ids, with a reason per object",
         "closing the rebuild set over input edges (consumers of a rebuilt object, producers of a rebuilt operation's inputs)",
-        "the Rhino-side prelude that opens the prior model, deletes the retired objects and re-stamps kept objects, copying and remapping their referenced native material tables",
         "refusing a patch that cannot be expressed, so the caller rebuilds instead"
       ],
       "does_not_own": [
         "a backend's geometry, host process or file format - monkeycad.occt, monkeycad.rhino, monkeycad.blender and monkeycad.formats",
-        "translating the program into a script and the object semantics its realization carries - monkeycad.rhino",
+        "translating the program into a script - monkeycad.rhino",
         "emitting the rebuilt operations - monkeycad.rhino's operation_subset does",
+        "writing the Rhino-side patch prelude - monkeycad.rhino",
         "running or verifying the patched export - monkeycad.rhino",
         "deciding whether to patch at all - runtime.project_runner's _export chooses reuse, patch or rebuild",
         "comparing two runs' saved geometry - studio.validation's compare",
@@ -248,15 +251,13 @@
         "CadProgramBinding (RhinoCadProgramBinding compatibility alias)",
         "speculative workspace Path",
         "CadExecutionRequest with explicit artifact stem, material/layer maps, observer, optional verified source and backend option mapping; no repository handle",
-        "prior CompiledGeometryProgram",
-        "prior model Path",
-        "expected semantics"
+        "prior CompiledGeometryProgram"
       ],
       "outputs": [
         "CadExecutionResult: backend id, exact binding, status, named verified artifacts, stable object/semantic coverage, failures and unchanged backend-specific receipt payload",
         "PatchSelection",
-        "patch prelude script text",
-        "structural digest mapping"
+        "structural digest mapping",
+        "expected semantics mapping"
       ],
       "public_api": [
         "CadBackend",
@@ -267,61 +268,66 @@
         "get_cad_backend",
         "cad_backend_ids",
         "CAD_BACKEND_REGISTRY",
-        "OcctBackend",
-        "RhinoBackend",
         "CadProgramBinding",
         "RhinoCadProgramBinding",
         "CadExecutionStatus",
         "CadExecutionError",
         "CadCapabilityError",
+        "expected_object_semantics",
+        "ROOT_LAYER",
+        "CadTranslationError",
         "select_patch_operations",
-        "build_patch_prelude",
         "PatchSelection",
         "CadPatchError"
       ],
       "depends_on": [
         "project.refs",
         "state.geometry_program",
-        "contracts.canonical",
+        "monkeycad.blender",
         "monkeycad.occt",
         "monkeycad.rhino",
-        "monkeycad.blender",
-        "monkeycad.formats",
-        "monkeycad.integrations",
-        "monkeycad.cad_patch",
-        "monkeycad.local_cad_discovery"
+        "monkeycad.program"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
         "services/project-runtime/src/project_runtime/application/drawing_plans.py",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/sources.py",
+        "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
         "tests/integration/test_cad_backend_contract.py",
         "tests/integration/test_cad_execution.py",
-        "tests/integration/test_cad_patch.py"
+        "tests/integration/test_cad_patch.py",
+        "tests/integration/test_cad_program.py",
+        "tests/integration/test_element_producers.py"
       ],
       "invariants": [
         "the common result preserves native success/readback evidence and validates exact binding, semantic identity, workspace containment and artifact bytes; it is not a new retained receipt or write authority",
         "an object is rebuilt only when its structural digest or its analytic bounds actually changed, beyond tolerance",
         "the rebuild set is closed over input edges - nothing consumed or produced by a rebuilt operation is left stale",
-        "an inexpressible patch fails CadPatchError, which is a signal to rebuild, never a partial document"
+        "an inexpressible patch fails CadPatchError, which is a signal to rebuild, never a partial document",
+        "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError"
       ],
       "status": "canonical",
       "tests": [
         "tests/integration/test_cad_backend_contract.py",
         "tests/integration/test_cad_patch.py",
-        "tests/integration/test_cad_execution.py"
+        "tests/integration/test_cad_execution.py",
+        "tests/integration/test_cad_program.py"
       ],
-      "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added. P103 incremental export; the only reason a run may reuse a prior .3dm. cad_execution.py still holds the neutral binding, errors and workspace helpers, the Rhino export, the OCCT export orchestration and the 3dm composition; it is listed under monkeycad.execution, monkeycad.rhino, monkeycad.occt and monkeycad.formats until #515 splits it.",
+      "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added. P103 incremental export; the only reason a run may reuse a prior .3dm. #515: execution.py holds the interface, binding, status and errors, the export provenance and bounds helpers both exporters share, and the speculative-workspace and hash helpers (they raise CadExecutionError and the interface calls them, so they are not a module of their own); registry.py the backend table; program.py the object semantics every backend's readback is checked against; patch.py the operation diff.",
       "files": [
-        "packages/monkeycad/src/monkeycad/cad_execution.py",
-        "packages/monkeycad/src/monkeycad/cad_backend.py",
-        "packages/monkeycad/src/monkeycad/cad_patch.py"
+        "packages/monkeycad/src/monkeycad/execution.py",
+        "packages/monkeycad/src/monkeycad/registry.py",
+        "packages/monkeycad/src/monkeycad/program.py",
+        "packages/monkeycad/src/monkeycad/patch.py",
+        "packages/monkeycad/src/monkeycad/__init__.py",
+        "packages/monkeycad/src/monkeycad/backends/__init__.py"
       ]
     },
     {
       "module_id": "monkeycad.occt",
-      "owner_path": "packages/monkeycad/src/monkeycad/occt_backend.py",
+      "owner_path": "packages/monkeycad/src/monkeycad/backends/occt/backend.py",
       "purpose": "The in-process OCCT backend: build a compiled program as exact B-reps, write and cold-read STEP with a mesh .3dm preview from the same model, and answer drawing and measurement queries on named shapes: hidden-line projection, plane sections, section perspectives, native 3dm decoding and solid-pair measurement.",
       "owns": [
         "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, bounded planar surface, retained polyline curve, capped or uncapped polyline loft, circular revolve, boolean and linear array operations; exact STEP write/readback and tessellated mesh and native curve .3dm preview from one model",
@@ -358,6 +364,7 @@
         "OcctSectionPerspective: visible and section polylines and cut regions in the section plane's frame, its principal point and focus, and the drawn, cut and removed object ids; no writes"
       ],
       "public_api": [
+        "OcctBackend",
         "execute_occt_export",
         "OcctCadExportIdentity",
         "OcctExecutionReceipt",
@@ -377,20 +384,27 @@
       "depends_on": [
         "state.geometry_program",
         "project.refs",
-        "contracts.canonical",
         "monkeycad.execution",
-        "monkeycad.rhino",
         "monkeycad.formats",
-        "monkeycad.integrations",
-        "monkeycad.cad_patch",
-        "monkeycad.local_cad_discovery"
+        "monkeycad.backends.occt",
+        "monkeycad.backends.occt.boolean",
+        "monkeycad.backends.occt.build",
+        "monkeycad.backends.occt.errors",
+        "monkeycad.backends.occt.kernel",
+        "monkeycad.backends.occt.measure",
+        "monkeycad.backends.occt.preview",
+        "monkeycad.backends.occt.projection",
+        "monkeycad.backends.occt.step",
+        "monkeycad.patch",
+        "monkeycad.program"
       ],
       "used_by": [
-        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_svg.py",
-        "packages/monkeydiagram/src/monkeydiagram/mesh_views.py",
+        "packages/monkeydiagram/src/monkeydiagram/sources.py",
+        "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
+        "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py",
+        "packages/monkeydiagram/src/monkeydiagram/projection/mesh_views.py",
         "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "services/project-runtime/src/project_runtime/application/drawings.py",
         "services/project-runtime/src/project_runtime/application/drawing_dimensions.py",
         "tests/integration/test_occt_execution.py",
@@ -414,22 +428,31 @@
         "tests/integration/test_cad_backend_contract.py",
         "packages/monkeycad/tests/test_occt_native_models.py"
       ],
-      "notes": "P107 in-process OCCT executor; OCP and rhino3dm are imported lazily, so importing the package loads neither. cad_execution.py still holds the neutral binding, errors and workspace helpers, the Rhino export, the OCCT export orchestration and the 3dm composition; it is listed under monkeycad.execution, monkeycad.rhino, monkeycad.occt and monkeycad.formats until #515 splits it.",
+      "notes": "P107 in-process OCCT executor; OCP and rhino3dm are imported lazily, so importing the package or any of its modules loads neither. #515 splits it by concern: kernel (the binding and the shape helpers the others share), build and boolean, measure, step, native_models, projection, section and preview, with the export orchestration in export.py and the registered OcctBackend in backend.py.",
       "files": [
-        "packages/monkeycad/src/monkeycad/occt_backend.py",
-        "packages/monkeycad/src/monkeycad/cad_execution.py"
+        "packages/monkeycad/src/monkeycad/backends/occt/__init__.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/backend.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/export.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/errors.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/kernel.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/boolean.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/build.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/measure.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/step.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/native_models.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/projection.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/section.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/preview.py"
       ]
     },
     {
       "module_id": "monkeycad.rhino",
-      "owner_path": "packages/monkeycad/src/monkeycad/cad_program.py",
-      "purpose": "The Rhino compatibility backend: translate a compiled program into one deterministic, semantics-carrying rhinoscriptsyntax script and the object semantics its realization must carry, run it in a supervised Rhino 8 COM host, read the saved .3dm back against that denominator, and export an editable work model by importing exact single-object STEP files instead of rebuilding.",
+      "owner_path": "packages/monkeycad/src/monkeycad/backends/rhino/backend.py",
+      "purpose": "The Rhino compatibility backend: translate a compiled program into one deterministic, semantics-carrying rhinoscriptsyntax script, run it in a supervised Rhino 8 COM host, read the saved .3dm back against the program's object semantics, and export an editable work model by importing exact single-object STEP files instead of rebuilding.",
       "owns": [
         "the rhinoscriptsyntax emission of the analytic operation kinds (solid, revolve, extrusion, planar_surface, loft, boolean union/difference/intersection, linear and radial array, transform, curve)",
-        "the layer path and layer colour tables derived from components and material assignment",
-        "the archflow:* object user text each physical object must carry (expected_object_semantics)",
-        "writing each of an operation's statements through as an archflow:<key> user string, verbatim, and the reserved identity keys a statement may not take",
         "the P103 partial emission of an operation subset",
+        "the Rhino-side prelude that opens the prior model, deletes the retired objects and re-stamps kept objects, copying and remapping their referenced native material tables",
         "native Rhino object material assignment from the caller-declared material and colour maps, in addition to layer display colours",
         "the STEP-import script: the same header, semantics tail and layer table as the program script, with each named object read from its own single-object STEP under a digest check, and the delivery's own retained material applied last so nothing overwrites it",
         "the immutable export plan: workspace layout, script, completion token, host witness and the full validation denominator digest",
@@ -446,6 +469,7 @@
       "does_not_own": [
         "the backend-neutral protocol, binding and registry - monkeycad.execution",
         "selecting what a patch rebuilds - monkeycad.execution",
+        "the object semantics a saved document must carry - monkeycad.execution",
         "reading the .3dm - monkeycad.formats",
         "compiling the program - compilers.geometry",
         "the analytic bounds, the placement readers and the operation kinds it may emit - state.geometry_program",
@@ -464,22 +488,21 @@
         "material_by_component",
         "material_colors",
         "operation_subset",
-        "layer_by_component"
+        "layer_by_component",
+        "PatchSelection, prior model Path and expected semantics for the patch prelude"
       ],
       "outputs": [
         "RhinoCadExportPlan",
         "RhinoCadExecutionReceipt",
         "ThreeDmInspection (embedded)",
         "CadTranslation (script, physical object ids, losses, layer colours)",
-        "expected semantics mapping"
+        "patch prelude script text"
       ],
       "public_api": [
+        "RhinoBackend",
         "translate_to_rhino_python",
-        "expected_object_semantics",
         "CadTranslation",
-        "CadTranslationError",
         "translate_step_import_to_rhino_python",
-        "ROOT_LAYER",
         "prepare_rhino_three_dm_export",
         "execute_rhino_three_dm_export",
         "verify_rhino_export_readback",
@@ -493,18 +516,26 @@
         "work_model_workspace",
         "verify_work_model_geometry",
         "discover_powershell",
-        "WORK_MODEL_EXPORT_PATH"
+        "WORK_MODEL_EXPORT_PATH",
+        "build_patch_prelude"
       ],
       "depends_on": [
         "state.geometry_program",
         "project.refs",
         "contracts.canonical",
         "monkeycad.execution",
-        "monkeycad.occt",
         "monkeycad.formats",
         "monkeycad.integrations",
-        "monkeycad.cad_patch",
-        "monkeycad.local_cad_discovery"
+        "monkeycad.occt",
+        "monkeycad.backends.occt.export",
+        "monkeycad.backends.occt.measure",
+        "monkeycad.backends.occt.step",
+        "monkeycad.backends.rhino",
+        "monkeycad.backends.rhino.script",
+        "monkeycad.backends.rhino.step_import",
+        "monkeycad.discovery",
+        "monkeycad.patch",
+        "monkeycad.program"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/artifacts.py",
@@ -518,7 +549,6 @@
         "the same program translates to the same script bytes - the emission is deterministic and self-contained",
         "coordinates pass through as the program states them; the translator performs no frame conversion",
         "every physical object is named and carries its archflow:* identity strings",
-        "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError",
         "planar_surface preserves its explicitly closed profile and datum elevation with AddPlanarSrf, without extrusion or capping",
         "a successful process exit is never sufficient - the saved file is read back independently and must match the denominator",
         "the export identity refuses any up_axis but Z-up and any unit outside millimeter/meter/inch/foot",
@@ -533,17 +563,21 @@
       "tests": [
         "tests/integration/test_cad_program.py",
         "tests/integration/test_cad_execution.py",
-        "tests/integration/test_cad_backend_contract.py"
+        "tests/integration/test_cad_backend_contract.py",
+        "tests/integration/test_cad_patch.py"
       ],
-      "notes": "The single CAD translation on the spine; P107's in-process OCCT executor would be a second executor of this program, not a second translation. The object semantics every backend's readback is checked against (expected_object_semantics, ROOT_LAYER) still live in cad_program.py with the translation. cad_execution.py still holds the neutral binding, errors and workspace helpers, the Rhino export, the OCCT export orchestration and the 3dm composition; it is listed under monkeycad.execution, monkeycad.rhino, monkeycad.occt and monkeycad.formats until #515 splits it.",
+      "notes": "The single CAD translation on the spine; P107's in-process OCCT executor would be a second executor of this program, not a second translation. #515: backends/rhino/ holds the translation, the patch prelude and the export script wrapper (script.py), the supervised export and readback (export.py), the STEP-import work model (step_import.py) and the registered RhinoBackend (backend.py); the object semantics every backend's readback is checked against are monkeycad.execution's (program.py).",
       "files": [
-        "packages/monkeycad/src/monkeycad/cad_program.py",
-        "packages/monkeycad/src/monkeycad/cad_execution.py"
+        "packages/monkeycad/src/monkeycad/backends/rhino/__init__.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/backend.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/export.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/script.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/step_import.py"
       ]
     },
     {
       "module_id": "monkeycad.blender",
-      "owner_path": "packages/monkeycad/src/monkeycad/blender_cad.py",
+      "owner_path": "packages/monkeycad/src/monkeycad/backends/blender/backend.py",
       "purpose": "The Blender backend: a closed-mesh .blend for solid and straight-extrusion programs, saved in one background Blender process and read back cold in another, and the Blender visualization of a verified OCCT STEP.",
       "owns": [
         "Blender solid and straight-extrusion meshes, explicit speculative .blend save in one background process, fresh-process geometry/semantic/binding readback, and the native retained receipt reader; no backend-specific project state",
@@ -575,15 +609,17 @@
         "project.record_kinds",
         "state.geometry_program",
         "monkeycad.execution",
-        "monkeycad.occt",
-        "monkeycad.rhino",
         "monkeycad.integrations",
-        "monkeycad.blender_worker",
-        "monkeycad.cad_backend",
-        "monkeycad.local_cad_discovery"
+        "monkeycad.occt",
+        "monkeycad.backends.blender.worker",
+        "monkeycad.backends.occt.export",
+        "monkeycad.backends.occt.preview",
+        "monkeycad.backends.occt.step",
+        "monkeycad.discovery",
+        "monkeycad.program"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "tests/integration/test_blender_cad.py",
         "tests/integration/test_blender_projection.py"
       ],
@@ -597,16 +633,17 @@
         "tests/integration/test_blender_projection.py",
         "tests/integration/test_blender_projection_runner.py"
       ],
-      "notes": "P115 #13: Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. blender_worker.py runs in Blender's own Python and is started by file name from beside blender_cad.py, so the two stay in one directory.",
+      "notes": "P115 #13: Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. backends/blender/worker.py runs in Blender's own Python and is started by file name from beside backends/blender/backend.py, so the two stay in one directory.",
       "files": [
-        "packages/monkeycad/src/monkeycad/blender_cad.py",
-        "packages/monkeycad/src/monkeycad/blender_worker.py",
-        "packages/monkeycad/src/monkeycad/blender_projection.py"
+        "packages/monkeycad/src/monkeycad/backends/blender/__init__.py",
+        "packages/monkeycad/src/monkeycad/backends/blender/backend.py",
+        "packages/monkeycad/src/monkeycad/backends/blender/worker.py",
+        "packages/monkeycad/src/monkeycad/backends/blender/projection.py"
       ]
     },
     {
       "module_id": "monkeycad.formats",
-      "owner_path": "packages/monkeycad/src/monkeycad/three_dm_inspector.py",
+      "owner_path": "packages/monkeycad/src/monkeycad/formats/three_dm_inspector.py",
       "purpose": "Read and convert model files without a CAD host: a deterministic, JSON-compatible summary of what is actually saved in one .3dm, bounded 3DM/GLB mesh codecs and conversion providers, SketchUp reading through the local SDK, and the composition of a patched .3dm from native replacement previews.",
       "owns": [
         "the ThreeDmInspection shape and its versioned key sets (the one place the schema's required keys are declared)",
@@ -649,20 +686,16 @@
         "SUPPORTED_INSPECTION_SCHEMAS",
         "inspect_three_dm_contents",
         "inspect_three_dm_index",
-        "monkeycad.model_formats.convert",
+        "monkeycad.formats.meshes.convert",
         "read_skp",
         "patch_composed_three_dm"
       ],
       "depends_on": [
         "contracts.canonical",
-        "project.refs",
         "state.geometry_program",
         "monkeycad.execution",
-        "monkeycad.occt",
-        "monkeycad.rhino",
         "monkeycad.integrations",
-        "monkeycad.cad_patch",
-        "monkeycad.local_cad_discovery"
+        "monkeycad.patch"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/artifacts.py",
@@ -693,13 +726,14 @@
         "packages/monkeycad/tests/test_model_conversion_regressions.py",
         "packages/monkeycad/tests/test_sketchup_reader.py"
       ],
-      "notes": "The single source of the inspection key sets that viewers and readback both check against. cad_execution.py still holds the neutral binding, errors and workspace helpers, the Rhino export, the OCCT export orchestration and the 3dm composition; it is listed under monkeycad.execution, monkeycad.rhino, monkeycad.occt and monkeycad.formats until #515 splits it.",
+      "notes": "The single source of the inspection key sets that viewers and readback both check against. formats/ also holds the bounded 3DM/GLB mesh codecs (meshes.py) and their conversion providers (conversion.py), SketchUp reading (sketchup_reader.py) and the composition of a patched .3dm (three_dm_compose.py).",
       "files": [
-        "packages/monkeycad/src/monkeycad/three_dm_inspector.py",
-        "packages/monkeycad/src/monkeycad/model_formats.py",
-        "packages/monkeycad/src/monkeycad/model_providers.py",
-        "packages/monkeycad/src/monkeycad/sketchup_reader.py",
-        "packages/monkeycad/src/monkeycad/cad_execution.py"
+        "packages/monkeycad/src/monkeycad/formats/__init__.py",
+        "packages/monkeycad/src/monkeycad/formats/three_dm_inspector.py",
+        "packages/monkeycad/src/monkeycad/formats/meshes.py",
+        "packages/monkeycad/src/monkeycad/formats/conversion.py",
+        "packages/monkeycad/src/monkeycad/formats/sketchup_reader.py",
+        "packages/monkeycad/src/monkeycad/formats/three_dm_compose.py"
       ]
     },
     {
@@ -732,7 +766,7 @@
         "monkeycad.formats"
       ],
       "used_by": [
-        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
         "apps/monkeyhub/api/tests/test_integrations.py",
         "tests/integration/test_integration_packs.py"
       ],
@@ -747,12 +781,12 @@
       "notes": "The Hub's /api/integrations serves these views (hub.shell).",
       "files": [
         "packages/monkeycad/src/monkeycad/integration_packs.py",
-        "packages/monkeycad/src/monkeycad/local_cad_discovery.py"
+        "packages/monkeycad/src/monkeycad/discovery.py"
       ]
     },
     {
       "module_id": "adapters.drawing_svg",
-      "owner_path": "packages/monkeydiagram/src/monkeydiagram/drawing_svg.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py",
       "purpose": "Serialise drawing polylines, orthographic or a section perspective, as one deterministic SVG that names each polyline's source object, and render a PNG from those SVG bytes.",
       "owns": [
         "cropping projected polylines to the view window after visibility was solved (crop_polylines)",
@@ -766,7 +800,7 @@
       "does_not_own": [
         "projecting geometry - monkeycad.occt (project_occt_lines)",
         "choosing the view, verifying the source or writing anything - runtime.drawing_elevation through project.repository",
-        "PDF/DXF sheets and the drawing standard behind them - documentation.drawings; line-weight standards, annotations and title blocks are that owner's conventions, not this serializer's"
+        "PDF/DXF sheets and the sheet styles behind them - documentation.drawings; line-weight standards, annotations and title blocks are that owner's conventions, not this serializer's"
       ],
       "inputs": [
         "OcctDrawingPolyline tuple",
@@ -801,10 +835,12 @@
         "dressing_assets"
       ],
       "depends_on": [
-        "monkeycad.occt"
+        "monkeycad.occt",
+        "monkeycad.backends.occt.projection"
       ],
       "used_by": [
-        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
         "packages/monkeydiagram/tests/test_drawing_svg.py",
         "packages/monkeydiagram/tests/test_drawing_elevation.py"
       ],
@@ -825,7 +861,7 @@
     },
     {
       "module_id": "adapters.mesh_views",
-      "owner_path": "packages/monkeydiagram/src/monkeydiagram/mesh_views.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/projection/mesh_views.py",
       "purpose": "Draw a fast look-only line view of named shapes from their triangles against a depth buffer: the model view's axonometric and the projection cache's thumbnails. Created because the exact hidden-line solve (monkeycad.occt through runtime.drawing_elevation) grows too fast with object count for a view nobody retains, and no drawing owner rasterises meshes.",
       "owns": [
         "triangulating the named shapes at a caller-chosen chord error, after forgetting any mesh a shape already holds so a model read once draws every size as a fresh read would, and naming the curve-only objects left out (triangulate)",
@@ -864,8 +900,10 @@
         "mesh_pipeline"
       ],
       "depends_on": [
-        "monkeycad.execution",
-        "monkeycad.occt"
+        "monkeycad.occt",
+        "monkeycad.backends.occt.errors",
+        "monkeycad.backends.occt.preview",
+        "monkeycad.backends.occt.step"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/drawings.py",
@@ -884,75 +922,12 @@
       "notes": "numpy comes with the drawing requirements (shapely). GH-367 part A."
     },
     {
-      "module_id": "capabilities.declaration",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/declaration.py",
-      "purpose": "Define and gate the mandatory typed decisions a stage requires, and compile the gate-passed ones into hard commitments.",
-      "owns": [
-        "DeclarationQuadrant and DeclarationKind: the vocabulary a stage's decision fields are grouped and typed by",
-        "DeclarationField and StageDeclarationContract, with each field's unit, authorized range and range provenance",
-        "the deterministic geometry cross-checks that bind a declared value to the accepted massing",
-        "the fail-closed stage gate over a declaration set (validate_stage_declarations)",
-        "compiling gate-passed declarations of named quadrants into HARD Commitments",
-        "selecting exactly the decision basis shards a contract's fields need"
-      ],
-      "does_not_own": [
-        "storing declared field values - the framework holds contracts, the provider supplies values",
-        "the commitment lifecycle and validation - archflow.state.commitments and archflow.validation",
-        "which seat may declare in which quadrant - capabilities.discipline_seats",
-        "stage opening or closure - archflow.state.stage_workflow and control.stage_closure"
-      ],
-      "inputs": [
-        "StageDeclarationContract",
-        "declared value mapping",
-        "SpatialOptionProposal",
-        "decision shards"
-      ],
-      "outputs": [
-        "derived measures mapping",
-        "Commitment",
-        "selected basis shards"
-      ],
-      "public_api": [
-        "DeclarationQuadrant",
-        "DeclarationKind",
-        "DeclarationField",
-        "DeclarationError",
-        "GeometryCheck",
-        "StageDeclarationContract",
-        "validate_stage_declarations",
-        "compile_declaration_commitments",
-        "select_decision_basis"
-      ],
-      "depends_on": [
-        "archflow.state.commitments",
-        "archflow.state.geometry_program",
-        "contracts.canonical",
-        "state.commitments"
-      ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
-        "tools/project/run_project.py",
-        "services/project-runtime/src/project_runtime/application/seats.py",
-        "tests/integration/test_discipline_seats.py",
-        "tests/integration/test_project_runner.py"
-      ],
-      "invariants": [
-        "the gate fails closed: a missing, out-of-range or geometry-contradicted field blocks the stage",
-        "a declared value is checked against the massing by a deterministic measure, within the contract's tolerance ratio",
-        "only gate-passed declarations become commitments, and only in the quadrants named"
-      ],
-      "status": "canonical",
-      "tests": [
-        "tests/integration/test_discipline_seats.py"
-      ],
-      "notes": "On the spine today mainly through DeclarationQuadrant, which scopes what a seat may declare."
-    },
-    {
       "module_id": "capabilities.discipline_seats",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/domain/discipline_seats.py",
       "purpose": "Divide authoring across role-scoped seats: what a seat may write, what it may read, what it hands the next seat, and in which round it runs.",
       "owns": [
         "SeatSpec: the component subtrees a seat writes, its disciplines, phases, quadrants, the seats it consumes and whether it reviews",
+        "DeclarationQuadrant: the quadrants a seat may act in (site, dimensions, structure, openings, detail), whose values SeatSpec@1 and the authored seat pack carry",
         "the owned subtree and ancestor computation over the component tree",
         "compiling a deterministic SeatHandover from a committed seat: its datums, exclusion bounds, digests and object constraints",
         "projecting the design state onto one seat as SeatAuthoringContext, so sibling subtrees never leak",
@@ -963,7 +938,6 @@
       "does_not_own": [
         "producing any geometry inside a seat's scope - capabilities.element_producers",
         "running the rounds, exporting or writing seat records - runtime.project_runner",
-        "the declaration contract and its gate - capabilities.declaration",
         "who is authorized to write canonically - archflow.contracts.authority (seats carry no_authority)",
         "reading the project's authored seat pack from disk - studio.candidate's seats adapter and tools/project/run_project.py"
       ],
@@ -986,6 +960,7 @@
       ],
       "public_api": [
         "SeatSpec",
+        "DeclarationQuadrant",
         "SeatError",
         "SeatHandover",
         "HandoverKind",
@@ -1000,14 +975,12 @@
         "schedule_seats"
       ],
       "depends_on": [
-        "monkeyarch.capabilities.declaration",
         "archflow.contracts.authority",
         "archflow.contracts.canonical",
         "archflow.project.refs",
         "archflow.state.developed_design",
         "archflow.state.geometry_program",
         "archflow.state.spatial",
-        "capabilities.declaration",
         "contracts.authority",
         "contracts.canonical",
         "project.refs",
@@ -1018,7 +991,7 @@
         "state.stage_workflow"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "tools/project/run_project.py",
         "services/project-runtime/src/project_runtime/application/seats.py",
         "tests/integration/test_discipline_seats.py",
@@ -1040,7 +1013,7 @@
     },
     {
       "module_id": "capabilities.element_producers",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
       "purpose": "Turn a State Record's Element@1 rows into geometry operations, datum bindings, published datums and materialized relations, reading references rather than computing coordinates.",
       "owns": [
         "the producer dispatch table PRODUCERS: column-array, capitals, beam, pediment, wall, prism, planar-surface, curve, ring, loft, dome-cap, stair, wedge, shell, declined",
@@ -1108,9 +1081,10 @@
         "canonical_params"
       ],
       "depends_on": [
-        "monkeyarch.capabilities.opening_solver",
-        "monkeyarch.capabilities.reference_resolver",
-        "monkeyarch.capabilities.wall_solver",
+        "monkeyarch.domain.opening_solver",
+        "monkeyarch.domain.reference_resolver",
+        "monkeyarch.domain.wall_solver",
+        "monkeyarch.authoring.producer_signatures",
         "archflow.project.refs",
         "archflow.state.geometry_program",
         "capabilities.opening_solver",
@@ -1122,7 +1096,7 @@
         "state.record"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "tests/integration/test_element_producers.py",
         "tests/integration/test_cad_patch.py",
         "services/project-runtime/src/project_runtime/application/construction.py"
@@ -1157,11 +1131,15 @@
         "packages/monkeyarch/tests/test_wall_explicit_point_reference.py",
         "tests/integration/test_wall_realization.py"
       ],
-      "notes": "The single geometry-emission owner on the spine; monument vocabulary (solids of revolution, boolean chains, classical-order members) would be added here rather than beside it."
+      "notes": "The single geometry-emission owner on the spine; monument vocabulary (solids of revolution, boolean chains, classical-order members) would be added here rather than beside it.",
+      "files": [
+        "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/producer_signatures.py"
+      ]
     },
     {
       "module_id": "capabilities.geometry_proposal",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
       "purpose": "Author, compile and retain bounded rounds of a provider's neutral geometry proposal against one exact state, with no fallback and no acceptance authority.",
       "owns": [
         "the strict provider request and response contracts (the authoring output topology and its function contracts)",
@@ -1210,7 +1188,7 @@
         "GeometryProposalProductionError"
       ],
       "depends_on": [
-        "monkeyarch.compilers.geometry",
+        "monkeyarch.compilation.geometry",
         "archflow.contracts.authority",
         "archflow.contracts.canonical",
         "archflow.ports.model",
@@ -1236,7 +1214,7 @@
         "state.stage_workflow"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "tools/project/run_project.py",
         "tools/project/verify_state_record.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
@@ -1267,7 +1245,7 @@
     },
     {
       "module_id": "capabilities.opening_solver",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/opening_solver.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/domain/opening_solver.py",
       "purpose": "Fill a wall's hosted voids with window and door types, emitting frame, glazing and leaf members as one hosted assembly per opening.",
       "owns": [
         "WindowType and DoorType: the proportions of one opening family (frame width/depth/projection, glazing or leaf thickness, offsets, leaf count and clearances)",
@@ -1305,7 +1283,7 @@
         "solve_openings"
       ],
       "depends_on": [
-        "monkeyarch.capabilities.wall_solver",
+        "monkeyarch.domain.wall_solver",
         "archflow.project.refs",
         "archflow.state.geometry_program",
         "capabilities.wall_solver",
@@ -1314,7 +1292,7 @@
         "state.geometry_program"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
         "tests/integration/test_element_producers.py"
       ],
       "invariants": [
@@ -1336,7 +1314,7 @@
     },
     {
       "module_id": "capabilities.reference_resolver",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/reference_resolver.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/domain/reference_resolver.py",
       "purpose": "Resolve the record's symbolic plan and elevation references against explicit project-local points, grids, levels and host lines - the one resolver every producer calls.",
       "owns": [
         "the reference vocabulary: GridRef, GridIntersection, AxisPoint, HostAlong, LevelRef, OffsetFrom, ProjectPoint",
@@ -1390,8 +1368,8 @@
         "state.geometry_program"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "packages/monkeyarch/tests/test_derivations_and_references.py",
         "tests/integration/test_element_producers.py",
         "tests/integration/test_cad_patch.py"
@@ -1413,7 +1391,7 @@
     },
     {
       "module_id": "capabilities.relation_checks",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/relation_checks.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/domain/relation_checks.py",
       "purpose": "Measure a State Record's relations against realized geometry and record held / violated / unchecked as a RelationCheckReport@1.",
       "owns": [
         "the checker table CHECKERS keyed by check_kind; measuring declared relations",
@@ -1463,7 +1441,7 @@
         "state.record"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "tests/integration/test_relation_checks.py"
       ],
       "invariants": [
@@ -1485,7 +1463,7 @@
     },
     {
       "module_id": "capabilities.wall_solver",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/domain/wall_solver.py",
       "purpose": "Solve one wall from its location line, thickness, height and storey datum into a solid, a cut tool per opening, and the hosted voids openings are filled into.",
       "owns": [
         "WallElement geometry: reference line, normal, plan points and plan rectangles in wall coordinates",
@@ -1536,8 +1514,8 @@
         "state.geometry_program"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/opening_solver.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
+        "packages/monkeyarch/src/monkeyarch/domain/opening_solver.py",
         "tests/integration/test_element_producers.py"
       ],
       "invariants": [
@@ -1557,7 +1535,7 @@
     },
     {
       "module_id": "compilers.geometry",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/compilation/geometry.py",
       "purpose": "The one pure compiler: bind a neutral geometry proposal to an exact state, order its operations, digest its objects, or return an explicit rejection receipt.",
       "owns": [
         "the operation dependency graph, its deterministic order and per-object digests",
@@ -1614,7 +1592,7 @@
         "state.record"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
         "tests/integration/test_geometry_compiler.py",
         "tests/integration/test_interface_datums.py",
         "tests/integration/test_element_producers.py",
@@ -1666,9 +1644,9 @@
       "depends_on": [],
       "used_by": [
         "packages/archflow/src/archflow/state/stage_workflow.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/domain/discipline_seats.py",
+        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "tools/project/freeze_project_stage_workflow.py",
         "tools/project/verify_state_record.py"
       ],
@@ -1723,7 +1701,7 @@
         "packages/archflow/src/archflow/state/stage_workflow.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
         "packages/archflow/src/archflow/state/developed_design.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "packages/archflow/src/archflow/ports/model.py"
       ],
       "invariants": [
@@ -1794,14 +1772,14 @@
       "used_by": [
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/geometry_program.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py",
+        "packages/monkeyarch/src/monkeyarch/domain/wall_solver.py",
         "packages/archflow/src/archflow/state/design_portfolio.py",
         "packages/archflow/src/archflow/state/developed_design.py",
         "packages/archflow/src/archflow/state/spatial.py",
         "packages/archflow/src/archflow/state/stage_workflow.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
-        "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py"
+        "packages/monkeyarch/src/monkeyarch/compilation/geometry.py",
+        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py"
       ],
       "invariants": [
         "a tuple field must already be sorted and unique; the validator never sorts on the caller's behalf",
@@ -1851,8 +1829,8 @@
         "project.refs"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "services/project-runtime/src/project_runtime/application/intent_agent.py",
         "services/project-runtime/tests/test_intent_agent_timeout.py"
       ],
@@ -2622,8 +2600,8 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/project/repository.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "services/project-runtime/src/project_runtime/application/harness.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
         "services/project-runtime/src/project_runtime/binding.py",
@@ -2690,8 +2668,8 @@
         "packages/archflow/src/archflow/project/repository.py",
         "packages/archflow/src/archflow/project/containers.py",
         "packages/archflow/src/archflow/project/issue.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
         "services/project-runtime/src/project_runtime/binding.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
@@ -2700,7 +2678,7 @@
         "tools/project/freeze_project_stage_workflow.py",
         "tools/project/verify_state_record.py",
         "packages/archflow/tests/test_record_kinds.py",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
         "services/project-runtime/src/project_runtime/application/gestures.py",
         "services/project-runtime/src/project_runtime/application/decisions.py"
@@ -2779,7 +2757,7 @@
         "packages/archflow/src/archflow/project/layout.py",
         "packages/archflow/src/archflow/project/ports.py",
         "packages/archflow/src/archflow/project/repository.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "packages/archflow/src/archflow/state/geometry_program.py",
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/state_record.py",
@@ -2809,7 +2787,7 @@
         "the list of shared-core owner modules, loaded by importing this module, and the separate list of workflow-owned ones (WORKFLOW_OWNER_MODULES) that load_workflow_owners() imports on request",
         "the boundary between the two tiers: the shared core may not import a workflow package, so an entry point above both layers - tools/project/create_project.py - calls load_workflow_owners(), and a process that loads only the core tier refuses a project holding a workflow-owned identity by name instead of guessing at it",
         "RunnerRunReceipt@3's declaration, stated as borrowed: it derives nothing from the canonical base it carries, and its owner module belongs to another lane",
-        "the CAD records' declarations, stated as borrowed from their writers monkeycad.cad_execution and monkeycad.three_dm_inspector, which the core does not import although a core-only migration has to restate those records: RhinoCadProgramBinding@1 keeps its base at /base, ThreeDmInspectionSummary@4 at the value of its archflow:base_state_sha256 document user-string row, and neither they nor the six CAD receipt and export-identity kinds derive anything from it"
+        "the CAD records' declarations, stated as borrowed from their writers monkeycad.execution, its backends and monkeycad.formats.three_dm_inspector, which the core does not import although a core-only migration has to restate those records: RhinoCadProgramBinding@1 keeps its base at /base, ThreeDmInspectionSummary@4 at the value of its archflow:base_state_sha256 document user-string row, and neither they nor the six CAD receipt and export-identity kinds derive anything from it"
       ],
       "does_not_own": [
         "every declaration but the borrowed ones above (each owner module states its own)",
@@ -3033,7 +3011,7 @@
         "packages/archflow/src/archflow/project/inputs.py",
         "packages/archflow/src/archflow/project/issue.py",
         "packages/archflow/src/archflow/project/location.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "services/project-runtime/src/project_runtime/application/harness.py",
         "services/project-runtime/src/project_runtime/application/seats.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
@@ -3042,7 +3020,8 @@
         "tools/project/verify_state_record.py",
         "tools/project/freeze_project_stage_workflow.py",
         "tools/project/issue_project.py",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/sources.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
         "tools/project/create_project.py",
         "packages/archflow/src/archflow/project/watch.py"
       ],
@@ -3078,7 +3057,7 @@
     },
     {
       "module_id": "runtime.project_runner",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
       "purpose": "The one runtime loop: run admitted seat rounds from a single State Record, retaining every record the run produces and returning an authority-free stage-run receipt.",
       "owns": [
         "run_project: binding the record to the run, projecting the developed-design view, and the seat round loop",
@@ -3141,13 +3120,11 @@
         "project.layout",
         "monkeycad.execution",
         "monkeycad.blender",
-        "monkeycad.blender_projection",
-        "monkeycad.cad_backend",
-        "monkeyarch.capabilities.discipline_seats",
-        "monkeyarch.capabilities.element_producers",
-        "monkeyarch.capabilities.geometry_proposal",
-        "monkeyarch.capabilities.reference_resolver",
-        "monkeyarch.capabilities.relation_checks",
+        "monkeyarch.domain.discipline_seats",
+        "monkeyarch.authoring.element_producers",
+        "monkeyarch.application.geometry_proposal",
+        "monkeyarch.domain.reference_resolver",
+        "monkeyarch.domain.relation_checks",
         "archflow.contracts.authority",
         "archflow.contracts.canonical",
         "archflow.ports.model",
@@ -3178,7 +3155,14 @@
         "state.record",
         "state.spatial",
         "state.stage_workflow",
-        "monkeyarch.capabilities"
+        "monkeyarch.authoring",
+        "monkeyarch.domain",
+        "monkeycad.occt",
+        "monkeycad.backends.blender.projection",
+        "monkeycad.backends.occt.errors",
+        "monkeycad.backends.occt.measure",
+        "monkeycad.backends.occt.step",
+        "monkeycad.registry"
       ],
       "used_by": [
         "tools/project/run_project.py",
@@ -3219,7 +3203,7 @@
     },
     {
       "module_id": "runtime.drawing_elevation",
-      "owner_path": "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
       "purpose": "Freeze model-axis projections, horizontal cut plans and section perspectives from verified STEP or registered native model geometry into SVG/PNG and the existing drawing receipt, without changing design state.",
       "owns": [
         "ElevationSource: the retained STEP and OcctExecutionReceipt@1 a drawing is derived from, and the verification that they agree (SHA, run, base, unit, Z-up, STEP names = physical object ids)",
@@ -3236,7 +3220,8 @@
         "section perspective: SectionPerspectiveView (a plan line and kept side, or an origin and normal; an explicit or default one-point camera) checked with named refusals before the model is read, the default eye placed from the exact cut, and the request, exact plane, resolved camera and crop recorded in the one drawing receipt (freeze_section_perspective)",
         "NativeModelSource: verify original 3DM bytes against their explicit registration and derive drawing shapes without fabricating semantic state or CAD execution provenance",
         "DrawnView: a drawn view's SVG, PNG and what its receipt says about the drawing apart from its source and run; freeze_model_axis_elevation and freeze_section_perspective take an optional cache (DrawingCache) asked for the drawn view once the source verified, so a kept drawing is retained without solving its view again",
-        "axonometric_frame: the right, up and look of a parallel view from any non-vertical direction with CAD +Z up; such a view is retained through freeze_model_axis_elevation with the elevation receipt, foreshortened and stated as a display scale"
+        "axonometric_frame: the right, up and look of a parallel view from any non-vertical direction with CAD +Z up; such a view is retained through freeze_model_axis_elevation with the elevation receipt, foreshortened and stated as a display scale",
+        "the difference between two cut-plan view recipes by dotted path - hidden objects, dimensions and dressing by the ids they hold, a material's hatch rule whole - and the class of correction it is, the first of compiler_defect, semantic_rule, recipe and local_override that holds for the difference and the replacement cause (recipe_diff, classify, CLASSES); pure, reading no project"
       ],
       "does_not_own": [
         "the hidden-line solve - monkeycad.occt",
@@ -3297,21 +3282,33 @@
         "current_object_id",
         "inspection_witness_ids",
         "DrawnView",
-        "DrawingCache"
+        "DrawingCache",
+        "recipe_diff",
+        "classify",
+        "CLASSES"
       ],
       "depends_on": [
-        "monkeycad.execution",
         "monkeycad.occt",
         "adapters.drawing_svg",
         "project.ports",
         "project.record_kinds",
         "project.refs",
         "project.repository",
-        "project.version_refs"
+        "project.version_refs",
+        "monkeydiagram.sources",
+        "monkeydiagram.projection.views",
+        "monkeycad.backends.occt.errors",
+        "monkeycad.backends.occt.kernel",
+        "monkeycad.backends.occt.measure",
+        "monkeycad.backends.occt.native_models",
+        "monkeycad.backends.occt.projection",
+        "monkeycad.backends.occt.section",
+        "monkeycad.backends.occt.step"
       ],
       "used_by": [
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
-        "services/project-runtime/src/project_runtime/application/drawings.py"
+        "services/project-runtime/src/project_runtime/application/drawings.py",
+        "services/project-runtime/src/project_runtime/application/drawing_corrections.py"
       ],
       "invariants": [
         "nothing is written before the source verified, the frame checked and the projection and both renderings succeeded",
@@ -3332,9 +3329,16 @@
       "status": "canonical",
       "tests": [
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
-        "packages/monkeydiagram/tests/test_drawing_section_perspective.py"
+        "packages/monkeydiagram/tests/test_drawing_section_perspective.py",
+        "packages/monkeydiagram/tests/test_corrections.py"
       ],
-      "notes": "CREATE 2026-09-07: the plan's first real consumer at the application boundary. runtime.project_runner is the seat/stage loop and does not derive drawings; adapters have no repository authority. First frozen drawing: villa-rotonda-reconstruction run drawing-a0-20260907-villa-b-minus-y from source run studio-cand-20260906-010451-dca4de25-4e9d (external workspace, noncanonical)."
+      "notes": "CREATE 2026-09-07: the plan's first real consumer at the application boundary. runtime.project_runner is the seat/stage loop and does not derive drawings; adapters have no repository authority. First frozen drawing: villa-rotonda-reconstruction run drawing-a0-20260907-villa-b-minus-y from source run studio-cand-20260906-010451-dca4de25-4e9d (external workspace, noncanonical). Split in #517: sources.py verifies the source, projection/views.py holds the frames and in-memory projections, drawing_runs.py retains drawing runs and registers the receipt's version refs.",
+      "files": [
+        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
+        "packages/monkeydiagram/src/monkeydiagram/sources.py",
+        "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
+        "packages/monkeydiagram/src/monkeydiagram/corrections.py"
+      ]
     },
     {
       "module_id": "semantics.conditions",
@@ -3461,7 +3465,7 @@
       ],
       "does_not_own": [
         "the record's own Relation shape with its datum role, propagation and validator binding (state.record)",
-        "checking a relation against materialized geometry (capabilities/relation_checks.py)",
+        "checking a relation against materialized geometry (domain/relation_checks.py)",
         "dependency edges and what propagates along them (state.dependencies)",
         "roles and conditions - semantics.roles, semantics.conditions"
       ],
@@ -3565,8 +3569,7 @@
         "packages/archflow/src/archflow/submission/canonical_state.py",
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
-        "packages/archflow/src/archflow/submission/model.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/declaration.py"
+        "packages/archflow/src/archflow/submission/model.py"
       ],
       "invariants": [
         "a transition never mutates history; it returns a new commitment with a predecessor link",
@@ -3578,7 +3581,7 @@
       "tests": [
         "packages/archflow/tests/test_project_authority_seam.py"
       ],
-      "notes": "Canonical: state.model, operational_state, submission.model, decision_operator and capabilities.declaration all take Commitment from here; the lifecycle transitions are the same type's, not a parallel."
+      "notes": "Canonical: state.model, operational_state, submission.model and decision_operator all take Commitment from here; the lifecycle transitions are the same type's, not a parallel."
     },
     {
       "module_id": "state.decision_operator",
@@ -3680,7 +3683,7 @@
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/state_record.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
-        "services/project-runtime/src/project_runtime/application/frame.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/frame.py",
         "services/project-runtime/src/project_runtime/application/projection.py"
       ],
       "invariants": [
@@ -3710,7 +3713,7 @@
       ],
       "does_not_own": [
         "where readings come from (the caller supplies them)",
-        "resolving datum, level or grid references (capabilities/reference_resolver.py)",
+        "resolving datum, level or grid references (domain/reference_resolver.py)",
         "recording the results as facts or parameters (state.operational_state, state.record)"
       ],
       "inputs": [
@@ -3739,7 +3742,7 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/state/state_record.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/reference_resolver.py"
+        "packages/monkeyarch/src/monkeyarch/domain/reference_resolver.py"
       ],
       "invariants": [
         "never calls Python eval; the operator and function set is closed",
@@ -3804,7 +3807,7 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/state/developed_design.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py"
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py"
       ],
       "invariants": [
         "ordinary A/B and agent tasks do not create branches",
@@ -3837,7 +3840,7 @@
         "the schematic option itself (state.spatial)",
         "the design phase vocabulary (state.design_maturity)",
         "branch selection and lineage (state.design_portfolio)",
-        "producing geometry operations from a component (capabilities/element_producers.py)"
+        "producing geometry operations from a component (authoring/element_producers.py)"
       ],
       "inputs": [
         "SelectedBranchHandoff",
@@ -3867,10 +3870,10 @@
         "project.version_refs"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
-        "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/domain/discipline_seats.py",
+        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/compilation/geometry.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "services/project-runtime/src/project_runtime/application/harness.py",
         "services/project-runtime/src/project_runtime/application/projection.py",
         "tools/project/run_project.py"
@@ -3914,11 +3917,11 @@
         "which objects a program delivers (delivered_object_ids): outputs nothing consumes, except unretained curves, and outputs whose operation states retain_for_inspection"
       ],
       "does_not_own": [
-        "producing operations from design content (capabilities/element_producers.py, wall_solver, opening_solver)",
-        "compiling a proposal into a cad program (compilers/geometry.py)",
+        "producing operations from design content (authoring/element_producers.py, wall_solver, opening_solver)",
+        "compiling a proposal into a cad program (compilation/geometry.py)",
         "executing or reading back geometry (monkeycad.execution and its backends, monkeycad.formats)",
         "translating the program into a CAD script and the object semantics its realization carries (monkeycad.rhino)",
-        "resolving a datum or grid reference for a producer (capabilities/reference_resolver.py)",
+        "resolving a datum or grid reference for a producer (domain/reference_resolver.py)",
         "which levels a project has (state.record.project_levels_of publishes them)",
         "canonical json and digests - contracts.canonical"
       ],
@@ -3993,25 +3996,31 @@
         "project.refs"
       ],
       "used_by": [
-        "packages/monkeycad/src/monkeycad/cad_execution.py",
-        "packages/monkeycad/src/monkeycad/occt_backend.py",
         "packages/archflow/src/archflow/state/state_record.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/opening_solver.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/reference_resolver.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py",
-        "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/domain/discipline_seats.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
+        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/domain/opening_solver.py",
+        "packages/monkeyarch/src/monkeyarch/domain/reference_resolver.py",
+        "packages/monkeyarch/src/monkeyarch/domain/wall_solver.py",
+        "packages/monkeyarch/src/monkeyarch/compilation/geometry.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "services/project-runtime/src/project_runtime/application/drawing_plans.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
         "tools/project/verify_state_record.py",
-        "packages/monkeycad/src/monkeycad/cad_program.py",
-        "packages/monkeycad/src/monkeycad/cad_patch.py",
-        "packages/monkeyarch/src/monkeyarch/construction/shapes.py",
-        "packages/monkeyarch/src/monkeyarch/construction/lowering.py"
+        "packages/monkeyarch/src/monkeyarch/authoring/construction/shapes.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/construction/lowering.py",
+        "packages/monkeycad/src/monkeycad/execution.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/export.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/export.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/step_import.py",
+        "packages/monkeycad/src/monkeycad/formats/three_dm_compose.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/build.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/boolean.py",
+        "packages/monkeycad/src/monkeycad/program.py",
+        "packages/monkeycad/src/monkeycad/backends/rhino/script.py",
+        "packages/monkeycad/src/monkeycad/patch.py"
       ],
       "invariants": [
         "the operation vocabulary is generic: no project, style or external-tool routing authority",
@@ -4207,8 +4216,8 @@
         "the DesignComponent and ComponentMaturity shapes (state.spatial)",
         "the ProjectLevel/ProjectGridAxis shapes it emits (state.geometry_program)",
         "persisting the record (project.repository)",
-        "compiling geometry from it (compilers/geometry.py via capabilities/element_producers.py)",
-        "the stage a run opens; the record names none, and from_dict refuses a stage key (runtime/project_runner.py, state.stage_workflow, ADR-007)",
+        "compiling geometry from it (compilation/geometry.py via authoring/element_producers.py)",
+        "the stage a run opens; the record names none, and from_dict refuses a stage key (application/project_runner.py, state.stage_workflow, ADR-007)",
         "propagating a successor or persisting it; the runner and repository retain those authorities"
       ],
       "inputs": [
@@ -4288,16 +4297,16 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/project/inputs.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/relation_checks.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/compilation/geometry.py",
+        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/domain/relation_checks.py",
         "services/project-runtime/src/project_runtime/application/projection.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
         "services/project-runtime/src/project_runtime/application/options.py",
         "services/project-runtime/src/project_runtime/application/program.py",
         "packages/archflow/src/archflow/state/program_sheet.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/element_reindex.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/element_reindex.py",
         "tools/project/reindex_project.py",
         "tools/project/verify_state_record.py"
       ],
@@ -4389,9 +4398,9 @@
         "project.version_refs"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/domain/discipline_seats.py",
+        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
         "packages/archflow/src/archflow/state/state_record.py",
         "packages/archflow/src/archflow/state/developed_design.py",
         "packages/archflow/src/archflow/state/design_portfolio.py",
@@ -4426,9 +4435,9 @@
         "the rule that a workflow may require only checks the spine can measure (require_measurable), applied where a workflow is frozen and where a stage is opened, never on read"
       ],
       "does_not_own": [
-        "running a stage or producing its closure record (runtime/project_runner.py)",
+        "running a stage or producing its closure record (application/project_runner.py)",
         "the design phase vocabulary it references (state.design_maturity)",
-        "the content of the closure the exit binding points at (capabilities/relation_checks.py via the runner)",
+        "the content of the closure the exit binding points at (domain/relation_checks.py via the runner)",
         "the authority block shape (contracts.authority)"
       ],
       "inputs": [
@@ -4476,7 +4485,7 @@
         "project.version_refs"
       ],
       "used_by": [
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
         "services/project-runtime/src/project_runtime/application/harness.py",
         "tools/project/run_project.py",
         "tools/project/freeze_project_stage_workflow.py",
@@ -4530,11 +4539,11 @@
         "registering section perspective revisions from a complete verified source model in the existing document list with the same source resolution, cache, monitoring and registration as elevations, keeping the drawing owner's refusal names",
         "direct native model drawing selection: registered external sourceAsset stays frozen and has no modelSource; state-bound composed 3DM uses its own geometry, never a partial paired STEP",
         "SKP upload through the local standalone SDK, retaining original SKP and derived 3DM face geometry in the same P036 registration; retries reuse the verified original content",
-        "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite",
+        "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, and the recipe_diff and classify of the two view recipes that monkeydiagram.corrections owns (runtime.drawing_elevation); and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite",
         "the content-keyed projection cache (ADR-008 #367): key = sha256(model asset sha256, kind, recipe hash, renderer, SALT) where renderer is the mesh renderer's source-derived version plus a digest of drawings.model_view_pipeline (view frame, crop margin, chord tolerance, the source of its framing and meshing, mesh_pipeline); every request, idle retry and re-queue first checks its source (check_model_view_source: the run's exact state and registered model, no geometry read) and a retry draws from the latest checked source; thumbnails read the run's own record, so a run on an older canonical base is drawn (require_readable) while actions keep require_actionable; PNG blobs in <project cache dir>/projections/blobs named by their own sha256, written then renamed and self-describing through text chunks; one status row per key in the project index's projection table (StatusTable), whose insert is the claim, with a per-key lock in the process; the queue is enqueued after every index commit (tree_model_sources: the working position's model, then what readers show, then the rest of the tree) and on a read miss; one low-priority render subprocess with timeout, memory cap, leases reclaimed at startup and after the timeout, bounded retries with backoff, a refused source or a cancel giving its attempt back, one model read for every size drawn next (load_model_view, draw_loaded_view), and a collector keeping what an index artifact reaches, replacing an older renderer's picture only once the current one is drawn, with a grace window",
         "drawings as on-demand projections (#368): an elevation's and a section perspective's SVG and PNG, a review sheet's PDF and DXF and a document page's raster are kinds of the same content-keyed cache (drawing-elevation, drawing-section-perspective, drawing-sheet, document-page), keyed by the input asset's sha256, a recipe holding every field that changes the bytes (the complete view and the drawn source content: geometry digest, unit, objects, bounds and semantics) and a renderer digest of the drawing code, fonts and libraries (drawings.drawing_pipeline); ProjectionQueue.on_demand draws one in the request that needs it through the existing generator, at most once per key, and the worker never draws them; issuing reads the cached files back and retains them in P036 byte for byte with a receipt of its own",
         "the retained axonometric: POST /api/drawings/elevations view axon, from a stated direction toward the viewer (default the model view's -X, -Y, +Z), framed on every physical object's bounds like an elevation",
-        "view sheets through POST /api/drawings/sheets: same-source plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own generator from the sheet's one source (modelSource, Stage or unbound imported asset) and named in the sheet recipe by its exact revision, placed at its own scale where the caller put it, with default titles, subtitles and scale labels from each view's own frame and a section's cut line on a plan; front/right/top requests keep the review sheet's layout and defaults; every sheet is one paper scene retained as PDF, DXF, SVG and PNG beside each other in its source run and registered as its PDF, which names the other three files' digests; GET /api/drawings/{asset_sha256}/files/{file_format} reads a view revision's SVG/PNG, only by its revisionRef (DRAWING_REVISION_REQUIRED), or a sheet's four files, verified"
+        "view sheets through POST /api/drawings/sheets: same-source plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own generator from the sheet's one source (modelSource, Stage or unbound imported asset) and named in the sheet recipe by its exact revision, placed at its own scale where the caller put it, with default titles, subtitles and scale labels from each view's own frame and a section's cut line on a plan, as monkeydiagram.documentation.sheet_layout lays them out; front/right/top requests keep the review sheet's layout and defaults; every sheet is one paper scene retained as PDF, DXF, SVG and PNG beside each other in its source run and registered as its PDF, which names the other three files' digests; GET /api/drawings/{asset_sha256}/files/{file_format} reads a view revision's SVG/PNG, only by its revisionRef (DRAWING_REVISION_REQUIRED), or a sheet's four files, verified"
       ],
       "does_not_own": [
         "producing the export or its receipt - monkeycad.execution and its backends, through runtime.project_runner",
@@ -4609,6 +4618,7 @@
         "open_document_work_copy",
         "list_document_work_copies",
         "DocumentWorkCopy",
+        "WORK_COPY_WORKSPACE",
         "GET /api/drawings/model-view",
         "model_view",
         "POST /api/drawings/plans",
@@ -4635,8 +4645,6 @@
         "GET /api/drawings/corrections",
         "drawing_corrections",
         "corrections",
-        "recipe_diff",
-        "classify",
         "recipe_suggestions",
         "Correction",
         "artifact_row_body",
@@ -4662,10 +4670,6 @@
         "monkeycad.occt",
         "monkeycad.rhino",
         "monkeycad.formats",
-        "monkeycad.cad_patch",
-        "monkeycad.model_formats",
-        "monkeycad.model_providers",
-        "monkeycad.sketchup_reader",
         "archflow.project.refs",
         "archflow.project.repository",
         "state.geometry_program",
@@ -4675,9 +4679,11 @@
         "project.refs",
         "project.repository",
         "runtime.drawing_elevation",
+        "monkeydiagram.sources",
+        "monkeydiagram.projection.views",
         "documentation.drawings",
         "monkeydiagram.documentation.styles",
-        "monkeydiagram.drawing_output",
+        "monkeydiagram.rendering.paper",
         "contracts.canonical",
         "studio.binding",
         "studio.shell",
@@ -4690,7 +4696,20 @@
         "project.memo",
         "project.index",
         "adapters.mesh_views",
-        "studio.board"
+        "studio.board",
+        "monkeydiagram.corrections",
+        "monkeydiagram.documentation.sheet_layout",
+        "monkeycad.backends.occt.errors",
+        "monkeycad.backends.occt.kernel",
+        "monkeycad.backends.occt.projection",
+        "monkeycad.backends.occt.section",
+        "monkeycad.backends.rhino.export",
+        "monkeycad.backends.rhino.step_import",
+        "monkeycad.formats.conversion",
+        "monkeycad.formats.meshes",
+        "monkeycad.formats.sketchup_reader",
+        "monkeycad.patch",
+        "monkeycad.program"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/candidate.py",
@@ -4827,6 +4846,7 @@
         "read_board",
         "save_board",
         "export_board_pages",
+        "BoardExportPage",
         "web: createBoardFeedback",
         "web: prepareBoardDesignRequest",
         "read_board(binding, revision_sha256=None)",
@@ -4906,7 +4926,7 @@
         "the honesty lines stating what this projection cannot tell you",
         "the component catalog derived from the record and the reference run's inspection: per component its descendant elements, editable capabilities (value, type, source, confidence, status, validator refs), object coverage and closure; per exported object the element it binds to, or MODEL_VISIBLE_CATALOG_MISSING when no Element@1 row answers for it",
         "reading PROJECT.md at the project root for names (aliases -> declared components) and the compass; nothing else is read from it",
-        "the record's frame: each Level@1 and GridAxis@1 with its role, its value (const x / const y as element_reindex.axis_lines_of reads it), the elements whose own references name it, and the closure of changing it (GET /api/state/frame, POST /api/state/closure); read-only, no grammar rule for editing a level or an axis",
+        "serving the record's frame and the closure of named refs (GET /api/state/frame, POST /api/state/closure) against the exact retained record the request selects; the reading itself is capabilities.element_reindex's (monkeyarch.authoring.frame)",
         "a capability a reference pins (a height whose top names a level, another element's datum or a grid role) is status=derived with source='derived from <ref>', read from the record's own dependency edges; it is shown, never created",
         "committed design history reads and exact Stage projections, including a descendant candidate with a retained matching Stage source",
         "explicitly configured shared-project HTTP pull/bootstrap and candidate upload through the existing P036 transfer port; no direct project file writes",
@@ -4951,6 +4971,8 @@
         "GET /api/state",
         "ProjectBinding",
         "ProjectBinding.open",
+        "ProjectBinding.unconfigured",
+        "ProcessState",
         "bound_project",
         "resolve_project",
         "binding_answer",
@@ -4973,8 +4995,6 @@
         "ProjectConventions",
         "GET /api/state/frame",
         "POST /api/state/closure",
-        "frame_of",
-        "closure_of_refs",
         "references_of",
         "ProjectBinding.design_history",
         "ProjectBinding.design_stage",
@@ -5061,7 +5081,9 @@
         "studio.render",
         "project.memo",
         "project.watch",
-        "project.index"
+        "project.index",
+        "monkeyarch.authoring.producer_signatures",
+        "monkeyarch.authoring.frame"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/projection.py",
@@ -5087,7 +5109,8 @@
         "an answer is remembered only in memory and only under a stable ReadToken, which is read from the project's layout watch (project.watch) and never walked on a request: this process's writes change the token at once and leave it unstable until the watch has seen them, another process's once the watch sees them (about a second); closing the binding gives back its share of the watch",
         "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view",
         "the drawing context publishes every wall's <id>-top from the producer itself, in production order, so a drawn shape standing on a wall keeps its drawing controls",
-        "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)"
+        "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)",
+        "ProjectBinding and ReadToken are the Runtime's public read API: MonkeyHub opens a project in process with ProjectBinding.unconfigured (no configured reference run, nothing exported), and binding.py imports no web framework; the app-state glue beside it reads its state object structurally (ProcessState) (#519)"
       ],
       "status": "canonical",
       "tests": [
@@ -5120,7 +5143,6 @@
         "services/project-runtime/src/project_runtime/api/dto/state.py",
         "services/project-runtime/src/project_runtime/application/catalog.py",
         "services/project-runtime/src/project_runtime/application/conventions.py",
-        "services/project-runtime/src/project_runtime/application/frame.py",
         "services/project-runtime/src/project_runtime/synchronization.py",
         "services/project-runtime/src/project_runtime/api/routes/synchronization.py",
         "services/project-runtime/src/project_runtime/application/working_draft.py",
@@ -5228,7 +5250,6 @@
         "RepresentationState"
       ],
       "depends_on": [
-        "capabilities.declaration",
         "capabilities.discipline_seats",
         "capabilities.geometry_proposal",
         "project.inputs",
@@ -5245,9 +5266,10 @@
         "state.stage_workflow",
         "studio.artifacts",
         "studio.intent",
-        "monkeycad.execution",
         "state.design_portfolio",
-        "studio.binding"
+        "studio.binding",
+        "monkeycad.formats",
+        "monkeycad.formats.three_dm_compose"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/validation.py",
@@ -5609,10 +5631,13 @@
         "studio.board",
         "studio.study",
         "adapters.drawing_svg",
-        "monkeyarch.construction",
-        "monkeyarch.construction.vocabulary",
+        "monkeyarch.authoring.construction",
+        "monkeyarch.authoring.construction.vocabulary",
+        "monkeyarch.authoring.construction.identity",
+        "monkeyarch.authoring.producer_signatures",
         "semantics.facets",
-        "studio.memory"
+        "studio.memory",
+        "monkeycad.backends.occt.projection"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/candidate.py",
@@ -5884,6 +5909,9 @@
         "GET /api/render/jobs/{job_id}",
         "GET /api/render/jobs",
         "RenderJobRecords",
+        "RenderJob",
+        "RenderRequestDto",
+        "render_job_dto",
         "ImageRenderAdapter",
         "RenderInput",
         "RenderOutput",
@@ -5934,7 +5962,8 @@
         "No adapter receives a project path or writer; all result persistence uses save_document",
         "Uploaded images without models are valid and never acquire fabricated modelSource",
         "Source freshness follows retained input requests, explicit page replacements and Drawing read-set status; a prior revision alone is not a replacement decision",
-        "No render action changes Design HEAD or accepts a Stage; hidden UI does not cancel a running attempt"
+        "No render action changes Design HEAD or accepts a Stage; hidden UI does not cancel a running attempt",
+        "RenderJobRecords reads an attempt back as a RenderJob value and validates a retained request with the same RenderRequestDto the wire accepts; only api.dto.rendering shapes the wire (render_job_dto), and the application layer imports nothing from api (#519)"
       ]
     },
     {
@@ -6077,20 +6106,26 @@
         "MonitoredCompiler.invoke_structured",
         "ConditionalReads",
         "CONDITIONAL_READS",
-        "IndexRevisionHeader: X-Monkey-Index <epoch>:<revision> on a successful write once the project index holds it (#366)"
+        "IndexRevisionHeader: X-Monkey-Index <epoch>:<revision> on a successful write once the project index holds it (#366)",
+        "OWNER_REFUSALS"
       ],
       "depends_on": [
         "monkeymonitor",
         "documentation.drawings",
         "monkeydiagram.documentation.styles",
-        "project.index"
+        "project.index",
+        "monkeyarch.authoring.frame",
+        "monkeyarch.domain.massing_transforms",
+        "monkeydiagram.documentation.sheet_layout",
+        "monkeydiagram.study"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/api/routes/",
         "services/project-runtime/tests/test_health.py",
         "services/project-runtime/tests/test_settings.py",
         "services/project-runtime/tests/test_errors.py",
-        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
         "apps/monkeyhub/launch-hub.ps1"
       ],
@@ -6115,7 +6150,9 @@
         "The Runtime parameter-lock proposal route uses the existing accept actor grant; local unauthenticated attribution identifies only the process boundary and does not prove a human caller",
         "POST /api/admissions uses the existing accept grant on a local-role Runtime; a shared project service does not expose it",
         "only the exact GET paths in CONDITIONAL_READS carry an ETag, answer If-None-Match with 304 and are answered from the binding's memo, and only for a 200 read under a stable token; every other method, path and status passes through unchanged",
-        "shutdown closes the bound project's binding after draining work, which stops its layout watch and lets go of the project folder"
+        "shutdown closes the bound project's binding after draining work, which stops its layout watch and lets go of the project folder",
+        "an owner package's refusal (monkeyarch.authoring.frame.FrameError, ...) carries its own wire code and sentence; OWNER_REFUSALS is the one place that gives each kind its status, and create_app answers it in the same {code, detail} body a StudioError has (#519)",
+        "MonkeyHub (apps/monkeyhub/api/monkeyhub_api) imports from project_runtime only main, errors, api.dto and the declared read API - binding.ProjectBinding and ReadToken, events, status, the document and work-copy readers (application.artifacts list_documents, document_bytes, list_document_work_copies, DocumentWorkCopy, WORK_COPY_WORKSPACE) and application.boards export_board_pages with BoardExportPage - and archcheck refuses any other import (architecture_policy forbidden_layer_imports, allowed; #519)"
       ],
       "status": "canonical",
       "tests": [
@@ -6355,7 +6392,8 @@
         "a commit that names no claim may write only the policy's shared_write_scope and unclaimed_write_scope",
         "only active and review claims hold paths and checkouts; a lane is a claim of its own, and an Issue claimed through lanes carries nothing but its lanes",
         "a commit on the pre-#358 registry keeps its card-era reading, where a subject ending in a single (#n) with no other Issue reference or GH- marker names GH-n; once a parent is on the current registry a commit cannot return to the old one, so that reading cannot authorize card work again",
-        "a current commit whose subject opens with a P###, M###, R### or P000-governance id is reported as a retired claim"
+        "a current commit whose subject opens with a P###, M###, R### or P000-governance id is reported as a retired claim",
+        "a layer rule may list allowed exceptions under its targets: a module, or a member a module defines at its top level; an import is let through only when its module is allowed, or, for from x import y, every x.y it takes is; an exception that names neither a module nor a defined member is reported like a dead target (#519)"
       ],
       "status": "canonical",
       "tests": [
@@ -6619,7 +6657,6 @@
       ],
       "depends_on": [
         "project.layout",
-        "capabilities.declaration",
         "capabilities.discipline_seats",
         "capabilities.geometry_proposal",
         "project.inputs",
@@ -6712,7 +6749,7 @@
         "the receipt shape (validation.model)",
         "the submission (submission.model)",
         "promotion after a pass (project.repository.prepare_transition)",
-        "domain checks such as relations, cad readback or usability (capabilities/relation_checks.py and the archived lanes)"
+        "domain checks such as relations, cad readback or usability (domain/relation_checks.py and the archived lanes)"
       ],
       "inputs": [
         "CanonicalState",
@@ -6798,8 +6835,8 @@
     },
     {
       "module_id": "capabilities.element_reindex",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/element_reindex.py",
-      "purpose": "Recover Element@1 identity from an exported model without moving it: objects (3dm inspection) -> component/family/side -> element drafts with symbolic references where the geometry snaps to declared axes and levels, proven by re-producing the drafted rows and measuring the residual; ambiguity and source conflicts are named, never resolved by guessing.",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/authoring/element_reindex.py",
+      "purpose": "Recover Element@1 identity from an exported model without moving it: objects (3dm inspection) -> component/family/side -> element drafts with symbolic references where the geometry snaps to declared axes and levels, proven by re-producing the drafted rows and measuring the residual; ambiguity and source conflicts are named, never resolved by guessing. It also reads the record's frame: each level and grid axis, what names it and what changing it reaches.",
       "owns": [
         "reading SourceObjects off a ThreeDmInspectionSummary (named bboxes, archflow:component / archflow:producer_op strings, geometry digests)",
         "family and side of an object from its producer op (column-west-3 -> column / west)",
@@ -6809,7 +6846,8 @@
         "the residual between produced and inspected boxes, by running the real producers on the drafted rows",
         "derived support_contact relations from vertical contact within the stage-5 tolerance",
         "the ComponentCatalog@1 payload and the typed reindex operator that adds axes, rows and relations and replaces nothing",
-        "re-seating a drafted prism onto a drafted flight's published <id>-top instead of a level"
+        "re-seating a drafted prism onto a drafted flight's published <id>-top instead of a level",
+        "the record's frame: each Level@1 and GridAxis@1 with its role, its value (const x / const y as axis_lines_of reads it), the elements whose own references name it, and the kernel's closure of changing it (frame_of); the closure of named refs with the propagating edges inside it (closure_of_refs); read-only, no grammar rule for editing a level or an axis; a ref the record does not carry, or an axis that is not three numbers, is a FrameError naming its code (UNKNOWN_REF, STATE_RECORD_INVALID)"
       ],
       "does_not_own": [
         "producing geometry from a row - capabilities.element_producers",
@@ -6828,19 +6866,33 @@
         "side_of",
         "Frame",
         "WEDGE_NOTE",
-        "SHELL_THICKNESS_NOTE"
+        "SHELL_THICKNESS_NOTE",
+        "frame_of",
+        "closure_of_refs",
+        "RecordFrame",
+        "FrameLevel",
+        "FrameAxis",
+        "ClosureAnswer",
+        "FrameError"
       ],
       "depends_on": [
         "capabilities.element_producers",
         "capabilities.reference_resolver",
         "state.geometry_program",
-        "state.record"
+        "state.record",
+        "state.dependencies"
+      ],
+      "used_by": [
+        "services/project-runtime/src/project_runtime/api/routes/state.py",
+        "services/project-runtime/src/project_runtime/api/dto/state.py"
       ],
       "files": [
-        "packages/monkeyarch/src/monkeyarch/capabilities/element_reindex.py"
+        "packages/monkeyarch/src/monkeyarch/authoring/element_reindex.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/frame.py"
       ],
       "tests": [
-        "packages/monkeyarch/tests/test_element_reindex.py"
+        "packages/monkeyarch/tests/test_element_reindex.py",
+        "packages/monkeyarch/tests/test_frame.py"
       ],
       "reason": "The studio's catalog (studio.binding) reads elements the record declares; a scripted project has none. Re-indexing is the one generic way to give such a project its tree: derived from the model the spine already inspected, checked by the producers the spine already runs. It extends the spine's Element@1 vocabulary; it adds no parallel geometry protocol.",
       "status": "canonical"
@@ -6882,22 +6934,24 @@
     },
     {
       "module_id": "state.massing_metrics",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/massing_metrics.py",
-      "purpose": "What a massing option measures - footprint, gross floor area, floor count, height, program share - and how it stands in a buildable envelope, read from the record's own Volume@1 / MassingLevel@1 entities in the kernel's voxel lattice.",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py",
+      "purpose": "What a massing option measures - footprint, gross floor area, floor count, height, program share - and how it stands in a buildable envelope, read from the record's own Volume@1 / MassingLevel@1 entities in the kernel's voxel lattice, and the six moves that make a massing option out of the record's own pack.",
       "owns": [
         "the massing quantities and their frame (MassingMetrics, LevelFootprint, massing_metrics)",
         "CELL_AREA_M2: one plan cell is one square metre, as schematic_proposal's SpatialGridBasis declares",
         "the union-of-plan-rectangles footprint, counted once where volumes overlap",
         "the three envelope findings and their whole vocabulary (EnvelopeFinding, envelope_check, VOLUME_OUTSIDE_ENVELOPE, HEIGHT_EXCEEDED, FAR_EXCEEDED)",
         "saying what could not be measured rather than measuring zero (MassingMetrics.honesty)",
-        "the typed refusal of a record or envelope that makes a measurement impossible (MassingMetricsError)"
+        "the typed refusal of a record or envelope that makes a measurement impossible (MassingMetricsError)",
+        "the closed transform vocabulary (TRANSFORMS: add_floor, remove_floor, shift_volume, scale_volume, split_volume, pack)",
+        "each transform's arithmetic on the pack and its typed refusals (MassingTransformError naming UNKNOWN_TRANSFORM, PACK_REQUIRED, PACK_INVALID, NOTHING_TO_RAISE, LAST_FLOOR, NOTHING_LEFT, UNKNOWN_AXIS, SPLIT_OUTSIDE_VOLUME, NO_MASSING, UNKNOWN_VOLUME, WHOLE_CELLS or POSITIVE_FACTOR)"
       ],
       "does_not_own": [
         "reading a Volume@1 box (state.record.volume_boxes_of)",
         "the massing entity vocabulary (state.record)",
         "the SiteBounds/SpatialLevel shapes the lattice comes from (state.spatial)",
-        "transforming a massing or holding options beside one another (studio.options)",
-        "compiling geometry from a massing (compilers/geometry.py)"
+        "holding options beside one another, retaining one and running the selected one (studio.options)",
+        "compiling geometry from a massing (compilation/geometry.py)"
       ],
       "inputs": [
         "StateRecord",
@@ -6919,27 +6973,41 @@
         "MassingMetricsError",
         "VOLUME_OUTSIDE_ENVELOPE",
         "envelope_check",
-        "massing_metrics"
+        "massing_metrics",
+        "TRANSFORMS",
+        "ADD_FLOOR",
+        "REMOVE_FLOOR",
+        "SHIFT_VOLUME",
+        "SCALE_VOLUME",
+        "SPLIT_VOLUME",
+        "PACK",
+        "MassingTransformError",
+        "require_transform",
+        "transformed"
       ],
       "depends_on": [
         "state.record"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/options.py",
-        "services/project-runtime/src/project_runtime/api/dto/options.py"
+        "services/project-runtime/src/project_runtime/api/dto/options.py",
+        "labs/candidate_evaluation/retained_fixture.py"
       ],
       "invariants": [
         "never writes the filesystem and decides nothing",
         "a plan bound that is not a whole cell is reported in honesty, never rounded",
         "an absent envelope key makes no finding",
-        "efficiency is null, never zero, when no program target was given or there is no floor area"
+        "efficiency is null, never zero, when no program target was given or there is no floor area",
+        "a move is whole-cell arithmetic on the pack and nothing else: it neither measures, retains nor runs the option, and a move it cannot make is refused by name with nothing changed"
       ],
       "status": "canonical",
       "files": [
-        "packages/monkeyarch/src/monkeyarch/capabilities/massing_metrics.py"
+        "packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py",
+        "packages/monkeyarch/src/monkeyarch/domain/massing_transforms.py"
       ],
       "tests": [
-        "tests/integration/test_massing_metrics.py"
+        "tests/integration/test_massing_metrics.py",
+        "packages/monkeyarch/tests/test_massing_transforms.py"
       ],
       "reason": "Snaptrude shows GFA, floor count and efficiency beside every massing option; here they are read from the record's own massing entities, once, by one module, so the studio's options and any later provider measure the same thing."
     },
@@ -6948,42 +7016,35 @@
       "owner_path": "services/project-runtime/src/project_runtime/application/options.py",
       "purpose": "Hold several massing options beside the record's own, each one deterministic transform of its SchematicPack@1, each measured, each retained in a run of its own.",
       "owns": [
-        "the closed transform vocabulary (TRANSFORMS: add_floor, remove_floor, shift_volume, scale_volume, split_volume, pack)",
-        "each transform's arithmetic on the pack and its typed refusals",
         "the in-process option table and its ids and run ids (OptionStore, MassingOption, OptionsTable, RUN_PREFIX, PERSISTENCE)",
         "retaining one option as selected-spatial-option in its own option-NNN run",
         "the record's volumes as the panel reads them (RecordMassing, RecordVolume, record_massing, baseline_pack)",
+        "making one option with a monkeyarch.domain.massing_transforms move: the move's name is checked before an option id is reserved, and the successor record the selection would run is measured before the pack is retained",
         "POST /api/options, GET /api/options, POST /api/options/{option_id}/select, GET /api/state/volumes",
         "carrying optional exact modelSource from POST /api/options, including pack requests, on its existing in-memory MassingOption and wire response; selection rechecks and passes that original source to the common candidate worker"
       ],
       "does_not_own": [
-        "measuring a massing (state.massing_metrics)",
+        "measuring a massing, or the moves that make an option out of a pack (state.massing_metrics)",
         "reading the record's massing as a pack (state.record.schematic_pack_of)",
         "deriving the successor record a selection runs (state.record)",
         "running a candidate (studio.candidate)",
         "the record kind vocabulary (project.record_kinds)"
       ],
       "public_api": [
-        "ADD_FLOOR",
         "MassingOption",
         "OptionStore",
         "OptionsTable",
-        "PACK",
         "PERSISTENCE",
         "RecordMassing",
         "RecordVolume",
-        "REMOVE_FLOOR",
         "RUN_PREFIX",
-        "SCALE_VOLUME",
-        "SHIFT_VOLUME",
-        "SPLIT_VOLUME",
-        "TRANSFORMS",
         "baseline_pack",
         "make_option",
         "record_massing"
       ],
       "depends_on": [
         "state.massing_metrics",
+        "monkeyarch.domain.massing_transforms",
         "state.record",
         "state.spatial",
         "project.ports",
@@ -7052,8 +7113,11 @@
       "depends_on": [
         "capabilities.element_producers",
         "capabilities.opening_solver",
-        "monkeyarch.construction",
-        "monkeyarch.construction.vocabulary",
+        "monkeyarch.authoring.construction",
+        "monkeyarch.authoring.construction.vocabulary",
+        "monkeyarch.authoring.construction.identity",
+        "monkeyarch.authoring.construction.lowering",
+        "monkeyarch.authoring.construction.script",
         "semantics.facets",
         "state.record"
       ],
@@ -7531,7 +7595,7 @@
     },
     {
       "module_id": "hub.shell",
-      "owner_path": "apps/monkeyhub/api/monkeyhub_api/main.py",
+      "owner_path": "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
       "status": "canonical",
       "purpose": "Own project runtime attachments, managed workers, idempotent Studio request admission and recovery observations, alongside existing project-bound CLI conversations and local tools; P036 retains all design authority.",
       "owns": [
@@ -7750,7 +7814,9 @@
       "files": [
         "apps/monkeyhub/api/monkeyhub_api/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
-        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/app/__init__.py",
+        "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
+        "apps/monkeyhub/api/monkeyhub_api/app/main.py",
         "apps/monkeyhub/api/monkeyhub_api/models.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/models.py",
@@ -7758,12 +7824,26 @@
         "apps/monkeyhub/api/monkeyhub_api/settings/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/credentials.py",
         "apps/monkeyhub/api/monkeyhub_api/project_archive.py",
+        "apps/monkeyhub/api/monkeyhub_api/projects.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
         "apps/monkeyhub/run.py",
         "apps/monkeyhub/launch-hub.ps1",
         "apps/monkeyhub/api/monkeyhub_api/chat/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/providers.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/activity.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/media.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/turn_context.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/mcp_server.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/tool_calls.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/preparation.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/transport.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/studio_tool.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/judgments.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/visual_review.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",
         "apps/monkeyhub/api/monkeyhub_api/chat/turn_trace.py",
         "apps/monkeyhub/api/monkeyhub_api/computer_tools.py",
@@ -7773,6 +7853,9 @@
         "apps/monkeyhub/web/src/notifications/",
         "apps/monkeyhub/api/monkeyhub_api/runtime/workers.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/operations.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/worker_http.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/runtime/models.py",
         "apps/monkeyhub/desktop/",
         "apps/monkeyhub/assets/",
@@ -7809,7 +7892,11 @@
         "apps/monkeyhub/web/scripts/dump-openapi.py",
         "apps/monkeyhub/web/src/ChatMessageContent.tsx",
         "apps/monkeyhub/web/src/ChatMessageContent.css",
-        "apps/monkeyhub/api/monkeyhub_api/updates.py",
+        "apps/monkeyhub/api/monkeyhub_api/updates/__init__.py",
+        "apps/monkeyhub/api/monkeyhub_api/updates/desktop_updates.py",
+        "apps/monkeyhub/api/monkeyhub_api/updates/feed.py",
+        "apps/monkeyhub/api/monkeyhub_api/updates/models.py",
+        "apps/monkeyhub/api/monkeyhub_api/updates/routes.py",
         "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx",
         "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
         "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingCanvas.css",
@@ -7980,7 +8067,7 @@
       ],
       "does_not_own": [
         "Choosing the roots: governance/architecture_policy.json lists them and tools.archcheck checks them",
-        "The production entry points' setup: apps/monkeyhub/run.py, the monkeyhub_api.chat.store MCP start and the project_runtime package read the same list themselves, because they run before anything in the checkout is importable and the runtime may not import tools",
+        "The production entry points' setup: apps/monkeyhub/run.py, the monkeyhub_api.chat.mcp_server MCP start and the project_runtime package read the same list themselves, because they run before anything in the checkout is importable and the runtime may not import tools",
         "The bundle's python313._pth (tools.package_monkeyapps) and CI's per-package editable installs"
       ],
       "inputs": [
@@ -8097,15 +8184,13 @@
     },
     {
       "module_id": "documentation.drawings",
-      "owner_path": "packages/monkeydiagram/src/monkeydiagram/documentation/drawings.py",
-      "purpose": "Validate and compile caller-supplied drawing information against a configurable drawing standard, and render common paper scenes to PDF and editable DXF.",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
+      "purpose": "Compose sheets in existing project styles and render common paper scenes to PDF, editable DXF and paper SVG.",
       "owns": [
-        "Drawing Standard v0.1: configurable sheet, view, graphic, annotation, information, status, coordination and revision conventions",
-        "DrawingState structural and cross-record validation: preferred scales, view references, dimension values and chains, source certainty, note placement, tags, interfaces, revisions and paper bounds",
-        "DrawingPlan as a detached plain domain value without receipt, digest or persistence authority",
         "PaperCanvas recording of resolved paper primitives with glyph and stroke bounds, and PDF/DXF/SVG serialization of those same scenes (SVG in paper mm with live text); the same scene always gives the same DXF bytes: the header dates and ezdxf's write time are one fixed time, its class table is in name order whatever the process's hashing, and its GUIDs derive from the file's content",
         "reusable ARCH400 white presentation and ARCH364 technical sheet styles extracted from existing drawings; compose_review_sheet places caller-supplied orthographic linework and measured dimensions at one explicit scale without changing model geometry",
-        "compose_view_sheet: caller-placed retained drawings (SheetView: a drawing's svg_paper_marks at its own paper size, placed at a top-left in mm) on a caller-sized paper in a style's frame margin and type sizes, each titled with its subtitle and scale label, a section's cut line with arrows and label on the plan it crosses (SheetSectionMark) and a title strip with the title, sheet number, source line and notes; a drawing or its labels leaving the frame, overlapping another drawing or the title strip, or strip text that does not fit, is refused by name, never moved, scaled or cropped"
+        "compose_view_sheet: caller-placed retained drawings (SheetView: a drawing's svg_paper_marks at its own paper size, placed at a top-left in mm) on a caller-sized paper in a style's frame margin and type sizes, each titled with its subtitle and scale label, a section's cut line with arrows and label on the plan it crosses (SheetSectionMark) and a title strip with the title, sheet number, source line and notes; a drawing or its labels leaving the frame, overlapping another drawing or the title strip, or strip text that does not fit, is refused by name, never moved, scaled or cropped",
+        "a view sheet's layout before it is composed: each placed drawing's default title, subtitle and scale label from its own frame (view_labels), a vertical section's plane as a line in plan (section_line) and its cut line where it crosses a placed plan, in that plan's paper mm (section_mark; SheetLayoutError DRAWING_SECTION_MARK_OUTSIDE when it does not), and the paper scene from the sheet recipe and the views' retained marks (view_sheet_scene); it reads no model or project"
       ],
       "does_not_own": [
         "source design objects, dimensions, parameter dependencies or confirmation decisions",
@@ -8114,24 +8199,16 @@
         "choosing artifact destinations, persistent writes, canonical promotion or issuance - existing project ports and explicit project decisions"
       ],
       "inputs": [
-        "caller-supplied DrawingState mapping",
-        "Drawing Standard configuration mapping",
         "paper drawing operations and explicit font mapping",
         "optional named source geometry projections for DXF modelspace"
       ],
       "outputs": [
-        "DrawingFinding tuple",
-        "DrawingPlan",
         "common paper scenes with printable bounds",
         "PDF bytes",
         "DXF bytes",
         "SVG bytes"
       ],
       "public_api": [
-        "DrawingFinding",
-        "DrawingPlan",
-        "validate_drawing_state",
-        "compile_drawing_state",
         "PaperPrimitive",
         "PaperSheet",
         "PaperCanvas",
@@ -8144,13 +8221,19 @@
         "compose_view_sheet",
         "SheetView",
         "SheetSectionMark",
-        "initialize_drawing_runtime"
+        "initialize_drawing_runtime",
+        "view_labels",
+        "section_line",
+        "section_mark",
+        "view_sheet_scene",
+        "SheetLayoutError"
       ],
       "depends_on": [
-        "monkeycad.execution"
+        "monkeydiagram.projection.views",
+        "monkeycad.occt",
+        "monkeycad.backends.occt.projection"
       ],
       "used_by": [
-        "packages/monkeydiagram/tests/test_drawing_standard.py",
         "packages/monkeydiagram/tests/test_drawing_output.py",
         "packages/monkeydiagram/tests/test_drawing_styles.py",
         "services/project-runtime/src/project_runtime/main.py",
@@ -8158,27 +8241,23 @@
       ],
       "invariants": [
         "Source design and project information remain the only facts; drawing values do not confirm or mutate them.",
-        "Scale is an explicit drawing convention, never a packing result; exceptions carry an explicit reason.",
-        "Derived dimensions retain their source certainty and unresolved dimensions cannot become construction control.",
-        "Tags, section references and revisions resolve against stable ids; actual paper primitives must fit the stated printable area.",
+        "Scale is an explicit drawing convention, never a packing result.",
         "PDF, DXF and SVG are serialized from the same paper scenes; none is reconstructed from another, and the same scenes give the same bytes of each.",
-        "The grammar uses ordinary values and no filesystem IO. Output adapters return bytes and never choose or write a project path.",
+        "Output adapters return bytes and never choose or write a project path.",
         "A view sheet moves each drawing's own marks to where the caller placed them, with their own pens and greys: nothing is re-projected, rescaled or cropped, and the placement is the caller's, never a packing result."
       ],
       "status": "canonical",
       "files": [
-        "packages/monkeydiagram/src/monkeydiagram/documentation/drawings.py",
         "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
-        "packages/monkeydiagram/src/monkeydiagram/documentation/drawing_standard_v0_1.json",
-        "packages/monkeydiagram/src/monkeydiagram/documentation/drawing_state.schema.json",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_output.py"
+        "packages/monkeydiagram/src/monkeydiagram/rendering/paper.py",
+        "packages/monkeydiagram/src/monkeydiagram/documentation/sheet_layout.py"
       ],
       "tests": [
-        "packages/monkeydiagram/tests/test_drawing_standard.py",
         "packages/monkeydiagram/tests/test_drawing_styles.py",
-        "packages/monkeydiagram/tests/test_drawing_output.py"
+        "packages/monkeydiagram/tests/test_drawing_output.py",
+        "packages/monkeydiagram/tests/test_sheet_layout.py"
       ],
-      "notes": "CREATE justified in docs/design/drawing-standard.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework."
+      "notes": "CREATE justified in docs/design/drawing-standard.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework. #517 retired the Drawing Standard v0.1 validator (documentation/drawings.py) and its two JSON files: no production reader (topology audit Q13). The sheet styles and the paper scene remain."
     },
     {
       "module_id": "monkeyfab",
@@ -8242,7 +8321,7 @@
       "purpose": "Retain corrected precedent evidence and conditional research in the existing Board document editor, with inspectable polygon tests and configured model proposals, without changing canonical design state.",
       "owns": [
         "Study evidence revisions tied to a registered document page, retained through P036 research-evidence-ledger records",
-        "validation of trace inputs and confirmed/proposed/rejected status, deterministic geometric projections and bounded counterfactual experiments",
+        "validation of trace inputs and confirmed/proposed/rejected status, deterministic geometric projections and bounded counterfactual experiments: the method, in monkeydiagram.study (canonical_evidence, derive, research_snapshot_of; StudyEvidenceError STUDY_EVIDENCE_INVALID), which reads no project",
         "explicit correction against the current Study revision, and cold reads that replay a retained revision's own findings after verifying its exact source and evidence",
         "the Study side panel and independent evidence draft in the existing document page editor",
         "editable, evidence-linked competing explanations, gaps, polygon counterfactual predictions/outcomes and conditional CompositionPattern/DesignPrior revisions",
@@ -8279,6 +8358,14 @@
         "POST /api/studies/propose",
         "list_studies",
         "polygon_observations",
+        "canonical_evidence",
+        "derive",
+        "composition_graph",
+        "check_research_links",
+        "research_snapshot_of",
+        "StudySource",
+        "StudyEvidenceError",
+        "CURRENT_DERIVATION_METHOD",
         "web: DocumentStudyPanel",
         "study_evidence_context"
       ],
@@ -8292,7 +8379,8 @@
         "project.record_kinds",
         "ports.model",
         "studio.intent",
-        "studio.board"
+        "studio.board",
+        "monkeydiagram.study"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/api/routes/study.py"
@@ -8314,9 +8402,10 @@
         "services/project-runtime/tests/test_study_research.py",
         "services/project-runtime/tests/test_study_model.py",
         "apps/monkeyhub/web/test/documentStudy.test.ts",
-        "apps/monkeyhub/web/test/documentStudy.browser.mjs"
+        "apps/monkeyhub/web/test/documentStudy.browser.mjs",
+        "packages/monkeydiagram/tests/test_study_method.py"
       ],
-      "notes": "EXTEND the existing Study owner. Document canvas and source store are reused; true polygon computation lives in MonkeyDiagram under this same capability. Historical bounds archive/compare behavior is retained, while polygon research results are independently named. Family judgments and historical causation remain unvalidated. Competing retained heads still require explicit reconciliation; exact archived revisions remain readable.",
+      "notes": "EXTEND the existing Study owner. Document canvas and source store are reused; the method - trace validation, derivations, polygon computation and research snapshots - lives in monkeydiagram.study under this same capability (#519), and the Runtime keeps the retained ledger, its cold reads and writes. Historical bounds archive/compare behavior is retained, while polygon research results are independently named. Family judgments and historical causation remain unvalidated. Competing retained heads still require explicit reconciliation; exact archived revisions remain readable.",
       "files": [
         "services/project-runtime/src/project_runtime/application/study.py",
         "services/project-runtime/src/project_runtime/api/routes/study.py",
@@ -8388,7 +8477,7 @@
     },
     {
       "module_id": "construction.script",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/construction/__init__.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/authoring/construction/__init__.py",
       "purpose": "The agent-facing way to author geometry (#419, L1): one bounded construction script, interpreted and never executed, over a small generic vocabulary; what it leaves is lowered to Component@1/Element@1 rows, where producers are chosen, and a record reads back in the same construction terms.",
       "owns": [
         "the construction language: an ast allow-list interpreter whose work is bounded - characters, steps (walking a sequence or a shape's points costs steps, and a comparison what it may walk), a wall-clock deadline that lowering runs under too, loop iterations, call depth, nesting, elements per list and per script, a profile edge-pair budget, 100 000 points in all and geometry results - refusing at a line with ConstructionError (CONSTRUCTION_INVALID)",
@@ -8434,11 +8523,11 @@
       "depends_on": [
         "capabilities.element_producers",
         "capabilities.reference_resolver",
-        "monkeyarch.construction.identity",
-        "monkeyarch.construction.lowering",
-        "monkeyarch.construction.script",
-        "monkeyarch.construction.shapes",
-        "monkeyarch.construction.vocabulary",
+        "monkeyarch.authoring.construction.identity",
+        "monkeyarch.authoring.construction.lowering",
+        "monkeyarch.authoring.construction.script",
+        "monkeyarch.authoring.construction.shapes",
+        "monkeyarch.authoring.construction.vocabulary",
         "project.refs",
         "state.derivation",
         "state.geometry_program",
@@ -8475,17 +8564,17 @@
       ],
       "notes": "Spec docs/design/construction-api.md section 3.1. The interpreter's verbs and the vocabulary are one table (script.IMPLEMENTED_VERBS is checked against vocabulary.VERBS at import).",
       "files": [
-        "packages/monkeyarch/src/monkeyarch/construction/__init__.py",
-        "packages/monkeyarch/src/monkeyarch/construction/script.py",
-        "packages/monkeyarch/src/monkeyarch/construction/shapes.py",
-        "packages/monkeyarch/src/monkeyarch/construction/identity.py",
-        "packages/monkeyarch/src/monkeyarch/construction/lowering.py",
-        "packages/monkeyarch/src/monkeyarch/construction/vocabulary.py"
+        "packages/monkeyarch/src/monkeyarch/authoring/construction/__init__.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/construction/script.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/construction/shapes.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/construction/identity.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/construction/lowering.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/construction/vocabulary.py"
       ]
     },
     {
       "module_id": "capabilities.domain_readiness",
-      "owner_path": "packages/monkeyarch/src/monkeyarch/capabilities/domain_readiness.py",
+      "owner_path": "packages/monkeyarch/src/monkeyarch/domain/domain_readiness.py",
       "purpose": "L4: the honest entry gate a technical domain calls before it runs - read only the semantics it needs, and answer an explicit enrichment request for what is missing instead of guessing it from shape, producer or name.",
       "owns": [
         "DomainNeeds and the DOMAINS registry: each domain's architectural.role read set and the facet keys it needs once it reads",
@@ -8546,7 +8635,7 @@
         "domain_readiness: one domain's readiness against the projection GET /api/state?run= would resolve, and the 404 DOMAIN_UNKNOWN refusal for an unrecognised domain"
       ],
       "does_not_own": [
-        "what a domain reads and needs, or sorting components into reads/requests - monkeyarch.capabilities.domain_readiness (capabilities.domain_readiness)",
+        "what a domain reads and needs, or sorting components into reads/requests - monkeyarch.domain.domain_readiness (capabilities.domain_readiness)",
         "resolving a run to a projection - application.projection.project_state (studio.binding)",
         "adding or editing a component's facets - the generic semanticEdit route (studio.intent)"
       ],
@@ -8557,14 +8646,14 @@
       ],
       "outputs": [
         "{domains: [...]} index mapping",
-        "the readiness mapping monkeyarch.capabilities.domain_readiness.readiness answers"
+        "the readiness mapping monkeyarch.domain.domain_readiness.readiness answers"
       ],
       "public_api": [
         "domains_index",
         "domain_readiness"
       ],
       "depends_on": [
-        "monkeyarch.capabilities.domain_readiness",
+        "monkeyarch.domain.domain_readiness",
         "capabilities.domain_readiness",
         "studio.binding",
         "studio.shell"

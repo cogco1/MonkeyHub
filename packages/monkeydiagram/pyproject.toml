@@ -12,16 +12,13 @@ requires-python = ">=3.12"
 dependencies = []
 
 [project.optional-dependencies]
-# Shared paper-scene PDF/DXF output; the drawing grammar itself uses stdlib only.
+# Shared paper-scene PDF/DXF output (rendering.paper).
 # Pillow rasterises the drawing SVG preview and the mesh views to PNG
-# (drawing_svg.render_svg_png, mesh_views).
+# (rendering.svg.render_svg_png, projection.mesh_views).
 drawings = ["reportlab==5.0.0", "ezdxf==1.4.4", "fonttools==4.64.0", "shapely==2.1.2", "Pillow>=12.3,<13"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-"monkeydiagram.documentation" = ["*.json"]
 
 # No [tool.pytest.ini_options]: the root one keeps pytest's rootdir at the checkout,
 # whose conftest.py puts this checkout's source roots first.

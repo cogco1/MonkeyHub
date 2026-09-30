@@ -11,8 +11,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from monkeycad.model_formats import ThreeDM
-from monkeycad.three_dm_inspector import inspect_three_dm_contents, inspect_three_dm_index
+from monkeycad.formats.meshes import ThreeDM
+from monkeycad.formats.three_dm_inspector import inspect_three_dm_contents, inspect_three_dm_index
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_MODEL_ASSET
@@ -236,8 +236,8 @@ class NativeDrawingTests(unittest.TestCase):
         self.assertEqual(ambiguous.status_code, 422)
 
     def test_real_skp_upload_keeps_original_and_draws_without_step(self):
-        from monkeycad import sketchup_reader
-        from monkeycad.model_formats import ConversionError
+        from monkeycad.formats import sketchup_reader
+        from monkeycad.formats.meshes import ConversionError
         try:
             sdk = sketchup_reader._sdk_location(None)
         except ConversionError as exc:
@@ -284,8 +284,8 @@ class NativeDrawingTests(unittest.TestCase):
         self.assertEqual(self.repository.read_head(), self.head)
 
     def test_missing_skp_runtime_does_not_register_a_fake_model(self):
-        from monkeycad.model_formats import ConversionError
-        with patch("monkeycad.sketchup_reader.read_skp", side_effect=ConversionError("SKP runtime unavailable")):
+        from monkeycad.formats.meshes import ConversionError
+        with patch("monkeycad.formats.sketchup_reader.read_skp", side_effect=ConversionError("SKP runtime unavailable")):
             result = self.client.post("/api/model-assets", json={"projectId": PROJECT_ID, "fileName": "source.skp",
                 "contentBase64": base64.b64encode(b"source").decode()})
         self.assertEqual(result.status_code, 422)

@@ -22,11 +22,10 @@ import unittest
 from fastapi.testclient import TestClient
 
 from archflow.state.state_record import StateRecord
+from monkeyarch.authoring.frame import FrameError, closure_of_refs, frame_of
 
-from project_runtime.application.frame import closure_of_refs, frame_of
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.errors import StudioError
 
 from .support import (
     PORTICO_RECORD_PAYLOAD,
@@ -214,7 +213,7 @@ class FrameTestCase(unittest.TestCase):
 
     def test_an_unprefixed_ref_is_refused(self) -> None:
         record = StateRecord.from_dict(PORTICO_RECORD_PAYLOAD)
-        with self.assertRaises(StudioError) as raised:
+        with self.assertRaises(FrameError) as raised:
             closure_of_refs(record, (LEVEL,))
         self.assertEqual(raised.exception.code, "UNKNOWN_REF")
 

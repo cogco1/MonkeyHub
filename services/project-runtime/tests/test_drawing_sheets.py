@@ -11,7 +11,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from monkeycad.occt_backend import occt_available
+from monkeycad.backends.occt.kernel import occt_available
 from archflow.project.refs import record_ref_from_uri
 from project_runtime.application.artifacts import save_document
 from project_runtime.binding import bound_project

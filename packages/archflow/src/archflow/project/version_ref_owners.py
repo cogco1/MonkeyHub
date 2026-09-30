@@ -52,7 +52,7 @@ OWNER_MODULES = (
 # entry point above both layers loads them; the names live here so there is
 # still one list of owners rather than one per caller.
 WORKFLOW_OWNER_MODULES = (
-    "monkeydiagram.drawing_elevation",
+    "monkeydiagram.drawing_runs",
 )
 
 
@@ -67,7 +67,7 @@ def load_workflow_owners() -> tuple[str, ...]:
 
 
 # Declared here rather than by its owner, and said plainly: the runner receipt
-# is written by ``packages/monkeyarch/src/monkeyarch/runtime/project_runner.py``, which another lane
+# is written by ``packages/monkeyarch/src/monkeyarch/application/project_runner.py``, which another lane
 # holds open. It derives nothing from the canonical base it carries - its
 # ``state_record_digest`` is ``StateRecord.digest``, which excludes ``base``,
 # and the envelope and developed-state digests it cites are other records'
@@ -81,7 +81,7 @@ for _schema, _fields in _BORROWED_DECLARATIONS.items():
 
 
 # Declared here rather than by the CAD package that writes these records,
-# ``monkeycad.cad_execution`` and ``monkeycad.three_dm_inspector``, and said
+# ``monkeycad.execution``, its backends and ``monkeycad.formats.three_dm_inspector``, and said
 # plainly: the core does not import them, and a core-only migration still has
 # to restate every CAD record a project retains. What the records serialise is
 # still the CAD package's to say,

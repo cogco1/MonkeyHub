@@ -29,7 +29,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from monkeyhub_api.chat import store as chat
+from monkeyhub_api.chat import mcp_server, preparation, store as chat, studio_tool, tool_calls, transport
 from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, HubFailure
 
 TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
@@ -53,8 +53,8 @@ class AgentAdmissionTests(unittest.TestCase):
                         "status": "running", "messages": []}
         self.writes = []
         self.addCleanup(patch.stopall)
-        patch.object(chat, "_bound_studio", side_effect=lambda *a, **k: (self.base, deepcopy(self.session))).start()
-        patch.object(chat, "_request_json", side_effect=self.request).start()
+        patch.object(preparation, "_bound_studio", side_effect=lambda *a, **k: (self.base, deepcopy(self.session))).start()
+        patch.object(transport, "_request_json", side_effect=self.request).start()
 
     def studio(self) -> TestClient:
         """The project's Runtime as the Hub starts it: with the Hub's instance id."""
@@ -87,7 +87,7 @@ class AgentAdmissionTests(unittest.TestCase):
         arguments = {"method": method, "path": path, **options}
         if body is not None:
             arguments["body"] = body
-        return chat.call_tool(self.hub, self.session["id"], name, arguments)
+        return tool_calls.call_tool(self.hub, self.session["id"], name, arguments)
 
     def refused(self, code, *args, **kwargs):
         with self.assertRaises(HubFailure) as refusal:
@@ -144,14 +144,14 @@ class AgentAdmissionTests(unittest.TestCase):
         for method, path in (("POST", "/api/admissions"), ("PUT", "/api/working-draft"), ("GET", "/api/admissions"),
                              ("GET", "/api/working-source"), ("GET", "/api/working-draft/revision")):
             with self.subTest(method=method, path=path):
-                self.assertTrue({"GET": chat._READ, "POST": chat._POST, "PUT": chat._WRITE}[method].fullmatch(path))
+                self.assertTrue({"GET": studio_tool._READ, "POST": studio_tool._POST, "PUT": studio_tool._WRITE}[method].fullmatch(path))
         # Continue and admission, never acceptance, local recovery or the full position.
-        self.assertIsNone(chat._WRITE.fullmatch("/api/working-draft/local"))
-        self.assertIsNone(chat._POST.fullmatch("/api/working-draft/save"))
-        self.assertIsNone(chat._POST.fullmatch("/api/candidates/run-1/accept"))
-        self.assertIsNone(chat._READ.fullmatch("/api/working-draft"))
+        self.assertIsNone(studio_tool._WRITE.fullmatch("/api/working-draft/local"))
+        self.assertIsNone(studio_tool._POST.fullmatch("/api/working-draft/save"))
+        self.assertIsNone(studio_tool._POST.fullmatch("/api/candidates/run-1/accept"))
+        self.assertIsNone(studio_tool._READ.fullmatch("/api/working-draft"))
 
-        tools = {tool["name"]: tool for tool in _tools_of(chat)}
+        tools = {tool["name"]: tool for tool in _tools_of(mcp_server)}
         described = tools["studio_request"]["description"]
         for words in ("POST /api/admissions", "supersedes", "study: {id, label, baseRunId}", "id an ASCII slug",
                       "PUT /api/working-draft", "only when the user's words ask to continue"):
@@ -356,8 +356,8 @@ class FirstModelRecipeTests(unittest.TestCase):
                         "status": "running", "messages": []}
         self.calls = []
         self.addCleanup(patch.stopall)
-        patch.object(chat, "_bound_studio", side_effect=lambda *a, **k: (self.base, deepcopy(self.session))).start()
-        patch.object(chat, "_request_json", side_effect=self.request).start()
+        patch.object(preparation, "_bound_studio", side_effect=lambda *a, **k: (self.base, deepcopy(self.session))).start()
+        patch.object(transport, "_request_json", side_effect=self.request).start()
 
     def request(self, base, path, method="GET", body=None, **kwargs):
         if base == self.hub and path.startswith("/api/chat/sessions/"):
@@ -380,7 +380,7 @@ class FirstModelRecipeTests(unittest.TestCase):
         if body is not None:
             arguments["body"] = body
         self.calls.append((name, method, path.split("?", 1)[0]))
-        return chat.call_tool(self.hub, self.session["id"], name, arguments)
+        return tool_calls.call_tool(self.hub, self.session["id"], name, arguments)
 
     def exported(self, run_id, digest):
         """The Runtime's model export between two tool calls; cad_export is off in tests."""
@@ -399,7 +399,7 @@ class FirstModelRecipeTests(unittest.TestCase):
         self.assertFalse([call for call in self.calls if call[1] == "GET"], "every value came back with a call")
 
     def test_a_first_model_and_its_follow_up_need_only_the_calls_the_guide_states(self):
-        guide = next(tool for tool in _tools_of(chat) if tool["name"] == "studio_request")["description"]
+        guide = next(tool for tool in _tools_of(mcp_server) if tool["name"] == "studio_request")["description"]
         for stated in ("POST /api/project/modeling with body {}", "POST /api/proposals/construction", "at=top(",
                        "awaitSeconds: 60", "candidate.stateDigest", "supersedes may be []", "POST /api/proposals/facets"):
             self.assertIn(stated, guide)
