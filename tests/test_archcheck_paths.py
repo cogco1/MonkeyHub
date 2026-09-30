@@ -140,6 +140,21 @@ class PolicyPathTests(unittest.TestCase):
         self.assertEqual(["POLICY_PATH_MISSING"], [code for _, code, _ in findings])
         self.assertIn("python_source_roots entry 'packages/archflow/src' does not exist", findings[0][2])
 
+    def test_a_moved_package_needs_its_src_directory_as_a_python_source_root(self) -> None:
+        for relative in (
+            "packages/monkeydiagram/src/monkeydiagram/drawing_svg.py",
+            "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
+            "services/project-runtime/src/project_runtime/main.py",
+        ):
+            _write(self.root, relative)
+        roots = ["archflow", "tools", "packages", "services"]
+        findings = self.findings(_policy(checked_source_roots=roots))
+        self.assertEqual(["POLICY_PATH_MISSING"] * 2, [code for _, code, _ in findings])
+        self.assertIn("python_source_roots has no entry 'packages/monkeydiagram/src'", findings[0][2])
+        self.assertIn("python_source_roots has no entry 'services/project-runtime/src'", findings[1][2])
+        listed = [".", "packages/monkeydiagram/src", "services/project-runtime/src"]
+        self.assertEqual([], self.findings(_policy(checked_source_roots=roots, python_source_roots=listed)))
+
     def test_a_write_site_that_is_gone_still_stops_the_check(self) -> None:
         site = {
             "path": "archflow/project/repository.py", "function": "*", "kind": "project_repository",

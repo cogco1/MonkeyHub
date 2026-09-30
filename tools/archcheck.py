@@ -364,13 +364,26 @@ def _in_tests(relative: str) -> bool:
     return relative.startswith("tests/") or "/tests/" in relative
 
 
+def _python_source_root(parts: tuple[str, ...], python_source_roots: Iterable[str]) -> tuple[str, ...] | None:
+    """The longest Python source root holding a path, as path segments."""
+
+    roots = [
+        prefix
+        for prefix in map(_scope_parts, python_source_roots)
+        if parts[: len(prefix)] == prefix
+    ]
+    return max(roots, key=len) if roots else None
+
+
 def check_policy_paths(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
     """A configured path must exist; a rule on a missing path guards nothing.
 
     A checked source root that is gone, or holds no Python source, is walked as
     an empty set, and a layer rule whose source matches no checked file never
     fires: both would pass forever after a move that forgot the policy. The
-    Python source roots name where module import names begin. Write sites and
+    Python source roots name where module import names begin, so a ``src``
+    directory holding checked Python must be one of them; otherwise its modules
+    would be named after the directories around them. Write sites and
     authority symbols are held to the same rule by ``validate_policy``.
     """
 
@@ -378,6 +391,7 @@ def check_policy_paths(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFin
         path.relative_to(root).as_posix()
         for path in _checked_python_files(root, policy)
     )
+
     def directory_state(relative: str) -> str | None:
         target = root / relative
         if not target.exists():
@@ -400,6 +414,19 @@ def check_policy_paths(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFin
                 ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
                 f"python_source_roots entry {python_root!r} {state}; no module import name begins there",
             )
+    unlisted: set[str] = set()
+    for relative in checked:
+        parts = _scope_parts(relative)
+        prefix = _python_source_root(parts, policy["python_source_roots"]) or ()
+        directories = parts[len(prefix):-1]
+        if "src" in directories:
+            unlisted.add("/".join(parts[: len(prefix) + directories.index("src") + 1]))
+    for source in sorted(unlisted):
+        yield PolicyFinding(
+            ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
+            f"python_source_roots has no entry {source!r}; the modules below it would be "
+            "named after the directories around them",
+        )
     for index, rule in enumerate(policy["forbidden_layer_imports"]):
         source = rule["source"]
         if any(_source_matches(relative, source) for relative in checked):
@@ -676,14 +703,10 @@ def _module_name(relative: str, python_source_roots: Iterable[str]) -> str | Non
     parts = _scope_parts(relative)
     if not parts or not parts[-1].endswith(".py"):
         return None
-    roots = [
-        prefix
-        for prefix in map(_scope_parts, python_source_roots)
-        if parts[: len(prefix)] == prefix
-    ]
-    if not roots:
+    prefix = _python_source_root(parts, python_source_roots)
+    if prefix is None:
         return None
-    names = [*parts[len(max(roots, key=len)):-1], parts[-1][:-3]]
+    names = [*parts[len(prefix):-1], parts[-1][:-3]]
     if names[-1] == "__init__":
         names.pop()
     if not names or not all(name.isidentifier() for name in names):
