@@ -6,13 +6,14 @@ never fires, and a registry that names a moved file keeps describing the old
 tree. Moving the repository's packages (#484 and the topology lanes after it)
 would otherwise leave each of these guards silently switched off.
 
-The cases build small trees in a temporary directory; the root-entry cases
-make it a Git repository, because the root is read from the index. Nothing here
-reads or writes this repository.
+The cases build small trees in a temporary directory; the root-entry and docs
+cases make it a Git repository, because both are read from the index. Nothing
+here reads or writes this repository.
 """
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -23,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.archcheck import (
     ARCHITECTURE_POLICY, ArchitecturePolicyError, _checked_python_files, _module_name,
-    check_policy_paths, check_registry, check_repository_root, validate_policy,
+    check_docs_layout, check_policy_paths, check_registry, check_repository_root, validate_policy,
 )
 
 
@@ -217,7 +218,7 @@ class RepositoryRootTests(unittest.TestCase):
         self.track()
         findings = self.findings()
         self.assertEqual([("scratch", "ROOT_ENTRY"), ("setup.py", "ROOT_ENTRY")], [item[:2] for item in findings])
-        self.assertIn("docs/REPO_LAYOUT.md", findings[0][2])
+        self.assertIn("docs/architecture/repository-layout.md", findings[0][2])
 
     def test_ignored_and_untracked_files_are_not_the_layout(self) -> None:
         for relative in ("archflow_v4.egg-info/PKG-INFO", ".pytest_cache/README.md", "error.log", "notes.txt"):
@@ -237,6 +238,114 @@ class RepositoryRootTests(unittest.TestCase):
         for policy in (_policy(legacy_root_packages=[]), without):
             with self.subTest(policy=policy.get("legacy_root_packages")):
                 self.assertEqual([("archflow", "ROOT_ENTRY")], [item[:2] for item in self.findings(policy)])
+
+
+class DocsLayoutTests(unittest.TestCase):
+    """docs/ keeps README.md at its root and categorised, kebab-case documents.
+
+    Read from Git's index like the root entries, so ignored private notes under
+    docs/ in a checkout decide nothing.
+    """
+
+    LAYOUT = (
+        "docs/README.md",
+        "docs/architecture/overview.md",
+        "docs/decisions/README.md",
+        "docs/decisions/001-one-spine.md",
+        "docs/prototypes/candidate-graph/README.md",
+        "docs/prototypes/candidate-graph/index.html",
+        "docs/prototypes/candidate-graph/data/issue-fixture.js",
+        "docs/prototypes/candidate-graph/screenshots/01-closed.png",
+    )
+
+    def setUp(self) -> None:
+        self.root = _temporary_root(self, "repo")
+        _git(self.root, "init", "-q")
+        for relative in self.LAYOUT:
+            _write(self.root, relative, "text\n")
+        self.track()
+
+    def track(self) -> None:
+        _git(self.root, "add", "-A")
+
+    def add(self, *relatives: str) -> list[tuple[str, str, str]]:
+        for relative in relatives:
+            _write(self.root, relative, "text\n")
+        self.track()
+        return [(item.path, item.code, item.message) for item in check_docs_layout(self.root)]
+
+    def test_the_layout_passes(self) -> None:
+        self.assertEqual([], self.add())
+
+    def test_only_the_readme_stays_at_the_docs_root(self) -> None:
+        findings = self.add("docs/ARCHITECTURE.md", "docs/index.md")
+        self.assertEqual(
+            [("docs/ARCHITECTURE.md", "DOCS_ROOT"), ("docs/index.md", "DOCS_ROOT")],
+            [item[:2] for item in findings],
+        )
+        self.assertIn("only README.md stays at the docs root", findings[0][2])
+
+    def test_a_document_name_is_lowercase_kebab_case_markdown(self) -> None:
+        bad = (
+            "docs/architecture/PROJECT_RUNTIME.md",
+            "docs/research/research_plan.md",
+            "docs/design/drawing-standard-v0.1.md",
+            "docs/design/Overview.md",
+            "docs/product/roadmap.markdown",
+        )
+        findings = self.add(*bad, "docs/design/drawing-standard.md")
+        self.assertEqual(sorted((path, "DOC_NAME") for path in bad), [item[:2] for item in findings])
+        self.assertTrue(all("not a lowercase kebab-case Markdown name" in item[2] for item in findings))
+
+    def test_a_dated_name_is_refused_although_it_is_kebab_case(self) -> None:
+        name = "2026-09-28-construction-api.md"
+        # The kebab pattern alone accepts it; the date ban is a rule of its own.
+        self.assertIsNotNone(re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*\.md", name))
+        findings = self.add(f"docs/design/{name}", f"docs/audits/{name}")
+        self.assertEqual(
+            [(f"docs/audits/{name}", "DOC_NAME"), (f"docs/design/{name}", "DOC_NAME")],
+            [item[:2] for item in findings],
+        )
+        self.assertIn("begins with a date", findings[0][2])
+        self.assertIn("created: YYYY-MM-DD", findings[0][2])
+
+    def test_a_decision_keeps_its_three_digit_number(self) -> None:
+        bad = (
+            "docs/decisions/ADR-011-interface-information-hierarchy.md",
+            "docs/decisions/11-interface.md",
+            "docs/decisions/0011-interface.md",
+            "docs/decisions/interface.md",
+        )
+        findings = self.add(*bad, "docs/decisions/011-interface-information-hierarchy.md")
+        self.assertEqual(sorted((path, "DOC_NAME") for path in bad), [item[:2] for item in findings])
+        self.assertTrue(all("not a decision name" in item[2] for item in findings))
+
+    def test_a_directory_name_is_kebab_case_and_reported_once(self) -> None:
+        findings = self.add("docs/Research/notes.md", "docs/design_notes/a.md", "docs/design_notes/b.md")
+        self.assertEqual(
+            [("docs/Research", "DOC_NAME"), ("docs/design_notes", "DOC_NAME")],
+            [item[:2] for item in findings],
+        )
+
+    def test_only_prototypes_keep_files_that_are_not_markdown(self) -> None:
+        findings = self.add(
+            "docs/prototypes/candidate-graph/prototype.css",
+            "docs/prototypes/candidate-graph/NOTES.md",
+            "docs/design/diagram.png",
+        )
+        self.assertEqual(
+            [("docs/design/diagram.png", "DOC_NAME"), ("docs/prototypes/candidate-graph/NOTES.md", "DOC_NAME")],
+            [item[:2] for item in findings],
+        )
+        self.assertIn("only docs/prototypes/ keeps other files", findings[0][2])
+
+    def test_ignored_and_untracked_files_are_not_the_layout(self) -> None:
+        _write(self.root, ".gitignore", "docs/TEAM_MEETING_AGENDA.md\ndocs/claude-worktree/\n")
+        for relative in ("docs/TEAM_MEETING_AGENDA.md", "docs/claude-worktree/Notes.md", "docs/RESEARCH_POSITIONING.md"):
+            _write(self.root, relative)
+        self.track()  # "git add -A" stages the untracked positioning note; unstage it
+        _git(self.root, "rm", "-q", "--cached", "docs/RESEARCH_POSITIONING.md")
+        self.assertEqual([], [item for item in check_docs_layout(self.root)])
 
 
 class RegistryPathTests(unittest.TestCase):

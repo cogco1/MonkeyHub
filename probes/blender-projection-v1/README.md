@@ -3,7 +3,7 @@
 Executed 2026-09-18 against the implementation based on MonkeyHub
 `1036802633ed1dd69a09384b800b381b03fce89b`, using Blender 4.3.0,
 cadquery-ocp 7.9.3.1.1 and Pillow 12.3.0 on Windows.
-[Reproduction and boundary](../../docs/BLENDER_PROJECTION.md).
+[Reproduction and boundary](../../docs/design/blender-projection.md).
 
 The `demo` P036 project contains two runs, `before` and `after`. MonkeyHub's wall
 producer moves the door from 6.0 to 6.1 m along the wall, then OCCT and Blender

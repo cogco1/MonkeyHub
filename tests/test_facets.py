@@ -2,7 +2,7 @@
 
 ``Component@1.fields.facets`` is a map of namespaced keys to string values,
 validated against ``packages/archflow/src/archflow/semantics/facets.py`` (spec
-docs/2026-09-28-construction-api.md §3.4): an enumerated key accepts one of
+docs/design/construction-api.md §3.4): an enumerated key accepts one of
 its closed set of values, a free-text key accepts 1-120 characters. An
 unknown key or an unregistered value is a ``StateRecordError`` naming the
 nearest key or the allowed values. ``component_facets`` reads the map back

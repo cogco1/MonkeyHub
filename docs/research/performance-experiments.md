@@ -16,7 +16,7 @@ OCBA 处理另一层资源问题：已有一组候选时，如何把有限的重
 | 唤醒分流，#204 | 合成只读分流中，28 次检查的主模型唤醒从 28 次变为 20 次；两臂均为 28/28 正确处置。期间存在其他调用负载 | 放到连续修改任务后，是否减少总成本且不延迟必要干预？ |
 | Jev 分流，#205 | 适配与失败回退已实现，真实 Jev 组尚未测量 | 在已有确定性分流之上，Jev 的额外调用、校准与回退是否仍有净收益？ |
 
-上述上下文与分流实验没有完成真实建筑修改。其调用时间受并发影响，不能用来宣布稳定提速。Stage 数据同时出现提速和变慢，说明总输入量本身不能解释使用速度。原始证据分别见 [revision-v2](../../probes/spatial-observation-v1/revision-v2.md)、[Stage 交接](../CONTEXT_COMPILATION.md#confirmed-stage-continuation-185)、[分流结果](../../labs/event_gating/results.md)。
+上述上下文与分流实验没有完成真实建筑修改。其调用时间受并发影响，不能用来宣布稳定提速。Stage 数据同时出现提速和变慢，说明总输入量本身不能解释使用速度。原始证据分别见 [revision-v2](../../probes/spatial-observation-v1/revision-v2.md)、[Stage 交接](../design/context-compilation.md#confirmed-stage-continuation-185)、[分流结果](../../labs/event_gating/results.md)。
 
 优先做两项：**工具回合折叠；带完整依赖保护的 lexical 上下文选择**。前者直接改变串行往返，后者已有可复用比较与明确失败题。Stage 和唤醒分流随后进入同一口径；暂不增加模型路由、强制 Critic 或新的观测框架。
 

@@ -65,14 +65,14 @@
     "packages/monkeymonitor/tests/",
     "packages/monkeycontrol/tests/",
     "packages/monkeyfab/tests/",
-    "docs/PROTOCOL.md",
+    "docs/protocols/project-runtime-api.md",
     "governance/architecture_policy.json",
-    "docs/SYSTEM_MAP.md",
-    "docs/SEMANTIC_REGISTRY.md"
+    "docs/architecture/system-map.md",
+    "docs/architecture/semantic-registry.md"
   ],
   "unclaimed_write_scope": [
-    "docs/adr/",
-    "docs/REPO_LAYOUT.md",
+    "docs/decisions/",
+    "docs/architecture/repository-layout.md",
     "CONTRIBUTING.md"
   ],
   "probe_root": "probes",
@@ -173,7 +173,7 @@
       ],
       "kind": "rendered_docs",
       "owner": "tools.devctl",
-      "reason": "Renders SYSTEM_MAP and SEMANTIC_REGISTRY from the module registry and the semantic tables; the files are committed."
+      "reason": "Renders docs/architecture/system-map.md and semantic-registry.md from the module registry and the semantic tables; the files are committed."
     },
     {
       "path": "tools/run_project.py",

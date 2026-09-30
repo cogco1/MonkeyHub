@@ -1,8 +1,8 @@
 """One authored State Record and the run the spine binds it to.
 
 The spine's design state is a ``StateRecord@1`` and its constructor is
-``developed_design_view(record, run=..., phase=...)`` (docs/CANONICAL_SPINE.md, the
-"Design state" row). ``initialize_developed_design`` — the portfolio
+``developed_design_view(record, run=..., phase=...)`` (docs/decisions/001-one-spine.md,
+the "Design state" row of its record). ``initialize_developed_design`` — the portfolio
 ceremony that used to build the fixture state for these tests — left with
 that lane, so the fixture is authored here as a record and projected the
 way ``runtime.project_runner`` and the Studio project it, with the same

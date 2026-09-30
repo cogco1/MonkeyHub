@@ -35,8 +35,8 @@ class WorkLookupTests(unittest.TestCase):
         (self.registry_path.parent / "architecture_policy.json").write_bytes(
             (source_root / "governance" / "architecture_policy.json").read_bytes()
         )
-        (self.root / "docs").mkdir()
-        for relative in ("docs/SYSTEM_MAP.md", "docs/SEMANTIC_REGISTRY.md"):
+        (self.root / "docs" / "architecture").mkdir(parents=True)
+        for relative in ("docs/architecture/system-map.md", "docs/architecture/semantic-registry.md"):
             (self.root / relative).write_text(UNRENDERED, encoding="utf-8")
         self.lanes = [
             self._lane("a-appserver", "apps/monkeyhub/app_server.py", "fixture.appserver"),
@@ -53,8 +53,8 @@ class WorkLookupTests(unittest.TestCase):
         self._save()
         for field, value in (
             ("ROOT", self.root), ("REGISTRY_PATH", self.registry_path),
-            ("SYSTEM_MAP", self.root / "docs/SYSTEM_MAP.md"),
-            ("SEMANTIC_REGISTRY", self.root / "docs/SEMANTIC_REGISTRY.md"),
+            ("SYSTEM_MAP", self.root / "docs/architecture/system-map.md"),
+            ("SEMANTIC_REGISTRY", self.root / "docs/architecture/semantic-registry.md"),
         ):
             patcher = patch.object(devctl, field, value)
             patcher.start()
@@ -262,10 +262,10 @@ class WorkLookupTests(unittest.TestCase):
         self.registry_path.unlink()
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(devctl.main(["render-map"]), 0)
-        for relative in ("docs/SYSTEM_MAP.md", "docs/SEMANTIC_REGISTRY.md"):
+        for relative in ("docs/architecture/system-map.md", "docs/architecture/semantic-registry.md"):
             self.assertNotEqual((self.root / relative).read_text(encoding="utf-8"), UNRENDERED, relative)
-        self.assertEqual(sorted(path.name for path in (self.root / "docs").iterdir()),
-                         ["SEMANTIC_REGISTRY.md", "SYSTEM_MAP.md"])
+        self.assertEqual(sorted(path.name for path in (self.root / "docs" / "architecture").iterdir()),
+                         ["semantic-registry.md", "system-map.md"])
 
 
 if __name__ == "__main__":

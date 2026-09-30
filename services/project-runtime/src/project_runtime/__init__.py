@@ -1,7 +1,7 @@
 """The Project Runtime: the project-scoped backend MonkeyHub starts once per open project.
 
 Historically the ArchFlow Studio API; since #491 the package is ``project_runtime`` in
-services/project-runtime (contract: docs/PROJECT_RUNTIME.md). The package sits outside
+services/project-runtime (contract: docs/architecture/project-runtime.md). The package sits outside
 ``archflow`` on purpose. It validates requests, shapes transport payloads and manages task
 lifecycle; design state, dependencies, validation, geometry and commit are calls *into* the
 kernel, never a second implementation beside it.

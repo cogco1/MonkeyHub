@@ -25,7 +25,7 @@ POLICY_PATH = "governance/architecture_policy.json"
 REGISTRY_PATH = "governance/work_registry.json"
 CARD_ERA_SCHEMA = "ArchFlowDevelopmentRegistry@2"
 SHARED = ["governance/work_registry.json", "governance/architecture_policy.json", "tests/"]
-POLICY = {"shared_write_scope": SHARED, "unclaimed_write_scope": ["docs/adr/", "CONTRIBUTING.md"]}
+POLICY = {"shared_write_scope": SHARED, "unclaimed_write_scope": ["docs/decisions/", "CONTRIBUTING.md"]}
 CARD_ERA_POLICY = {"shared_write_scope": [*SHARED, "docs/mapping/"]}
 
 
@@ -302,11 +302,11 @@ class GithubClaimTests(_GithubClaimCases, unittest.TestCase):
 
     def test_unclaimed_commits_write_only_shared_and_policy_unclaimed_paths(self) -> None:
         self.commit("Clarify contribution guidance", {
-            "CONTRIBUTING.md": "guidance\n", "docs/adr/ADR-009.md": "decision\n", "tests/test_doc.py": "assert True\n",
+            "CONTRIBUTING.md": "guidance\n", "docs/decisions/009-memory-layer.md": "decision\n", "tests/test_doc.py": "assert True\n",
         })
         self.assertEqual((), self.findings())
-        self.commit("Tidy the agent rules", {"AGENTS.md": "rules\n", "docs/REPO_LAYOUT.md": "layout\n"})
-        self.assertEqual({("AGENTS.md", "SCOPE_UNDECLARED"), ("docs/REPO_LAYOUT.md", "SCOPE_UNDECLARED")}, self.found())
+        self.commit("Tidy the agent rules", {"AGENTS.md": "rules\n", "docs/architecture/overview.md": "overview\n"})
+        self.assertEqual({("AGENTS.md", "SCOPE_UNDECLARED"), ("docs/architecture/overview.md", "SCOPE_UNDECLARED")}, self.found())
 
     def test_a_claimed_commit_does_not_gain_the_unclaimed_paths(self) -> None:
         self.commit("GH-60: also edit the guide", {"CONTRIBUTING.md": "guidance\n"})
