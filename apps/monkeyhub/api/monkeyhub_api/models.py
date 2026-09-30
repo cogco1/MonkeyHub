@@ -231,6 +231,31 @@ class ChatDocumentRef(BaseModel):
 class ChatDocument(ChatDocumentRef):
     fileName: str
     mimeType: str
+    # The part a user message's image plays in a render discussion (#253), as
+    # the user chose it; absent on presented results and older records.
+    role: Literal["source", "reference"] | None = None
+
+
+class ChatRenderContext(BaseModel):
+    """The images one message discusses, by exact registered page and the role the user chose (#253).
+
+    One source, the image a render would start from, and up to three
+    references it may borrow from. The source is never also a reference and no
+    page repeats. It names pages only: never a file name, a newest image or a
+    model state, and it needs no design context.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+
+    source: ChatDocumentRef
+    references: list[ChatDocumentRef] = Field(default_factory=list, max_length=3)
+
+    @model_validator(mode="after")
+    def distinct_pages(self):
+        pages = [(row.runId, row.assetSha256, row.revisionRef, row.pageIndex) for row in (self.source, *self.references)]
+        if len(set(pages)) != len(pages):
+            raise ValueError("The source and each reference must be distinct pages; the source is not also a reference.")
+        return self
 
 
 class ChatSuggestionEstimate(BaseModel):
@@ -511,6 +536,8 @@ class ChatPostRequest(BaseModel):
     designContext: ChatDesignContext | None = None
     contextMode: Literal["continue", "project", "stage"] = "continue"
     suggestionSelection: ChatSuggestionSelection | None = None
+    # The registered images this message discusses (#253), bound for this turn only.
+    renderContext: ChatRenderContext | None = None
 
     @model_validator(mode="after")
     def project_context_requires_source(self):

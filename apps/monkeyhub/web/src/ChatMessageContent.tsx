@@ -8,7 +8,8 @@ export type ChatDocument = NonNullable<ChatMessage["documents"]>[number];
 type Labels = { attachments: string; previewImage: string; close: string; download: string;
   imageLoading: string; imageFailed: string; openDocument: string; filesTitle: string;
   fileCount: (count: number) => string; fileDetails: (count: number) => string;
-  filePage: (page: number) => string; fileReference: (index: number) => string };
+  filePage: (page: number) => string; fileReference: (index: number) => string;
+  renderRoleSource: string; renderRoleReference: string };
 
 /** Model text never supplies executable markup, image URLs or application routes. */
 function safeLink(value: string): string | undefined {
@@ -138,6 +139,8 @@ export function ChatMessageFiles({ sessionId, messageId, attachments = [], docum
             <span className="chat-file-row__meta">{format(file)}
               {file.size != null && <> · {fileSize(file.size)}</>}
               {file.document && <> · {labels.filePage((file.document.pageIndex ?? 0) + 1)}</>}
+              {/* #253: the role the architect gave this image in an image discussion. */}
+              {file.document?.role && <> · {file.document.role === "source" ? labels.renderRoleSource : labels.renderRoleReference}</>}
               {itemReference && <> · {itemReference}</>}
             </span>
           </div>
