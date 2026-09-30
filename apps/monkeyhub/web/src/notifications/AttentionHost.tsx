@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type FocusEvent } from "react";
-import type { Language } from "../../../../shared-web/src/appearance.js";
+import type { Language } from "../../../../../packages/web-shared/src/appearance.js";
 import { attentionCopy, clearance, GAP, noticeText, type AttentionEvent, type AttentionWords, type Box } from "./attention";
 import { useAttention } from "./useAttention";
 import "./attention.css";

@@ -166,7 +166,7 @@ import {createRoot} from 'react-dom/client';
 import {ProjectWorkspace} from '/src/app/ProjectWorkspace';
 import {UserPreferencesProvider,usePreferences} from '/test/TestProviders';
 import '/src/styles.css';
-import '/@fs/${path.resolve(repoRoot, "apps/shared-web/src/base.css").replaceAll("\\", "/")}';
+import '/@fs/${path.resolve(repoRoot, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
 function Project({id,active}){
  const [workspace,setWorkspace]=useState('render');
  const preferences=usePreferences();
@@ -191,7 +191,7 @@ import RenderWorkspace from '/src/workspaces/render/RenderWorkspace';
 import {captureRenderView} from '/src/workspaces/monkeyarch/viewer/renderView';
 import {UserPreferencesProvider} from '/test/TestProviders';
 import '/src/styles.css';
-import '/@fs/${path.resolve(repoRoot, "apps/shared-web/src/base.css").replaceAll("\\", "/")}';
+import '/@fs/${path.resolve(repoRoot, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
 const source=await fetch('/capture/fixture/model').then(response=>response.json());
 const loader=new Rhino3dmLoader(); loader.setLibraryPath('/rhino3dm/');
 const object=await loader.loadAsync('/capture/fixture/model-bytes'); loader.dispose();

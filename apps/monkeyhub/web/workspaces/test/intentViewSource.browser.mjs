@@ -185,7 +185,7 @@ try {
       transform(source, id) {
         const modulePath = id.split("?")[0].replaceAll("\\", "/");
         if (modulePath === `${webRoot.replaceAll("\\", "/")}/test/workspace-fixture.tsx`) {
-          return { code: `import "/@fs/${path.resolve(webRoot, "../../../shared-web/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
+          return { code: `import "/@fs/${path.resolve(webRoot, "../../../../packages/web-shared/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
         }
         if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeydiagram/documentVisualInput.ts`) {
           const marker = "  if (!Number.isFinite(maxEdge)";

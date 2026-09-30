@@ -3,7 +3,7 @@ import { useCallback } from "react";
 import { usePreferences } from "../features/settings/preferences";
 import { messagesEn, type MessageKey } from "../../../src/i18n/messages.en";
 import { messagesZhCN } from "../../../src/i18n/messages.zh-CN";
-import { translateMessage } from "../../../../../shared-web/src/i18n.js";
+import { translateMessage } from "../../../../../../packages/web-shared/src/i18n.js";
 
 export type MessageParameters = Readonly<Record<string, string | number>>;
 export type TFunction = (

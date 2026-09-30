@@ -68,7 +68,7 @@
 全局只有一个“Hub settings”对话框（`HUB/main.tsx:212-294`），工作区内没有设置入口。
 
 ### 视觉
-- `apps/shared-web/src/base.css` 提供颜色 token 和四级字号角色。
+- `packages/web-shared/src/base.css` 提供颜色 token 和四级字号角色。
 - 外壳基本遵守；工作区样式自有一套 `calc(Npx*var(--font-scale))` 字号。
 - Monitor 使用裸 px。
 - 桌面启动页只有暗色。

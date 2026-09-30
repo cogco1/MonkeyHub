@@ -151,7 +151,7 @@ change page memory only.
 **Taken from the product:**
 
 - Colour, type, radius and shadow tokens are copied from
-  `apps/shared-web/src/base.css` (Workshop Graphite with Drafting Blue, light
+  `packages/web-shared/src/base.css` (Workshop Graphite with Drafting Blue, light
   and dark).
 - Shell geometry follows `apps/monkeyhub/web/src/ChatShell.css`: sidebar,
   chat, resizer, tool panel, rail.

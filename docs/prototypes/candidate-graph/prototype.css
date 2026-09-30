@@ -1,7 +1,7 @@
 /* ---------------------------------------------------------------------------
    GH-284 Candidate Graph: dev prototype styles.
 
-   Tokens are copied from apps/shared-web/src/base.css (Workshop Graphite with
+   Tokens are copied from packages/web-shared/src/base.css (Workshop Graphite with
    Drafting Blue). The bare :root is dark; the light set answers an explicit
    light choice or a system theme that prefers light, exactly as in base.css.
    Shell geometry mirrors apps/monkeyhub/web/src/ChatShell.css (sidebar, chat,

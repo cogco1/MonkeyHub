@@ -69,7 +69,7 @@ SOURCE_PATHS = (
     "archflow", "monkeyarch", "monkeydiagram", "monkeymonitor", "monkeycontrol",
     "apps/archflow-studio/api",
     "apps/archflow-studio/assets",
-    "apps/monkeyhub", "apps/monkeyfab", "apps/shared-web", "OPEN_MONKEYHUB.cmd",
+    "apps/monkeyhub", "apps/monkeyfab", "packages/web-shared", "OPEN_MONKEYHUB.cmd",
     "README.md", "SECURITY.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
     "governance/module_registry.json",
 )
