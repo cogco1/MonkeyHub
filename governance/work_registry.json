@@ -1,31 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-513",
-      "status": "active",
-      "branch": "codex/integration-512-518-520",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-512-518-520",
-      "base_ref": "008514fd9f85207c2ee4995303b5c05cc67bbb10",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "state.geometry_program",
-        "capabilities.geometry_proposal",
-        "adapters.cad_program",
-        "adapters.cad_patch",
-        "adapters.cad_execution",
-        "construction.script",
-        "runtime.project_runner",
-        "studio.artifacts",
-        "studio.candidate",
-        "tools.verify_state_record"
-      ],
-      "write_scope": [
-        "docs/architecture/repository-layout.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
