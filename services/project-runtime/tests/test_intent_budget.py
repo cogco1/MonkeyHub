@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from project_runtime.application.intent_agent import Selection
 from project_runtime.application.intent_budget import build_context_budget
-from project_runtime.monitoring import MonitoredCompiler
+from project_runtime.application.monitored_compiler import MonitoredCompiler
 from monkeymonitor.store import UsageLog
 from monkeymonitor.usage import TokenUsage, UsageEvent, diagnostic_details
 from project_runtime.settings import StudioSettings, SettingsError, CONTEXT_BUDGET_ENV, PROJECT_DIR_ENV

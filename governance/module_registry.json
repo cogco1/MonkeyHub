@@ -6009,6 +6009,7 @@
         "services/project-runtime/src/project_runtime/api/dto/health.py",
         "services/project-runtime/src/project_runtime/api/dto/protocol.py",
         "services/project-runtime/src/project_runtime/monitoring.py",
+        "services/project-runtime/src/project_runtime/application/monitored_compiler.py",
         "scripts/dev/run-project-runtime.ps1",
         "services/project-runtime/src/project_runtime/authentication.py",
         "services/project-runtime/src/project_runtime/api/dto/synchronization.py",

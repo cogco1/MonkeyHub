@@ -19,7 +19,8 @@ from httpx2 import ASGITransport, AsyncClient
 
 from project_runtime.application.intent_agent import DeterministicCompiler, Selection
 from project_runtime.jobs import JobRegistry
-from project_runtime.monitoring import MonitoredCompiler, StudioMonitor, candidate_event_id
+from project_runtime.application.monitored_compiler import MonitoredCompiler
+from project_runtime.monitoring import StudioMonitor, candidate_event_id
 from archflow.project.refs import record_ref_from_uri
 from monkeyarch.runtime import project_runner
 from monkeymonitor.store import BUSY_NOTICE, UsageLog

@@ -28,7 +28,8 @@ from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER
 from project_runtime.application import intent_agent, study_model
 from project_runtime.binding import bound_project
 from project_runtime.application.intent_agent import CodexCompiler, AnthropicCompiler, DeterministicCompiler, IntentAgentFailed
-from project_runtime.monitoring import MonitoredCompiler, StudioMonitor
+from project_runtime.application.monitored_compiler import MonitoredCompiler
+from project_runtime.monitoring import StudioMonitor
 from project_runtime.errors import StudioError
 from project_runtime.api.dto.study import StudyResearchRequestDto
 from project_runtime.api.routes import study as study_routes

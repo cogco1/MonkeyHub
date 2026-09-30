@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi.testclient import TestClient
 
 from project_runtime.main import create_app
-from project_runtime.monitoring import MonitoredCompiler
+from project_runtime.application.monitored_compiler import MonitoredCompiler
 from project_runtime.settings import StudioSettings
 from monkeymonitor.store import UsageLog
 

@@ -43,7 +43,8 @@ from .events import StudioEvents
 from .application.intent_agent import compiler_from_settings
 from .jobs import JobRegistry
 from .application.rendering import RenderJobRecords
-from .monitoring import MonitoredCompiler, StudioMonitor
+from .application.monitored_compiler import MonitoredCompiler
+from .monitoring import StudioMonitor
 from .application.options import OptionStore
 from .application.proposals import ProposalStore
 from .application.validation import ValidationStore
