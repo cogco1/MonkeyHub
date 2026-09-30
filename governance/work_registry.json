@@ -1,35 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-521",
-      "status": "active",
-      "branch": "codex/521-hub-splits",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-521-hub-splits",
-      "base_ref": "c175e7b3bae4265455afe90f4211d67055aee8a2",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "hub.shell",
-        "tools.package_monkeyapps"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/",
-        "apps/monkeyhub/api/tests/",
-        "apps/monkeyhub/run.py",
-        "apps/monkeyhub/README.md",
-        "apps/monkeyhub/web/scripts/dump-openapi.py",
-        "apps/monkeyhub/web/test/renderWorkspace.browser.mjs",
-        "tools/benchmarks/run_turn_benchmark.py",
-        "tools/release/package_monkeyapps.py",
-        "labs/checkpoint_critique/provider.py",
-        "docs/architecture/project-runtime.md",
-        "docs/design/hub-interaction.md",
-        "docs/development/nightly-release.md",
-        "docs/architecture/repository-layout.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
