@@ -7902,7 +7902,7 @@
         "The shared application preference authority"
       ],
       "inputs": [
-        "One exact Hub source Git commit or ref, including apps/monkeyfab",
+        "One exact Hub source Git commit or ref, including packages/monkeyfab",
         "Saved development root and optional task name, or explicit external staging, cache and output directories",
         "Builder Node/npm and Windows Python runtime inputs",
         "Explicit base/target desktop bundle directories and output ZIP, or a local developer patch with explicit base and staging parent"
@@ -8045,7 +8045,7 @@
     },
     {
       "module_id": "monkeyfab",
-      "owner_path": "apps/monkeyfab/src/monkeyfab/cli.py",
+      "owner_path": "packages/monkeyfab/src/monkeyfab/cli.py",
       "purpose": "Prepare closed print meshes and upload already sliced Bambu jobs through the Fab CLI hosted by Hub.",
       "status": "canonical",
       "owns": [
@@ -8084,18 +8084,18 @@
         "Send never starts printing, persists access codes or silently retries an uncertain upload"
       ],
       "files": [
-        "apps/monkeyfab/src/monkeyfab/__init__.py",
-        "apps/monkeyfab/src/monkeyfab/__main__.py",
-        "apps/monkeyfab/src/monkeyfab/cli.py",
-        "apps/monkeyfab/src/monkeyfab/geometry.py",
-        "apps/monkeyfab/src/monkeyfab/profiles.py",
-        "apps/monkeyfab/src/monkeyfab/send.py"
+        "packages/monkeyfab/src/monkeyfab/__init__.py",
+        "packages/monkeyfab/src/monkeyfab/__main__.py",
+        "packages/monkeyfab/src/monkeyfab/cli.py",
+        "packages/monkeyfab/src/monkeyfab/geometry.py",
+        "packages/monkeyfab/src/monkeyfab/profiles.py",
+        "packages/monkeyfab/src/monkeyfab/send.py"
       ],
       "tests": [
-        "apps/monkeyfab/tests/test_cli.py",
-        "apps/monkeyfab/tests/test_geometry.py",
-        "apps/monkeyfab/tests/test_profiles.py",
-        "apps/monkeyfab/tests/test_send.py"
+        "packages/monkeyfab/tests/test_cli.py",
+        "packages/monkeyfab/tests/test_geometry.py",
+        "packages/monkeyfab/tests/test_profiles.py",
+        "packages/monkeyfab/tests/test_send.py"
       ],
       "notes": "User-requested repository consolidation. Import the existing MonkeyFab implementation at 6128f99c8fbcc5db41539a225386a6495fa6c5ab; retain its CLI and algorithm ownership. No current core, modeling or drawing owner provides print preparation, so this registers the existing capability instead of adding another implementation."
     },

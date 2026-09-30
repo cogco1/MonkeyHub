@@ -147,7 +147,7 @@ class PackageAdapterTests(unittest.TestCase):
         for directory in (
             "apps/archflow-studio/api/archflow_studio_api",
             "apps/monkeyhub/api", "apps/monkeyhub/installer/third-party",
-            "apps/monkeyfab/src/monkeyfab", "apps/monkeyfab/tests",
+            "packages/monkeyfab/src/monkeyfab", "packages/monkeyfab/tests",
         ):
             (self.source / directory).mkdir(parents=True)
         for relative in (
@@ -157,8 +157,8 @@ class PackageAdapterTests(unittest.TestCase):
             "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "pyproject.toml",
             "governance/module_registry.json", "tools/create_project.py", "tools/run_project.py",
             "tools/source_roots.py", "SECURITY.md",
-            "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml",
-            "apps/monkeyfab/tests/test_cli.py",
+            "packages/monkeyfab/src/monkeyfab/__main__.py", "packages/monkeyfab/pyproject.toml",
+            "packages/monkeyfab/tests/test_cli.py",
             "packages/monkeycontrol/src/monkeycontrol/__init__.py",
             "packages/monkeycontrol/src/monkeycontrol/hosts/execution_host.ps1",
             "packages/monkeydiagram/src/monkeydiagram/__init__.py", "packages/monkeydiagram/tests/test_svg.py",
@@ -242,9 +242,11 @@ class PackageAdapterTests(unittest.TestCase):
         self.assertEqual((self.bundle / "tools/source_roots.py").read_text(), "fixture")
         self.assertIn("tools/source_roots.py", builder.SOURCE_PATHS)
         self.assertNotIn("governance/architecture_policy.json", builder.SOURCE_PATHS)
+        # Fab keeps the bundle path installed updaters require, wherever the repository keeps it.
         self.assertEqual((self.bundle / "apps/monkeyfab/src/monkeyfab/__main__.py").read_text(), "fixture")
         self.assertEqual((self.bundle / "apps/monkeyfab/pyproject.toml").read_text(), "fixture")
         self.assertFalse((self.bundle / "apps/monkeyfab/tests").exists())
+        self.assertIn("packages/monkeyfab", builder.SOURCE_PATHS)
         self.assertEqual((self.bundle / "apps/monkeyhub/web/dist/index.html").read_text(), "fixture")
         # The desktop shortcut and the browser launcher take the product icon from here.
         self.assertEqual((self.bundle / "apps/monkeyhub/assets/monkeyarch.ico").read_text(), "fixture")

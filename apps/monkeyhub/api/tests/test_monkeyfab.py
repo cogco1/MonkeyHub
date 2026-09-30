@@ -23,7 +23,7 @@ source_roots.put_first(ROOT)
 
 from fastapi.testclient import TestClient
 
-from monkeyhub_api.fabrication import ACCESS_CODE_ENV
+from monkeyhub_api.fabrication import ACCESS_CODE_ENV, Fabrication, available
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import FabSendRequest
 
@@ -255,6 +255,25 @@ class FabApiTests(_FabCase):
                 thread.join(5)
             self.assertFalse(thread.is_alive())
             self.assertEqual(responses[0].status_code, 200)
+
+
+class FabSourceTests(unittest.TestCase):
+    """A checkout keeps Fab in packages/monkeyfab, the installed bundle at apps/monkeyfab."""
+
+    def test_the_cli_runs_from_where_the_snapshot_keeps_it(self):
+        result = subprocess.CompletedProcess([], 0, json.dumps({"fixture": PROFILE}), "")
+        for relative in ("packages/monkeyfab/src", "apps/monkeyfab/src"):
+            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.assertFalse(available(root))
+                (root / relative / "monkeyfab").mkdir(parents=True)
+                (root / relative / "monkeyfab/__main__.py").touch()
+                self.assertTrue(available(root))
+                with patch("monkeyhub_api.fabrication.subprocess.run", return_value=result) as run:
+                    Fabrication(root).profiles()
+                self.assertEqual(run.call_args.kwargs["env"]["PYTHONPATH"].split(os.pathsep)[0],
+                                 str(root / relative))
+        self.assertTrue(available(ROOT))
 
 
 class FabRealCliTests(_FabCase):

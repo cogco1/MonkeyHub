@@ -8,5 +8,6 @@ test_command = "python -m unittest discover -s tests -v"
 [tool.pytest.ini_options]
 # A package suite has no __init__.py, so two suites holding modules of one name cannot
 # share a process. monkeycontrol's test_trace.py and test_cli.py repeat monkeymonitor's and
-# monkeyfab's names; its suite runs on its own, as CI runs every package suite.
+# monkeyfab's names, and monkeyfab's suite needs Fab's own dependencies: both run on their
+# own, as CI runs every package suite.
 testpaths = ["tests", "packages/archflow/tests", "packages/monkeydiagram/tests", "packages/monkeymonitor/tests"]

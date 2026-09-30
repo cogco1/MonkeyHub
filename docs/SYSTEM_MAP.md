@@ -703,7 +703,7 @@ Validate and compile caller-supplied drawing information against a configurable 
 
 ## monkeyfab
 
-### monkeyfab — `apps/monkeyfab/src/monkeyfab/cli.py`
+### monkeyfab — `packages/monkeyfab/src/monkeyfab/cli.py`
 Prepare closed print meshes and upload already sliced Bambu jobs through the Fab CLI hosted by Hub.
 - owns: Uniform unit/scale conversion and closed grid cuts within a selected printer envelope; Printer profiles, assembly offsets, STL and parts.json export to an explicit output directory; Local sliced-job inspection and optional LAN FTPS upload without starting a print
 - does not own: Hub UI, HTTP transport, application lifecycle or installation; Architectural design changes, project persistence, canonical HEAD or formal issue; Slicing, printer control, automatic printing or credential storage

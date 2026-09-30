@@ -44,7 +44,7 @@ jobs:
             packages/monkeydiagram/pyproject.toml
             packages/monkeymonitor/pyproject.toml
             packages/monkeycontrol/pyproject.toml
-            apps/monkeyfab/pyproject.toml
+            packages/monkeyfab/pyproject.toml
             apps/archflow-studio/api/requirements.txt
 
       # Every event runs the same verification. The scope and whitespace checks
@@ -71,7 +71,7 @@ jobs:
           -e packages/monkeydiagram
           -e packages/monkeymonitor
           -e packages/monkeycontrol
-          -e "apps/monkeyfab[send,test]"
+          -e "packages/monkeyfab[send,test]"
           -r apps/archflow-studio/api/requirements.txt
           -r apps/monkeyhub/api/requirements.txt
           httpx2 pytest
@@ -97,7 +97,7 @@ jobs:
         run: python -m pytest packages/monkeycontrol/tests -q
 
       - name: Fab geometry, CLI and upload boundaries
-        run: python -m pytest apps/monkeyfab/tests -q
+        run: python -m pytest packages/monkeyfab/tests -q
 
       - name: Studio API suite
         env:

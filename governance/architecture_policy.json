@@ -12,7 +12,7 @@
     "tests",
     "labs",
     "apps/monkeyhub",
-    "apps/monkeyfab"
+    "packages/monkeyfab"
   ],
   "import_only_source_roots": [
     "labs"
@@ -21,7 +21,7 @@
     ".",
     "apps/archflow-studio/api",
     "apps/monkeyhub/api",
-    "apps/monkeyfab/src",
+    "packages/monkeyfab/src",
     "packages/monkeydiagram/src",
     "packages/archflow/src",
     "packages/monkeyarch/src",
@@ -64,6 +64,7 @@
     "packages/archflow/tests/",
     "packages/monkeymonitor/tests/",
     "packages/monkeycontrol/tests/",
+    "packages/monkeyfab/tests/",
     "docs/PROTOCOL.md",
     "governance/architecture_policy.json",
     "docs/SYSTEM_MAP.md",
@@ -499,7 +500,7 @@
       "reason": "Holds one OS file lock under the explicit nonproject Hub runtime root across CLI startup and managed worker drain; browser and desktop cannot concurrently rewrite the same Hub chats/config. The lock contains no project state and is released when the actual Hub exits."
     },
     {
-      "path": "apps/monkeyfab/src/monkeyfab/cli.py",
+      "path": "packages/monkeyfab/src/monkeyfab/cli.py",
       "function": "_prepare",
       "operations": [
         "mkdir",
@@ -770,6 +771,15 @@
       "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
     },
     {
+      "source": "packages/monkeyfab/tests",
+      "targets": [
+        "tests",
+        "labs",
+        "archive"
+      ],
+      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+    },
+    {
       "source": "packages/archflow/src/archflow/contracts",
       "targets": [
         "archflow.adapters",
@@ -895,7 +905,7 @@
       "reason": "The independent usage and pricing tool receives plain values; project and workflow execution remain with their owners."
     },
     {
-      "source": "apps/monkeyfab/src",
+      "source": "packages/monkeyfab/src/monkeyfab",
       "targets": [
         "archflow",
         "monkeyarch",
@@ -903,6 +913,7 @@
         "monkeymonitor",
         "archflow_studio_api",
         "monkeyhub_api",
+        "labs",
         "probes",
         "archive",
         "monkeycontrol"
