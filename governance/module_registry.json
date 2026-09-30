@@ -3444,7 +3444,7 @@
         "contracts.fields"
       ],
       "used_by": [
-        "packages/archflow/src/archflow/state/model.py",
+        "packages/archflow/src/archflow/submission/canonical_state.py",
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
         "packages/archflow/src/archflow/submission/model.py",
@@ -3890,7 +3890,7 @@
     },
     {
       "module_id": "state.model",
-      "owner_path": "packages/archflow/src/archflow/state/model.py",
+      "owner_path": "packages/archflow/src/archflow/submission/canonical_state.py",
       "purpose": "The CanonicalState@1 HEAD shape (facts, commitments, open obligations, artifacts) and the StateRef compatibility alias.",
       "owns": [
         "the canonical HEAD state value and its uniqueness rules (CanonicalState)",
@@ -3925,8 +3925,7 @@
       "depends_on": [
         "contracts.fields",
         "project.refs",
-        "state.commitments",
-        "state.program"
+        "state.commitments"
       ],
       "used_by": [
         "packages/archflow/src/archflow/validation/engine.py",
@@ -3945,7 +3944,7 @@
       "tests": [
         "packages/archflow/tests/test_project_authority_seam.py"
       ],
-      "notes": "Canonical; its Obligation is the legacy obligation shape CanonicalState@1 carries. Projecting DesignObligation into it is an open gap with no Issue yet; until then the two shapes coexist by decision, not by accident."
+      "notes": "Canonical; its Obligation is the legacy obligation shape CanonicalState@1 carries. Projecting DesignObligation into it is an open gap with no Issue yet; until then the two shapes coexist by decision, not by accident. It lives in submission/ beside the submission it is checked with (#512); the id predates the move, and ids change only in the id round. Its BuildingProgram legacy_program_view went with state.program: no code built one and no retained state carried one."
     },
     {
       "module_id": "state.operational_state",
@@ -4019,47 +4018,6 @@
         "packages/archflow/tests/test_pantheon_compiled_state.py"
       ],
       "notes": "The widest state dependency after project.refs; it carries its own _version_dict/_branch_dict serde parallel to contracts.branch."
-    },
-    {
-      "module_id": "state.program",
-      "owner_path": "packages/archflow/src/archflow/state/program.py",
-      "purpose": "The compact voxel-era building program (use, footprint, required spaces, clearances) carried by canonical state.",
-      "owns": [
-        "the BuildingProgram@1 record and its JSON form",
-        "footprint targets with tolerance (FootprintTarget)",
-        "the typed program error codes (ProgramErrorCode, BuildingProgramError)",
-        "cross-clause feasibility checks (circulation width against footprint, prohibitions against requirements)"
-      ],
-      "does_not_own": [
-        "the design that answers the program (state.spatial)",
-        "commitments derived from the program (state.commitments)",
-        "site input (state.site_context)"
-      ],
-      "inputs": [
-        "authored program mapping or JSON"
-      ],
-      "outputs": [
-        "BuildingProgram"
-      ],
-      "public_api": [
-        "BuildingProgram",
-        "FootprintTarget"
-      ],
-      "depends_on": [],
-      "used_by": [
-        "packages/archflow/src/archflow/state/model.py"
-      ],
-      "invariants": [
-        "dimensions are integers in blocks: the vocabulary is voxel-era, not metric",
-        "a program states requirements, not a design",
-        "text values must not carry surrounding whitespace",
-        "an impossible constraint combination raises rather than being clamped"
-      ],
-      "status": "canonical",
-      "tests": [
-        "packages/archflow/tests/test_program_sheet.py"
-      ],
-      "notes": "Canonical: BuildingProgram is the legacy_program_view field of CanonicalState@1 and retained states carry it."
     },
     {
       "module_id": "state.record",
@@ -6093,7 +6051,6 @@
       ],
       "depends_on": [
         "archflow.project.refs",
-        "archflow.state.model",
         "archflow.submission.model",
         "archflow.validation.engine",
         "archflow.validation.model",

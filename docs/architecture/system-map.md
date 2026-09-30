@@ -391,7 +391,7 @@ What a massing option measures - footprint, gross floor area, floor count, heigh
 - api: `CELL_AREA_M2`, `EnvelopeFinding`, `FAR_EXCEEDED`, `FINDING_CODES`, `HEIGHT_EXCEEDED`, `LevelFootprint`, `MassingMetrics`, `MassingMetricsError`, `VOLUME_OUTSIDE_ENVELOPE`, `envelope_check`, `massing_metrics`
 - invariants: never writes the filesystem and decides nothing; a plan bound that is not a whole cell is reported in honesty, never rounded; an absent envelope key makes no finding; efficiency is null, never zero, when no program target was given or there is no floor area
 
-### state.model — `packages/archflow/src/archflow/state/model.py`
+### state.model — `packages/archflow/src/archflow/submission/canonical_state.py`
 The CanonicalState@1 HEAD shape (facts, commitments, open obligations, artifacts) and the StateRef compatibility alias.
 - owns: the canonical HEAD state value and its uniqueness rules (CanonicalState); the plain fact, obligation and artifact-ref value types used by the submission and validation path (Fact, Obligation, ArtifactRef); the compatibility GoalContract used only by walking-skeleton fixtures; creating an initial version-0 canonical state (initialize_canonical_project); the StateRef = ProjectVersionRef compatibility alias
 - does not own: design content, which lives in the State Record (state.record); commitment lifecycle (state.commitments); the branch-local operational state (state.operational_state); persisting or promoting state (project.repository)
@@ -404,13 +404,6 @@ The branch-local kernel state (facts, bindings, locks, obligations and the depen
 - does not own: applying a decision to produce the next state (state.decision_operator); phase gates and deliverables (state.design_maturity); the architectural relation vocabulary (semantics.relation_kinds); canonical write authority (explicitly outside the operational state); persisting state (project.repository); commitment lifecycle transitions (state.commitments); the dependency edge, what propagates along it and the closure over it (state.dependencies)
 - api: `OperationalMarkovState`, `DesignObligation`, `ObligationStatus`, `ObligationCondition`, `StateFact`, `StateDomain`, `FactEpistemicStatus`, `FactValue`, `ParameterBinding`, `StateLock`, `load_operational_state_record`, `LegacyOperationalMarkovStateV2`, `OperationalStateMigrationRequired`
 - invariants: stores only future-relevant compiled consequences: no prompt history, tool transcripts or rejected drafts; blocking edges between obligations must be acyclic; an obligation's status is consistent with its blockers and its exact activation condition; a legacy V2 record has no current-state authority and must be migrated explicitly; never writes the filesystem
-
-### state.program — `packages/archflow/src/archflow/state/program.py`
-The compact voxel-era building program (use, footprint, required spaces, clearances) carried by canonical state.
-- owns: the BuildingProgram@1 record and its JSON form; footprint targets with tolerance (FootprintTarget); the typed program error codes (ProgramErrorCode, BuildingProgramError); cross-clause feasibility checks (circulation width against footprint, prohibitions against requirements)
-- does not own: the design that answers the program (state.spatial); commitments derived from the program (state.commitments); site input (state.site_context)
-- api: `BuildingProgram`, `FootprintTarget`
-- invariants: dimensions are integers in blocks: the vocabulary is voxel-era, not metric; a program states requirements, not a design; text values must not carry surrounding whitespace; an impossible constraint combination raises rather than being clamped
 
 ### state.program_sheet — `packages/archflow/src/archflow/state/program_sheet.py`
 The architect's program sheet and the two directions between it and a record's spatial option: one sheet row per Space@1, and a typed operator for what a sheet adds.

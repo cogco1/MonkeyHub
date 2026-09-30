@@ -10,7 +10,6 @@ from dataclasses import dataclass
 
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef
 from archflow.state.commitments import Commitment
-from archflow.state.program import BuildingProgram
 from archflow.contracts.fields import unique as _require_unique
 
 
@@ -107,7 +106,6 @@ class CanonicalState:
     ref: ProjectVersionRef
     goal: GoalContract | None = None
     design_program_ref: ProjectRecordRef | None = None
-    legacy_program_view: BuildingProgram | None = None
     facts: tuple[Fact, ...] = ()
     commitments: tuple[Commitment, ...] = ()
     open_obligations: tuple[Obligation, ...] = ()
@@ -129,13 +127,6 @@ class CanonicalState:
             and self.design_program_ref.project_id != self.ref.project_id
         ):
             raise ValueError("design program belongs to another project")
-        if (
-            self.legacy_program_view is not None
-            and not isinstance(self.legacy_program_view, BuildingProgram)
-        ):
-            raise TypeError(
-                "legacy_program_view must be a BuildingProgram compatibility view"
-            )
         for name, values in (
             ("facts", self.facts),
             ("commitments", self.commitments),
