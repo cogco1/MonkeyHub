@@ -38,12 +38,16 @@ from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 from uuid import UUID, uuid4
 
-# A CLI starts this same file as its stdio MCP connection, including from a
-# packaged interpreter which does not inherit the launcher's sys.path.
+# A CLI starts this same file as its stdio MCP connection, which does not
+# inherit the launcher's sys.path. A checkout lists where import names begin in
+# its architecture policy and its roots go first (tools/source_roots.py); a
+# packaged interpreter ships no policy, and its python313._pth lists the roots.
 if __package__ in {None, ""}:
     _source = Path(__file__).resolve().parents[4]
-    for _path in (_source, _source / "apps/archflow-studio/api", Path(__file__).resolve().parents[1]):
-        sys.path.insert(0, str(_path))
+    _policy = _source / "governance" / "architecture_policy.json"
+    if _policy.is_file():
+        _roots = [str(_source / root) for root in json.loads(_policy.read_text(encoding="utf-8"))["python_source_roots"]]
+        sys.path[:0] = [root for root in _roots if root not in sys.path]
     __package__ = "monkeyhub_api"
     # Started as a script this module is __main__, so a sibling importing it by
     # name would execute a second copy with its own context variables and its

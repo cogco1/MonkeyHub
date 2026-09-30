@@ -83,7 +83,7 @@ Each new Codex chat keeps one adapter process between turns. Hub saves its opaqu
 & $Python .\apps\monkeyhub\run.py --runtime-root '<workspace-root>\temp\monkeyhub-local-test' --port 8790 --hub-web-dir .\apps\monkeyhub\web\dist --no-browser
 ```
 
-run.py adds the source and API import paths explicitly, including for embedded Python that ignores PYTHONPATH. Its fixed --service studio and --service monitor forms call the existing service entry points; child processes use the same sys.executable.
+In a checkout, run.py puts the Python source roots that governance/architecture_policy.json lists first on its import path, so a worktree runs its own code without PYTHONPATH or an editable install; the installed package's embedded Python, which ignores PYTHONPATH, reads the same roots from its python313._pth. Its fixed --service studio and --service monitor forms call the existing service entry points; child processes use the same sys.executable.
 
 For source development, run `python -m pip install -e "apps/monkeyfab[send]"` from this repository using the Python environment that starts Hub. Fab code lives in [apps/monkeyfab](../monkeyfab/README.md); Hub always calls that checkout’s CLI, and complete desktop/browser packages include it by default. No second repository or source ref is needed.
 

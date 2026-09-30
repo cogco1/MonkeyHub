@@ -143,19 +143,30 @@ class WorkflowBoundaryTests(unittest.TestCase):
             ("archflow/state/example.py", "monkeyarch.capabilities.element_producers"),
             ("archflow/adapters/example.py", "monkeydiagram.drawing_svg"),
             ("monkeyarch/example.py", "monkeydiagram.drawing_svg"),
-            ("monkeydiagram/example.py", "monkeyarch.compilers.geometry"),
+            ("packages/monkeydiagram/src/monkeydiagram/example.py", "monkeyarch.compilers.geometry"),
         ):
             with self.subTest(source=source, target=target):
                 findings = tuple(check_imports(source, _index_tree(ast.parse(f"import {target}")), self.policy))
                 self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
 
     def test_workflows_may_consume_shared_contracts(self) -> None:
-        for source in ("monkeyarch/example.py", "monkeydiagram/example.py"):
+        for source in ("monkeyarch/example.py", "packages/monkeydiagram/src/monkeydiagram/example.py"):
             with self.subTest(source=source):
                 findings = tuple(check_imports(source, _index_tree(ast.parse(
                     "from archflow.state.geometry_program import CompiledGeometryProgram"
                 )), self.policy))
                 self.assertEqual((), findings)
+
+    def test_a_package_suite_imports_neither_the_repository_suite_nor_a_lab(self) -> None:
+        for target in ("tests.support", "labs.spatial_observation.fixture"):
+            with self.subTest(target=target):
+                findings = tuple(check_imports("packages/monkeydiagram/tests/test_example.py",
+                                               _index_tree(ast.parse(f"import {target}")), self.policy))
+                self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
+        findings = tuple(check_imports("packages/monkeydiagram/tests/test_example.py", _index_tree(ast.parse(
+            "from monkeydiagram.drawing_svg import drawing_svg\nfrom archflow.adapters import occt_backend"
+        )), self.policy))
+        self.assertEqual((), findings)
 
     def test_registry_checks_dependencies_from_each_workflow_package(self) -> None:
         for package in ("monkeyarch", "monkeydiagram"):

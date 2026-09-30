@@ -19,9 +19,11 @@ from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode = True
-for path in (REPO, REPO / "apps/archflow-studio/api"):
-    if str(path) not in sys.path:
-        sys.path.insert(0, str(path))
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+from tools import source_roots  # noqa: E402
+
+source_roots.put_first(REPO)
 
 from archflow.project.refs import ProjectVersionRef, RunRef
 from archflow.state.operational_state import DesignObligation

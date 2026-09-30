@@ -26,6 +26,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
+from tools import source_roots  # noqa: E402
+
+source_roots.put_first(REPO)
 
 from archflow.contracts.authority import (  # noqa: E402
     DEFAULT_AUTHORITY_FIELDS,

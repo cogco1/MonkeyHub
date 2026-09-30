@@ -23,7 +23,11 @@ import json
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+from tools import source_roots  # noqa: E402
+
+source_roots.put_first(REPO)
 
 from monkeyarch.capabilities.element_reindex import AMBIGUOUS, DRAFT, ERROR, EXISTING, reindex  # noqa: E402
 from archflow.project.inputs import load_authored_record  # noqa: E402

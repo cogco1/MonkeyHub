@@ -4,7 +4,7 @@
   "checked_source_roots": [
     "archflow",
     "monkeyarch",
-    "monkeydiagram",
+    "packages/monkeydiagram",
     "monkeymonitor",
     "monkeycontrol",
     "tools",
@@ -21,7 +21,8 @@
     ".",
     "apps/archflow-studio/api",
     "apps/monkeyhub/api",
-    "apps/monkeyfab/src"
+    "apps/monkeyfab/src",
+    "packages/monkeydiagram/src"
   ],
   "repository_root_entries": [
     "apps",
@@ -46,12 +47,12 @@
     "OPEN_MONKEYHUB.cmd",
     "README.md",
     "SECURITY.md",
+    "conftest.py",
     "pyproject.toml"
   ],
   "legacy_root_packages": [
     "archflow",
     "monkeyarch",
-    "monkeydiagram",
     "monkeymonitor",
     "monkeycontrol"
   ],
@@ -60,6 +61,7 @@
     "governance/work_registry.json",
     "tests/",
     "apps/archflow-studio/api/tests/",
+    "packages/monkeydiagram/tests/",
     "docs/PROTOCOL.md",
     "governance/architecture_policy.json",
     "docs/SYSTEM_MAP.md",
@@ -730,6 +732,15 @@
       "reason": "The public spine suite must not depend on retired lane code. Retired source and its tests are kept outside the public checkout; the import guard prevents reintroducing that dependency."
     },
     {
+      "source": "packages/monkeydiagram/tests",
+      "targets": [
+        "tests",
+        "labs",
+        "archive"
+      ],
+      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+    },
+    {
       "source": "archflow/contracts",
       "targets": [
         "archflow.adapters",
@@ -810,7 +821,7 @@
       "reason": "The 3D workflow uses ArchFlow contracts and ports; the host coordinates drawing handoffs. Project-specific data and tooling are not runtime dependencies."
     },
     {
-      "source": "monkeydiagram",
+      "source": "packages/monkeydiagram/src/monkeydiagram",
       "targets": [
         "monkeyarch",
         "labs",

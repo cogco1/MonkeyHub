@@ -148,7 +148,7 @@ Checkout 旧 Stage 只读。若从当前 head 做局部墙体修改，保留完�
 
 - 正常打开项目默认当前 Branch 的 head Stage。恢复明确选中的候选时标识“未提交”，不把最新文件当成最新 Stage。
 - 切历史 Stage 时，3D、匹配的 2D、选中对象与提交基准一起切换。候选预览与继续编辑都针对该候选的实际状态；来源尚未就绪时不能向旧基准误提交。
-- 图纸生成完成后自动进入 2D 并打开响应给出的确切文件与页。复用 `monkeydiagram/drawing_elevation.py` 已有 STEP→SVG/PNG 和冷读回，先接一张真实立面到 Studio；平面、剖面及施工图继续按既有出图计划扩展。
+- 图纸生成完成后自动进入 2D 并打开响应给出的确切文件与页。复用 `packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py` 已有 STEP→SVG/PNG 和冷读回，先接一张真实立面到 Studio；平面、剖面及施工图继续按既有出图计划扩展。
 - 图纸修订按逻辑图纸、精确模型来源和视图条件组织。默认选择当前 Stage 匹配的最新图纸修订，不按所有 run 的时间、文件名或 SHA 排序。候选图纸保持候选标识；接受相同模型后可复用已有图纸，不篡改其原始生成回执。
 - 图纸文件修订、页批注修订与模型 Stage 分开。批注提交采用确切页面和 ink revision；后续图纸不改变已提交批注的来源。
 - 旧 Stage 无图纸时显示该节点暂无图纸，可从该精确模型生成；不能拿当前 Stage 的图纸填空。切换前复用现有批注 controller 完成保存，失败则保留草稿和原上下文。
@@ -212,7 +212,7 @@ Checkout 旧 Stage 只读。若从当前 head 做局部墙体修改，保留完�
 - [jobs](../apps/archflow-studio/api/archflow_studio_api/application/jobs.py)、[proposals](../apps/archflow-studio/api/archflow_studio_api/application/proposals.py)、[runner](../monkeyarch/runtime/project_runner.py)、[cad_patch](../archflow/adapters/cad_patch.py)：并发冲突、复用与增量执行边界。
 - [project ports](../archflow/project/ports.py)、[repository](../archflow/project/repository.py)、[layout](../archflow/project/layout.py)、[issue](../archflow/project/issue.py)：现有持久化范围、原子发布和本方案需要补充的设计 branch 引用。
 - [App](../apps/monkeyhub/web/src/app/App.tsx)、[VersionsStrip](../apps/monkeyhub/web/src/features/stage/VersionsStrip.tsx)、[Stage](../apps/monkeyhub/web/src/features/stage/Stage.tsx)、[DocumentCanvas](../apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx)：当前视图、来源和显示生命周期。
-- [drawing_elevation](../monkeydiagram/drawing_elevation.py)、[既有出图方案](DRAWING_MODULE_ARCHITECTURE_PLAN.md)、[SYSTEM_MAP](SYSTEM_MAP.md)：已实现立面消费者和其他能力边界。
+- [drawing_elevation](../packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py)、[既有出图方案](DRAWING_MODULE_ARCHITECTURE_PLAN.md)、[SYSTEM_MAP](SYSTEM_MAP.md)：已实现立面消费者和其他能力边界。
 
 ## 12. 本地实施结果（2026-09-09）
 

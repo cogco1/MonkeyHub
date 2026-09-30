@@ -145,7 +145,7 @@ class PackageAdapterTests(unittest.TestCase):
         self.node = self.root / "node.exe"
         self.node.write_bytes(b"selected Node runtime")
         for directory in (
-            "archflow", "monkeyarch", "monkeydiagram", "monkeymonitor", "monkeycontrol",
+            "archflow", "monkeyarch", "monkeymonitor", "monkeycontrol",
             "apps/archflow-studio/api/archflow_studio_api",
             "apps/monkeyhub/api", "apps/monkeyhub/installer/third-party",
             "apps/monkeyfab/src/monkeyfab", "apps/monkeyfab/tests",
@@ -157,10 +157,11 @@ class PackageAdapterTests(unittest.TestCase):
             "apps/monkeyhub/run.py", "apps/monkeyhub/assets/monkeyarch.ico",
             "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "pyproject.toml",
             "governance/module_registry.json", "tools/create_project.py", "tools/run_project.py",
-            "SECURITY.md",
+            "tools/source_roots.py", "SECURITY.md",
             "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml",
             "apps/monkeyfab/tests/test_cli.py",
             "monkeycontrol/__init__.py", "monkeycontrol/hosts/execution_host.ps1",
+            "packages/monkeydiagram/src/monkeydiagram/__init__.py", "packages/monkeydiagram/tests/test_svg.py",
         ):
             target = self.source / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -217,9 +218,19 @@ class PackageAdapterTests(unittest.TestCase):
         self.assertEqual((self.bundle / "monkeycontrol/__init__.py").read_text(), "fixture")
         self.assertEqual((self.bundle / "monkeycontrol/hosts/execution_host.ps1").read_text(), "fixture")
         self.assertIn("monkeycontrol", builder.SOURCE_PATHS)
+        # A package the repository keeps under packages/<name>/src ships at the bundle root,
+        # where python313._pth's ..\.. finds it, without its tests.
+        self.assertEqual((self.bundle / "monkeydiagram/__init__.py").read_text(), "fixture")
+        self.assertIn("packages/monkeydiagram/src/monkeydiagram", builder.SOURCE_PATHS)
+        self.assertFalse((self.bundle / "packages").exists())
         # A user holding only the ZIP can still find the security-reporting route.
         self.assertEqual((self.bundle / "SECURITY.md").read_text(), "fixture")
         self.assertIn("SECURITY.md", builder.SOURCE_PATHS)
+        # The bundled tools reach their source roots through this; with no architecture
+        # policy in the bundle it leaves the paths python313._pth lists alone.
+        self.assertEqual((self.bundle / "tools/source_roots.py").read_text(), "fixture")
+        self.assertIn("tools/source_roots.py", builder.SOURCE_PATHS)
+        self.assertNotIn("governance/architecture_policy.json", builder.SOURCE_PATHS)
         self.assertEqual((self.bundle / "apps/monkeyfab/src/monkeyfab/__main__.py").read_text(), "fixture")
         self.assertEqual((self.bundle / "apps/monkeyfab/pyproject.toml").read_text(), "fixture")
         self.assertFalse((self.bundle / "apps/monkeyfab/tests").exists())
