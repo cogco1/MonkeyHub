@@ -364,7 +364,6 @@
         "archflow.project.record_kinds",
         "project.record_kinds",
         "archflow.adapters.cad_backend",
-        "project.version_refs",
         "archflow.adapters.blender_projection",
         "archflow.adapters.local_cad_discovery"
       ],
@@ -737,16 +736,14 @@
         "inspect_three_dm_index"
       ],
       "depends_on": [
-        "contracts.canonical",
-        "project.version_refs"
+        "contracts.canonical"
       ],
       "used_by": [
         "archflow/adapters/cad_execution.py",
         "monkeyarch/runtime/project_runner.py",
         "tests/test_three_dm_inspector.py",
         "tests/test_cad_execution.py",
-        "tests/test_occt_execution.py",
-        "archflow/project/version_ref_owners.py"
+        "tests/test_occt_execution.py"
       ],
       "invariants": [
         "read-only: rhino3dm is imported lazily, one immutable byte snapshot is read, and no Rhino process is started",
@@ -2681,10 +2678,11 @@
       "owns": [
         "the list of shared-core owner modules, loaded by importing this module, and the separate list of workflow-owned ones (WORKFLOW_OWNER_MODULES) that load_workflow_owners() imports on request",
         "the boundary between the two tiers: the shared core may not import a workflow package, so an entry point above both layers - tools/create_project.py - calls load_workflow_owners(), and a process that loads only the core tier refuses a project holding a workflow-owned identity by name instead of guessing at it",
-        "one borrowed declaration, stated as borrowed: RunnerRunReceipt@3 derives nothing from the canonical base it carries, and its owner module belongs to another lane"
+        "RunnerRunReceipt@3's declaration, stated as borrowed: it derives nothing from the canonical base it carries, and its owner module belongs to another lane",
+        "the CAD records' declarations, stated as borrowed from their writers archflow.adapters.cad_execution and archflow.adapters.three_dm_inspector, which the core does not import although a core-only migration has to restate those records: RhinoCadProgramBinding@1 keeps its base at /base, ThreeDmInspectionSummary@4 at the value of its archflow:base_state_sha256 document user-string row, and neither they nor the six CAD receipt and export-identity kinds derive anything from it"
       ],
       "does_not_own": [
-        "every declaration but the one borrowed above (each owner module states its own)",
+        "every declaration but the borrowed ones above (each owner module states its own)",
         "the declaration table and how a declaration is applied (project.version_refs)",
         "what to do about an undeclared location (project.repository)"
       ],
@@ -2700,22 +2698,20 @@
         "load_workflow_owners"
       ],
       "depends_on": [
-        "adapters.cad_execution",
         "project.issue",
         "project.refs",
         "state.developed_design",
         "state.record",
         "state.spatial",
         "state.stage_workflow",
-        "project.version_refs",
-        "adapters.three_dm_inspector"
+        "project.version_refs"
       ],
       "used_by": [
         "archflow/project/repository.py",
         "tools/create_project.py"
       ],
       "invariants": [
-        "holds no rule of its own: it names owners and loads them, and the single declaration it makes is borrowed and says so",
+        "holds no rule of its own: it names owners and loads them, and each declaration it makes is borrowed and says so; it imports no CAD adapter, so a core-only process sees the CAD declarations without loading CAD code",
         "imports a shared-core owner at module scope and a workflow owner only through load_workflow_owners(), which a caller above both layers invokes"
       ],
       "status": "canonical",
@@ -2786,7 +2782,7 @@
         "archflow/state/spatial.py",
         "archflow/state/stage_workflow.py",
         "archflow/state/developed_design.py",
-        "archflow/adapters/cad_execution.py"
+        "archflow/project/version_ref_owners.py"
       ],
       "invariants": [
         "never writes the filesystem and imports no other archflow module",

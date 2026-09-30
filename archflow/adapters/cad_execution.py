@@ -76,10 +76,6 @@ from archflow.project.refs import BranchRef, ProjectRecordRef, require_identifie
 from archflow.state.geometry_program import CompiledGeometryProgram, delivered_object_ids
 from archflow.state.geometry_program import AssemblyRole, require_sha256
 from archflow.contracts.canonical import canonical_digest
-from archflow.project.version_refs import (
-    register as _register_version_refs,
-    register_derived as _register_derived_fields,
-)
 
 
 _MAX_PROCESS_TEXT = 2_000
@@ -4320,25 +4316,3 @@ __all__ = [
     "patch_composed_three_dm",
     "verify_rhino_export_readback",
 ]
-
-
-# The canonical base a CAD execution reaches the adapter with lives in the
-# program binding, and every receipt family carries that binding rather than
-# repeating the base: Rhino, OCCT and Blender receipts all serialise it at
-# ``identity.binding``, and the Blender projection receipt at ``binding``.
-# Declaring the binding once covers all four, and none of the receipts derives
-# anything from the base: their object digests come from the compiled program,
-# their artifact digests name files, and the base itself is only carried.
-VERSION_REF_POINTERS = {"RhinoCadProgramBinding@1": ("/base",)}
-
-_register_version_refs(VERSION_REF_POINTERS)
-_register_derived_fields("RhinoCadProgramBinding@1", ())
-for _receipt_schema in (
-    "RhinoCadExecutionReceipt@4",
-    "OcctExecutionReceipt@1",
-    "BlenderExecutionReceipt@1",
-    "BlenderProjectionReceipt@1",
-    "RhinoCadExportIdentity@2",
-    "OcctCadExportIdentity@1",
-):
-    _register_derived_fields(_receipt_schema, ())

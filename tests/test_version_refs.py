@@ -10,6 +10,9 @@ exactly what was declared.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 import unittest
 
 # Both owner tiers, loaded the way an entry point loads them. Relying on a
@@ -153,6 +156,34 @@ class OwnerLoadingTests(unittest.TestCase):
         # PromotionDecision@1 is the case that motivated this: a command that
         # never imported project.issue would refuse every promoted project.
         self.assertEqual(declared_pointers("PromotionDecision@1"), ("/checked_state",))
+
+    def test_the_core_tier_declares_the_cad_records_without_loading_cad(self) -> None:
+        """#485: a core-only migration can restate a CAD record, and imports no CAD code.
+
+        Asked of a new interpreter: this module has imported both CAD adapters
+        itself, so in-process it could not tell who declared what.
+        """
+
+        probe = (
+            "import sys, archflow.project.version_ref_owners;"
+            "from archflow.project.version_refs import declared_pointers, derived_fields;"
+            "print(sorted(name for name in sys.modules if name.startswith('archflow.adapters')));"
+            "print(declared_pointers('RhinoCadProgramBinding@1'));"
+            "print(declared_pointers('ThreeDmInspectionSummary@4'));"
+            "print(derived_fields('OcctExecutionReceipt@1'))"
+        )
+        root = Path(__file__).resolve().parents[1]
+        finished = subprocess.run(
+            [sys.executable, "-c", probe], capture_output=True, text=True, cwd=str(root),
+            env={**os.environ, "PYTHONPATH": str(root)}, timeout=120,
+        )
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout.splitlines(), [
+            "[]",
+            "('/base',)",
+            "('/document_user_strings[key=archflow:base_state_sha256]/value',)",
+            "()",
+        ])
 
     def test_a_workflow_owner_declares_itself_when_it_is_loaded(self) -> None:
         """The boundary is where the declaration is loaded, not whether it exists."""
