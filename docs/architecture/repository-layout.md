@@ -60,7 +60,7 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 ├─ labs/                         兴趣驱动的探索；可以导入核心，核心不反向导入
 ├─ scripts/dev/                  仅供开发的薄启动脚本（显式 --project-dir）；生产入口只有 MonkeyHub
 ├─ tools/                        对应既有能力的 CLI 与治理命令
-├─ tests/                        行为和边界测试；随真实迁移同步 imports
+├─ tests/                        跨 owner 的测试：integration/、packaging/；monkeymonitor/ 的基准驱动随 #495 移到 tools/benchmarks/
 ├─ probes/                       明确晋升的项目输入与回归证据
 ├─ governance/                   现有模块、工作、策略三类来源
 └─ docs/                         README.md 索引；architecture、product、protocols、development、design、
@@ -242,7 +242,7 @@ MonkeyArch 按层整理、Runtime 内部分层并把业务逻辑按函数归还 
 | R1-4 | #490 | monkeyarch、monkeymonitor、monkeycontrol、monkeyfab → `packages/`。已落地 | R1-3 |
 | R1-5 | #491 | Project Runtime → `services/project-runtime`（`project_runtime`）。已落地 | R1-1a、R1-4 |
 | R1-6 | #492 | Hub web 单一源根。已落地 | R1-1b |
-| R1-7 | #493 | 测试随 owner | R1-4、R1-5：测试要进的包和服务目录已存在 |
+| R1-7 | #493 | 测试随 owner：单一 owner 的测试进该 owner 的 `tests/`，测 tools 的进 `tools/tests/`，互借 helper 的一组整体进 `tests/integration/`，打包测试进 `tests/packaging/`。已落地 | R1-4、R1-5：测试要进的包和服务目录已存在 |
 | R1-8 | #494 | docs 分类与命名，打开 docs 检查。已落地 | R1-2 至 R1-5，免得指向代码的链接改两遍 |
 | R1-9 | #495 | tools 按用途分组 | R1-5 |
 | R1-10 | #496 | 去掉 `legacy_root_packages` 棘轮，确认没有遗留目录和引用，发布第一轮报告 | 以上全部 |
