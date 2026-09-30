@@ -639,6 +639,9 @@ class StudyTests(unittest.TestCase):
             "status": "confirmed",
         }])
         self.assertEqual(invalid.status_code, 422, invalid.text)
+        # The method's refusal (monkeydiagram.study) answers in the body the Runtime's own did (#519).
+        self.assertEqual(invalid.json(), {"code": "STUDY_EVIDENCE_INVALID",
+                                          "detail": "Evidence 'bad' points must be finite normalized page coordinates."})
         self.assertFalse((self.repository.layout.runs / "study-furniture-house").exists())
         self.assertEqual(self.repository.read_head(), self.head)
 
