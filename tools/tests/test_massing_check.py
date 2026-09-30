@@ -11,7 +11,7 @@ from OCP.IFSelect import IFSelect_RetDone
 from OCP.Interface import Interface_Static
 from OCP.STEPControl import STEPControl_Controller, STEPControl_StepModelType, STEPControl_Writer
 
-from archflow.adapters import occt_backend
+from monkeycad import occt_backend
 from tools.benchmarks.massing_check import EXPECTED_VOLUME, check_massing
 
 NEEDS_OCCT = unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")

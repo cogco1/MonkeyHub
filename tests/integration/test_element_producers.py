@@ -13,7 +13,7 @@ import math
 import unittest
 from dataclasses import replace
 
-from archflow.adapters.cad_program import expected_object_semantics
+from monkeycad.cad_program import expected_object_semantics
 from archflow.state.geometry_program import expected_object_bounds
 from monkeyarch.capabilities.element_producers import (
     ElementProducerError,

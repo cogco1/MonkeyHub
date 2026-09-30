@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from archflow.adapters import occt_backend
+from monkeycad import occt_backend
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.application import intent_agent
 from project_runtime.binding import bound_project

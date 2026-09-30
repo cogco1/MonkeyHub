@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from archflow.adapters.three_dm_inspector import (
+from monkeycad.three_dm_inspector import (
     ThreeDmInspection,
     ThreeDmInspectionError,
     ThreeDmInspectionErrorCode,
@@ -68,13 +68,15 @@ class ThreeDmInspectorTests(unittest.TestCase):
                     sys.executable,
                     "-c",
                     "import json,sys; from pathlib import Path; "
-                    "from archflow.adapters.three_dm_inspector import inspect_three_dm_index; "
+                    "from monkeycad.three_dm_inspector import inspect_three_dm_index; "
                     "print(json.dumps(inspect_three_dm_index(Path(sys.argv[1]).read_bytes())))",
                     str(source),
                 ],
                 cwd=Path(__file__).resolve().parents[1],
-                # The fresh process reads this checkout's kernel, not an installed one.
-                env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
+                # The fresh process reads this checkout's CAD package and the kernel it
+                # imports, not installed ones.
+                env={**os.environ, "PYTHONPATH": os.pathsep.join(
+                    str(Path(__file__).resolve().parents[2] / package / "src") for package in ("monkeycad", "archflow"))},
                 check=True,
                 capture_output=True,
                 text=True,
@@ -114,13 +116,13 @@ class ThreeDmInspectorTests(unittest.TestCase):
             source = Path(temporary_directory) / "block.3dm"
             self._write_model(source)
             with patch(
-                "archflow.adapters.three_dm_inspector._objects",
+                "monkeycad.three_dm_inspector._objects",
                 side_effect=AssertionError("full object inspection is not an index"),
             ), patch(
-                "archflow.adapters.three_dm_inspector._encoded_geometry_sha256",
+                "monkeycad.three_dm_inspector._encoded_geometry_sha256",
                 side_effect=AssertionError("an index must not encode geometry"),
             ), patch(
-                "archflow.adapters.three_dm_inspector._aggregate_bbox",
+                "monkeycad.three_dm_inspector._aggregate_bbox",
                 side_effect=AssertionError("an index must not inspect bounds"),
             ):
                 result = inspect_three_dm_index(source.read_bytes())
@@ -159,7 +161,7 @@ class ThreeDmInspectorTests(unittest.TestCase):
             Settings=SimpleNamespace(ModelUnitSystem=rhino3dm.UnitSystem.Meters),
             ArchiveVersion=80,
         )
-        with patch("archflow.adapters.three_dm_inspector._decode_model", return_value=model):
+        with patch("monkeycad.three_dm_inspector._decode_model", return_value=model):
             result = inspect_three_dm_index(b"mock native snapshot")
         self.assertEqual(result["objects"][0]["type"], "Brep")
         self.assertNotIn("is_valid", result["objects"][0])
@@ -230,7 +232,7 @@ class ThreeDmInspectorTests(unittest.TestCase):
             source = Path(temporary_directory) / "model.3dm"
             source.write_bytes(b"file bytes are read before dependency loading")
             with patch(
-                "archflow.adapters.three_dm_inspector.importlib.import_module",
+                "monkeycad.three_dm_inspector.importlib.import_module",
                 side_effect=ModuleNotFoundError("rhino3dm"),
             ):
                 with self.assertRaises(ThreeDmInspectionError) as raised:

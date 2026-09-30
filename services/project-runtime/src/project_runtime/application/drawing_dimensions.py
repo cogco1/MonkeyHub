@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping, Sequence
 
-from archflow.adapters.occt_backend import cad_point, section_occt_lines
+from monkeycad.occt_backend import cad_point, section_occt_lines
 from archflow.project.record_kinds import SEAT_OCCT_EXECUTION
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError

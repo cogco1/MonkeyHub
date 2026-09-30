@@ -1091,7 +1091,7 @@ class RecessTests(ConstructionTestCase):
     def volumes(self, record: StateRecord, result) -> dict[str, float] | None:
         """The successor applied and checked, its program compiled as the runner does, then built with OCCT."""
 
-        from archflow.adapters import occt_backend
+        from monkeycad import occt_backend
         from tests.integration.test_occt_execution import _compile as compile_program
 
         successor = _apply(record, result)

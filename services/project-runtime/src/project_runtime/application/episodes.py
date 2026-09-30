@@ -58,7 +58,7 @@ from ..binding import retained_sources
 from ..binding import ProjectBinding, record_kind
 from .projection import project_state
 from .pick import COMPONENT_KEY, OBJECT_REF_KEY, OBJECT_REF_PREFIX, element_of_object
-from archflow.adapters.three_dm_inspector import inspect_three_dm_contents
+from monkeycad.three_dm_inspector import inspect_three_dm_contents
 
 SCHEMA = "DeliberationEpisode@1"
 

@@ -17,8 +17,8 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from archflow.adapters import occt_backend
-from archflow.adapters.cad_execution import (
+from monkeycad import occt_backend
+from monkeycad.cad_execution import (
     CadExecutionStatus,
     CadProgramBinding,
     OcctExecutionReceipt,
@@ -37,7 +37,7 @@ from tests.integration.support import shared_bound_state
 from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
 
 NEEDS_OCCT = unittest.skipUnless(
-    occt_backend.occt_available(), "cadquery-ocp is not installed: python -m pip install -e 'packages/archflow[cad-occt]'"
+    occt_backend.occt_available(), "cadquery-ocp is not installed: python -m pip install -e 'packages/monkeycad[occt]'"
 )
 
 BASIS = ("reading:plate",)

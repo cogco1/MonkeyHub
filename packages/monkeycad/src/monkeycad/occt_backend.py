@@ -1,4 +1,4 @@
-"""In-process OCCT backend behind ``adapters.cad_execution`` (P107, lane A).
+"""In-process OCCT backend behind ``monkeycad.cad_execution`` (P107, lane A).
 
 The Rhino path translates a compiled program into a script and lets an
 external host realize it.  This backend interprets the same
@@ -15,7 +15,7 @@ the same B-reps (``project_occt_lines``, ``section_occt_lines`` and
 ``section_occt_regions``), and a section perspective whose picture plane is
 the cut (``project_occt_section_perspective``).  The export identity, the readback verification
 against the analytic predictor and the receipt live in
-``adapters.cad_execution``; nothing here knows a project, a run or a
+``monkeycad.cad_execution``; nothing here knows a project, a run or a
 workspace rule.
 
 Coordinate frame.  Program geometry is ``(x, y-up, z-plan)``.  The Rhino
@@ -60,7 +60,7 @@ write (or read transfer).  Nothing else is serialised: shape building,
 measuring and tessellation do not touch the statics.
 
 Requires the optional dependency ``cadquery-ocp`` (``pip install -e
-'packages/archflow[cad-occt]'``).  It is imported lazily: importing this module, or the
+'packages/monkeycad[occt]'``).  It is imported lazily: importing this module, or the
 execution owner that imports it, never loads OCCT.
 """
 
@@ -491,7 +491,7 @@ def _occt() -> SimpleNamespace:
     except ImportError as exc:
         raise OcctUnavailableError(
             "optional dependency 'cadquery-ocp' is unavailable; install it with "
-            "python -m pip install -e 'packages/archflow[cad-occt]'; no Rhino is required or started"
+            "python -m pip install -e 'packages/monkeycad[occt]'; no Rhino is required or started"
         ) from exc
     namespace = SimpleNamespace(OCP=ocp, **modules)
     # The STEP writer prints transfer statistics at Info level; a kernel
@@ -2430,7 +2430,7 @@ def write_preview_three_dm(
     except ImportError as exc:
         raise OcctUnavailableError(
             "optional dependency 'rhino3dm' is unavailable; install it with "
-            "python -m pip install -e 'packages/archflow[cad-occt]'"
+            "python -m pip install -e 'packages/monkeycad[occt]'"
         ) from exc
     if not isinstance(path, Path):
         raise TypeError("path must be pathlib.Path")

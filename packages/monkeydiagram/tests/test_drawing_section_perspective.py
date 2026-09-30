@@ -15,7 +15,7 @@ from dataclasses import asdict
 from pathlib import Path
 from io import BytesIO
 
-from archflow.adapters import occt_backend
+from monkeycad import occt_backend
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import SEAT_OCCT_EXECUTION, STUDIO_MODEL_ASSET
 from archflow.project.repository import FilesystemProjectRepository

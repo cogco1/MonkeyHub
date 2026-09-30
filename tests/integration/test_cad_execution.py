@@ -12,7 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from archflow.adapters.cad_execution import (
+from monkeycad.cad_execution import (
     CadExecutionError,
     CadExecutionStatus,
     RhinoCadProgramBinding,
@@ -23,7 +23,7 @@ from archflow.adapters.cad_execution import (
     prepare_rhino_three_dm_export,
     verify_rhino_export_readback,
 )
-from archflow.adapters.three_dm_inspector import ThreeDmInspection
+from monkeycad.three_dm_inspector import ThreeDmInspection
 from archflow.project.refs import BranchRef, ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.state.geometry_program import (
     CompiledGeometryObject,
@@ -1179,7 +1179,7 @@ class RhinoCadExportTest(unittest.TestCase):
                 _write_success_marker(plan)
 
             with patch(
-                "archflow.adapters.cad_execution.inspect_three_dm",
+                "monkeycad.cad_execution.inspect_three_dm",
                 return_value=_inspection(plan),
             ):
                 receipt = execute_rhino_three_dm_export(
@@ -1214,7 +1214,7 @@ class RhinoCadExportTest(unittest.TestCase):
                 return _cleanup_result(plan)
 
             with patch(
-                "archflow.adapters.cad_execution.inspect_three_dm",
+                "monkeycad.cad_execution.inspect_three_dm",
                 return_value=_inspection(plan),
             ):
                 receipt = execute_rhino_three_dm_export(

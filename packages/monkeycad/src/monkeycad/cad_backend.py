@@ -9,9 +9,9 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Callable, Mapping, Protocol
 
-import archflow.adapters.cad_execution as cad
-from archflow.adapters.cad_execution import CadExecutionError, CadProgramBinding
-from archflow.adapters.cad_program import CadTranslationError, expected_object_semantics
+import monkeycad.cad_execution as cad
+from monkeycad.cad_execution import CadExecutionError, CadProgramBinding
+from monkeycad.cad_program import CadTranslationError, expected_object_semantics
 from archflow.state.geometry_program import CompiledGeometryProgram, GeometryBoundsError
 
 
@@ -260,7 +260,7 @@ def _options(options, allowed, backend_id):
 
 # Add an implementation here and declare it under compiled-cad-execution in the
 # module registry. The runner uses this same table for selection and execution.
-from archflow.adapters.blender_cad import BlenderBackend
+from monkeycad.blender_cad import BlenderBackend
 
 CAD_BACKEND_REGISTRY: dict[str, CadBackend] = {backend.backend_id: backend for backend in (OcctBackend(), RhinoBackend(), BlenderBackend())}
 

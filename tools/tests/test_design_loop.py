@@ -6,7 +6,7 @@ import time
 import unittest
 from urllib.parse import urlencode
 
-from archflow.adapters.occt_backend import occt_available
+from monkeycad.occt_backend import occt_available
 from tools.benchmarks import run_design_loop as design_loop
 
 

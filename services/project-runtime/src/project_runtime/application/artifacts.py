@@ -56,8 +56,8 @@ from archflow.project.record_kinds import (
     RUNNER_RUN_RECEIPT, SEAT_OCCT_EXECUTION, SEAT_RHINO_EXECUTION, STUDIO_SOURCE_DOCUMENT, STUDIO_MODEL_ASSET,
     STUDIO_DOCUMENT_MODEL_SOURCE,
 )
-from archflow.adapters.three_dm_inspector import inspect_three_dm_contents, inspect_three_dm_index, ThreeDmInspectionError
-from archflow.adapters.cad_program import ROOT_LAYER
+from monkeycad.three_dm_inspector import inspect_three_dm_contents, inspect_three_dm_index, ThreeDmInspectionError
+from monkeycad.cad_program import ROOT_LAYER
 from archflow.project.index import IndexUnavailable
 from archflow.project.layout import cad_workspace_path
 from archflow.project.memo import ContentMemo, PathStamps
@@ -1626,13 +1626,13 @@ def export_rhino_work_model(
     own directory behind and never blocks the next one.
     """
 
-    from archflow.adapters.cad_execution import (  # imported late: the kernel CAD adapter
+    from monkeycad.cad_execution import (  # imported late: the CAD package
         WORK_MODEL_EXPORT_PATH, CadExecutionError, CadProgramBinding, StepImportSource,
         discover_powershell, discover_rhino_executables, execute_rhino_three_dm_export,
         prepare_rhino_three_dm_export, split_step_objects, verify_work_model_geometry,
         work_model_workspace,
     )
-    from archflow.adapters.cad_program import CadTranslationError
+    from monkeycad.cad_program import CadTranslationError
     from archflow.project.refs import BranchRef
     from archflow.state.geometry_program import GeometryBoundsError, load_compiled_geometry_program
 
@@ -2049,8 +2049,8 @@ def register_model_asset(
 
 
 def _register_external_skp(binding, file_name, content_base64, monitor, event_sink):
-    from archflow.adapters.model_formats import ConversionError, ThreeDM
-    from archflow.adapters.sketchup_reader import read_skp
+    from monkeycad.model_formats import ConversionError, ThreeDM
+    from monkeycad.sketchup_reader import read_skp
 
     if len(file_name) > 240 or any(char in file_name for char in "/\\\r\n\x00"):
         raise StudioError(422, "MODEL_ASSET_INVALID", "Provide a model file name, not a server path.")

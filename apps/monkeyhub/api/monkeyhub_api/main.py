@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.requests import Request
 import uvicorn
-from archflow.adapters.integration_packs import IntegrationPackManager
+from monkeycad.integration_packs import IntegrationPackManager
 
 from project_runtime.errors import StudioError
 from project_runtime.api.dto.project import ModelingInitializeDto, ModelingInitializeRequestDto

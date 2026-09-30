@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 from xml.etree import ElementTree
 
-from archflow.adapters import occt_backend
+from monkeycad import occt_backend
 from monkeydiagram import drawing_elevation
 from monkeydiagram.drawing_svg import render_svg_png, svg_objects
 from archflow.project.ports import PersistenceArea, PersistenceDestination

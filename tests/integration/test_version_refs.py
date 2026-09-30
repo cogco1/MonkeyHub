@@ -42,8 +42,8 @@ from archflow.project.version_refs import (
     structural_child,
 )
 from archflow.project.refs import BranchRef, ProjectRecordRef, ProjectVersionRef, RunRef
-from archflow.adapters.cad_execution import RhinoCadProgramBinding
-from archflow.adapters.three_dm_inspector import ThreeDmInspection
+from monkeycad.cad_execution import RhinoCadProgramBinding
+from monkeycad.three_dm_inspector import ThreeDmInspection
 from archflow.state.spatial import (
     SchematicOption,
     SchematicOptionSet,
@@ -169,7 +169,7 @@ class OwnerLoadingTests(unittest.TestCase):
         probe = (
             "import sys, archflow.project.version_ref_owners;"
             "from archflow.project.version_refs import declared_pointers, derived_fields;"
-            "print(sorted(name for name in sys.modules if name.startswith('archflow.adapters')));"
+            "print(sorted(name for name in sys.modules if name.startswith('monkeycad')));"
             "print(declared_pointers('RhinoCadProgramBinding@1'));"
             "print(declared_pointers('ThreeDmInspectionSummary@4'));"
             "print(derived_fields('OcctExecutionReceipt@1'))"

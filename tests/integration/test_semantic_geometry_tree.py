@@ -189,10 +189,14 @@ class SemanticGeometryTreeTests(unittest.TestCase):
     def test_removed_projection_and_p026_bypass_have_no_production_route(
         self,
     ) -> None:
-        root = Path(__file__).resolve().parents[2] / "packages" / "archflow" / "src" / "archflow"
-        paths = tuple(root.rglob("*.py"))
+        packages = Path(__file__).resolve().parents[2] / "packages"
+        root = packages / "archflow" / "src" / "archflow"
+        # The CAD package left the kernel (#514) and stays inside the scan.
+        cad = packages / "monkeycad" / "src" / "monkeycad"
+        paths = (*root.rglob("*.py"), *cad.rglob("*.py"))
         # A moved kernel would leave nothing to read and the scan would pass.
         self.assertIn(root / "__init__.py", paths)
+        self.assertIn(cad / "__init__.py", paths)
         source = "\n".join(path.read_text(encoding="utf-8") for path in paths)
         for forbidden in (
             "CandidateProgramProjection",

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
-from archflow.adapters.cad_program import expected_object_semantics
+from monkeycad.cad_program import expected_object_semantics
 from archflow.state.geometry_program import delivered_object_ids, expected_object_bounds
 
 _WITNESS_PREFIX = "__archflow_visible_bounds__"

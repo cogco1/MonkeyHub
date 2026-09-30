@@ -102,7 +102,7 @@ PACKS = (
             PackCapability("model.execute", "blender-worker", "compiled-cad-execution:blender",
                            ("execute-in-speculative-workspace",), ("Windows", "Darwin", "Linux")),
             PackCapability("visualization.project", "blender-worker",
-                           "archflow.adapters.blender_projection.execute_blender_projection",
+                           "monkeycad.blender_projection.execute_blender_projection",
                            ("read-verified-model", "execute-in-speculative-workspace"),
                            ("Windows", "Darwin", "Linux")),
         ),
@@ -118,7 +118,7 @@ PACKS = (
         ),
         (
             PackCapability("source.read", "sketchup-sdk-reader",
-                           "archflow.adapters.sketchup_reader.read_skp", ("read-source",), ("Windows",)),
+                           "monkeycad.sketchup_reader.read_skp", ("read-source",), ("Windows",)),
             PackCapability("viewport.observe", "sketchup-live-extension", None,
                            ("observe-enabled-application",), ("Windows", "Darwin")),
             PackCapability("viewport.capture", "sketchup-live-extension", None,

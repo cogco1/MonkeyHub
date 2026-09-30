@@ -80,11 +80,11 @@ for _schema, _fields in _BORROWED_DECLARATIONS.items():
     register_derived(_schema, _fields)
 
 
-# Declared here rather than by the CAD adapters that write these records,
-# ``archflow.adapters.cad_execution`` and
-# ``archflow.adapters.three_dm_inspector``, and said plainly: the core does not
-# import them, and a core-only migration still has to restate every CAD record
-# a project retains. What the records serialise is still the adapters' to say,
+# Declared here rather than by the CAD package that writes these records,
+# ``monkeycad.cad_execution`` and ``monkeycad.three_dm_inspector``, and said
+# plainly: the core does not import them, and a core-only migration still has
+# to restate every CAD record a project retains. What the records serialise is
+# still the CAD package's to say,
 # so a change there is a change here; :mod:`tests.integration.test_version_refs` builds the
 # binding and the inspection summary with their own writers and checks each
 # declaration against what they write.

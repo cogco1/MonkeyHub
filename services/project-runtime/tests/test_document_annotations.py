@@ -764,8 +764,8 @@ class DocumentTracingTests(unittest.TestCase):
         self.assertEqual(retried["status"], "succeeded", retried)
 
     def test_real_occt_output_uses_xy_plan_z_height_and_preserves_asymmetric_path(self):
-        from archflow.adapters.occt_backend import occt_available
-        from archflow.adapters.three_dm_inspector import inspect_three_dm
+        from monkeycad.occt_backend import occt_available
+        from monkeycad.three_dm_inspector import inspect_three_dm
 
         if not occt_available():
             self.skipTest("cadquery-ocp is not installed")

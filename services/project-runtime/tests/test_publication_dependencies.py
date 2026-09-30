@@ -5,7 +5,7 @@ from copy import deepcopy
 from fastapi.testclient import TestClient
 import pytest
 
-from archflow.adapters.occt_backend import occt_available
+from monkeycad.occt_backend import occt_available
 from project_runtime.main import create_app
 
 from . import test_drawing_plans as plans

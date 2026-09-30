@@ -16,7 +16,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from archflow.adapters import occt_backend
+from monkeycad import occt_backend
 from archflow.project.refs import record_ref_from_uri
 from monkeydiagram.drawing_elevation import read_model_axis_elevation
 from project_runtime.main import create_app
@@ -195,7 +195,7 @@ class DrawingTests(CandidateTestCase):
 
     def test_sheet_styles_generate_scaled_pdfs_on_source_run_and_reuse_after_restart(self):
         from pypdf import PdfReader
-        from archflow.adapters.cad_execution import project_occt_lines
+        from monkeycad.cad_execution import project_occt_lines
 
         self.enable_monitor()
         styles = self.client.get("/api/drawings/styles")
@@ -260,7 +260,7 @@ class DrawingTests(CandidateTestCase):
         self.assertEqual(self.repository.read_head(), self.head)
 
     def test_sheet_hidden_objects_are_removed_before_visibility_and_recipe_changes_keep_old_pdf(self):
-        from archflow.adapters.cad_execution import project_occt_lines
+        from monkeycad.cad_execution import project_occt_lines
 
         receipt = self.repository.load_json(record_ref_from_uri(self.step["receiptRef"], PROJECT_ID))
         physical = set(receipt["physical_object_ids"])

@@ -12,9 +12,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from archflow.adapters.cad_execution import CadExecutionError, RhinoPatchBase, patch_composed_three_dm, prepare_rhino_three_dm_export
-from archflow.adapters.cad_patch import CadPatchError, PatchSelection, build_patch_prelude, select_patch_operations
-from archflow.adapters.cad_program import expected_object_semantics, translate_to_rhino_python
+from monkeycad.cad_execution import CadExecutionError, RhinoPatchBase, patch_composed_three_dm, prepare_rhino_three_dm_export
+from monkeycad.cad_patch import CadPatchError, PatchSelection, build_patch_prelude, select_patch_operations
+from monkeycad.cad_program import expected_object_semantics, translate_to_rhino_python
 from archflow.state.geometry_program import delivered_object_ids
 from monkeyarch.capabilities.element_producers import ProductionContext, produce_rows
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
@@ -494,7 +494,7 @@ class ComposedThreeDmPatchTests(unittest.TestCase):
             GeometryOperation, GeometryOperationKind, GeometryParameter,
             GeometryParameterKind, LengthUnit,
         )
-        from archflow.adapters.cad_execution import CadExecutionStatus, execute_occt_export
+        from monkeycad.cad_execution import CadExecutionStatus, execute_occt_export
         from archflow.state.geometry_program import expected_object_bounds
 
         r = self.rhino
