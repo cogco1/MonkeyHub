@@ -32,19 +32,7 @@ ArchFlow 源码接入默认从 GitHub `main` 开始，记录实际提交和对�
 
 这四项完成后，再决定新的模型功能。第一天不要求跑完整建筑、接入外部模型服务或增加通用框架。
 
-<details>
-<summary>2026-09-06 历史快照（不作为当前接入基线）</summary>
-
-| 仓库 | 当日 GitHub `main` | 已核实状态 |
-| --- | --- | --- |
-| 共享工具箱 | [`73f9ee4`](https://github.com/cogco1/huaguoshan-digital-infrastructure/commit/73f9ee423a6ae2509b7cd96a1645bf0fa139484b) | [该提交 Actions 通过](https://github.com/cogco1/huaguoshan-digital-infrastructure/actions/runs/33937511062)；已发布命令是 `research`，不是本地开发中的 `hgs` |
-| ArchFlow | [`7b3d09f`](https://github.com/cogco1/ARCHFLOW_V4/commit/7b3d09fb9c6dd819d8e26a9b827f992527bb39da) | [该提交 Actions 失败](https://github.com/cogco1/ARCHFLOW_V4/actions/runs/33930349347)：旧 `archflow-runtime` 入口导入不存在的 `archflow.project.runtime`；该 CI 尚未覆盖 Studio API/Web |
-
-当日维护者的 ArchFlow 本地提交为 `a587156`，比上述远端多 24 笔提交；另有未提交改动。工具箱本地提交为 `c3b54af`，另有 `hgs` 查询、目录及命名等未提交改动。本清单发布不等于这些代码已发布。
-
-</details>
-
-下列 ArchFlow 命令对应当前源码入口；工具箱保留其独立发布边界。每次接入记录所选仓库的实际提交并查看 Actions，不按历史快照回退代码。源码检查通过不等于已在新成员电脑完成接入。
+下列 ArchFlow 命令对应当前源码入口；工具箱保留其独立发布边界。每次接入记录所选仓库的实际提交并查看 Actions。源码检查通过不等于已在新成员电脑完成接入。
 
 ## 1. 负责人先给什么
 

@@ -696,8 +696,7 @@ git switch --detach FETCH_HEAD
 git rev-parse HEAD
 ```
 
-确认取得的提交包含本节所用的创建命令和配置模板，再进行安装。后续开发从约定基线开短分支；
-8.8 记录旧版交付事实，不作为默认安装版本。
+确认取得的提交包含本节所用的创建命令和配置模板，再进行安装。后续开发从约定基线开短分支。
 
 需要已安装 Git、Python 3.12 和 Node.js 24；9 月 5 日首次隔离核验版本为 Python 3.12.10 / Node.js 24.14.0。
 Vite 声明的 Node 下限为 `^20.19.0 || >=22.12.0`，这里选 Node 24 同时覆盖直接运行 TypeScript 的 Web 测试。
@@ -882,7 +881,7 @@ $result = Invoke-RestMethod "$api/state?run=$($accepted.candidateId)"
 ### 8.6 GitHub Actions 与本机相关检查
 
 既有 [verify.yml](../.github/workflows/verify.yml) 包含架构、PR 提交范围、内核/API、Web 和 Ubuntu/Windows 首次接入检查。
-每次交付查看对应提交或 PR 的实际 Checks；8.8 中的历史检查不代表当前提交已经通过。
+每次交付查看对应提交或 PR 的实际 Checks；以往的检查结果不代表当前提交已经通过。
 `archcheck` 的当前静态边界检查与 `--changed` 的历史提交范围检查分别执行，不能互相替代。
 
 在另一个终端重新设置 `$SourceRoot`、`$RuntimeRoot`、`$Python` 与 venv PATH，按上述路径运行：
@@ -928,29 +927,6 @@ npm.cmd run build  # 包含 typecheck
    不在有他人 WIP 的目录切换成员分支。同步基线按任务需要进行，不要求每日 rebase。
 
 首次交接完成的标准是另一位成员确实拿到相同版本、复跑并审查了一次修改；本机自测不能代签。
-
-### 8.8 历史核验记录
-
-以下是 2026-09-05 的历史核验记录：在外部 Runtime 的 `temp/team-onboarding-20260905/` 中，用当时本地 `main`
-（`4a4e196e9a64ac50a4b9f4e23611e1af35888359`）的独立 clone 和新 venv
-完成依赖安装、API/Web 启动、通过 Web 代理的 health/protocol/state 请求及 `portico-base.height = 2.2`
-候选执行。候选重新读取值为 2.2，`HEAD` 前后相同，未生成 CAD artifact。
-Python 实装为 FastAPI 0.141.1、uvicorn 0.52.4、Pydantic 2.13.5、Pillow 12.3.0、httpx2 2.12.0、rhino3dm 8.32.1；
-API 聚焦检查 58 项、其中 1 项真实 villa 输入检查跳过，Web 12 项通过且构建成功。
-该 clone 另外应用了当日两处脚本修正：OpenAPI 使用 venv Python，生成客户端比较忽略 CRLF/LF 差别。
-Windows 换行的 `api:check` 已通过；接口正文差异仍会报错。`archcheck` 通过。
-这些结果属于当日的本机隔离验证；当时第二位成员、浏览器交互和真实模型试用尚未验证。
-
-同日 GitHub `main` 实查为 `7b3d09f`，本地核验基线比它多 10 笔提交；当日五文件修改只在本地交付，
-新增 Actions 尚未在 GitHub 运行。这些历史结果不作为当前版本状态。
-
-2026-09-08 的分发候选为 [PR #3](https://github.com/cogco1/ARCHFLOW_V4/pull/3) 的
-`217204171f1ac69088fb54977acc124dc1284c2e`，四个 CI job 已通过，默认远端 main 仍为 `7b3d09f`。
-该候选包含已提交的 Studio 基线和历史 scope 修复，不包含随后开发的文档视觉输入或主检出其他未提交修改。
-以上是该候选当时的状态，不作为默认安装版本；当时第二位成员的独立复现仍待完成，维护者检查与 CI 不替代成员试用。
-
-首位队友试用前，负责人还需提供：两个 GitHub 仓库的成员访问权限、此次分发版本、首位成员与审查人、
-一个小修改的文件范围。空项目连接检查不依赖建筑模型；试用真实建筑或候选修改时，再提供允许共享的完整输入或项目副本。
 
 ## 9. 与共享工具箱的分工
 
