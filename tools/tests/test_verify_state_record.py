@@ -10,7 +10,8 @@ that names no phase is read in design_development, which is the phase every
 projection had when it was written.
 
 The project, its record, its frozen workflow and the reference run are the
-runner suite's own builders; nothing here is a second fixture framework.
+runner suite's own builders (stage_ladder_fixture.py); nothing here is a second
+fixture framework.
 """
 from __future__ import annotations
 
@@ -31,9 +32,9 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.stage_workflow import DesignPhase
 from archflow.project.inputs import load_authored_record
 from archflow.state.state_record import legacy_state_digest
-from tests.integration.test_project_runner import DECLARED_LIVE_IDENTITY, _geometry_only, _ladder_project, _options, _record, _run_opened_stage, _seats
 from tools.project import verify_state_record
 from tools.project.open_stage_run import open_stage_run
+from stage_ladder_fixture import DECLARED_LIVE_IDENTITY, _geometry_only, _ladder_project, _options, _record, _run_opened_stage, _seats
 
 REFERENCE_RUN = "stage-0-001"
 EQUIVALENCE_RUN = "equivalence-001"
