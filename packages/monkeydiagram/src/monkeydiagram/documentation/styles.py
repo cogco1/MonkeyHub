@@ -17,7 +17,7 @@ from math import ceil, hypot, isfinite
 from typing import Any, Mapping, Sequence
 
 from monkeycad.cad_execution import OcctDrawingPolyline
-from ..drawing_output import PaperCanvas
+from ..rendering.paper import PaperCanvas
 
 _MM = 72.0 / 25.4
 _UNITS = {"meter": 1000.0, "millimeter": 1.0, "foot": 304.8, "inch": 25.4}
@@ -299,7 +299,7 @@ def compose_review_sheet(*, style_id: str, views: Mapping[str, Sequence[OcctDraw
 class SheetView:
     """One retained drawing placed on a view sheet at its own paper size.
 
-    ``marks`` are the drawing's ``drawing_svg.DrawingMark`` values: polylines
+    ``marks`` are the drawing's ``rendering.svg.DrawingMark`` values: polylines
     and poché in the drawing's own paper mm from its top-left, with pens in
     mm and grey levels. ``place_mm`` is where that top-left goes, in mm from
     the sheet's top-left. ``title``, ``subtitle`` and ``scale_label`` are the
