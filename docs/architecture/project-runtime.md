@@ -27,6 +27,7 @@ owner refuses with its own exception, which names the wire code; `main.OWNER_REF
 place that gives each kind its status, and it answers in the same `{code, detail}` body as a
 `StudioError`. Composite use cases (cut plans, dimensions, representation status, visual
 reviews), model and agent calls, and the document registry (`application/artifacts.py`) stay here.
+
 The service id `studio`, the server name `monkeyarch-api` and the forwarding path segment
 `/studio/` are process and wire names kept for compatibility; they name this runtime and
 nothing else (§9). The workspace modules render directly inside the Hub frontend;
