@@ -496,7 +496,7 @@ function Complete-Installation([string]$Directory) {
             }
             $target = Join-Path $Directory $item.Entry
             [MonkeyHub.InstallerShortcut]::Write($link, $target, $Directory,
-                (Join-Path $Directory 'apps\archflow-studio\assets\monkeyarch.ico'), $item.WindowStyle)
+                (Join-Path $Directory 'apps\monkeyhub\assets\monkeyarch.ico'), $item.WindowStyle)
             $written = [MonkeyHub.InstallerShortcut]::Read($link)
             if ($written.TargetPath -ne $target -or $written.WorkingDirectory -ne $Directory) {
                 throw "The desktop shortcut does not point to this installation: $link"

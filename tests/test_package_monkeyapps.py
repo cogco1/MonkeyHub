@@ -146,7 +146,7 @@ class PackageAdapterTests(unittest.TestCase):
         self.node.write_bytes(b"selected Node runtime")
         for directory in (
             "archflow", "monkeyarch", "monkeydiagram", "monkeymonitor", "monkeycontrol",
-            "apps/archflow-studio/api/archflow_studio_api", "apps/archflow-studio/assets",
+            "apps/archflow-studio/api/archflow_studio_api",
             "apps/monkeyhub/api", "apps/monkeyhub/installer/third-party",
             "apps/monkeyfab/src/monkeyfab", "apps/monkeyfab/tests",
         ):
@@ -154,11 +154,9 @@ class PackageAdapterTests(unittest.TestCase):
         for relative in (
             "apps/monkeyhub/installer/third-party/README.md", "apps/monkeyhub/installer/README.md",
             "apps/monkeyhub/installer/INSTALL_MONKEYHUB.cmd",
-            "apps/monkeyhub/run.py",
+            "apps/monkeyhub/run.py", "apps/monkeyhub/assets/monkeyarch.ico",
             "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "pyproject.toml",
-            "governance/module_registry.json", "apps/shared-web/src/appearance.js",
-            "apps/shared-web/src/i18n.js", "apps/shared-web/src/browserTranslator.js",
-            "apps/shared-web/src/base.css", "tools/create_project.py", "tools/run_project.py",
+            "governance/module_registry.json", "tools/create_project.py", "tools/run_project.py",
             "SECURITY.md",
             "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml",
             "apps/monkeyfab/tests/test_cli.py",
@@ -226,6 +224,8 @@ class PackageAdapterTests(unittest.TestCase):
         self.assertEqual((self.bundle / "apps/monkeyfab/pyproject.toml").read_text(), "fixture")
         self.assertFalse((self.bundle / "apps/monkeyfab/tests").exists())
         self.assertEqual((self.bundle / "apps/monkeyhub/web/dist/index.html").read_text(), "fixture")
+        # The desktop shortcut and the browser launcher take the product icon from here.
+        self.assertEqual((self.bundle / "apps/monkeyhub/assets/monkeyarch.ico").read_text(), "fixture")
         self.assertFalse((self.bundle / "apps/archflow-studio/web").exists())
         urls = {call.args[0] for call in fetched.call_args_list}
         self.assertEqual(urls, {
@@ -315,7 +315,7 @@ class DesktopPackageTests(unittest.TestCase):
                             "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml"]
                 if desktop:
                     required.extend(("MonkeyHub.exe", "_runtime/desktop-Cargo.lock"))
-                for relative in required:
+                for relative in (*required, "apps/monkeyhub/assets/monkeyarch.ico"):
                     path = bundle / relative
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(b"fixture - never executed")
@@ -353,13 +353,18 @@ class DesktopPackageTests(unittest.TestCase):
             inspect.write_text("param($Directory)\n$shell = New-Object -ComObject WScript.Shell\n"
                                "@('MonkeyHub.lnk') | ForEach-Object { "
                                "$link = $shell.CreateShortcut((Join-Path $Directory $_)); "
-                               "[PSCustomObject]@{Target=$link.TargetPath; WindowStyle=$link.WindowStyle} } "
+                               "[PSCustomObject]@{Target=$link.TargetPath; WindowStyle=$link.WindowStyle; "
+                               "Icon=$link.IconLocation} } "
                                "| ConvertTo-Json -Compress\n", encoding="utf-8")
             result = subprocess.run(["powershell.exe", "-NoProfile", "-File", str(inspect), str(shortcuts)],
                                     capture_output=True, text=True, timeout=15, check=True)
             link = json.loads(result.stdout)
             self.assertTrue(Path(link["Target"]).samefile(desktop_entry), link)
             self.assertEqual(link["WindowStyle"], 1)
+            # The shortcut takes its icon from the version it opens.
+            icon, _, index = link["Icon"].rpartition(",")
+            self.assertEqual(index, "0", link)
+            self.assertTrue(Path(icon).samefile(installed / "apps/monkeyhub/assets/monkeyarch.ico"), link)
 
             # A familiar filename without our package metadata is not ours to replace.
             foreign = root / "another application"

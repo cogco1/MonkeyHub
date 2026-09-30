@@ -105,7 +105,7 @@ print(json.dumps({"cases": [{"name": case, "png": base64.b64encode(fixture_png(c
       name: "document-study-host-appearance",
       transform(code, id) {
         if (id.replaceAll("\\", "/").endsWith("/test/workspace-fixture.tsx"))
-          return `import "../../../../shared-web/src/base.css";\n${code}`;
+          return `import "../../../../../packages/web-shared/src/base.css";\n${code}`;
       },
     }], server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null } });
   http.on("request", (request, response) => {

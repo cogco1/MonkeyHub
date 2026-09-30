@@ -49,7 +49,7 @@ import {createRoot} from 'react-dom/client';
 import {ProjectWorkspace} from '/src/app/ProjectWorkspace';
 import {UserPreferencesProvider} from '/test/TestProviders';
 import '/src/styles.css';
-import '/@fs/${path.resolve(repoRoot, "apps/shared-web/src/base.css").replaceAll("\\", "/")}';
+import '/@fs/${path.resolve(repoRoot, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
 function App(){const [workspace,setWorkspace]=useState('arch');
  return <UserPreferencesProvider baseUrl={location.origin}>
   <ProjectWorkspace expectedProjectId="demo-project" workspace={workspace} onWorkspaceChange={setWorkspace}

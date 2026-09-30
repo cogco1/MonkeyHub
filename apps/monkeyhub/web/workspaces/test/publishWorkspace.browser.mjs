@@ -59,7 +59,7 @@ uvicorn.run(app,host='127.0.0.1',port=port,log_level='warning')
 const fixture = `
 import React,{useState} from 'react';import{createRoot}from'react-dom/client';
 import{ProjectWorkspace}from'/src/app/ProjectWorkspace';import{UserPreferencesProvider}from'/test/TestProviders';
-import'/src/styles.css';import'/@fs/${path.resolve(repo, "apps/shared-web/src/base.css").replaceAll("\\", "/")}';
+import'/src/styles.css';import'/@fs/${path.resolve(repo, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
 function Project({id}){const[workspace,setWorkspace]=useState('publish');
 return <UserPreferencesProvider baseUrl={location.origin+'/'+id}><nav>{['publish','board','render'].map(w=><button key={w} onClick={()=>setWorkspace(w)}>{w}</button>)}</nav><main style={{height:'calc(100% - 40px)'}}><ProjectWorkspace expectedProjectId={id} workspace={workspace} onWorkspaceChange={setWorkspace}/></main></UserPreferencesProvider>}
 function App(){const[id,setId]=useState('pub-a');return <><button id="project-switch" onClick={()=>setId(id==='pub-a'?'pub-b':'pub-a')}>{id}</button><div style={{height:'calc(100% - 30px)'}}><Project key={id} id={id}/></div></>}

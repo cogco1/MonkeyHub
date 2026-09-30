@@ -52,7 +52,7 @@ import {flushSync} from 'react-dom';
 import DrawingCanvas from '/src/workspaces/monkeydiagram/DrawingCanvas';
 import {UserPreferencesProvider,useStudio,usePreferences} from '/test/TestProviders.tsx';
 import '/src/styles.css';
-import '/@fs/${root}/../../../shared-web/src/base.css';
+import '/@fs/${root}/../../../../packages/web-shared/src/base.css';
 const modelA=${JSON.stringify(modelA)},modelB=${JSON.stringify(modelB)};
 const metrics=window.drawingFixture={requests:[],documents:[${JSON.stringify(legacyDocument)}],artifacts:[${JSON.stringify(externalArtifact)},${JSON.stringify(unsupportedExact)}],uploads:[],handoffs:[],head:'stage-A',revision:0,headDrawable:true,recipe:{hatchSpacingMm:3}};
 const stages=[{stageRef:'stage-A',label:'Accepted A',branchId:'main',modelSource:modelA}, {stageRef:'stage-B',label:'Accepted B',branchId:'main',modelSource:modelB}];

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type FormEvent } from "react";
-import type { AppearancePreferences } from "../../../shared-web/src/appearance.js";
+import type { AppearancePreferences } from "../../../../packages/web-shared/src/appearance.js";
 import { MenuCommand, MenuSeparator, MenuTabs, StatusLine, SurfaceBar } from "../workspaces/src/features/chrome/SurfaceChrome";
 import type { AppStatus, ApplicationSettingsDto, ChatProject } from "./api/generated";
 import {

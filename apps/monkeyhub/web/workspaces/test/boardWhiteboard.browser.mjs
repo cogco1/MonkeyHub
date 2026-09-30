@@ -31,7 +31,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import Board from "/src/workspaces/monkeyboard/Board.tsx";
 import { UserPreferencesProvider } from "/test/TestProviders.tsx";
-import "/@fs/${path.join(repoRoot, "apps/shared-web/src/base.css").replaceAll("\\", "/")}";
+import "/@fs/${path.join(repoRoot, "packages/web-shared/src/base.css").replaceAll("\\", "/")}";
 import "/src/styles.css";
 createRoot(document.getElementById("root")).render(React.createElement(UserPreferencesProvider, null,
   React.createElement(Board, { onSubmit: (request) => window.receiveBoardRequest(request) })));

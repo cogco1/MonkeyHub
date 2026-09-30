@@ -249,7 +249,7 @@ try {
         const modulePath = id.split("?")[0].replaceAll("\\", "/");
         if ((viewBaseOnly || process.env.BOARD_NOTE_SCREENSHOTS) && modulePath === `${webRoot.replaceAll("\\", "/")}/test/workspace-fixture.tsx`) {
           // The footer layout is checked against the real Hub theme.
-          return { code: `import "/@fs/${path.resolve(webRoot, "../../../shared-web/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
+          return { code: `import "/@fs/${path.resolve(webRoot, "../../../../packages/web-shared/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
         }
         if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeyboard/Board.tsx`) {
           return { code: `export default function Board({onOpenDocument, onSubmit}) {
