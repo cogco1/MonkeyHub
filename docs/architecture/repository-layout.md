@@ -141,7 +141,7 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
 │  └─ web/                          单一源根：src/ test/ scripts/ tools/ assets/
 ├─ services/project-runtime/        src/project_runtime/  tests/  README.md  requirements.txt  pyproject.toml
 ├─ packages/
-│  ├─ archflow/                     src/archflow/{contracts,project,state,semantics,validation,submission,ports,relations,adapters}
+│  ├─ archflow/                     src/archflow/{contracts,project,state,semantics,validation,submission,ports,adapters}
 │  ├─ monkeyarch/                   src/monkeyarch/（第一轮保持原内部结构）
 │  ├─ monkeydiagram/                src/monkeydiagram/
 │  ├─ monkeymonitor/  monkeycontrol/  monkeyfab/    src/<包名>/

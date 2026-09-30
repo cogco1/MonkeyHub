@@ -5,4 +5,5 @@ says what spatial condition it forms. An entity (a wall, a column, a space) is
 neither: entity schemas live in the State Record. Natural language enters only
 as an alias that resolves to a registered id; a semantic string that resolves
 to nothing is refused by the record with the nearest registered ids named.
+``relation_kinds`` lists the kinds a record's relation may name.
 """

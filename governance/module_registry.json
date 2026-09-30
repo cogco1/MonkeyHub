@@ -1598,7 +1598,6 @@
         "packages/archflow/src/archflow/state/spatial.py",
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/stage_workflow.py",
-        "packages/archflow/src/archflow/relations/contracts.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
         "packages/archflow/src/archflow/state/developed_design.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
@@ -1670,7 +1669,6 @@
         "project.refs"
       ],
       "used_by": [
-        "packages/archflow/src/archflow/relations/contracts.py",
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/geometry_program.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py",
@@ -2658,7 +2656,6 @@
         "packages/archflow/src/archflow/project/layout.py",
         "packages/archflow/src/archflow/project/ports.py",
         "packages/archflow/src/archflow/project/repository.py",
-        "packages/archflow/src/archflow/relations/contracts.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "packages/archflow/src/archflow/state/geometry_program.py",
         "packages/archflow/src/archflow/state/operational_state.py",
@@ -2957,67 +2954,6 @@
       "notes": "1311 lines carrying the whole persistence concept, including Windows sharing-violation retries around the HEAD swap; PreparedTransition and RecoveryReport are returned but never imported by name."
     },
     {
-      "module_id": "relations.contracts",
-      "owner_path": "packages/archflow/src/archflow/relations/contracts.py",
-      "purpose": "Persistence-neutral typed contracts for the architectural relation graph, and the relation-kind vocabulary the State Record validates against.",
-      "owns": [
-        "the node kind vocabulary (ArchitecturalNodeKind, ArchitecturalNode)",
-        "the core relation vocabulary (ArchitecturalRelationKind) - the one vocabulary the record accepts",
-        "the closed participant-role set per relation kind (allowed_relation_roles, RelationParticipant)",
-        "relation projections and epistemic status (RelationProjection, RelationEpistemicStatus)",
-        "monotone impact effects and propagation rules (ImpactEffect, RelationPropagationRule)",
-        "the relation and graph records with their digests (ArchitecturalRelation, ArchitecturalRelationGraph)"
-      ],
-      "does_not_own": [
-        "graph coverage and traversal (deliberately outside this module)",
-        "checking a relation against materialized geometry (capabilities/relation_checks.py)",
-        "the record's own Relation shape with its datum role and validator binding (state.record)",
-        "dependency edges (state.operational_state)"
-      ],
-      "inputs": [
-        "node and relation declarations",
-        "BranchRef",
-        "scope and stage digests"
-      ],
-      "outputs": [
-        "ArchitecturalRelation",
-        "ArchitecturalRelationGraph",
-        "digests"
-      ],
-      "public_api": [
-        "ArchitecturalRelationKind",
-        "ArchitecturalNodeKind",
-        "ArchitecturalNode",
-        "ArchitecturalRelation",
-        "ArchitecturalRelationGraph",
-        "RelationParticipant",
-        "RelationProjection",
-        "RelationEpistemicStatus",
-        "RelationPropagationRule",
-        "ImpactEffect",
-        "ArchitecturalRelationContractError"
-      ],
-      "depends_on": [
-        "contracts.canonical",
-        "contracts.fields",
-        "project.refs"
-      ],
-      "used_by": [
-        "packages/archflow/src/archflow/state/state_record.py"
-      ],
-      "invariants": [
-        "owns no design, stage-acceptance, persistence or canonical-write authority",
-        "participant roles are closed per relation kind; an unknown role is refused",
-        "the graph is a deterministic projection over exact records, never a mutable store",
-        "never writes the filesystem"
-      ],
-      "status": "canonical",
-      "tests": [
-        "packages/archflow/tests/test_program_sheet.py"
-      ],
-      "notes": "On the spine only because state_record.py imports ArchitecturalRelationKind; the graph types have no spine consumer and §2.2 sends the ArchitecturalRelation graph to the monuments/controller lanes, so this module should shrink to the enum."
-    },
-    {
       "module_id": "runtime.project_runner",
       "owner_path": "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
       "purpose": "The one runtime loop: run admitted seat rounds from a single State Record, retaining every record the run produces and returning an authority-free stage-run receipt.",
@@ -3291,7 +3227,7 @@
       ],
       "does_not_own": [
         "roles - semantics.roles",
-        "relation kinds - relations.contracts"
+        "relation kinds - semantics.relation_kinds"
       ],
       "inputs": [],
       "outputs": [
@@ -3397,6 +3333,41 @@
         "packages/archflow/tests/test_semantics.py"
       ],
       "notes": ""
+    },
+    {
+      "module_id": "semantics.relation_kinds",
+      "owner_path": "packages/archflow/src/archflow/semantics/relation_kinds.py",
+      "purpose": "The architectural relation kinds a State Record relation may name.",
+      "owns": [
+        "the core relation vocabulary (ArchitecturalRelationKind) - the one vocabulary the record accepts"
+      ],
+      "does_not_own": [
+        "the record's own Relation shape with its datum role, propagation and validator binding (state.record)",
+        "checking a relation against materialized geometry (capabilities/relation_checks.py)",
+        "dependency edges and what propagates along them (state.dependencies)",
+        "roles and conditions - semantics.roles, semantics.conditions"
+      ],
+      "inputs": [],
+      "outputs": [
+        "ArchitecturalRelationKind"
+      ],
+      "public_api": [
+        "ArchitecturalRelationKind"
+      ],
+      "depends_on": [],
+      "used_by": [
+        "packages/archflow/src/archflow/state/state_record.py",
+        "packages/archflow/src/archflow/state/program_sheet.py"
+      ],
+      "invariants": [
+        "a relation kind is one of these ids; the record refuses any other",
+        "never writes the filesystem"
+      ],
+      "status": "canonical",
+      "tests": [
+        "packages/archflow/tests/test_program_sheet.py"
+      ],
+      "notes": "The enum of relations.contracts, which #512 deleted with the relation graph types nothing used."
     },
     {
       "module_id": "semantics.roles",
@@ -3991,7 +3962,7 @@
       "does_not_own": [
         "applying a decision to produce the next state (state.decision_operator)",
         "phase gates and deliverables (state.design_maturity)",
-        "the architectural relation vocabulary (relations.contracts)",
+        "the architectural relation vocabulary (semantics.relation_kinds)",
         "canonical write authority (explicitly outside the operational state)",
         "persisting state (project.repository)",
         "commitment lifecycle transitions (state.commitments)",
@@ -4120,7 +4091,7 @@
         "Explicit metadata-only parameter lock/unlock operators; ordinary edits preserve existing lock metadata and established parameter binding paths, including inherited Type defaults, without freezing unrelated consumer fields"
       ],
       "does_not_own": [
-        "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
+        "the relation kind vocabulary (semantics.relation_kinds.ArchitecturalRelationKind)",
         "DesignObligation (state.operational_state); DependencyEdge, DependencyEffect and the closure walk (state.dependencies)",
         "the DesignComponent and ComponentMaturity shapes (state.spatial)",
         "the ProjectLevel/ProjectGridAxis shapes it emits (state.geometry_program)",
@@ -4189,7 +4160,7 @@
       "depends_on": [
         "contracts.canonical",
         "project.refs",
-        "relations.contracts",
+        "semantics.relation_kinds",
         "semantics.conditions",
         "semantics.facets",
         "semantics.registry",
@@ -5515,7 +5486,6 @@
         "project.refs",
         "capabilities.element_producers",
         "capabilities.reference_resolver",
-        "relations.contracts",
         "semantics.registry",
         "studio.artifacts",
         "adapters.three_dm_inspector",
@@ -7010,7 +6980,7 @@
         "the sheet's totals (target x count, mapped, unmapped ids)"
       ],
       "does_not_own": [
-        "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
+        "the relation kind vocabulary (semantics.relation_kinds.ArchitecturalRelationKind)",
         "the semantic vocabulary a function names (semantics.registry, semantics.roles)",
         "the entity schemas and their referential integrity (state.record)",
         "where the sheet is kept (project.layout) or its reading and writing (project.inputs)",
@@ -7040,7 +7010,7 @@
       ],
       "depends_on": [
         "state.record",
-        "relations.contracts",
+        "semantics.relation_kinds",
         "semantics.registry",
         "project.refs"
       ],

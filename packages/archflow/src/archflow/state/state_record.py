@@ -39,7 +39,7 @@ from archflow.state.derivation import (
 )
 from archflow.state.dependencies import DependencyEdge, DependencyEffect, downstream_closure, downstream_closures
 from archflow.state.operational_state import DesignObligation
-from archflow.relations.contracts import ArchitecturalRelationKind
+from archflow.semantics.relation_kinds import ArchitecturalRelationKind
 from archflow.semantics.conditions import CONDITION_IDS
 from archflow.semantics.facets import FACET_KEYS, FREE_TEXT_MAX, FREE_TEXT_MIN, allowed_facet_values, suggest_facet_key
 from archflow.semantics.registry import resolve_semantic_kind, suggest_semantic, suggest_semantic_kind
