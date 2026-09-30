@@ -136,8 +136,6 @@ def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
         "unclaimed_write_scope",
     ):
         _require_string_list(policy, field)
-    if "legacy_root_packages" in policy:
-        _require_string_list(policy, "legacy_root_packages")
     python_roots = policy["python_source_roots"]
     if len(python_roots) != len(set(python_roots)):
         raise ArchitecturePolicyError(
@@ -149,23 +147,13 @@ def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
                 f"python_source_roots entry {python_root!r} must be a repository-relative directory"
             )
     root_entries = policy["repository_root_entries"]
-    legacy_packages = policy.get("legacy_root_packages", [])
-    for field, names in (
-        ("repository_root_entries", root_entries),
-        ("legacy_root_packages", legacy_packages),
-    ):
-        if len(names) != len(set(names)):
-            raise ArchitecturePolicyError(f"{field} must not contain duplicates")
-        for name in names:
-            if "/" in name or not _repository_path(name):
-                raise ArchitecturePolicyError(
-                    f"{field} entry {name!r} must be one top-level name"
-                )
-    if set(root_entries) & set(legacy_packages):
-        raise ArchitecturePolicyError(
-            "legacy_root_packages must not repeat repository_root_entries: "
-            "the ratchet only shrinks"
-        )
+    if len(root_entries) != len(set(root_entries)):
+        raise ArchitecturePolicyError("repository_root_entries must not contain duplicates")
+    for name in root_entries:
+        if "/" in name or not _repository_path(name):
+            raise ArchitecturePolicyError(
+                f"repository_root_entries entry {name!r} must be one top-level name"
+            )
     checked_roots = policy["checked_source_roots"]
     if len(checked_roots) != len(set(checked_roots)):
         raise ArchitecturePolicyError(
@@ -655,31 +643,22 @@ def check_repository_root(root: Path, policy: dict[str, Any]) -> Iterator[Policy
     """The repository root holds only the entries docs/architecture/repository-layout.md names.
 
     Read from Git's index, not the filesystem: a checkout also holds ignored
-    caches, build output and private notes that belong to no layout. The root
-    packages that predate ``packages/`` are a ratchet, not an allowance: each
-    move removes its entry from ``legacy_root_packages``, and an entry left
-    there after its package has moved is reported as well, so the root cannot
-    take the package back.
+    caches, build output and private notes that belong to no layout. The
+    allowlist is the whole of the root: a package moved back there is reported
+    like any other entry it does not name.
     """
 
     allowed = set(policy["repository_root_entries"])
-    legacy = set(policy.get("legacy_root_packages", ()))
     entries = {
         path.split("/", 1)[0]
         for path in _git(root, "ls-files", "-z").split("\0")
         if path
     }
-    for entry in sorted(entries - allowed - legacy):
+    for entry in sorted(entries - allowed):
         yield PolicyFinding(
             entry, 1, "ROOT_ENTRY",
             f"{entry!r} is not a repository root entry; put it under an existing "
             "top-level directory (docs/architecture/repository-layout.md) or add it to repository_root_entries",
-        )
-    for entry in sorted(legacy - entries):
-        yield PolicyFinding(
-            ARCHITECTURE_POLICY, 1, "ROOT_ENTRY",
-            f"legacy_root_packages still lists {entry!r}, which Git no longer tracks at the "
-            "root; remove it so the ratchet only shrinks",
         )
 
 

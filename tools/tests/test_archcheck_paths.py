@@ -50,7 +50,6 @@ def _policy(**changes: object) -> dict[str, object]:
         "import_only_source_roots": [],
         "python_source_roots": ["."],
         "repository_root_entries": ["docs", "tools", ".gitignore", "README.md"],
-        "legacy_root_packages": ["archflow"],
         "shared_write_scope": ["tests/"],
         "unclaimed_write_scope": ["docs/"],
         "probe_root": "probes",
@@ -180,23 +179,18 @@ class PolicyShapeTests(unittest.TestCase):
         del without["repository_root_entries"]
         with self.assertRaisesRegex(ArchitecturePolicyError, "repository_root_entries"):
             validate_policy(without)
-        for field in ("repository_root_entries", "legacy_root_packages"):
-            for names in (["apps/monkeyhub"], [".."], ["C:"], ["docs", "docs"]):
-                with self.subTest(field=field, names=names), self.assertRaisesRegex(ArchitecturePolicyError, field):
-                    _policy(**{field: names})
-
-    def test_the_ratchet_cannot_also_be_an_allowed_entry(self) -> None:
-        with self.assertRaisesRegex(ArchitecturePolicyError, "only shrinks"):
-            _policy(repository_root_entries=["docs", "tools", "archflow"])
+        for names in (["apps/monkeyhub"], [".."], ["C:"], ["docs", "docs"]):
+            with self.subTest(names=names), self.assertRaisesRegex(ArchitecturePolicyError, "repository_root_entries"):
+                _policy(repository_root_entries=names)
 
 
 class RepositoryRootTests(unittest.TestCase):
-    """The root is read from Git's index; the legacy packages are a ratchet."""
+    """The root is read from Git's index and holds only the allowlisted entries."""
 
     def setUp(self) -> None:
         self.root = _temporary_root(self, "repo")
         _git(self.root, "init", "-q")
-        for relative in ("README.md", ".gitignore", "docs/index.md", "tools/check.py", "archflow/__init__.py"):
+        for relative in ("README.md", ".gitignore", "docs/index.md", "tools/check.py"):
             _write(self.root, relative, "*.egg-info/\n.pytest_cache/\n*.log\n" if relative == ".gitignore" else "text\n")
         self.track()
 
@@ -209,7 +203,7 @@ class RepositoryRootTests(unittest.TestCase):
             for item in check_repository_root(self.root, policy or _policy())
         ]
 
-    def test_the_layout_and_the_legacy_packages_pass(self) -> None:
+    def test_the_layout_passes(self) -> None:
         self.assertEqual([], self.findings())
 
     def test_a_tracked_entry_outside_the_layout_is_a_finding(self) -> None:
@@ -227,17 +221,11 @@ class RepositoryRootTests(unittest.TestCase):
         _git(self.root, "rm", "-q", "--cached", "notes.txt")
         self.assertEqual([], self.findings())
 
-    def test_a_package_that_moved_must_leave_the_ratchet(self) -> None:
-        findings = self.findings(_policy(legacy_root_packages=["archflow", "monkeydiagram"]))
-        self.assertEqual([(ARCHITECTURE_POLICY, "ROOT_ENTRY")], [item[:2] for item in findings])
-        self.assertIn("'monkeydiagram'", findings[0][2])
-
-    def test_a_package_off_the_ratchet_may_not_stay_at_the_root(self) -> None:
-        without = _policy()
-        del without["legacy_root_packages"]
-        for policy in (_policy(legacy_root_packages=[]), without):
-            with self.subTest(policy=policy.get("legacy_root_packages")):
-                self.assertEqual([("archflow", "ROOT_ENTRY")], [item[:2] for item in self.findings(policy)])
+    def test_a_package_moved_back_to_the_root_is_a_finding(self) -> None:
+        # The packages left the root for packages/ in round 1; nothing lets one return.
+        _write(self.root, "archflow/__init__.py")
+        self.track()
+        self.assertEqual([("archflow", "ROOT_ENTRY")], [item[:2] for item in self.findings()])
 
 
 class DocsLayoutTests(unittest.TestCase):
