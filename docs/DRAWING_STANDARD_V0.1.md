@@ -110,7 +110,7 @@ PDF/DXF 实测主图为 1:20，三个 460 mm 深剖面均为纸面 46 mm（1:10�
 ### 已有风格的程序化复用
 
 MonkeyDiagram 的图纸风格由现有 `documentation.drawings` 承担：
-`monkeydiagram/documentation/styles.py` 提供样式配置及 `compose_review_sheet`，
+`packages/monkeydiagram/src/monkeydiagram/documentation/styles.py` 提供样式配置及 `compose_review_sheet`，
 接收真实正立面、右立面和未剖切顶投影，以明确比例生成同源 PDF/DXF。
 
 - `arch400-white`：采用住宅项目 2026-09-10 九页成套图的白底表达，22×22 英寸、
@@ -121,9 +121,9 @@ Studio 的 `GET /api/drawings/styles` 提供可选风格；`POST /api/drawings/s
 选定的比例不因版面不足自动缩小。隐藏对象、立面轮廓简化和说明由请求明确给定；切换风格不改变模型或原图。
 这两套配置来自已核对的现有图纸；任意参考 PDF/图片的自动风格识别尚未接入。
 
-标准配置为 `monkeydiagram/documentation/drawing_standard_v0_1.json`，结构为 `drawing_state.schema.json`。Python 入口为 `monkeydiagram.documentation` 的 `validate_drawing_state(state, standard)` 与 `compile_drawing_state(state, standard)`。JSON Schema 说明结构；Python 校验器还检查跨记录关系、尺寸端点及图面边界。
+标准配置为 `packages/monkeydiagram/src/monkeydiagram/documentation/drawing_standard_v0_1.json`，结构为 `drawing_state.schema.json`。Python 入口为 `monkeydiagram.documentation` 的 `validate_drawing_state(state, standard)` 与 `compile_drawing_state(state, standard)`。JSON Schema 说明结构；Python 校验器还检查跨记录关系、尺寸端点及图面边界。
 
-调用方先准备项目来源、对象、材料、视图目的与尺寸状态，运行校验与编译，再用 `monkeydiagram.drawing_output.PaperCanvas` 记录纸面内容。PDF 与 DXF 导出相同场景；图元边界回填 DrawingState 后，在写出成果前再检查实际可打印范围。成果字节交回现有项目仓库端口。输出依赖可用 `pip install -e ".[drawings]"` 安装；核心校验器不需要 CAD 或 PDF 库。
+调用方先准备项目来源、对象、材料、视图目的与尺寸状态，运行校验与编译，再用 `monkeydiagram.drawing_output.PaperCanvas` 记录纸面内容。PDF 与 DXF 导出相同场景；图元边界回填 DrawingState 后，在写出成果前再检查实际可打印范围。成果字节交回现有项目仓库端口。输出依赖是 `packages/monkeydiagram/pyproject.toml` 的 `drawings` extra（Runtime 的 requirements.txt 列出同样的版本）；核心校验器不需要 CAD 或 PDF 库。
 
 ```python
 import json
