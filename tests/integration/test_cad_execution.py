@@ -22,7 +22,7 @@ from monkeycad.backends.rhino.export import (
 )
 from monkeycad.execution import CadExecutionError, CadExecutionStatus
 from archflow.state.geometry_program import CompiledGeometryProgram
-from cad_fixture import (
+from tests.integration.support import (
     _FakeWorker,
     _binding,
     _cleanup_result,

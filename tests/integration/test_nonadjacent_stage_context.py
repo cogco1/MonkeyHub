@@ -5,7 +5,12 @@ All projects are disposable P036 fixtures; no provider or user CAD app is used.
 """
 from copy import deepcopy
 from dataclasses import replace
+from importlib import import_module
+from pathlib import Path
+import sys
 import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "services/project-runtime/src"))
 
 from fastapi.testclient import TestClient
 
@@ -20,12 +25,13 @@ from project_runtime.application.candidate import run_operator
 from project_runtime.application.projection import project_state
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
+from tests.integration import window_support as window
+from tests.integration.runner_support import _no_rhino
 
-from . import support, window_fixture as window
-from .test_candidate import CandidateTestCase
-from .test_working_copies import register_model
-from .window_fixture import _no_rhino
-
+# Load API fixtures by their full package so they do not shadow kernel tests.
+support = import_module("services.project-runtime.tests.support")
+CandidateTestCase = import_module("services.project-runtime.tests.test_candidate").CandidateTestCase
+register_model = import_module("services.project-runtime.tests.test_working_copies").register_model
 PROJECT_ID, SEATS_PAYLOAD = support.PROJECT_ID, support.SEATS_PAYLOAD
 retain_runner_receipt = support.retain_runner_receipt
 runner_state_digest = support.runner_state_digest

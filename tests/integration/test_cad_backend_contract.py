@@ -12,7 +12,7 @@ import hashlib
 import os
 import tempfile
 import unittest
-from contextlib import contextmanager, nullcontext
+from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
@@ -28,7 +28,6 @@ from monkeycad.backends.rhino.backend import RhinoBackend
 from monkeycad.backends.rhino.export import discover_powershell
 from monkeycad.execution import (
     CadExecutionError,
-    CadExecutionRequest,
     CadExecutionResult,
     CadProgramBinding,
     RhinoCadProgramBinding,
@@ -40,23 +39,19 @@ from archflow.project.record_kinds import stage_geometry_program
 from archflow.project.refs import BranchRef, RunRef, record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyarch.application.project_runner import ProjectRunnerError
-from cad_execution_fixture import (
-    _FakeWorker,
+from tests.integration.support import (
     _binding,
     _box,
-    _cleanup_result,
-    _fake_executable,
-    _inspection,
+    _controlled_rhino,
     _loft,
     _no_process,
     _program,
     _program_of,
     _radial_array,
+    _rhino_request as _request,
     _single_operation_program,
-    _write_host_witness,
-    _write_success_marker,
 )
-from runner_fixture import _ExportProject, _options, _prism_row, _record, _taller_plinth
+from tests.integration.runner_support import _ExportProject, _options, _prism_row, _record, _taller_plinth
 
 
 NEEDS_OCCT = unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
@@ -71,17 +66,6 @@ def _real_rhino_options():
     if powershell is None:
         raise RuntimeError("real Rhino acceptance requires Windows PowerShell and Rhino 8 COM")
     return {"powershell_executable": powershell, "timeout_seconds": 120}
-
-
-def _request(workspace, *, program=None, binding=None, **options):
-    program = program or _program()
-    return CadExecutionRequest(
-        program=program,
-        binding=binding or _binding(program),
-        speculative_workspace=workspace,
-        artifact_stem="contract-candidate",
-        **options,
-    )
 
 
 def _persisted_program(repository, run):
@@ -106,48 +90,6 @@ def _persisted_program(repository, run):
         design_state_digest=program.proposal.design_state_digest,
         predecessor_program_digest=program.proposal.predecessor_program_digest,
     )
-
-
-@contextmanager
-def _controlled_rhino(root, *, bad_inspection=False, plans=None, oracle_shift=0.0):
-    """Inject only host I/O and inspection; leave execution and validation real."""
-    prepare = rhino_export.prepare_rhino_three_dm_export
-    plans = [] if plans is None else plans
-
-    def capture_plan(*args, **kwargs):
-        plan = prepare(*args, **kwargs)
-        plans.append(plan)
-        return plan
-
-    def runner(*args, **kwargs):
-        plan = plans[-1]
-        _write_host_witness(plan)
-        plan.model_path.write_bytes(b"controlled Rhino contract fixture, not a real 3dm")
-        _write_success_marker(plan)
-        return _FakeWorker(stdout="controlled worker")
-
-    def inspect(path, **kwargs):
-        plan = plans[-1]
-        data = plan.model_path.read_bytes()
-        inspection = replace(_inspection(plan), file_sha256=hashlib.sha256(data).hexdigest(), file_bytes=len(data))
-        if bad_inspection:
-            inspection = replace(inspection, object_user_strings=())
-        if oracle_shift and ".rebuild-oracle" in plan.model_path.name:
-            def shifted(bounds):
-                return {key: [values[0] + oracle_shift, *values[1:]] for key, values in bounds.items()}
-
-            inspection = replace(inspection, aggregate_bbox=shifted(inspection.aggregate_bbox),
-                named_object_bboxes=tuple({**row, "bbox": shifted(row["bbox"])} for row in inspection.named_object_bboxes))
-        return inspection
-
-    with patch.object(rhino_export, "prepare_rhino_three_dm_export", side_effect=capture_plan), \
-         patch.object(rhino_export, "inspect_three_dm", side_effect=inspect), \
-         _no_process():
-        yield {
-            "powershell_executable": _fake_executable(root),
-            "runner": runner,
-            "cleanup_runner": lambda *args, **kwargs: _cleanup_result(plans[-1]),
-        }
 
 
 class CadRequestContractTests(unittest.TestCase):

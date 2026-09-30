@@ -1,32 +1,36 @@
-"""What the cross-package tests share: the spine's authored record, a villa record, CAD programs
-and a format-1 project.
+"""What the cross-package tests share.
 
-``shared_bound_state`` binds the authored ``StateRecord@1`` to a real P036 run and
-projects it, and ``_proposal`` is the geometry compiler's fixture proposal over
-that state; ``_record`` is a villa's State Record; ``_program`` and ``_binding``
-are the CAD suite's synthetic compiled program and its exact binding. Each is a
-copy of its owner's fixture - packages/monkeyarch/tests/spine_fixture.py,
-packages/monkeyarch/tests/state_record_fixture.py and
-packages/monkeycad/tests/cad_fixture.py - because the tests here run from the
-repository root, where a package's tests are not importable.
+Copies of owners' fixtures, because the tests here run from the repository root,
+where a package's tests are not importable: the spine's authored record, its
+bound state and the geometry compiler's fixture proposal over it
+(packages/monkeyarch/tests/spine_fixture.py), the portico slice's grid and
+levels (portico_fixture.py) and a villa's State Record (state_record_fixture.py).
 
-The OCCT program builders (``_box``, ``_array``, ``_program_of``) and
-``ProjectFormatFixture`` are this suite's own: the OCCT execution and format
-migration tests use them, and so do the runner and migration scan tests.
+This suite's own: the CAD synthetic compiled program, its exact binding and a
+controlled Rhino host; the OCCT program builders; a Blender request; and
+``ProjectFormatFixture``, complete current and format-1 projects. The runner's
+fixtures are in runner_support.py and the window's in window_support.py.
 """
 
 from __future__ import annotations
 
 import atexit
+import hashlib
 import io
 import json
 import shutil
+import subprocess
 import tempfile
 import unittest
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from monkeycad.execution import RhinoCadProgramBinding
+from monkeycad.backends.rhino import export as rhino_export
+from monkeycad.execution import CadExecutionRequest, RhinoCadProgramBinding
+from monkeycad.formats.three_dm_inspector import ThreeDmInspection
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, STATE_RECORD
 from archflow.project.refs import BranchRef, ProjectRecordRef, ProjectVersionRef, RunRef, record_file_name
@@ -60,6 +64,10 @@ from archflow.state.geometry_program import (
     HostedAssembly,
     LengthUnit,
     ObjectRevisionPrecondition,
+    ProjectGridAxis,
+    ProjectGrids,
+    ProjectLevel,
+    ProjectLevels,
     SemanticBinding,
 )
 from archflow.state.state_record import (
@@ -613,6 +621,31 @@ def _only(proposal, operations, assemblies):
     )
 
 
+# ---------------------------------------------------------------- the portico slice's grid and levels
+# A copy of MonkeyArch's portico_fixture.py, for the prism cut-out tests.
+
+BASIS = ("reading:plate",)
+PN = "level-piano-nobile"
+
+
+def _grids() -> ProjectGrids:
+    axes = [ProjectGridAxis(f"axis-{k + 1}", str(k + 1), ((k - 2.5) * 1.6065, 0.0, 0.0), (0.0, 0.0, 1.0), BASIS) for k in range(6)]
+    axes.append(ProjectGridAxis("axis-w", "W", (0.0, 0.0, -13.85), (1.0, 0.0, 0.0), BASIS))       # the west facade line
+    axes.append(ProjectGridAxis("axis-ox", "OX", (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), BASIS))        # three lines through the origin, for
+    axes.append(ProjectGridAxis("axis-oz", "OZ", (0.0, 0.0, 0.0), (0.0, 0.0, 1.0), BASIS))        # reading a stated direction off a
+    axes.append(ProjectGridAxis("axis-od", "OD", (0.0, 0.0, 0.0), (1.0, 0.0, 1.0), BASIS))        # run whose plan coordinates are plain
+    return ProjectGrids(project_id="demo", published_by="seat-coordination", axes=tuple(sorted(axes, key=lambda a: a.axis_id)))
+
+
+def _levels(piano: float = 3.57) -> ProjectLevels:
+    return ProjectLevels(project_id="demo", published_by="seat-coordination", levels=(
+        ProjectLevel("level-ground", "terrain-grade", 0.0, BASIS), ProjectLevel(PN, "piano-nobile", piano, BASIS)))
+
+
+def _op_params(operation) -> dict:
+    return {p.name: json.loads(p.value_json) for p in operation.parameters}
+
+
 # ---------------------------------------------------------------- a villa's State Record
 
 def _record() -> StateRecord:
@@ -786,6 +819,238 @@ def _binding(
     )
 
 
+def _inspection(plan) -> ThreeDmInspection:
+    expected_counts = dict(plan.expected_object_counts)
+    expected_objects = plan.expected_semantics["objects"]
+    expected_blocks = plan.expected_semantics["blocks"]
+    array_ops = {
+        name.removeprefix("archflow-family-") for name in expected_blocks
+    }
+    user_rows = []
+    named_rows = []
+    instance_rows = []
+    visible_witnesses = []
+    counter = 0
+    for object_id, semantic in sorted(expected_objects.items()):
+        producer = semantic["user_text"]["archflow:producer_op"]
+        for index in range(expected_counts[object_id]):
+            counter += 1
+            object_ref = f"object-{counter}"
+            user_rows.append(
+                {
+                    "object_id": object_ref,
+                    "name": semantic["name"],
+                    "layer_path": semantic["layer"],
+                    "attributes": tuple(
+                        {"key": key, "value": value}
+                        for key, value in sorted(semantic["user_text"].items())
+                    ),
+                    "geometry": (),
+                }
+            )
+            if producer in array_ops:
+                instance_rows.append(
+                    {
+                        "object_id": object_ref,
+                        "definition_id": f"definition-{producer}",
+                        "definition_name": f"archflow-family-{producer}",
+                        "layer_index": 0,
+                        "layer_id": "layer-0",
+                        "layer_path": semantic["layer"],
+                        "is_instance_definition_object": False,
+                        "transform": [],
+                    }
+                )
+        if producer not in array_ops:
+            # An object is delivered as the number of Breps its count states:
+            # one for an ordinary solid, and - where there are no blocks, as in
+            # an imported document - one per copy of an array.
+            for copy in range(expected_counts[object_id]):
+                named_rows.append(
+                    {
+                        "object_id": f"named-{object_id}-{copy}",
+                        "name": object_id,
+                        "type": "Brep",
+                        "layer_path": semantic["layer"],
+                        "bbox": plan.expected_bounds[object_id],
+                        "bbox_source": "brep_face_render_mesh_vertices",
+                        "mesh_face_count": 1,
+                        "mesh_vertex_count": 8,
+                    }
+                )
+                visible_witnesses.append(
+                    {
+                        "object_id": f"named-{object_id}-{copy}",
+                        "name": object_id,
+                        "type": "Brep",
+                        "source": "brep_face_render_mesh_vertices",
+                        "mesh_face_count": 1,
+                        "mesh_vertex_count": 8,
+                    }
+                )
+    definitions = tuple(
+        {
+            "id": f"definition-{name.removeprefix('archflow-family-')}",
+            "name": name,
+            "description": "",
+            "update_type": "Static",
+            "is_linked": False,
+            "object_ids": [f"definition-member-{name}"],
+            "object_count": 1,
+            "user_strings": [],
+            "reference_count": count,
+        }
+        for name, count in sorted(expected_blocks.items())
+    )
+    visible_witnesses.extend(
+        {
+            "object_id": definition["object_ids"][0],
+            "name": "",
+            "type": "Brep",
+            "source": "brep_face_render_mesh_vertices",
+            "mesh_face_count": 1,
+            "mesh_vertex_count": 8,
+        }
+        for definition in definitions
+    )
+    aggregate = {
+        "min": [
+            min(row["min"][axis] for row in plan.expected_bounds.values())
+            for axis in range(3)
+        ],
+        "max": [
+            max(row["max"][axis] for row in plan.expected_bounds.values())
+            for axis in range(3)
+        ],
+    }
+    layers = tuple(
+        {
+            "index": index,
+            "id": f"layer-{index}",
+            "name": full_path.rsplit("::", 1)[-1],
+            "full_path": full_path,
+            "color_rgba": [*color, 255],
+            "parent_id": None,
+            "visible": True,
+            "locked": False,
+            "object_count": 0,
+        }
+        for index, (full_path, color) in enumerate(plan.expected_layer_colors)
+    )
+    return ThreeDmInspection(
+        file_sha256="9" * 64,
+        file_bytes=1024,
+        three_dm_version=8,
+        archive_version=80,
+        units={"name": "Meters", "code": 4},
+        layers=layers,
+        object_count=counter + len(definitions),
+        top_level_object_count=counter,
+        instance_definition_member_count=len(definitions),
+        object_counts_by_type={},
+        object_counts_by_layer=(),
+        instance_definitions=definitions,
+        instance_references=tuple(instance_rows),
+        document_user_strings=tuple(
+            {"key": key, "value": value}
+            for key, value in plan.expected_document_user_text
+        ),
+        object_user_strings=tuple(user_rows),
+        aggregate_bbox=aggregate,
+        bbox_contributing_geometry_count=counter,
+        named_object_bboxes=tuple(named_rows),
+        visible_bounds_witnesses=tuple(visible_witnesses),
+    )
+
+
+def _fake_executable(workspace: Path) -> Path:
+    path = workspace / "powershell.exe"
+    path.write_bytes(b"")
+    return path
+
+
+def _write_success_marker(plan) -> None:
+    payload = {
+        "schema": "RhinoCadCompletionMarker@1",
+        "artifact_relative_path": plan.artifact_relative_path,
+        "completion_token": plan.completion_token,
+        "status": "succeeded",
+    }
+    plan.completion_marker_path.write_text(
+        json.dumps(
+            payload,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def _write_host_witness(plan, *, exact: bool = True, new_pid_count: int = 1) -> None:
+    payload = {
+        "schema": "RhinoCadHostWitness@1",
+        "completion_token": plan.completion_token,
+        "ownership_status": "exact" if exact else "ambiguous",
+        "new_pid_count": new_pid_count,
+        "pid": 4242 if exact else None,
+        "executable_path": (
+            r"C:\Program Files\Rhino 8\System\Rhino.exe" if exact else None
+        ),
+        "start_time_utc_ticks": 638900000000000000 if exact else None,
+    }
+    plan.host_witness_path.write_text(
+        json.dumps(payload, separators=(",", ":")),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def _cleanup_result(plan, *, confirmed: bool = True):
+    payload = {
+        "schema": "RhinoCadCleanupWitness@1",
+        "completion_token": plan.completion_token,
+        "pid": 4242,
+        "status": "stopped" if confirmed else "identity_mismatch",
+        "identity_matched": confirmed,
+        "stop_requested": confirmed,
+        "cleanup_confirmed": confirmed,
+        "error_detail": None,
+    }
+    return SimpleNamespace(
+        returncode=0 if confirmed else 1,
+        stdout=json.dumps(payload, separators=(",", ":")),
+        stderr="",
+    )
+
+
+class _FakeWorker:
+    def __init__(self, *, stdout: str = "", stderr: str = "", running: bool = True):
+        self.stdout_text = stdout
+        self.stderr_text = stderr
+        self.returncode = None if running else 0
+        self.terminated = False
+        self.killed = False
+
+    def poll(self):
+        return self.returncode
+
+    def terminate(self):
+        self.terminated = True
+        self.returncode = -15
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+        self.returncode = -9
+
+    def communicate(self, timeout=None):
+        return self.stdout_text, self.stderr_text
+
+
 # ---------------------------------------------------------------- programs of chosen operations
 
 def _box(op_id: str, origin: list[float], size: list[float]) -> GeometryOperation:
@@ -836,6 +1101,159 @@ def _program_of(*operations: GeometryOperation) -> CompiledGeometryProgram:
         )
     )
     return replace(program, proposal=proposal, operation_order=tuple(op.op_id for op in operations), objects=objects)
+
+
+def _single_operation_program(operation: GeometryOperation) -> CompiledGeometryProgram:
+    """The synthetic fixture program with its one operation replaced."""
+
+    program = _program()
+    output = operation.output_object_ids[0]
+    binding = replace(program.proposal.semantic_bindings[0], object_ids=(output,))
+    proposal = replace(program.proposal, operations=(operation,), semantic_bindings=(binding,))
+    return replace(
+        program,
+        proposal=proposal,
+        operation_order=(operation.op_id,),
+        objects=(CompiledGeometryObject(object_id=output, producer_op_id=operation.op_id, object_digest="3" * 64),),
+    )
+
+
+def _loft(op_id: str, *, profile_basis: str = "polyline", cap_ends: bool = True) -> GeometryOperation:
+    square = lambda y: [[0.0, y, 0.0], [1.0, y, 0.0], [1.0, y, 1.0], [0.0, y, 1.0]]
+    return GeometryOperation(
+        op_id=op_id,
+        kind=GeometryOperationKind.LOFT,
+        output_object_ids=(f"{op_id}-object",),
+        input_object_ids=(),
+        frame_id="world",
+        parameters=(
+            GeometryParameter.create(name="cap_ends", kind=GeometryParameterKind.BOOLEAN, value=cap_ends),
+            GeometryParameter.create(name="loft_type", kind=GeometryParameterKind.TEXT, value="straight"),
+            GeometryParameter.create(name="profile_basis", kind=GeometryParameterKind.TEXT, value=profile_basis),
+            GeometryParameter.create(name="profile_size", kind=GeometryParameterKind.INTEGER, value=4),
+            GeometryParameter.create(name="profiles", kind=GeometryParameterKind.POINTS3, value=square(0.0) + square(2.0), unit=LengthUnit.METER),
+        ),
+        semantic_binding_ids=("body-binding",),
+    )
+
+
+def _radial_array(op_id: str, source: GeometryOperation) -> GeometryOperation:
+    return GeometryOperation(
+        op_id=op_id,
+        kind=GeometryOperationKind.RADIAL_ARRAY,
+        output_object_ids=(f"{op_id}-object",),
+        input_object_ids=(source.output_object_ids[0],),
+        frame_id="world",
+        parameters=(
+            GeometryParameter.create(name="angle_step_degrees", kind=GeometryParameterKind.NUMBER, value=90.0),
+            GeometryParameter.create(name="center", kind=GeometryParameterKind.VECTOR3, value=[0.0, 0.0, 0.0], unit=LengthUnit.METER),
+            GeometryParameter.create(name="count", kind=GeometryParameterKind.INTEGER, value=4),
+        ),
+        semantic_binding_ids=("body-binding",),
+    )
+
+
+def _no_process():
+    """Any attempt to start a process (Rhino, PowerShell) fails the test."""
+
+    return patch.multiple(subprocess, Popen=_refuse_process, run=_refuse_process)
+
+
+def _refuse_process(*args, **kwargs):
+    raise AssertionError(f"the OCCT executor must not start a process: {args[:1]}")
+
+
+# ---------------------------------------------------------------- a controlled Rhino host and its request
+
+def _rhino_request(workspace, *, program=None, binding=None, **options):
+    program = program or _program()
+    return CadExecutionRequest(
+        program=program,
+        binding=binding or _binding(program),
+        speculative_workspace=workspace,
+        artifact_stem="contract-candidate",
+        **options,
+    )
+
+
+@contextmanager
+def _controlled_rhino(root, *, bad_inspection=False, plans=None, oracle_shift=0.0):
+    """Inject only host I/O and inspection; leave execution and validation real."""
+    prepare = rhino_export.prepare_rhino_three_dm_export
+    plans = [] if plans is None else plans
+
+    def capture_plan(*args, **kwargs):
+        plan = prepare(*args, **kwargs)
+        plans.append(plan)
+        return plan
+
+    def runner(*args, **kwargs):
+        plan = plans[-1]
+        _write_host_witness(plan)
+        plan.model_path.write_bytes(b"controlled Rhino contract fixture, not a real 3dm")
+        _write_success_marker(plan)
+        return _FakeWorker(stdout="controlled worker")
+
+    def inspect(path, **kwargs):
+        plan = plans[-1]
+        data = plan.model_path.read_bytes()
+        inspection = replace(_inspection(plan), file_sha256=hashlib.sha256(data).hexdigest(), file_bytes=len(data))
+        if bad_inspection:
+            inspection = replace(inspection, object_user_strings=())
+        if oracle_shift and ".rebuild-oracle" in plan.model_path.name:
+            def shifted(bounds):
+                return {key: [values[0] + oracle_shift, *values[1:]] for key, values in bounds.items()}
+
+            inspection = replace(inspection, aggregate_bbox=shifted(inspection.aggregate_bbox),
+                named_object_bboxes=tuple({**row, "bbox": shifted(row["bbox"])} for row in inspection.named_object_bboxes))
+        return inspection
+
+    with patch.object(rhino_export, "prepare_rhino_three_dm_export", side_effect=capture_plan), \
+         patch.object(rhino_export, "inspect_three_dm", side_effect=inspect), \
+         _no_process():
+        yield {
+            "powershell_executable": _fake_executable(root),
+            "runner": runner,
+            "cleanup_runner": lambda *args, **kwargs: _cleanup_result(plans[-1]),
+        }
+
+
+# ---------------------------------------------------------------- a Blender request over two objects
+
+LONG_BOX_ID = "box-" + "identity-preserved-" * 4
+
+
+def _extrusion(*, vector=(2.0, 3.0, 1.0)):
+    return GeometryOperation(
+        op_id="triangle", kind=GeometryOperationKind.EXTRUSION,
+        output_object_ids=("triangle-object",), input_object_ids=(),
+        frame_id="world", semantic_binding_ids=("body-binding",),
+        parameters=(
+            GeometryParameter.create(name="base_level", kind=GeometryParameterKind.NUMBER, value=5.0, unit=LengthUnit.METER),
+            GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=2.0, unit=LengthUnit.METER),
+            GeometryParameter.create(name="profile", kind=GeometryParameterKind.POINTS3,
+                                     value=[[1.0, 0.0, 2.0], [5.0, 0.0, 2.0], [1.0, 0.0, 5.0]], unit=LengthUnit.METER),
+            GeometryParameter.create(name="vector", kind=GeometryParameterKind.VECTOR3, value=list(vector), unit=LengthUnit.METER),
+        ),
+    )
+
+
+def _two_objects(unit=LengthUnit.MILLIMETER):
+    operations = (_box(LONG_BOX_ID, [10.0, 20.0, 30.0], [2.0, 3.0, 4.0]), _extrusion())
+    operations = tuple(replace(op, parameters=tuple(
+        replace(parameter, unit=unit) if parameter.unit is not None else parameter
+        for parameter in op.parameters
+    )) for op in operations)
+    program = _program_of(*operations)
+    return replace(program, proposal=replace(program.proposal, length_unit=unit))
+
+
+def _blender_request(workspace, *, program=None, **changes):
+    program = program or _two_objects()
+    return CadExecutionRequest(
+        program=program, binding=_binding(program), speculative_workspace=workspace,
+        artifact_stem="blender-candidate", **changes,
+    )
 
 
 # ---------------------------------------------------------------- a current and a format-1 project
