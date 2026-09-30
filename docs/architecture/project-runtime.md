@@ -17,9 +17,9 @@ the wire protocol of the Hub side is [project-runtime-api.md, "MonkeyHub project
 ## 1. One process per open project
 
 - Key: `studio:` + the normalised, resolved project directory
-  (`apps/monkeyhub/api/monkeyhub_api/applications.py`, `_child_key`; `workers.py`,
+  (`apps/monkeyhub/api/monkeyhub_api/runtime/applications.py`, `_child_key`; `workers.py`,
   `project_key`); runtime id `uuid5(NAMESPACE_URL, "<projectId>:<normcase path>")`
-  (`runtime.py`). Identical project ids in different folders never share a process,
+  (`runtime/manager.py`). Identical project ids in different folders never share a process,
   admission or projection.
 - The Hub creates, monitors and stops it (`applications.py`, `workers.py`). Nothing else does
   in production: one lifecycle owner (`AGENTS.md`, "Extend behavior, remove superseded paths").
@@ -104,7 +104,7 @@ The *library* is an ordinary complete project named by the Hub application setti
 set, the Hub prepares the library's Runtime as it prepares a chat's own project, reads `GET /api/skills`,
 and writes the current versions into a Claude plugin in its own cache,
 `<runtime root>/cache/skill-plugins/<index digest>/` (`.claude-plugin/plugin.json`,
-`skills/<name>/SKILL.md`), rebuilt only when the index changes (`monkeyhub_api/skill_plugins.py`). A Claude
+`skills/<name>/SKILL.md`), rebuilt only when the index changes (`monkeyhub_api/chat/skill_plugins.py`). A Claude
 chat is started with `--plugin-dir <that directory>`; Claude lists each name and description and reads a
 body only when it uses the skill. Nothing is written into any project.
 
@@ -158,7 +158,7 @@ not as compatibility stubs for the removed panels:
 
 | Runtime route | Production consumer / decision |
 | --- | --- |
-| `GET /api/program` | Hub `chat.call_tool` → `studio_request` reads the bound project's structured brief; keep. |
+| `GET /api/program` | Hub `chat.store.call_tool` → `studio_request` reads the bound project's structured brief; keep. |
 | `POST /api/program` | The same Agent tool applies a sheet through Hub mutation admission and the existing candidate worker; keep. |
 | `GET /api/options`, `POST /api/options` | Agent reads/generates measured massing options using the bound runtime; keep. |
 | `POST /api/options/{option_id}/select` | Agent sends an explicit selection through Hub admission to the existing candidate path; keep. |
@@ -166,7 +166,7 @@ not as compatibility stubs for the removed panels:
 | `GET /api/state/frame` | Local model Sync and the Agent both consume declared datum references; keep. |
 
 The route allowlists and guidance are in
-`apps/monkeyhub/api/monkeyhub_api/chat.py`; the dispatch regression is
+`apps/monkeyhub/api/monkeyhub_api/chat/store.py`; the dispatch regression is
 `test_program_and_massing_routes_remain_bound_agent_capabilities` in its existing
 `test_chat.py`. Runtime `test_program.py` and `test_options.py` continue to test
 real source validation, candidate execution and retained-data behavior.
@@ -218,14 +218,14 @@ at handshake ([project-runtime-api.md §1](../protocols/project-runtime-api.md))
 ## 6. How it is reached
 
 In production only through the Hub's forwarding path
-`/api/runtime/projects/{runtime_id}/studio/{path}` (`monkeyhub_api/main.py`, `runtime.py`
+`/api/runtime/projects/{runtime_id}/studio/{path}` (`monkeyhub_api/main.py`, `runtime/manager.py`
 `forward`): path allowlist (`/api/...` and `/openapi.json` only), project id checked in query
 and body (`PROJECT_MISMATCH`), `Idempotency-Key` admission for mutations — every request that is
 not `GET`, `HEAD` or `OPTIONS`, except `/api/events/*`, `POST /api/state/closure` and
-`POST /api/pick/resolve` (`runtime.py`, `forward`) — `X-Monkey-Candidate`
+`POST /api/pick/resolve` (`runtime/manager.py`, `forward`) — `X-Monkey-Candidate`
 and `X-Monkey-Worker` for candidate-producing requests, and an allowlist of forwarded request
 headers. `GET .../studio/api/events` is not forwarded (`STUDIO_EVENTS_RELAYED`): the Hub
-attaches once to each worker's own `/api/events` (`runtime.py`, `_WorkerEvents`; it resumes
+attaches once to each worker's own `/api/events` (`runtime/manager.py`, `_WorkerEvents`; it resumes
 with `Last-Event-ID` and reattaches after 0.5 s, then 1, 2, 4 s … while attachments carry
 nothing) and relays it on its single `GET /api/runtime/events` stream, which every Hub page
 already holds: `index` frames are the worker's `index.committed` hints (#366), `studio` frames
