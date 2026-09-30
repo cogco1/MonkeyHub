@@ -528,7 +528,7 @@ class MonitoringOcctTests(OcctCandidateTestCase):
         # The CLI message below is an explicit provider fixture; CAD and the
         # Studio/Monitor boundaries execute for real in this disposable project.
         with patch.object(sys, "path", [str(Path(__file__).resolve().parents[3] / "apps/monkeyhub/api"), *sys.path]):
-            from monkeyhub_api.chat_trace import HubTurnObserver
+            from monkeyhub_api.chat.turn_trace import HubTurnObserver
         from monkeymonitor.server import MonitorData
 
         turn_id = str(uuid4())

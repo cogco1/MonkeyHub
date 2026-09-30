@@ -33,14 +33,14 @@ from archflow.adapters.integration_packs import IntegrationPackManager
 from project_runtime.transport.errors import StudioError
 from project_runtime.transport.project import ModelingInitializeDto, ModelingInitializeRequestDto
 
-from . import chat as chat_tools
-from . import credentials
+from .chat import store as chat_tools
+from .settings import credentials
 from . import project_archive
-from .applications import Applications
-from .chat import ChatStore
+from .runtime.applications import Applications
+from .chat.store import ChatStore
 from .computer_tools import ComputerService
-from .runtime import ProjectRuntimeManager
-from .runtime_models import (HubRuntimeDto, OperationAcknowledgeRequest, OperationRecord, ProjectRuntimeDto,
+from .runtime.manager import ProjectRuntimeManager
+from .runtime.models import (HubRuntimeDto, OperationAcknowledgeRequest, OperationRecord, ProjectRuntimeDto,
                              OpenRuntimeRequest, RuntimeProjectRequest, RuntimeEvent)
 from .settings.models import ApplicationSettingsDto
 from .settings.routes import router as preferences_router

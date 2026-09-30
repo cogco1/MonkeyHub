@@ -31,7 +31,7 @@ def _progress_chat_store():
     safely act on *now*. Progress rows live in memory, are never passed back to the
     provider, and never enter P036 or the saved chat JSON.
     """
-    from monkeyhub_api import chat as chat_module
+    from monkeyhub_api.chat import store as chat_module
     from monkeyhub_api.models import ChatMessage
 
     class ProgressChatStore(chat_module.ChatStore):

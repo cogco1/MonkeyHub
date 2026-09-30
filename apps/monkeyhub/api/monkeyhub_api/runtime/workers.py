@@ -13,7 +13,7 @@ from urllib.error import URLError
 from urllib.request import ProxyHandler, build_opener
 from uuid import uuid4
 
-from .models import HubError, HubFailure
+from ..models import HubError, HubFailure
 
 
 WorkerState = Literal["starting", "ready", "busy", "stopping", "stopped", "crashed", "recovering", "unavailable"]

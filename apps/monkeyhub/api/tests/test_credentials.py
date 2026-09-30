@@ -26,9 +26,10 @@ source_roots.put_first(ROOT)
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from monkeyhub_api import chat, credentials  # noqa: E402
-from monkeyhub_api.applications import Applications  # noqa: E402
-from monkeyhub_api.chat import ChatStore  # noqa: E402
+from monkeyhub_api.chat import store as chat  # noqa: E402
+from monkeyhub_api.settings import credentials  # noqa: E402
+from monkeyhub_api.runtime.applications import Applications  # noqa: E402
+from monkeyhub_api.chat.store import ChatStore  # noqa: E402
 from monkeyhub_api.main import HubSettings, create_app  # noqa: E402
 from monkeyhub_api.models import HubFailure  # noqa: E402
 from monkeyhub_api.settings.models import ApplicationSettingsDto  # noqa: E402

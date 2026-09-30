@@ -15,7 +15,7 @@ from test_chat import FAKE_CLI, wait_for
 from test_acp_session import FAKE_AGENT, PNG_IMAGE
 from fastapi.testclient import TestClient
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyhub_api import chat
+from monkeyhub_api.chat import store as chat
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, ChatDesignContext
 
@@ -110,7 +110,7 @@ class AcpCommandTests(unittest.TestCase):
             (r"\\server\share\MonkeyHub", r"\\server\share\MonkeyHub"),
         ):
             with self.subTest(root=root):
-                source = Path(root) / "apps/monkeyhub/api/monkeyhub_api/chat.py"
+                source = Path(root) / "apps/monkeyhub/api/monkeyhub_api/chat/store.py"
                 with patch.object(chat.Path, "resolve", return_value=source), \
                      patch.object(chat.Path, "is_file", return_value=True), \
                      patch.object(chat.importlib.util, "find_spec", return_value=object()):
@@ -125,7 +125,7 @@ class AcpCommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="Hub ACP 入口 ") as directory:
             root = Path(directory).resolve()
             hub = root / "apps/monkeyhub"
-            source = hub / "api/monkeyhub_api/chat.py"
+            source = hub / "api/monkeyhub_api/chat/store.py"
             source.parent.mkdir(parents=True)
             source.touch()
             adapter = hub / "node_modules/@agentclientprotocol/codex-acp/dist/index.js"

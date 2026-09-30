@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import test_chat as cli_fixture
 import test_acp_chat as acp_fixture
-from monkeyhub_api import acp_session, chat
+from monkeyhub_api.chat import acp_session, store as chat
 from monkeyhub_api.models import ChatDesignContext, ChatPostRequest, HubFailure
 
 

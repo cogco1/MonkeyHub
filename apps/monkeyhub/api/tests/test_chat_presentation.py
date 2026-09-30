@@ -33,8 +33,8 @@ from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.application.artifacts import save_document
 from project_runtime.application.binding import ProjectBinding
 from project_runtime.settings import StudioSettings
-from monkeyhub_api import chat
-from monkeyhub_api.chat import ChatStore
+from monkeyhub_api.chat import store as chat
+from monkeyhub_api.chat.store import ChatStore
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatDocumentRef, ChatPostRequest, ChatProvider
 
@@ -209,7 +209,7 @@ class ChatPresentationTests(unittest.TestCase):
         before = {str(path.relative_to(self.project)): path.read_bytes()
                   for path in self.project.rglob("*") if path.is_file()}
         with patch.object(self.store, "providers", side_effect=AssertionError("No provider lookup")), \
-                patch("monkeyhub_api.chat.subprocess.Popen", side_effect=AssertionError("No provider invocation")):
+                patch("monkeyhub_api.chat.store.subprocess.Popen", side_effect=AssertionError("No provider invocation")):
             rebound = self.bind()
             self.assertEqual(rebound, self.bound)
             self.present("user")
@@ -314,7 +314,7 @@ class ChatPresentationTests(unittest.TestCase):
 
     def test_external_session_cannot_start_native_provider(self):
         with patch.object(self.store, "providers", side_effect=AssertionError("No provider lookup")), \
-                patch("monkeyhub_api.chat.subprocess.Popen", side_effect=AssertionError("No provider invocation")):
+                patch("monkeyhub_api.chat.store.subprocess.Popen", side_effect=AssertionError("No provider invocation")):
             response = self.client.post(f"/api/chat/sessions/{self.bound['chatId']}/messages", json={
                 "projectId": self.bound["projectId"], "content": "Run a new native turn",
             })
@@ -401,7 +401,7 @@ class ChatPresentationTests(unittest.TestCase):
 
     def test_external_turn_that_made_a_candidate_gets_the_study_card(self):
         """#404 F15: an external turn's requests through the Hub give it the same result card."""
-        from monkeyhub_api.runtime import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager
+        from monkeyhub_api.runtime.manager import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager
 
         runtimes = ProjectRuntimeManager(None, self.store)
         self.assertEqual(self.store.turn_results, runtimes.turn_results)

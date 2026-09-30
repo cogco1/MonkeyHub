@@ -368,7 +368,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         # A checkout's own source roots go first; an installed bundle ships no
         # architecture policy, and its python313._pth lists the same roots.
         source_roots.put_first(APPLICATION_ROOT)
-        from monkeyhub_api.applications import source_revision
+        from monkeyhub_api.runtime.applications import source_revision
         from monkeyhub_api.settings.models import ApplicationSettingsDto
         from monkeyhub_api.settings.store import save_application_settings
 
@@ -726,7 +726,7 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         self.fail("Owned chat UI Automation timed out:\n" + "\n".join(attempts))
 
     def test_retained_chat_and_settings_are_visible_before_first_write(self):
-        from monkeyhub_api.chat import ChatStore, _SavedChat
+        from monkeyhub_api.chat.store import ChatStore, _SavedChat
         from monkeyhub_api.models import ChatMessage
 
         timestamp = "2026-01-01T00:00:00+00:00"

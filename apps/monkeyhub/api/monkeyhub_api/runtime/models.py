@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from project_runtime.transport.runtime import RuntimeDto
 
-from .models import ChatSummary, HubError
+from ..models import ChatSummary, HubError
 
 
 class WorkerStatus(BaseModel):

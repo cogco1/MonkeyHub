@@ -26,10 +26,10 @@ from test_monkeyhub_lifecycle import LocalHubCase, ROOT, project_fixture, wait_f
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.application.binding import ProjectBinding
 from project_runtime.settings import StudioSettings
-from monkeyhub_api import runtime as runtime_module
+from monkeyhub_api.runtime import manager as runtime_module
 from monkeyhub_api.models import ChatSummary, HubError, HubFailure
-from monkeyhub_api.runtime import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager, _WorkCopyObservation
-from monkeyhub_api.workers import WorkerSnapshot
+from monkeyhub_api.runtime.manager import HttpResult, OperationManager, ProjectRuntime, ProjectRuntimeManager, _WorkCopyObservation
+from monkeyhub_api.runtime.workers import WorkerSnapshot
 
 
 class ProjectRuntimeHttpTests(LocalHubCase):
@@ -453,7 +453,7 @@ for _ in range(5):
             wait_for(lambda: any(row.observed_sha256 == original["assetSha256"]
                                  for row in manager.get(runtime_id).work_copies.values()),
                      "The initial work copy was not observed", timeout=20)
-            with patch("monkeyhub_api.runtime.list_document_work_copies", side_effect=OSError("Temporarily unreadable")):
+            with patch("monkeyhub_api.runtime.manager.list_document_work_copies", side_effect=OSError("Temporarily unreadable")):
                 work.write_bytes(self.png_bytes("black"))
                 row = self.wait_runtime_error(client, runtime_id, "WORK_COPY_READ_FAILED")
                 self.assertEqual(row["projection"], "ready")
@@ -898,7 +898,7 @@ for _ in range(5):
             self.assertEqual(self.project_bytes(self.project), before)
 
     def test_same_worker_recovers_readiness_without_rebuilding_unchanged_projection(self):
-        from monkeyhub_api.runtime import request_http
+        from monkeyhub_api.runtime.manager import request_http
 
         with self.hub() as client:
             runtime_id = self.open_project(client)
@@ -914,7 +914,7 @@ for _ in range(5):
                 with patch.object(applications, "worker_snapshots", return_value=(unavailable,)):
                     manager._refresh(runtime)
                 self.assertEqual(runtime.projection, "stale")
-                with patch("monkeyhub_api.runtime.request_http", wraps=request_http) as reads:
+                with patch("monkeyhub_api.runtime.manager.request_http", wraps=request_http) as reads:
                     manager._refresh(runtime)
                 self.assertEqual(runtime.projection, "ready")
                 self.assertFalse(any(call.args[1] == "/api/state" for call in reads.call_args_list))
@@ -926,8 +926,8 @@ for _ in range(5):
             manager = client.app.state.runtimes
             runtime = manager.get(runtime_id)
             wait_for(lambda: runtime.work_copy_key is not None, "The opening pass did not bind work copies", timeout=10)
-            with patch("monkeyhub_api.runtime._WORK_COPY_CHECK_S", 0.2), \
-                    patch("monkeyhub_api.runtime._IDLE_HEARTBEAT_S", 0.2),                     patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as checks,                     patch.object(manager, "bind_work_copies", wraps=manager.bind_work_copies) as binds:
+            with patch("monkeyhub_api.runtime.manager._WORK_COPY_CHECK_S", 0.2), \
+                    patch("monkeyhub_api.runtime.manager._IDLE_HEARTBEAT_S", 0.2),                     patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as checks,                     patch.object(manager, "bind_work_copies", wraps=manager.bind_work_copies) as binds:
                 # Deriving the list reads every record of every run (#314), so
                 # an idle watcher compares what decides it and derives nothing.
                 runtime.wake.set()
@@ -1078,7 +1078,7 @@ for _ in range(5):
 
         with patch.object(runtime.wake, "wait", side_effect=heartbeat), \
              patch.object(manager, "_observe_work_copies", side_effect=observe), \
-             patch("monkeyhub_api.runtime.time.monotonic", side_effect=lambda: now[0]):
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
             manager._watch(runtime)
         self.assertEqual(len(ticks), 14)
 
@@ -1098,7 +1098,7 @@ class WorkCopyObservationTests(unittest.TestCase):
         self.manager = object.__new__(ProjectRuntimeManager)
 
     def read_at(self, seconds):
-        with patch("monkeyhub_api.runtime.time.monotonic_ns", return_value=int(seconds * 1_000_000_000)):
+        with patch("monkeyhub_api.runtime.manager.time.monotonic_ns", return_value=int(seconds * 1_000_000_000)):
             return self.manager._stable_work_copy_bytes(self.observed)
 
     def replace_preserving_timestamp(self):
@@ -1179,7 +1179,7 @@ class RuntimeCostTests(unittest.TestCase):
         return repository
 
     def manager(self, workers=(), sessions=()):
-        from monkeyhub_api.runtime import project_key
+        from monkeyhub_api.runtime.manager import project_key
 
         def worker_snapshots(*, project_dir=None):
             # The supervisor's selection: launches naming this project directory.
@@ -1202,7 +1202,7 @@ class RuntimeCostTests(unittest.TestCase):
         repository = self.project()
         manager = self.manager()
         self.addCleanup(manager.shutdown)
-        with patch("monkeyhub_api.runtime._project", wraps=runtime_module._project) as checks:
+        with patch("monkeyhub_api.runtime.manager._project", wraps=runtime_module._project) as checks:
             opened = manager.open(self.fixture.PROJECT_ID, str(repository.layout.root))
             self.assertEqual(checks.call_count, 1)
             for _ in range(5):
@@ -1232,7 +1232,7 @@ class RuntimeCostTests(unittest.TestCase):
         manager = self.manager()
         self.addCleanup(manager.shutdown)
         root = str(repository.layout.root)
-        with patch("monkeyhub_api.runtime._project", wraps=runtime_module._project) as checks:
+        with patch("monkeyhub_api.runtime.manager._project", wraps=runtime_module._project) as checks:
             opened = manager.open(self.fixture.PROJECT_ID, root)
             self.assertEqual(checks.call_count, 1)
             with patch.object(opened.wake, "set", wraps=opened.wake.set) as full_reads, \
@@ -1256,7 +1256,7 @@ class RuntimeCostTests(unittest.TestCase):
         manager = self.manager()
         runtime = self.runtime(manager, repository)
         runtime.binding_signature = runtime_module.binding_signature(runtime.project_dir)
-        with patch("monkeyhub_api.runtime._project", return_value=("another-project", runtime.project_dir)) as checks:
+        with patch("monkeyhub_api.runtime.manager._project", return_value=("another-project", runtime.project_dir)) as checks:
             self.assertIs(manager.get(runtime.runtime_id), runtime)
             checks.assert_not_called()
             os.utime(repository.layout.manifest, ns=(1, 1))
@@ -1311,7 +1311,7 @@ class RuntimeCostTests(unittest.TestCase):
         with patch.object(manager, "refresh", wraps=manager.refresh) as refresh, \
              patch.object(runtime.wake, "wait", side_effect=heartbeat), \
              patch.object(manager, "_observe_work_copies", return_value=0), \
-             patch("monkeyhub_api.runtime.time.monotonic", side_effect=lambda: now[0]):
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
             manager._watch(runtime)
 
         # Refresh counts after each pass: first idle read, skipped, changed,
@@ -1352,7 +1352,7 @@ class RuntimeCostTests(unittest.TestCase):
         with patch.object(manager, "refresh", wraps=manager.refresh) as refresh, \
              patch.object(runtime.wake, "wait", side_effect=heartbeat), \
              patch.object(manager, "_observe_work_copies", return_value=0), \
-             patch("monkeyhub_api.runtime.time.monotonic", side_effect=lambda: now[0]):
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
             manager._watch(runtime)
         # Opening read, two skipped fallbacks, then the external write read.
         self.assertEqual(refreshes, [1, 1, 1, 2])
@@ -1381,7 +1381,7 @@ class RuntimeCostTests(unittest.TestCase):
              patch.object(manager, "_follow_worker"), \
              patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as inputs, \
              patch.object(runtime.wake, "wait", side_effect=heartbeat), \
-             patch("monkeyhub_api.runtime.time.monotonic", side_effect=lambda: now[0]):
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
             manager._watch(runtime)
         # One pass every idle interval; the old observer passed every second.
         self.assertLessEqual(len(passes), 60 / runtime_module._IDLE_HEARTBEAT_S)
