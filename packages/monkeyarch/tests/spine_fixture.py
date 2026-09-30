@@ -13,6 +13,13 @@ creates a run, binds the record to it and returns the projection, so a
 test that compiles against this state is compiling against what
 production would hand the compiler. It takes the run's phase, as the
 projection does in production, and every caller states one.
+
+The geometry compiler's fixture proposal over that state (``_state``,
+``_proposal``, ``_only``) and ``_compile``, which produces a record's element
+rows and compiles them into it, are here too. The kernel-level part is copied
+into the ArchFlow suite (packages/archflow/tests/proposal_fixture.py) and the
+repository's integration support (tests/integration/support.py): a package's
+tests cannot import another suite's.
 """
 
 from __future__ import annotations
@@ -29,7 +36,9 @@ from pathlib import Path
 from monkeyarch.application.geometry_proposal import (
     GeometryProposalProviderIdentity,
 )
-from monkeyarch.compilation.geometry import compile_geometry_program
+from monkeyarch.authoring.element_producers import ProductionContext, element_rows_of, produce_rows
+from monkeyarch.compilation.geometry import GeometryIssueCode, compile_geometry_program
+from monkeyarch.domain.reference_resolver import ReferenceContext
 from archflow.ports.model import ModelInvocationReceipt, ModelInvocationStatus
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import SELECTED_SPATIAL_OPTION
@@ -48,6 +57,8 @@ from archflow.state.geometry_program import (
     AssemblyKind,
     AssemblyMember,
     AssemblyRole,
+    AssetReference,
+    CompiledGeometryProgram,
     CoordinateFrame,
     DetailMaturity,
     GeometryOperation,
@@ -58,9 +69,10 @@ from archflow.state.geometry_program import (
     GeometryTolerance,
     HostedAssembly,
     LengthUnit,
+    ObjectRevisionPrecondition,
     SemanticBinding,
 )
-from archflow.state.state_record import StateRecord, developed_design_view
+from archflow.state.state_record import StateRecord, developed_design_view, project_grids_of, project_levels_of
 
 PROJECT_ID = "demo"
 RUN_ID = "run-1"
@@ -731,3 +743,266 @@ class ProducerFixture(unittest.IsolatedAsyncioTestCase):
             policy=GeometryProposalPolicy(extra.pop("rounds", 1)),
             **extra,
         )
+
+
+# ---------------------------------------------------------------- the compiler's fixture proposal
+
+def _state(*, width: float = 6.0) -> DevelopedDesignState:
+    """The fixture state; ``width`` re-authors the building component.
+
+    A different width is a different design decision on the same
+    component, so the component's revision advances and its intent says
+    why: that is what the compiler must notice as a semantic change.
+    """
+
+    state = shared_bound_state()[3]
+    if width == 6.0:
+        return state
+    proposal = state.selected_schematic.option.proposal
+    components = tuple(
+        replace(
+            item,
+            revision=item.revision + 1,
+            intent=f"{item.intent} Width decision {width}.",
+        )
+        if item.component_id == "building"
+        else item
+        for item in proposal.components
+    )
+    option = replace(
+        state.selected_schematic.option,
+        proposal=replace(proposal, components=components),
+    )
+    return replace(
+        state,
+        selected_schematic=replace(
+            state.selected_schematic,
+            option=option,
+        ),
+    )
+
+
+def _number(name: str, value: float) -> GeometryParameter:
+    return GeometryParameter.create(
+        name=name,
+        kind=GeometryParameterKind.NUMBER,
+        value=value,
+        unit=LengthUnit.METER,
+    )
+
+
+def _operation(
+    *,
+    op_id: str,
+    kind: GeometryOperationKind,
+    output: str,
+    inputs: tuple[str, ...] = (),
+    parameter: GeometryParameter | None = None,
+    asset_id: str | None = None,
+    responds: tuple[str, ...] = (),
+    responds_to_bindings: tuple[str, ...] = (),
+) -> GeometryOperation:
+    return GeometryOperation(
+        op_id=op_id,
+        kind=kind,
+        output_object_ids=(output,),
+        input_object_ids=inputs,
+        frame_id="world",
+        parameters=(parameter,) if parameter is not None else (),
+        semantic_binding_ids=("building-binding",),
+        asset_id=asset_id,
+        asset_socket_id="origin" if asset_id is not None else None,
+        asset_scale=(1.0, 1.0, 1.0) if asset_id is not None else None,
+        responds_to_object_ids=responds,
+        responds_to_binding_ids=responds_to_bindings,
+    )
+
+
+def _proposal(
+    state: DevelopedDesignState,
+    *,
+    wall_width: float = 6.0,
+    predecessor: str | None = None,
+    revisions: tuple[ObjectRevisionPrecondition, ...] = (),
+    respond_to_dependencies: bool = False,
+    assets: tuple[AssetReference, ...] = (),
+    extra_operations: tuple[GeometryOperation, ...] = (),
+) -> GeometryProgramProposal:
+    dependency_response = (
+        {
+            "cut": ("wall",),
+            "frame": ("cut-result",),
+            "leaf": ("cut-result",),
+            "hardware": ("cut-result",),
+            "clearance": ("cut-result",),
+        }
+        if respond_to_dependencies
+        else {}
+    )
+    operations = (
+        _operation(
+            op_id="clearance",
+            kind=GeometryOperationKind.SOLID,
+            output="clearance",
+            inputs=("cut-result",),
+            parameter=_number("depth", 1.2),
+            responds=dependency_response.get("clearance", ()),
+        ),
+        _operation(
+            op_id="cut",
+            kind=GeometryOperationKind.BOOLEAN_DIFFERENCE,
+            output="cut-result",
+            inputs=("opening-tool", "wall"),
+            responds=dependency_response.get("cut", ()),
+        ),
+        _operation(
+            op_id="frame",
+            kind=GeometryOperationKind.SWEEP,
+            output="frame",
+            inputs=("cut-result",),
+            parameter=_number("thickness", 0.08),
+            responds=dependency_response.get("frame", ()),
+        ),
+        _operation(
+            op_id="hardware",
+            kind=GeometryOperationKind.SOLID,
+            output="hardware",
+            inputs=("cut-result",),
+            parameter=_number("placeholder-size", 0.05),
+            responds=dependency_response.get("hardware", ()),
+        ),
+        _operation(
+            op_id="leaf",
+            kind=GeometryOperationKind.SOLID,
+            output="leaf",
+            inputs=("cut-result",),
+            parameter=_number("thickness", 0.04),
+            responds=dependency_response.get("leaf", ()),
+        ),
+        _operation(
+            op_id="opening-tool",
+            kind=GeometryOperationKind.SOLID,
+            output="opening-tool",
+            parameter=_number("width", 0.9),
+        ),
+        _operation(
+            op_id="unrelated",
+            kind=GeometryOperationKind.CURVE,
+            output="unrelated-axis",
+            parameter=_number("length", 2.0),
+        ),
+        _operation(
+            op_id="wall",
+            kind=GeometryOperationKind.SOLID,
+            output="wall",
+            parameter=_number("width", wall_width),
+        ),
+        *extra_operations,
+    )
+    object_ids = tuple(
+        sorted(
+            {
+                object_id
+                for operation in operations
+                for object_id in operation.output_object_ids
+            }
+        )
+    )
+    binding = SemanticBinding(
+        binding_id="building-binding",
+        component_id="building",
+        object_ids=object_ids,
+        commitment_refs=(COMMITMENT,),
+        evidence_refs=(EVIDENCE,),
+    )
+    assembly = HostedAssembly(
+        assembly_id="entry-assembly",
+        kind=AssemblyKind.DOOR,
+        host_object_id="wall",
+        host_socket_id="entry-axis",
+        members=(
+            AssemblyMember(AssemblyRole.CLEARANCE, ("clearance",)),
+            AssemblyMember(AssemblyRole.FRAME, ("frame",)),
+            AssemblyMember(AssemblyRole.HARDWARE, ("hardware",)),
+            AssemblyMember(AssemblyRole.HOST_CUT, ("cut-result",)),
+            AssemblyMember(AssemblyRole.LEAF, ("leaf",)),
+        ),
+        interface_refs=("interface:inside-to-outside",),
+        semantic_binding_ids=("building-binding",),
+        maturity=DetailMaturity.FUNCTIONAL,
+    )
+    return GeometryProgramProposal(
+        proposal_id="geometry-proposal",
+        project_id=state.project_id,
+        run_id=state.run_id,
+        base=state.base,
+        design_state_digest=state.state_digest,
+        predecessor_program_digest=predecessor,
+        length_unit=LengthUnit.METER,
+        tolerance=GeometryTolerance(0.001, 0.001),
+        frames=(
+            CoordinateFrame(
+                frame_id="world",
+                parent_frame_id=None,
+                transform_from_parent=AffineTransform.identity(),
+                source_refs=(EVIDENCE,),
+            ),
+        ),
+        assets=assets,
+        semantic_bindings=(binding,),
+        operations=tuple(sorted(operations, key=lambda item: item.op_id)),
+        assemblies=(assembly,),
+        revisions=revisions,
+    )
+
+
+def _only(proposal, operations, assemblies):
+    """The fixture proposal reduced to the caller's own operations.
+
+    A caller that brings real element operations does not want the
+    fixture's hand-built door beside them: keep the one semantic binding,
+    re-home it onto the supplied objects, and drop the rest.
+    """
+
+    ids = tuple(sorted(o for op in operations for o in op.output_object_ids))
+    binding = replace(proposal.semantic_bindings[0], object_ids=ids)
+    return replace(
+        proposal,
+        operations=tuple(sorted(operations, key=lambda o: o.op_id)),
+        semantic_bindings=(binding,),
+        assemblies=tuple(sorted(assemblies, key=lambda a: a.assembly_id)),
+    )
+
+
+def _codes(result) -> set[GeometryIssueCode]:
+    return {item.code for item in result.receipt.issues}
+
+
+# ---------------------------------------------------------------- a record, produced and compiled
+
+def _compile(record: StateRecord) -> CompiledGeometryProgram:
+    """Producers, then the compiler, exactly as the authored-record tests do it.
+
+    The producers' hosted assemblies travel into the proposal as the runner
+    carries them, re-homed onto the fixture's one semantic binding.
+    """
+
+    levels = project_levels_of(record)
+    context = ProductionContext(
+        references=ReferenceContext(grids=project_grids_of(record), levels=levels), published={}, frame_id="world"
+    )
+    produced = produce_rows(element_rows_of(record), context)
+    state = _state()
+    operations = tuple(replace(op, semantic_binding_ids=("building-binding",)) for element in produced for op in element.operations)
+    assemblies = tuple(replace(a, semantic_binding_ids=("building-binding",)) for element in produced for a in element.assemblies)
+    datums = tuple(sorted(list(context.published.values()) + list(levels.datums()), key=lambda d: d.datum_id))
+    result = compile_geometry_program(
+        state,
+        _only(_proposal(state, extra_operations=operations), operations, assemblies),
+        active_commitment_refs=(COMMITMENT,),
+        interface_datums=datums,
+        datum_bindings=tuple(b for element in produced for b in element.bindings),
+    )
+    if result.program is None:
+        raise AssertionError([(i.code.value, i.subject_id, i.detail) for i in result.receipt.issues])
+    return result.program

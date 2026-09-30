@@ -27,7 +27,7 @@ from archflow.state.state_record import (
     component_facets,
 )
 from monkeyarch.authoring.element_producers import element_rows_of
-from tests.integration.test_state_record import _record
+from state_record_fixture import _record
 
 _OMIT = object()
 

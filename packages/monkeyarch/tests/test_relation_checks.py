@@ -18,8 +18,7 @@ from archflow.state.geometry_program import expected_object_bounds
 from monkeyarch.authoring.element_producers import ElementRow
 from monkeyarch.domain.relation_checks import CHECKERS, RelationCheckError, check_relations
 from archflow.state.state_record import CHECK_KINDS, Entity, Relation, StateRecord, StateRecordError, ValidatorBinding
-from tests.integration.test_cad_patch import _compile
-from tests.integration.test_element_producers import BASIS, PN, _levels, _produce, _rows
+from portico_fixture import BASIS, PN, _compile, _levels, _produce, _rows
 
 
 def _record_and_bounds(rows=None, *, program_rows=None):

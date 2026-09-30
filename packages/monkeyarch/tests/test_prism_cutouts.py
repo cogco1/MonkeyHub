@@ -13,9 +13,9 @@ from monkeyarch.authoring.element_producers import ElementProducerError, Element
 from monkeyarch.domain.reference_resolver import ReferenceContext
 from monkeyarch.domain.wall_solver import WallSolverError, subtract_rectangular_cutouts
 from monkeyarch.compilation.geometry import compile_geometry_program
-from tests.integration.test_element_producers import BASIS, PN, _grids, _levels, _op_params
-from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
-from tests.integration import test_project_runner as runner_support
+from portico_fixture import BASIS, PN, _grids, _levels, _op_params
+from spine_fixture import COMMITMENT, _only, _proposal, _state
+import runner_fixture as runner_support
 
 
 def _cut(cutout_id="window", span0=0.5, span1=1.5, bottom=1.0, top=2.0):
@@ -131,7 +131,7 @@ class PrismCutoutTests(unittest.TestCase):
 
 @runner_support.NEEDS_OCCT
 class PrismCutoutRunTests(unittest.TestCase):
-    _run = runner_support.IncrementalSourceRunTests.run_source
+    _run = runner_support.run_source
 
     def test_saved_source_can_remove_and_restore_a_panel_while_reusing_its_neighbour(self):
         from archflow.state.geometry_program import load_compiled_geometry_program

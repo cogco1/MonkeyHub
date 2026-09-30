@@ -14,7 +14,7 @@ from pathlib import Path
 
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.dependencies import DependencyEffect
-from archflow.state.operational_state import DesignObligation, ObligationStatus
+from archflow.state.operational_state import ObligationStatus
 from archflow.project.refs import ProjectVersionRef, RunRef
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.state_record import (
@@ -42,30 +42,7 @@ from archflow.state.state_record import (
     schematic_pack_of,
     resolve_element_bindings,
 )
-
-
-def _record() -> StateRecord:
-    entities = (
-        Entity("building", "Component@1", {"semantic_kind": "whole-building", "intent": "villa", "typology": "centralized villa"}),
-        Entity("portico-west", "Component@1", {"semantic_kind": "arrival-and-buttress", "intent": "west portico"}, parent_id="building"),
-        Entity("portico-columns", "Component@1", {"semantic_kind": "vertical-support", "intent": "six columns"}, parent_id="portico-west"),
-        Entity("portico-entablature", "Component@1", {"semantic_kind": "horizontal-load-transfer", "intent": "entablature"}, parent_id="portico-west"),
-        Entity("level-piano-nobile", "Level@1", {"role": "piano-nobile", "elevation": 3.57}, basis_refs=("reading:plan",)),
-        Entity("axis-1", "GridAxis@1", {"role": "1", "origin": [-10.71, 0.0, 0.0], "direction": [0.0, 0.0, 1.0]}),
-        Entity("columns-west", "Element@1", {"component_id": "portico-columns", "producer": "column-array", "base_level": "level-piano-nobile"}, lineage=Lineage(introduced_at="stage-2")),
-        Entity("entablature-west", "Element@1", {"component_id": "portico-entablature", "producer": "beam", "host": "columns-west"}, lineage=Lineage(introduced_at="stage-2")),
-    )
-    parameters = (
-        Parameter("column_diameter", 0.714, "m", epistemic_status="declared", source_ref="reading:plan"),
-        Parameter("column_height", 6.426, "m", expr="9 * column_diameter", inputs=("column_diameter",), source_ref="rule:ionic-nine-diameters"),
-    )
-    relations = (
-        Relation("columns-support-entablature", "support", "columns-west", "entablature-west", datum_role="columns-west-top", propagation="revalidate",
-                 validator=ValidatorBinding("support_contact", tolerance=0.001), basis_refs=("reading:plan",)),
-    )
-    obligations = (DesignObligation(obligation_id="continuous-load-path", statement="a column grid was chosen: complete the load path to the foundation",
-                                    source_ref="relation:columns-support-entablature", status=ObligationStatus.OPEN, subject_refs=("entity:columns-west",)),)
-    return StateRecord("demo", "run-1", entities, parameters, relations, obligations, evidence_refs=("reading:plan",), decision_ref="decision:declared")
+from state_record_fixture import _record
 
 
 class StateRecordTests(unittest.TestCase):
@@ -836,7 +813,7 @@ class StateRecordTests(unittest.TestCase):
 
     def test_massing_entities_rebuild_the_spatial_option_exactly(self) -> None:
         from monkeyarch.application.project_runner import SchematicPack, bootstrap_developed_state
-        from tests.integration.test_project_runner import EVIDENCE, _component
+        from runner_fixture import EVIDENCE, _component
         pack = SchematicPack.from_dict({
             "schema": "SchematicPack@1", "project_id": "demo", "option_id": "declared-option", "label": "demo declared schematic", "typology": "test block with a portico",
             "rationale": "declared from the survey record", "evidence_refs": [EVIDENCE],
@@ -890,7 +867,7 @@ class StateRecordTests(unittest.TestCase):
         """P102 last step: the record answers the four identity questions, so the compiler takes it directly."""
 
         from monkeyarch.compilation.geometry import compile_geometry_program
-        from tests.integration.test_geometry_compiler import COMMITMENT, _proposal, _state
+        from spine_fixture import COMMITMENT, _proposal, _state
 
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})

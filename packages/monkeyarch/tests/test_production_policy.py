@@ -22,7 +22,7 @@ from monkeyarch.application.geometry_proposal import (
     resume_geometry_program_proposal,
 )
 from archflow.state.geometry_program import GeometryParameter
-from tests.integration.support import (
+from spine_fixture import (
     COMMITMENT,
     IDENTITY,
     ProducerFixture,

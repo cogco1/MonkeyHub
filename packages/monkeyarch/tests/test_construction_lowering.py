@@ -14,14 +14,11 @@ import time
 import unittest
 from types import SimpleNamespace
 
-from archflow.project.refs import ProjectVersionRef
 from archflow.state.geometry_program import delivered_object_ids
 from archflow.state.state_record import (
     Entity,
     Parameter,
     StateRecord,
-    apply_state_record_operator,
-    compile_component_edit,
     project_grids_of,
     project_levels_of,
 )
@@ -29,54 +26,18 @@ from monkeyarch.authoring.element_producers import (
     ProductionContext,
     element_rows_of,
     produce_rows,
-    validate_element_contract,
 )
 from monkeyarch.domain.reference_resolver import ReferenceContext
 from monkeyarch.authoring.construction.identity import ELEMENT_SUFFIX
-from monkeyarch.authoring.construction.lowering import compile_construction_script, geometry_view
+from monkeyarch.authoring.construction.lowering import geometry_view
 from monkeyarch.authoring.construction.script import ConstructionError
 from monkeyarch.authoring.construction.vocabulary import layer_rule_violations, vocabulary
+from lowering_fixture import EVIDENCE, _apply, _compile, _level, _record
 
-EVIDENCE = "input:monkeyarch-modeling-setup"
 PARAMETERS = (
     Parameter("h", 3.0, "m", epistemic_status="declared", source_ref=EVIDENCE),
     Parameter("sill", 0.9, "m", epistemic_status="declared", source_ref=EVIDENCE),
 )
-ROOT = Entity("model", "Component@1", {"intent": "Root for candidate modeling", "source_refs": [EVIDENCE]})
-
-
-def _level(entity_id: str, elevation: float, role: str | None = None) -> Entity:
-    return Entity(entity_id, "Level@1", {"role": role or entity_id, "elevation": elevation}, basis_refs=(EVIDENCE,))
-
-
-def _record(*extra: Entity, parameters: tuple[Parameter, ...] = (), ground: float | None = 0.0) -> StateRecord:
-    levels = (_level("ground", ground),) if ground is not None else ()
-    return StateRecord(
-        project_id="demo", run_id="authored", entities=(ROOT, *levels, *extra),
-        parameters=parameters, evidence_refs=(EVIDENCE,), option={"option_id": "modeling"},
-        base=ProjectVersionRef("demo", 0, "0" * 64),
-    )
-
-
-def _compile(script: str, record: StateRecord | None = None):
-    return compile_construction_script(script, record if record is not None else _record(), root_component_id="model")
-
-
-def _apply(record: StateRecord, result) -> StateRecord:
-    """The successor, exactly as the semantic-edit path derives it: rows merged over existing fields."""
-
-    existing = {entity.entity_id: entity for entity in record.entities}
-    entities = []
-    for row in result.entities:
-        previous = existing.get(row["entity_id"])
-        value = dict(row)
-        if previous is not None:
-            value = {**previous.to_dict(), **value, "fields": {**previous.fields, **row["fields"]}}
-        entities.append(Entity.from_dict(value))
-    operator = compile_component_edit(record, entities=tuple(entities), remove_entity_ids=tuple(result.remove_entity_ids))
-    successor = apply_state_record_operator(record, operator)
-    validate_element_contract(successor, tuple(row["entity_id"] for row in result.entities if row["schema"] == "Element@1"))
-    return successor
 
 
 def _operations(record: StateRecord) -> dict:
@@ -1090,7 +1051,7 @@ class RecessTests(ConstructionTestCase):
         from monkeycad.backends.occt.build import build_program_shapes
         from monkeycad.backends.occt.kernel import occt_available
         from monkeycad.backends.occt.measure import measure_shape
-        from tests.integration.test_occt_execution import _compile as compile_program
+        from spine_fixture import _compile as compile_program
 
         successor = _apply(record, result)
         program = compile_program(successor)

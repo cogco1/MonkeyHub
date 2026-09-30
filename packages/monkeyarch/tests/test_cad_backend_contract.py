@@ -40,18 +40,23 @@ from archflow.project.record_kinds import stage_geometry_program
 from archflow.project.refs import BranchRef, RunRef, record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyarch.application.project_runner import ProjectRunnerError
-from tests.integration.test_cad_execution import (
+from cad_execution_fixture import (
     _FakeWorker,
     _binding,
+    _box,
     _cleanup_result,
     _fake_executable,
     _inspection,
+    _loft,
+    _no_process,
     _program,
+    _program_of,
+    _radial_array,
+    _single_operation_program,
     _write_host_witness,
     _write_success_marker,
 )
-from tests.integration.test_occt_execution import _box, _loft, _no_process, _program_of, _radial_array, _single_operation_program
-from tests.integration.test_project_runner import _ExportProject, _options, _prism_row, _record
+from runner_fixture import _ExportProject, _options, _prism_row, _record, _taller_plinth
 
 
 NEEDS_OCCT = unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
@@ -422,14 +427,6 @@ class CadBackendConformanceTests(unittest.TestCase):
 
 def _cad_seats(receipt):
     return {seat["seat_id"]: seat["cad"] for seat in receipt["seat_results"]}
-
-
-def _taller_plinth(record):
-    return replace(record, entities=tuple(
-        replace(entity, fields={**entity.fields, "params": {**entity.fields["params"], "height": 0.8}})
-        if entity.entity_id == "columns-plinth" else entity
-        for entity in record.entities
-    ))
 
 
 class _RegisteredContractBackend:

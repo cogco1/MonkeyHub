@@ -36,7 +36,7 @@ from archflow.state.state_record import (
 )
 from archflow.state.geometry_program import load_compiled_geometry_program
 from monkeyarch.application import project_runner
-from tests.integration import test_project_runner as runner_support
+import runner_fixture as runner_support
 
 
 HOST = "wall-south"
@@ -167,7 +167,7 @@ class WindowSourceParameterTests(unittest.TestCase):
 @runner_support.NEEDS_OCCT
 class WindowRelationalCadTests(unittest.TestCase):
     # Reuse the existing test fixture's one-seat run_project invocation.
-    _run = runner_support.IncrementalSourceRunTests.run_source
+    _run = runner_support.run_source
 
     def setUp(self) -> None:
         for patcher in runner_support._no_rhino():

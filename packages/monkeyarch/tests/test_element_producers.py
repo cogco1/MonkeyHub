@@ -31,58 +31,16 @@ from monkeyarch.authoring.producer_signatures import parameter_unit, producer_si
 from monkeyarch.application.geometry_proposal import GeometryProposalStatus
 from monkeyarch.domain.reference_resolver import ReferenceContext
 from monkeyarch.compilation.geometry import compile_geometry_program
-from archflow.state.geometry_program import GeometryOperationKind, ProjectGridAxis, ProjectGrids, ProjectLevel, ProjectLevels, SemanticBinding
+from archflow.state.geometry_program import GeometryOperationKind, SemanticBinding
 from archflow.state.state_record import project_grids_of, project_levels_of
-from tests.integration.support import ProducerFixture, authored_record
-from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
-
-BASIS = ("reading:plate",)
-PN = "level-piano-nobile"
-
-
-def _grids() -> ProjectGrids:
-    axes = [ProjectGridAxis(f"axis-{k + 1}", str(k + 1), ((k - 2.5) * 1.6065, 0.0, 0.0), (0.0, 0.0, 1.0), BASIS) for k in range(6)]
-    axes.append(ProjectGridAxis("axis-w", "W", (0.0, 0.0, -13.85), (1.0, 0.0, 0.0), BASIS))       # the west facade line
-    axes.append(ProjectGridAxis("axis-ox", "OX", (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), BASIS))        # three lines through the origin, for
-    axes.append(ProjectGridAxis("axis-oz", "OZ", (0.0, 0.0, 0.0), (0.0, 0.0, 1.0), BASIS))        # reading a stated direction off a
-    axes.append(ProjectGridAxis("axis-od", "OD", (0.0, 0.0, 0.0), (1.0, 0.0, 1.0), BASIS))        # run whose plan coordinates are plain
-    return ProjectGrids(project_id="demo", published_by="seat-coordination", axes=tuple(sorted(axes, key=lambda a: a.axis_id)))
+from portico_fixture import BASIS, PN, _grids, _levels, _op_params, _produce, _rows
+from spine_fixture import COMMITMENT, ProducerFixture, _only, _proposal, _state, authored_record
 
 
 def _on(axis: str, along: float) -> dict:
     """A plan point at ``along`` metres from an axis's origin, along that axis."""
 
     return {"axis_point": {"axis": axis, "along": along}}
-
-
-def _levels(piano: float = 3.57) -> ProjectLevels:
-    return ProjectLevels(project_id="demo", published_by="seat-coordination", levels=(
-        ProjectLevel("level-ground", "terrain-grade", 0.0, BASIS), ProjectLevel(PN, "piano-nobile", piano, BASIS)))
-
-
-def _rows(column_height: float = 6.426, engagement: float | None = None) -> tuple[ElementRow, ...]:
-    capital_params = {"height": 0.18, "half_extent": 0.56}
-    if engagement is not None:
-        capital_params["engagement"] = {"depth": engagement}
-    return (
-        ElementRow("columns-west", "portico-columns", "column-array", {"axes": ["1", "2", "3", "4", "5", "6"], "facade": "W", "base": {"level": PN}},
-                   {"radius": 0.357, "height": column_height, "segments": 24}, BASIS),
-        ElementRow("capitals-west", "portico-capitals", "capitals", {"axes": ["1", "2", "3", "4", "5", "6"], "facade": "W", "columns": "columns-west", "base": {"datum": "columns-west-top"}},
-                   capital_params, BASIS),
-        ElementRow("entablature-west", "portico-entablature", "beam", {"from": {"grid": ["1", "W"]}, "to": {"grid": ["6", "W"]}, "base": {"datum": "capitals-west-top"}, "support": "capitals-west"},
-                   {"depth": 0.92, "height": 1.33875, "end_overhang": 0.36}, BASIS),
-        ElementRow("pediment-west", "portico-pediments", "pediment", {"from": {"grid": ["1", "W"]}, "to": {"grid": ["6", "W"]}, "base": {"datum": "entablature-west-top"}, "support": "entablature-west"},
-                   {"rise": 1.78, "thickness": 0.3}, BASIS),
-    )
-
-
-def _produce(rows, levels=None):
-    context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=levels or _levels()), published={})
-    return produce_rows(rows, context), context
-
-
-def _op_params(operation) -> dict:
-    return {p.name: json.loads(p.value_json) for p in operation.parameters}
 
 
 def _assert_bbox(case, points, expected) -> None:
@@ -266,7 +224,7 @@ class SemanticWallContractTests(unittest.TestCase):
 class PlanarSurfaceProducerTests(unittest.TestCase):
     def test_a_bound_elevation_edit_moves_the_surface_and_keeps_the_base(self) -> None:
         from archflow.state.state_record import Parameter, StateRecordEditKind, StateRecordOperator, apply_state_record_operator
-        from tests.integration.support import shared_bound_state
+        from spine_fixture import shared_bound_state
 
         record = authored_record()
         surface = replace(next(e for e in record.entities if e.entity_id == "wall-south"), fields={
@@ -723,7 +681,7 @@ class PrismElevationTests(unittest.TestCase):
 
     def test_parameter_edits_keep_panel_elevation_and_thickness_independent(self) -> None:
         from archflow.state.state_record import Parameter, StateRecordEditKind, StateRecordOperator, apply_state_record_operator
-        from tests.integration.support import shared_bound_state
+        from spine_fixture import shared_bound_state
 
         record = authored_record()
         panel = replace(next(e for e in record.entities if e.entity_id == "wall-south"), fields={
@@ -751,7 +709,7 @@ class PrismElevationTests(unittest.TestCase):
 class PlanarSurfaceProposalTests(ProducerFixture):
     async def test_surface_passes_the_real_proposal_contract_and_datum_compiler(self) -> None:
         from monkeyarch.application.geometry_proposal import proposal_authoring_output
-        from tests.integration.support import ScriptedProvider
+        from spine_fixture import ScriptedProvider
 
         context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=_levels()), published={}, frame_id="world")
         row = ElementRow("surface", "building", "planar-surface", {"base": {"level": PN}},
@@ -1281,7 +1239,7 @@ class BoundRowTests(unittest.TestCase):
 class BoundProfileContractTests(unittest.TestCase):
     def _record(self, producer):
         from archflow.state.state_record import Parameter
-        from tests.integration.support import shared_bound_state
+        from spine_fixture import shared_bound_state
 
         record = authored_record()
         profile = [[0, 0], ["@width", 0], ["@width", "@half_width"], [0, "@half_width"]]
@@ -1346,7 +1304,7 @@ class StatedRowsThroughTheProposalTests(ProducerFixture):
 
     def _accepted(self):
         from monkeyarch.application.geometry_proposal import proposal_authoring_output
-        from tests.integration.support import ScriptedProvider
+        from spine_fixture import ScriptedProvider
 
         context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=_levels()), published={}, frame_id="world")
         produced = produce_rows((_wedge_row(), _shell_row()), context)
