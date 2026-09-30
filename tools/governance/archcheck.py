@@ -5,7 +5,8 @@ write ownership, state authorities, the probe boundary, the entries Git tracks
 at the repository root and under docs/, the module registry and every path it
 names, and the live work registry -- GitHub Issue claims only, no two of them
 holding the same path or checkout. A path the policy configures must exist: a
-rule whose path is gone is reported, never skipped.
+rule whose path is gone is reported, never skipped. So is a layer rule's target
+that names no module, since nothing can import it.
 
 With ``--changed <base>`` it checks one branch instead, using each commit's
 policy and work registry from Git. Once the scope rule exists in a parent, a
@@ -424,6 +425,135 @@ def check_policy_paths(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFin
         yield PolicyFinding(
             ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
             f"forbidden_layer_imports[{index}] source {source!r} {state}; the rule guards nothing",
+        )
+
+
+def _module_names(root: Path, python_source_roots: Iterable[str]) -> frozenset[str]:
+    """Every module under the Python source roots, and every package above one.
+
+    The names are import names, as ``_module_name`` gives them. A package is
+    named whether or not it has an ``__init__.py``: a directory of modules
+    imports as a namespace package. A Python source root inside another is
+    walked as its own root, so its modules are not also named after the
+    directories around it. A directory whose name cannot be part of an import
+    name (``.git``, ``src-tauri``) holds no module and is not walked, nor are
+    the trees ``NOT_SOURCE_DIRECTORIES`` names.
+    """
+
+    roots = tuple(python_source_roots)
+    nested = {"/".join(_scope_parts(python_root)) for python_root in roots}
+    names: set[str] = set()
+    for python_root in roots:
+        for directory, subdirectories, files in os.walk(root / python_root):
+            relative = Path(directory).relative_to(root).as_posix()
+            prefix = "" if relative == "." else f"{relative}/"
+            subdirectories[:] = [
+                name for name in subdirectories
+                if name.isidentifier() and not _not_source_directory(name) and prefix + name not in nested
+            ]
+            for name in files:
+                module = _module_name(prefix + name, roots) if name.endswith(".py") else None
+                if module is not None:
+                    parts = module.split(".")
+                    names.update(".".join(parts[:end]) for end in range(1, len(parts) + 1))
+    return frozenset(names)
+
+
+def _absolute_imports(nodes: Iterable[ast.AST]) -> Iterator[str]:
+    """The modules one file imports by absolute name.
+
+    A relative import names a module of the file's own package, never a
+    third-party one, so it is left out.
+    """
+
+    for node in nodes:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                yield alias.name
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            yield node.module
+
+
+def _git_ignored(root: Path, paths: Iterable[str]) -> frozenset[str]:
+    """The given repository-relative paths that Git ignores in this checkout.
+
+    ``git check-ignore`` exits 1 when it ignores none of them: an answer, not
+    a failure.
+    """
+
+    listed = sorted(set(paths))
+    if not listed:
+        return frozenset()
+    try:
+        completed = subprocess.run(
+            ("git", "check-ignore", "--", *listed),
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError as exc:
+        raise ArchitecturePolicyError(f"git check-ignore failed: {exc}") from exc
+    if completed.returncode not in (0, 1):
+        raise ArchitecturePolicyError(f"git check-ignore failed: {completed.stderr.strip()}")
+    return frozenset(line for line in completed.stdout.splitlines() if line)
+
+
+def check_layer_targets(
+    root: Path,
+    policy: dict[str, Any],
+    imported: Iterable[str],
+) -> Iterator[PolicyFinding]:
+    """A layer rule's target names a module; a target that names none forbids nothing.
+
+    Targets are import names, so they resolve the way an import does, not as
+    paths. A target resolves when it names a module under the Python source
+    roots or a package above one. A name that begins with one of this
+    repository's top-level packages must resolve that way: a leftover import
+    of a module that has gone does not keep it alive. Any other name is a
+    third-party module and resolves while a checked file imports it
+    (``imported``, absolute imports only), so it names a library the
+    repository really uses. The last kind is a directory Git ignores at a
+    Python source root, such as ``archive/``, where retired lanes are kept
+    outside the public tree: its modules exist only in the checkouts that keep
+    them, and the rule is what stops committed code from reaching for them.
+    Every other target is reported once for each rule that names it.
+    """
+
+    python_roots = policy["python_source_roots"]
+    modules = _module_names(root, python_roots)
+    first_party = {name.partition(".")[0] for name in modules}
+    used = frozenset(imported)
+    unresolved: list[tuple[int, str]] = []
+    for index, rule in enumerate(policy["forbidden_layer_imports"]):
+        for target in rule["targets"]:
+            if target in modules:
+                continue
+            if target.partition(".")[0] not in first_party and any(_module_matches(name, target) for name in used):
+                continue
+            unresolved.append((index, target))
+    directories = {
+        top: tuple("/".join((*_scope_parts(python_root), top)) + "/" for python_root in python_roots)
+        for top in {target.partition(".")[0] for _, target in unresolved} - first_party
+    }
+    ignored = _git_ignored(root, (path for paths in directories.values() for path in paths))
+    for index, target in unresolved:
+        top = target.partition(".")[0]
+        if top in first_party:
+            parts = target.split(".")
+            depth = max(end for end in range(1, len(parts)) if ".".join(parts[:end]) in modules)
+            detail = f"names no module: {'.'.join(parts[:depth])} has no module {parts[depth]}"
+        elif any(path in ignored for path in directories[top]):
+            continue
+        else:
+            detail = (
+                "names no module under the Python source roots, no checked file imports it "
+                "and Git ignores no directory of that name"
+            )
+        yield PolicyFinding(
+            ARCHITECTURE_POLICY, 1, "POLICY_TARGET_MISSING",
+            f"forbidden_layer_imports[{index}] target {target!r} {detail}; the rule guards nothing against it",
         )
 
 
@@ -1491,8 +1621,10 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
     """Check the tree under ``root``, which must be a Git checkout.
 
     The root entries and the docs tree are read from Git's index
-    (``check_repository_root``, ``check_docs_layout``); everything else is
-    read from the files on disk.
+    (``check_repository_root``, ``check_docs_layout``), and a layer-rule
+    target that no module or import accounts for is looked up in Git's ignore
+    rules (``check_layer_targets``); everything else is read from the files
+    on disk.
     """
 
     validate_policy(policy, root)
@@ -1502,6 +1634,7 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
     findings.extend(check_docs_layout(root))
     findings.extend(check_registry(root, policy))
     findings.extend(check_scopes(root, policy, load_work_registry(root)))
+    imported: set[str] = set()
     for path in _checked_python_files(root, policy):
         relative = path.relative_to(root).as_posix()
         tree, parse_finding = _parse(path, root)
@@ -1510,6 +1643,7 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
             continue
         assert tree is not None
         index = _index_tree(tree)
+        imported.update(_absolute_imports(index.nodes))
         checks: list[Iterable[PolicyFinding]] = [
             check_imports(relative, index, policy)
         ]
@@ -1523,6 +1657,7 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
             )
         for result in checks:
             findings.extend(result)
+    findings.extend(check_layer_targets(root, policy, imported))
     return tuple(sorted(set(findings)))
 
 
