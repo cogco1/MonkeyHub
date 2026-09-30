@@ -51,7 +51,7 @@ workflow file is on the default branch.
 
 Nothing changes in the Hub. An installed MonkeyHub on the unsigned prerelease
 channel checks the public releases 30 s after start and then every 6 h
-(`apps/monkeyhub/api/monkeyhub_api/updates.py`), downloads and prepares the delta
+(`apps/monkeyhub/api/monkeyhub_api/updates/`), downloads and prepares the delta
 patch for its exact installed commit, and switches to the new version when the
 application next quits normally. It never restarts itself.
 

@@ -47,10 +47,8 @@ from .settings.models import ApplicationSettingsDto
 from .settings.routes import router as preferences_router
 from .settings.store import SettingsError, read_application_settings
 from .fabrication import Fabrication
-from .updates import (
-    DesktopUpdates, UpdateStatus, CompleteUpdate, RollbackUpdate, UpdateSettings, MAX_PATCH_BYTES,
-    recover_failed_start,
-)
+from .updates.desktop_updates import DesktopUpdates, MAX_PATCH_BYTES, recover_failed_start
+from .updates.models import UpdateStatus, CompleteUpdate, RollbackUpdate, UpdateSettings
 from .models import (
     AppId, AppStatus, FabPrepareRequest, FabPrepareResult, FabProfile,
     FabSendRequest, FabSendResult, HubError, HubFailure, HubHealth,

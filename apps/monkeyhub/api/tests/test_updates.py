@@ -33,8 +33,9 @@ from fastapi.testclient import TestClient
 from apps.monkeyhub.installer.patch import REQUIRED_FILES, create_patch
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import HubFailure
-from monkeyhub_api import updates as updates_module
-from monkeyhub_api.updates import DesktopUpdates, ReleaseFeed, recover_failed_start
+from monkeyhub_api.updates import desktop_updates, feed
+from monkeyhub_api.updates.desktop_updates import DesktopUpdates, recover_failed_start
+from monkeyhub_api.updates.feed import ReleaseFeed
 
 BASE, TARGET = "a" * 40, "b" * 40
 
@@ -232,7 +233,7 @@ class DesktopUpdateTests(unittest.TestCase):
         ):
             with self.subTest(source=source):
                 self.updates.source_root = Path(source)
-                with patch("monkeyhub_api.updates.subprocess.run", return_value=SimpleNamespace(returncode=0)) as run:
+                with patch("monkeyhub_api.updates.desktop_updates.subprocess.run", return_value=SimpleNamespace(returncode=0)) as run:
                     self.updates._activate()
                 command = run.call_args.args[0]
                 self.assertEqual(command[command.index("-File") + 1],
@@ -288,7 +289,7 @@ class DesktopUpdateTests(unittest.TestCase):
 
         trial = self.controller(Path("\\\\?\\" + str(target)))
         old = self.controller(Path("\\\\?\\" + str(self.base)))
-        with patch("monkeyhub_api.updates.subprocess.run", side_effect=activate_in_fixture):
+        with patch("monkeyhub_api.updates.desktop_updates.subprocess.run", side_effect=activate_in_fixture):
             self.assertEqual(trial.complete(BASE).state, "idle")
             self.assertEqual(old.rollback(BASE, TARGET).error.code, "UPDATE_ROLLED_BACK")
         self.assertEqual(trial.source_root, Path("\\\\?\\" + str(target)))
@@ -439,9 +440,9 @@ class AutomaticUpdateTests(unittest.TestCase):
                 return SimpleNamespace(returncode=self.activation_code, stdout="", stderr="")
             return SimpleNamespace(returncode=0, stdout="usage: run.py [-h] [--runtime-root RUNTIME_ROOT]", stderr="")
 
-        for patcher in (patch("monkeyhub_api.updates.subprocess.run", side_effect=run),
-                        patch.object(updates_module, "FIRST_CHECK_SECONDS", 0.05),
-                        patch.object(updates_module, "TRIAL_GRACE_SECONDS", 0.2)):
+        for patcher in (patch("monkeyhub_api.updates.desktop_updates.subprocess.run", side_effect=run),
+                        patch.object(desktop_updates, "FIRST_CHECK_SECONDS", 0.05),
+                        patch.object(desktop_updates, "TRIAL_GRACE_SECONDS", 0.2)):
             patcher.start()
             self.addCleanup(patcher.stop)
 
@@ -638,14 +639,14 @@ class AutomaticUpdateTests(unittest.TestCase):
             f"sys.path[:0] = {[str(ROOT), str(ROOT / 'services/project-runtime/src'), str(ROOT / 'apps/monkeyhub/api')]!r}",
             "threading.Thread(target=sys.stdin.read, daemon=True).start()",
             "time.sleep(0.5)",
-            "from monkeyhub_api import updates",
+            "from monkeyhub_api.updates import desktop_updates",
             "real = subprocess.run",
             "# Only the interpreter is this one; every option is the Hub's own.",
             "subprocess.run = lambda command, **options: real([sys.executable, *command[1:]], **options)",
-            "updates.PREFLIGHT_SECONDS = 20.0",
+            "desktop_updates.PREFLIGHT_SECONDS = 20.0",
             "target = Path(sys.argv[1])",
             "try:",
-            "    updates.DesktopUpdates(target, target / 'updates', managed=False, busy=lambda: None)._preflight(target)",
+            "    desktop_updates.DesktopUpdates(target, target / 'updates', managed=False, busy=lambda: None)._preflight(target)",
             "except ValueError as error:",
             "    print('refused:', error)",
             "else:",
@@ -718,7 +719,7 @@ class AutomaticUpdateTests(unittest.TestCase):
     def test_an_automatic_check_skipped_while_busy_runs_again_soon(self):
         updates = self.controller()
         updates._preparing = True
-        with patch.object(updates_module, "BUSY_RETRY_SECONDS", 0.1):
+        with patch.object(desktop_updates, "BUSY_RETRY_SECONDS", 0.1):
             updates.start(9, "instance")
             time.sleep(0.3)
             self.assertEqual(self.github.requests, [], "no check while a transaction is busy")
@@ -764,7 +765,7 @@ class AutomaticUpdateTests(unittest.TestCase):
         updates._worker.join()
         self.assertEqual(updates.status().state, "ready")
         self.activation_code = 1
-        with self.assertLogs("monkeyhub_api.updates", "WARNING"):
+        with self.assertLogs("monkeyhub_api.updates.desktop_updates", "WARNING"):
             updates.activate_on_quit()
         self.assertEqual([command[0] for command in self.processes],
                          [str(self.target / "_runtime/python/python.exe"), "powershell.exe"])
@@ -773,7 +774,7 @@ class AutomaticUpdateTests(unittest.TestCase):
         self.processes.clear()
         self.activation_code = 0
         (self.target / INSTALLER).write_bytes(b"changed installer")
-        with self.assertLogs("monkeyhub_api.updates", "WARNING") as logged:
+        with self.assertLogs("monkeyhub_api.updates.desktop_updates", "WARNING") as logged:
             updates.activate_on_quit()
         self.assertIn("Prepared version file", logged.output[0])
         self.assertEqual(self.processes, [], "a changed installer is never run")
@@ -896,7 +897,7 @@ class AutomaticUpdateTests(unittest.TestCase):
         self.assertIs(updates._own_health(port, "mine"), False)
 
     def test_redirects_stay_on_https(self):
-        handler = updates_module._HttpsRedirects()
+        handler = feed._HttpsRedirects()
         request = urllib.request.Request(ReleaseFeed.url(TAG, "asset.zip"))
         with self.assertRaises(HTTPError):
             handler.redirect_request(request, None, 302, "Found", {}, "http://objects.githubusercontent.com/asset")

@@ -688,7 +688,7 @@
       "reason": "Streams the explicitly selected, size-bounded developer patch into the private incoming file returned by DesktopUpdates under its caller-supplied nonproject runtime/updates root."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/updates.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/updates/desktop_updates.py",
       "function": "_save",
       "operations": [
         "mkdir",
@@ -700,7 +700,7 @@
       "reason": "Atomically records only the desktop update transaction under the explicitly supplied nonproject updates directory; no project data or alternative configuration authority."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/updates.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/updates/desktop_updates.py",
       "function": "begin_upload",
       "operations": [
         "mkdir"
@@ -710,7 +710,7 @@
       "reason": "Creates a private incoming patch directory under the explicitly supplied nonproject updates root; patch failures clean only that validated temporary directory."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/updates.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/updates/desktop_updates.py",
       "function": "_write_check",
       "operations": [
         "mkdir",
@@ -721,7 +721,7 @@
       "reason": "Atomically records only the last automatic update check and the cached public release list (with its ETag) under the explicitly supplied nonproject updates directory; no project data or configuration authority."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/updates.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/updates/feed.py",
       "function": "download",
       "operations": [
         "open_write"
