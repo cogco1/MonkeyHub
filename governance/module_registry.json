@@ -5959,7 +5959,7 @@
         "services/project-runtime/tests/test_settings.py",
         "services/project-runtime/tests/test_errors.py",
         "apps/monkeyhub/api/monkeyhub_api/main.py",
-        "apps/monkeyhub/api/monkeyhub_api/applications.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
         "apps/monkeyhub/launch-hub.ps1"
       ],
       "invariants": [
@@ -7247,9 +7247,9 @@
       "depends_on": [],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/monitoring.py",
-        "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/turn_trace.py",
         "packages/monkeymonitor/src/monkeymonitor/__main__.py",
-        "apps/monkeyhub/api/monkeyhub_api/applications.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
         "apps/monkeyhub/web/src/MonitorPage.tsx"
       ],
       "invariants": [
@@ -7623,21 +7623,24 @@
         "apps/monkeyhub/api/monkeyhub_api/settings/models.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/store.py",
         "apps/monkeyhub/api/monkeyhub_api/settings/routes.py",
+        "apps/monkeyhub/api/monkeyhub_api/settings/credentials.py",
         "apps/monkeyhub/api/monkeyhub_api/project_archive.py",
-        "apps/monkeyhub/api/monkeyhub_api/applications.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/__init__.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
         "apps/monkeyhub/run.py",
         "apps/monkeyhub/launch-hub.ps1",
-        "apps/monkeyhub/api/monkeyhub_api/chat.py",
-        "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
-        "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/__init__.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/skill_plugins.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/turn_trace.py",
         "apps/monkeyhub/api/monkeyhub_api/computer_tools.py",
-        "apps/monkeyhub/api/monkeyhub_api/acp_session.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/acp_session.py",
         "apps/monkeyhub/web/src/ChatShell.tsx",
         "apps/monkeyhub/web/src/ChatShell.css",
         "apps/monkeyhub/web/src/notifications/",
-        "apps/monkeyhub/api/monkeyhub_api/workers.py",
-        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-        "apps/monkeyhub/api/monkeyhub_api/runtime_models.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/workers.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime/models.py",
         "apps/monkeyhub/desktop/",
         "apps/monkeyhub/assets/",
         "apps/monkeyhub/web/src/MonitorPage.tsx",
@@ -7762,7 +7765,8 @@
         "apps/monkeyhub/api/tests/test_integrations.py",
         "apps/monkeyhub/api/tests/test_chat_suggestions.py",
         "apps/monkeyhub/web/test/projectStore.test.ts",
-        "apps/monkeyhub/api/tests/test_chat_render.py"
+        "apps/monkeyhub/api/tests/test_chat_render.py",
+        "apps/monkeyhub/api/tests/test_chat_progress.py"
       ],
       "depends_on": [
         "project.repository",
@@ -7844,7 +7848,7 @@
       ],
       "does_not_own": [
         "Choosing the roots: governance/architecture_policy.json lists them and tools.archcheck checks them",
-        "The production entry points' setup: apps/monkeyhub/run.py, the monkeyhub_api.chat MCP start and the project_runtime package read the same list themselves, because they run before anything in the checkout is importable and the runtime may not import tools",
+        "The production entry points' setup: apps/monkeyhub/run.py, the monkeyhub_api.chat.store MCP start and the project_runtime package read the same list themselves, because they run before anything in the checkout is importable and the runtime may not import tools",
         "The bundle's python313._pth (tools.package_monkeyapps) and CI's per-package editable installs"
       ],
       "inputs": [
