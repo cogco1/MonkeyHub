@@ -37,7 +37,7 @@ from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.settings import StudioSettings
-from monkeyhub_api.chat import store as chat_tools
+from monkeyhub_api.chat import transport
 from monkeyhub_api.main import HubSettings, complete_interrupted_connection_teardown, create_app
 from monkeyhub_api.settings.models import ApplicationSettingsDto
 from monkeyhub_api.settings.store import save_application_settings
@@ -342,7 +342,7 @@ class HubApiLifecycleTests(LocalHubCase):
             head = (root / "HEAD").read_bytes()
             route = "/api/project/modeling"
             query, body = {"projectDir": str(root)}, {"projectId": project["projectId"]}
-            actual_request = chat_tools._request_json
+            actual_request = transport._request_json
 
             def request(base, path, method="GET", body=None, timeout=180):
                 if base == self.base_url:
@@ -351,7 +351,7 @@ class HubApiLifecycleTests(LocalHubCase):
                     return response.json()
                 return actual_request(base, path, method, body, timeout)
 
-            with patch.object(chat_tools, "_request_json", side_effect=request):
+            with patch.object(transport, "_request_json", side_effect=request):
                 prepared = client.post(route, params=query, json=body)
                 self.assertEqual(prepared.status_code, 200, prepared.text)
                 self.assertTrue(prepared.json()["initialized"])

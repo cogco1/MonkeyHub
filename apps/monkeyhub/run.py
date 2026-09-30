@@ -31,7 +31,7 @@ def _progress_chat_store():
     safely act on *now*. Progress rows live in memory, are never passed back to the
     provider, and never enter P036 or the saved chat JSON.
     """
-    from monkeyhub_api.chat import store as chat_module
+    from monkeyhub_api.chat import providers, store as chat_module
     from monkeyhub_api.models import ChatMessage
 
     class ProgressChatStore(chat_module.ChatStore):
@@ -54,7 +54,7 @@ def _progress_chat_store():
                     if (running is None or running.stop.is_set()
                             or event.get("sessionId") != session.acpSessionId):
                         return
-                    text = chat_module._redact(str(update["content"].get("text") or ""), environment)
+                    text = providers._redact(str(update["content"].get("text") or ""), environment)
                     self._progress(session, "provider-summary", text, append=True, status="streaming")
                 return
             if kind == "plan":

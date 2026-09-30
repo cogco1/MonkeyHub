@@ -36,7 +36,8 @@ from project_runtime.events import StudioEvents
 from project_runtime.settings import StudioSettings
 from project_runtime.errors import StudioError
 
-from ..chat.store import _NoRedirect, _project
+from ..chat.transport import _NoRedirect
+from ..projects import _project
 from ..models import HubError, HubFailure
 from .models import HubRuntimeDto, OperationRecord, ProjectRuntimeDto, WorkerStatus
 

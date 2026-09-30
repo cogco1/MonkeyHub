@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import test_chat as cli_fixture
 import test_acp_chat as acp_fixture
-from monkeyhub_api.chat import acp_session, store as chat
+from monkeyhub_api.chat import acp_session, store as chat, transport, turn_context
 from monkeyhub_api.models import ChatDesignContext, ChatPostRequest, HubFailure
 
 
@@ -59,7 +59,7 @@ class StageHandoffTests(unittest.TestCase):
     def turn(self, session, pack, *, mode="stage"):
         fixture = self.fixture
         fixture.PACK = pack
-        with patch.object(chat, "_request_json", side_effect=fixture.studio(session, [])):
+        with patch.object(transport, "_request_json", side_effect=fixture.studio(session, [])):
             fixture.store.post(session.id, ChatPostRequest(
                 projectId=session.projectId, content="Build the walls from the saved stage",
                 contextMode=mode, designContext=fixture.selected()))
@@ -151,14 +151,14 @@ class StageHandoffTests(unittest.TestCase):
         fixture.PACK = stage_pack("stage-walls")
         request = ChatPostRequest(projectId=session.projectId, content="Continue walls",
                                   contextMode="stage", designContext=fixture.selected())
-        with patch.object(chat, "_request_json", side_effect=fixture.studio(
+        with patch.object(transport, "_request_json", side_effect=fixture.studio(
                 session, [], HubFailure(409, "STALE_BASE", "The selected source changed"))):
             fixture.store.post(session.id, request)
             self.assertEqual(fixture.finished(session).error.code, "STALE_BASE")
         def cancelled(*args, **kwargs):
             fixture.store._running[session.id].stop.set()
             return fixture.PACK
-        with patch.object(chat, "_prepared_context", side_effect=cancelled):
+        with patch.object(turn_context, "_prepared_context", side_effect=cancelled):
             fixture.store.post(session.id, request)
             self.assertEqual(fixture.finished(session).status, "interrupted")
         self.assertEqual(len(fixture.calls()), count)
@@ -169,7 +169,7 @@ class StageHandoffTests(unittest.TestCase):
         fixture = self.fixture
         session, old_id, old_start = self.established(provider="claude")
         count = len(fixture.calls())
-        with patch.object(chat, "_request_json", side_effect=fixture.studio(session, [])), \
+        with patch.object(transport, "_request_json", side_effect=fixture.studio(session, [])), \
              patch.object(chat.ChatStore, "_command", side_effect=OSError("the installed CLI is missing")):
             fixture.store.post(session.id, self.boundary_request(session))
             result = fixture.finished(session)
@@ -188,7 +188,7 @@ class StageHandoffTests(unittest.TestCase):
             store._running[session_id].stop.set()
             return replaced
 
-        with patch.object(chat, "_request_json", side_effect=fixture.studio(session, [])), \
+        with patch.object(transport, "_request_json", side_effect=fixture.studio(session, [])), \
              patch.object(chat.ChatStore, "_fresh_provider_session", autospec=True, side_effect=stopped):
             fixture.store.post(session.id, self.boundary_request(session))
             result = fixture.finished(session)
@@ -199,7 +199,7 @@ class StageHandoffTests(unittest.TestCase):
     def test_a_replacement_that_opened_its_own_session_survives_a_failed_turn(self):
         fixture = self.fixture
         session, old_id, _ = self.established()
-        with patch.object(chat, "_request_json", side_effect=fixture.studio(session, [])):
+        with patch.object(transport, "_request_json", side_effect=fixture.studio(session, [])):
             # The fake CLI reports its new session and only then fails the turn.
             fixture.store.post(session.id, self.boundary_request(session, "model-refused-test: build the walls"))
             result = fixture.finished(session)
@@ -228,7 +228,7 @@ class AcpStageHandoffTests(unittest.TestCase):
         request = ChatPostRequest(projectId=session.projectId, content="Build walls",
                                   contextMode="stage", designContext=ChatDesignContext(
                                       sourceRunId="run-001", stateDigest="a" * 64))
-        with patch.object(chat, "_prepared_context", return_value=stage_pack()):
+        with patch.object(turn_context, "_prepared_context", return_value=stage_pack()):
             fixture.store.post(session.id, request)
             fixture.finished(session)
             identifier = fixture.store._sessions[session.id].acpSessionId
@@ -259,7 +259,7 @@ class AcpStageHandoffTests(unittest.TestCase):
         request = ChatPostRequest(projectId=session.projectId, content="Build walls",
                                   contextMode="stage", designContext=ChatDesignContext(
                                       sourceRunId="run-001", stateDigest="a" * 64))
-        with patch.object(chat, "_prepared_context", return_value=stage_pack()), \
+        with patch.object(turn_context, "_prepared_context", return_value=stage_pack()), \
              patch.object(acp_session.CodexAcpSession, "prompt", side_effect=acp_session.AcpSessionError(
                  "the adapter could not open a session")):
             fixture.store.post(session.id, request)

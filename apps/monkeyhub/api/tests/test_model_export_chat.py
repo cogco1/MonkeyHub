@@ -1,14 +1,14 @@
 """The conversational agent's model-export tool uses the bound backend."""
 import unittest
 from unittest.mock import patch
-from monkeyhub_api.chat import store as chat
+from monkeyhub_api.chat import preparation, tool_calls, transport
 from monkeyhub_api.models import HubFailure
 
 
 class ModelExportChatTests(unittest.TestCase):
     def setUp(self):
         self.session = {"projectId":"demo", "projectDir":"C:/projects/demo", "status":"running"}
-        self.binding = patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", self.session))
+        self.binding = patch.object(preparation, "_bound_studio", return_value=("http://127.0.0.1:8791", self.session))
         self.binding.start()
         self.addCleanup(self.binding.stop)
 
@@ -20,8 +20,8 @@ class ModelExportChatTests(unittest.TestCase):
             if path.endswith("/model-source"):
                 return upload
             return {"jobId":"job-1", "statusPath":"/api/exports/export-1"}
-        with patch.object(chat, "_request_json", side_effect=request):
-            result = chat.call_tool("http://127.0.0.1:8790", "11111111-1111-4111-8111-111111111111", "studio_request", {
+        with patch.object(transport, "_request_json", side_effect=request):
+            result = tool_calls.call_tool("http://127.0.0.1:8790", "11111111-1111-4111-8111-111111111111", "studio_request", {
                 "method":"POST", "path":"/api/exports", "body":{"targetFormat":"3dm", "attachmentId":"22222222-2222-4222-8222-222222222222"}})
         self.assertEqual(result["jobId"],"job-1")
         self.assertIn("/sessions/11111111-1111-4111-8111-111111111111/attachments/22222222-2222-4222-8222-222222222222/model-source",calls[0][1])
@@ -30,7 +30,7 @@ class ModelExportChatTests(unittest.TestCase):
 
     def test_conflicting_upload_and_project_are_not_silently_resolved(self):
         with self.assertRaises(HubFailure) as caught:
-            chat.call_tool("http://127.0.0.1:8790", "11111111-1111-4111-8111-111111111111", "studio_request", {
+            tool_calls.call_tool("http://127.0.0.1:8790", "11111111-1111-4111-8111-111111111111", "studio_request", {
                 "method":"POST", "path":"/api/exports", "body":{"targetFormat":"glb", "attachmentId":"22222222-2222-4222-8222-222222222222",
                 "projectRevision":{"runId":"run-1","stateDigest":"a"*64}}})
         self.assertEqual(caught.exception.error.code,"EXPORT_SOURCE_AMBIGUOUS")
@@ -38,8 +38,8 @@ class ModelExportChatTests(unittest.TestCase):
     def test_only_success_has_download_link(self):
         for status in ("running","failed","succeeded"):
             reply = {"status":status,"downloadPath":"/api/exports/export-1/bytes"}
-            with patch.object(chat,"_request_json",return_value=reply):
-                result = chat.call_tool("http://127.0.0.1:8790","11111111-1111-4111-8111-111111111111","studio_request",{
+            with patch.object(transport,"_request_json",return_value=reply):
+                result = tool_calls.call_tool("http://127.0.0.1:8790","11111111-1111-4111-8111-111111111111","studio_request",{
                     "path":"/api/exports/export-1"})
             self.assertEqual("downloadUrl" in result,status == "succeeded")
             if status == "succeeded":
@@ -47,8 +47,8 @@ class ModelExportChatTests(unittest.TestCase):
 
     def test_current_project_revision_passes_unchanged(self):
         body = {"targetFormat":"skp", "projectRevision":{"runId":"run-1", "stateDigest":"a"*64}}
-        with patch.object(chat,"_request_json",return_value={"jobId":"j"}) as request:
-            chat.call_tool("http://127.0.0.1:8790","11111111-1111-4111-8111-111111111111","studio_request",{
+        with patch.object(transport,"_request_json",return_value={"jobId":"j"}) as request:
+            tool_calls.call_tool("http://127.0.0.1:8790","11111111-1111-4111-8111-111111111111","studio_request",{
                 "method":"POST","path":"/api/exports","body":body})
         self.assertEqual(request.call_args.args[3],body)
 
@@ -57,8 +57,8 @@ class ModelExportChatTests(unittest.TestCase):
             'application/json':{'schema':{'$ref':'#/components/schemas/ModelExportRequest'}}}}}}},
             'components':{'schemas':{'ModelExportRequest':{'properties':{'upload':{'type':'object'},
                 'targetFormat':{'type':'string'}}}}}}
-        with patch.object(chat,'_request_json',return_value=document):
-            result = chat.call_tool('http://127.0.0.1:8790','11111111-1111-4111-8111-111111111111','studio_schema',{
+        with patch.object(transport,'_request_json',return_value=document):
+            result = tool_calls.call_tool('http://127.0.0.1:8790','11111111-1111-4111-8111-111111111111','studio_schema',{
                 'method':'POST','path':'/api/exports'})
         properties = result['components']['schemas']['ModelExportRequest']['properties']
         self.assertIn('attachmentId',properties)

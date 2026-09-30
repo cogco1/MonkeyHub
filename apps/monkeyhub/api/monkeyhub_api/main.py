@@ -33,7 +33,8 @@ from archflow.adapters.integration_packs import IntegrationPackManager
 from project_runtime.errors import StudioError
 from project_runtime.api.dto.project import ModelingInitializeDto, ModelingInitializeRequestDto
 
-from .chat import store as chat_tools
+from . import projects
+from .chat import media, preparation, providers, transport
 from .settings import credentials
 from . import project_archive
 from .runtime.applications import Applications
@@ -360,7 +361,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         if app_id in {"monkeyarch", "monkeyboard"}:
             target = projectDir or read_application_settings(settings.runtime_root).project_dir
             if target:
-                project_id, target = chat_tools._project(target)
+                project_id, target = projects._project(target)
                 runtime = runtimes.open(project_id, target)
         with chats.application_lifecycle(app_id, project_dir=projectDir):
             if runtime is not None and any(row.state == "crashed" for row in applications.worker_snapshots(project_dir=runtime.project_dir)):
@@ -395,7 +396,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     def update_application_settings(body: ApplicationSettingsDto) -> ApplicationSettingsDto:
         if body.library_dir is not None:
             # The skill library (#252) is a complete project, checked as one.
-            _, library = chat_tools._project(body.library_dir)
+            _, library = projects._project(body.library_dir)
             body = body.model_copy(update={"library_dir": library})
         with chats.project_configuration(body.project_dir):
             return applications.configure(body)
@@ -405,7 +406,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         target = projectDir if projectDir is not None else read_application_settings(settings.runtime_root).project_dir
         if not target:
             raise HubFailure(409, "PROJECT_REQUIRED", "Choose a project before preparing its modeling workspace.")
-        project_id, project_dir = chat_tools._project(target)
+        project_id, project_dir = projects._project(target)
         if project_id != body.project_id:
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The selected project changed before its workspace was prepared.")
         status = start_app("monkeyarch", projectDir=project_dir)
@@ -417,8 +418,8 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
             if status.error is not None:
                 raise HubFailure(503, status.error.code, status.error.detail)
             raise HubFailure(503, "CHAT_STUDIO_UNAVAILABLE", "The project workspace is not ready. Retry preparing this project.")
-        base, binding = chat_tools._bound_studio(chats.hub_url, None, project_id=project_id, project_dir=project_dir)
-        prepared = chat_tools._request_json(base, "/api/project/modeling", "POST", {"projectId": binding["projectId"]})
+        base, binding = preparation._bound_studio(chats.hub_url, None, project_id=project_id, project_dir=project_dir)
+        prepared = transport._request_json(base, "/api/project/modeling", "POST", {"projectId": binding["projectId"]})
         runtimes.open(project_id, project_dir)
         return prepared
 
@@ -444,7 +445,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
                                     saved=saved, storeAvailable=available)
         if saved:
             return CredentialStatus(id=credential_id, configured=True, source="saved", saved=True, storeAvailable=available)
-        if credential_id == "coding-plan" and chat_tools.claude_plan_configured():
+        if credential_id == "coding-plan" and providers.claude_plan_configured():
             return CredentialStatus(id=credential_id, configured=True, source="claude-config", storeAvailable=available)
         return CredentialStatus(id=credential_id, configured=False, storeAvailable=available)
 
@@ -539,7 +540,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.get("/api/chat/sessions/{session_id}/documents/{message_id}/{index}", response_class=Response)
     def read_chat_document(session_id: str, message_id: str, index: int, download: bool = False):
         document, data = chats.presentation_document(session_id, message_id, index)
-        safe_inline = document.mime_type in chat_tools._IMAGE_MIMES | {"application/pdf"}
+        safe_inline = document.mime_type in media._IMAGE_MIMES | {"application/pdf"}
         disposition = "attachment" if download or not safe_inline else "inline"
         return Response(data, media_type=document.mime_type if safe_inline else "application/octet-stream",
                         headers={"Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(document.file_name, safe='')}",
@@ -558,9 +559,9 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     def read_chat_attachment(session_id: str, attachment_id: str, inline: bool = False):
         attachment, path = chats.attachment(session_id, attachment_id)
         if inline:
-            if attachment.mimeType not in chat_tools._IMAGE_MIMES:
+            if attachment.mimeType not in media._IMAGE_MIMES:
                 raise HubFailure(422, "CHAT_IMAGE_INVALID", "Only supported raster images can be previewed inline.")
-            chat_tools._verify_image(path.read_bytes(), attachment.mimeType)
+            media._verify_image(path.read_bytes(), attachment.mimeType)
         return FileResponse(path, media_type=attachment.mimeType if inline else "application/octet-stream", filename=attachment.name,
                             content_disposition_type="inline" if inline else "attachment",
                             headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})

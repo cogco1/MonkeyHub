@@ -21,7 +21,7 @@ source_roots.put_first(ROOT)
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyhub_api.chat import store as chat
+from monkeyhub_api.chat import guides, store as chat
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import (
     ChatCreateRequest, ChatMessage, ChatPostRequest, ChatPresentationRequest,
@@ -146,7 +146,7 @@ print(json.dumps({"type":"turn.completed"}),flush=True)
         self.assertIn(native, invocation["args"])
         self.assertIn("resume", invocation["args"])
         self.assertTrue(invocation["prompt"].endswith(suggestion()["prompt"]))
-        self.assertIn(chat._SUGGESTION_INSTRUCTIONS, invocation["prompt"])
+        self.assertIn(guides._SUGGESTION_INSTRUCTIONS, invocation["prompt"])
         self.assertEqual(self.select().json()["code"], "CHAT_SUGGESTION_CONSUMED")
         reopened = self.new_store()
         self.assertEqual(reopened.get(self.session.id).model_dump(), result.model_dump())

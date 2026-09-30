@@ -33,7 +33,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from project_runtime.application.artifacts import save_document
 from project_runtime.binding import ProjectBinding
 from project_runtime.settings import StudioSettings
-from monkeyhub_api.chat import store as chat
+from monkeyhub_api.chat import guides, mcp_server
 from monkeyhub_api.chat.store import ChatStore
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatDocumentRef, ChatPostRequest, ChatProvider
@@ -172,7 +172,7 @@ class ChatPresentationTests(unittest.TestCase):
             self.assertFalse(thread.is_alive(), "Loopback Hub did not stop")
 
     def mcp(self, requests, *, connection=None, expected_errors=()):
-        connection = connection or {"command": sys.executable, "args": [str(Path(chat.__file__)), "--mcp",
+        connection = connection or {"command": sys.executable, "args": [str(Path(mcp_server.__file__)), "--mcp",
             "--hub-url", self.store.hub_url, "--project-dir", str(self.project),
             "--source-session-id", self.bound["sourceSessionId"]]}
         environment = {**os.environ, "PYTHONUTF8": "1", **connection.get("env", {})}
@@ -396,8 +396,8 @@ class ChatPresentationTests(unittest.TestCase):
         with Image.open(BytesIO(page.content)) as image:
             self.assertEqual(image.format, "PNG")
             self.assertLess(image.width, image.height, "the second, portrait page is the one shown")
-        self.assertIn("chat_present kind=assistant", chat._GUIDES["/api/drawings"])
-        self.assertIn("documents:[{runId, assetSha256, revisionRef, pageIndex}]", chat._GUIDES["/api/drawings"])
+        self.assertIn("chat_present kind=assistant", guides._GUIDES["/api/drawings"])
+        self.assertIn("documents:[{runId, assetSha256, revisionRef, pageIndex}]", guides._GUIDES["/api/drawings"])
 
     def test_external_turn_that_made_a_candidate_gets_the_study_card(self):
         """#404 F15: an external turn's requests through the Hub give it the same result card."""

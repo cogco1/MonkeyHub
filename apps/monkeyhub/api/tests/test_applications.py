@@ -278,7 +278,7 @@ class HubChildStdinTests(unittest.TestCase):
                 starts.setdefault(f"{path.relative_to(HUB_PACKAGE).as_posix()}:{scope}", []).append((line, named))
         # The scan reads the real package: these start processes today.
         self.assertLessEqual({"runtime/applications.py:source_revision", "runtime/workers.py:WorkerSupervisor.start",
-                              "chat/acp_session.py:CodexAcpSession._start", "chat/store.py:_stop_process"}, set(starts))
+                              "chat/acp_session.py:CodexAcpSession._start", "chat/providers.py:_stop_process"}, set(starts))
         unnamed = [f"{site} (line {line})" for site, rows in starts.items() if site not in INHERITS_HUB_STDIN
                    for line, named in rows if not named]
         self.assertEqual(unnamed, [], "pass stdin=subprocess.DEVNULL or a pipe the Hub owns, "

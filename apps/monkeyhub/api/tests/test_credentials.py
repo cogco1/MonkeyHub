@@ -26,7 +26,7 @@ source_roots.put_first(ROOT)
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from monkeyhub_api.chat import store as chat  # noqa: E402
+from monkeyhub_api.chat import providers  # noqa: E402
 from monkeyhub_api.settings import credentials  # noqa: E402
 from monkeyhub_api.runtime.applications import Applications  # noqa: E402
 from monkeyhub_api.chat.store import ChatStore  # noqa: E402
@@ -199,7 +199,7 @@ class CodingPlanTests(CredentialTestCase):
     def test_a_saved_endpoint_and_token_make_coding_plan_available(self):
         store = ChatStore(self.root / "runtime", "http://127.0.0.1:18790", commands={"claude": ("claude.exe",)})
         self.addCleanup(store.shutdown)
-        with patch.object(chat, "_check_providers", return_value={}):
+        with patch.object(providers, "_check_providers", return_value={}):
             self.assertFalse({row.id: row for row in store.providers()}["coding-plan"].available)
             self.save_preferences(codingPlanBaseUrl="https://plan.example.invalid/anthropic")
             self.assertFalse({row.id: row for row in store.providers()}["coding-plan"].available, "an endpoint alone is not enough")
@@ -208,13 +208,13 @@ class CodingPlanTests(CredentialTestCase):
         self.assertTrue(row.available)
         self.assertIn("saved in Hub settings", row.detail)
         self.assertNotIn(PLAN_TOKEN, row.model_dump_json())
-        self.assertEqual(chat._coding_plan_env(), {"ANTHROPIC_BASE_URL": "https://plan.example.invalid/anthropic",
+        self.assertEqual(providers._coding_plan_env(), {"ANTHROPIC_BASE_URL": "https://plan.example.invalid/anthropic",
                                                    "ANTHROPIC_AUTH_TOKEN": PLAN_TOKEN})
 
     def test_saved_keys_are_redacted_wherever_they_surface(self):
         self.store.write("MonkeyHub/coding-plan-token", PLAN_TOKEN)
         self.store.write("MonkeyHub/gemini-api-key", GEMINI_KEY)
-        self.assertEqual(chat._redact(f"sent {PLAN_TOKEN} and {GEMINI_KEY}", {}), "sent [redacted] and [redacted]")
+        self.assertEqual(providers._redact(f"sent {PLAN_TOKEN} and {GEMINI_KEY}", {}), "sent [redacted] and [redacted]")
 
     def test_an_endpoint_must_be_a_plain_http_address(self):
         from monkeyhub_api.settings.models import UserSettingsDto
@@ -233,7 +233,7 @@ class LoginTests(CredentialTestCase):
                           commands={"codex": (r"C:\Users\fixture\AppData\Roaming\npm\codex.cmd",)})
         self.addCleanup(store.shutdown)
         # The console check is replaced, not os.name: pathlib reads os.name to choose its flavour.
-        with patch.object(chat, "_open_console") as opened, patch.object(chat, "_console_available", return_value=True):
+        with patch.object(providers, "_open_console") as opened, patch.object(providers, "_console_available", return_value=True):
             store.open_login("codex")
             with self.assertRaises(HubFailure) as missing:
                 store.open_login("claude")
