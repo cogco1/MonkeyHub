@@ -369,13 +369,13 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "tests/test_cad_execution.py",
-        "tests/test_cad_patch.py",
-        "tests/test_occt_execution.py",
+        "tests/integration/test_cad_execution.py",
+        "tests/integration/test_cad_patch.py",
+        "tests/integration/test_occt_execution.py",
         "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
-        "tests/test_cad_backend_contract.py"
+        "tests/integration/test_cad_backend_contract.py"
       ],
       "invariants": [
         "a successful process exit is never sufficient - the saved file is read back independently and must match the denominator",
@@ -406,19 +406,19 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_cad_execution.py",
-        "tests/test_cad_patch.py",
-        "tests/test_occt_execution.py",
-        "tests/test_cad_backend_contract.py",
-        "tests/test_blender_cad.py",
-        "tests/test_blender_projection.py",
-        "tests/test_model_formats.py",
-        "tests/model_export_glb_reader.mjs",
-        "tests/test_model_providers.py",
-        "tests/test_occt_native_models.py",
-        "tests/test_sketchup_reader.py",
-        "tests/test_software_discovery.py",
-        "tests/test_integration_packs.py"
+        "tests/integration/test_cad_execution.py",
+        "tests/integration/test_cad_patch.py",
+        "tests/integration/test_occt_execution.py",
+        "tests/integration/test_cad_backend_contract.py",
+        "tests/integration/test_blender_cad.py",
+        "tests/integration/test_blender_projection.py",
+        "packages/archflow/tests/test_model_formats.py",
+        "packages/archflow/tests/model_export_glb_reader.mjs",
+        "packages/archflow/tests/test_model_providers.py",
+        "packages/archflow/tests/test_occt_native_models.py",
+        "packages/archflow/tests/test_sketchup_reader.py",
+        "tests/integration/test_software_discovery.py",
+        "tests/integration/test_integration_packs.py"
       ],
       "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added.",
       "files": [
@@ -476,7 +476,7 @@
       ],
       "used_by": [
         "packages/archflow/src/archflow/adapters/cad_execution.py",
-        "tests/test_cad_patch.py"
+        "tests/integration/test_cad_patch.py"
       ],
       "invariants": [
         "an object is rebuilt only when its structural digest or its analytic bounds actually changed, beyond tolerance",
@@ -485,7 +485,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_cad_patch.py"
+        "tests/integration/test_cad_patch.py"
       ],
       "notes": "P103 incremental export; the only reason a run may reuse a prior .3dm."
     },
@@ -543,9 +543,9 @@
         "packages/archflow/src/archflow/adapters/cad_patch.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tools/verify_state_record.py",
-        "tests/test_cad_program.py",
-        "tests/test_cad_patch.py",
-        "tests/test_element_producers.py"
+        "tests/integration/test_cad_program.py",
+        "tests/integration/test_cad_patch.py",
+        "tests/integration/test_element_producers.py"
       ],
       "invariants": [
         "an unsupported operation kind fails CadTranslationError rather than being dropped silently",
@@ -560,7 +560,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_cad_program.py"
+        "tests/integration/test_cad_program.py"
       ],
       "notes": "The single CAD translation on the spine; P107's in-process OCCT executor would be a second executor of this program, not a second translation."
     },
@@ -741,9 +741,9 @@
       "used_by": [
         "packages/archflow/src/archflow/adapters/cad_execution.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "tests/test_three_dm_inspector.py",
-        "tests/test_cad_execution.py",
-        "tests/test_occt_execution.py"
+        "packages/archflow/tests/test_three_dm_inspector.py",
+        "tests/integration/test_cad_execution.py",
+        "tests/integration/test_occt_execution.py"
       ],
       "invariants": [
         "read-only: rhino3dm is imported lazily, one immutable byte snapshot is read, and no Rhino process is started",
@@ -755,7 +755,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_three_dm_inspector.py"
+        "packages/archflow/tests/test_three_dm_inspector.py"
       ],
       "notes": "The single source of the inspection key sets that viewers and readback both check against."
     },
@@ -809,8 +809,8 @@
         "packages/monkeyarch/src/monkeyarch/capabilities/discipline_seats.py",
         "tools/run_project.py",
         "services/project-runtime/src/project_runtime/adapters/seats.py",
-        "tests/test_discipline_seats.py",
-        "tests/test_project_runner.py"
+        "tests/integration/test_discipline_seats.py",
+        "tests/integration/test_project_runner.py"
       ],
       "invariants": [
         "the gate fails closed: a missing, out-of-range or geometry-contradicted field blocks the stage",
@@ -819,7 +819,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_discipline_seats.py"
+        "tests/integration/test_discipline_seats.py"
       ],
       "notes": "On the spine today mainly through DeclarationQuadrant, which scopes what a seat may declare."
     },
@@ -897,8 +897,8 @@
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "tools/run_project.py",
         "services/project-runtime/src/project_runtime/adapters/seats.py",
-        "tests/test_discipline_seats.py",
-        "tests/test_project_runner.py"
+        "tests/integration/test_discipline_seats.py",
+        "tests/integration/test_project_runner.py"
       ],
       "invariants": [
         "a seat's authoring context contains only its subtree, its ancestors and the handovers it consumes - a sibling subtree is never visible",
@@ -909,8 +909,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_discipline_seats.py",
-        "tests/test_project_runner.py"
+        "tests/integration/test_discipline_seats.py",
+        "tests/integration/test_project_runner.py"
       ],
       "notes": "P095/P098; seats are people, not state - they arrive beside the record, never inside it."
     },
@@ -999,8 +999,8 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "tests/test_element_producers.py",
-        "tests/test_cad_patch.py",
+        "tests/integration/test_element_producers.py",
+        "tests/integration/test_cad_patch.py",
         "services/project-runtime/src/project_runtime/application/construction.py"
       ],
       "invariants": [
@@ -1024,14 +1024,14 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_element_producers.py",
-        "tests/test_whole_stair.py",
-        "tests/test_cad_patch.py",
-        "tests/test_project_runner.py",
-        "tests/test_prism_cutouts.py",
-        "tests/test_occt_execution.py",
-        "tests/test_wall_explicit_point_reference.py",
-        "tests/test_wall_realization.py"
+        "tests/integration/test_element_producers.py",
+        "tests/integration/test_whole_stair.py",
+        "tests/integration/test_cad_patch.py",
+        "tests/integration/test_project_runner.py",
+        "tests/integration/test_prism_cutouts.py",
+        "tests/integration/test_occt_execution.py",
+        "packages/monkeyarch/tests/test_wall_explicit_point_reference.py",
+        "tests/integration/test_wall_realization.py"
       ],
       "notes": "The single geometry-emission owner on the spine; monument vocabulary (solids of revolution, boolean chains, classical-order members) would be added here rather than beside it."
     },
@@ -1119,9 +1119,9 @@
         "tools/run_project.py",
         "tools/verify_state_record.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
-        "tests/test_production_policy.py",
-        "tests/test_element_producers.py",
-        "tests/test_state_record.py"
+        "tests/integration/test_production_policy.py",
+        "tests/integration/test_element_producers.py",
+        "tests/integration/test_state_record.py"
       ],
       "invariants": [
         "no fallback: a round that does not compile is rejected with issues, never patched into acceptance",
@@ -1137,10 +1137,10 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_production_policy.py",
-        "tests/test_element_producers.py",
-        "tests/test_wall_realization.py",
-        "tests/test_geometry_authoring_contract.py"
+        "tests/integration/test_production_policy.py",
+        "tests/integration/test_element_producers.py",
+        "tests/integration/test_wall_realization.py",
+        "tests/integration/test_geometry_authoring_contract.py"
       ],
       "notes": "The runner drives it with an inline RecordedProposalProvider for replay; a live provider enters through studio.intent, which signs its call with the same ports.model receipt."
     },
@@ -1194,7 +1194,7 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py",
-        "tests/test_element_producers.py"
+        "tests/integration/test_element_producers.py"
       ],
       "invariants": [
         "a type carries proportions only - no position, no level, no absolute size",
@@ -1206,10 +1206,10 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_element_producers.py",
-        "tests/test_opening_solver.py",
-        "tests/test_occt_execution.py",
-        "tests/test_wall_realization.py"
+        "tests/integration/test_element_producers.py",
+        "tests/integration/test_opening_solver.py",
+        "tests/integration/test_occt_execution.py",
+        "tests/integration/test_wall_realization.py"
       ],
       "notes": "P092 filler side; P099 gives the arrayed placement so N identical openings share one member definition."
     },
@@ -1271,9 +1271,9 @@
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "tests/test_derivations_and_references.py",
-        "tests/test_element_producers.py",
-        "tests/test_cad_patch.py"
+        "packages/monkeyarch/tests/test_derivations_and_references.py",
+        "tests/integration/test_element_producers.py",
+        "tests/integration/test_cad_patch.py"
       ],
       "invariants": [
         "resolve_elevation never returns a number - the compiler is the only thing that turns a datum id into one",
@@ -1284,9 +1284,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_derivations_and_references.py",
-        "tests/test_element_producers.py",
-        "tests/test_wall_explicit_point_reference.py"
+        "packages/monkeyarch/tests/test_derivations_and_references.py",
+        "tests/integration/test_element_producers.py",
+        "packages/monkeyarch/tests/test_wall_explicit_point_reference.py"
       ],
       "notes": "The datum namespace boundary: level ids and element-top ids resolve here, so producers stay coordinate-free."
     },
@@ -1343,7 +1343,7 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "tests/test_relation_checks.py"
+        "tests/integration/test_relation_checks.py"
       ],
       "invariants": [
         "nothing is healed: a check only measures and reports",
@@ -1355,10 +1355,10 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_relation_checks.py",
-        "tests/test_project_runner.py",
-        "tests/test_lintel_bearing.py",
-        "tests/test_window_relational_update.py"
+        "tests/integration/test_relation_checks.py",
+        "tests/integration/test_project_runner.py",
+        "packages/monkeyarch/tests/test_lintel_bearing.py",
+        "tests/integration/test_window_relational_update.py"
       ],
       "notes": "One checker per kind the record can declare; adding a kind means adding a checker here and an id to CHECK_KINDS in the same change."
     },
@@ -1417,7 +1417,7 @@
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/capabilities/element_producers.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/opening_solver.py",
-        "tests/test_element_producers.py"
+        "tests/integration/test_element_producers.py"
       ],
       "invariants": [
         "the wall is one solid; every opening is a void request the wall hosts, never a separate subtraction chain",
@@ -1428,11 +1428,11 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_element_producers.py",
-        "tests/test_wall_solver_contact.py",
-        "tests/test_prism_cutouts.py"
+        "tests/integration/test_element_producers.py",
+        "packages/monkeyarch/tests/test_wall_solver_contact.py",
+        "tests/integration/test_prism_cutouts.py"
       ],
-      "notes": "P092 host side: the wall grants the aperture, the opening type never moves it. The spine suite drives it through the authored record's south wall (tests/support.py)."
+      "notes": "P092 host side: the wall grants the aperture, the opening type never moves it. The spine suite drives it through the authored record's south wall (tests/integration/support.py)."
     },
     {
       "module_id": "compilers.geometry",
@@ -1495,12 +1495,12 @@
       ],
       "used_by": [
         "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
-        "tests/test_geometry_compiler.py",
-        "tests/test_interface_datums.py",
-        "tests/test_element_producers.py",
-        "tests/test_cad_patch.py",
-        "tests/test_semantic_geometry_tree.py",
-        "tests/test_state_record.py"
+        "tests/integration/test_geometry_compiler.py",
+        "tests/integration/test_interface_datums.py",
+        "tests/integration/test_element_producers.py",
+        "tests/integration/test_cad_patch.py",
+        "tests/integration/test_semantic_geometry_tree.py",
+        "tests/integration/test_state_record.py"
       ],
       "invariants": [
         "pure: it reads inputs and returns a result, and never writes or mutates anything",
@@ -1513,9 +1513,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_geometry_compiler.py",
-        "tests/test_interface_datums.py",
-        "tests/test_semantic_geometry_tree.py"
+        "tests/integration/test_geometry_compiler.py",
+        "tests/integration/test_interface_datums.py",
+        "tests/integration/test_semantic_geometry_tree.py"
       ],
       "notes": "Named canonical in ADR-001's record, section 2.2 'Program and compiler'; runtime/geometry_compiler.py is only its shim."
     },
@@ -1614,7 +1614,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_state_record.py"
+        "tests/integration/test_state_record.py"
       ],
       "notes": "state/geometry_program.py re-implements this as digest_value/require_sha256 rather than importing it: a second digest implementation still on the spine."
     },
@@ -1732,9 +1732,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_production_policy.py"
+        "tests/integration/test_production_policy.py"
       ],
-      "notes": "ModelPhase.INTENT_COMPILATION is the Studio's phase; nothing retained carries it yet. The archived P053 control plane held the only other instantiation of these contracts. The spine suite drives the Protocol and the receipt round trip through tests/support.py ScriptedProvider."
+      "notes": "ModelPhase.INTENT_COMPILATION is the Studio's phase; nothing retained carries it yet. The archived P053 control plane held the only other instantiation of these contracts. The spine suite drives the Protocol and the receipt round trip through tests/integration/support.py ScriptedProvider."
     },
     {
       "module_id": "project.archive",
@@ -1783,7 +1783,7 @@
       "status": "canonical",
       "tests": [
         "packages/archflow/tests/test_project_archive.py",
-        "tests/test_create_project.py",
+        "tools/tests/test_create_project.py",
         "packages/archflow/tests/test_project_transfer.py"
       ],
       "notes": "CREATE: the archive wrapper had no owner besides a CLI; two consumers (CLI and Hub API) now share it.",
@@ -2011,7 +2011,7 @@
       ],
       "used_by": [
         "tools/issue_project.py",
-        "tests/test_issue_project.py"
+        "tools/tests/test_issue_project.py"
       ],
       "invariants": [
         "nothing is written until every refusal has passed, so a refused issue leaves the project exactly as it was",
@@ -2022,8 +2022,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_issue_project.py",
-        "tests/test_project_runner.py"
+        "tools/tests/test_issue_project.py",
+        "tests/integration/test_project_runner.py"
       ],
       "notes": "Wave B / W8. Before this module nothing on the spine called prepare_transition or compare_and_swap; every project stood at issue 0."
     },
@@ -2098,7 +2098,7 @@
       "status": "canonical",
       "tests": [
         "packages/archflow/tests/test_project_inputs.py",
-        "tests/test_project_runner.py",
+        "tests/integration/test_project_runner.py",
         "packages/archflow/tests/test_project_fingerprint.py",
         "packages/archflow/tests/test_project_watch.py"
       ],
@@ -2715,7 +2715,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_version_refs.py"
+        "tests/integration/test_version_refs.py"
       ],
       "notes": "CREATE: registration by import side effect made the declared table depend on a caller's incidental imports, which refused every project that had promoted a candidate."
     },
@@ -2791,8 +2791,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_version_refs.py",
-        "tests/test_project_format_migration.py"
+        "tests/integration/test_version_refs.py",
+        "tests/integration/test_project_format_migration.py"
       ],
       "notes": "CREATE: the declaration has to live somewhere neither the migrator nor any single owner controls, or a format migration ends up guessing a record's meaning from its JSON shape. Holds no payload knowledge of its own."
     },
@@ -2933,11 +2933,11 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_freeze_project_stage_workflow.py",
+        "tools/tests/test_freeze_project_stage_workflow.py",
         "packages/archflow/tests/test_project_repository.py",
         "packages/archflow/tests/test_record_kinds.py",
         "packages/archflow/tests/test_project_transfer.py",
-        "tests/test_project_format_migration.py",
+        "tests/integration/test_project_format_migration.py",
         "packages/archflow/tests/test_project_working_draft.py",
         "packages/archflow/tests/test_project_fingerprint.py",
         "packages/archflow/tests/test_project_memo.py",
@@ -3121,8 +3121,8 @@
         "packages/archflow/src/archflow/state/state_record.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
         "services/project-runtime/src/project_runtime/adapters/harness.py",
-        "tests/test_project_runner.py",
-        "tests/test_state_record.py",
+        "tests/integration/test_project_runner.py",
+        "tests/integration/test_state_record.py",
         "tools/open_stage_run.py"
       ],
       "invariants": [
@@ -3145,10 +3145,10 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_runner.py",
-        "tests/test_state_record.py",
-        "tests/test_cad_backend_contract.py",
-        "tests/test_blender_projection_runner.py"
+        "tests/integration/test_project_runner.py",
+        "tests/integration/test_state_record.py",
+        "tests/integration/test_cad_backend_contract.py",
+        "tests/integration/test_blender_projection_runner.py"
       ],
       "notes": "packages/archflow/src/archflow/state/state_record.py imports SchematicPack/bootstrap_developed_state from here - the state to runtime inversion ADR-001's record (section 2.2) folds away."
     },
@@ -3337,7 +3337,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_facets.py"
+        "tests/integration/test_facets.py"
       ],
       "notes": "Facets live on Component@1.fields.facets (spec docs/design/construction-api.md §3.4); GH-419 Task C2."
     },
@@ -3593,7 +3593,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_derivations_and_references.py"
+        "packages/monkeyarch/tests/test_derivations_and_references.py"
       ],
       "notes": "One spine consumer (reference_resolver) and one test; EvaluatedQuantity is never imported by name."
     },
@@ -3729,8 +3729,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_geometry_compiler.py",
-        "tests/test_discipline_seats.py"
+        "tests/integration/test_geometry_compiler.py",
+        "tests/integration/test_discipline_seats.py"
       ],
       "notes": "Canonical, but 14 of its 19 public types are never imported outside the module, and it depends on two fold targets (design_maturity, design_portfolio); StateRecord reaches it only through developed_design_view."
     },
@@ -3844,12 +3844,12 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_cad_execution.py",
-        "tests/test_geometry_compiler.py",
-        "tests/test_geometry_program.py",
-        "tests/test_interface_datums.py",
-        "tests/test_occt_execution.py",
-        "tests/test_wall_realization.py"
+        "tests/integration/test_cad_execution.py",
+        "tests/integration/test_geometry_compiler.py",
+        "tests/integration/test_geometry_program.py",
+        "tests/integration/test_interface_datums.py",
+        "tests/integration/test_occt_execution.py",
+        "tests/integration/test_wall_realization.py"
       ],
       "notes": "Defines its own digest_value/require_sha256 instead of using contracts.canonical, a second digest implementation on the spine; at 1564 lines it is the largest contract module."
     },
@@ -4188,12 +4188,12 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_state_record.py",
-        "tests/test_project_runner.py",
+        "tests/integration/test_state_record.py",
+        "tests/integration/test_project_runner.py",
         "services/project-runtime/tests/test_projection.py",
-        "tests/test_massing_metrics.py",
-        "tests/test_lintel_bearing.py",
-        "tests/test_window_relational_update.py",
+        "tests/integration/test_massing_metrics.py",
+        "packages/monkeyarch/tests/test_lintel_bearing.py",
+        "tests/integration/test_window_relational_update.py",
         "services/project-runtime/tests/test_derivation_memo.py"
       ],
       "notes": "The projection is built here; state no longer imports runtime."
@@ -4273,7 +4273,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_semantic_geometry_tree.py",
+        "tests/integration/test_semantic_geometry_tree.py",
         "packages/archflow/tests/test_design_portfolio.py"
       ],
       "notes": "Carries module-local _branch_to_dict/_branch_from_dict copies of contracts.branch, and depends on two fold targets (design_maturity for DesignPhase, site_context for SiteBounds); SpatialLevel is a third level vocabulary alongside ProjectLevel and MassingLevel@1. The site-context record (ground model, approach, unknowns) is archived with the sandbox lane."
@@ -4363,8 +4363,8 @@
       "status": "canonical",
       "tests": [
         "packages/archflow/tests/test_stage_workflow.py",
-        "tests/test_freeze_project_stage_workflow.py",
-        "tests/test_project_runner.py"
+        "tools/tests/test_freeze_project_stage_workflow.py",
+        "tests/integration/test_project_runner.py"
       ],
       "notes": "Depends on the fold target state/design_maturity only for DesignPhase/DESIGN_PHASES; StageRunPredecessor is nested inside the envelope and never imported by name. Phase gates, entry proofs and backward revision (design_maturity) are archived with the controller lane. The closure compile pipeline (requirement profiles, check receipt envelopes, claim applicability) is archived; the runner writes the exit record from its own checks. CHECK_KINDS is imported inside require_measurable because state.record imports DesignPhase from here; the measurable set is read when a workflow is checked, not when the module loads."
     },
@@ -5598,13 +5598,13 @@
         "services/project-runtime/tests/test_elevation.py",
         "apps/monkeyhub/web/test/elevation.browser.mjs",
         "services/project-runtime/tests/test_decisions.py",
-        "tests/test_nonadjacent_stage_context.py",
+        "tests/integration/test_nonadjacent_stage_context.py",
         "services/project-runtime/tests/test_visual_observation.py",
         "services/project-runtime/tests/test_visual_reviews.py",
         "services/project-runtime/tests/test_candidate_admission.py",
-        "tests/test_benchmark_visual_observation.py",
+        "tools/tests/test_benchmark_visual_observation.py",
         "services/project-runtime/tests/test_recipe_export.py",
-        "tests/test_export_drawing_recipe.py"
+        "tools/tests/test_export_drawing_recipe.py"
       ],
       "notes": "ADR-001's record, section 2.1, makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -6226,9 +6226,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_archcheck_scopes.py",
-        "tests/test_archcheck_github_claims.py",
-        "tests/test_archcheck_paths.py"
+        "tools/tests/test_archcheck_scopes.py",
+        "tools/tests/test_archcheck_github_claims.py",
+        "tools/tests/test_archcheck_paths.py"
       ],
       "notes": "Architecture checks parse source without importing application code; scope behavior is verified with disposable Git repositories."
     },
@@ -6287,8 +6287,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_devctl_module.py",
-        "tests/test_devctl_work.py"
+        "tools/tests/test_devctl_module.py",
+        "tools/tests/test_devctl_work.py"
       ],
       "notes": "Pure governance tooling; it puts its own tree on sys.path so a worktree renders itself and not whichever archflow is importable."
     },
@@ -6331,7 +6331,7 @@
         "state.stage_workflow"
       ],
       "used_by": [
-        "tests/test_freeze_project_stage_workflow.py"
+        "tools/tests/test_freeze_project_stage_workflow.py"
       ],
       "invariants": [
         "the stored payload is exactly what was validated",
@@ -6341,7 +6341,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_freeze_project_stage_workflow.py"
+        "tools/tests/test_freeze_project_stage_workflow.py"
       ],
       "notes": "Deliberately small: the only way a workflow enters a project without acquiring a stage."
     },
@@ -6378,7 +6378,7 @@
         "project.repository"
       ],
       "used_by": [
-        "tests/test_issue_project.py"
+        "tools/tests/test_issue_project.py"
       ],
       "invariants": [
         "the command checks nothing itself; every refusal is project.issue's, printed with its type",
@@ -6386,7 +6386,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_issue_project.py"
+        "tools/tests/test_issue_project.py"
       ],
       "notes": "Wave B / W8. The word HEAD does not appear in this command's help or output."
     },
@@ -6437,7 +6437,7 @@
         "state.stage_workflow"
       ],
       "used_by": [
-        "tests/test_project_runner.py"
+        "tests/integration/test_project_runner.py"
       ],
       "invariants": [
         "stage 0 opens with no predecessor; stage N>0 opens only against the retained SATISFIED exit binding of the run that closed stage N-1, and refuses before the run is created",
@@ -6447,7 +6447,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_runner.py"
+        "tests/integration/test_project_runner.py"
       ],
       "notes": "The missing half of ADR-007 rule 2: the guard could always refuse a stage, and until now nothing on the spine could open one past stage 0."
     },
@@ -6506,7 +6506,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_runner.py"
+        "tests/integration/test_project_runner.py"
       ],
       "notes": "Spine command-line entry point; focused tests call main(argv) to verify the default OCCT and explicit Rhino backend selections."
     },
@@ -6559,7 +6559,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_verify_state_record.py"
+        "tests/integration/test_verify_state_record.py"
       ],
       "notes": "The P102 migration receipt tool; the paper's replay comparison runs through it. The reference phase is preserved through identity comparison, equivalence state and harness; legacy receipts without a phase retain the design_development default."
     },
@@ -6707,7 +6707,7 @@
         "packages/monkeyarch/src/monkeyarch/capabilities/element_reindex.py"
       ],
       "tests": [
-        "tests/test_element_reindex.py"
+        "packages/monkeyarch/tests/test_element_reindex.py"
       ],
       "reason": "The studio's catalog (studio.binding) reads elements the record declares; a scripted project has none. Re-indexing is the one generic way to give such a project its tree: derived from the model the spine already inspected, checked by the producers the spine already runs. It extends the spine's Element@1 vocabulary; it adds no parallel geometry protocol.",
       "status": "canonical"
@@ -6742,7 +6742,7 @@
         "tools/reindex_project.py"
       ],
       "tests": [
-        "tests/test_element_reindex.py"
+        "packages/monkeyarch/tests/test_element_reindex.py"
       ],
       "reason": "The tool is the only writer of the re-index records; it writes them as run records of a new run and touches nothing the project already holds.",
       "status": "canonical"
@@ -6806,7 +6806,7 @@
         "packages/monkeyarch/src/monkeyarch/capabilities/massing_metrics.py"
       ],
       "tests": [
-        "tests/test_massing_metrics.py"
+        "tests/integration/test_massing_metrics.py"
       ],
       "reason": "Snaptrude shows GFA, floor count and efficiency beside every massing option; here they are read from the record's own massing entities, once, by one module, so the studio's options and any later provider measure the same thing."
     },
@@ -7118,9 +7118,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_create_project.py",
+        "tools/tests/test_create_project.py",
         "services/project-runtime/tests/test_create_project.py",
-        "tests/test_project_format_migration.py"
+        "tests/integration/test_project_format_migration.py"
       ],
       "notes": "CREATE only for the requested user-facing initialization command: existing tools operate on retained projects/runs and have no creation entry. Persistence is an EXTEND of project.repository, with no parallel writer. The --export-archive/--restore-archive flags stay here and delegate to project.archive, which the Hub API calls directly."
     },
@@ -7175,7 +7175,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_rehearse_project_archive.py"
+        "tools/tests/test_rehearse_project_archive.py"
       ],
       "notes": "CREATE for GH-56's remaining acceptance: the repository had the archive and its routes but no way to run the fresh-environment rehearsal the issue closes on. Export and restore are not reimplemented here; the driver runs the landed CLI so the rehearsal exercises what a user runs."
     },
@@ -7829,7 +7829,7 @@
         "New worktrees contain the selected committed base, not uncommitted files or design project data"
       ],
       "tests": [
-        "tests/test_workspace.py"
+        "tools/tests/test_workspace.py"
       ],
       "notes": "CREATE: no existing owner creates source worktrees. tools.devctl owns read-only development lookup; tools.package_monkeyapps owns distribution building. Their two real path consumers share this configuration implementation."
     },
@@ -7878,7 +7878,7 @@
         "Only this checkout's policy is read; nothing is installed and no environment variable is required"
       ],
       "tests": [
-        "tests/test_source_roots.py"
+        "tools/tests/test_source_roots.py"
       ],
       "notes": "CREATE (#488): tools.workspace creates worktrees and tools.archcheck checks the policy; neither belongs in the startup of every tool and test, and this module also ships with the two bundled tools, where it must do nothing."
     },
@@ -7953,9 +7953,9 @@
         "apps/monkeyhub/installer/patch.py"
       ],
       "tests": [
-        "tests/test_package_monkeyapps.py",
-        "tests/test_installer_signed_release.py",
-        "tests/test_monkeyhub_patch.py"
+        "tests/packaging/test_package_monkeyapps.py",
+        "tests/packaging/test_installer_signed_release.py",
+        "tests/packaging/test_monkeyhub_patch.py"
       ],
       "notes": "Workspace tests cover restart reuse, task/cache placement, explicit overrides and preservation of project files. Signed-installation tests use an ephemeral in-process key and a fixture candidate; they exercise the verifier, not a real publisher identity. Distribution acceptance still requires an explicit candidate build plus isolated installer and installed-application smoke checks."
     },
@@ -8310,8 +8310,8 @@
         "state.record"
       ],
       "used_by": [
-        "tests/test_construction_script.py",
-        "tests/test_construction_lowering.py"
+        "packages/monkeyarch/tests/test_construction_script.py",
+        "tests/integration/test_construction_lowering.py"
       ],
       "invariants": [
         "A script is parsed with ast and walked by an allow-list; Python never compiles or executes it.",
@@ -8334,9 +8334,9 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_construction_script.py",
-        "tests/test_construction_lowering.py",
-        "tests/test_wall_realization.py"
+        "packages/monkeyarch/tests/test_construction_script.py",
+        "tests/integration/test_construction_lowering.py",
+        "tests/integration/test_wall_realization.py"
       ],
       "notes": "Spec docs/design/construction-api.md section 3.1. The interpreter's verbs and the vocabulary are one table (script.IMPLEMENTED_VERBS is checked against vocabulary.VERBS at import).",
       "files": [
@@ -8386,7 +8386,7 @@
         "state.record"
       ],
       "used_by": [
-        "tests/test_domain_readiness.py",
+        "packages/monkeyarch/tests/test_domain_readiness.py",
         "services/project-runtime/src/project_runtime/application/domains.py"
       ],
       "invariants": [
@@ -8398,7 +8398,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_domain_readiness.py"
+        "packages/monkeyarch/tests/test_domain_readiness.py"
       ],
       "notes": "spec docs/design/construction-api.md §3.6 (GH-419 Task C5). No structural or thermal engine exists behind this gate yet; it is the readiness question every future domain tool will call first."
     },

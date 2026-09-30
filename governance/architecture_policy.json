@@ -62,9 +62,11 @@
     "services/project-runtime/tests/",
     "packages/monkeydiagram/tests/",
     "packages/archflow/tests/",
+    "packages/monkeyarch/tests/",
     "packages/monkeymonitor/tests/",
     "packages/monkeycontrol/tests/",
     "packages/monkeyfab/tests/",
+    "tools/tests/",
     "docs/protocols/project-runtime-api.md",
     "governance/architecture_policy.json",
     "docs/architecture/system-map.md",
@@ -753,6 +755,15 @@
       "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
     },
     {
+      "source": "packages/monkeyarch/tests",
+      "targets": [
+        "tests",
+        "labs",
+        "archive"
+      ],
+      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+    },
+    {
       "source": "packages/monkeymonitor/tests",
       "targets": [
         "tests",
@@ -778,6 +789,29 @@
         "archive"
       ],
       "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+    },
+    {
+      "source": "services/project-runtime/tests",
+      "targets": [
+        "labs"
+      ],
+      "reason": "The Runtime's tests never import a lab; a lab's own checks live in that lab. The service's own rule already keeps the repository suite, tools and retired code out of them."
+    },
+    {
+      "source": "apps/monkeyhub/api/tests",
+      "targets": [
+        "tests",
+        "archive"
+      ],
+      "reason": "The Hub's tests import the Hub and what it may import, never the repository suite or retired lane code, so they run from their own directory in a public checkout."
+    },
+    {
+      "source": "apps/monkeyhub/desktop/tests",
+      "targets": [
+        "tests",
+        "archive"
+      ],
+      "reason": "The desktop shell's tests import what they test, never the repository suite or retired lane code, so they run from their own directory in a public checkout."
     },
     {
       "source": "packages/archflow/src/archflow/contracts",

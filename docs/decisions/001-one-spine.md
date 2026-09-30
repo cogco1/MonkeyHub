@@ -151,7 +151,8 @@ a module outside the owner defines a function whose normalised body equals an ow
 or when anything under `archflow/`, `tools/`, `apps/` or `tests/` imports `archive`. The spine
 suite is held to the same boundary as the spine: a test that needs an archived lane's code is
 that lane's test and lives in `archive/tests/`, which may import the spine and never the other
-way round (`tests/test_spine_suite_is_the_spines.py` proves it from inside the suite). The
+way round ([`tests/test_spine_suite_is_the_spines.py`](https://github.com/cogco1/MonkeyHub/blob/c6fc5d2cd024ca58c20110b16c8cd76762c16bf4/tests/test_spine_suite_is_the_spines.py)
+proved it from inside the suite until #493 made the architecture policy apply the rule to every test root). The
 registry is the map; [`docs/ARCHITECTURE.md`](https://github.com/cogco1/MonkeyHub/blob/c6c97d4a2ad765e5b37d87dbc29d7cb756f97a45/docs/ARCHITECTURE.md) is rewritten to describe the one spine and nothing
 else.
 

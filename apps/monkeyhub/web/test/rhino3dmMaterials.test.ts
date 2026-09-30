@@ -23,7 +23,7 @@ import {
  * Rhino3dmLoader exactly as the viewer opens it - no browser, no manually
  * typed opacity, no copied binary.
  *
- * There is no fixture file. ``tests/test_occt_execution.py`` executes the
+ * There is no fixture file. ``tests/integration/test_occt_execution.py`` executes the
  * typed south window of the fixture record into a temporary workspace and
  * hands the preview's path here through ``ARCHFLOW_PREVIEW_3DM``; on its
  * own, this file skips and says so. That preview carries two object
@@ -47,7 +47,7 @@ const rhinoDir = join(web, "node_modules", "rhino3dm");
 const previewPath = process.env.ARCHFLOW_PREVIEW_3DM;
 const skip = previewPath
   ? false
-  : "no current preview: tests/test_occt_execution.py exports one and hands its path in ARCHFLOW_PREVIEW_3DM";
+  : "no current preview: tests/integration/test_occt_execution.py exports one and hands its path in ARCHFLOW_PREVIEW_3DM";
 
 interface WorkerMessage {
   type: string;

@@ -239,14 +239,14 @@ npm.cmd run build
 
 ```powershell
 $env:ARCHFLOW_BLENDER_EXECUTABLE = (Get-Command blender -CommandType Application).Source
-python -m unittest tests.test_blender_cad tests.test_cad_backend_contract -v
+python -m unittest tests.integration.test_blender_cad tests.integration.test_cad_backend_contract -v
 ```
 
 测试使用临时 workspace/project，通过两个独立后台进程先保存、再打开检查。未设置该变量时，真实宿主用例会 skip，不能将其写成通过。已有精确输出可由 runner 复用；有 source 时保留来源文件并按当前程序完整重建，不承诺增量 patch 或 `.blend` 字节重现。
 
 PR #18 已在 Blender 4.3.2 完成 15 项测试，包括真实保存/冷读、重启复用和候选修改；其公共 CAD、runner、record kinds 与 CLI 的另外 112 项检查通过。Rhino 独立执行按[真实宿主验收命令](../../packages/archflow/src/archflow/adapters/README.md#rhino-host-acceptance)显式启用，默认 skip 不算验收。#13 已于 2026-09-15 关闭：第二个账号从 fresh clone 在真实 Blender 4.3.0 上复跑通过（由 agent 执行），关闭时未要求真人交接。
 
-接手时先读 #13 与已合入的 #15、#17、#18，再运行 `python tools/devctl.py work` 确认有无登记中的 Blender lane；原 Blender lane 已关闭。用 `python -m unittest tests.test_devctl_work tests.test_archcheck_scopes -v` 可复跑三条独立模拟 lane、故意生产路径重叠与明确先后交接。测试演练不代替真人接手：新成员应在自己的 worktree 复现选定任务，将版本、结果和遇到的问题交给约定 reviewer。开发继续沿公共 CAD 契约；缺少共享契约时先提交上游 PR，再更新依赖分支，Blender lane 不修改 Hub/App Server 实现。
+接手时先读 #13 与已合入的 #15、#17、#18，再运行 `python tools/devctl.py work` 确认有无登记中的 Blender lane；原 Blender lane 已关闭。用 `python -m pytest tools/tests/test_devctl_work.py tools/tests/test_archcheck_scopes.py -v` 可复跑三条独立模拟 lane、故意生产路径重叠与明确先后交接。测试演练不代替真人接手：新成员应在自己的 worktree 复现选定任务，将版本、结果和遇到的问题交给约定 reviewer。开发继续沿公共 CAD 契约；缺少共享契约时先提交上游 PR，再更新依赖分支，Blender lane 不修改 Hub/App Server 实现。
 
 ## 6. 把这段发给她的 Agent
 

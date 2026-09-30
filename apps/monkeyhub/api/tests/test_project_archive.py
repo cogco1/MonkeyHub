@@ -35,7 +35,7 @@ from monkeyhub_api.settings.store import save_application_settings
 def fingerprint(root: Path) -> list[tuple[str, str]]:
     """Sorted relative paths and content digests, as the spine reads a tree.
 
-    Advisory ``.lock`` files are left out exactly as ``tests/test_create_project.py``
+    Advisory ``.lock`` files are left out exactly as ``tools/tests/test_create_project.py``
     leaves them out: reading a project takes its locks, and an empty lock file
     beside HEAD is not project content that an export may change.
     """
