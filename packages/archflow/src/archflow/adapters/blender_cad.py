@@ -15,13 +15,13 @@ from pathlib import Path
 import archflow.adapters.cad_execution as cad
 from archflow.adapters.local_cad_discovery import resolve_blender_executable
 from archflow.adapters.blender_worker import READBACK_PREFIX, UNIT_SETTINGS
-from archflow.adapters.cad_program import (
-    CadTranslationError, _params, _rgb, expected_object_bounds,
-    expected_object_semantics, lift_to_base_level,
-)
+from archflow.adapters.cad_program import CadTranslationError, _rgb, expected_object_semantics
 from archflow.contracts.canonical import canonical_json
 from archflow.project.record_kinds import SEAT_BLENDER_EXECUTION
-from archflow.state.geometry_program import GeometryProgramError, _require_planar_surface_profile
+from archflow.state.geometry_program import (
+    GeometryProgramError, _require_planar_surface_profile, expected_object_bounds, lift_to_base_level,
+    operation_parameters,
+)
 
 
 def _extrusion(profile, vector, op_id):
@@ -61,7 +61,7 @@ def _scene_plan(request):
         kind, op_id = operation.kind.value, operation.op_id
         if kind not in ("solid", "extrusion") or operation.input_object_ids or len(operation.output_object_ids) != 1:
             raise CadTranslationError(f"Blender does not support {kind} operation {op_id}; first slice supports solid and straight extrusion")
-        params = _params(operation)
+        params = operation_parameters(operation)
         if kind == "solid":
             origin, size = params["origin"], params["size"]
             if any(value <= 0 for value in size):

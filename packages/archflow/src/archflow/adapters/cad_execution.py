@@ -31,11 +31,8 @@ from archflow.adapters.local_cad_discovery import SoftwareDiscoveryRegistry
 from archflow.adapters.cad_program import (
     LONG_PATH_HELPER_SOURCE,
     CadTranslationError,
-    _params,
     _resolved_layer_colors,
-    expected_object_bounds,
     expected_object_semantics,
-    lift_to_base_level,
     translate_step_import_to_rhino_python,
     translate_to_rhino_python,
 )
@@ -73,7 +70,14 @@ from archflow.adapters.three_dm_inspector import (
     inspect_three_dm,
 )
 from archflow.project.refs import BranchRef, ProjectRecordRef, require_identifier
-from archflow.state.geometry_program import CompiledGeometryProgram, delivered_object_ids
+from archflow.state.geometry_program import (
+    CompiledGeometryProgram,
+    GeometryBoundsError,
+    delivered_object_ids,
+    expected_object_bounds,
+    lift_to_base_level,
+    operation_parameters,
+)
 from archflow.state.geometry_program import AssemblyRole, require_sha256
 from archflow.contracts.canonical import canonical_digest
 
@@ -3433,7 +3437,7 @@ def execute_occt_export(
             )
         )
         raw_bounds = expected_object_bounds(program)
-    except CadTranslationError as exc:
+    except (CadTranslationError, GeometryBoundsError) as exc:
         raise CadExecutionError(f"program denominator is not analytically determined: {exc}") from exc
     physical = tuple(sorted(semantics["objects"]))
     if set(raw_bounds) != set(physical):
@@ -3443,7 +3447,7 @@ def execute_occt_export(
     deliveries = _declared_deliveries(program, physical)
     curves = {
         operation.output_object_ids[0]: [[x, z, y] for x, y, z in lift_to_base_level(
-            _params(operation)["points"], _params(operation), operation.op_id)]
+            operation_parameters(operation)["points"], operation_parameters(operation), operation.op_id)]
         for operation in program.proposal.operations
         if operation.kind.value == "curve" and operation.output_object_ids[0] in physical
     }

@@ -60,7 +60,6 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 from uuid import uuid4
 
-from archflow.adapters.cad_program import expected_object_bounds
 from archflow.adapters.cad_backend import (
     CadExecutionError, CadExecutionRequest, CadExecutionSource, CadProgramBinding,
     cad_backend_ids, get_cad_backend,
@@ -139,6 +138,7 @@ from archflow.state.geometry_program import (
     ProjectGrids,
     ProjectLevels,
     SemanticBinding,
+    expected_object_bounds,
     load_compiled_geometry_program,
 )
 from archflow.state.spatial import SiteBounds

@@ -791,8 +791,7 @@ class ParameterBindingRunTests(unittest.TestCase):
         ))
 
     def _bounds(self, repository, receipt, seat_id: str):
-        from archflow.adapters.cad_program import expected_object_bounds
-        from archflow.state.geometry_program import load_compiled_geometry_program
+        from archflow.state.geometry_program import expected_object_bounds, load_compiled_geometry_program
 
         seat = {s["seat_id"]: s for s in receipt["seat_results"]}[seat_id]
         return expected_object_bounds(load_compiled_geometry_program(repository.load_json(record_ref_from_uri(seat["program_ref"], "demo"))))

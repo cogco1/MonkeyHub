@@ -2497,3 +2497,339 @@ def _decode_sorted_list(
     return tuple(
         sorted(_decode_list(value, decoder, field, errors=errors), key=key)
     )
+
+
+# ---------------------------------------------------------------- analytic bounds
+#
+# What a realization of a compiled program must measure, predicted from the
+# program alone, and the placement readers every executor shares with that
+# prediction: an operation's parameters, a profile lifted onto its datum-bound
+# base level and a revolve's end sections. Construction checks a cut against
+# the same prediction the CAD receipts are compared with.
+
+
+class GeometryBoundsError(GeometryProgramError):
+    """An operation whose placement or bounds the analytic replay cannot determine."""
+
+
+class DifferenceBoundsError(GeometryBoundsError):
+    """A ``boolean_difference`` whose bounds ``expected_object_bounds`` cannot determine analytically.
+
+    ``disjoint`` is true when a void's bounds miss the base's, so the difference
+    would remove nothing; otherwise the voids can alter an extremum of the base.
+    """
+
+    def __init__(self, message: str, *, disjoint: bool) -> None:
+        super().__init__(message)
+        self.disjoint = disjoint
+
+
+#: The operation kinds ``expected_object_bounds`` replays. A CAD translation
+#: emits these and no other: an object of another kind would have no bounds
+#: to be checked against.
+ANALYTIC_OPERATION_KINDS: frozenset[str] = frozenset(
+    {
+        "planar_surface",
+        "solid",
+        "revolve",
+        "extrusion",
+        "loft",
+        "boolean_union",
+        "boolean_difference",
+        "boolean_intersection",
+        "array",
+        "radial_array",
+        "transform",
+        "curve",
+    }
+)
+
+
+def lift_to_base_level(points, params: Mapping[str, object], op_id: str):
+    """Apply an optional datum-bound ``base_level`` to profile points.
+
+    ``base_level`` (P090, M096) is the elevation the profile's lowest
+    point must sit on. Elevation is the program's Y axis. The profile
+    keeps its shape; only its elevation derives from the datum, so a
+    dependent object never restates the level it sits on.
+    """
+
+    if "base_level" not in params:
+        if "base_offset" in params:
+            raise GeometryBoundsError(
+                f"{op_id}: base_offset without a datum-bound base_level restates an elevation"
+            )
+        return [tuple(float(v) for v in p) for p in points]
+    raw = params["base_level"]
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw):
+        raise GeometryBoundsError(f"{op_id}: base_level must be a finite number")
+    # P092: an element's own vertical dimension above its storey (a sill
+    # height, a frame seat) rides on the datum instead of restating it.
+    offset = params.get("base_offset", 0.0)
+    if isinstance(offset, bool) or not isinstance(offset, (int, float)) or not math.isfinite(offset):
+        raise GeometryBoundsError(f"{op_id}: base_offset must be a finite number")
+    lifted = [tuple(float(v) for v in p) for p in points]
+    if not lifted:
+        return lifted
+    shift = float(raw) + float(offset) - min(p[1] for p in lifted)
+    return [(p[0], p[1] + shift, p[2]) for p in lifted]
+
+
+def revolve_parameters(params: Mapping[str, object], op_id: str):
+    """The declared circular end sections, placed on their optional storey datum."""
+
+    a0, a1 = lift_to_base_level((params["axis_start"], params["axis_end"]), params, op_id)
+    length = math.dist(a0, a1)
+    if not math.isfinite(length) or length <= 0.0:
+        raise GeometryBoundsError(f"revolve {op_id} requires a finite non-zero axis")
+    # Retained circular-section realization has a 0.01 minimum end radius.
+    # All executors and the predictor use it identically.
+    radii = tuple(max(float(params[name]), 0.01) for name in ("start_radius", "end_radius"))
+    if any(not math.isfinite(radius) for radius in radii):
+        raise GeometryBoundsError(f"revolve {op_id} requires finite radii")
+    return a0, a1, *radii
+
+
+def _is_axis_aligned_box(profile, vector) -> bool:
+    """True for a rectangular, axis-aligned, level profile extruded along Y."""
+
+    if len(profile) != 4 or len(vector) != 3:
+        return False
+    if float(vector[0]) != 0.0 or float(vector[2]) != 0.0 or float(vector[1]) == 0.0:
+        return False
+    ys = {round(float(p[1]), 12) for p in profile}
+    xs = sorted({round(float(p[0]), 12) for p in profile})
+    zs = sorted({round(float(p[2]), 12) for p in profile})
+    if len(ys) != 1 or len(xs) != 2 or len(zs) != 2:
+        return False
+    corners = {(x, z) for x in xs for z in zs}
+    return {(round(float(p[0]), 12), round(float(p[2]), 12)) for p in profile} == corners
+
+
+def operation_parameters(operation) -> dict[str, object]:
+    """An operation's parameters as the JSON values they state, by name."""
+
+    decoded = {}
+    for parameter in operation.parameters:
+        decoded[parameter.name] = json.loads(parameter.value_json)
+    return decoded
+
+
+def _rotate_about_vertical(point, center, degrees):
+    theta = math.radians(degrees)
+    c, s = math.cos(theta), math.sin(theta)
+    x, z = point[0] - center[0], point[2] - center[2]
+    return (
+        center[0] + x * c + z * s,
+        point[1],
+        center[2] + z * c - x * s,
+    )
+
+
+def expected_object_bounds(program) -> dict[str, dict]:
+    """Analytic per-object bounds the CAD realization must reproduce.
+
+    The replay tracks each object's extreme points through the same
+    operation semantics the translator emits, so an equivalence receipt
+    can compare CAD-measured bounding boxes against program-derived ones
+    without trusting either side's renderer.
+    """
+
+    proposal = program.proposal
+    operations = {op.op_id: op for op in proposal.operations}
+    points: dict[str, list] = {}
+    counts: dict[str, int] = {}
+    boxes: set[str] = set()   # objects known to be axis-aligned boxes
+    actual: set[str] = set()  # objects whose points lie on the object itself (vertices), not on its box
+    for op_id in program.operation_order:
+        operation = operations[op_id]
+        kind = operation.kind.value
+        if kind not in ANALYTIC_OPERATION_KINDS:
+            continue
+        params = operation_parameters(operation)
+        out = operation.output_object_ids[0]
+        ins = list(operation.input_object_ids)
+        if kind == "curve":
+            if not bool(params.get("retain_for_inspection", False)):
+                continue
+            points[out] = lift_to_base_level(params["points"], params, op_id)
+            counts[out] = 1
+            actual.add(out)
+        elif kind == "solid":
+            o, s = params["origin"], params["size"]
+            points[out] = [
+                (o[0] + dx * s[0], o[1] + dy * s[1], o[2] + dz * s[2])
+                for dx in (0, 1)
+                for dy in (0, 1)
+                for dz in (0, 1)
+            ]
+            counts[out] = 1
+            boxes.add(out)
+            actual.add(out)
+        elif kind == "planar_surface":
+            points[out] = lift_to_base_level(params["profile"], params, op_id)
+            counts[out] = 1
+            actual.add(out)
+        elif kind == "extrusion":
+            profile = lift_to_base_level(params["profile"], params, op_id)
+            vector = params["vector"]
+            points[out] = [tuple(p) for p in profile] + [
+                (p[0] + vector[0], p[1] + vector[1], p[2] + vector[2])
+                for p in profile
+            ]
+            counts[out] = 1
+            if _is_axis_aligned_box(profile, vector):
+                boxes.add(out)
+            actual.add(out)
+        elif kind == "revolve":
+            a0, a1, r0, r1 = revolve_parameters(params, op_id)
+            axis = [float(a1[i]) - float(a0[i]) for i in range(3)]
+            axis_length = math.sqrt(sum(value * value for value in axis))
+            if not math.isfinite(axis_length) or axis_length <= 0.0:
+                raise GeometryBoundsError(
+                    f"revolve {op_id} requires a finite non-zero axis"
+                )
+            unit_axis = [value / axis_length for value in axis]
+            pts = []
+            for level, radius in (
+                (a0, r0),
+                (a1, r1),
+            ):
+                projected_radii = [
+                    radius * math.sqrt(max(0.0, 1.0 - component * component))
+                    for component in unit_axis
+                ]
+                pts.extend(
+                    tuple(
+                        float(level[axis_index]) + sign * projected_radii[axis_index]
+                        for axis_index in range(3)
+                    )
+                    for sign in (-1.0, 1.0)
+                )
+            points[out] = pts
+            counts[out] = 1
+        elif kind == "loft":
+            points[out] = [
+                tuple(p)
+                for p in lift_to_base_level(params["profiles"], params, op_id)
+            ]
+            counts[out] = 1
+            actual.add(out)
+        elif kind == "boolean_union":
+            points[out] = [p for i in ins for p in points[i]]
+            counts[out] = 1
+            if all(i in actual for i in ins): actual.add(out)
+        elif kind == "boolean_difference":
+            base = sorted(ins)[int(params.get("base_index", 0))]
+            base_min, base_max = _point_bounds(points[base])
+            cutters = {
+                cutter: _point_bounds(points[cutter])
+                for cutter in ins if cutter != base
+            }
+            for cutter, (cutter_min, cutter_max) in cutters.items():
+                if any(cutter_max[axis] <= base_min[axis] or cutter_min[axis] >= base_max[axis]
+                       for axis in range(3)):
+                    raise DifferenceBoundsError(
+                        f"boolean difference {op_id}: void {cutter} removes nothing from {base}; "
+                        "their bounds do not overlap",
+                        disjoint=True,
+                    )
+            # A base point strictly outside every void's closed bounds survives
+            # the cut. Check voids together: separate cuts may jointly remove a
+            # face that either cut alone would preserve.
+            retained = [
+                point for point in points[base]
+                if all(any(point[axis] < lo[axis] or point[axis] > hi[axis]
+                           for axis in range(3))
+                       for lo, hi in cutters.values())
+            ]
+            # Keep all plan positions as well as the six current extrema:
+            # radial_array later rotates this projection about vertical.
+            # A wall-end door with a header satisfies both conditions.
+            plan_positions = {(point[0], point[2]) for point in retained}
+            keeps_every_extreme = (
+                bool(retained)
+                and _point_bounds(retained) == (base_min, base_max)
+                and all((point[0], point[2]) in plan_positions for point in points[base])
+            )
+            if base in actual and keeps_every_extreme:
+                pass
+            elif base in boxes:
+                raise DifferenceBoundsError(
+                    "boolean difference bounds are not analytically "
+                    f"determined for {op_id}: cutters can alter a base extremum "
+                    "or its vertical-axis rotation",
+                    disjoint=False,
+                )
+            else:
+                # Other shapes can hold an extremum at a single point: accept only
+                # voids strictly inside the base's box.
+                for cutter, (cutter_min, cutter_max) in cutters.items():
+                    if not all(base_min[axis] < cutter_min[axis] and cutter_max[axis] < base_max[axis]
+                               for axis in range(3)):
+                        raise DifferenceBoundsError(
+                            "boolean difference bounds are not analytically "
+                            f"determined for {op_id}: void {cutter} can alter a base extremum of {base}",
+                            disjoint=False,
+                        )
+            points[out] = list(points[base])
+            counts[out] = 1
+            if base in actual and len(retained) == len(points[base]):
+                actual.add(out)
+        elif kind == "boolean_intersection":
+            lo = [max(min(c[axis] for c in points[i]) for i in ins)
+                  for axis in range(3)]
+            hi = [min(max(c[axis] for c in points[i]) for i in ins)
+                  for axis in range(3)]
+            points[out] = [
+                (lo[0], lo[1], lo[2]),
+                (hi[0], hi[1], hi[2]),
+            ]
+            counts[out] = 1
+        elif kind == "array":
+            count, step = int(params["count"]), params["step"]
+            points[out] = [
+                (p[0] + step[0] * i, p[1] + step[1] * i, p[2] + step[2] * i)
+                for i in range(count)
+                for p in points[ins[0]]
+            ]
+            counts[out] = count * counts[ins[0]]
+            if ins[0] in actual: actual.add(out)
+        elif kind == "radial_array":
+            count = int(params["count"])
+            center = params["center"]
+            angle = float(params["angle_step_degrees"])
+            start = float(params.get("start_angle_degrees", 0.0))
+            points[out] = [
+                _rotate_about_vertical(p, center, start + i * angle)
+                for i in range(count)
+                for p in points[ins[0]]
+            ]
+            counts[out] = count * counts[ins[0]]
+            if ins[0] in actual: actual.add(out)
+        elif kind == "transform":
+            points[out] = list(points[ins[0]])
+            counts[out] = counts[ins[0]]
+            if ins[0] in actual: actual.add(out)
+    delivered = set(delivered_object_ids(proposal))
+    bounds: dict[str, dict] = {}
+    for object_id, pts in points.items():
+        if object_id not in delivered:
+            continue
+        bounds[object_id] = {
+            "bbox_min": [min(p[axis] for p in pts) for axis in range(3)],
+            "bbox_max": [max(p[axis] for p in pts) for axis in range(3)],
+            "brep_count": counts[object_id],
+        }
+    return bounds
+
+
+def _point_bounds(
+    values: list[tuple[float, float, float]],
+) -> tuple[list[float], list[float]]:
+    if not values:
+        raise GeometryBoundsError("analytic bounds require at least one point")
+    return (
+        [min(point[axis] for point in values) for axis in range(3)],
+        [max(point[axis] for point in values) for axis in range(3)],
+    )

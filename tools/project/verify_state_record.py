@@ -43,8 +43,7 @@ from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 
-from archflow.adapters.cad_program import expected_object_bounds  # noqa: E402
-from archflow.state.geometry_program import load_compiled_geometry_program  # noqa: E402
+from archflow.state.geometry_program import expected_object_bounds, load_compiled_geometry_program  # noqa: E402
 from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity  # noqa: E402
 from archflow.contracts.authority import no_authority  # noqa: E402
 from archflow.project.inputs import load_authored_record, load_seat_pack_file  # noqa: E402

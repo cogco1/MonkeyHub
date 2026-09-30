@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from archflow.adapters.cad_program import expected_object_bounds
+from archflow.state.geometry_program import expected_object_bounds
 from archflow.adapters.cad_patch import select_patch_operations
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository

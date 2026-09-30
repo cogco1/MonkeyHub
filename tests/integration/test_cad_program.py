@@ -9,10 +9,13 @@ from unittest.mock import patch
 
 from archflow.adapters.cad_program import (
     CadTranslationError,
-    DifferenceBoundsError,
-    expected_object_bounds,
     expected_object_semantics,
     translate_to_rhino_python,
+)
+from archflow.state.geometry_program import (
+    DifferenceBoundsError,
+    GeometryBoundsError,
+    expected_object_bounds,
 )
 
 
@@ -441,7 +444,7 @@ class ExpectedBoundsTest(unittest.TestCase):
             with self.subTest(change=change):
                 build = program(op("bad", "revolve", ["bad-object"], **(params | change)))
                 for consume in (expected_object_bounds, translate_to_rhino_python):
-                    with self.assertRaises(CadTranslationError):
+                    with self.assertRaises(GeometryBoundsError):
                         consume(build)
 
     def test_box_keeps_its_bounds_under_a_through_cut(self):
@@ -500,7 +503,7 @@ class ExpectedBoundsTest(unittest.TestCase):
             ),
         )
         with self.assertRaisesRegex(
-            CadTranslationError,
+            GeometryBoundsError,
             "can alter a base extremum",
         ) as caught:
             expected_object_bounds(build)
@@ -548,7 +551,7 @@ class ExpectedBoundsTest(unittest.TestCase):
         base = op("base", "solid", ["base-object"], origin=[0.0, 0.0, 0.0], size=[10.0, 10.0, 10.0])
         away = op("away", "solid", ["away-object"], origin=[20.0, 0.0, 0.0], size=[2.0, 2.0, 2.0])
         cut = op("cut", "boolean_difference", ["cut-object"], ["away-object", "base-object"], base_index=1)
-        with self.assertRaisesRegex(CadTranslationError, "void away-object removes nothing from base-object") as caught:
+        with self.assertRaisesRegex(GeometryBoundsError, "void away-object removes nothing from base-object") as caught:
             expected_object_bounds(program(base, away, cut))
         # Typed, so a caller can say why in its own words without reading the sentence.
         self.assertIsInstance(caught.exception, DifferenceBoundsError)
@@ -603,7 +606,7 @@ class ExpectedBoundsTest(unittest.TestCase):
                     self.assertEqual([0.0, 0.0, 0.0], result["bbox_min"])
                     self.assertEqual([10.0, 10.0, 10.0], result["bbox_max"])
                 else:
-                    with self.assertRaisesRegex(CadTranslationError, "can alter a base extremum"):
+                    with self.assertRaisesRegex(GeometryBoundsError, "can alter a base extremum"):
                         expected_object_bounds(build)
 
     def test_difference_rejects_whole_face_and_plan_corner_removal(self):
@@ -622,7 +625,7 @@ class ExpectedBoundsTest(unittest.TestCase):
                        count=1, center=[0.0, 0.0, 0.0], angle_step_degrees=0.0,
                        start_angle_degrees=45.0),
                 )
-                with self.assertRaisesRegex(CadTranslationError, "can alter a base extremum") as caught:
+                with self.assertRaisesRegex(GeometryBoundsError, "can alter a base extremum") as caught:
                     expected_object_bounds(build)
                 self.assertIsInstance(caught.exception, DifferenceBoundsError)
                 self.assertFalse(caught.exception.disjoint)

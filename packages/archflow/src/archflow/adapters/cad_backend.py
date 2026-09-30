@@ -12,7 +12,7 @@ from typing import Callable, Mapping, Protocol
 import archflow.adapters.cad_execution as cad
 from archflow.adapters.cad_execution import CadExecutionError, CadProgramBinding
 from archflow.adapters.cad_program import CadTranslationError, expected_object_semantics
-from archflow.state.geometry_program import CompiledGeometryProgram
+from archflow.state.geometry_program import CompiledGeometryProgram, GeometryBoundsError
 
 
 @dataclass(frozen=True)
@@ -209,7 +209,7 @@ class RhinoBackend:
         try:
             plan = cad.prepare_rhino_three_dm_export(request.program, **_native_inputs(request),
                 artifact_name=f"{request.artifact_stem}.3dm", patch=patch)
-        except CadTranslationError as exc:
+        except (CadTranslationError, GeometryBoundsError) as exc:
             return _unsupported(request, self.backend_id, exc)
         except CadExecutionError as exc:
             if "typed losses" in str(exc):

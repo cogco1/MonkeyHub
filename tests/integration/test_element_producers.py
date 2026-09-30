@@ -13,7 +13,8 @@ import math
 import unittest
 from dataclasses import replace
 
-from archflow.adapters.cad_program import expected_object_bounds, expected_object_semantics
+from archflow.adapters.cad_program import expected_object_semantics
+from archflow.state.geometry_program import expected_object_bounds
 from monkeyarch.capabilities.element_producers import (
     ElementProducerError,
     ElementRow,
@@ -369,7 +370,7 @@ class CurveProducerTests(unittest.TestCase):
                 self.assertEqual((element.datums, element.relations, context.published), ((), (), {}))
 
     def test_plane_origin_and_negative_coordinate_follow_the_bound_level_plus_offsets(self):
-        from archflow.adapters.cad_program import lift_to_base_level
+        from archflow.state.geometry_program import lift_to_base_level
         plane = {"origin": [10, 4, 20], "xAxis": [1, 0, 0], "yAxis": [0, -1, 0], "normal": [0, 0, 1]}
         row = ElementRow("path", "envelope", "curve", {"base": {"offset_from": {"level": PN, "offset": 0.2}}},
                          {"profile": [[0, 0], [3, 2]], "work_plane": plane, "elevation": -0.5}, BASIS)
@@ -474,7 +475,7 @@ class DrawingPlaneTests(unittest.TestCase):
         self.assertNotIn("drawn-top", context.published)
 
     def test_negative_vertical_profile_coordinate_is_not_lost_during_datum_lift(self):
-        from archflow.adapters.cad_program import lift_to_base_level
+        from archflow.state.geometry_program import lift_to_base_level
         plane = {"origin": [10, 4, 20], "xAxis": [1, 0, 0], "yAxis": [0, -1, 0], "normal": [0, 0, 1]}
         produced, _ = _produce((self.row(work_plane=plane),))
         params = _op_params(produced[0].operations[0])
@@ -621,7 +622,7 @@ class PlanarCompressionTests(unittest.TestCase):
         return edit_drawn_element(row, context, kind="compress_above", threshold=threshold, factor=factor)
 
     def world_profile(self, row):
-        from archflow.adapters.cad_program import lift_to_base_level
+        from archflow.state.geometry_program import lift_to_base_level
 
         produced, context = _produce((row,))
         params = _op_params(produced[0].operations[0])

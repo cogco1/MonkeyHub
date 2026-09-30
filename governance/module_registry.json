@@ -492,14 +492,12 @@
     {
       "module_id": "adapters.cad_program",
       "owner_path": "packages/archflow/src/archflow/adapters/cad_program.py",
-      "purpose": "Translate a compiled neutral geometry program into one deterministic, semantics-carrying rhinoscriptsyntax build script, plus the analytic denominator it must reproduce.",
+      "purpose": "Translate a compiled neutral geometry program into one deterministic, semantics-carrying rhinoscriptsyntax build script and the object semantics its realization must carry.",
       "owns": [
-        "the supported operation vocabulary and its rhinoscriptsyntax emission (solid, revolve, extrusion, planar_surface, loft, boolean union/difference/intersection, linear and radial array, transform, curve)",
+        "the rhinoscriptsyntax emission of the analytic operation kinds (solid, revolve, extrusion, planar_surface, loft, boolean union/difference/intersection, linear and radial array, transform, curve)",
         "the layer path and layer colour tables derived from components and material assignment",
         "the archflow:* object user text each physical object must carry (expected_object_semantics)",
         "writing each of an operation's statements through as an archflow:<key> user string, verbatim, and the reserved identity keys a statement may not take",
-        "the analytic per-object bounds the realization must reproduce (expected_object_bounds)",
-        "applying a datum-bound base_level to profile points (lift_to_base_level)",
         "the P103 partial emission of an operation subset",
         "native Rhino object material assignment from the caller-declared material and colour maps, in addition to layer display colours",
         "the STEP-import script: the same header, semantics tail and layer table as the program script, with each named object read from its own single-object STEP under a digest check, and the delivery's own retained material applied last so nothing overwrites it"
@@ -509,6 +507,7 @@
         "deciding which operations a patch rebuilds - adapters.cad_patch",
         "reading the resulting .3dm - adapters.three_dm_inspector",
         "compiling the program - compilers.geometry",
+        "the analytic bounds, the placement readers and the operation kinds it may emit - state.geometry_program",
         "any design decision: it holds no design authority and adds no geometry"
       ],
       "inputs": [
@@ -521,17 +520,13 @@
       ],
       "outputs": [
         "CadTranslation (script, physical object ids, losses, layer colours)",
-        "expected semantics mapping",
-        "expected bounds mapping"
+        "expected semantics mapping"
       ],
       "public_api": [
         "translate_to_rhino_python",
         "expected_object_semantics",
-        "expected_object_bounds",
-        "lift_to_base_level",
         "CadTranslation",
         "CadTranslationError",
-        "DifferenceBoundsError",
         "translate_step_import_to_rhino_python",
         "ROOT_LAYER"
       ],
@@ -541,8 +536,6 @@
       "used_by": [
         "packages/archflow/src/archflow/adapters/cad_execution.py",
         "packages/archflow/src/archflow/adapters/cad_patch.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "tools/project/verify_state_record.py",
         "tests/integration/test_cad_program.py",
         "tests/integration/test_cad_patch.py",
         "tests/integration/test_element_producers.py"
@@ -553,10 +546,7 @@
         "coordinates pass through as the program states them; the translator performs no frame conversion",
         "every physical object is named and carries its archflow:* identity strings",
         "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError",
-        "planar_surface preserves its explicitly closed profile and datum elevation with AddPlanarSrf, without extrusion or capping; analytic bounds retain the zero-thickness plane",
-        "a difference keeps its base's predicted bounds when every base vertex survives outside every void's box, for any base whose points are its own vertices",
-        "a void whose box does not overlap its base's box is refused by name: it removes nothing",
-        "a boolean_difference whose bounds cannot be determined analytically fails DifferenceBoundsError, a CadTranslationError that says whether a void misses its base"
+        "planar_surface preserves its explicitly closed profile and datum elevation with AddPlanarSrf, without extrusion or capping"
       ],
       "status": "canonical",
       "tests": [
@@ -1304,7 +1294,7 @@
       ],
       "does_not_own": [
         "which relations reach the check - runtime.project_runner passes the record's own declared relations plus the `support` relations the producers built",
-        "producing the geometry or the analytic bounds it measures - capabilities.element_producers and compilers.geometry",
+        "producing the geometry or the analytic bounds it measures - capabilities.element_producers, compilers.geometry and state.geometry_program",
         "declaring the relation in the first place - archflow.state.state_record",
         "turning a violation into a stage or run verdict - runtime.project_runner",
         "any repair or healing of geometry that fails a check - nothing on the spine does this",
@@ -3016,10 +3006,8 @@
       "depends_on": [
         "project.layout",
         "adapters.cad_execution",
-        "adapters.cad_program",
         "adapters.three_dm_inspector",
         "archflow.adapters.cad_execution",
-        "archflow.adapters.cad_program",
         "archflow.adapters.three_dm_inspector",
         "monkeyarch.capabilities.discipline_seats",
         "monkeyarch.capabilities.element_producers",
@@ -3772,7 +3760,7 @@
     {
       "module_id": "state.geometry_program",
       "owner_path": "packages/archflow/src/archflow/state/geometry_program.py",
-      "purpose": "The typed, platform-neutral geometry program (operations, frames, assemblies, assets, datums), the published project levels and grids, and the reader of the program's retained records.",
+      "purpose": "The typed, platform-neutral geometry program (operations, frames, assemblies, assets, datums), the published project levels and grids, the reader of the program's retained records, and the analytic bounds its realization must reproduce.",
       "owns": [
         "the generic operation and parameter vocabularies (GeometryOperationKind, GeometryParameterKind, GeometryOperation, GeometryParameter)",
         "GeometryOperation.statements: the declared, non-geometric facts an operation carries to the export as archflow:<key> user strings - identifier keys, text values, deterministic order",
@@ -3787,6 +3775,10 @@
         "compiled geometry program/object values, asset substitution receipts and their retained serialization shared by the MonkeyArch compiler and ArchFlow CAD adapters",
         "reading retained CompiledGeometryProgram@2/@3 and GeometryProgramProposal@2 records back exactly, refusing a compiled program that is not the canonical rendering of what it rebuilds (load_compiled_geometry_program, load_geometry_program_proposal)",
         "decoding a proposal body and each of its item lists for one named state, raise-first or collecting every failure (decode_proposal_body, decode_proposal_items)",
+        "the analytic per-object bounds the realization must reproduce (expected_object_bounds)",
+        "applying a datum-bound base_level to profile points (lift_to_base_level)",
+        "an operation's parameters as the JSON values they state and a revolve's end sections on their optional storey datum, read the same way by every executor and the prediction (operation_parameters, revolve_parameters)",
+        "the operation kinds with analytic bounds, the only kinds a CAD translation emits (ANALYTIC_OPERATION_KINDS)",
         "PLANAR_SURFACE: one explicitly closed planar polygon without thickness; operation construction rejects open, non-planar, self-intersecting and degenerate boundaries",
         "which objects a program delivers (delivered_object_ids): outputs nothing consumes, except unretained curves, and outputs whose operation states retain_for_inspection"
       ],
@@ -3794,6 +3786,7 @@
         "producing operations from design content (capabilities/element_producers.py, wall_solver, opening_solver)",
         "compiling a proposal into a cad program (compilers/geometry.py)",
         "executing or reading back geometry (adapters/cad_execution.py, three_dm_inspector)",
+        "translating the program into a CAD script and the object semantics its realization carries (adapters.cad_program)",
         "resolving a datum or grid reference for a producer (capabilities/reference_resolver.py)",
         "which levels a project has (state.record.project_levels_of publishes them)",
         "canonical json and digests - contracts.canonical"
@@ -3812,7 +3805,8 @@
         "InterfaceDatum",
         "ProjectLevels",
         "ProjectGrids",
-        "CompiledGeometryProgram and GeometryProgramProposal reloaded from their retained records"
+        "CompiledGeometryProgram and GeometryProgramProposal reloaded from their retained records",
+        "expected bounds mapping"
       ],
       "public_api": [
         "GeometryProgramProposal",
@@ -3853,7 +3847,14 @@
         "load_compiled_geometry_program",
         "load_geometry_program_proposal",
         "decode_proposal_body",
-        "decode_proposal_items"
+        "decode_proposal_items",
+        "expected_object_bounds",
+        "lift_to_base_level",
+        "revolve_parameters",
+        "operation_parameters",
+        "ANALYTIC_OPERATION_KINDS",
+        "GeometryBoundsError",
+        "DifferenceBoundsError"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3875,7 +3876,11 @@
         "services/project-runtime/src/project_runtime/application/drawing_plans.py",
         "services/project-runtime/src/project_runtime/application/artifacts.py",
         "services/project-runtime/src/project_runtime/application/candidate.py",
-        "tools/project/verify_state_record.py"
+        "tools/project/verify_state_record.py",
+        "packages/archflow/src/archflow/adapters/cad_program.py",
+        "packages/archflow/src/archflow/adapters/cad_patch.py",
+        "packages/monkeyarch/src/monkeyarch/construction/shapes.py",
+        "packages/monkeyarch/src/monkeyarch/construction/lowering.py"
       ],
       "invariants": [
         "the operation vocabulary is generic: no project, style or external-tool routing authority",
@@ -3887,18 +3892,23 @@
         "never writes the filesystem",
         "an operation may name no semantic binding; allowing it changes no retained serialization",
         "a hosted assembly may cite no interface; one that cites any serializes exactly as before",
-        "a retained record reloads exactly or raises GeometryProgramError; a @2 compiled program reloads with empty datum fields"
+        "a retained record reloads exactly or raises GeometryProgramError; a @2 compiled program reloads with empty datum fields",
+        "the analytic bounds of a planar_surface retain its zero-thickness plane",
+        "a difference keeps its base's predicted bounds when every base vertex survives outside every void's box, for any base whose points are its own vertices",
+        "a void whose box does not overlap its base's box is refused by name: it removes nothing",
+        "a boolean_difference whose bounds cannot be determined analytically fails DifferenceBoundsError, a GeometryBoundsError that says whether a void misses its base"
       ],
       "status": "canonical",
       "tests": [
         "tests/integration/test_cad_execution.py",
+        "tests/integration/test_cad_program.py",
         "tests/integration/test_geometry_compiler.py",
         "tests/integration/test_geometry_program.py",
         "tests/integration/test_interface_datums.py",
         "tests/integration/test_occt_execution.py",
         "tests/integration/test_wall_realization.py"
       ],
-      "notes": "The values and the reader of their retained records (#513) are one contract; every digest comes from contracts.canonical."
+      "notes": "The values, the reader of their retained records and their analytic bounds (#513) are one contract, so MonkeyArch construction, the runtime and the CAD adapters read programs and predict bounds without importing one another; every digest comes from contracts.canonical."
     },
     {
       "module_id": "state.model",
@@ -6528,7 +6538,6 @@
         "main"
       ],
       "depends_on": [
-        "adapters.cad_program",
         "capabilities.geometry_proposal",
         "contracts.authority",
         "project.inputs",
@@ -8287,7 +8296,6 @@
         "LAYER_RULE_TOKENS"
       ],
       "depends_on": [
-        "adapters.cad_program",
         "capabilities.element_producers",
         "capabilities.reference_resolver",
         "monkeyarch.construction.identity",
