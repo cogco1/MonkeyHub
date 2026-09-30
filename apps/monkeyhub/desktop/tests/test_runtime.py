@@ -364,9 +364,9 @@ class DesktopRuntimeTests(unittest.TestCase):
         for directory in (APPLICATION_ROOT, APPLICATION_ROOT / "apps/archflow-studio/api", APPLICATION_ROOT / "apps/monkeyhub/api"):
             if str(directory) not in sys.path:
                 sys.path.insert(0, str(directory))
-        from archflow_studio_api.settings import save_application_settings
-        from archflow_studio_api.transport.settings import ApplicationSettingsDto
         from monkeyhub_api.applications import source_revision
+        from monkeyhub_api.settings.models import ApplicationSettingsDto
+        from monkeyhub_api.settings.store import save_application_settings
 
         self.revision = source_revision(APPLICATION_ROOT)
         self.assertIsNotNone(self.revision)
@@ -919,8 +919,8 @@ $pattern.Current.Value | ConvertTo-Json -Compress
     def without_project(self, *runtimes):
         """Settings that name no project, so no Hub starts project workers: a drain that waits
         for a worker still starting on a loaded runner is not what these tests are about."""
-        from archflow_studio_api.settings import save_application_settings
-        from archflow_studio_api.transport.settings import ApplicationSettingsDto
+        from monkeyhub_api.settings.models import ApplicationSettingsDto
+        from monkeyhub_api.settings.store import save_application_settings
 
         for runtime in (self.runtime, *runtimes):
             studio_port, monitor_port = free_ports(2)

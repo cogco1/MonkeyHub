@@ -5876,9 +5876,8 @@
     {
       "module_id": "studio.shell",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/main.py",
-      "purpose": "The Project Runtime: assemble the project-scoped FastAPI boundary MonkeyHub starts once per open project, read its configuration only from the environment the Hub resolved, and serve the settings routes the Hub mounts (contract: docs/PROJECT_RUNTIME.md).",
+      "purpose": "The Project Runtime: assemble the project-scoped FastAPI boundary MonkeyHub starts once per open project and read its configuration only from the environment the Hub resolved (contract: docs/PROJECT_RUNTIME.md).",
       "owns": [
-        "Render provider/model/timeout preferences remain in UserSettingsDto; explicit launch environment supplies the secret only to the configured Runtime adapter, with no project or HTTP key field",
         "create_app and the uvicorn entry point, and the lifespan that lets a running candidate finish",
         "StudioSettings and every environment variable the process reads (project dir, cad_export occt/rhino/off with legacy rhino_export read-in, workers, powershell, reference run, mode, bind host, token, origins)",
         "the two modes of the boundary: local is unauthenticated, and a remote process without a token and without allowed origins is refused at construction",
@@ -5888,10 +5887,8 @@
         "the reserved application Protocols (IntentProvider, RetrievalProvider, PreviewBackend, ViewerAssetProvider, HumanReviewPort, StudioEventSink)",
         "every wire DTO and its camelCase aliases, and the router mounting order",
         "GET /api/health and GET /api/protocol",
-        "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement, served for MonkeyHub, which owns the settings authority and injects the resolved values into the runtime's launch environment",
         "Optional MonitoredCompiler host adapter: MONKEYMONITOR_DATA_DIR enables metadata-only recording of intent and structured Study model outcomes without changing its result or retrying a call",
         "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity",
-        "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
         "Reading the positive application-text intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter",
         "operator-configured actor authentication with explicit project read/propose/accept/release grants; shared-project service role excludes local computation; Runtime upstream settings contain no project authority",
         "ActorAttribution and request_attribution: who caused one request and through which surface (studio, or a Hub-managed process), read from the middleware's resolved actor and this process's own launch settings and never from a request body or header"
@@ -5948,15 +5945,7 @@
         "StudioHealth",
         "ServerIdentityDto",
         "server_identity_dto",
-        "UserSettingsDto",
-        "read_user_settings",
-        "save_user_settings",
-        "GET /api/settings/user",
-        "PUT /api/settings/user",
         "MonitoredCompiler",
-        "ApplicationSettingsDto",
-        "read_application_settings",
-        "save_application_settings",
         "StudioMonitor",
         "authenticated_actor",
         "require_actor",
@@ -5985,8 +5974,7 @@
         "apps/archflow-studio/api/tests/test_errors.py",
         "apps/monkeyhub/api/monkeyhub_api/main.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
-        "apps/monkeyhub/launch-hub.ps1",
-        "apps/monkeyhub/web/src/main.tsx"
+        "apps/monkeyhub/launch-hub.ps1"
       ],
       "invariants": [
         "create_app binds no project; only explicitly supplied external actor configuration is read at creation",
@@ -5998,15 +5986,13 @@
         "a refusal that ends a clarification carries a null continuationToken, so a client can tell 'answer this' from 'this is what the system lacks' without reading the sentence",
         "ports.py holds Protocols only: there are deliberately no implementations here",
         "projectBound in health is whether the binding opens, not a claim about what it contains",
-        "remote servers do not advertise user-settings and answer authenticated settings routes with 404; saving preferences never changes the running compiler or project, and null clears a saved override",
         "Managed stop refuses new jobs, ends SSE and drains accepted work before normal process exit; standalone startup remains supported",
-        "Hub application launch choices do not replace user appearance or provider preferences, and never write project state",
         "One optional host UsageLog records compiler, candidate, export, client wait and Stage-save diagnostics; logging never changes or repeats business operations",
         "Optional operation-diagnostics records client interaction and wait spans; per-request operation/parent headers cross sync routes and candidate workers without process-global request state; pure model inference time stays unknown",
         "configured actors never fall back to the legacy token; authorization uses the authenticated actor and actual project binding; shared services reject computation before route execution; accept grants do not imply release",
         "an editable work model is offered only for a view that is exactly one exported delivery, one request at a time per source; its file is downloaded through the existing artifact bytes route, and it is never loaded into the viewer beside the preview of the same delivery",
         "an actor identity a caller supplies is never an actor: attribution comes from the authenticated actor the middleware resolved, or states the local unauthenticated boundary's own identity; no credential byte leaves this module",
-        "Configuration comes only from the environment the launcher resolved (StudioSettings.from_env); the preference file is served over the settings routes and never consulted for the runtime's own behavior",
+        "Configuration comes only from the environment the launcher resolved (StudioSettings.from_env); the runtime serves no settings route and reads neither the preference file nor the Hub's application settings",
         "One process binds one project directory, keyed and supervised by MonkeyHub; in production it is reached only through the Hub's forwarding path, and it never grows a persistent user-settings file, a launcher, a tray or a UI of its own",
         "The Runtime parameter-lock proposal route uses the existing accept actor grant; local unauthenticated attribution identifies only the process boundary and does not prove a human caller",
         "POST /api/admissions uses the existing accept grant on a local-role Runtime; a shared project service does not expose it",
@@ -6024,7 +6010,7 @@
         "apps/archflow-studio/api/tests/test_study_model.py",
         "apps/archflow-studio/api/tests/test_conditional_reads.py"
       ],
-      "notes": "Project Runtime contract: docs/PROJECT_RUNTIME.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/monkeyhub/web/workspaces/src/api/connection.ts is the client boundary. The runtime serves the settings routes MonkeyHub mounts; browser appearance, language catalogs and workspace composition belong to hub.shell; this process serves APIs only.",
+      "notes": "Project Runtime contract: docs/PROJECT_RUNTIME.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/monkeyhub/web/workspaces/src/api/connection.ts is the client boundary. User preferences and the Hub's application settings - their files, DTOs and routes - belong to hub.shell, as do browser appearance, language catalogs and workspace composition; this process serves APIs only.",
       "files": [
         "apps/archflow-studio/api/archflow_studio_api/main.py",
         "apps/archflow-studio/api/archflow_studio_api/settings.py",
@@ -6036,8 +6022,6 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/errors.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/health.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/protocol.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/settings.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/settings.py",
         "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
         "scripts/dev/run-project-runtime.ps1",
         "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
@@ -7470,11 +7454,14 @@
         "The shared project canvas host (features/canvas): Excalidraw mount defaults, the local font path, theme mapping, wheel zoom and scene-point click hit testing, used by MonkeyBoard and the Design Tree",
         "Hub-local integration diagnostic snapshot and explicit bounded rescan; qualification and bridge execution stay with the existing adapter owner.",
         "The configured skill library (#252): reading the library project's current skills through its Runtime and materializing them into a Claude plugin directory under <runtime root>/cache/skill-plugins/<index digest>/, passed with --plugin-dir; nothing is written into any project, and no library means an unchanged command",
-        "Binding a chat message's selected images (ChatPostRequest.renderContext, #253) to exact registered PNG/JPEG pages of the conversation's own project before anything is kept or a CLI starts, keeping them on the user message with the roles the user chose and handing roles and exact pages to the native turn, whose Agent reads each page through the registered-page export and reaches the existing studio.render routes through the operation admission"
+        "Binding a chat message's selected images (ChatPostRequest.renderContext, #253) to exact registered PNG/JPEG pages of the conversation's own project before anything is kept or a CLI starts, keeping them on the user message with the roles the user chose and handing roles and exact pages to the native turn, whose Agent reads each page through the registered-page export and reaches the existing studio.render routes through the operation admission",
+        "Render provider/model/timeout preferences remain in UserSettingsDto; explicit launch environment supplies the secret only to the configured Runtime adapter, with no project or HTTP key field",
+        "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement (monkeyhub_api/settings); the resolved values reach a Project Runtime only through its launch environment",
+        "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
-        "Alternative preference persistence; user and application configuration are read and saved through the Project Runtime package's settings module (studio.shell), while the settings authority and its UI are the Hub's",
+        "A second preference store: user preferences and application configuration are read and saved only through monkeyhub_api/settings, and a Project Runtime receives only the resolved values in its launch environment",
         "Plugin discovery or installation, publisher signature verification of updates (issue #58), or attaching to and stopping foreign processes"
       ],
       "inputs": [
@@ -7514,6 +7501,12 @@
         "PUT /api/settings/apps",
         "GET /api/settings/user",
         "PUT /api/settings/user",
+        "UserSettingsDto",
+        "read_user_settings",
+        "save_user_settings",
+        "ApplicationSettingsDto",
+        "read_application_settings",
+        "save_application_settings",
         "GET /api/fab/profiles",
         "POST /api/fab/prepare",
         "POST /api/fab/send",
@@ -7623,7 +7616,9 @@
         "Suggestion cards remain source-turn/revision-bound ChatStore messages. Selecting the latest completed card records its reference before the ordinary provider turn; stale, repeated, cross-project, non-idle, archived and external selections cannot execute. Estimates without a basis stay unknown; a suggestion grants no tool, installation, spending or project-issue authority.",
         "A render context is refused before any message is kept or any CLI starts when a page is not this project's exact registration, has a newer registered replacement or is not a PNG/JPEG image; nothing chooses a newest, same-named or nearby image instead",
         "A composer holding a Board image discussion sends nothing while a reply runs: the images and their words wait for the next message, and a mid-turn message is never labelled as about them; an external, archived or closing chat refuses a render context before its images are read",
-        "A chat render request names a provider the Runtime reports available, or is refused before admission: with none configured the answer says image generation is not configured and nothing is submitted; one requestId is one Runtime dispatch"
+        "A chat render request names a provider the Runtime reports available, or is refused before admission: with none configured the answer says image generation is not configured and nothing is submitted; one requestId is one Runtime dispatch",
+        "saving preferences never changes a running Project Runtime, its compiler or its project, and null clears a saved override",
+        "Hub application launch choices do not replace user appearance or provider preferences, and never write project state"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -7634,6 +7629,10 @@
         "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
         "apps/monkeyhub/api/monkeyhub_api/main.py",
         "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/monkeyhub_api/settings/__init__.py",
+        "apps/monkeyhub/api/monkeyhub_api/settings/models.py",
+        "apps/monkeyhub/api/monkeyhub_api/settings/store.py",
+        "apps/monkeyhub/api/monkeyhub_api/settings/routes.py",
         "apps/monkeyhub/api/monkeyhub_api/project_archive.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
         "apps/monkeyhub/run.py",
@@ -7722,6 +7721,7 @@
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
         "apps/monkeyhub/api/tests/test_launch_hub.py",
         "apps/monkeyhub/api/tests/test_applications.py",
+        "apps/monkeyhub/api/tests/test_settings.py",
         "apps/monkeyhub/api/tests/test_monkeyfab.py",
         "apps/monkeyhub/api/tests/test_chat.py",
         "apps/monkeyhub/api/tests/test_skill_library.py",

@@ -52,9 +52,9 @@ from typing import Any, Callable, Mapping
 import uuid
 
 from archflow.contracts.canonical import canonical_digest
-from archflow_studio_api.settings import read_application_settings
 
 from .models import HubFailure
+from .settings.store import read_application_settings
 
 PLUGIN_NAME = "monkeyhub-library"
 # Skills --setting-sources and disableBundledSkills leave in place, on Claude

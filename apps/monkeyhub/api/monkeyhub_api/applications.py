@@ -12,11 +12,11 @@ from urllib.parse import urlencode
 from uuid import uuid5, NAMESPACE_URL
 
 from archflow.project.manifest import ProjectManifest
-from archflow_studio_api.settings import read_application_settings, read_user_settings, save_application_settings
-from archflow_studio_api.transport.settings import ApplicationSettingsDto
 
 from .models import AppId, AppStatus, HubError, HubFailure
 from . import credentials, fabrication
+from .settings.models import ApplicationSettingsDto
+from .settings.store import read_application_settings, read_user_settings, save_application_settings
 from .workers import WorkerLaunch, WorkerSnapshot, WorkerSupervisor, project_key
 
 APPS = {

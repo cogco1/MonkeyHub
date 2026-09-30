@@ -23,12 +23,12 @@ for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhu
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from archflow_studio_api.transport.settings import ApplicationSettingsDto  # noqa: E402
 from monkeyhub_api import chat, credentials  # noqa: E402
 from monkeyhub_api.applications import Applications  # noqa: E402
 from monkeyhub_api.chat import ChatStore  # noqa: E402
 from monkeyhub_api.main import HubSettings, create_app  # noqa: E402
 from monkeyhub_api.models import HubFailure  # noqa: E402
+from monkeyhub_api.settings.models import ApplicationSettingsDto  # noqa: E402
 
 GEMINI_KEY = "AIzaSyFixture-gemini-key-0001"
 PLAN_TOKEN = "fixture.plan-token-0002"
@@ -213,7 +213,7 @@ class CodingPlanTests(CredentialTestCase):
         self.assertEqual(chat._redact(f"sent {PLAN_TOKEN} and {GEMINI_KEY}", {}), "sent [redacted] and [redacted]")
 
     def test_an_endpoint_must_be_a_plain_http_address(self):
-        from archflow_studio_api.transport.settings import UserSettingsDto
+        from monkeyhub_api.settings.models import UserSettingsDto
         from pydantic import ValidationError
 
         self.assertEqual(UserSettingsDto.model_validate({"codingPlanBaseUrl": "https://open.example.invalid/api/anthropic"})

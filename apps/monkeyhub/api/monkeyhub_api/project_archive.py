@@ -22,7 +22,6 @@ from archflow.project.repository import (
     ProjectHeadLocked,
     ProjectRepositoryError,
 )
-from archflow_studio_api.settings import read_application_settings
 
 from .chat import _position, _project, _workspace
 from .models import (
@@ -33,6 +32,7 @@ from .models import (
     ProjectArchiveRestoreResult,
     ProjectArchiveSummary,
 )
+from .settings.store import read_application_settings
 
 _ARCHIVE_STATUS = {
     "PROJECT_NOT_FOUND": 404,

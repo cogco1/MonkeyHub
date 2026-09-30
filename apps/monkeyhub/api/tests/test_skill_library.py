@@ -24,11 +24,12 @@ from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.main import create_app as create_studio
-from archflow_studio_api.settings import StudioSettings, save_application_settings
-from archflow_studio_api.transport.settings import ApplicationSettingsDto
+from archflow_studio_api.settings import StudioSettings
 from monkeyhub_api import chat, skill_plugins
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest
+from monkeyhub_api.settings.models import ApplicationSettingsDto
+from monkeyhub_api.settings.store import save_application_settings
 
 LIBRARY_ID = "skill-library"
 HATCH = {"projectId": LIBRARY_ID, "name": "hatch-review",
