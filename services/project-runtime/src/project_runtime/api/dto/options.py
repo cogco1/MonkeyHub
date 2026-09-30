@@ -16,10 +16,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from monkeyarch.domain.massing_metrics import EnvelopeFinding, MassingMetrics
+from monkeyarch.domain.massing_transforms import TRANSFORMS
 
 from ...application.options import (
     PERSISTENCE,
-    TRANSFORMS,
     MassingOption,
     OptionsTable,
     RecordMassing,

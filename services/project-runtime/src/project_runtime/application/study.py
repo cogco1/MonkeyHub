@@ -3,7 +3,9 @@
 A Study begins from one exact registered document page. Its editable truth is a
 small set of trace-evidence primitives in normalized page coordinates.
 Measurements, relations, the CompositionGraph, hypotheses and counterfactual
-judgements are deterministic projections of confirmed traces. A saved revision
+judgements are deterministic projections of confirmed traces, and the method
+that derives them is MonkeyDiagram's (``monkeydiagram.study``, #519); this
+module keeps the retained ledger that records them. A saved revision
 is an archival snapshot of the method that produced it: cold reads validate its
 exact source, its evidence and the agreement between its own retained relations,
 receipts and evidence, but never reinterpret retained derivations with today's
@@ -21,9 +23,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from copy import deepcopy
 import json
-import math
 import threading
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Literal, Mapping
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from archflow.contracts.canonical import canonical_digest
 from archflow.ports.model import ModelInvocationReceipt, ModelPhase, ModelInvocationStatus
@@ -31,6 +34,16 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri, require_identifier
 from archflow.project.repository import ProjectRepositoryError
+from monkeydiagram.study import (
+    CURRENT_DERIVATION_METHOD,
+    StudyEvidenceError,
+    StudySource,
+    canonical_evidence,
+    check_research_links,
+    composition_graph,
+    derive,
+    research_snapshot_of,
+)
 
 from .artifacts import _registered_document_bytes, list_documents
 from ..binding import ProjectBinding, record_kind
@@ -52,60 +65,110 @@ LEGACY_LEDGER_KEYS = frozenset({
     "counterfactuals",
     "canonical_state_changed",
 })
-CURRENT_DERIVATION_METHOD = "StudyDerivation@1"
 LEDGER_KEYS = LEGACY_LEDGER_KEYS | {"derivation_method"}
 RESEARCH_LEDGER_KEYS = LEDGER_KEYS | {"research"}
-RESEARCH_METHOD = "manual-conjecture-polygon-intervention@1"
 STUDY_RUN_PREFIX = "study-"
-TRACE_KINDS = frozenset({"envelope", "mass", "void", "floor_plate"})
-TRACE_STATUSES = frozenset({"proposed", "confirmed", "rejected"})
-TRACE_ORIGINS = frozenset({"machine", "user", "imported"})
-_COORD_EPS = 1e-9
-# Traces are retained at six decimals, so anything smaller than one
-# quantisation step would measure as a zero-area trace the moment it is
-# written down. Refuse it at the door instead of retaining that measurement.
-_MIN_TRACE_AREA = 1e-6
-_ALIGN_TOLERANCE = 0.02
-_EQUAL_SIZE_TOLERANCE = 0.03
-_CENTRED_VOID_TOLERANCE = 0.05
-_DOMINANT_MASS_RATIO = 1.5
-_COUNTERFACTUAL_SHIFT = 0.08
-_COUNTERFACTUAL_SCALE = 0.82
 _study_lock = threading.RLock()
+IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"
 
 
-@dataclass(frozen=True, slots=True)
-class StudySource:
-    run_id: str
-    asset_sha256: str
-    revision_ref: str | None
-    page_index: int
-    page_width: float
-    page_height: float
-    mime_type: str
-    document_ref: str
+# The research a Study ledger retains, as a person or a model states it: the
+# save request carries it, the model's answer is read through it, and a retained
+# snapshot's inputs are read back through it (api.dto.study builds requests on it).
+class StudyResearchInputDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
 
-    @property
-    def basis_ref(self) -> str:
-        revision = self.revision_ref or "uploaded"
-        return (
-            f"document:{self.run_id}:{self.asset_sha256}:"
-            f"{revision}:page:{self.page_index}"
-        )
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "run_id": self.run_id,
-            "asset_sha256": self.asset_sha256,
-            "revision_ref": self.revision_ref,
-            "page_index": self.page_index,
-            "page_width": self.page_width,
-            "page_height": self.page_height,
-            "mime_type": self.mime_type,
-            "document_ref": self.document_ref,
-            "coordinate_frame": "normalized-page-xy-top-left@1",
-            "basis_ref": self.basis_ref,
-        }
+class StudyRevisionRequestDto(StudyResearchInputDto):
+    """One exact retained Study revision; comparison never guesses a current head."""
+
+    study_id: str = Field(alias="studyId", pattern=IDENTIFIER_PATTERN)
+    ledger_ref: str = Field(alias="ledgerRef", min_length=1)
+
+
+class StudyResearchComparisonDto(StudyResearchInputDto):
+    studies: list[StudyRevisionRequestDto] = Field(min_length=2, max_length=6)
+
+
+class StudyHistoricalSourceDto(StudyResearchInputDto):
+    source_id: str = Field(alias="sourceId", pattern=IDENTIFIER_PATTERN)
+    citation: str = Field(max_length=4000)
+    url: str = Field(default="", max_length=4000)
+    locator: str = Field(default="", max_length=2000)
+    summary: str = Field(default="", max_length=8000)
+
+
+class StudyHypothesisDto(StudyResearchInputDto):
+    hypothesis_id: str = Field(alias="hypothesisId", pattern=IDENTIFIER_PATTERN)
+    statement: str = Field(max_length=8000)
+    evidence_ids: list[str] = Field(default_factory=list, alias="evidenceIds", max_length=200)
+    counter_evidence_ids: list[str] = Field(default_factory=list, alias="counterEvidenceIds", max_length=200)
+    historical_source_ids: list[str] = Field(default_factory=list, alias="historicalSourceIds", max_length=40)
+    assumptions: list[str] = Field(default_factory=list, max_length=40)
+    falsification: str = Field(default="", max_length=8000)
+    competes_with: list[str] = Field(default_factory=list, alias="competesWith", max_length=20)
+    status: Literal["open", "revised", "rejected"] = "open"
+
+
+class StudyEvidenceGapDto(StudyResearchInputDto):
+    gap_id: str = Field(alias="gapId", pattern=IDENTIFIER_PATTERN)
+    description: str = Field(max_length=8000)
+    evidence_ids: list[str] = Field(default_factory=list, alias="evidenceIds", max_length=200)
+
+
+class StudyInterventionParametersDto(StudyResearchInputDto):
+    dx: float = Field(default=0.0, ge=-1.0, le=1.0, allow_inf_nan=False)
+    dy: float = Field(default=0.0, ge=-1.0, le=1.0, allow_inf_nan=False)
+    scale: float = Field(default=1.0, gt=0.0, le=4.0, allow_inf_nan=False)
+
+
+class StudyInterventionDto(StudyResearchInputDto):
+    counterfactual_id: str = Field(alias="counterfactualId", pattern=IDENTIFIER_PATTERN)
+    hypothesis_ids: list[str] = Field(default_factory=list, alias="hypothesisIds", max_length=20)
+    target_evidence_id: str = Field(alias="targetEvidenceId", pattern=IDENTIFIER_PATTERN)
+    operation: Literal["translate", "scale", "remove"]
+    parameters: StudyInterventionParametersDto = Field(default_factory=StudyInterventionParametersDto)
+    conditions: list[str] = Field(default_factory=list, max_length=40)
+    prediction: str = Field(default="", max_length=8000)
+    execute: bool = False
+
+
+class CompositionPatternDto(StudyResearchInputDto):
+    pattern_id: str = Field(alias="patternId", pattern=IDENTIFIER_PATTERN)
+    name: str = Field(max_length=2000)
+    rule: str = Field(max_length=8000)
+    evidence_ids: list[str] = Field(default_factory=list, alias="evidenceIds", max_length=200)
+    conditions: list[str] = Field(default_factory=list, max_length=40)
+    exceptions: list[str] = Field(default_factory=list, max_length=40)
+
+
+class StudyChangedContextDto(StudyResearchInputDto):
+    changed_conditions: list[str] = Field(default_factory=list, alias="changedConditions", max_length=40)
+    decision: Literal["unresolved", "retain", "revise", "reject"] = "unresolved"
+    reason: str = Field(default="", max_length=8000)
+    revised_statement: str = Field(default="", alias="revisedStatement", max_length=8000)
+
+
+class DesignPriorDto(StudyResearchInputDto):
+    prior_id: str = Field(alias="priorId", pattern=IDENTIFIER_PATTERN)
+    statement: str = Field(max_length=8000)
+    pattern_id: str = Field(alias="patternId", pattern=IDENTIFIER_PATTERN)
+    hypothesis_ids: list[str] = Field(default_factory=list, alias="hypothesisIds", max_length=20)
+    conditions: list[str] = Field(default_factory=list, max_length=40)
+    preference: str = Field(default="", max_length=8000)
+    preference_status: Literal["unresolved", "stated"] = Field(default="unresolved", alias="preferenceStatus")
+    changed_context: StudyChangedContextDto | None = Field(default=None, alias="changedContext")
+
+
+class StudyResearchRequestDto(StudyResearchInputDto):
+    question: str = Field(default="", max_length=8000)
+    historical_sources: list[StudyHistoricalSourceDto] = Field(default_factory=list, alias="historicalSources", max_length=40)
+    hypotheses: list[StudyHypothesisDto] = Field(default_factory=list, max_length=20)
+    gaps: list[StudyEvidenceGapDto] = Field(default_factory=list, max_length=40)
+    counterfactuals: list[StudyInterventionDto] = Field(default_factory=list, max_length=5)
+    comparisons: list[StudyResearchComparisonDto] = Field(default_factory=list, max_length=6)
+    composition_pattern: CompositionPatternDto | None = Field(default=None, alias="compositionPattern")
+    design_prior: DesignPriorDto | None = Field(default=None, alias="designPrior")
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,51 +298,6 @@ def study_evidence_context(view: StudyView, *, budget_bytes: int = 12288) -> dic
     if complete:
         result.update(content)
     return result
-
-
-@dataclass(frozen=True, slots=True)
-class _Box:
-    x0: float
-    y0: float
-    x1: float
-    y1: float
-
-    @property
-    def width(self) -> float:
-        return self.x1 - self.x0
-
-    @property
-    def height(self) -> float:
-        return self.y1 - self.y0
-
-    @property
-    def area(self) -> float:
-        return self.width * self.height
-
-    @property
-    def cx(self) -> float:
-        return (self.x0 + self.x1) / 2.0
-
-    @property
-    def cy(self) -> float:
-        return (self.y0 + self.y1) / 2.0
-
-    def to_dict(self) -> dict[str, float]:
-        return {
-            "x_min": _q(self.x0),
-            "y_min": _q(self.y0),
-            "x_max": _q(self.x1),
-            "y_max": _q(self.y1),
-            "width": _q(self.width),
-            "height": _q(self.height),
-            "area": _q(self.area),
-            "centroid_x": _q(self.cx),
-            "centroid_y": _q(self.cy),
-        }
-
-
-def _q(value: float) -> float:
-    return round(float(value), 6)
 
 
 def _study_run_id(study_id: str) -> str:
@@ -428,741 +446,6 @@ def _source_payload_matches(retained: Mapping[str, Any], exact: StudySource) -> 
     if "document_ref" not in retained:
         expected.pop("document_ref")
     return dict(retained) == expected
-
-
-def _points(value: object, evidence_id: str) -> list[list[float]]:
-    if not isinstance(value, list) or len(value) < 3:
-        raise StudioError(
-            422,
-            "STUDY_EVIDENCE_INVALID",
-            f"Evidence {evidence_id!r} needs at least three polygon points.",
-        )
-    result: list[list[float]] = []
-    for point in value:
-        if not isinstance(point, (list, tuple)) or len(point) != 2:
-            raise StudioError(
-                422,
-                "STUDY_EVIDENCE_INVALID",
-                f"Evidence {evidence_id!r} has an invalid point.",
-            )
-        x, y = point
-        if (
-            isinstance(x, bool)
-            or isinstance(y, bool)
-            or not isinstance(x, (int, float))
-            or not isinstance(y, (int, float))
-            or not math.isfinite(float(x))
-            or not math.isfinite(float(y))
-            or not 0.0 <= float(x) <= 1.0
-            or not 0.0 <= float(y) <= 1.0
-        ):
-            raise StudioError(
-                422,
-                "STUDY_EVIDENCE_INVALID",
-                f"Evidence {evidence_id!r} points must be finite normalized page coordinates.",
-            )
-        result.append([_q(float(x)), _q(float(y))])
-    if len({(point[0], point[1]) for point in result}) < 3:
-        raise StudioError(
-            422,
-            "STUDY_EVIDENCE_INVALID",
-            f"Evidence {evidence_id!r} polygon collapses to fewer than three distinct points.",
-        )
-    if _polygon_area(result) < _MIN_TRACE_AREA:
-        raise StudioError(
-            422,
-            "STUDY_EVIDENCE_INVALID",
-            f"Evidence {evidence_id!r} polygon has no measurable area.",
-        )
-    return result
-
-
-def _polygon_area(points: list[list[float]]) -> float:
-    return abs(
-        sum(
-            points[index][0] * points[(index + 1) % len(points)][1]
-            - points[(index + 1) % len(points)][0] * points[index][1]
-            for index in range(len(points))
-        )
-    ) / 2.0
-
-
-def _box(points: list[list[float]]) -> _Box:
-    xs = [point[0] for point in points]
-    ys = [point[1] for point in points]
-    return _Box(min(xs), min(ys), max(xs), max(ys))
-
-
-def _evidence(
-    source: StudySource,
-    rows: Iterable[Mapping[str, Any]],
-) -> list[dict[str, Any]]:
-    """Canonicalize request rows and already-retained evidence identically."""
-
-    result: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for raw in rows:
-        if not isinstance(raw, Mapping):
-            raise StudioError(
-                422,
-                "STUDY_EVIDENCE_INVALID",
-                "Every trace is an object of evidence fields.",
-            )
-        evidence_id = raw.get("evidence_id")
-        kind = raw.get("kind")
-        status = raw.get("status", "proposed")
-        origin = raw.get("origin", "user")
-        confidence = raw.get("confidence", 1.0 if origin == "user" else 0.5)
-        if not isinstance(evidence_id, str):
-            raise StudioError(
-                422,
-                "STUDY_EVIDENCE_INVALID",
-                "Every trace needs an evidence id.",
-            )
-        try:
-            require_identifier(evidence_id, "evidence_id")
-        except (TypeError, ValueError) as exc:
-            raise StudioError(
-                422,
-                "STUDY_EVIDENCE_INVALID",
-                "Evidence ids must be stable identifiers.",
-            ) from exc
-        if evidence_id in seen:
-            raise StudioError(
-                422,
-                "STUDY_EVIDENCE_INVALID",
-                f"Evidence id {evidence_id!r} is duplicated.",
-            )
-        seen.add(evidence_id)
-        if (
-            kind not in TRACE_KINDS
-            or status not in TRACE_STATUSES
-            or origin not in TRACE_ORIGINS
-        ):
-            raise StudioError(
-                422,
-                "STUDY_EVIDENCE_INVALID",
-                f"Evidence {evidence_id!r} has an unsupported kind, status or origin.",
-            )
-        if (
-            isinstance(confidence, bool)
-            or not isinstance(confidence, (int, float))
-            or not math.isfinite(float(confidence))
-            or not 0 <= float(confidence) <= 1
-        ):
-            raise StudioError(
-                422,
-                "STUDY_EVIDENCE_INVALID",
-                f"Evidence {evidence_id!r} confidence must be between zero and one.",
-            )
-        points_value = raw.get("points")
-        geometry = raw.get("geometry")
-        if points_value is None and isinstance(geometry, Mapping):
-            points_value = geometry.get("points")
-        points = _points(points_value, evidence_id)
-        result.append(
-            {
-                "evidence_id": evidence_id,
-                "primitive": "polygon-trace",
-                "kind": kind,
-                "geometry": {"type": "polygon", "points": points},
-                "status": status,
-                "confidence": _q(float(confidence)),
-                "origin": origin,
-                "basis_refs": [source.basis_ref],
-            }
-        )
-    return sorted(result, key=lambda item: item["evidence_id"])
-
-
-def _confirmed(
-    evidence: Iterable[Mapping[str, Any]],
-) -> list[Mapping[str, Any]]:
-    return [item for item in evidence if item.get("status") == "confirmed"]
-
-
-def _measurement_rows(
-    evidence: Iterable[Mapping[str, Any]],
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for item in _confirmed(evidence):
-        box = _box(item["geometry"]["points"])
-        rows.append(
-            {
-                "measurement_id": f"bbox-{item['evidence_id']}",
-                "evidence_id": item["evidence_id"],
-                "method": "normalized-axis-aligned-bounds@1",
-                **box.to_dict(),
-            }
-        )
-    return rows
-
-
-def _contains(a: _Box, b: _Box) -> bool:
-    return (
-        a.x0 <= b.x0 + _COORD_EPS
-        and a.y0 <= b.y0 + _COORD_EPS
-        and a.x1 + _COORD_EPS >= b.x1
-        and a.y1 + _COORD_EPS >= b.y1
-        and (
-            a.width > b.width + _COORD_EPS
-            or a.height > b.height + _COORD_EPS
-        )
-    )
-
-
-def _intersection(a: _Box, b: _Box) -> float:
-    return max(0.0, min(a.x1, b.x1) - max(a.x0, b.x0)) * max(
-        0.0,
-        min(a.y1, b.y1) - max(a.y0, b.y0),
-    )
-
-
-def _relation_rows(
-    evidence: Iterable[Mapping[str, Any]],
-) -> list[dict[str, Any]]:
-    items = _confirmed(evidence)
-    boxes = {
-        item["evidence_id"]: _box(item["geometry"]["points"])
-        for item in items
-    }
-    rows: list[dict[str, Any]] = []
-    for index, left in enumerate(items):
-        for right in items[index + 1 :]:
-            a_id = left["evidence_id"]
-            b_id = right["evidence_id"]
-            a = boxes[a_id]
-            b = boxes[b_id]
-            facts: list[tuple[str, float | None, str, str]] = []
-            if _contains(a, b):
-                facts.append(("contains", None, a_id, b_id))
-            elif _contains(b, a):
-                facts.append(("contains", None, b_id, a_id))
-            overlap = _intersection(a, b)
-            if overlap > _COORD_EPS:
-                union = a.area + b.area - overlap
-                facts.append(
-                    ("overlaps", overlap / union if union else 0.0, a_id, b_id)
-                )
-            if abs(a.cx - b.cx) <= _ALIGN_TOLERANCE:
-                facts.append(
-                    ("aligned_x_center", abs(a.cx - b.cx), a_id, b_id)
-                )
-            if abs(a.cy - b.cy) <= _ALIGN_TOLERANCE:
-                facts.append(
-                    ("aligned_y_center", abs(a.cy - b.cy), a_id, b_id)
-                )
-            if abs(a.width - b.width) <= _EQUAL_SIZE_TOLERANCE:
-                facts.append(
-                    ("same_width", abs(a.width - b.width), a_id, b_id)
-                )
-            if abs(a.height - b.height) <= _EQUAL_SIZE_TOLERANCE:
-                facts.append(
-                    ("same_height", abs(a.height - b.height), a_id, b_id)
-                )
-            for kind, value, subject, object_id in facts:
-                row: dict[str, Any] = {
-                    "relation_id": f"{kind}:{subject}:{object_id}",
-                    "kind": kind,
-                    "subject_evidence_id": subject,
-                    "object_evidence_id": object_id,
-                    "method": "normalized-bounds-relation@1",
-                }
-                if value is not None:
-                    row["value"] = _q(value)
-                rows.append(row)
-    return sorted(rows, key=lambda item: item["relation_id"])
-
-
-def _graph(
-    evidence: Iterable[Mapping[str, Any]],
-    relations: Iterable[Mapping[str, Any]],
-) -> dict[str, Any]:
-    nodes = [
-        {
-            "evidence_id": item["evidence_id"],
-            "kind": item["kind"],
-            "bounds": _box(item["geometry"]["points"]).to_dict(),
-        }
-        for item in _confirmed(evidence)
-    ]
-    nodes.sort(key=lambda item: item["evidence_id"])
-    node_ids = {node["evidence_id"] for node in nodes}
-    edges = [dict(row) for row in relations]
-    edges.sort(key=lambda item: item["relation_id"])
-    for edge in edges:
-        # An edge is a statement about two traces this graph carries. A
-        # retained endpoint naming a trace that is absent, or one the same
-        # revision kept proposed or rejected, describes a composition this
-        # archive does not hold: serving it would publish a graph whose own
-        # edges contradict its nodes. Refusing here is not re-judging the old
-        # method's conclusions — it is declining to reconstruct a graph the
-        # retained evidence cannot support.
-        for end in ("subject_evidence_id", "object_evidence_id"):
-            if edge.get(end) not in node_ids:
-                raise ValueError(
-                    f"relation {edge['relation_id']!r} names {edge.get(end)!r}, "
-                    "which is not a confirmed trace of this revision",
-                )
-    body = {
-        "schema": "CompositionGraph@1",
-        "nodes": nodes,
-        "edges": edges,
-    }
-    return {**body, "graph_digest": canonical_digest(body, ascii=False)}
-
-
-def _aligned_columns(
-    plates: list[Mapping[str, Any]],
-    aligned: set[frozenset[str]],
-) -> list[list[str]]:
-    """Group plates into columns whose members are all aligned with each other.
-
-    Alignment is a tolerance, so it does not chain: a-b and b-c can both hold
-    while a-c does not. Taking connected components would claim a stacking the
-    relation layer refused to state, so a plate joins a column only when it is
-    aligned with every plate already in it. Sweeping left to right by centre
-    makes that choice deterministic and independent of trace names.
-    """
-
-    columns: list[list[str]] = []
-    for plate in sorted(
-        plates,
-        key=lambda node: (node["bounds"]["centroid_x"], node["evidence_id"]),
-    ):
-        plate_id = plate["evidence_id"]
-        for column in columns:
-            if all(
-                frozenset((plate_id, member)) in aligned
-                for member in column
-            ):
-                column.append(plate_id)
-                break
-        else:
-            columns.append([plate_id])
-    return sorted(
-        (sorted(column) for column in columns if len(column) > 1),
-        key=lambda column: column[0],
-    )
-
-
-def _hypotheses(
-    evidence: Iterable[Mapping[str, Any]],
-    graph: Mapping[str, Any],
-) -> list[dict[str, Any]]:
-    items = {
-        item["evidence_id"]: item
-        for item in _confirmed(evidence)
-    }
-    nodes = {
-        node["evidence_id"]: node
-        for node in graph["nodes"]
-    }
-    edges = list(graph["edges"])
-    rows: list[dict[str, Any]] = []
-
-    # Dominance is a comparison between masses. An envelope encloses them by
-    # definition, so ranking it here would only ever report that an envelope
-    # was traced; and a single mass has nothing to dominate.
-    masses = sorted(
-        (node for node in nodes.values() if node["kind"] == "mass"),
-        key=lambda node: (
-            -node["bounds"]["area"],
-            node["evidence_id"],
-        ),
-    )
-    if len(masses) > 1:
-        leader, runner_up = masses[0], masses[1]
-        if leader["bounds"]["area"] >= _DOMINANT_MASS_RATIO * runner_up["bounds"]["area"]:
-            rows.append(
-                {
-                    "hypothesis_id": f"dominant-mass:{leader['evidence_id']}",
-                    "rule": "dominant_mass",
-                    # The verdict rests on exactly this comparison. The masses
-                    # ranked below the runner-up agree with it, so they are not
-                    # counter-evidence to it.
-                    "support_evidence_ids": sorted(
-                        {leader["evidence_id"], runner_up["evidence_id"]}
-                    ),
-                    "counter_evidence_ids": [],
-                    "status": "supported",
-                }
-            )
-
-    for edge in edges:
-        if edge["kind"] != "contains":
-            continue
-        subject = edge["subject_evidence_id"]
-        object_id = edge["object_evidence_id"]
-        if (
-            items[object_id]["kind"] == "void"
-            and items[subject]["kind"] in {"mass", "envelope"}
-        ):
-            rows.append(
-                {
-                    "hypothesis_id": f"nested-void:{subject}:{object_id}",
-                    "rule": "void_nested_in_mass",
-                    "support_evidence_ids": [subject, object_id],
-                    "counter_evidence_ids": [],
-                    "status": "supported",
-                }
-            )
-            a = nodes[subject]["bounds"]
-            b = nodes[object_id]["bounds"]
-            if (
-                abs(a["centroid_x"] - b["centroid_x"]) <= _CENTRED_VOID_TOLERANCE
-                and abs(a["centroid_y"] - b["centroid_y"]) <= _CENTRED_VOID_TOLERANCE
-            ):
-                rows.append(
-                    {
-                        "hypothesis_id": f"central-void:{subject}:{object_id}",
-                        "rule": "void_centrality",
-                        "support_evidence_ids": [subject, object_id],
-                        "counter_evidence_ids": [],
-                        "status": "supported",
-                    }
-                )
-
-    plates = [
-        node for node in nodes.values()
-        if node["kind"] == "floor_plate"
-    ]
-    if len(plates) >= 2:
-        plate_ids = {node["evidence_id"] for node in plates}
-        aligned = {
-            frozenset((edge["subject_evidence_id"], edge["object_evidence_id"]))
-            for edge in edges
-            if edge["kind"] == "aligned_x_center"
-            and edge["subject_evidence_id"] in plate_ids
-            and edge["object_evidence_id"] in plate_ids
-        }
-        for column in _aligned_columns(plates, aligned):
-            rows.append(
-                {
-                    "hypothesis_id": "stacked-floor-plates:" + ":".join(column),
-                    "rule": "stacked_floor_plate_alignment",
-                    "support_evidence_ids": column,
-                    "counter_evidence_ids": sorted(plate_ids - set(column)),
-                    "status": "supported",
-                }
-            )
-
-    for row in rows:
-        row["reasoning_receipt"] = {
-            "method": "deterministic-study-rules@1",
-            "graph_digest": graph["graph_digest"],
-            "observe": "confirmed-trace-evidence",
-            "normalize": "normalized-page-bounds",
-            "hypothesize": row["rule"],
-            "falsify": "counterfactual-relation-signature",
-        }
-    return sorted(rows, key=lambda item: item["hypothesis_id"])
-
-
-def _copy_evidence(
-    evidence: Iterable[Mapping[str, Any]],
-) -> list[dict[str, Any]]:
-    return json.loads(json.dumps(list(evidence)))
-
-
-def _transform_points(
-    points: list[list[float]],
-    *,
-    dx: float = 0.0,
-    scale: float = 1.0,
-) -> list[list[float]] | None:
-    """Move a trace inside the page, or refuse rather than fabricate geometry.
-
-    Clamping a transformed point back onto the page silently flattens the
-    trace: a shift at the page edge becomes a contraction, and a narrow trace
-    collapses to a line this module's own validator would reject. A variant
-    that cannot be carried out on this page is not a counterfactual.
-    """
-
-    box = _box(points)
-    cx = box.cx
-    cy = box.cy
-    transformed = []
-    for x, y in points:
-        tx = _q(cx + (x - cx) * scale + dx)
-        ty = _q(cy + (y - cy) * scale)
-        if not (0.0 <= tx <= 1.0 and 0.0 <= ty <= 1.0):
-            return None
-        transformed.append([tx, ty])
-    if _polygon_area(transformed) < _MIN_TRACE_AREA:
-        return None
-    return transformed
-
-
-def _signature(
-    evidence: Iterable[Mapping[str, Any]],
-    relations: Iterable[Mapping[str, Any]],
-) -> set[str]:
-    return {
-        *(
-            f"node:{item['evidence_id']}:{item['kind']}"
-            for item in _confirmed(evidence)
-        ),
-        *(f"edge:{item['relation_id']}" for item in relations),
-    }
-
-
-def _counterfactuals(
-    evidence: Iterable[Mapping[str, Any]],
-    baseline_relations: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    confirmed = sorted(
-        _confirmed(evidence),
-        key=lambda item: item["evidence_id"],
-    )
-    if not confirmed:
-        return []
-    baseline_signature = _signature(evidence, baseline_relations)
-    # Falsify the trace the composition actually rests on — the one carrying
-    # the most relations, then the largest. Preferring a kind, or the first id
-    # in the alphabet, would let renaming a trace change what the Study claims
-    # to have tested.
-    incident = {item["evidence_id"]: 0 for item in confirmed}
-    for row in baseline_relations:
-        for end in ("subject_evidence_id", "object_evidence_id"):
-            if row[end] in incident:
-                incident[row[end]] += 1
-    target = min(
-        confirmed,
-        key=lambda item: (
-            -incident[item["evidence_id"]],
-            -_box(item["geometry"]["points"]).area,
-            item["evidence_id"],
-        ),
-    )
-    variants = (
-        ("shift_x", {"dx": _COUNTERFACTUAL_SHIFT, "scale": 1.0}),
-        ("contract", {"dx": 0.0, "scale": _COUNTERFACTUAL_SCALE}),
-        ("remove", None),
-    )
-    rows: list[dict[str, Any]] = []
-    for operation, parameters in variants:
-        changed = _copy_evidence(evidence)
-        candidate = next(
-            item
-            for item in changed
-            if item["evidence_id"] == target["evidence_id"]
-        )
-        if operation == "remove":
-            candidate["status"] = "rejected"
-        else:
-            moved = _transform_points(candidate["geometry"]["points"], **parameters)
-            if moved is None and operation == "shift_x":
-                parameters = {**parameters, "dx": -parameters["dx"]}
-                moved = _transform_points(candidate["geometry"]["points"], **parameters)
-            if moved is None:
-                # The page has no room to carry this variant out on this
-                # trace. A clamped one would falsify nothing.
-                continue
-            candidate["geometry"]["points"] = moved
-        relations = _relation_rows(changed)
-        signature = _signature(changed, relations)
-        union = baseline_signature | signature
-        similarity = (
-            1.0
-            if not union
-            else len(baseline_signature & signature) / len(union)
-        )
-        rows.append(
-            {
-                "counterfactual_id": f"{operation}:{target['evidence_id']}",
-                "target_evidence_id": target["evidence_id"],
-                "operation": operation,
-                "parameters": parameters or {},
-                "relation_signature_similarity": _q(similarity),
-                "removed_facts": sorted(baseline_signature - signature),
-                "added_facts": sorted(signature - baseline_signature),
-                "judgement": (
-                    "preserve-family"
-                    if similarity >= 0.67
-                    else "transition"
-                ),
-                "method": "composition-signature-jaccard@1",
-            }
-        )
-    return rows
-
-
-def _derived(
-    evidence: list[dict[str, Any]],
-) -> tuple[
-    list[dict[str, Any]],
-    list[dict[str, Any]],
-    dict[str, Any],
-    list[dict[str, Any]],
-    list[dict[str, Any]],
-]:
-    measurements = _measurement_rows(evidence)
-    relations = _relation_rows(evidence)
-    graph = _graph(evidence, relations)
-    hypotheses = _hypotheses(evidence, graph)
-    counterfactuals = _counterfactuals(evidence, relations)
-    return measurements, relations, graph, hypotheses, counterfactuals
-
-
-def _polygon_observations(
-    source: StudySource, evidence: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    from monkeydiagram import study as drawing_study
-
-    return drawing_study.polygon_observations(
-        [{"evidence_id": row["evidence_id"], "kind": row["kind"],
-          "points": row["geometry"]["points"]} for row in _confirmed(evidence)],
-        page_width=source.page_width, page_height=source.page_height,
-    )
-
-
-def _research_links(research: Mapping[str, Any], evidence: list[dict[str, Any]]) -> None:
-    """Check references without reinterpreting the person's arguments."""
-    def identifiers(rows, key):
-        if not isinstance(rows, list) or not all(isinstance(row, Mapping) for row in rows):
-            raise ValueError("Research entries must be object lists.")
-        result = [row[key] for row in rows]
-        if not all(isinstance(value, str) and value for value in result) or len(set(result)) != len(result):
-            raise ValueError(f"Research {key} values must be unique nonempty identifiers.")
-        return set(result)
-
-    def refs(row, field, allowed):
-        values = row[field]
-        if not isinstance(values, list) or not all(isinstance(value, str) and value in allowed for value in values):
-            raise ValueError(f"Research {field} names an absent source, trace or hypothesis.")
-
-    evidence_ids = {row["evidence_id"] for row in evidence}
-    source_ids = identifiers(research["historical_sources"], "source_id")
-    hypothesis_ids = identifiers(research["hypotheses"], "hypothesis_id")
-    identifiers(research["gaps"], "gap_id")
-    identifiers(research["counterfactuals"], "counterfactual_id")
-    for hypothesis in research["hypotheses"]:
-        refs(hypothesis, "evidence_ids", evidence_ids)
-        if "counter_evidence_ids" in hypothesis:
-            refs(hypothesis, "counter_evidence_ids", evidence_ids)
-        refs(hypothesis, "historical_source_ids", source_ids)
-        refs(hypothesis, "competes_with", hypothesis_ids - {hypothesis["hypothesis_id"]})
-    for gap in research["gaps"]:
-        refs(gap, "evidence_ids", evidence_ids)
-    for intervention in research["counterfactuals"]:
-        refs(intervention, "hypothesis_ids", hypothesis_ids)
-        if intervention["target_evidence_id"] not in evidence_ids:
-            raise ValueError("A counterfactual target must name an existing trace.")
-    pattern = research["composition_pattern"]
-    if pattern is not None:
-        refs(pattern, "evidence_ids", evidence_ids)
-    prior = research["design_prior"]
-    if prior is not None:
-        refs(prior, "hypothesis_ids", hypothesis_ids)
-        if pattern is None or prior["pattern_id"] != pattern["pattern_id"]:
-            raise ValueError("A DesignPrior must name this Study's CompositionPattern.")
-        if prior["preference_status"] == "stated" and not prior["preference"].strip():
-            raise ValueError("A stated preference needs the person's actual preference text.")
-        context = prior["changed_context"]
-        if context and context["decision"] != "unresolved":
-            if not any(value.strip() for value in context["changed_conditions"]) or not context["reason"].strip():
-                raise ValueError("A changed-context decision needs changed conditions and a reason.")
-            if context["decision"] == "revise" and not context["revised_statement"].strip():
-                raise ValueError("Revising a prior needs the revised statement.")
-
-
-def _research_intervention(source, evidence, intervention, baseline) -> dict[str, Any] | None:
-    if not intervention["execute"]:
-        return None
-    if not intervention["prediction"].strip() or not any(value.strip() for value in intervention["conditions"]) or not intervention["hypothesis_ids"]:
-        raise ValueError("An executed counterfactual needs its prior prediction, conditions and hypotheses.")
-    changed = _copy_evidence(evidence)
-    target = next(row for row in changed if row["evidence_id"] == intervention["target_evidence_id"])
-    if target["status"] != "confirmed":
-        return {"status": "unsupported", "method": "aspect-correct-polygon-intervention@1",
-                "reason": "The intervention target has not been confirmed by the user."}
-    parameters = intervention["parameters"]
-    operation = intervention["operation"]
-    if operation == "remove":
-        target["status"] = "rejected"
-    else:
-        points = target["geometry"]["points"]
-        # Uniform page-coordinate scaling preserves physical similarity even
-        # on a rectangular page. Translation is expressed in page fractions.
-        box = _box(points)
-        scale = parameters["scale"] if operation == "scale" else 1.0
-        dx = parameters["dx"] if operation == "translate" else 0.0
-        dy = parameters["dy"] if operation == "translate" else 0.0
-        moved = [[_q(box.cx + (x - box.cx) * scale + dx),
-                  _q(box.cy + (y - box.cy) * scale + dy)] for x, y in points]
-        if any(not 0 <= coordinate <= 1 for point in moved for coordinate in point):
-            return {"status": "unsupported", "method": "aspect-correct-polygon-intervention@1",
-                    "reason": "The requested geometry leaves the source page; it was not clamped."}
-        target["geometry"]["points"] = moved
-    if changed == evidence:
-        return {"status": "unsupported", "method": "aspect-correct-polygon-intervention@1",
-                "reason": "The requested intervention makes no geometric change."}
-    try:
-        measurements, relations = _polygon_observations(source, changed)
-    except ValueError as exc:
-        return {"status": "unsupported", "method": "aspect-correct-polygon-intervention@1", "reason": str(exc)}
-    baseline_measurements, baseline_relations = baseline
-    before = _signature(evidence, baseline_relations)
-    after = _signature(changed, relations)
-    union = before | after
-    return {
-        "status": "computed", "category": "computed", "method": "aspect-correct-polygon-intervention@1",
-        "metric_frame": "page-aspect-correct-long-edge@1",
-        "evidence": changed, "measurements": measurements, "relations": relations,
-        "baseline_measurements": baseline_measurements, "baseline_relations": baseline_relations,
-        "removed_facts": sorted(before - after), "added_facts": sorted(after - before),
-        "relation_signature_similarity": _q(len(before & after) / len(union)) if union else 1.0,
-        "interpretation": "underdetermined",
-    }
-
-
-def _research_snapshot(source, evidence, research) -> dict[str, Any]:
-    result = json.loads(json.dumps(research, allow_nan=False))
-    _research_links(result, evidence)
-    try:
-        baseline = _polygon_observations(source, evidence)
-    except ValueError as exc:
-        baseline = None
-        unsupported = str(exc)
-    for row in result["counterfactuals"]:
-        if row["execute"] and (not row["prediction"].strip() or not any(value.strip() for value in row["conditions"]) or not row["hypothesis_ids"]):
-            raise ValueError("An executed counterfactual needs its prior prediction, conditions and hypotheses.")
-        row["actual"] = (
-            _research_intervention(source, evidence, row, baseline) if baseline is not None
-            else ({"status": "unsupported", "method": "aspect-correct-polygon-intervention@1", "reason": unsupported}
-                  if row["execute"] else None)
-        )
-    missing = []
-    hypotheses = result["hypotheses"]
-    if not result["question"].strip():
-        missing.append("research-question")
-    if len(hypotheses) < 2 or not any(row["competes_with"] for row in hypotheses):
-        missing.append("two-competing-explanations")
-    if any(not row["statement"].strip() or not any(value.strip() for value in row["assumptions"]) or not row["falsification"].strip()
-           or not (row["evidence_ids"] or row["historical_source_ids"]) for row in hypotheses):
-        missing.append("evidence-conditions-and-falsification")
-    if not any(row["description"].strip() for row in result["gaps"]):
-        missing.append("evidence-gap")
-    executed = [row for row in result["counterfactuals"] if row["actual"] and row["actual"]["status"] == "computed"]
-    distinct_results = {json.dumps(row["actual"]["evidence"], sort_keys=True) for row in executed}
-    if not 3 <= len(distinct_results) <= 5:
-        missing.append("three-to-five-computed-interventions")
-    pattern, prior = result["composition_pattern"], result["design_prior"]
-    if not pattern or not pattern["rule"].strip() or not pattern["evidence_ids"] or not any(value.strip() for value in pattern["conditions"]):
-        missing.append("composition-pattern")
-    if not prior or not prior["statement"].strip() or not prior["hypothesis_ids"] or not any(value.strip() for value in prior["conditions"]):
-        missing.append("conditional-design-prior")
-    context = prior and prior["changed_context"]
-    if not context or context["decision"] not in {"retain", "revise", "reject"}:
-        missing.append("changed-context-decision")
-    result.update({
-        "method": RESEARCH_METHOD, "source_binding": source.to_dict(),
-        "observations": None if baseline is None else {"category": "computed", "method": "aspect-correct-polygon@1",
-            "metric_frame": "page-aspect-correct-long-edge@1", "measurements": baseline[0], "relations": baseline[1]},
-        "completion": {"ready": not missing, "missing": missing},
-    })
-    return result
 
 
 def _check_comparison_results(binding, research, results) -> None:
@@ -1350,8 +633,8 @@ def _load_payload(
             "The retained Study source no longer resolves to the exact registered page it names.",
         )
     try:
-        normalized = _evidence(exact_source, evidence)
-    except StudioError as exc:
+        normalized = canonical_evidence(exact_source, evidence)
+    except StudyEvidenceError as exc:
         raise StudioError(
             409,
             "STUDY_LEDGER_INVALID",
@@ -1382,7 +665,7 @@ def _load_payload(
                         or request_payload.get("evidence") != input_ledger["evidence"]
                         or request_payload.get("research") != input_ledger.get("research")
                         or receipt.request.context_digest != canonical_digest(request_payload, ascii=False)
-                        or receipt.request.checkpoint_digest != _graph(input_ledger["evidence"], input_ledger["relations"])["graph_digest"]):
+                        or receipt.request.checkpoint_digest != composition_graph(input_ledger["evidence"], input_ledger["relations"])["graph_digest"]):
                     raise ValueError("Model receipt does not describe its exact retained input revision")
         except (KeyError, TypeError, ValueError, StudioError) as exc:
             raise StudioError(409, "STUDY_LEDGER_INVALID", "The retained Study model receipt is invalid.") from exc
@@ -1407,7 +690,7 @@ def _load_payload(
                 raise ValueError("The research snapshot has no method.")
             if research["source_binding"] != source:
                 raise ValueError("The research snapshot names another source page.")
-            _research_links(research, evidence)
+            check_research_links(research, evidence)
             _check_comparison_results(binding, research, research.get("comparison_results", []))
             for row in research["counterfactuals"]:
                 if row["actual"] is not None and (not isinstance(row["actual"], Mapping)
@@ -1416,7 +699,7 @@ def _load_payload(
                 actual = row["actual"]
                 if actual and actual["status"] == "computed":
                     retained = actual["evidence"]
-                    if _evidence(exact_source, retained) != retained:
+                    if canonical_evidence(exact_source, retained) != retained:
                         raise ValueError("The retained intervention evidence is not canonical.")
                     originals = {item["evidence_id"]: item for item in evidence}
                     if {item["evidence_id"] for item in retained} != set(originals):
@@ -1522,7 +805,7 @@ def read_study(
     # retained relation snapshot. It does not invoke today's hypotheses or
     # counterfactual method.
     try:
-        graph = _graph(payload["evidence"], payload["relations"])
+        graph = composition_graph(payload["evidence"], payload["relations"])
     except (KeyError, TypeError, ValueError) as exc:
         raise StudioError(
             409,
@@ -1594,12 +877,12 @@ def save_study(
         revision_ref=revision_ref,
         page_index=page_index,
     )
-    evidence = _evidence(source, evidence_rows)
-    measurements, relations, graph, hypotheses, counterfactuals = _derived(evidence)
+    evidence = canonical_evidence(source, evidence_rows)
+    measurements, relations, graph, hypotheses, counterfactuals = derive(evidence)
     research_snapshot = None
     if research is not None:
         try:
-            research_snapshot = _research_snapshot(source, evidence, research)
+            research_snapshot = research_snapshot_of(source, evidence, research)
         except (KeyError, TypeError, ValueError) as exc:
             raise StudioError(422, "STUDY_RESEARCH_INVALID", str(exc)) from exc
 
@@ -1665,7 +948,7 @@ def save_study(
                     or model_receipt.request.payload.get("evidence") != previous_payload["evidence"]
                     or model_receipt.request.payload.get("research") != previous_payload.get("research")
                     or model_receipt.request.context_digest != canonical_digest(model_receipt.request.payload, ascii=False)
-                    or model_receipt.request.checkpoint_digest != _graph(previous_payload["evidence"], previous_payload["relations"])["graph_digest"]):
+                    or model_receipt.request.checkpoint_digest != composition_graph(previous_payload["evidence"], previous_payload["relations"])["graph_digest"]):
                 raise StudioError(422, "STUDY_MODEL_BINDING_INVALID", "The model response must name this exact Study source and previous revision.")
             invocations.append(model_receipt.to_dict())
         if invocations:

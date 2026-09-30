@@ -3220,7 +3220,8 @@
         "section perspective: SectionPerspectiveView (a plan line and kept side, or an origin and normal; an explicit or default one-point camera) checked with named refusals before the model is read, the default eye placed from the exact cut, and the request, exact plane, resolved camera and crop recorded in the one drawing receipt (freeze_section_perspective)",
         "NativeModelSource: verify original 3DM bytes against their explicit registration and derive drawing shapes without fabricating semantic state or CAD execution provenance",
         "DrawnView: a drawn view's SVG, PNG and what its receipt says about the drawing apart from its source and run; freeze_model_axis_elevation and freeze_section_perspective take an optional cache (DrawingCache) asked for the drawn view once the source verified, so a kept drawing is retained without solving its view again",
-        "axonometric_frame: the right, up and look of a parallel view from any non-vertical direction with CAD +Z up; such a view is retained through freeze_model_axis_elevation with the elevation receipt, foreshortened and stated as a display scale"
+        "axonometric_frame: the right, up and look of a parallel view from any non-vertical direction with CAD +Z up; such a view is retained through freeze_model_axis_elevation with the elevation receipt, foreshortened and stated as a display scale",
+        "the difference between two cut-plan view recipes by dotted path - hidden objects, dimensions and dressing by the ids they hold, a material's hatch rule whole - and the class of correction it is, the first of compiler_defect, semantic_rule, recipe and local_override that holds for the difference and the replacement cause (recipe_diff, classify, CLASSES); pure, reading no project"
       ],
       "does_not_own": [
         "the hidden-line solve - monkeycad.occt",
@@ -3281,7 +3282,10 @@
         "current_object_id",
         "inspection_witness_ids",
         "DrawnView",
-        "DrawingCache"
+        "DrawingCache",
+        "recipe_diff",
+        "classify",
+        "CLASSES"
       ],
       "depends_on": [
         "monkeycad.occt",
@@ -3303,7 +3307,8 @@
       ],
       "used_by": [
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
-        "services/project-runtime/src/project_runtime/application/drawings.py"
+        "services/project-runtime/src/project_runtime/application/drawings.py",
+        "services/project-runtime/src/project_runtime/application/drawing_corrections.py"
       ],
       "invariants": [
         "nothing is written before the source verified, the frame checked and the projection and both renderings succeeded",
@@ -3324,13 +3329,15 @@
       "status": "canonical",
       "tests": [
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
-        "packages/monkeydiagram/tests/test_drawing_section_perspective.py"
+        "packages/monkeydiagram/tests/test_drawing_section_perspective.py",
+        "packages/monkeydiagram/tests/test_corrections.py"
       ],
       "notes": "CREATE 2026-09-07: the plan's first real consumer at the application boundary. runtime.project_runner is the seat/stage loop and does not derive drawings; adapters have no repository authority. First frozen drawing: villa-rotonda-reconstruction run drawing-a0-20260907-villa-b-minus-y from source run studio-cand-20260906-010451-dca4de25-4e9d (external workspace, noncanonical). Split in #517: sources.py verifies the source, projection/views.py holds the frames and in-memory projections, drawing_runs.py retains drawing runs and registers the receipt's version refs.",
       "files": [
         "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
         "packages/monkeydiagram/src/monkeydiagram/sources.py",
-        "packages/monkeydiagram/src/monkeydiagram/projection/views.py"
+        "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
+        "packages/monkeydiagram/src/monkeydiagram/corrections.py"
       ]
     },
     {
@@ -3676,7 +3683,7 @@
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/state_record.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
-        "services/project-runtime/src/project_runtime/application/frame.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/frame.py",
         "services/project-runtime/src/project_runtime/application/projection.py"
       ],
       "invariants": [
@@ -4532,11 +4539,11 @@
         "registering section perspective revisions from a complete verified source model in the existing document list with the same source resolution, cache, monitoring and registration as elevations, keeping the drawing owner's refusal names",
         "direct native model drawing selection: registered external sourceAsset stays frozen and has no modelSource; state-bound composed 3DM uses its own geometry, never a partial paired STEP",
         "SKP upload through the local standalone SDK, retaining original SKP and derived 3DM face geometry in the same P036 registration; retries reuse the verified original content",
-        "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite",
+        "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, and the recipe_diff and classify of the two view recipes that monkeydiagram.corrections owns (runtime.drawing_elevation); and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite",
         "the content-keyed projection cache (ADR-008 #367): key = sha256(model asset sha256, kind, recipe hash, renderer, SALT) where renderer is the mesh renderer's source-derived version plus a digest of drawings.model_view_pipeline (view frame, crop margin, chord tolerance, the source of its framing and meshing, mesh_pipeline); every request, idle retry and re-queue first checks its source (check_model_view_source: the run's exact state and registered model, no geometry read) and a retry draws from the latest checked source; thumbnails read the run's own record, so a run on an older canonical base is drawn (require_readable) while actions keep require_actionable; PNG blobs in <project cache dir>/projections/blobs named by their own sha256, written then renamed and self-describing through text chunks; one status row per key in the project index's projection table (StatusTable), whose insert is the claim, with a per-key lock in the process; the queue is enqueued after every index commit (tree_model_sources: the working position's model, then what readers show, then the rest of the tree) and on a read miss; one low-priority render subprocess with timeout, memory cap, leases reclaimed at startup and after the timeout, bounded retries with backoff, a refused source or a cancel giving its attempt back, one model read for every size drawn next (load_model_view, draw_loaded_view), and a collector keeping what an index artifact reaches, replacing an older renderer's picture only once the current one is drawn, with a grace window",
         "drawings as on-demand projections (#368): an elevation's and a section perspective's SVG and PNG, a review sheet's PDF and DXF and a document page's raster are kinds of the same content-keyed cache (drawing-elevation, drawing-section-perspective, drawing-sheet, document-page), keyed by the input asset's sha256, a recipe holding every field that changes the bytes (the complete view and the drawn source content: geometry digest, unit, objects, bounds and semantics) and a renderer digest of the drawing code, fonts and libraries (drawings.drawing_pipeline); ProjectionQueue.on_demand draws one in the request that needs it through the existing generator, at most once per key, and the worker never draws them; issuing reads the cached files back and retains them in P036 byte for byte with a receipt of its own",
         "the retained axonometric: POST /api/drawings/elevations view axon, from a stated direction toward the viewer (default the model view's -X, -Y, +Z), framed on every physical object's bounds like an elevation",
-        "view sheets through POST /api/drawings/sheets: same-source plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own generator from the sheet's one source (modelSource, Stage or unbound imported asset) and named in the sheet recipe by its exact revision, placed at its own scale where the caller put it, with default titles, subtitles and scale labels from each view's own frame and a section's cut line on a plan; front/right/top requests keep the review sheet's layout and defaults; every sheet is one paper scene retained as PDF, DXF, SVG and PNG beside each other in its source run and registered as its PDF, which names the other three files' digests; GET /api/drawings/{asset_sha256}/files/{file_format} reads a view revision's SVG/PNG, only by its revisionRef (DRAWING_REVISION_REQUIRED), or a sheet's four files, verified"
+        "view sheets through POST /api/drawings/sheets: same-source plans, vertical sections, elevations, axonometrics and section perspectives, each drawn or read back through its own generator from the sheet's one source (modelSource, Stage or unbound imported asset) and named in the sheet recipe by its exact revision, placed at its own scale where the caller put it, with default titles, subtitles and scale labels from each view's own frame and a section's cut line on a plan, as monkeydiagram.documentation.sheet_layout lays them out; front/right/top requests keep the review sheet's layout and defaults; every sheet is one paper scene retained as PDF, DXF, SVG and PNG beside each other in its source run and registered as its PDF, which names the other three files' digests; GET /api/drawings/{asset_sha256}/files/{file_format} reads a view revision's SVG/PNG, only by its revisionRef (DRAWING_REVISION_REQUIRED), or a sheet's four files, verified"
       ],
       "does_not_own": [
         "producing the export or its receipt - monkeycad.execution and its backends, through runtime.project_runner",
@@ -4611,6 +4618,7 @@
         "open_document_work_copy",
         "list_document_work_copies",
         "DocumentWorkCopy",
+        "WORK_COPY_WORKSPACE",
         "GET /api/drawings/model-view",
         "model_view",
         "POST /api/drawings/plans",
@@ -4637,8 +4645,6 @@
         "GET /api/drawings/corrections",
         "drawing_corrections",
         "corrections",
-        "recipe_diff",
-        "classify",
         "recipe_suggestions",
         "Correction",
         "artifact_row_body",
@@ -4691,6 +4697,8 @@
         "project.index",
         "adapters.mesh_views",
         "studio.board",
+        "monkeydiagram.corrections",
+        "monkeydiagram.documentation.sheet_layout",
         "monkeycad.backends.occt.errors",
         "monkeycad.backends.occt.kernel",
         "monkeycad.backends.occt.projection",
@@ -4838,6 +4846,7 @@
         "read_board",
         "save_board",
         "export_board_pages",
+        "BoardExportPage",
         "web: createBoardFeedback",
         "web: prepareBoardDesignRequest",
         "read_board(binding, revision_sha256=None)",
@@ -4917,7 +4926,7 @@
         "the honesty lines stating what this projection cannot tell you",
         "the component catalog derived from the record and the reference run's inspection: per component its descendant elements, editable capabilities (value, type, source, confidence, status, validator refs), object coverage and closure; per exported object the element it binds to, or MODEL_VISIBLE_CATALOG_MISSING when no Element@1 row answers for it",
         "reading PROJECT.md at the project root for names (aliases -> declared components) and the compass; nothing else is read from it",
-        "the record's frame: each Level@1 and GridAxis@1 with its role, its value (const x / const y as element_reindex.axis_lines_of reads it), the elements whose own references name it, and the closure of changing it (GET /api/state/frame, POST /api/state/closure); read-only, no grammar rule for editing a level or an axis",
+        "serving the record's frame and the closure of named refs (GET /api/state/frame, POST /api/state/closure) against the exact retained record the request selects; the reading itself is capabilities.element_reindex's (monkeyarch.authoring.frame)",
         "a capability a reference pins (a height whose top names a level, another element's datum or a grid role) is status=derived with source='derived from <ref>', read from the record's own dependency edges; it is shown, never created",
         "committed design history reads and exact Stage projections, including a descendant candidate with a retained matching Stage source",
         "explicitly configured shared-project HTTP pull/bootstrap and candidate upload through the existing P036 transfer port; no direct project file writes",
@@ -4962,6 +4971,8 @@
         "GET /api/state",
         "ProjectBinding",
         "ProjectBinding.open",
+        "ProjectBinding.unconfigured",
+        "ProcessState",
         "bound_project",
         "resolve_project",
         "binding_answer",
@@ -4984,8 +4995,6 @@
         "ProjectConventions",
         "GET /api/state/frame",
         "POST /api/state/closure",
-        "frame_of",
-        "closure_of_refs",
         "references_of",
         "ProjectBinding.design_history",
         "ProjectBinding.design_stage",
@@ -5073,7 +5082,8 @@
         "project.memo",
         "project.watch",
         "project.index",
-        "monkeyarch.authoring.producer_signatures"
+        "monkeyarch.authoring.producer_signatures",
+        "monkeyarch.authoring.frame"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/projection.py",
@@ -5099,7 +5109,8 @@
         "an answer is remembered only in memory and only under a stable ReadToken, which is read from the project's layout watch (project.watch) and never walked on a request: this process's writes change the token at once and leave it unstable until the watch has seen them, another process's once the watch sees them (about a second); closing the binding gives back its share of the watch",
         "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view",
         "the drawing context publishes every wall's <id>-top from the producer itself, in production order, so a drawn shape standing on a wall keeps its drawing controls",
-        "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)"
+        "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)",
+        "ProjectBinding and ReadToken are the Runtime's public read API: MonkeyHub opens a project in process with ProjectBinding.unconfigured (no configured reference run, nothing exported), and binding.py imports no web framework; the app-state glue beside it reads its state object structurally (ProcessState) (#519)"
       ],
       "status": "canonical",
       "tests": [
@@ -5132,7 +5143,6 @@
         "services/project-runtime/src/project_runtime/api/dto/state.py",
         "services/project-runtime/src/project_runtime/application/catalog.py",
         "services/project-runtime/src/project_runtime/application/conventions.py",
-        "services/project-runtime/src/project_runtime/application/frame.py",
         "services/project-runtime/src/project_runtime/synchronization.py",
         "services/project-runtime/src/project_runtime/api/routes/synchronization.py",
         "services/project-runtime/src/project_runtime/application/working_draft.py",
@@ -5899,6 +5909,9 @@
         "GET /api/render/jobs/{job_id}",
         "GET /api/render/jobs",
         "RenderJobRecords",
+        "RenderJob",
+        "RenderRequestDto",
+        "render_job_dto",
         "ImageRenderAdapter",
         "RenderInput",
         "RenderOutput",
@@ -5949,7 +5962,8 @@
         "No adapter receives a project path or writer; all result persistence uses save_document",
         "Uploaded images without models are valid and never acquire fabricated modelSource",
         "Source freshness follows retained input requests, explicit page replacements and Drawing read-set status; a prior revision alone is not a replacement decision",
-        "No render action changes Design HEAD or accepts a Stage; hidden UI does not cancel a running attempt"
+        "No render action changes Design HEAD or accepts a Stage; hidden UI does not cancel a running attempt",
+        "RenderJobRecords reads an attempt back as a RenderJob value and validates a retained request with the same RenderRequestDto the wire accepts; only api.dto.rendering shapes the wire (render_job_dto), and the application layer imports nothing from api (#519)"
       ]
     },
     {
@@ -6092,13 +6106,18 @@
         "MonitoredCompiler.invoke_structured",
         "ConditionalReads",
         "CONDITIONAL_READS",
-        "IndexRevisionHeader: X-Monkey-Index <epoch>:<revision> on a successful write once the project index holds it (#366)"
+        "IndexRevisionHeader: X-Monkey-Index <epoch>:<revision> on a successful write once the project index holds it (#366)",
+        "OWNER_REFUSALS"
       ],
       "depends_on": [
         "monkeymonitor",
         "documentation.drawings",
         "monkeydiagram.documentation.styles",
-        "project.index"
+        "project.index",
+        "monkeyarch.authoring.frame",
+        "monkeyarch.domain.massing_transforms",
+        "monkeydiagram.documentation.sheet_layout",
+        "monkeydiagram.study"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/api/routes/",
@@ -6131,7 +6150,9 @@
         "The Runtime parameter-lock proposal route uses the existing accept actor grant; local unauthenticated attribution identifies only the process boundary and does not prove a human caller",
         "POST /api/admissions uses the existing accept grant on a local-role Runtime; a shared project service does not expose it",
         "only the exact GET paths in CONDITIONAL_READS carry an ETag, answer If-None-Match with 304 and are answered from the binding's memo, and only for a 200 read under a stable token; every other method, path and status passes through unchanged",
-        "shutdown closes the bound project's binding after draining work, which stops its layout watch and lets go of the project folder"
+        "shutdown closes the bound project's binding after draining work, which stops its layout watch and lets go of the project folder",
+        "an owner package's refusal (monkeyarch.authoring.frame.FrameError, ...) carries its own wire code and sentence; OWNER_REFUSALS is the one place that gives each kind its status, and create_app answers it in the same {code, detail} body a StudioError has (#519)",
+        "MonkeyHub (apps/monkeyhub/api/monkeyhub_api) imports from project_runtime only main, errors, api.dto and the declared read API - binding.ProjectBinding and ReadToken, events, status, the document and work-copy readers (application.artifacts list_documents, document_bytes, list_document_work_copies, DocumentWorkCopy, WORK_COPY_WORKSPACE) and application.boards export_board_pages with BoardExportPage - and archcheck refuses any other import (architecture_policy forbidden_layer_imports, allowed; #519)"
       ],
       "status": "canonical",
       "tests": [
@@ -6371,7 +6392,8 @@
         "a commit that names no claim may write only the policy's shared_write_scope and unclaimed_write_scope",
         "only active and review claims hold paths and checkouts; a lane is a claim of its own, and an Issue claimed through lanes carries nothing but its lanes",
         "a commit on the pre-#358 registry keeps its card-era reading, where a subject ending in a single (#n) with no other Issue reference or GH- marker names GH-n; once a parent is on the current registry a commit cannot return to the old one, so that reading cannot authorize card work again",
-        "a current commit whose subject opens with a P###, M###, R### or P000-governance id is reported as a retired claim"
+        "a current commit whose subject opens with a P###, M###, R### or P000-governance id is reported as a retired claim",
+        "a layer rule may list allowed exceptions under its targets: a module, or a member a module defines at its top level; an import is let through only when its module is allowed, or, for from x import y, every x.y it takes is; an exception that names neither a module nor a defined member is reported like a dead target (#519)"
       ],
       "status": "canonical",
       "tests": [
@@ -6814,7 +6836,7 @@
     {
       "module_id": "capabilities.element_reindex",
       "owner_path": "packages/monkeyarch/src/monkeyarch/authoring/element_reindex.py",
-      "purpose": "Recover Element@1 identity from an exported model without moving it: objects (3dm inspection) -> component/family/side -> element drafts with symbolic references where the geometry snaps to declared axes and levels, proven by re-producing the drafted rows and measuring the residual; ambiguity and source conflicts are named, never resolved by guessing.",
+      "purpose": "Recover Element@1 identity from an exported model without moving it: objects (3dm inspection) -> component/family/side -> element drafts with symbolic references where the geometry snaps to declared axes and levels, proven by re-producing the drafted rows and measuring the residual; ambiguity and source conflicts are named, never resolved by guessing. It also reads the record's frame: each level and grid axis, what names it and what changing it reaches.",
       "owns": [
         "reading SourceObjects off a ThreeDmInspectionSummary (named bboxes, archflow:component / archflow:producer_op strings, geometry digests)",
         "family and side of an object from its producer op (column-west-3 -> column / west)",
@@ -6824,7 +6846,8 @@
         "the residual between produced and inspected boxes, by running the real producers on the drafted rows",
         "derived support_contact relations from vertical contact within the stage-5 tolerance",
         "the ComponentCatalog@1 payload and the typed reindex operator that adds axes, rows and relations and replaces nothing",
-        "re-seating a drafted prism onto a drafted flight's published <id>-top instead of a level"
+        "re-seating a drafted prism onto a drafted flight's published <id>-top instead of a level",
+        "the record's frame: each Level@1 and GridAxis@1 with its role, its value (const x / const y as axis_lines_of reads it), the elements whose own references name it, and the kernel's closure of changing it (frame_of); the closure of named refs with the propagating edges inside it (closure_of_refs); read-only, no grammar rule for editing a level or an axis; a ref the record does not carry, or an axis that is not three numbers, is a FrameError naming its code (UNKNOWN_REF, STATE_RECORD_INVALID)"
       ],
       "does_not_own": [
         "producing geometry from a row - capabilities.element_producers",
@@ -6843,19 +6866,33 @@
         "side_of",
         "Frame",
         "WEDGE_NOTE",
-        "SHELL_THICKNESS_NOTE"
+        "SHELL_THICKNESS_NOTE",
+        "frame_of",
+        "closure_of_refs",
+        "RecordFrame",
+        "FrameLevel",
+        "FrameAxis",
+        "ClosureAnswer",
+        "FrameError"
       ],
       "depends_on": [
         "capabilities.element_producers",
         "capabilities.reference_resolver",
         "state.geometry_program",
-        "state.record"
+        "state.record",
+        "state.dependencies"
+      ],
+      "used_by": [
+        "services/project-runtime/src/project_runtime/api/routes/state.py",
+        "services/project-runtime/src/project_runtime/api/dto/state.py"
       ],
       "files": [
-        "packages/monkeyarch/src/monkeyarch/authoring/element_reindex.py"
+        "packages/monkeyarch/src/monkeyarch/authoring/element_reindex.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/frame.py"
       ],
       "tests": [
-        "packages/monkeyarch/tests/test_element_reindex.py"
+        "packages/monkeyarch/tests/test_element_reindex.py",
+        "packages/monkeyarch/tests/test_frame.py"
       ],
       "reason": "The studio's catalog (studio.binding) reads elements the record declares; a scripted project has none. Re-indexing is the one generic way to give such a project its tree: derived from the model the spine already inspected, checked by the producers the spine already runs. It extends the spine's Element@1 vocabulary; it adds no parallel geometry protocol.",
       "status": "canonical"
@@ -6898,20 +6935,22 @@
     {
       "module_id": "state.massing_metrics",
       "owner_path": "packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py",
-      "purpose": "What a massing option measures - footprint, gross floor area, floor count, height, program share - and how it stands in a buildable envelope, read from the record's own Volume@1 / MassingLevel@1 entities in the kernel's voxel lattice.",
+      "purpose": "What a massing option measures - footprint, gross floor area, floor count, height, program share - and how it stands in a buildable envelope, read from the record's own Volume@1 / MassingLevel@1 entities in the kernel's voxel lattice, and the six moves that make a massing option out of the record's own pack.",
       "owns": [
         "the massing quantities and their frame (MassingMetrics, LevelFootprint, massing_metrics)",
         "CELL_AREA_M2: one plan cell is one square metre, as schematic_proposal's SpatialGridBasis declares",
         "the union-of-plan-rectangles footprint, counted once where volumes overlap",
         "the three envelope findings and their whole vocabulary (EnvelopeFinding, envelope_check, VOLUME_OUTSIDE_ENVELOPE, HEIGHT_EXCEEDED, FAR_EXCEEDED)",
         "saying what could not be measured rather than measuring zero (MassingMetrics.honesty)",
-        "the typed refusal of a record or envelope that makes a measurement impossible (MassingMetricsError)"
+        "the typed refusal of a record or envelope that makes a measurement impossible (MassingMetricsError)",
+        "the closed transform vocabulary (TRANSFORMS: add_floor, remove_floor, shift_volume, scale_volume, split_volume, pack)",
+        "each transform's arithmetic on the pack and its typed refusals (MassingTransformError naming UNKNOWN_TRANSFORM, PACK_REQUIRED, PACK_INVALID, NOTHING_TO_RAISE, LAST_FLOOR, NOTHING_LEFT, UNKNOWN_AXIS, SPLIT_OUTSIDE_VOLUME, NO_MASSING, UNKNOWN_VOLUME, WHOLE_CELLS or POSITIVE_FACTOR)"
       ],
       "does_not_own": [
         "reading a Volume@1 box (state.record.volume_boxes_of)",
         "the massing entity vocabulary (state.record)",
         "the SiteBounds/SpatialLevel shapes the lattice comes from (state.spatial)",
-        "transforming a massing or holding options beside one another (studio.options)",
+        "holding options beside one another, retaining one and running the selected one (studio.options)",
         "compiling geometry from a massing (compilation/geometry.py)"
       ],
       "inputs": [
@@ -6934,27 +6973,41 @@
         "MassingMetricsError",
         "VOLUME_OUTSIDE_ENVELOPE",
         "envelope_check",
-        "massing_metrics"
+        "massing_metrics",
+        "TRANSFORMS",
+        "ADD_FLOOR",
+        "REMOVE_FLOOR",
+        "SHIFT_VOLUME",
+        "SCALE_VOLUME",
+        "SPLIT_VOLUME",
+        "PACK",
+        "MassingTransformError",
+        "require_transform",
+        "transformed"
       ],
       "depends_on": [
         "state.record"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/options.py",
-        "services/project-runtime/src/project_runtime/api/dto/options.py"
+        "services/project-runtime/src/project_runtime/api/dto/options.py",
+        "labs/candidate_evaluation/retained_fixture.py"
       ],
       "invariants": [
         "never writes the filesystem and decides nothing",
         "a plan bound that is not a whole cell is reported in honesty, never rounded",
         "an absent envelope key makes no finding",
-        "efficiency is null, never zero, when no program target was given or there is no floor area"
+        "efficiency is null, never zero, when no program target was given or there is no floor area",
+        "a move is whole-cell arithmetic on the pack and nothing else: it neither measures, retains nor runs the option, and a move it cannot make is refused by name with nothing changed"
       ],
       "status": "canonical",
       "files": [
-        "packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py"
+        "packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py",
+        "packages/monkeyarch/src/monkeyarch/domain/massing_transforms.py"
       ],
       "tests": [
-        "tests/integration/test_massing_metrics.py"
+        "tests/integration/test_massing_metrics.py",
+        "packages/monkeyarch/tests/test_massing_transforms.py"
       ],
       "reason": "Snaptrude shows GFA, floor count and efficiency beside every massing option; here they are read from the record's own massing entities, once, by one module, so the studio's options and any later provider measure the same thing."
     },
@@ -6963,42 +7016,35 @@
       "owner_path": "services/project-runtime/src/project_runtime/application/options.py",
       "purpose": "Hold several massing options beside the record's own, each one deterministic transform of its SchematicPack@1, each measured, each retained in a run of its own.",
       "owns": [
-        "the closed transform vocabulary (TRANSFORMS: add_floor, remove_floor, shift_volume, scale_volume, split_volume, pack)",
-        "each transform's arithmetic on the pack and its typed refusals",
         "the in-process option table and its ids and run ids (OptionStore, MassingOption, OptionsTable, RUN_PREFIX, PERSISTENCE)",
         "retaining one option as selected-spatial-option in its own option-NNN run",
         "the record's volumes as the panel reads them (RecordMassing, RecordVolume, record_massing, baseline_pack)",
+        "making one option with a monkeyarch.domain.massing_transforms move: the move's name is checked before an option id is reserved, and the successor record the selection would run is measured before the pack is retained",
         "POST /api/options, GET /api/options, POST /api/options/{option_id}/select, GET /api/state/volumes",
         "carrying optional exact modelSource from POST /api/options, including pack requests, on its existing in-memory MassingOption and wire response; selection rechecks and passes that original source to the common candidate worker"
       ],
       "does_not_own": [
-        "measuring a massing (state.massing_metrics)",
+        "measuring a massing, or the moves that make an option out of a pack (state.massing_metrics)",
         "reading the record's massing as a pack (state.record.schematic_pack_of)",
         "deriving the successor record a selection runs (state.record)",
         "running a candidate (studio.candidate)",
         "the record kind vocabulary (project.record_kinds)"
       ],
       "public_api": [
-        "ADD_FLOOR",
         "MassingOption",
         "OptionStore",
         "OptionsTable",
-        "PACK",
         "PERSISTENCE",
         "RecordMassing",
         "RecordVolume",
-        "REMOVE_FLOOR",
         "RUN_PREFIX",
-        "SCALE_VOLUME",
-        "SHIFT_VOLUME",
-        "SPLIT_VOLUME",
-        "TRANSFORMS",
         "baseline_pack",
         "make_option",
         "record_massing"
       ],
       "depends_on": [
         "state.massing_metrics",
+        "monkeyarch.domain.massing_transforms",
         "state.record",
         "state.spatial",
         "project.ports",
@@ -8143,7 +8189,8 @@
       "owns": [
         "PaperCanvas recording of resolved paper primitives with glyph and stroke bounds, and PDF/DXF/SVG serialization of those same scenes (SVG in paper mm with live text); the same scene always gives the same DXF bytes: the header dates and ezdxf's write time are one fixed time, its class table is in name order whatever the process's hashing, and its GUIDs derive from the file's content",
         "reusable ARCH400 white presentation and ARCH364 technical sheet styles extracted from existing drawings; compose_review_sheet places caller-supplied orthographic linework and measured dimensions at one explicit scale without changing model geometry",
-        "compose_view_sheet: caller-placed retained drawings (SheetView: a drawing's svg_paper_marks at its own paper size, placed at a top-left in mm) on a caller-sized paper in a style's frame margin and type sizes, each titled with its subtitle and scale label, a section's cut line with arrows and label on the plan it crosses (SheetSectionMark) and a title strip with the title, sheet number, source line and notes; a drawing or its labels leaving the frame, overlapping another drawing or the title strip, or strip text that does not fit, is refused by name, never moved, scaled or cropped"
+        "compose_view_sheet: caller-placed retained drawings (SheetView: a drawing's svg_paper_marks at its own paper size, placed at a top-left in mm) on a caller-sized paper in a style's frame margin and type sizes, each titled with its subtitle and scale label, a section's cut line with arrows and label on the plan it crosses (SheetSectionMark) and a title strip with the title, sheet number, source line and notes; a drawing or its labels leaving the frame, overlapping another drawing or the title strip, or strip text that does not fit, is refused by name, never moved, scaled or cropped",
+        "a view sheet's layout before it is composed: each placed drawing's default title, subtitle and scale label from its own frame (view_labels), a vertical section's plane as a line in plan (section_line) and its cut line where it crosses a placed plan, in that plan's paper mm (section_mark; SheetLayoutError DRAWING_SECTION_MARK_OUTSIDE when it does not), and the paper scene from the sheet recipe and the views' retained marks (view_sheet_scene); it reads no model or project"
       ],
       "does_not_own": [
         "source design objects, dimensions, parameter dependencies or confirmation decisions",
@@ -8174,9 +8221,15 @@
         "compose_view_sheet",
         "SheetView",
         "SheetSectionMark",
-        "initialize_drawing_runtime"
+        "initialize_drawing_runtime",
+        "view_labels",
+        "section_line",
+        "section_mark",
+        "view_sheet_scene",
+        "SheetLayoutError"
       ],
       "depends_on": [
+        "monkeydiagram.projection.views",
         "monkeycad.occt",
         "monkeycad.backends.occt.projection"
       ],
@@ -8196,11 +8249,13 @@
       "status": "canonical",
       "files": [
         "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
-        "packages/monkeydiagram/src/monkeydiagram/rendering/paper.py"
+        "packages/monkeydiagram/src/monkeydiagram/rendering/paper.py",
+        "packages/monkeydiagram/src/monkeydiagram/documentation/sheet_layout.py"
       ],
       "tests": [
         "packages/monkeydiagram/tests/test_drawing_styles.py",
-        "packages/monkeydiagram/tests/test_drawing_output.py"
+        "packages/monkeydiagram/tests/test_drawing_output.py",
+        "packages/monkeydiagram/tests/test_sheet_layout.py"
       ],
       "notes": "CREATE justified in docs/design/drawing-standard.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework. #517 retired the Drawing Standard v0.1 validator (documentation/drawings.py) and its two JSON files: no production reader (topology audit Q13). The sheet styles and the paper scene remain."
     },
@@ -8266,7 +8321,7 @@
       "purpose": "Retain corrected precedent evidence and conditional research in the existing Board document editor, with inspectable polygon tests and configured model proposals, without changing canonical design state.",
       "owns": [
         "Study evidence revisions tied to a registered document page, retained through P036 research-evidence-ledger records",
-        "validation of trace inputs and confirmed/proposed/rejected status, deterministic geometric projections and bounded counterfactual experiments",
+        "validation of trace inputs and confirmed/proposed/rejected status, deterministic geometric projections and bounded counterfactual experiments: the method, in monkeydiagram.study (canonical_evidence, derive, research_snapshot_of; StudyEvidenceError STUDY_EVIDENCE_INVALID), which reads no project",
         "explicit correction against the current Study revision, and cold reads that replay a retained revision's own findings after verifying its exact source and evidence",
         "the Study side panel and independent evidence draft in the existing document page editor",
         "editable, evidence-linked competing explanations, gaps, polygon counterfactual predictions/outcomes and conditional CompositionPattern/DesignPrior revisions",
@@ -8303,6 +8358,14 @@
         "POST /api/studies/propose",
         "list_studies",
         "polygon_observations",
+        "canonical_evidence",
+        "derive",
+        "composition_graph",
+        "check_research_links",
+        "research_snapshot_of",
+        "StudySource",
+        "StudyEvidenceError",
+        "CURRENT_DERIVATION_METHOD",
         "web: DocumentStudyPanel",
         "study_evidence_context"
       ],
@@ -8316,7 +8379,8 @@
         "project.record_kinds",
         "ports.model",
         "studio.intent",
-        "studio.board"
+        "studio.board",
+        "monkeydiagram.study"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/api/routes/study.py"
@@ -8338,9 +8402,10 @@
         "services/project-runtime/tests/test_study_research.py",
         "services/project-runtime/tests/test_study_model.py",
         "apps/monkeyhub/web/test/documentStudy.test.ts",
-        "apps/monkeyhub/web/test/documentStudy.browser.mjs"
+        "apps/monkeyhub/web/test/documentStudy.browser.mjs",
+        "packages/monkeydiagram/tests/test_study_method.py"
       ],
-      "notes": "EXTEND the existing Study owner. Document canvas and source store are reused; true polygon computation lives in MonkeyDiagram under this same capability. Historical bounds archive/compare behavior is retained, while polygon research results are independently named. Family judgments and historical causation remain unvalidated. Competing retained heads still require explicit reconciliation; exact archived revisions remain readable.",
+      "notes": "EXTEND the existing Study owner. Document canvas and source store are reused; the method - trace validation, derivations, polygon computation and research snapshots - lives in monkeydiagram.study under this same capability (#519), and the Runtime keeps the retained ledger, its cold reads and writes. Historical bounds archive/compare behavior is retained, while polygon research results are independently named. Family judgments and historical causation remain unvalidated. Competing retained heads still require explicit reconciliation; exact archived revisions remain readable.",
       "files": [
         "services/project-runtime/src/project_runtime/application/study.py",
         "services/project-runtime/src/project_runtime/api/routes/study.py",

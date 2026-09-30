@@ -11,8 +11,6 @@ from __future__ import annotations
 from pathlib import Path
 from io import BytesIO
 
-from archflow.project.repository import FilesystemProjectRepository
-
 from .. import projects
 
 from ..models import ChatDocument, ChatDocumentRef, ChatRenderContext, HubFailure
@@ -42,13 +40,10 @@ def _project_binding(project_id: str, project_dir: str):
     """The conversation's own project, opened read-only, once its identity is verified."""
 
     from project_runtime.binding import ProjectBinding
-    from project_runtime.settings import StudioSettings
 
     if projects._project(project_dir) != (project_id, project_dir):
         raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The conversation's project identity changed.")
-    root = Path(project_dir)
-    return ProjectBinding(FilesystemProjectRepository.open(root), project_id=project_id, project_dir=root,
-                          settings=StudioSettings(project_dir=root, cad_export="off"))
+    return ProjectBinding.unconfigured(Path(project_dir), project_id=project_id)
 
 
 def _registered_page(binding, ref: ChatDocumentRef):

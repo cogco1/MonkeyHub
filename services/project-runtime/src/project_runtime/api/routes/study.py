@@ -10,6 +10,8 @@ from typing import Any, Mapping
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
+from monkeydiagram import study as drawing_study
+
 from ...application import study as study_application
 from ...binding import bound_project
 from ...application.study import StudyView, list_studies, read_study, save_study
@@ -81,7 +83,7 @@ def _metric_evidence(view: StudyView) -> tuple[list[dict[str, Any]], tuple[float
         row = dict(retained)
         geometry = dict(row["geometry"])
         geometry["points"] = [
-            [study_application._q(float(x) * x_scale), study_application._q(float(y) * y_scale)]
+            [drawing_study.rounded(float(x) * x_scale), drawing_study.rounded(float(y) * y_scale)]
             for x, y in geometry["points"]
         ]
         row["geometry"] = geometry
@@ -94,7 +96,7 @@ def _comparison_relations(metric_evidence: list[dict[str, Any]]) -> list[dict[st
 
     return [
         {**row, "method": "aspect-correct-bounds-relation@1"}
-        for row in study_application._relation_rows(metric_evidence)
+        for row in drawing_study.relation_rows(metric_evidence)
     ]
 
 
@@ -104,7 +106,7 @@ def _topology_counter(
 ) -> Counter[str]:
     """Forget trace names while preserving semantic multiplicity and direction."""
 
-    confirmed = study_application._confirmed(metric_evidence)
+    confirmed = drawing_study.confirmed_traces(metric_evidence)
     kinds = {row["evidence_id"]: row["kind"] for row in confirmed}
     facts: Counter[str] = Counter(f"node:{row['kind']}" for row in confirmed)
     for relation in relations:
@@ -140,7 +142,7 @@ def _multiset_jaccard(left: Counter[str], right: Counter[str]) -> float:
         return 1.0
     intersection = sum(min(left.get(key, 0), right.get(key, 0)) for key in keys)
     union = sum(max(left.get(key, 0), right.get(key, 0)) for key in keys)
-    return study_application._q(intersection / union) if union else 1.0
+    return drawing_study.rounded(intersection / union) if union else 1.0
 
 
 def _proportions(
@@ -149,9 +151,9 @@ def _proportions(
 ) -> dict[str, Any]:
     """Describe proportion separately from topology in a stable semantic order."""
 
-    confirmed = study_application._confirmed(metric_evidence)
+    confirmed = drawing_study.confirmed_traces(metric_evidence)
     boxes = {
-        row["evidence_id"]: study_application._box(row["geometry"]["points"])
+        row["evidence_id"]: drawing_study.box_of(row["geometry"]["points"])
         for row in confirmed
     }
 
@@ -173,7 +175,7 @@ def _proportions(
         # ratio the comparison projection removed. With no confirmed envelope,
         # report size/position directly against the long-edge unit frame.
         basis_id = None
-        basis = study_application._Box(0.0, 0.0, 1.0, 1.0)
+        basis = drawing_study.Box(0.0, 0.0, 1.0, 1.0)
         basis_name = "source-page-long-edge"
 
     by_kind: dict[str, list[Mapping[str, Any]]] = {}
@@ -193,11 +195,11 @@ def _proportions(
                 "kind": kind,
                 "rank": index,
                 "evidence_id": row["evidence_id"],
-                "width_ratio": study_application._q(box.width / basis.width),
-                "height_ratio": study_application._q(box.height / basis.height),
-                "area_ratio": study_application._q(box.area / basis.area),
-                "centroid_offset_x": study_application._q((box.cx - basis.cx) / basis.width),
-                "centroid_offset_y": study_application._q((box.cy - basis.cy) / basis.height),
+                "width_ratio": drawing_study.rounded(box.width / basis.width),
+                "height_ratio": drawing_study.rounded(box.height / basis.height),
+                "area_ratio": drawing_study.rounded(box.area / basis.area),
+                "centroid_offset_x": drawing_study.rounded((box.cx - basis.cx) / basis.width),
+                "centroid_offset_y": drawing_study.rounded((box.cy - basis.cy) / basis.height),
                 "metric_bounds": box.to_dict(),
             })
     return {
@@ -218,7 +220,7 @@ def _projection(view: StudyView) -> tuple[dict[str, Any], Counter[str]]:
         "derivation_method": view.payload.get("derivation_method"),
         "source_graph_digest": view.composition_graph["graph_digest"],
         "source": source,
-        "metric_scale": {"x": study_application._q(scale[0]), "y": study_application._q(scale[1])},
+        "metric_scale": {"x": drawing_study.rounded(scale[0]), "y": drawing_study.rounded(scale[1])},
         "comparison_relations": relations,
         "topology": _counter_rows(topology),
         "proportions": _proportions(metric_evidence, scale),
@@ -234,7 +236,7 @@ def _proportion_delta(left: Mapping[str, Any], right: Mapping[str, Any]) -> tupl
         a = left_slots[slot]
         b = right_slots[slot]
         delta = {
-            field: study_application._q(abs(float(a[field]) - float(b[field])))
+            field: drawing_study.rounded(abs(float(a[field]) - float(b[field])))
             for field in _PROPORTION_FIELDS
         }
         maximum = max(maximum, *delta.values())
@@ -244,7 +246,7 @@ def _proportion_delta(left: Mapping[str, Any], right: Mapping[str, Any]) -> tupl
             "right_evidence_id": b["evidence_id"],
             "delta": delta,
         })
-    return rows, study_application._q(maximum)
+    return rows, drawing_study.rounded(maximum)
 
 
 def _compare_exact_revisions(binding, requested) -> dict[str, Any]:

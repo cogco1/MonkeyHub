@@ -33,10 +33,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import re
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Annotated, Any, Iterable, Mapping, Sequence
 import uuid
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from archflow.contracts.canonical import CanonicalValueError, canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -72,6 +72,31 @@ _DOMAIN_SOURCES = {"drawing": frozenset({"board", "document"}), "copy": frozense
 # target it belongs to. The wire bounds them exactly as a drawing request does.
 RECIPE_KEYS = {"cutLineMm": "drawing:lineweight", "visibleLineMm": "drawing:lineweight",
                "hatchSpacingMm": "drawing:hatch"}
+# Those bounds, stated once: a cut-plan request's pens and hatch spacing
+# (api.dto.drawings) and a recipe's graphics (RecipeGraphicsDto) are both these,
+# so a recipe never holds a value a drawing request would refuse.
+CutLineMm = Annotated[float, Field(gt=0, le=2, allow_inf_nan=False)]
+VisibleLineMm = Annotated[float, Field(gt=0, le=2, allow_inf_nan=False)]
+HatchSpacingMm = Annotated[float, Field(ge=0.5, le=20, allow_inf_nan=False)]
+
+
+class RecipeGraphicsDto(BaseModel):
+    """The paper-space values one project recipe sets; a key it leaves out is null.
+
+    Closed to the drawing's own graphics keys, each bounded exactly as a cut-plan
+    request bounds it. No object, material or model is looked up: a recipe is
+    what a new drawing starts from, not a claim about one model.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    cut_line_mm: CutLineMm | None = Field(
+        alias="cutLineMm", default=None, description="cut line weight on paper; set under drawing:lineweight")
+    visible_line_mm: VisibleLineMm | None = Field(
+        alias="visibleLineMm", default=None, description="visible line weight on paper; set under drawing:lineweight")
+    hatch_spacing_mm: HatchSpacingMm | None = Field(
+        alias="hatchSpacingMm", default=None, description="section hatch spacing on paper; set under drawing:hatch")
+
+
 # The order a new drawing reads recipes in. A standard (hard) comes first but is
 # not enforced (D-05-3). A temporary correction is not memory: it stays on its
 # own drawing as a local override.
@@ -1011,10 +1036,7 @@ def read_recipe_export(document: Any) -> RecipeExport:
             or any(RECIPE_KEYS.get(key) != target or value is None for key, value in graphics.items())):
         raise _export_invalid("an export sets at least one paper-space value, each under its own target: "
                               + ", ".join(f"{key} under {owner}" for key, owner in RECIPE_KEYS.items()) + ".")
-    # The wire's own bounds, read where they are defined. Imported here
-    # because the transport module imports this one.
-    from ..api.dto.decisions import RecipeGraphicsDto
-
+    # The wire's own bounds, the ones a drawing request takes.
     try:
         RecipeGraphicsDto.model_validate(dict(graphics), strict=True)
     except ValidationError as exc:

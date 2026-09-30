@@ -26,6 +26,7 @@ from project_runtime.binding import ProjectBinding, bound_project
 from project_runtime.application.decisions import (
     DECISIONS_RUN_ID,
     RECIPE_KEYS,
+    RecipeGraphicsDto,
     compile_scoped_decisions,
     decision_context_for,
     focus_refs,
@@ -33,7 +34,6 @@ from project_runtime.application.decisions import (
 )
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
-from project_runtime.api.dto.decisions import RecipeGraphicsDto
 from project_runtime.api.dto.drawings import PlanRequestDto
 from project_runtime.errors import StudioError
 

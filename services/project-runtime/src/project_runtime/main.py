@@ -17,7 +17,8 @@ import re
 import subprocess
 import sys
 import threading
-from typing import AsyncIterator, TextIO
+from types import MappingProxyType
+from typing import AsyncIterator, Mapping, TextIO
 import weakref
 
 from fastapi import Depends, FastAPI, Header, Request
@@ -31,6 +32,10 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 import uvicorn
 
 from archflow.project.index import IndexCommit, add_commit_listener
+from monkeyarch.authoring.frame import FrameError
+from monkeyarch.domain.massing_transforms import MassingTransformError
+from monkeydiagram.documentation.sheet_layout import SheetLayoutError
+from monkeydiagram.study import StudyEvidenceError
 
 from .api import routes
 from .api.routes import memory as memory_routes
@@ -51,7 +56,7 @@ from .application.validation import ValidationStore
 from .protocol import SERVER_VERSION
 from .settings import BIND_ENV, PROJECT_DIR_ENV, REMOTE_MODE, SHARED_PROJECT_ROLE, StudioSettings
 from .api.conditional import CONDITIONAL_READS, ConditionalReads
-from .errors import StudioError
+from .errors import StudioError, error_sentence
 
 DEFAULT_PORT = 8000
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
@@ -78,6 +83,23 @@ async def _handle_studio_error(request: Request, exc: StudioError) -> JSONRespon
     return JSONResponse(status_code=exc.status, content=exc.body())
 
 
+# The refusals the owner packages raise (#519). Each names its own wire code and
+# says its own sentence; the status it answers with is this server's, and this
+# table is the one place that says it. A route lets them through, and they
+# arrive in the same ``{code, detail}`` body as a ``StudioError``.
+OWNER_REFUSALS: Mapping[type[Exception], int] = MappingProxyType({
+    FrameError: 422,
+    MassingTransformError: 422,
+    SheetLayoutError: 422,
+    StudyEvidenceError: 422,
+})
+
+
+async def _handle_owner_refusal(request: Request, exc: Exception) -> JSONResponse:
+    status = next(OWNER_REFUSALS[kind] for kind in type(exc).__mro__ if kind in OWNER_REFUSALS)
+    return _error(status, exc.code, error_sentence(exc))
+
+
 async def _handle_http_exception(
     request: Request, exc: StarletteHTTPException
 ) -> JSONResponse:
@@ -85,8 +107,8 @@ async def _handle_http_exception(
     # (404 NOT_FOUND) and a known path with the wrong method (405
     # METHOD_NOT_ALLOWED). ``HTTP_ERROR`` is the fallback for any other status
     # the framework itself raises — a malformed ``Range`` header, say. Route
-    # code never reaches it: routes raise ``StudioError``, which has its own
-    # handler and its own named code.
+    # code never reaches it: routes raise ``StudioError`` or let an owner's
+    # refusal through, and each has its own handler and its own named code.
     code = _HTTP_ERROR_CODES.get(exc.status_code, "HTTP_ERROR")
     return _error(exc.status_code, code, str(exc.detail), getattr(exc, "headers", None))
 
@@ -454,6 +476,8 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
             app.state.intent_compiler, app.state.monitor
         )
     app.add_exception_handler(StudioError, _handle_studio_error)
+    for refusal in OWNER_REFUSALS:
+        app.add_exception_handler(refusal, _handle_owner_refusal)
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
     app.add_exception_handler(Exception, _handle_unexpected_error)

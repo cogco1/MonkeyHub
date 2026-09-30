@@ -240,7 +240,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
                      if f.code == "LAYER_AUTHORITY_VIOLATION")
 
     def test_the_runtime_application_layer_imports_no_route_and_not_the_middleware(self) -> None:
-        """The runtime imports itself relatively, so the rule holds on resolved names (#518)."""
+        """Nor a DTO (#519). The runtime imports itself relatively, so the rule holds on resolved names (#518)."""
 
         application = "services/project-runtime/src/project_runtime/application/example.py"
         for source in (
@@ -249,6 +249,10 @@ class WorkflowBoundaryTests(unittest.TestCase):
             "from ..api.conditional import ConditionalReads",
             "from project_runtime.api.routes import candidates",
             "def later():\n    from ..api.routes import candidates\n",
+            "from ..api.dto.working_draft import WorkingDraftDto",
+            "from ..api.dto import rendering",
+            "def later():\n    from ..api.dto.decisions import RecipeGraphicsDto\n",
+            "import project_runtime.api",
         ):
             with self.subTest(source=source):
                 self.assertTrue(self._layer_findings(application, source))
@@ -262,6 +266,52 @@ class WorkflowBoundaryTests(unittest.TestCase):
         ):
             with self.subTest(relative=relative, source=source):
                 self.assertEqual((), self._layer_findings(relative, source))
+
+    def test_the_hub_reads_the_runtime_only_through_its_declared_read_api(self) -> None:
+        """MonkeyHub starts the Runtime, shares its refusals and wire shapes, and reads cold through its read API (#519)."""
+
+        hub = "apps/monkeyhub/api/monkeyhub_api/runtime/example.py"
+        for source in (
+            "from project_runtime.main import main",
+            "from project_runtime.errors import StudioError",
+            "from project_runtime.api.dto.runtime import RuntimeDto, runtime_dto",
+            "from project_runtime.api.dto.project import ModelingInitializeDto",
+            "from project_runtime.binding import ProjectBinding, ReadToken",
+            "from project_runtime.events import StudioEvents",
+            "from project_runtime.status import inspect_runtime",
+            "from project_runtime.application.artifacts import (\n    WORK_COPY_WORKSPACE, DocumentWorkCopy, document_bytes,"
+            " list_document_work_copies, list_documents,\n)",
+            "def later():\n    from project_runtime.application.boards import BoardExportPage, export_board_pages\n",
+        ):
+            with self.subTest(source=source):
+                self.assertEqual((), self._layer_findings(hub, source))
+        for source, named in (
+            ("from project_runtime.settings import StudioSettings", "project_runtime.settings.StudioSettings"),
+            ("from project_runtime.binding import ProjectBinding, bound_project", "project_runtime.binding.bound_project"),
+            ("from project_runtime.binding import initialize_modeling", "project_runtime.binding.initialize_modeling"),
+            ("import project_runtime.binding", "project_runtime.binding"),
+            ("from project_runtime import binding", "project_runtime.binding"),
+            ("from project_runtime.application.artifacts import save_document", "project_runtime.application.artifacts.save_document"),
+            ("from project_runtime.application import artifacts", "project_runtime.application.artifacts"),
+            ("from project_runtime.application.boards import *", "project_runtime.application.boards"),
+            ("from project_runtime.api.routes import candidates", "project_runtime.api.routes.candidates"),
+            ("def later():\n    from project_runtime.application.candidate import execute_candidate\n",
+             "project_runtime.application.candidate.execute_candidate"),
+            ("import project_runtime", "project_runtime"),
+        ):
+            with self.subTest(source=source):
+                findings = self._layer_findings(hub, source)
+                self.assertEqual(1, len(findings), findings)
+                self.assertIn(repr(named), findings[0].message)
+        # The Hub's tests build Runtime fixtures and patch its insides; the rule is the production package's.
+        self.assertEqual((), self._layer_findings("apps/monkeyhub/api/tests/test_example.py",
+                                                  "from project_runtime.settings import StudioSettings"))
+
+    def test_the_project_binding_imports_no_web_framework(self) -> None:
+        binding = "services/project-runtime/src/project_runtime/binding.py"
+        for source in ("from starlette.datastructures import State", "import fastapi"):
+            with self.subTest(source=source):
+                self.assertTrue(self._layer_findings(binding, source))
 
     def test_no_package_imports_the_runtime_that_composes_it(self) -> None:
         for relative in ("packages/archflow/src/archflow/state/example.py", "packages/monkeyarch/src/monkeyarch/example.py",

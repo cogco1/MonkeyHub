@@ -31,7 +31,7 @@ from project_runtime.application.intent_agent import CodexCompiler, AnthropicCom
 from project_runtime.application.monitored_compiler import MonitoredCompiler
 from project_runtime.monitoring import StudioMonitor
 from project_runtime.errors import StudioError
-from project_runtime.api.dto.study import StudyResearchRequestDto
+from project_runtime.application.study import StudyResearchRequestDto
 from project_runtime.api.routes import study as study_routes
 from monkeymonitor.store import UsageLog
 

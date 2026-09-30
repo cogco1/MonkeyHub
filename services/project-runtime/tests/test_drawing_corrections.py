@@ -28,11 +28,10 @@ from monkeycad.backends.occt.kernel import occt_available
 from monkeycad.formats.three_dm_inspector import inspect_three_dm_index
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.refs import record_ref_from_uri
+from monkeydiagram.corrections import classify, recipe_diff
 from project_runtime.application.artifacts import DocumentPage, ModelSource, SourceDocument
 from project_runtime.application.decisions import RecipeValue
-from project_runtime.application.drawing_corrections import (
-    classify, corrections, recipe_diff, recipe_holds, recipe_suggestions,
-)
+from project_runtime.application.drawing_corrections import corrections, recipe_holds, recipe_suggestions
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 

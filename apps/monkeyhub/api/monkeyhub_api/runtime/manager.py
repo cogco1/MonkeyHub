@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from uuid import uuid4, uuid5, NAMESPACE_URL
 
 from archflow.project.record_kinds import STUDIO_DOCUMENT_MODEL_SOURCE, STUDIO_SOURCE_DOCUMENT
-from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
+from archflow.project.repository import ProjectRepositoryError
 from project_runtime.application.artifacts import (
     WORK_COPY_WORKSPACE,
     DocumentWorkCopy,
@@ -29,7 +29,6 @@ from project_runtime.application.artifacts import (
 )
 from project_runtime.binding import ProjectBinding, ReadToken
 from project_runtime.events import StudioEvents
-from project_runtime.settings import StudioSettings
 from project_runtime.errors import StudioError
 
 from ..projects import _project
@@ -326,9 +325,7 @@ class ProjectRuntimeManager:
                 raise HubFailure(409, "HUB_STOPPING", "Hub is closing.")
             runtime = self._projects.get(runtime_id)
             if runtime is None:
-                settings = StudioSettings(project_dir=Path(actual_dir), cad_export="off")
-                binding = ProjectBinding(FilesystemProjectRepository.open(Path(actual_dir)),
-                    project_id=actual_id, project_dir=Path(actual_dir), settings=settings)
+                binding = ProjectBinding.unconfigured(Path(actual_dir), project_id=actual_id)
                 operations = OperationManager(actual_id, project_dir=actual_dir,
                     journal_path=self.applications.runtime_root / "runtime/operations" / f"{runtime_id}.json")
                 runtime = ProjectRuntime(runtime_id, actual_id, actual_dir, operations, binding)

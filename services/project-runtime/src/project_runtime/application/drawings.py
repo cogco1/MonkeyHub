@@ -19,7 +19,6 @@ from io import BytesIO
 from collections import OrderedDict
 from itertools import product
 import json
-import math
 from math import ceil, sqrt
 import os
 from pathlib import Path
@@ -34,6 +33,7 @@ from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, record_ref_from_uri, require_identifier
+from monkeydiagram.documentation.sheet_layout import section_line, section_mark, view_labels, view_sheet_scene
 from monkeydiagram.drawing_runs import (
     CUT_PLAN_KIND, DrawnView, freeze_model_axis_elevation, freeze_section_perspective, read_model_axis_elevation,
 )
@@ -302,9 +302,10 @@ def drawing_pipeline(kind: str) -> dict[str, Any]:
 
         return {"kind": kind, "code": {**_source_files(*_OCCT_DRAWING, "monkeydiagram.rendering.paper",
                                                          "monkeydiagram.documentation.styles",
+                                                         "monkeydiagram.documentation.sheet_layout",
                                                          "project_runtime.application.boards"),
                                        "sheet": hashlib.sha256("".join(inspect.getsource(function) for function in (
-                                           _drawn_sheet, _sheet_files, _view_sheet_scene)).encode("utf-8")).hexdigest()[:16]},
+                                           _drawn_sheet, _sheet_files)).encode("utf-8")).hexdigest()[:16]},
                 "fonts": {role: hashlib.sha256(path.read_bytes()).hexdigest()[:16] for role, path in _sheet_fonts().items()},
                 "backend": backend_identity(),
                 "libraries": {name: _library_version(name)
@@ -1032,22 +1033,7 @@ def generate_sheet(
         return document
 
 
-_UNIT_SYMBOLS = {"meter": "m", "millimeter": "mm", "inch": "in", "foot": "ft"}
-_UNIT_DECIMALS = {"meter": 3, "millimeter": 0, "inch": 2, "foot": 3}
 _UNIT_NAMES = {"meter": "metres", "millimeter": "millimetres", "inch": "inches", "foot": "feet"}
-
-
-def _signed(value: float, unit: str) -> str:
-    return f"{value:+.{_UNIT_DECIMALS[unit]}f} {_UNIT_SYMBOLS[unit]}"
-
-
-def _axis(vector) -> str | None:
-    """+X, -Y, ... for a model axis direction; None for any other direction."""
-
-    for index, name in enumerate("XYZ"):
-        if abs(abs(vector[index]) - 1.0) <= 1e-9:
-            return ("+" if vector[index] > 0 else "-") + name
-    return None
 
 
 def _sheet_view_kind(view: Mapping[str, Any], recipe: Mapping[str, Any]) -> str:
@@ -1056,83 +1042,6 @@ def _sheet_view_kind(view: Mapping[str, Any], recipe: Mapping[str, Any]) -> str:
     if view["kind"] == "elevation":
         return "axon" if view["arguments"].get("view") == "axon" else "elevation"
     return view["kind"]
-
-
-def _sheet_view_labels(view: Mapping[str, Any], kind: str, recipe: Mapping[str, Any], unit: str) -> tuple[str, str, str]:
-    """A placed view's title, subtitle and scale label: the caller's words, else what its own frame states."""
-
-    label = view.get("mark_label")
-    cut = f" {label}-{label}" if label else ""
-    if kind == "plan":
-        frame = recipe["frame"]
-        title, subtitle, scale = "PLAN", f"Horizontal cut at Z {_signed(frame['origin'][2], unit)}, looking down", frame["scale"]
-    elif kind == "section":
-        frame = recipe["frame"]
-        look = _axis(frame["look"])
-        position = frame["origin"]["XYZ".index(look[1])]
-        title, subtitle, scale = "SECTION" + cut, f"Vertical cut at {look[1]} {_signed(position, unit)}, looking {look}", frame["scale"]
-    elif kind == "axon":
-        toward = [-value for value in recipe["look"]]
-        iso = max(abs(value) for value in toward) - min(abs(value) for value in toward) <= 1e-9
-        sides = " / ".join(("+" if value > 0 else "-") + name for name, value in zip("XYZ", toward) if abs(value) > 1e-9)
-        title = "ISOMETRIC" if iso else "AXONOMETRIC"
-        subtitle, scale = f"Parallel view from {sides}, whole model, not to scale", f"display {recipe['scale']}"
-    elif kind == "elevation":
-        name = view["arguments"].get("view", "front")
-        look = _axis(recipe["look"])
-        if name == "top":
-            title, subtitle = "TOP VIEW", "Orthographic, looking down; not a cut plan"
-        else:
-            title, subtitle = f"{name.upper()} ELEVATION", f"Orthographic, looking {look}"
-        scale = recipe["scale"]
-    else:
-        scale = recipe["scale"]
-        title, subtitle = "SECTION PERSPECTIVE" + cut, f"Cut plane at {scale}; depth in perspective, not to scale"
-        scale = f"{scale} at the cut"
-    return (view.get("title") or title, subtitle if view.get("subtitle") is None else view["subtitle"], scale)
-
-
-def _section_line(kind: str, recipe: Mapping[str, Any]):
-    """A section view's plane in plan: a point on it and the horizontal direction toward its kept side."""
-
-    if kind == "section":
-        return recipe["frame"]["origin"], recipe["frame"]["look"]
-    if kind == "section-perspective":
-        normal = recipe["section"]["normal"]
-        if abs(normal[2]) > 1e-9:
-            return None
-        return recipe["section"]["origin"], [-value for value in normal]
-    return None
-
-
-def _section_mark(view_id: str, label: str, section, plan_id: str, plan: Mapping[str, Any], unit: str):
-    """Where a vertical section plane crosses a placed horizontal plan, in that plan's own paper mm."""
-
-    from monkeydiagram.documentation.styles import SheetSectionMark
-
-    origin, look = section
-    length = math.hypot(look[0], look[1])
-    lx, ly = look[0] / length, look[1] / length
-    frame = plan["frame"]
-    u0, v0, u1, v1 = frame["crop_uv"]
-    mm_per_unit = UNIT_METRES[unit] * 1000 / int(frame["scale"].split(":")[1])
-    along = (-ly, lx)
-    low, high = -math.inf, math.inf
-    plane = (origin[0] - frame["origin"][0], origin[1] - frame["origin"][1])
-    for point, direction, (bottom, top) in zip(plane, along, ((u0, u1), (v0, v1))):
-        if abs(direction) <= 1e-12:
-            if not bottom <= point <= top:
-                low, high = 1.0, 0.0
-            continue
-        first, second = (bottom - point) / direction, (top - point) / direction
-        low, high = max(low, min(first, second)), min(high, max(first, second))
-    if not low < high:
-        raise StudioError(422, "DRAWING_SECTION_MARK_OUTSIDE",
-                          f"Section {label} ({view_id}) does not cross the plan's window; mark it on a plan it cuts.")
-    # The plan's u and v are X and Y measured from its frame origin.
-    ends = [(plane[0] + along[0] * t, plane[1] + along[1] * t) for t in (low, high)]
-    paper = [((u - u0) * mm_per_unit, (v1 - v) * mm_per_unit) for u, v in ends]
-    return SheetSectionMark(view_id=plan_id, start_mm=paper[0], end_mm=paper[1], look_mm=(lx, -ly), label=label)
 
 
 def _source_text(binding, model_source, source, unit: str) -> str:
@@ -1164,20 +1073,6 @@ def _sheet_view_document(binding, view: Mapping[str, Any], sources: Mapping[str,
     if view["kind"] == "section-perspective":
         return generate_section_perspective(binding, monitor=monitor, projections=projections, **arguments)
     raise ValueError(f"unknown sheet view kind {view['kind']!r}")
-
-
-def _view_sheet_scene(style_id, recipe, placed, marks, fonts):
-    """The view sheet's paper scene from its recipe and the retained views' marks; writes nothing."""
-
-    from monkeydiagram.documentation.styles import SheetView, compose_view_sheet
-
-    views = tuple(SheetView(view_id=row["id"], size_mm=tuple(row["sizeMm"]), marks=placed[row["id"]],
-                            place_mm=tuple(row["placeMm"]), title=row["title"], subtitle=row["subtitle"],
-                            scale_label=row["scaleLabel"]) for row in recipe["views"])
-    return compose_view_sheet(style_id=style_id, paper_size_mm=tuple(recipe["paperSizeMm"]), views=views,
-                              title=recipe["title"], sheet_number=recipe["sheetNumber"], subtitle=recipe["subtitle"],
-                              notes=tuple(recipe["notes"]), source_text=recipe["sourceText"], section_marks=marks,
-                              font_mapping=fonts)
 
 
 def _view_sheet(binding, *, source_stage_ref, model_source, source_asset, style_id, views, paper_size_mm, title, subtitle,
@@ -1234,7 +1129,7 @@ def _view_sheet(binding, *, source_stage_ref, model_source, source_asset, style_
                                                          "or its cut onto the model.")
         recipe = drawing.receipt["view"]
         kind = _sheet_view_kind(view, recipe)
-        view_title, view_subtitle, scale = _sheet_view_labels(view, kind, recipe, unit)
+        view_title, view_subtitle, scale = view_labels(view, kind, recipe, unit)
         row = {"id": view["id"], "kind": kind, "placeMm": list(view["place_mm"]), "sizeMm": list(size),
                "title": view_title, "subtitle": view_subtitle, "scaleLabel": scale, "runId": document.run_id,
                "assetSha256": document.asset_sha256, "revisionRef": document.revision_ref}
@@ -1247,13 +1142,13 @@ def _view_sheet(binding, *, source_stage_ref, model_source, source_asset, style_
         if "mark" not in row:
             continue
         target = row["mark"]["on"]
-        section = _section_line(kinds[row["id"]], recipes[row["id"]])
+        section = section_line(kinds[row["id"]], recipes[row["id"]])
         if section is None:
             raise StudioError(422, "DRAWING_SECTION_MARK_INVALID", f"View {row['id']} has no vertical plane to mark on a plan.")
         if kinds[target] != "plan":
             raise StudioError(422, "DRAWING_SECTION_MARK_INVALID", f"View {row['id']} is marked on {target}, which is not a "
                                                                    "horizontal cut plan.")
-        mark = _section_mark(row["id"], row["mark"]["label"], section, target, recipes[target], unit)
+        mark = section_mark(row["id"], row["mark"]["label"], section, target, recipes[target], unit)
         if mark not in section_marks:  # a section and its perspective through one plane mark it once
             section_marks.append(mark)
     recipe = {
@@ -1285,7 +1180,7 @@ def _view_sheet(binding, *, source_stage_ref, model_source, source_asset, style_
 
         def draw():
             try:
-                canvas = _view_sheet_scene(style_id, recipe, placed, tuple(section_marks), fonts)
+                canvas = view_sheet_scene(style_id, recipe, placed, tuple(section_marks), fonts)
             except ValueError as exc:
                 raise StudioError(422, "DRAWING_SHEET_LAYOUT_INVALID", str(exc)) from exc
             try:

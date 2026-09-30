@@ -1195,12 +1195,42 @@
       "reason": "The Project Runtime composes the packages for one open project; a package, and a package's own tests, never import it back."
     },
     {
+      "source": "apps/monkeyhub/api/monkeyhub_api",
+      "targets": [
+        "project_runtime"
+      ],
+      "allowed": [
+        "project_runtime.main",
+        "project_runtime.errors",
+        "project_runtime.api.dto",
+        "project_runtime.binding.ProjectBinding",
+        "project_runtime.binding.ReadToken",
+        "project_runtime.events",
+        "project_runtime.status",
+        "project_runtime.application.artifacts.list_documents",
+        "project_runtime.application.artifacts.document_bytes",
+        "project_runtime.application.artifacts.list_document_work_copies",
+        "project_runtime.application.artifacts.DocumentWorkCopy",
+        "project_runtime.application.artifacts.WORK_COPY_WORKSPACE",
+        "project_runtime.application.boards.export_board_pages",
+        "project_runtime.application.boards.BoardExportPage"
+      ],
+      "reason": "MonkeyHub starts the Runtime (main), shares its refusals (errors) and embeds its wire shapes (api.dto); it reads a project in process only through the Runtime's declared read API (#519): ProjectBinding and ReadToken, the event log, the runtime status, the document and work-copy readers and the Board page export. Everything else in project_runtime is reached over the Hub's forwarding path, so the Runtime can change its insides without the Hub following them."
+    },
+    {
+      "source": "services/project-runtime/src/project_runtime/binding",
+      "targets": [
+        "fastapi",
+        "starlette"
+      ],
+      "reason": "ProjectBinding and ReadToken are the Runtime's public read API, which MonkeyHub opens in process (#519): the binding holds no web framework, and the app-state glue beside it is structural."
+    },
+    {
       "source": "services/project-runtime/src/project_runtime/application",
       "targets": [
-        "project_runtime.api.routes",
-        "project_runtime.api.conditional"
+        "project_runtime.api"
       ],
-      "reason": "The HTTP layer calls the application layer, never the reverse: api imports application, and application imports no route and not the conditional-read middleware. project_runtime.api.dto joins these targets once #519 gives application the record schemas it still reads through six DTO imports (decisions, rendering twice, representation_dependencies, study_model, working_draft)."
+      "reason": "The HTTP layer calls the application layer, never the reverse: api imports application, and application imports no route, no DTO and not the conditional-read middleware. The schemas of the records application reads back (the working position, a render request, a recipe's graphics, a Study's research) are application's own, and api.dto builds on them (#519)."
     },
     {
       "source": "services/project-runtime/src/project_runtime/api/dto",

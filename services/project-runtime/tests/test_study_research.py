@@ -16,6 +16,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER
 from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
+from monkeydiagram import study as drawing_study
 from project_runtime.application import study as study_application
 from project_runtime.binding import bound_project
 from project_runtime.main import create_app
@@ -109,7 +110,7 @@ class StudyResearchTests(unittest.TestCase):
         self.assertTrue(second["research"]["completion"]["ready"])
         self.assertEqual(second["research"]["designPrior"]["preferenceStatus"], "unresolved")
         self.assertNotEqual(first["ledgerRef"], second["ledgerRef"])
-        with patch.object(study_application, "_polygon_observations", side_effect=AssertionError("no cold recomputation")):
+        with patch.object(drawing_study, "_polygon_observations", side_effect=AssertionError("no cold recomputation")):
             restarted = self.new_client()
             current = restarted.get("/api/studies/synthetic-passage")
             archived = restarted.get("/api/studies/synthetic-passage", params={"ledgerRef": first["ledgerRef"]})
@@ -322,7 +323,7 @@ class StudyResearchTests(unittest.TestCase):
         saved = self.save(research=research)
         view = self.evidence_view(saved)
         original = deepcopy(view.payload)
-        with patch.object(study_application, "_polygon_observations", side_effect=AssertionError("no recomputation")):
+        with patch.object(drawing_study, "_polygon_observations", side_effect=AssertionError("no recomputation")):
             context = study_application.study_evidence_context(view)
         self.assertTrue(context["completeness"]["complete"], context["completeness"])
         self.assertEqual({row["hypothesis_id"] for row in context["hypotheses"]}, {"connection", "environmental-gap"})
