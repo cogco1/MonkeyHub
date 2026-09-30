@@ -166,15 +166,15 @@ not as compatibility stubs for the removed panels:
 
 | Runtime route | Production consumer / decision |
 | --- | --- |
-| `GET /api/program` | Hub `chat.store.call_tool` → `studio_request` reads the bound project's structured brief; keep. |
+| `GET /api/program` | Hub `chat.tool_calls.call_tool` → `studio_request` reads the bound project's structured brief; keep. |
 | `POST /api/program` | The same Agent tool applies a sheet through Hub mutation admission and the existing candidate worker; keep. |
 | `GET /api/options`, `POST /api/options` | Agent reads/generates measured massing options using the bound runtime; keep. |
 | `POST /api/options/{option_id}/select` | Agent sends an explicit selection through Hub admission to the existing candidate path; keep. |
 | `GET /api/semantics` | Agent queries the vocabulary accepted by structured Program/component edits; keep. |
 | `GET /api/state/frame` | Local model Sync and the Agent both consume declared datum references; keep. |
 
-The route allowlists and guidance are in
-`apps/monkeyhub/api/monkeyhub_api/chat/store.py`; the dispatch regression is
+The route allowlists are in `apps/monkeyhub/api/monkeyhub_api/chat/studio_tool.py` and the
+guidance in `chat/guides.py`; the dispatch regression is
 `test_program_and_massing_routes_remain_bound_agent_capabilities` in its existing
 `test_chat.py`. Runtime `test_program.py` and `test_options.py` continue to test
 real source validation, candidate execution and retained-data behavior.
@@ -226,14 +226,14 @@ at handshake ([project-runtime-api.md §1](../protocols/project-runtime-api.md))
 ## 6. How it is reached
 
 In production only through the Hub's forwarding path
-`/api/runtime/projects/{runtime_id}/studio/{path}` (`monkeyhub_api/main.py`, `runtime/manager.py`
+`/api/runtime/projects/{runtime_id}/studio/{path}` (`monkeyhub_api/runtime/routes.py`, `runtime/manager.py`
 `forward`): path allowlist (`/api/...` and `/openapi.json` only), project id checked in query
 and body (`PROJECT_MISMATCH`), `Idempotency-Key` admission for mutations — every request that is
 not `GET`, `HEAD` or `OPTIONS`, except `/api/events/*`, `POST /api/state/closure` and
 `POST /api/pick/resolve` (`runtime/manager.py`, `forward`) — `X-Monkey-Candidate`
 and `X-Monkey-Worker` for candidate-producing requests, and an allowlist of forwarded request
 headers. `GET .../studio/api/events` is not forwarded (`STUDIO_EVENTS_RELAYED`): the Hub
-attaches once to each worker's own `/api/events` (`runtime/manager.py`, `_WorkerEvents`; it resumes
+attaches once to each worker's own `/api/events` (`runtime/worker_http.py`, `_WorkerEvents`; it resumes
 with `Last-Event-ID` and reattaches after 0.5 s, then 1, 2, 4 s … while attachments carry
 nothing) and relays it on its single `GET /api/runtime/events` stream, which every Hub page
 already holds: `index` frames are the worker's `index.committed` hints (#366), `studio` frames

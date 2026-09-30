@@ -42,7 +42,7 @@ def _hub_helpers():
         location = str(root / relative)
         if location not in sys.path:
             sys.path.insert(0, location)
-    from monkeyhub_api.chat.store import _cli_commands, _stop_process
+    from monkeyhub_api.chat.providers import _cli_commands, _stop_process
     return _cli_commands, _stop_process
 
 

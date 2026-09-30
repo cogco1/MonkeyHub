@@ -143,8 +143,8 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
 ```text
 <source-root>/
 ├─ apps/monkeyhub/                  产品：api/ web/ desktop/ installer/ assets/ run.py launch-hub.ps1
-│  ├─ api/monkeyhub_api/            Hub 后端：chat/ runtime/ settings/ 三组；只有一个文件的组（main、updates、
-│  │                                fabrication、computer_tools、project_archive）与共用的 models 留在包根
+│  ├─ api/monkeyhub_api/            Hub 后端：app/ chat/ runtime/ settings/ updates/ 五组；只有一个文件的组
+│  │                                （fabrication、computer_tools、project_archive、projects）与共用的 models 留在包根
 │  └─ web/                          单一源根：src/ test/ scripts/ tools/ assets/
 ├─ services/project-runtime/        src/project_runtime/{api/{routes,dto},application,render_adapters}  tests/  README.md  requirements.txt  pyproject.toml
 ├─ packages/

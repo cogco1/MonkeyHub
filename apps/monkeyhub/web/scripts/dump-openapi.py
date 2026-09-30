@@ -12,7 +12,7 @@ def main() -> None:
     sys.path[:0] = [str(ROOT), str(ROOT / "services/project-runtime/src"), str(ROOT / "apps/monkeyhub/api")]
     from project_runtime.main import create_app as runtime_app
     from project_runtime.settings import StudioSettings
-    from monkeyhub_api.main import create_app as hub_app, HubSettings
+    from monkeyhub_api.app.composition import create_app as hub_app, HubSettings
     with TemporaryDirectory(prefix="monkeyhub-schema-") as directory:
         applications = (
             (runtime_app(StudioSettings(project_dir=Path(directory) / "unbound")), WEB_DIR / ".generated/project-runtime"),

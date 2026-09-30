@@ -26,10 +26,10 @@ from monkeycontrol.record import NAME as RECORDING_NAME
 from monkeycontrol.runtime import RuntimeRefusal
 from monkeycontrol.trace import ResolvedTarget, WindowInfo, build_receipt
 
-from monkeyhub_api.chat import store as chat
+from monkeyhub_api.chat import activity, mcp_server, providers, tool_calls, transport
 from monkeyhub_api.chat.turn_trace import HubTurnObserver
 from monkeyhub_api.computer_tools import POLICY_PATH, ComputerService, read_policy, tool_definitions
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import HubFailure
 from monkeymonitor.store import UsageLog
 
@@ -66,7 +66,7 @@ def receipt(*, status="succeeded", refusal=None, verification=None):
 
 
 def hub_failure(status: int, payload: dict) -> HubFailure:
-    """What chat._request_json raises for a non-2xx answer, mirrored here.
+    """What transport._request_json raises for a non-2xx answer, mirrored here.
 
     The real one keeps the route's own code when the body carries one that
     looks like a code, and falls back to CHAT_TOOL_FAILED. A fake that simply
@@ -157,7 +157,7 @@ class ComputerHubCase(LocalHubCase):
         return path
 
     def transport(self, client):
-        """chat._request_json over this TestClient, refusing the same way."""
+        """transport._request_json over this TestClient, refusing the same way."""
 
         def request(base, path, method="GET", body=None, timeout=180, **kwargs):
             answer = client.request(method, path, json=body)
@@ -422,7 +422,7 @@ class ComputerRouteTests(ComputerHubCase):
 
 class ComputerToolTests(ComputerHubCase):
     def test_mcp_tools_list_includes_computer_tools(self):
-        tools = {tool["name"]: tool for tool in _tools_of(chat)}
+        tools = {tool["name"]: tool for tool in _tools_of(mcp_server)}
         for name in ("computer_inspect", "computer_action", "computer_record"):
             self.assertIn(name, tools, name)
             self.assertIs(tools[name]["inputSchema"]["additionalProperties"], False)
@@ -440,25 +440,25 @@ class ComputerToolTests(ComputerHubCase):
 
     def test_claude_allowlist_follows_policy(self):
         names = ("computer_inspect", "computer_action", "computer_record")
-        without = chat._claude_approved(self.runtime)
+        without = providers._claude_approved(self.runtime)
         for name in names:
             self.assertNotIn(f"mcp__monkeyhub__{name}", without, name)
-        self.assertEqual(without, chat._CLAUDE_APPROVED)
+        self.assertEqual(without, providers._CLAUDE_APPROVED)
         self.enable()
-        approved = chat._claude_approved(self.runtime)
+        approved = providers._claude_approved(self.runtime)
         for name in names:
             self.assertIn(f"mcp__monkeyhub__{name}", approved, name)
-        self.assertEqual(approved[: len(chat._CLAUDE_APPROVED)], chat._CLAUDE_APPROVED)
+        self.assertEqual(approved[: len(providers._CLAUDE_APPROVED)], providers._CLAUDE_APPROVED)
 
     def test_a_disabled_machine_refuses_the_tool_call_by_its_own_code(self):
         # No policy file: the tool adds nothing, so what the conversation sees
         # has to be the route's refusal, carried across as a HubFailure rather
         # than flattened into a body that reads like an answer.
         with self.hub() as client:
-            with patch.object(chat, "_request_json") as request:
+            with patch.object(transport, "_request_json") as request:
                 request.side_effect = self.transport(client)
                 with self.assertRaises(HubFailure) as refused:
-                    chat.call_tool(
+                    tool_calls.call_tool(
                         self.base_url,
                         "00000000-0000-4000-8000-000000000000",
                         "computer_inspect",
@@ -474,9 +474,9 @@ class ComputerToolTests(ComputerHubCase):
         expected = receipt()
         with self.hub() as client:
             self.inject(client, answer=expected)
-            with patch.object(chat, "_request_json") as request:
+            with patch.object(transport, "_request_json") as request:
                 request.side_effect = self.transport(client)
-                answer = chat.call_tool(
+                answer = tool_calls.call_tool(
                     self.base_url,
                     "00000000-0000-4000-8000-000000000000",
                     "computer_action",
@@ -487,7 +487,7 @@ class ComputerToolTests(ComputerHubCase):
         self.assertEqual(request.call_args[0][2], "POST")
 
     def test_activity_line_names_target(self):
-        line, candidate, failed = chat._tool_activity(
+        line, candidate, failed = activity._tool_activity(
             {
                 "server": "monkeyhub",
                 "tool": "computer_action",
@@ -520,7 +520,7 @@ class ComputerToolTests(ComputerHubCase):
         self.assertFalse(failed)
 
     def test_a_refused_action_says_so_on_one_line(self):
-        line, _, _ = chat._tool_activity(
+        line, _, _ = activity._tool_activity(
             {
                 "server": "monkeyhub",
                 "tool": "computer_action",

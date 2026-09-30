@@ -29,7 +29,7 @@ from monkeycontrol.runtime import (
     process_name,
 )
 
-from .chat import store as chat
+from .chat import transport
 from .models import (
     ComputerActionRequest, ComputerInspectRequest, ComputerPolicy,
     ComputerRecordingRequest, HubFailure,
@@ -309,4 +309,4 @@ def call(hub: str, name: str, arguments: dict) -> dict:
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "This action is not exposed to the chat.")
     if not isinstance(arguments, dict):
         raise HubFailure(422, "COMPUTER_ACTION_INVALID", "Tool arguments must be an object.")
-    return chat._request_json(hub, path, "POST", dict(arguments))
+    return transport._request_json(hub, path, "POST", dict(arguments))

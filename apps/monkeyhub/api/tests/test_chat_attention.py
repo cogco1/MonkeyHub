@@ -21,7 +21,7 @@ from test_chat import FAKE_CLI, wait_for
 from test_acp_chat import HUB_AGENT
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyhub_api.chat import store as chat
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatPermissionRequest, ChatPostRequest
 
 
@@ -144,7 +144,7 @@ class ChatAttentionTests(unittest.TestCase):
         self.assertIsNone(self.store.get(session.id).attention)
 
     def test_the_session_list_says_which_chats_wait(self):
-        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+        with patch("monkeyhub_api.app.composition.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
         with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             session, other = self.create(), self.create()

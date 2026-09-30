@@ -31,7 +31,7 @@ for folder in (ROOT, ROOT / "apps/monkeyhub/api", ROOT / "apps/monkeyhub/api/tes
 
 import uvicorn
 from test_monkeyhub_lifecycle import free_ports, project_fixture
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.app.composition import HubSettings, create_app
 from monkeyhub_api.settings.models import ApplicationSettingsDto
 from monkeyhub_api.settings.store import save_application_settings
 from archflow.project.archive import archive_manifest, restore_project_archive, write_project_archive

@@ -23,7 +23,7 @@ from archflow.project.repository import (
     ProjectRepositoryError,
 )
 
-from .chat.store import _position, _project, _workspace
+from .projects import _position, _project, _workspace
 from .models import (
     ChatProject,
     HubFailure,

@@ -340,7 +340,7 @@ def smoke_runtime(bundle: Path) -> None:
     )], cwd=bundle)
     run([str(python), "-B", str(bundle / "apps/monkeyhub/run.py"), "--help"], cwd=bundle)
     run([str(python), "-B", "-c", (
-        "from pathlib import Path; from monkeyhub_api.chat.store import _codex_acp_command; "
+        "from pathlib import Path; from monkeyhub_api.chat.providers import _codex_acp_command; "
         "root=Path.cwd(); command=_codex_acp_command(); "
         "assert command and Path(command[0])==root/'_runtime/node/node.exe'; "
         "assert Path(command[1]).is_relative_to(root); "
