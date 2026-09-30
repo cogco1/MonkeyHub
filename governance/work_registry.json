@@ -1,4 +1,27 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-485",
+      "status": "active",
+      "branch": "codex/485-cad-version-refs",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-485-cad-version-refs",
+      "base_ref": "17ac51d57162cf2eca3f37f4336f32d748656aa2",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "project.version_ref_owners",
+        "project.version_refs",
+        "adapters.cad_execution",
+        "adapters.three_dm_inspector"
+      ],
+      "write_scope": [
+        "archflow/project/version_ref_owners.py",
+        "archflow/adapters/cad_execution.py",
+        "archflow/adapters/three_dm_inspector.py"
+      ],
+      "depends_on": []
+    }
+  ]
 }
