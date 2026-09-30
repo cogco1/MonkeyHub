@@ -435,7 +435,7 @@
       ],
       "kind": "diagnostics",
       "owner": "monkeymonitor",
-      "reason": "Create the caller-selected diagnostics directory and shared Hub/Studio journal lock file; no project authority."
+      "reason": "Create the caller-selected diagnostics directory and shared Hub/Runtime journal lock file; no project authority."
     },
     {
       "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
@@ -511,7 +511,7 @@
       ],
       "kind": "application_conversation",
       "owner": "hub.shell",
-      "reason": "Saves chat attachment bytes and atomically saves their transcript metadata and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Studio/P036 interfaces."
+      "reason": "Saves chat attachment bytes and atomically saves their transcript metadata and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Runtime/P036 interfaces."
     },
     {
       "path": "apps/monkeyhub/api/monkeyhub_api/skill_plugins.py",
