@@ -1634,7 +1634,7 @@ def export_rhino_work_model(
     )
     from archflow.adapters.cad_program import CadTranslationError
     from archflow.project.refs import BranchRef
-    from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
+    from archflow.state.geometry_program import GeometryBoundsError, load_compiled_geometry_program
 
     with _work_model_lock:
         listing = list_artifacts(binding, run_id=run_id)
@@ -1721,7 +1721,7 @@ def export_rhino_work_model(
                     ).items()
                 },
             )
-        except (CadExecutionError, CadTranslationError) as exc:
+        except (CadExecutionError, CadTranslationError, GeometryBoundsError) as exc:
             raise StudioError(409, "WORK_MODEL_NOT_EXPORTABLE", error_sentence(str(exc))) from exc
         _require_same_semantics(maps, plan.expected_semantics, plan.expected_layer_colors)
         execution = execute_rhino_three_dm_export(

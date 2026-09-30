@@ -19,7 +19,8 @@ from pathlib import Path
 
 from monkeyarch.capabilities.declaration import DeclarationQuadrant
 from monkeyarch.capabilities.discipline_seats import SeatSpec
-from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity, load_compiled_geometry_program
+from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity
+from archflow.state.geometry_program import load_compiled_geometry_program
 from archflow.state.stage_workflow import CompositeStageClosureReceipt, StageClosureStatus
 from archflow.project.containers import published
 from archflow.project.issue import RunNotComplete, issue_run
@@ -790,8 +791,7 @@ class ParameterBindingRunTests(unittest.TestCase):
         ))
 
     def _bounds(self, repository, receipt, seat_id: str):
-        from archflow.adapters.cad_program import expected_object_bounds
-        from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
+        from archflow.state.geometry_program import expected_object_bounds, load_compiled_geometry_program
 
         seat = {s["seat_id"]: s for s in receipt["seat_results"]}[seat_id]
         return expected_object_bounds(load_compiled_geometry_program(repository.load_json(record_ref_from_uri(seat["program_ref"], "demo"))))

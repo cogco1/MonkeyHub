@@ -27,10 +27,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from monkeyarch.capabilities.geometry_proposal import (
-    GeometryProposalProviderIdentity,
-    load_compiled_geometry_program,
-)
+from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity
+from archflow.state.geometry_program import load_compiled_geometry_program
 from monkeyarch.capabilities.discipline_seats import SeatSpec
 from archflow.adapters.cad_execution import patch_composed_three_dm
 from archflow.project.layout import cad_workspace_path

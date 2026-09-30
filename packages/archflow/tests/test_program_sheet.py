@@ -14,7 +14,7 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from archflow.relations.contracts import ArchitecturalRelationKind
+from archflow.semantics.relation_kinds import ArchitecturalRelationKind
 from archflow.project.refs import ProjectVersionRef
 from archflow.state.program_sheet import (
     PROGRAM_SHEET_SCHEMA,

@@ -14,7 +14,7 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from archflow.adapters.cad_program import expected_object_bounds
+from archflow.state.geometry_program import expected_object_bounds
 from monkeyarch.capabilities.element_producers import ElementRow
 from monkeyarch.capabilities.relation_checks import CHECKERS, RelationCheckError, check_relations
 from archflow.state.state_record import CHECK_KINDS, Entity, Relation, StateRecord, StateRecordError, ValidatorBinding

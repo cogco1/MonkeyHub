@@ -1159,7 +1159,7 @@ class CandidateComponentRemovalTests(CandidateTestCase):
         from archflow.adapters.cad_execution import patch_composed_three_dm
         from archflow.adapters.three_dm_inspector import inspect_three_dm_contents
         from project_runtime.application.artifacts import ModelSource
-        from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
+        from archflow.state.geometry_program import load_compiled_geometry_program
         if not occt_backend.occt_available():
             self.skipTest("cadquery-ocp is not installed")
 

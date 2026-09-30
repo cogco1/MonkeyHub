@@ -13,7 +13,8 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.state.commitments import Commitment, CommitmentKind, CommitmentStatus, CommitmentStrength, CriterionRef
 from archflow.state.decision_operator import ConditionComparator, DecisionOperator, LegacyDecisionOperatorV1, StateCondition, compile_decision_operator, load_decision_operator_record
-from archflow.state.operational_state import DependencyEffect, DependencyEdge, DesignObligation, FactEpistemicStatus, LegacyOperationalMarkovStateV2, ObligationStatus, OperationalMarkovState, StateDomain, StateFact, load_operational_state_record
+from archflow.state.dependencies import DependencyEffect, DependencyEdge
+from archflow.state.operational_state import DesignObligation, FactEpistemicStatus, LegacyOperationalMarkovStateV2, ObligationStatus, OperationalMarkovState, StateDomain, StateFact, load_operational_state_record
 
 
 # The kernel this suite belongs to, which the case-answer guard reads.

@@ -4,7 +4,7 @@ import unittest
 
 from archflow.project.refs import ProjectVersionRef
 from archflow.state.commitments import Commitment, CommitmentKind, CommitmentStatus, CommitmentStrength, CriterionRef, RevisionPolicy
-from archflow.state.model import initialize_canonical_project
+from archflow.submission.canonical_state import initialize_canonical_project
 from archflow.submission.model import CandidateDelta, CandidateSubmission, Claim
 from archflow.validation.engine import AuthorizedCommitmentClaimsValidator
 

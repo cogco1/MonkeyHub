@@ -492,14 +492,12 @@
     {
       "module_id": "adapters.cad_program",
       "owner_path": "packages/archflow/src/archflow/adapters/cad_program.py",
-      "purpose": "Translate a compiled neutral geometry program into one deterministic, semantics-carrying rhinoscriptsyntax build script, plus the analytic denominator it must reproduce.",
+      "purpose": "Translate a compiled neutral geometry program into one deterministic, semantics-carrying rhinoscriptsyntax build script and the object semantics its realization must carry.",
       "owns": [
-        "the supported operation vocabulary and its rhinoscriptsyntax emission (solid, revolve, extrusion, planar_surface, loft, boolean union/difference/intersection, linear and radial array, transform, curve)",
+        "the rhinoscriptsyntax emission of the analytic operation kinds (solid, revolve, extrusion, planar_surface, loft, boolean union/difference/intersection, linear and radial array, transform, curve)",
         "the layer path and layer colour tables derived from components and material assignment",
         "the archflow:* object user text each physical object must carry (expected_object_semantics)",
         "writing each of an operation's statements through as an archflow:<key> user string, verbatim, and the reserved identity keys a statement may not take",
-        "the analytic per-object bounds the realization must reproduce (expected_object_bounds)",
-        "applying a datum-bound base_level to profile points (lift_to_base_level)",
         "the P103 partial emission of an operation subset",
         "native Rhino object material assignment from the caller-declared material and colour maps, in addition to layer display colours",
         "the STEP-import script: the same header, semantics tail and layer table as the program script, with each named object read from its own single-object STEP under a digest check, and the delivery's own retained material applied last so nothing overwrites it"
@@ -509,6 +507,7 @@
         "deciding which operations a patch rebuilds - adapters.cad_patch",
         "reading the resulting .3dm - adapters.three_dm_inspector",
         "compiling the program - compilers.geometry",
+        "the analytic bounds, the placement readers and the operation kinds it may emit - state.geometry_program",
         "any design decision: it holds no design authority and adds no geometry"
       ],
       "inputs": [
@@ -521,17 +520,13 @@
       ],
       "outputs": [
         "CadTranslation (script, physical object ids, losses, layer colours)",
-        "expected semantics mapping",
-        "expected bounds mapping"
+        "expected semantics mapping"
       ],
       "public_api": [
         "translate_to_rhino_python",
         "expected_object_semantics",
-        "expected_object_bounds",
-        "lift_to_base_level",
         "CadTranslation",
         "CadTranslationError",
-        "DifferenceBoundsError",
         "translate_step_import_to_rhino_python",
         "ROOT_LAYER"
       ],
@@ -541,8 +536,6 @@
       "used_by": [
         "packages/archflow/src/archflow/adapters/cad_execution.py",
         "packages/archflow/src/archflow/adapters/cad_patch.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
-        "tools/project/verify_state_record.py",
         "tests/integration/test_cad_program.py",
         "tests/integration/test_cad_patch.py",
         "tests/integration/test_element_producers.py"
@@ -553,10 +546,7 @@
         "coordinates pass through as the program states them; the translator performs no frame conversion",
         "every physical object is named and carries its archflow:* identity strings",
         "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError",
-        "planar_surface preserves its explicitly closed profile and datum elevation with AddPlanarSrf, without extrusion or capping; analytic bounds retain the zero-thickness plane",
-        "a difference keeps its base's predicted bounds when every base vertex survives outside every void's box, for any base whose points are its own vertices",
-        "a void whose box does not overlap its base's box is refused by name: it removes nothing",
-        "a boolean_difference whose bounds cannot be determined analytically fails DifferenceBoundsError, a CadTranslationError that says whether a void misses its base"
+        "planar_surface preserves its explicitly closed profile and datum elevation with AddPlanarSrf, without extrusion or capping"
       ],
       "status": "canonical",
       "tests": [
@@ -1043,10 +1033,9 @@
         "the strict provider request and response contracts (the authoring output topology and its function contracts)",
         "the function-contract check itself: parameters against the table for the operation's kind, statements only by shape - an operation's statements are never listed as missing or extra",
         "the bounded round loop, its policy knobs (round cap, bookkeeping completion, progress budget, partial acceptance, stall escalation) and its resume seam",
-        "decoding a provider's full or edit-shaped answer into a typed GeometryProgramProposal without inventing geometry",
+        "decoding a provider's full or edit-shaped answer into a typed GeometryProgramProposal without inventing geometry, through state.geometry_program's body and item decoders",
         "semantic coverage validation of a proposal against the state, commitments, seat scope and required component bindings",
         "the lineage / round / proposal / deferral / escalation records and their persistence through the repository",
-        "reloading one exact compiled program from its retained record",
         "the planar_surface function contract: one explicit POINTS3 boundary, optional datum-relative base_offset and no input objects",
         "the retained CURVE function contract accepts optional datum-relative base_offset beside points and basis; the existing polyline representation serves drawn curves",
         "the extrusion and loft function contracts' optional retain_for_inspection, and the loft's optional hidden_for_inspection"
@@ -1056,7 +1045,8 @@
         "the request and receipt contracts it invokes a provider with - ports.model",
         "accepting a stage or writing canonical state - it holds no hard-gate or canonical-write authority",
         "producing geometry from records itself - capabilities.element_producers (the runner feeds it an authored proposal)",
-        "any CAD translation or execution - archflow.adapters"
+        "any CAD translation or execution - archflow.adapters",
+        "reading retained CompiledGeometryProgram and GeometryProgramProposal records - state.geometry_program"
       ],
       "inputs": [
         "StateRecord or DevelopedDesignState",
@@ -1078,7 +1068,6 @@
         "produce_geometry_program_proposal",
         "resume_geometry_program_proposal",
         "load_geometry_proposal_lineage",
-        "load_compiled_geometry_program",
         "proposal_authoring_output",
         "proposal_edit_authoring_output",
         "GeometryProposalPolicy",
@@ -1095,7 +1084,6 @@
         "archflow.project.refs",
         "archflow.state.developed_design",
         "archflow.state.geometry_program",
-        "archflow.state.operational_state",
         "archflow.state.spatial",
         "archflow.state.stage_workflow",
         "archflow.state.state_record",
@@ -1109,7 +1097,6 @@
         "project.refs",
         "state.developed_design",
         "state.geometry_program",
-        "state.operational_state",
         "state.record",
         "state.spatial",
         "state.stage_workflow"
@@ -1307,7 +1294,7 @@
       ],
       "does_not_own": [
         "which relations reach the check - runtime.project_runner passes the record's own declared relations plus the `support` relations the producers built",
-        "producing the geometry or the analytic bounds it measures - capabilities.element_producers and compilers.geometry",
+        "producing the geometry or the analytic bounds it measures - capabilities.element_producers, compilers.geometry and state.geometry_program",
         "declaring the relation in the first place - archflow.state.state_record",
         "turning a violation into a stage or run verdict - runtime.project_runner",
         "any repair or healing of geometry that fails a check - nothing on the spine does this",
@@ -1484,13 +1471,12 @@
         "archflow.project.refs",
         "archflow.state.developed_design",
         "archflow.state.geometry_program",
-        "archflow.state.operational_state",
         "archflow.state.state_record",
         "contracts.canonical",
+        "contracts.fields",
         "project.refs",
         "state.developed_design",
         "state.geometry_program",
-        "state.operational_state",
         "state.record"
       ],
       "used_by": [
@@ -1601,7 +1587,6 @@
         "packages/archflow/src/archflow/state/spatial.py",
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/stage_workflow.py",
-        "packages/archflow/src/archflow/relations/contracts.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
         "packages/archflow/src/archflow/state/developed_design.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
@@ -1628,11 +1613,12 @@
         "exact mapping key-set checks used to detect schema drift (exact_mapping)",
         "payload field primitives: mapping, list_of, tuple_of, typed_tuple, string_tuple, unique, number, positive, refs, ids",
         "scheme-qualified logical-ref syntax, rejecting file: and drive-letter paths (logical_ref)",
-        "sorted-unique bounded tuples of refs and identifiers (deterministic_refs, deterministic_identifiers)"
+        "portable logical-ref and local-id syntax (require_logical_ref, require_local_id, PORTABLE_LOGICAL_REF_PATTERN)",
+        "sorted-unique bounded tuples of refs and identifiers (deterministic_refs, deterministic_identifiers)",
+        "unbounded non-empty text and the enum member a text value names (unbounded_text, enum_member)"
       ],
       "does_not_own": [
         "identifier syntax itself, which it delegates to project.refs.require_identifier",
-        "the logical-ref validator used by the operational-state family (state.operational_state.require_logical_ref is a parallel)",
         "digesting or serializing the values it validates (contracts.canonical)"
       ],
       "inputs": [
@@ -1661,25 +1647,37 @@
         "text",
         "tuple_of",
         "typed_tuple",
-        "unique"
+        "unique",
+        "PORTABLE_LOGICAL_REF_PATTERN",
+        "require_logical_ref",
+        "require_local_id",
+        "unbounded_text",
+        "enum_member"
       ],
       "depends_on": [
         "project.refs"
       ],
       "used_by": [
-        "packages/archflow/src/archflow/relations/contracts.py",
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/geometry_program.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py"
+        "packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py",
+        "packages/archflow/src/archflow/state/design_portfolio.py",
+        "packages/archflow/src/archflow/state/developed_design.py",
+        "packages/archflow/src/archflow/state/spatial.py",
+        "packages/archflow/src/archflow/state/stage_workflow.py",
+        "packages/archflow/src/archflow/state/decision_operator.py",
+        "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
+        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py"
       ],
       "invariants": [
         "a tuple field must already be sorted and unique; the validator never sorts on the caller's behalf",
         "collections are bounded at 4096 items",
-        "validation is total: an unexpected type raises rather than being coerced"
+        "validation is total: an unexpected type raises rather than being coerced",
+        "a portable logical ref refuses file: and drive-letter paths and anything outside PORTABLE_LOGICAL_REF_PATTERN, with no length bound"
       ],
       "status": "canonical",
       "tests": [],
-      "notes": "Canonical, but all four of its consumers are themselves fold targets and no test imports it directly; finite_number is never imported.",
+      "notes": "Canonical. require_logical_ref (from state.operational_state, #512) and logical_ref are two rules on purpose: the state modules' refs are unbounded and take no underscore in the scheme, and one rule for both would change what their records accept. No test imports it directly; finite_number is never imported.",
       "untested_reason": "field primitives with no behaviour of their own; every StateRecord/GeometryProgram round-trip test exercises them"
     },
     {
@@ -2605,7 +2603,7 @@
         "digesting content (contracts.canonical)",
         "mapping a ref onto a filesystem path (project.layout)",
         "reading or writing anything a ref names (project.repository)",
-        "logical (scheme-qualified) refs, which are not project refs (contracts.fields.logical_ref, state.operational_state.require_logical_ref)"
+        "logical (scheme-qualified) refs, which are not project refs (contracts.fields.logical_ref, contracts.fields.require_logical_ref)"
       ],
       "inputs": [
         "str identifier",
@@ -2647,7 +2645,6 @@
         "packages/archflow/src/archflow/project/layout.py",
         "packages/archflow/src/archflow/project/ports.py",
         "packages/archflow/src/archflow/project/repository.py",
-        "packages/archflow/src/archflow/relations/contracts.py",
         "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
         "packages/archflow/src/archflow/state/geometry_program.py",
         "packages/archflow/src/archflow/state/operational_state.py",
@@ -2946,67 +2943,6 @@
       "notes": "1311 lines carrying the whole persistence concept, including Windows sharing-violation retries around the HEAD swap; PreparedTransition and RecoveryReport are returned but never imported by name."
     },
     {
-      "module_id": "relations.contracts",
-      "owner_path": "packages/archflow/src/archflow/relations/contracts.py",
-      "purpose": "Persistence-neutral typed contracts for the architectural relation graph, and the relation-kind vocabulary the State Record validates against.",
-      "owns": [
-        "the node kind vocabulary (ArchitecturalNodeKind, ArchitecturalNode)",
-        "the core relation vocabulary (ArchitecturalRelationKind) - the one vocabulary the record accepts",
-        "the closed participant-role set per relation kind (allowed_relation_roles, RelationParticipant)",
-        "relation projections and epistemic status (RelationProjection, RelationEpistemicStatus)",
-        "monotone impact effects and propagation rules (ImpactEffect, RelationPropagationRule)",
-        "the relation and graph records with their digests (ArchitecturalRelation, ArchitecturalRelationGraph)"
-      ],
-      "does_not_own": [
-        "graph coverage and traversal (deliberately outside this module)",
-        "checking a relation against materialized geometry (capabilities/relation_checks.py)",
-        "the record's own Relation shape with its datum role and validator binding (state.record)",
-        "dependency edges (state.operational_state)"
-      ],
-      "inputs": [
-        "node and relation declarations",
-        "BranchRef",
-        "scope and stage digests"
-      ],
-      "outputs": [
-        "ArchitecturalRelation",
-        "ArchitecturalRelationGraph",
-        "digests"
-      ],
-      "public_api": [
-        "ArchitecturalRelationKind",
-        "ArchitecturalNodeKind",
-        "ArchitecturalNode",
-        "ArchitecturalRelation",
-        "ArchitecturalRelationGraph",
-        "RelationParticipant",
-        "RelationProjection",
-        "RelationEpistemicStatus",
-        "RelationPropagationRule",
-        "ImpactEffect",
-        "ArchitecturalRelationContractError"
-      ],
-      "depends_on": [
-        "contracts.canonical",
-        "contracts.fields",
-        "project.refs"
-      ],
-      "used_by": [
-        "packages/archflow/src/archflow/state/state_record.py"
-      ],
-      "invariants": [
-        "owns no design, stage-acceptance, persistence or canonical-write authority",
-        "participant roles are closed per relation kind; an unknown role is refused",
-        "the graph is a deterministic projection over exact records, never a mutable store",
-        "never writes the filesystem"
-      ],
-      "status": "canonical",
-      "tests": [
-        "packages/archflow/tests/test_program_sheet.py"
-      ],
-      "notes": "On the spine only because state_record.py imports ArchitecturalRelationKind; the graph types have no spine consumer and §2.2 sends the ArchitecturalRelation graph to the monuments/controller lanes, so this module should shrink to the enum."
-    },
-    {
       "module_id": "runtime.project_runner",
       "owner_path": "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
       "purpose": "The one runtime loop: run admitted seat rounds from a single State Record, retaining every record the run produces and returning an authority-free stage-run receipt.",
@@ -3070,10 +3006,8 @@
       "depends_on": [
         "project.layout",
         "adapters.cad_execution",
-        "adapters.cad_program",
         "adapters.three_dm_inspector",
         "archflow.adapters.cad_execution",
-        "archflow.adapters.cad_program",
         "archflow.adapters.three_dm_inspector",
         "monkeyarch.capabilities.discipline_seats",
         "monkeyarch.capabilities.element_producers",
@@ -3280,7 +3214,7 @@
       ],
       "does_not_own": [
         "roles - semantics.roles",
-        "relation kinds - relations.contracts"
+        "relation kinds - semantics.relation_kinds"
       ],
       "inputs": [],
       "outputs": [
@@ -3388,6 +3322,41 @@
       "notes": ""
     },
     {
+      "module_id": "semantics.relation_kinds",
+      "owner_path": "packages/archflow/src/archflow/semantics/relation_kinds.py",
+      "purpose": "The architectural relation kinds a State Record relation may name.",
+      "owns": [
+        "the core relation vocabulary (ArchitecturalRelationKind) - the one vocabulary the record accepts"
+      ],
+      "does_not_own": [
+        "the record's own Relation shape with its datum role, propagation and validator binding (state.record)",
+        "checking a relation against materialized geometry (capabilities/relation_checks.py)",
+        "dependency edges and what propagates along them (state.dependencies)",
+        "roles and conditions - semantics.roles, semantics.conditions"
+      ],
+      "inputs": [],
+      "outputs": [
+        "ArchitecturalRelationKind"
+      ],
+      "public_api": [
+        "ArchitecturalRelationKind"
+      ],
+      "depends_on": [],
+      "used_by": [
+        "packages/archflow/src/archflow/state/state_record.py",
+        "packages/archflow/src/archflow/state/program_sheet.py"
+      ],
+      "invariants": [
+        "a relation kind is one of these ids; the record refuses any other",
+        "never writes the filesystem"
+      ],
+      "status": "canonical",
+      "tests": [
+        "packages/archflow/tests/test_program_sheet.py"
+      ],
+      "notes": "The enum of relations.contracts, which #512 deleted with the relation graph types nothing used."
+    },
+    {
       "module_id": "semantics.roles",
       "owner_path": "packages/archflow/src/archflow/semantics/roles.py",
       "purpose": "The registered roles a component may hold (what it does for the building), with meanings and aliases.",
@@ -3462,7 +3431,7 @@
         "contracts.fields"
       ],
       "used_by": [
-        "packages/archflow/src/archflow/state/model.py",
+        "packages/archflow/src/archflow/submission/canonical_state.py",
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
         "packages/archflow/src/archflow/submission/model.py",
@@ -3488,7 +3457,7 @@
         "the typed intent record with no write authority (DecisionOperator, StateCondition, ConditionComparator)",
         "precondition, lock-authority and commitment-spawn authority checks",
         "the delta and its digest (StateDelta)",
-        "the explicit deterministic dependency closure over invalidations (ClosureReceipt)",
+        "the explicit deterministic dependency closure over invalidations, bounded at 4096 refs (ClosureReceipt)",
         "refreshing obligation readiness after a delta and minting revalidation obligations",
         "the read-only V1 compatibility record and its migration gate (LegacyDecisionOperatorV1, load_decision_operator_record)"
       ],
@@ -3496,7 +3465,8 @@
         "the state types it operates on (state.operational_state)",
         "commitment lifecycle legality (state.commitments.transition_commitment)",
         "phase gates (state.design_maturity)",
-        "persisting the compiled result (project.repository)"
+        "persisting the compiled result (project.repository)",
+        "the closure walk (state.dependencies.downstream_closure)"
       ],
       "inputs": [
         "DecisionOperator",
@@ -3520,6 +3490,7 @@
         "contracts.fields",
         "project.refs",
         "state.commitments",
+        "state.dependencies",
         "state.operational_state"
       ],
       "used_by": [
@@ -3539,6 +3510,60 @@
         "services/project-runtime/tests/test_proposals.py"
       ],
       "notes": "Canonical: the Studio's conversational proposals remain DecisionOperator@2 inputs to OperationalMarkovState. StateRecord application is separately owned by state.record through its closed StateRecordOperator; no Studio-local successor remains."
+    },
+    {
+      "module_id": "state.dependencies",
+      "owner_path": "packages/archflow/src/archflow/state/dependencies.py",
+      "purpose": "The canonical design dependency: one edge, what may propagate along it, and the one downstream closure every reader of those edges uses.",
+      "owns": [
+        "the dependency edge and what propagates along it (DependencyEdge, DependencyEffect)",
+        "which effects carry a change downstream (PROPAGATING_EFFECTS: invalidates and requires_revalidation; blocks and supports_only carry none)",
+        "the one downstream closure over dependency edges, for one group of changed refs or for several over one graph (downstream_closure, downstream_closures)"
+      ],
+      "does_not_own": [
+        "which edges a record declares (state.record.dependency_edges)",
+        "what a closure means to its reader: impact (studio.validation), frame (studio.binding), revalidation obligations and their bound (state.decision_operator), combining candidates (state.record)",
+        "the orders and cycle checks over other graphs, which differ on purpose: parameter derivation (state.derivation), obligation blockers (state.operational_state), production order (capabilities.element_producers) and operation order (compilers.geometry)"
+      ],
+      "inputs": [
+        "DependencyEdge values",
+        "changed refs, one group or several",
+        "the effects that propagate (PROPAGATING_EFFECTS by default)"
+      ],
+      "outputs": [
+        "DependencyEdge",
+        "a sorted closure per group of changed refs"
+      ],
+      "public_api": [
+        "DependencyEdge",
+        "DependencyEffect",
+        "PROPAGATING_EFFECTS",
+        "downstream_closure",
+        "downstream_closures"
+      ],
+      "depends_on": [
+        "contracts.canonical",
+        "contracts.fields"
+      ],
+      "used_by": [
+        "packages/archflow/src/archflow/state/operational_state.py",
+        "packages/archflow/src/archflow/state/state_record.py",
+        "packages/archflow/src/archflow/state/decision_operator.py",
+        "services/project-runtime/src/project_runtime/application/frame.py",
+        "services/project-runtime/src/project_runtime/application/projection.py"
+      ],
+      "invariants": [
+        "a closure contains its changed refs and everything downstream of them, sorted; each group's closure is independent of the others",
+        "only an edge whose effect is among the requested effects carries a change",
+        "an edge that carries a change never points at a normative ref (obligation: or commitment:); a blocking edge connects two obligations",
+        "never writes the filesystem"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/integration/test_state_record.py",
+        "packages/archflow/tests/test_operational_markov_compiler.py"
+      ],
+      "notes": "Split out of state.operational_state (#512) together with the closure state.record, state.decision_operator and the Studio frame each carried a copy of."
     },
     {
       "module_id": "state.derivation",
@@ -3644,7 +3669,6 @@
         "contracts.canonical",
         "contracts.fields",
         "project.refs",
-        "state.operational_state",
         "state.spatial"
       ],
       "used_by": [
@@ -3707,7 +3731,6 @@
         "contracts.fields",
         "project.refs",
         "state.design_portfolio",
-        "state.operational_state",
         "state.spatial",
         "state.stage_workflow",
         "project.version_refs"
@@ -3737,7 +3760,7 @@
     {
       "module_id": "state.geometry_program",
       "owner_path": "packages/archflow/src/archflow/state/geometry_program.py",
-      "purpose": "The typed, platform-neutral geometry program (operations, frames, assemblies, assets, datums) and the published project levels and grids.",
+      "purpose": "The typed, platform-neutral geometry program (operations, frames, assemblies, assets, datums), the published project levels and grids, the reader of the program's retained records, and the analytic bounds its realization must reproduce.",
       "owns": [
         "the generic operation and parameter vocabularies (GeometryOperationKind, GeometryParameterKind, GeometryOperation, GeometryParameter)",
         "GeometryOperation.statements: the declared, non-geometric facts an operation carries to the export as archflow:<key> user strings - identifier keys, text values, deterministic order",
@@ -3750,6 +3773,12 @@
         "the program proposal record and its digest (GeometryProgramProposal)",
         "project levels and grid axes as published datums (ProjectLevel, ProjectLevels, ProjectGridAxis, ProjectGrids, verify_project_datums)",
         "compiled geometry program/object values, asset substitution receipts and their retained serialization shared by the MonkeyArch compiler and ArchFlow CAD adapters",
+        "reading retained CompiledGeometryProgram@2/@3 and GeometryProgramProposal@2 records back exactly, refusing a compiled program that is not the canonical rendering of what it rebuilds (load_compiled_geometry_program, load_geometry_program_proposal)",
+        "decoding a proposal body and each of its item lists for one named state, raise-first or collecting every failure (decode_proposal_body, decode_proposal_items)",
+        "the analytic per-object bounds the realization must reproduce (expected_object_bounds)",
+        "applying a datum-bound base_level to profile points (lift_to_base_level)",
+        "an operation's parameters as the JSON values they state and a revolve's end sections on their optional storey datum, read the same way by every executor and the prediction (operation_parameters, revolve_parameters)",
+        "the operation kinds with analytic bounds, the only kinds a CAD translation emits (ANALYTIC_OPERATION_KINDS)",
         "PLANAR_SURFACE: one explicitly closed planar polygon without thickness; operation construction rejects open, non-planar, self-intersecting and degenerate boundaries",
         "which objects a program delivers (delivered_object_ids): outputs nothing consumes, except unretained curves, and outputs whose operation states retain_for_inspection"
       ],
@@ -3757,6 +3786,7 @@
         "producing operations from design content (capabilities/element_producers.py, wall_solver, opening_solver)",
         "compiling a proposal into a cad program (compilers/geometry.py)",
         "executing or reading back geometry (adapters/cad_execution.py, three_dm_inspector)",
+        "translating the program into a CAD script and the object semantics its realization carries (adapters.cad_program)",
         "resolving a datum or grid reference for a producer (capabilities/reference_resolver.py)",
         "which levels a project has (state.record.project_levels_of publishes them)",
         "canonical json and digests - contracts.canonical"
@@ -3765,7 +3795,8 @@
         "operation and parameter declarations",
         "level/axis declarations",
         "state digest",
-        "logical refs"
+        "logical refs",
+        "retained CompiledGeometryProgram@2/@3 and GeometryProgramProposal@2 records"
       ],
       "outputs": [
         "GeometryOperation",
@@ -3773,7 +3804,9 @@
         "GeometryProgramProposal",
         "InterfaceDatum",
         "ProjectLevels",
-        "ProjectGrids"
+        "ProjectGrids",
+        "CompiledGeometryProgram and GeometryProgramProposal reloaded from their retained records",
+        "expected bounds mapping"
       ],
       "public_api": [
         "GeometryProgramProposal",
@@ -3810,13 +3843,23 @@
         "CompiledGeometryObject",
         "AssetSubstitutionReceipt",
         "GeometryCompilationError",
-        "delivered_object_ids"
+        "delivered_object_ids",
+        "load_compiled_geometry_program",
+        "load_geometry_program_proposal",
+        "decode_proposal_body",
+        "decode_proposal_items",
+        "expected_object_bounds",
+        "lift_to_base_level",
+        "revolve_parameters",
+        "operation_parameters",
+        "ANALYTIC_OPERATION_KINDS",
+        "GeometryBoundsError",
+        "DifferenceBoundsError"
       ],
       "depends_on": [
         "contracts.canonical",
         "contracts.fields",
-        "project.refs",
-        "state.operational_state"
+        "project.refs"
       ],
       "used_by": [
         "packages/archflow/src/archflow/adapters/cad_execution.py",
@@ -3829,7 +3872,15 @@
         "packages/monkeyarch/src/monkeyarch/capabilities/reference_resolver.py",
         "packages/monkeyarch/src/monkeyarch/capabilities/wall_solver.py",
         "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
-        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py"
+        "packages/monkeyarch/src/monkeyarch/runtime/project_runner.py",
+        "services/project-runtime/src/project_runtime/application/drawing_plans.py",
+        "services/project-runtime/src/project_runtime/application/artifacts.py",
+        "services/project-runtime/src/project_runtime/application/candidate.py",
+        "tools/project/verify_state_record.py",
+        "packages/archflow/src/archflow/adapters/cad_program.py",
+        "packages/archflow/src/archflow/adapters/cad_patch.py",
+        "packages/monkeyarch/src/monkeyarch/construction/shapes.py",
+        "packages/monkeyarch/src/monkeyarch/construction/lowering.py"
       ],
       "invariants": [
         "the operation vocabulary is generic: no project, style or external-tool routing authority",
@@ -3840,22 +3891,28 @@
         "a proposal names the design-state digest it was produced from",
         "never writes the filesystem",
         "an operation may name no semantic binding; allowing it changes no retained serialization",
-        "a hosted assembly may cite no interface; one that cites any serializes exactly as before"
+        "a hosted assembly may cite no interface; one that cites any serializes exactly as before",
+        "a retained record reloads exactly or raises GeometryProgramError; a @2 compiled program reloads with empty datum fields",
+        "the analytic bounds of a planar_surface retain its zero-thickness plane",
+        "a difference keeps its base's predicted bounds when every base vertex survives outside every void's box, for any base whose points are its own vertices",
+        "a void whose box does not overlap its base's box is refused by name: it removes nothing",
+        "a boolean_difference whose bounds cannot be determined analytically fails DifferenceBoundsError, a GeometryBoundsError that says whether a void misses its base"
       ],
       "status": "canonical",
       "tests": [
         "tests/integration/test_cad_execution.py",
+        "tests/integration/test_cad_program.py",
         "tests/integration/test_geometry_compiler.py",
         "tests/integration/test_geometry_program.py",
         "tests/integration/test_interface_datums.py",
         "tests/integration/test_occt_execution.py",
         "tests/integration/test_wall_realization.py"
       ],
-      "notes": "Defines its own digest_value/require_sha256 instead of using contracts.canonical, a second digest implementation on the spine; at 1564 lines it is the largest contract module."
+      "notes": "The values, the reader of their retained records and their analytic bounds (#513) are one contract, so MonkeyArch construction, the runtime and the CAD adapters read programs and predict bounds without importing one another; every digest comes from contracts.canonical."
     },
     {
       "module_id": "state.model",
-      "owner_path": "packages/archflow/src/archflow/state/model.py",
+      "owner_path": "packages/archflow/src/archflow/submission/canonical_state.py",
       "purpose": "The CanonicalState@1 HEAD shape (facts, commitments, open obligations, artifacts) and the StateRef compatibility alias.",
       "owns": [
         "the canonical HEAD state value and its uniqueness rules (CanonicalState)",
@@ -3890,8 +3947,7 @@
       "depends_on": [
         "contracts.fields",
         "project.refs",
-        "state.commitments",
-        "state.program"
+        "state.commitments"
       ],
       "used_by": [
         "packages/archflow/src/archflow/validation/engine.py",
@@ -3910,29 +3966,28 @@
       "tests": [
         "packages/archflow/tests/test_project_authority_seam.py"
       ],
-      "notes": "Canonical; its Obligation is the legacy obligation shape CanonicalState@1 carries. Projecting DesignObligation into it is an open gap with no Issue yet; until then the two shapes coexist by decision, not by accident."
+      "notes": "Canonical; its Obligation is the legacy obligation shape CanonicalState@1 carries. Projecting DesignObligation into it is an open gap with no Issue yet; until then the two shapes coexist by decision, not by accident. It lives in submission/ beside the submission it is checked with (#512); the id predates the move, and ids change only in the id round. Its BuildingProgram legacy_program_view went with state.program: no code built one and no retained state carried one."
     },
     {
       "module_id": "state.operational_state",
       "owner_path": "packages/archflow/src/archflow/state/operational_state.py",
-      "purpose": "The branch-local kernel state (facts, bindings, locks, obligations, dependency edges) that the State Record and every downstream contract reuse.",
+      "purpose": "The branch-local kernel state (facts, bindings, locks, obligations and the dependency edges it holds) that the State Record and every downstream contract reuse.",
       "owns": [
-        "portable logical-ref and local-id syntax (require_logical_ref, require_local_id, PORTABLE_LOGICAL_REF_PATTERN)",
         "the state domain and fact epistemic vocabularies (StateDomain, FactEpistemicStatus)",
         "canonical fact values and facts (FactValue, StateFact)",
         "parameter bindings and authority locks (ParameterBinding, StateLock)",
         "the design obligation with its status, blockers and activation condition (DesignObligation, ObligationStatus, ObligationCondition)",
-        "the dependency edge and what propagates along it (DependencyEdge, DependencyEffect)",
         "OperationalMarkovState@3 with its sufficient and state digests",
         "the read-only V2 compatibility record and its explicit migration gate (LegacyOperationalMarkovStateV2, load_operational_state_record, OperationalStateMigrationRequired)"
       ],
       "does_not_own": [
         "applying a decision to produce the next state (state.decision_operator)",
         "phase gates and deliverables (state.design_maturity)",
-        "the architectural relation vocabulary (relations.contracts)",
+        "the architectural relation vocabulary (semantics.relation_kinds)",
         "canonical write authority (explicitly outside the operational state)",
         "persisting state (project.repository)",
-        "commitment lifecycle transitions (state.commitments)"
+        "commitment lifecycle transitions (state.commitments)",
+        "the dependency edge, what propagates along it and the closure over it (state.dependencies)"
       ],
       "inputs": [
         "facts, bindings, locks, obligations, dependency edges",
@@ -3942,14 +3997,11 @@
       "outputs": [
         "OperationalMarkovState and its digests",
         "DesignObligation",
-        "DependencyEdge",
         "StateFact"
       ],
       "public_api": [
         "OperationalMarkovState",
         "DesignObligation",
-        "DependencyEdge",
-        "DependencyEffect",
         "ObligationStatus",
         "ObligationCondition",
         "StateFact",
@@ -3958,9 +4010,6 @@
         "FactValue",
         "ParameterBinding",
         "StateLock",
-        "require_logical_ref",
-        "require_local_id",
-        "PORTABLE_LOGICAL_REF_PATTERN",
         "load_operational_state_record",
         "LegacyOperationalMarkovStateV2",
         "OperationalStateMigrationRequired"
@@ -3969,20 +4018,13 @@
         "contracts.canonical",
         "contracts.fields",
         "project.refs",
-        "state.commitments"
+        "state.commitments",
+        "state.dependencies"
       ],
       "used_by": [
-        "packages/archflow/src/archflow/state/state_record.py",
-        "packages/archflow/src/archflow/state/spatial.py",
-        "packages/archflow/src/archflow/state/developed_design.py",
-        "services/project-runtime/src/project_runtime/application/projection.py",
-        "packages/archflow/src/archflow/state/design_portfolio.py",
         "packages/archflow/tests/test_operational_markov_compiler.py",
         "packages/archflow/src/archflow/state/stage_workflow.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
-        "packages/archflow/src/archflow/state/geometry_program.py",
-        "packages/monkeyarch/src/monkeyarch/compilers/geometry.py",
-        "packages/monkeyarch/src/monkeyarch/capabilities/geometry_proposal.py",
         "services/project-runtime/src/project_runtime/application/intent.py"
       ],
       "invariants": [
@@ -3997,48 +4039,7 @@
         "packages/archflow/tests/test_operational_markov_compiler.py",
         "packages/archflow/tests/test_pantheon_compiled_state.py"
       ],
-      "notes": "The widest state dependency after project.refs; it carries its own _version_dict/_branch_dict serde parallel to contracts.branch, and require_logical_ref is a second logical-ref validator alongside contracts.fields.logical_ref."
-    },
-    {
-      "module_id": "state.program",
-      "owner_path": "packages/archflow/src/archflow/state/program.py",
-      "purpose": "The compact voxel-era building program (use, footprint, required spaces, clearances) carried by canonical state.",
-      "owns": [
-        "the BuildingProgram@1 record and its JSON form",
-        "footprint targets with tolerance (FootprintTarget)",
-        "the typed program error codes (ProgramErrorCode, BuildingProgramError)",
-        "cross-clause feasibility checks (circulation width against footprint, prohibitions against requirements)"
-      ],
-      "does_not_own": [
-        "the design that answers the program (state.spatial)",
-        "commitments derived from the program (state.commitments)",
-        "site input (state.site_context)"
-      ],
-      "inputs": [
-        "authored program mapping or JSON"
-      ],
-      "outputs": [
-        "BuildingProgram"
-      ],
-      "public_api": [
-        "BuildingProgram",
-        "FootprintTarget"
-      ],
-      "depends_on": [],
-      "used_by": [
-        "packages/archflow/src/archflow/state/model.py"
-      ],
-      "invariants": [
-        "dimensions are integers in blocks: the vocabulary is voxel-era, not metric",
-        "a program states requirements, not a design",
-        "text values must not carry surrounding whitespace",
-        "an impossible constraint combination raises rather than being clamped"
-      ],
-      "status": "canonical",
-      "tests": [
-        "packages/archflow/tests/test_program_sheet.py"
-      ],
-      "notes": "Canonical: BuildingProgram is the legacy_program_view field of CanonicalState@1 and retained states carry it."
+      "notes": "The widest state dependency after project.refs; it carries its own _version_dict/_branch_dict serde parallel to contracts.branch."
     },
     {
       "module_id": "state.record",
@@ -4049,7 +4050,7 @@
         "the binding identity a geometry program cites (StateRecord.state_digest)",
         "the entity schema vocabulary (Level@1, GridAxis@1, Type@1, Element@1, Assembly@1, Space@1, Reading@1, Component@1, MassingLevel@1, Volume@1, Connection@1)",
         "referential integrity inside one record: unique ids, known parents, known relation endpoints, known parameter inputs, known zone volumes and connection zones",
-        "the record's dependency edges and the downstream closure over them (dependency_edges, closure, closures); batched closures reuse one graph within the same record",
+        "the record's dependency edges and its closures over them (dependency_edges, closure, closures), walked by state.dependencies; batched closures reuse one graph within the same record",
         "binding an authored portable record to one run and canonical base (bound_to, run_ref)",
         "the record's own relation shape with datum role, propagation and validator binding (Relation, ValidatorBinding)",
         "CHECK_KINDS: the check_kind vocabulary a validator may name, one line of meaning each, and the field each kind takes; solid_nonpenetration requires explicit distinct final object_pairs and zero linear tolerance, and may check distinct outputs of the same host entity without a self-dependency",
@@ -4070,8 +4071,8 @@
         "Explicit metadata-only parameter lock/unlock operators; ordinary edits preserve existing lock metadata and established parameter binding paths, including inherited Type defaults, without freezing unrelated consumer fields"
       ],
       "does_not_own": [
-        "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
-        "DesignObligation, DependencyEdge and DependencyEffect (state.operational_state)",
+        "the relation kind vocabulary (semantics.relation_kinds.ArchitecturalRelationKind)",
+        "DesignObligation (state.operational_state); DependencyEdge, DependencyEffect and the closure walk (state.dependencies)",
         "the DesignComponent and ComponentMaturity shapes (state.spatial)",
         "the ProjectLevel/ProjectGridAxis shapes it emits (state.geometry_program)",
         "persisting the record (project.repository)",
@@ -4139,11 +4140,12 @@
       "depends_on": [
         "contracts.canonical",
         "project.refs",
-        "relations.contracts",
+        "semantics.relation_kinds",
         "semantics.conditions",
         "semantics.facets",
         "semantics.registry",
         "semantics.roles",
+        "state.dependencies",
         "state.design_portfolio",
         "state.developed_design",
         "state.derivation",
@@ -4252,7 +4254,6 @@
         "contracts.canonical",
         "contracts.fields",
         "project.refs",
-        "state.operational_state",
         "state.stage_workflow",
         "project.version_refs"
       ],
@@ -4531,7 +4532,7 @@
         "adapters.three_dm_inspector",
         "archflow.project.refs",
         "archflow.project.repository",
-        "capabilities.geometry_proposal",
+        "state.geometry_program",
         "project.layout",
         "project.ports",
         "project.record_kinds",
@@ -4915,7 +4916,7 @@
         "project.refs",
         "project.repository",
         "state.developed_design",
-        "state.operational_state",
+        "state.dependencies",
         "state.record",
         "state.spatial",
         "state.stage_workflow",
@@ -5107,6 +5108,7 @@
         "project.repository",
         "runtime.project_runner",
         "state.developed_design",
+        "state.geometry_program",
         "state.operational_state",
         "state.record",
         "state.stage_workflow",
@@ -5465,7 +5467,6 @@
         "project.refs",
         "capabilities.element_producers",
         "capabilities.reference_resolver",
-        "relations.contracts",
         "semantics.registry",
         "studio.artifacts",
         "adapters.three_dm_inspector",
@@ -6073,7 +6074,6 @@
       ],
       "depends_on": [
         "archflow.project.refs",
-        "archflow.state.model",
         "archflow.submission.model",
         "archflow.validation.engine",
         "archflow.validation.model",
@@ -6539,7 +6539,6 @@
         "main"
       ],
       "depends_on": [
-        "adapters.cad_program",
         "capabilities.geometry_proposal",
         "contracts.authority",
         "project.inputs",
@@ -6548,6 +6547,7 @@
         "project.refs",
         "project.repository",
         "runtime.project_runner",
+        "state.geometry_program",
         "state.operational_state",
         "state.record",
         "state.stage_workflow",
@@ -6961,7 +6961,7 @@
         "the sheet's totals (target x count, mapped, unmapped ids)"
       ],
       "does_not_own": [
-        "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
+        "the relation kind vocabulary (semantics.relation_kinds.ArchitecturalRelationKind)",
         "the semantic vocabulary a function names (semantics.registry, semantics.roles)",
         "the entity schemas and their referential integrity (state.record)",
         "where the sheet is kept (project.layout) or its reading and writing (project.inputs)",
@@ -6991,7 +6991,7 @@
       ],
       "depends_on": [
         "state.record",
-        "relations.contracts",
+        "semantics.relation_kinds",
         "semantics.registry",
         "project.refs"
       ],
@@ -8297,7 +8297,6 @@
         "LAYER_RULE_TOKENS"
       ],
       "depends_on": [
-        "adapters.cad_program",
         "capabilities.element_producers",
         "capabilities.reference_resolver",
         "monkeyarch.construction.identity",

@@ -12,10 +12,6 @@ from archflow.project.refs import (
     require_identifier,
 )
 from archflow.state.stage_workflow import DesignPhase
-from archflow.state.operational_state import (
-    require_local_id,
-    require_logical_ref,
-)
 from archflow.contracts.canonical import canonical_digest, canonical_json, require_sha256
 from archflow.contracts.fields import (
     mapping as _mapping,
@@ -27,6 +23,8 @@ from archflow.contracts.fields import (
     exact_mapping as _exact,
     number,
     refs as _refs,
+    require_local_id,
+    require_logical_ref,
     text as _text,
 )
 from archflow.project.version_refs import (

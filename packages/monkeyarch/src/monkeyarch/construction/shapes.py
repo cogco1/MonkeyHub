@@ -26,7 +26,6 @@ from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import Any, Callable, Iterable
 
-from archflow.adapters.cad_program import expected_object_bounds
 from archflow.state.derivation import DerivationError, substitute
 from archflow.state.geometry_program import (
     GeometryParameter,
@@ -34,6 +33,7 @@ from archflow.state.geometry_program import (
     InterfaceDatum,
     InterfaceDatumKind,
     LengthUnit,
+    expected_object_bounds,
 )
 from archflow.state.state_record import (
     StateRecord,

@@ -13,7 +13,7 @@ from archflow.state.design_portfolio import (
     BranchRevisionRef,
     SelectedBranchHandoff,
 )
-from archflow.state.operational_state import require_logical_ref
+from archflow.contracts.fields import require_logical_ref
 from archflow.state.spatial import SchematicOption
 from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.contracts.fields import (

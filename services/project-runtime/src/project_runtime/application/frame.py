@@ -30,18 +30,10 @@ from monkeyarch.capabilities.reference_resolver import (
     OffsetFrom,
     parse_reference,
 )
-from archflow.state.operational_state import DependencyEdge, DependencyEffect
+from archflow.state.dependencies import PROPAGATING_EFFECTS, DependencyEdge
 from archflow.state.state_record import StateRecord
 
 from ..transport.errors import StudioError
-
-# The two effects ``StateRecord.closure`` walks. Named here so the edges this
-# module reports back are the ones that actually carried the closure and not
-# every edge that happens to touch it.
-PROPAGATING = (
-    DependencyEffect.INVALIDATES,
-    DependencyEffect.REQUIRES_REVALIDATION,
-)
 
 # The flat ``Element@1`` fields that name a ``Level@1`` outright. The record's
 # own reader treats these the same way (``base_level`` / ``top_level`` /
@@ -140,7 +132,7 @@ def closure_of_refs(
     edges = tuple(
         edge
         for edge in record.dependency_edges()
-        if edge.effect in PROPAGATING
+        if edge.effect in PROPAGATING_EFFECTS
         and edge.upstream_ref in inside
         and edge.downstream_ref in inside
     )

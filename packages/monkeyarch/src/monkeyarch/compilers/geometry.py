@@ -10,7 +10,7 @@ from archflow.project.refs import require_identifier
 from archflow.state.developed_design import DevelopedDesignState
 from archflow.state.geometry_program import AssemblyRole, AssetReference, DatumBinding, GeometryOperation, GeometryOperationKind, GeometryParameter, GeometryProgramError, GeometryProgramProposal, InterfaceDatum, require_sha256, AssetSubstitutionReceipt, CompiledGeometryObject, CompiledGeometryProgram, GeometryCompilationError, delivered_object_ids
 from archflow.contracts.canonical import canonical_digest
-from archflow.state.operational_state import require_logical_ref
+from archflow.contracts.fields import require_logical_ref
 
 
 class GeometryIssueCode(StrEnum):

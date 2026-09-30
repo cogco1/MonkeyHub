@@ -20,7 +20,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
-from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
+from archflow.state.geometry_program import load_compiled_geometry_program
 from monkeydiagram.drawing_elevation import (
     DrawingElevationError, ElevationView, NativeModelSource, SectionPerspectiveError, current_object_id, freeze_cut_plan,
     inspection_witness_ids, model_axis_section, read_elevation_source, read_model_axis_elevation, plan_dressing_anchors,

@@ -43,7 +43,7 @@ from dataclasses import dataclass
 import threading
 from typing import Any, Callable, Mapping
 
-from archflow.state.model import ArtifactRef, CanonicalState
+from archflow.submission.canonical_state import ArtifactRef, CanonicalState
 from archflow.state.state_record import StateRecord
 from archflow.submission.model import CandidateDelta, CandidateSubmission, Claim
 from archflow.validation.engine import (

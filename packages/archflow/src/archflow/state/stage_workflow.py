@@ -23,8 +23,6 @@ from archflow.project.refs import BranchRef, require_identifier
 from archflow.state.operational_state import (
     DesignObligation,
     ObligationStatus,
-    require_local_id,
-    require_logical_ref,
 )
 from archflow.contracts.fields import (
     mapping as _mapping,
@@ -32,6 +30,8 @@ from archflow.contracts.fields import (
 )
 from archflow.contracts.fields import (
     exact_mapping as _exact,
+    require_local_id,
+    require_logical_ref,
 )
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from archflow.state.model import StateRef
+from archflow.submission.canonical_state import StateRef
 
 
 class Severity(StrEnum):
