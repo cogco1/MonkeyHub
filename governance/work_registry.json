@@ -166,6 +166,7 @@
       "handoff": "PR #330 draft: historical claim repair and real Penguin persistence review; issues 319/321/324/327 remain open.",
       "modules": [
         "adapters.cad_execution",
+        "studio.binding",
         "studio.artifacts",
         "studio.render",
         "runtime.drawing_elevation",
@@ -234,6 +235,9 @@
         "tools/archcheck.py",
         "CONTRIBUTING.md",
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
+        "apps/archflow-studio/api/tests/test_binding.py",
+        "docs/DRAWING_DISCOVERY_VALIDATION.md",
         "apps/monkeyhub/web/src/ChatShell.tsx",
         "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",

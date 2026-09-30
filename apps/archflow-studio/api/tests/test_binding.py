@@ -228,6 +228,17 @@ class BoundProjectTests(unittest.TestCase):
             binding.run_ids(), (REFERENCE_RUN_ID, HARNESS_RUN_ID)
         )
 
+    def test_discovery_does_not_hide_a_retained_run_with_missing_manifest(self) -> None:
+        from archflow_studio_api.application.artifacts import list_documents
+        binding = ProjectBinding.open(self.settings)
+        run = self.repository.create_run('damaged-run')
+        self.repository.layout.run(run.run_id).manifest.unlink()
+        self.assertIn(run.run_id, binding.run_ids())
+        with self.assertRaises(StudioError) as raised:
+            list_documents(binding)
+        self.assertEqual(raised.exception.code, 'RUN_NOT_FOUND')
+        self.assertIn('damaged-run', raised.exception.detail)
+
 
 class ProjectWithoutRunsTests(unittest.TestCase):
     def setUp(self) -> None:

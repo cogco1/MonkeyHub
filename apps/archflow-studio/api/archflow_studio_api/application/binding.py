@@ -284,6 +284,13 @@ class ProjectBinding:
         """
 
         try:
+            # Discovery may see create_run's directory before it publishes
+            # run.json. Wait only for that incomplete publication; complete
+            # runs (including Working Head reads) never wait for a writer.
+            layout = self.repository.layout.run(run_id)
+            if layout.root.is_dir() and not layout.manifest.exists():
+                with self.repository.working_draft_guard():
+                    return self.repository.load_run(run_id)
             return self.repository.load_run(run_id)
         except Exception as exc:
             raise StudioError(

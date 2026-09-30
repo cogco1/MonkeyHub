@@ -1,5 +1,8 @@
 """Actual conversion, P036 revisions, drawing invalidation and cold Runtime reads."""
 import base64,os,tempfile,time,unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+from unittest.mock import patch
 from uuid import uuid4
 from pathlib import Path
 from fastapi.testclient import TestClient
@@ -19,8 +22,8 @@ class RenderSceneTests(unittest.TestCase):
         self.app=create_app(self.settings);self.client=TestClient(self.app)
         self.addCleanup(self.client.close);self.addCleanup(self.app.state.jobs.shutdown);self.addCleanup(self.app.state.render_jobs.shutdown)
 
-    def select(self,scale=1,expected=None):
-        reply=self.client.post('/api/exports',json={'targetFormat':'3dm','upload':{'fileName':'penguin.glb','contentBase64':base64.b64encode(source(scale)).decode()}})
+    def select(self,scale=1,expected=None,content=None):
+        reply=self.client.post('/api/exports',json={'targetFormat':'3dm','upload':{'fileName':'sample.glb','contentBase64':base64.b64encode(source(scale) if content is None else content).decode()}})
         self.assertEqual(reply.status_code,202,reply.text)
         for _ in range(500):
             result=self.client.get(reply.json()['statusPath']).json()
@@ -87,6 +90,57 @@ class RenderSceneTests(unittest.TestCase):
             self.assertEqual(front['recipe']['featureReferences'][0]['id'],'triangle-17')
             self.assertEqual(front['recipe']['featureReferences'][0]['status'],'unresolved')
             self.assertTrue(any(r['status']=='outdated' for r in rows))
+
+    def test_drawing_list_waits_for_publishing_run_manifest(self):
+        # A small architectural wall, plus the original Penguin when supplied.
+        wall=Mesh('Wall',[(0,0,0),(4,0,0),(4,.2,0),(0,.2,0),(0,0,3),(4,0,3),(4,.2,3),(0,.2,3)],
+                  [(0,2,1),(0,3,2),(4,5,6),(4,6,7),(0,1,5),(0,5,4),(1,2,6),(1,6,5),(2,3,7),(2,7,6),(3,0,4),(3,4,7)])
+        samples=[('architectural-wall',GLB().write(Scene([wall],'Meters',[])))]
+        if os.environ.get('PENGUIN_TEST_GLB'):
+            samples.append(('original-penguin',Path(os.environ['PENGUIN_TEST_GLB']).read_bytes()))
+        expected=None
+        for name,content in samples:
+            with self.subTest(model=name):
+                selected=self.select(expected=expected,content=content);expected=selected['geometryRevision']
+                observer=TestClient(create_app(self.settings));self.addCleanup(observer.close)
+                self.assertEqual(observer.get('/api/render/drawings').status_code,200)
+                publishing,release,reading=Event(),Event(),Event()
+                original_link=os.link
+                def hold_manifest(src,dst,*args,**kwargs):
+                    path=Path(dst)
+                    if path.name=='run.json' and path.parent.name.startswith('mesh-view-') and not publishing.is_set():
+                        self.assertTrue(path.parent.is_dir())
+                        self.assertFalse(path.exists())
+                        publishing.set()
+                        if not release.wait(30):raise TimeoutError('test did not release run publication')
+                    return original_link(src,dst,*args,**kwargs)
+                def read_list():
+                    reading.set()
+                    return observer.get('/api/render/drawings')
+                with patch('archflow.project.repository.os.link',side_effect=hold_manifest), ThreadPoolExecutor(max_workers=2) as pool:
+                    writer=pool.submit(self.client.post,'/api/render/drawings',json={'geometryRevision':expected})
+                    try:
+                        self.assertTrue(publishing.wait(15),'generation must reach real run publication')
+                        reader=pool.submit(read_list)
+                        self.assertTrue(reading.wait(5))
+                        time.sleep(.2)
+                        if reader.done():
+                            response=reader.result()
+                            self.assertEqual(response.status_code,200,response.text)
+                        self.assertFalse(reader.done(),'discovery waits for the publishing run, not a partial directory')
+                    finally:
+                        release.set()
+                    result=writer.result(timeout=60)
+                    self.assertEqual(result.status_code,200,result.text)
+                    readback=reader.result(timeout=30)
+                    self.assertEqual(readback.status_code,200,readback.text)
+                with TestClient(create_app(self.settings)) as cold:
+                    rows=cold.get('/api/render/drawings').json()
+                    current=[row for row in rows if row['status']=='current']
+                    self.assertEqual(len(current),4)
+                    self.assertEqual({row['recipe']['view'] for row in current},{'front','side','top','isometric'})
+                    self.assertTrue(all(row['recipe']['geometryRevision']==expected for row in current))
+                self.assertEqual(self.repository.read_head(),self.head)
 
     def test_old_regions_and_invalid_camera_cannot_be_silently_rebound(self):
         first=self.select();scene=self.client.get('/api/render/scene').json()['scene']
