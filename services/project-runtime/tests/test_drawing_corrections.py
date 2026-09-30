@@ -268,8 +268,8 @@ class ImportedPlans(unittest.TestCase):
 
     def agent(self, body):
         """One cut-plan request exactly as the Agent's CLI makes it, through the Hub's studio_request."""
-        chat, failure = hub_chat()
-        project_id, project_dir = chat._project(str(self.project))
+        projects, tools, transport, failure = hub_chat()
+        project_id, project_dir = projects._project(str(self.project))
         session = {"id": str(uuid4()), "status": "running", "projectId": project_id, "projectDir": project_dir,
                    "messages": [{"id": str(uuid4()), "role": "user", "content": "Open up the hatch on this plan."}]}
         runtime = uuid5(NAMESPACE_URL, f"{project_id}:{os.path.normcase(str(Path(project_dir).resolve()))}")
@@ -291,9 +291,9 @@ class ImportedPlans(unittest.TestCase):
                 raise failure(reply.status_code, reply.json().get("code", "CHAT_TOOL_FAILED"), str(reply.json().get("detail")))
             return reply.json()
 
-        with patch.object(chat, "_request_json", side_effect=forward):
-            return chat.call_tool(HUB, session["id"], "studio_request",
-                                  {"method": "POST", "path": "/api/drawings/plans", "body": body})
+        with patch.object(transport, "_request_json", side_effect=forward):
+            return tools.call_tool(HUB, session["id"], "studio_request",
+                                   {"method": "POST", "path": "/api/drawings/plans", "body": body})
 
     def corrections(self, drawing=None, client=None):
         response = (client or self.client).get("/api/drawings/corrections", params={
