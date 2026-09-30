@@ -3182,7 +3182,8 @@
         "section perspective: SectionPerspectiveView (a plan line and kept side, or an origin and normal; an explicit or default one-point camera) checked with named refusals before the model is read, the default eye placed from the exact cut, and the request, exact plane, resolved camera and crop recorded in the one drawing receipt (freeze_section_perspective)",
         "NativeModelSource: verify original 3DM bytes against their explicit registration and derive drawing shapes without fabricating semantic state or CAD execution provenance",
         "DrawnView: a drawn view's SVG, PNG and what its receipt says about the drawing apart from its source and run; freeze_model_axis_elevation and freeze_section_perspective take an optional cache (DrawingCache) asked for the drawn view once the source verified, so a kept drawing is retained without solving its view again",
-        "axonometric_frame: the right, up and look of a parallel view from any non-vertical direction with CAD +Z up; such a view is retained through freeze_model_axis_elevation with the elevation receipt, foreshortened and stated as a display scale"
+        "axonometric_frame: the right, up and look of a parallel view from any non-vertical direction with CAD +Z up; such a view is retained through freeze_model_axis_elevation with the elevation receipt, foreshortened and stated as a display scale",
+        "the difference between two cut-plan view recipes by dotted path - hidden objects, dimensions and dressing by the ids they hold, a material's hatch rule whole - and the class of correction it is, the first of compiler_defect, semantic_rule, recipe and local_override that holds for the difference and the replacement cause (recipe_diff, classify, CLASSES); pure, reading no project"
       ],
       "does_not_own": [
         "the hidden-line solve - monkeycad.occt",
@@ -3243,7 +3244,10 @@
         "current_object_id",
         "inspection_witness_ids",
         "DrawnView",
-        "DrawingCache"
+        "DrawingCache",
+        "recipe_diff",
+        "classify",
+        "CLASSES"
       ],
       "depends_on": [
         "monkeycad.execution",
@@ -3259,7 +3263,8 @@
       ],
       "used_by": [
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
-        "services/project-runtime/src/project_runtime/application/drawings.py"
+        "services/project-runtime/src/project_runtime/application/drawings.py",
+        "services/project-runtime/src/project_runtime/application/drawing_corrections.py"
       ],
       "invariants": [
         "nothing is written before the source verified, the frame checked and the projection and both renderings succeeded",
@@ -3280,13 +3285,15 @@
       "status": "canonical",
       "tests": [
         "packages/monkeydiagram/tests/test_drawing_elevation.py",
-        "packages/monkeydiagram/tests/test_drawing_section_perspective.py"
+        "packages/monkeydiagram/tests/test_drawing_section_perspective.py",
+        "packages/monkeydiagram/tests/test_corrections.py"
       ],
       "notes": "CREATE 2026-09-07: the plan's first real consumer at the application boundary. runtime.project_runner is the seat/stage loop and does not derive drawings; adapters have no repository authority. First frozen drawing: villa-rotonda-reconstruction run drawing-a0-20260907-villa-b-minus-y from source run studio-cand-20260906-010451-dca4de25-4e9d (external workspace, noncanonical). Split in #517: sources.py verifies the source, projection/views.py holds the frames and in-memory projections, drawing_runs.py retains drawing runs and registers the receipt's version refs.",
       "files": [
         "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
         "packages/monkeydiagram/src/monkeydiagram/sources.py",
-        "packages/monkeydiagram/src/monkeydiagram/projection/views.py"
+        "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
+        "packages/monkeydiagram/src/monkeydiagram/corrections.py"
       ]
     },
     {
@@ -4482,7 +4489,7 @@
         "registering section perspective revisions from a complete verified source model in the existing document list with the same source resolution, cache, monitoring and registration as elevations, keeping the drawing owner's refusal names",
         "direct native model drawing selection: registered external sourceAsset stays frozen and has no modelSource; state-bound composed 3DM uses its own geometry, never a partial paired STEP",
         "SKP upload through the local standalone SDK, retaining original SKP and derived 3DM face geometry in the same P036 registration; retries reuse the verified original content",
-        "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, a recipe_diff of the two view recipes by dotted path and a classify into compiler_defect, semantic_rule, recipe or local_override; and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite",
+        "the drawing correction projection (05-S2, application/drawing_corrections.py): each cut-plan revision paired with the registered revision its receipt names as previous, the pair's replacement_cause, and the recipe_diff and classify of the two view recipes that monkeydiagram.corrections owns (runtime.drawing_elevation); and the project's recipe suggestions - a pen or hatch spacing changed the same way in representation-only revisions no agent asked for on at least two drawings no active recipe covers - each citing its exact revision pairs and the page a recipe decision would cite",
         "the content-keyed projection cache (ADR-008 #367): key = sha256(model asset sha256, kind, recipe hash, renderer, SALT) where renderer is the mesh renderer's source-derived version plus a digest of drawings.model_view_pipeline (view frame, crop margin, chord tolerance, the source of its framing and meshing, mesh_pipeline); every request, idle retry and re-queue first checks its source (check_model_view_source: the run's exact state and registered model, no geometry read) and a retry draws from the latest checked source; thumbnails read the run's own record, so a run on an older canonical base is drawn (require_readable) while actions keep require_actionable; PNG blobs in <project cache dir>/projections/blobs named by their own sha256, written then renamed and self-describing through text chunks; one status row per key in the project index's projection table (StatusTable), whose insert is the claim, with a per-key lock in the process; the queue is enqueued after every index commit (tree_model_sources: the working position's model, then what readers show, then the rest of the tree) and on a read miss; one low-priority render subprocess with timeout, memory cap, leases reclaimed at startup and after the timeout, bounded retries with backoff, a refused source or a cancel giving its attempt back, one model read for every size drawn next (load_model_view, draw_loaded_view), and a collector keeping what an index artifact reaches, replacing an older renderer's picture only once the current one is drawn, with a grace window",
         "drawings as on-demand projections (#368): an elevation's and a section perspective's SVG and PNG, a review sheet's PDF and DXF and a document page's raster are kinds of the same content-keyed cache (drawing-elevation, drawing-section-perspective, drawing-sheet, document-page), keyed by the input asset's sha256, a recipe holding every field that changes the bytes (the complete view and the drawn source content: geometry digest, unit, objects, bounds and semantics) and a renderer digest of the drawing code, fonts and libraries (drawings.drawing_pipeline); ProjectionQueue.on_demand draws one in the request that needs it through the existing generator, at most once per key, and the worker never draws them; issuing reads the cached files back and retains them in P036 byte for byte with a receipt of its own",
         "the retained axonometric: POST /api/drawings/elevations view axon, from a stated direction toward the viewer (default the model view's -X, -Y, +Z), framed on every physical object's bounds like an elevation",
@@ -4587,8 +4594,6 @@
         "GET /api/drawings/corrections",
         "drawing_corrections",
         "corrections",
-        "recipe_diff",
-        "classify",
         "recipe_suggestions",
         "Correction",
         "artifact_row_body",
@@ -4644,7 +4649,8 @@
         "project.memo",
         "project.index",
         "adapters.mesh_views",
-        "studio.board"
+        "studio.board",
+        "monkeydiagram.corrections"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/candidate.py",
