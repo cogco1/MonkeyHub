@@ -1122,6 +1122,13 @@ export const chatCopy = {
     filesTitle: "本轮文件", fileCount: (count: number) => `${count} 个文件`,
     fileDetails: (count: number) => count ? `技术细节与其他 ${count} 个文件` : "技术细节",
     filePage: (page: number) => `第 ${page} 页`, fileReference: (index: number) => `条目 ${index}`,
+    // #253：画板交来的图片讨论，以及每张图片在消息中的角色。
+    renderContextTitle: "图片讨论", renderContextNext: "随下一条消息发送；之后每次更正也会带上，直到你移除。",
+    renderContextAfterReply: "本次回复结束后，随下一条消息发送。", renderContextRemove: "移除图片",
+    renderContextDetails: "精确来源", renderContextUnavailable: "项目资料中找不到",
+    renderRoleSource: "源图", renderRoleReference: "参考图",
+    renderContextTarget: "针对所附图片，不修改模型",
+    renderContextReplaced: "画板上有更新版本",
     resultModels: "模型成果",
     externalChat: "外部对话", externalNotice: "请回原应用继续对话。",
     attachmentCount: "每条消息最多添加 8 个附件。", attachmentSize: "每个附件不能超过 20 MiB。", attachmentTotal: "附件合计不能超过 40 MiB。", attachmentRead: "无法读取附件，请重新选择。",
@@ -1222,6 +1229,7 @@ export const chatCopy = {
       fabProfiles: "读取打印配置", fabCheck: "检查打印文件", present: "展示结果", attachment: "读取附件",
       bind: "连接对话", desktopStep: "操作桌面", readFiles: "查阅资料", editFiles: "修改文件",
       command: "运行命令", planSteps: "整理步骤", webFetch: "打开网页", generic: "其他操作",
+      renderRead: "查看渲染", renderStart: "开始生成渲染图",
     },
     jumpLatest: "跳到最新消息", jumpLatestNew: (count: number) => `跳到最新消息（${count} 条新消息）`,
     // GH-300：侧栏的跨项目入口。

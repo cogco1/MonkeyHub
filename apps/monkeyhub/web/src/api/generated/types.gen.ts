@@ -379,6 +379,10 @@ export type ChatDocument = {
      * Mimetype
      */
     mimeType: string;
+    /**
+     * Role
+     */
+    role?: 'source' | 'reference' | null;
 };
 
 /**
@@ -552,6 +556,7 @@ export type ChatPostRequest = {
      */
     contextMode?: 'continue' | 'project' | 'stage';
     suggestionSelection?: ChatSuggestionSelection | null;
+    renderContext?: ChatRenderContext | null;
 };
 
 /**
@@ -739,6 +744,24 @@ export type ChatProvider = {
      * Modeldetail
      */
     modelDetail?: string;
+};
+
+/**
+ * ChatRenderContext
+ *
+ * The images one message discusses, by exact registered page and the role the user chose (#253).
+ *
+ * One source, the image a render would start from, and up to three
+ * references it may borrow from. The source is never also a reference and no
+ * page repeats. It names pages only: never a file name, a newest image or a
+ * model state, and it needs no design context.
+ */
+export type ChatRenderContext = {
+    source: ChatDocumentRef;
+    /**
+     * References
+     */
+    references?: Array<ChatDocumentRef>;
 };
 
 /**
