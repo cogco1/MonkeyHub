@@ -22,7 +22,6 @@
   },
   "include": [
     "src",
-    "workspaces/src",
     "vite.config.ts"
   ]
 }

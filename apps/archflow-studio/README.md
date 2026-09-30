@@ -6,7 +6,7 @@ The [Project Runtime contract](../../docs/PROJECT_RUNTIME.md) defines project bi
 process identity, lifecycle and API forwarding.
 
 Board and Arch render directly inside the Hub frontend. Diagram is the page editor
-opened from Board. Their source is in `../monkeyhub/web/workspaces/src/`; there is no
+opened from Board. Their source is in `../monkeyhub/web/src/`; there is no
 Studio web server, standalone browser shell, iframe boundary or second frontend build.
 Application settings, navigation and language catalogs belong to Hub.
 
@@ -49,7 +49,7 @@ Build or develop the single frontend from `apps/monkeyhub/web`:
 
 ```powershell
 npm ci
-npm ci --prefix workspaces/tools/openapi-ts
+npm ci --prefix tools/openapi-ts
 npm run api:check
 npm test
 npm run build
@@ -58,7 +58,7 @@ npm run dev
 
 The development frontend forwards `/api` to `MONKEYHUB_API_URL` (default port 8790).
 Workspace browser regressions may instead mount the test-only fixture with
-`npx vite --config workspaces/test/vite.config.ts --port 5174`, targeting an explicit
+`npx vite --config test/vite.config.ts --port 5174`, targeting an explicit
 `ARCHFLOW_STUDIO_API_URL`. That fixture is not included in production builds.
 
 ## 3. The API
@@ -507,7 +507,7 @@ preview its export under the `CANDIDATE` chip → read the review-readiness card
 sentence and get a question card → open the evidence drawer; then the light theme and the
 900 px fold.
 
-Optional browser smoke scripts (`../monkeyhub/web/workspaces/test/*.browser.mjs`) use an installed `playwright` package, or a filesystem module path supplied through `PLAYWRIGHT_MODULE`. `documentCanvas.browser.mjs` also requires `DOCUMENT_FIXTURES` pointing to its disposable PDF/image fixtures; these scripts use an explicit Project Runtime and the test-only workspace fixture and are separate from `npm test`.
+Optional browser smoke scripts (`../monkeyhub/web/test/*.browser.mjs`) use an installed `playwright` package, or a filesystem module path supplied through `PLAYWRIGHT_MODULE`. `documentCanvas.browser.mjs` also requires `DOCUMENT_FIXTURES` pointing to its disposable PDF/image fixtures; these scripts use an explicit Project Runtime and the test-only workspace fixture and are separate from `npm test`.
 
 ## Local Runtime and shared project collaboration
 

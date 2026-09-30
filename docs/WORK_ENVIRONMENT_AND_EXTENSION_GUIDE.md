@@ -199,7 +199,7 @@ facets 解锁的能力才可使用，例如 `architectural.role = wall` 之后�
 Git 源码仓 / worktree
   archflow/                  公共项目底座、建筑事实和技术接口
   monkeyarch/                三维建模算法与运行编排
-  monkeydiagram/             图纸投影与表达
+  packages/monkeydiagram/    图纸投影与表达（src/ 布局，自带 pyproject.toml 与本包测试）
   apps/archflow-studio/api/  项目运行时；API-only，历史目录名保留
   governance/                owner、依赖与架构防火墙
   docs/                      人读文档，不是实时项目状态
@@ -444,7 +444,7 @@ YYYYMMDD[-NN]_项目名称[_内容或图种][_RNN].扩展名
 
 ```text
 React / Vite / three.js / rhino3dm-wasm
-  apps/monkeyhub/web/workspaces
+  apps/monkeyhub/web
                 │ OpenAPI-generated SDK
                 ▼
 Project Runtime（FastAPI）
@@ -544,7 +544,7 @@ Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-na
 | **ArchFlow** | 共享项目底座、建筑事实、技术契约与正式发布 | `archflow/` |
 | **MonkeyHub** | 唯一对外应用入口；启动、工作区切换、服务管理与共享设置，Agent 接入也沿此入口 | `apps/monkeyhub/`；`OPEN_MONKEYHUB.cmd` |
 | **MonkeyArch** | 三维建模、模型候选与续改 | `monkeyarch/`；Hub `appId: monkeyarch` |
-| **MonkeyDiagram** | 图纸、图解、平立剖表达与单页批注 | `monkeydiagram/`；Hub rail「工具」组的「图纸」（与渲染、制作、用量并列）；Board 双击已登记图页进入精确页面编辑 |
+| **MonkeyDiagram** | 图纸、图解、平立剖表达与单页批注 | `packages/monkeydiagram/`；Hub rail「工具」组的「图纸」（与渲染、制作、用量并列）；Board 双击已登记图页进入精确页面编辑 |
 | **MonkeyBoard** | 图版排布、方案比较、会议展示与画布批注；含「排版」模式（排版与导出，即 Publish 界面） | Hub `appId: monkeyboard`；同页项目工作区；左上角「画板 \| 排版」切换两种模式 |
 | **Design tree（状态树）** | 项目的设计历史：当前线上的阶段与已选方案连成主干，未选方案为短枝，进行中的 Agent 任务在起点处占位；查看不移动“当前”，从这里继续与接受为下一阶段分开 | Hub rail 第一组的第三项（建模、画板、状态树，2026-09-25 决定）；项目工作区 `view=tree`；项目工作区顶部的阶段标签也打开它 |
 | **MonkeyMonitor** | 用量、费用、耗时与计算过程查看 | `monkeymonitor/`；Hub `appId: monkeymonitor` |
@@ -565,7 +565,7 @@ MonkeyMonitor 诊断服务仍独立运行，Usage 与 MonkeyFab 页面由 Hub �
 （通过项目上下文传递该页的 run / asset / revision / page），批注与来源绑定沿用原有 owner；
 编辑器里的 MonkeyBoard 入口先写回该页批注再返回，恢复离开时的画板视角与选中。
 这条往返仅切换同一项目中的图页编辑与画板，不卸载模型或画布，也不触碰其他项目工作区
-（MonkeyArch 未同步的模型草稿保持不变）。图纸能力仍归 `monkeydiagram/`，Board 不再复制一套编辑器。
+（MonkeyArch 未同步的模型草稿保持不变）。图纸能力仍归 `packages/monkeydiagram/`，Board 不再复制一套编辑器。
 
 设计历史统一使用以下用语，详细动作与存储约定见
 [Stage / Branch / Candidate 方案](STAGE_BRANCH_CANDIDATE_PLAN.md)：
@@ -627,15 +627,15 @@ ArchFlow 继续复用现有 FastAPI/OpenAPI 与生成客户端，外部模块从
 
 ### 第 5 步：DTO 改动后生成客户端
 
-在 `apps/monkeyhub/web/workspaces`：
+在 `apps/monkeyhub/web`：
 
 ```powershell
 npm run api:generate
 npm run api:check
 ```
 
-`api:generate` 从真实 `create_app(...).openapi()` 生成 `src/api/generated/`。UI 再通过
-`src/api/client.ts` 的现有门面调用，不直接修改 generated 文件。
+`api:generate` 从真实 `create_app(...).openapi()` 生成 `src/api/project-runtime/generated/`。UI 再通过
+`src/api/project-runtime/client.ts` 的现有门面调用，不直接修改 generated 文件。
 
 ### 第 6 步：以行为闭环验收
 
@@ -712,7 +712,7 @@ $env:PATH = "$RuntimeRoot\venv\Scripts;" + $env:PATH
 & $Python -m pip install -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 & $Python -m pip check
 npm.cmd ci --prefix apps/monkeyhub/web
-npm.cmd ci --prefix apps/monkeyhub/web/workspaces/tools/openapi-ts
+npm.cmd ci --prefix apps/monkeyhub/web/tools/openapi-ts
 python -c "import sys; print(sys.executable)"
 ```
 
@@ -801,7 +801,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SourceRoot\scripts\dev
 前台运行 `archflow_studio_api.main`，Ctrl+C 结束。它没有配置文件、没有默认项目、没有启动窗口和托盘，
 也不管理任何生命周期；其余设置全部是 API 本来就读取的 `ARCHFLOW_STUDIO_*` 环境变量。
 “可独立运行”不等于“独立产品入口”：生产环境里项目运行时的生命周期只属于 MonkeyHub。工作区测试页位于
-`apps/monkeyhub/web/workspaces/test/`，不进入生产构建；实际产品交互通过 Hub 验收。
+`apps/monkeyhub/web/test/`，不进入生产构建；实际产品交互通过 Hub 验收。
 
 #### 手动联调
 
@@ -823,7 +823,7 @@ $env:ARCHFLOW_STUDIO_RHINO_EXPORT = '0'
 $SourceRoot = 'D:\code\ARCHFLOW_V4'
 Set-Location "$SourceRoot\apps\monkeyhub\web"
 $env:ARCHFLOW_STUDIO_API_URL = 'http://127.0.0.1:18080'
-npx.cmd vite --config workspaces/test/vite.config.ts --port 15174
+npx.cmd vite --config test/vite.config.ts --port 15174
 ```
 
 打开测试页 `http://127.0.0.1:15174/test/workspace.html`（仅隔离回归，不进入生产构建）。这组端口与默认的一键启动端口分开；端口被占用时一起改 API 端口和

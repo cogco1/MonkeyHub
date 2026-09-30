@@ -372,8 +372,8 @@
         "tests/test_cad_execution.py",
         "tests/test_cad_patch.py",
         "tests/test_occt_execution.py",
-        "monkeydiagram/drawing_elevation.py",
-        "tests/test_drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/tests/test_drawing_elevation.py",
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
         "tests/test_cad_backend_contract.py"
       ],
@@ -566,7 +566,7 @@
     },
     {
       "module_id": "adapters.drawing_svg",
-      "owner_path": "monkeydiagram/drawing_svg.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/drawing_svg.py",
       "purpose": "Serialise drawing polylines, orthographic or a section perspective, as one deterministic SVG that names each polyline's source object, and render a PNG from those SVG bytes.",
       "owns": [
         "cropping projected polylines to the view window after visibility was solved (crop_polylines)",
@@ -618,9 +618,9 @@
         "archflow.adapters.occt_backend"
       ],
       "used_by": [
-        "monkeydiagram/drawing_elevation.py",
-        "tests/test_drawing_svg.py",
-        "tests/test_drawing_elevation.py"
+        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/tests/test_drawing_svg.py",
+        "packages/monkeydiagram/tests/test_drawing_elevation.py"
       ],
       "invariants": [
         "the same polylines, crop and options give the same SVG bytes; the same SVG gives the same PNG bytes",
@@ -632,14 +632,14 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_drawing_svg.py",
-        "tests/test_drawing_elevation.py"
+        "packages/monkeydiagram/tests/test_drawing_svg.py",
+        "packages/monkeydiagram/tests/test_drawing_elevation.py"
       ],
       "notes": "CREATE 2026-09-07 (A0 of docs/DRAWING_MODULE_ARCHITECTURE_PLAN.md): no owner serialised drawings; the PDF/DXF paper canvas in a teammate's worktree is a different output and stays out. Pillow renders the PNG (already installed with the Studio); no browser, image model or re-projection."
     },
     {
       "module_id": "adapters.mesh_views",
-      "owner_path": "monkeydiagram/mesh_views.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/mesh_views.py",
       "purpose": "Draw a fast look-only line view of named shapes from their triangles against a depth buffer: the model view's axonometric and the projection cache's thumbnails. Created because the exact hidden-line solve (adapters.cad_execution through runtime.drawing_elevation) grows too fast with object count for a view nobody retains, and no drawing owner rasterises meshes.",
       "owns": [
         "triangulating the named shapes at a caller-chosen chord error, after forgetting any mesh a shape already holds so a model read once draws every size as a fresh read would, and naming the curve-only objects left out (triangulate)",
@@ -683,7 +683,7 @@
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
-        "tests/test_mesh_views.py"
+        "packages/monkeydiagram/tests/test_mesh_views.py"
       ],
       "invariants": [
         "the same shapes, frame and size give the same PNG bytes",
@@ -693,7 +693,7 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_mesh_views.py"
+        "packages/monkeydiagram/tests/test_mesh_views.py"
       ],
       "notes": "numpy comes with the drawing requirements (shapely). GH-367 part A."
     },
@@ -2568,8 +2568,8 @@
         "tools/freeze_project_stage_workflow.py",
         "tools/verify_state_record.py",
         "tests/test_record_kinds.py",
-        "monkeydiagram/drawing_elevation.py",
-        "tests/test_drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/tests/test_drawing_elevation.py",
         "apps/archflow-studio/api/archflow_studio_api/application/gestures.py",
         "apps/archflow-studio/api/archflow_studio_api/application/decisions.py"
       ],
@@ -2911,7 +2911,7 @@
         "tools/verify_state_record.py",
         "tools/freeze_project_stage_workflow.py",
         "tools/issue_project.py",
-        "monkeydiagram/drawing_elevation.py",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
         "tools/create_project.py",
         "archflow/project/watch.py"
       ],
@@ -3154,7 +3154,7 @@
     },
     {
       "module_id": "runtime.drawing_elevation",
-      "owner_path": "monkeydiagram/drawing_elevation.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py",
       "purpose": "Freeze model-axis projections, horizontal cut plans and section perspectives from verified STEP or registered native model geometry into SVG/PNG and the existing drawing receipt, without changing design state.",
       "owns": [
         "ElevationSource: the retained STEP and OcctExecutionReceipt@1 a drawing is derived from, and the verification that they agree (SHA, run, base, unit, Z-up, STEP names = physical object ids)",
@@ -3245,7 +3245,7 @@
         "archflow.adapters.occt_backend"
       ],
       "used_by": [
-        "tests/test_drawing_elevation.py",
+        "packages/monkeydiagram/tests/test_drawing_elevation.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawings.py"
       ],
       "invariants": [
@@ -3266,8 +3266,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_drawing_elevation.py",
-        "tests/test_drawing_section_perspective.py"
+        "packages/monkeydiagram/tests/test_drawing_elevation.py",
+        "packages/monkeydiagram/tests/test_drawing_section_perspective.py"
       ],
       "notes": "CREATE 2026-09-07: the plan's first real consumer at the application boundary. runtime.project_runner is the seat/stage loop and does not derive drawings; adapters have no repository authority. First frozen drawing: villa-rotonda-reconstruction run drawing-a0-20260907-villa-b-minus-y from source run studio-cand-20260906-010451-dca4de25-4e9d (external workspace, noncanonical)."
     },
@@ -4614,7 +4614,7 @@
         "apps/archflow-studio/api/tests/test_artifacts.py",
         "apps/archflow-studio/api/tests/test_cad_export.py",
         "apps/archflow-studio/api/tests/test_captures.py",
-        "apps/monkeyhub/web/workspaces/test/modelPreviews.browser.mjs",
+        "apps/monkeyhub/web/test/modelPreviews.browser.mjs",
         "apps/archflow-studio/api/tests/test_documents.py",
         "apps/archflow-studio/api/tests/test_working_copies.py",
         "apps/archflow-studio/api/tests/test_drawings.py",
@@ -4623,7 +4623,7 @@
         "apps/archflow-studio/api/tests/test_model_exports.py",
         "apps/archflow-studio/api/tests/test_model_source_index.py",
         "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
-        "apps/monkeyhub/web/workspaces/test/externalModelImport.browser.mjs",
+        "apps/monkeyhub/web/test/externalModelImport.browser.mjs",
         "apps/archflow-studio/api/tests/test_section_perspective.py",
         "apps/archflow-studio/api/tests/test_native_drawings.py",
         "apps/archflow-studio/api/tests/test_drawing_corrections.py",
@@ -4720,7 +4720,7 @@
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+        "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
         "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawings.py"
       ],
@@ -4741,19 +4741,19 @@
       "status": "canonical",
       "tests": [
         "apps/archflow-studio/api/tests/test_boards.py",
-        "apps/monkeyhub/web/workspaces/test/boardScene.test.ts",
-        "apps/monkeyhub/web/workspaces/test/boardSaveQueue.test.ts",
-        "apps/monkeyhub/web/workspaces/test/boardFeedbackGeometry.test.ts",
-        "apps/monkeyhub/web/workspaces/test/boardFeedback.test.ts",
-        "apps/monkeyhub/web/workspaces/test/boardIntentHandoff.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/boardWhiteboard.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/boardNavigation.test.ts",
-        "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/boardConceptFeedback.test.ts",
-        "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/boardRender.test.ts",
+        "apps/monkeyhub/web/test/boardScene.test.ts",
+        "apps/monkeyhub/web/test/boardSaveQueue.test.ts",
+        "apps/monkeyhub/web/test/boardFeedbackGeometry.test.ts",
+        "apps/monkeyhub/web/test/boardFeedback.test.ts",
+        "apps/monkeyhub/web/test/boardIntentHandoff.browser.mjs",
+        "apps/monkeyhub/web/test/boardReplacement.browser.mjs",
+        "apps/monkeyhub/web/test/boardWhiteboard.browser.mjs",
+        "apps/monkeyhub/web/test/boardNavigation.test.ts",
+        "apps/monkeyhub/web/test/boardDocumentOpen.browser.mjs",
+        "apps/monkeyhub/web/test/boardConceptFeedback.test.ts",
+        "apps/monkeyhub/web/test/boundWorkCopy.browser.mjs",
+        "apps/monkeyhub/web/test/renderWorkspace.browser.mjs",
+        "apps/monkeyhub/web/test/boardRender.test.ts",
         "apps/monkeyhub/web/test/chatShell.browser.mjs"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
@@ -5158,7 +5158,7 @@
         "apps/archflow-studio/api/tests/test_document_annotations.py",
         "apps/archflow-studio/api/tests/test_working_copies.py",
         "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
-        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
+        "apps/monkeyhub/web/test/candidatePreview.browser.mjs",
         "apps/archflow-studio/api/tests/test_runtime.py",
         "apps/archflow-studio/api/tests/test_worktrees.py"
       ],
@@ -5591,12 +5591,12 @@
         "apps/archflow-studio/api/tests/test_geometry_first_authoring.py",
         "apps/archflow-studio/api/tests/test_wall_project_point_authoring.py",
         "apps/archflow-studio/api/tests/test_deepening_parameterized_prisms.py",
-        "apps/monkeyhub/web/workspaces/test/modelDraft.test.ts",
-        "apps/monkeyhub/web/workspaces/test/syncModelDraft.test.ts",
-        "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
+        "apps/monkeyhub/web/test/modelDraft.test.ts",
+        "apps/monkeyhub/web/test/syncModelDraft.test.ts",
+        "apps/monkeyhub/web/test/modelSync.browser.mjs",
         "apps/archflow-studio/api/tests/test_acceptance_audit.py",
         "apps/archflow-studio/api/tests/test_elevation.py",
-        "apps/monkeyhub/web/workspaces/test/elevation.browser.mjs",
+        "apps/monkeyhub/web/test/elevation.browser.mjs",
         "apps/archflow-studio/api/tests/test_decisions.py",
         "tests/test_nonadjacent_stage_context.py",
         "apps/archflow-studio/api/tests/test_visual_observation.py",
@@ -5631,12 +5631,12 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/capabilities.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/capability.py",
         "tools/benchmark_intent_context.py",
-        "apps/monkeyhub/web/workspaces/src/features/stage/modelDraft.ts",
-        "apps/monkeyhub/web/workspaces/src/features/stage/syncModelDraft.ts",
-        "apps/monkeyhub/web/workspaces/src/api/client.ts",
+        "apps/monkeyhub/web/src/features/stage/modelDraft.ts",
+        "apps/monkeyhub/web/src/features/stage/syncModelDraft.ts",
+        "apps/monkeyhub/web/src/api/project-runtime/client.ts",
         "apps/archflow-studio/api/archflow_studio_api/application/elevation.py",
-        "apps/monkeyhub/web/workspaces/src/features/stage/ElevationPanel.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/stage/ElevationPanel.css",
+        "apps/monkeyhub/web/src/features/stage/ElevationPanel.tsx",
+        "apps/monkeyhub/web/src/features/stage/ElevationPanel.css",
         "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/decisions.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
@@ -5784,7 +5784,7 @@
         "apps/archflow-studio/api/tests/test_rendering.py",
         "apps/archflow-studio/api/tests/test_representation_dependencies.py",
         "apps/archflow-studio/api/tests/test_render_gemini_adapter.py",
-        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs"
+        "apps/monkeyhub/web/test/renderWorkspace.browser.mjs"
       ],
       "inputs": [
         "Exact SourceDocument runId/assetSha256/revisionRef/pageIndex, ordered references, direction and output options",
@@ -5996,7 +5996,7 @@
         "apps/archflow-studio/api/tests/test_study_model.py",
         "apps/archflow-studio/api/tests/test_conditional_reads.py"
       ],
-      "notes": "Project Runtime contract: docs/PROJECT_RUNTIME.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/monkeyhub/web/workspaces/src/api/connection.ts is the client boundary. User preferences and the Hub's application settings - their files, DTOs and routes - belong to hub.shell, as do browser appearance, language catalogs and workspace composition; this process serves APIs only.",
+      "notes": "Project Runtime contract: docs/PROJECT_RUNTIME.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/monkeyhub/web/src/api/project-runtime/connection.ts is the client boundary. User preferences and the Hub's application settings - their files, DTOs and routes - belong to hub.shell, as do browser appearance, language catalogs and workspace composition; this process serves APIs only.",
       "files": [
         "apps/archflow-studio/api/archflow_studio_api/main.py",
         "apps/archflow-studio/api/archflow_studio_api/settings.py",
@@ -7563,7 +7563,7 @@
         "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source",
         "GET /api/integrations",
         "ChatSuggestion via chat_present / ChatPresentationRequest; ChatPostRequest.suggestionSelection resolves one retained card into the existing native user-turn admission",
-        "workspaces/src/api/projectStore.ts: ProjectStore and projectStores, one ref-counted client store per open project fed by the Hub's one stream (#366), with each entity's last move (moved, movedAt) and each project's kept Studio events known by <stream>:<seq>; useProjectStore / useProjectRevision / useProjectMoved / useProjectStoreInstance / useRuntimeKey"
+        "src/api/project-runtime/projectStore.ts: ProjectStore and projectStores, one ref-counted client store per open project fed by the Hub's one stream (#366), with each entity's last move (moved, movedAt) and each project's kept Studio events known by <stream>:<seq>; useProjectStore / useProjectRevision / useProjectMoved / useProjectStoreInstance / useRuntimeKey"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -7642,22 +7642,22 @@
         "apps/monkeyhub/web/src/MonitorPage.tsx",
         "apps/monkeyhub/web/src/MonitorPage.css",
         "apps/monkeyhub/web/src/monitorData.ts",
-        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-        "apps/monkeyhub/web/workspaces/src/app/AppShell.tsx",
-        "apps/monkeyhub/web/workspaces/src/app/ErrorBoundary.tsx",
-        "apps/monkeyhub/web/workspaces/src/app/ErrorPanel.tsx",
-        "apps/monkeyhub/web/workspaces/src/app/LoadingOverlay.tsx",
-        "apps/monkeyhub/web/workspaces/src/app/useSession.ts",
-        "apps/monkeyhub/web/workspaces/src/app/useCandidateRuns.ts",
-        "apps/monkeyhub/web/workspaces/src/app/evidence.ts",
-        "apps/monkeyhub/web/workspaces/src/app/transcript.ts",
-        "apps/monkeyhub/web/workspaces/src/api/connection.ts",
-        "apps/monkeyhub/web/workspaces/src/features/settings/preferences.tsx",
-        "apps/monkeyhub/web/workspaces/src/i18n/useT.ts",
-        "apps/monkeyhub/web/workspaces/src/i18n/BilingualText.tsx",
-        "apps/monkeyhub/web/workspaces/src/i18n/BilingualText.css",
-        "apps/monkeyhub/web/workspaces/src/i18n/browserTranslator.ts",
-        "apps/monkeyhub/web/workspaces/src/styles.css",
+        "apps/monkeyhub/web/src/app/App.tsx",
+        "apps/monkeyhub/web/src/app/AppShell.tsx",
+        "apps/monkeyhub/web/src/app/ErrorBoundary.tsx",
+        "apps/monkeyhub/web/src/app/ErrorPanel.tsx",
+        "apps/monkeyhub/web/src/app/LoadingOverlay.tsx",
+        "apps/monkeyhub/web/src/app/useSession.ts",
+        "apps/monkeyhub/web/src/app/useCandidateRuns.ts",
+        "apps/monkeyhub/web/src/app/evidence.ts",
+        "apps/monkeyhub/web/src/app/transcript.ts",
+        "apps/monkeyhub/web/src/api/project-runtime/connection.ts",
+        "apps/monkeyhub/web/src/features/settings/preferences.tsx",
+        "apps/monkeyhub/web/src/i18n/useT.ts",
+        "apps/monkeyhub/web/src/i18n/BilingualText.tsx",
+        "apps/monkeyhub/web/src/i18n/BilingualText.css",
+        "apps/monkeyhub/web/src/i18n/browserTranslator.ts",
+        "apps/monkeyhub/web/src/app/styles.css",
         "packages/web-shared/src/appearance.js",
         "packages/web-shared/src/appearance.d.ts",
         "packages/web-shared/src/i18n.js",
@@ -7667,43 +7667,43 @@
         "packages/web-shared/src/base.css",
         "apps/monkeyhub/web/src/i18n/messages.en.ts",
         "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/workspaces/src/api/ProjectRuntimeContext.tsx",
-        "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
-        "apps/monkeyhub/web/workspaces/scripts/dump-openapi.py",
+        "apps/monkeyhub/web/src/api/project-runtime/ProjectRuntimeContext.tsx",
+        "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx",
+        "apps/monkeyhub/web/scripts/dump-openapi.py",
         "apps/monkeyhub/web/src/ChatMessageContent.tsx",
         "apps/monkeyhub/web/src/ChatMessageContent.css",
         "apps/monkeyhub/api/monkeyhub_api/updates.py",
         "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.css",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/RecipeTransfer.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/RecipeTransfer.css",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/drawingPlan.ts",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderResults.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/render.css",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/ModelPreview.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/renderView.ts",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingDressing.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/canvas/ProjectCanvas.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/canvas/canvasAssets.ts",
-        "apps/monkeyhub/web/workspaces/src/features/canvas/sceneHit.ts",
-        "apps/monkeyhub/web/workspaces/src/features/canvas/canvas.css",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/contract.ts",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/model.ts",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/layout.ts",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/scene.ts",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/words.ts",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/useDesignTree.ts",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/continueUndo.ts",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeBar.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeToast.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeSurface.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeCanvas.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeDetails.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/DesignTreeList.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/designTree.css",
-        "apps/monkeyhub/web/workspaces/src/features/designTree/fixture.ts",
+        "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
+        "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingCanvas.css",
+        "apps/monkeyhub/web/src/workspaces/monkeydiagram/RecipeTransfer.tsx",
+        "apps/monkeyhub/web/src/workspaces/monkeydiagram/RecipeTransfer.css",
+        "apps/monkeyhub/web/src/workspaces/monkeydiagram/drawingPlan.ts",
+        "apps/monkeyhub/web/src/workspaces/render/RenderWorkspace.tsx",
+        "apps/monkeyhub/web/src/workspaces/render/RenderResults.tsx",
+        "apps/monkeyhub/web/src/workspaces/render/render.css",
+        "apps/monkeyhub/web/src/workspaces/render/ModelPreview.tsx",
+        "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/renderView.ts",
+        "apps/monkeyhub/web/src/workspaces/monkeydiagram/DrawingDressing.tsx",
+        "apps/monkeyhub/web/src/features/canvas/ProjectCanvas.tsx",
+        "apps/monkeyhub/web/src/features/canvas/canvasAssets.ts",
+        "apps/monkeyhub/web/src/features/canvas/sceneHit.ts",
+        "apps/monkeyhub/web/src/features/canvas/canvas.css",
+        "apps/monkeyhub/web/src/features/designTree/contract.ts",
+        "apps/monkeyhub/web/src/features/designTree/model.ts",
+        "apps/monkeyhub/web/src/features/designTree/layout.ts",
+        "apps/monkeyhub/web/src/features/designTree/scene.ts",
+        "apps/monkeyhub/web/src/features/designTree/words.ts",
+        "apps/monkeyhub/web/src/features/designTree/useDesignTree.ts",
+        "apps/monkeyhub/web/src/features/designTree/continueUndo.ts",
+        "apps/monkeyhub/web/src/features/designTree/DesignTreeBar.tsx",
+        "apps/monkeyhub/web/src/features/designTree/DesignTreeToast.tsx",
+        "apps/monkeyhub/web/src/features/designTree/DesignTreeSurface.tsx",
+        "apps/monkeyhub/web/src/features/designTree/DesignTreeCanvas.tsx",
+        "apps/monkeyhub/web/src/features/designTree/DesignTreeDetails.tsx",
+        "apps/monkeyhub/web/src/features/designTree/DesignTreeList.tsx",
+        "apps/monkeyhub/web/src/features/designTree/designTree.css",
+        "apps/monkeyhub/web/src/features/designTree/fixture.ts",
         "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
         "apps/monkeyhub/web/src/ChatSuggestionCard.css"
       ],
@@ -7730,10 +7730,10 @@
         "apps/monkeyhub/api/tests/test_project_archive.py",
         "apps/monkeyhub/desktop/tests/test_runtime.py",
         "apps/monkeyhub/web/test/monitorData.test.ts",
-        "apps/monkeyhub/web/workspaces/test/connection.test.ts",
-        "apps/monkeyhub/web/workspaces/test/proposalCard.test.ts",
-        "apps/monkeyhub/web/workspaces/test/preferences.test.ts",
-        "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs",
+        "apps/monkeyhub/web/test/connection.test.ts",
+        "apps/monkeyhub/web/test/proposalCard.test.ts",
+        "apps/monkeyhub/web/test/preferences.test.ts",
+        "apps/monkeyhub/web/test/boundWorkCopy.browser.mjs",
         "apps/monkeyhub/api/tests/test_stage_handoff.py",
         "tests/monkeymonitor/test_stage_handoff_benchmark.py",
         "apps/monkeyhub/api/tests/test_chat_presentation.py",
@@ -7742,25 +7742,25 @@
         "apps/monkeyhub/api/tests/test_updates.py",
         "apps/monkeyhub/desktop/tests/updates.rs",
         "apps/monkeyhub/desktop/tests/test_update_handoff.py",
-        "apps/monkeyhub/web/workspaces/test/drawingPlan.test.ts",
-        "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/recipeTransfer.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
+        "apps/monkeyhub/web/test/drawingPlan.test.ts",
+        "apps/monkeyhub/web/test/drawingCanvas.browser.mjs",
+        "apps/monkeyhub/web/test/recipeTransfer.browser.mjs",
+        "apps/monkeyhub/web/test/candidatePreview.browser.mjs",
         "apps/monkeyhub/api/tests/test_model_export_chat.py",
-        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/renderView.test.ts",
-        "apps/monkeyhub/web/workspaces/test/workingHead.test.ts",
+        "apps/monkeyhub/web/test/renderWorkspace.browser.mjs",
+        "apps/monkeyhub/web/test/renderView.test.ts",
+        "apps/monkeyhub/web/test/workingHead.test.ts",
         "apps/monkeyhub/web/test/worktreeGraph.test.ts",
-        "apps/monkeyhub/web/workspaces/test/designTree.test.ts",
-        "apps/monkeyhub/web/workspaces/test/designTree.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/modelComparison.test.ts",
+        "apps/monkeyhub/web/test/designTree.test.ts",
+        "apps/monkeyhub/web/test/designTree.browser.mjs",
+        "apps/monkeyhub/web/test/modelComparison.test.ts",
         "apps/monkeyhub/api/tests/test_chat_admission.py",
         "apps/archflow-studio/api/tests/test_agent_drawing_dressing.py",
-        "apps/monkeyhub/web/workspaces/test/errorBoundary.browser.mjs",
+        "apps/monkeyhub/web/test/errorBoundary.browser.mjs",
         "apps/monkeyhub/web/test/catalogs.test.ts",
         "apps/monkeyhub/api/tests/test_integrations.py",
         "apps/monkeyhub/api/tests/test_chat_suggestions.py",
-        "apps/monkeyhub/web/workspaces/test/projectStore.test.ts",
+        "apps/monkeyhub/web/test/projectStore.test.ts",
         "apps/monkeyhub/api/tests/test_chat_render.py"
       ],
       "depends_on": [
@@ -7833,6 +7833,55 @@
       "notes": "CREATE: no existing owner creates source worktrees. tools.devctl owns read-only development lookup; tools.package_monkeyapps owns distribution building. Their two real path consumers share this configuration implementation."
     },
     {
+      "module_id": "tools.source_roots",
+      "owner_path": "tools/source_roots.py",
+      "status": "canonical",
+      "purpose": "Put a checkout's Python source roots, as its architecture policy lists them, in front of sys.path, so each of many worktrees imports its own code without an editable install into a shared interpreter.",
+      "owns": [
+        "Reading python_source_roots relative to one checkout and putting the roots sys.path lacks in front of it, in policy order, for tools, the root test suite (tests/__init__.py) and pytest (the root conftest.py)",
+        "Doing nothing where no architecture policy ships, as in an installed bundle whose python313._pth lists the roots"
+      ],
+      "does_not_own": [
+        "Choosing the roots: governance/architecture_policy.json lists them and tools.archcheck checks them",
+        "The production entry points' setup: apps/monkeyhub/run.py, the monkeyhub_api.chat MCP start and the archflow_studio_api package read the same list themselves, because they run before anything in the checkout is importable and the runtime may not import tools",
+        "The bundle's python313._pth (tools.package_monkeyapps) and CI's per-package editable installs"
+      ],
+      "inputs": [
+        "One checkout directory"
+      ],
+      "outputs": [
+        "The checkout's source roots as absolute paths in policy order, and sys.path with each missing one in front"
+      ],
+      "public_api": [
+        "roots",
+        "put_first"
+      ],
+      "depends_on": [],
+      "used_by": [
+        "tests/__init__.py",
+        "tools.create_project",
+        "tools.run_project",
+        "tools.devctl",
+        "tools.freeze_project_stage_workflow",
+        "tools.issue_project",
+        "tools.open_stage_run",
+        "tools.rehearse_project_archive",
+        "tools.reindex_project",
+        "tools.verify_state_record",
+        "studio.intent",
+        "labs/spatial_observation/fixture.py",
+        "apps/monkeyhub/web/test/drawingCanvas.browser.mjs"
+      ],
+      "invariants": [
+        "A root already on sys.path keeps its place; a missing one goes before everything else, so neither an installed copy nor another checkout answers in its name",
+        "Only this checkout's policy is read; nothing is installed and no environment variable is required"
+      ],
+      "tests": [
+        "tests/test_source_roots.py"
+      ],
+      "notes": "CREATE (#488): tools.workspace creates worktrees and tools.archcheck checks the policy; neither belongs in the startup of every tool and test, and this module also ships with the two bundled tools, where it must do nothing."
+    },
+    {
       "module_id": "tools.package_monkeyapps",
       "owner_path": "tools/package_monkeyapps.py",
       "status": "canonical",
@@ -7888,7 +7937,8 @@
         "--verify reads the release directory without building or installing; matching hashes establish consistency with that unsigned manifest, not publisher authenticity",
         "install.ps1 -RequireSignedRelease verifies the pinned publisher signature and binds the manifest to the archive, the source commit and every file of the tree that becomes the installation, before the first shortcut, launch or current-version move, and never falls back to an unsigned installation",
         "An installation without -RequireSignedRelease stays labelled candidate-unsigned; the builder signs nothing and no publisher key is held in this repository",
-        "Local patches are explicitly unsigned developer artifacts. Full base and target file hashes, exact commits and executable identity are checked; traversal, Windows path aliases and reparse points are rejected. Unchanged files are copied, never hardlinked; existing versions are never overwritten. Python runtime bytecode caches are excluded."
+        "Local patches are explicitly unsigned developer artifacts. Full base and target file hashes, exact commits and executable identity are checked; traversal, Windows path aliases and reparse points are rejected. Unchanged files are copied, never hardlinked; existing versions are never overwritten. Python runtime bytecode caches are excluded.",
+        "A package under packages/<name>/src/<name> ships at the bundle root as <name>/, where python313._pth's ..\\.. finds it, so the bundle's layout and the installed updater's required files do not change when a package moves (#488)"
       ],
       "used_by": [
         "apps/monkeyhub/installer/README.md"
@@ -7910,7 +7960,7 @@
     },
     {
       "module_id": "documentation.drawings",
-      "owner_path": "monkeydiagram/documentation/drawings.py",
+      "owner_path": "packages/monkeydiagram/src/monkeydiagram/documentation/drawings.py",
       "purpose": "Validate and compile caller-supplied drawing information against a configurable drawing standard, and render common paper scenes to PDF and editable DXF.",
       "owns": [
         "Drawing Standard v0.1: configurable sheet, view, graphic, annotation, information, status, coordination and revision conventions",
@@ -7963,9 +8013,9 @@
         "adapters.cad_execution"
       ],
       "used_by": [
-        "tests/test_drawing_standard.py",
-        "tests/test_drawing_output.py",
-        "tests/test_drawing_styles.py",
+        "packages/monkeydiagram/tests/test_drawing_standard.py",
+        "packages/monkeydiagram/tests/test_drawing_output.py",
+        "packages/monkeydiagram/tests/test_drawing_styles.py",
         "apps/archflow-studio/api/archflow_studio_api/main.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawings.py"
       ],
@@ -7980,16 +8030,16 @@
       ],
       "status": "canonical",
       "files": [
-        "monkeydiagram/documentation/drawings.py",
-        "monkeydiagram/documentation/styles.py",
-        "monkeydiagram/documentation/drawing_standard_v0_1.json",
-        "monkeydiagram/documentation/drawing_state.schema.json",
-        "monkeydiagram/drawing_output.py"
+        "packages/monkeydiagram/src/monkeydiagram/documentation/drawings.py",
+        "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
+        "packages/monkeydiagram/src/monkeydiagram/documentation/drawing_standard_v0_1.json",
+        "packages/monkeydiagram/src/monkeydiagram/documentation/drawing_state.schema.json",
+        "packages/monkeydiagram/src/monkeydiagram/drawing_output.py"
       ],
       "tests": [
-        "tests/test_drawing_standard.py",
-        "tests/test_drawing_styles.py",
-        "tests/test_drawing_output.py"
+        "packages/monkeydiagram/tests/test_drawing_standard.py",
+        "packages/monkeydiagram/tests/test_drawing_styles.py",
+        "packages/monkeydiagram/tests/test_drawing_output.py"
       ],
       "notes": "CREATE justified in docs/DRAWING_STANDARD_V0.1.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework."
     },
@@ -8126,8 +8176,8 @@
         "apps/archflow-studio/api/tests/test_study_compare.py",
         "apps/archflow-studio/api/tests/test_study_research.py",
         "apps/archflow-studio/api/tests/test_study_model.py",
-        "apps/monkeyhub/web/workspaces/test/documentStudy.test.ts",
-        "apps/monkeyhub/web/workspaces/test/documentStudy.browser.mjs"
+        "apps/monkeyhub/web/test/documentStudy.test.ts",
+        "apps/monkeyhub/web/test/documentStudy.browser.mjs"
       ],
       "notes": "EXTEND the existing Study owner. Document canvas and source store are reused; true polygon computation lives in MonkeyDiagram under this same capability. Historical bounds archive/compare behavior is retained, while polygon research results are independently named. Family judgments and historical causation remain unvalidated. Competing retained heads still require explicit reconciliation; exact archived revisions remain readable.",
       "files": [
@@ -8135,7 +8185,7 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/study.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/study.py",
         "apps/archflow-studio/api/archflow_studio_api/application/study_model.py",
-        "monkeydiagram/study.py"
+        "packages/monkeydiagram/src/monkeydiagram/study.py"
       ]
     },
     {
@@ -8174,8 +8224,8 @@
         "apps/archflow-studio/api/archflow_studio_api/application/publication_output.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/publications.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/publications.py",
-        "apps/monkeyhub/web/workspaces/src/workspaces/publish/PublishWorkspace.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/publish/publicationSaveQueue.ts"
+        "apps/monkeyhub/web/src/workspaces/publish/PublishWorkspace.tsx",
+        "apps/monkeyhub/web/src/workspaces/publish/publicationSaveQueue.ts"
       ],
       "inputs": [
         "Project binding, exact registered page references, editable page elements and format-independent layout spec",
@@ -8195,8 +8245,8 @@
       "tests": [
         "apps/archflow-studio/api/tests/test_publications.py",
         "apps/archflow-studio/api/tests/test_publication_dependencies.py",
-        "apps/monkeyhub/web/workspaces/test/publishWorkspace.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/publicationSaveQueue.test.ts"
+        "apps/monkeyhub/web/test/publishWorkspace.browser.mjs",
+        "apps/monkeyhub/web/test/publicationSaveQueue.test.ts"
       ]
     },
     {

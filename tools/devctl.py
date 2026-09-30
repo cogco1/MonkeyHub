@@ -19,7 +19,10 @@ ROOT = Path(__file__).resolve().parents[1]
 # and not whichever archflow happens to be importable from the interpreter.
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from tools.archcheck import REGISTRY_SCHEMA  # noqa: E402 - needs this tree on sys.path first
+from tools import source_roots  # noqa: E402 - needs this tree on sys.path first
+from tools.archcheck import REGISTRY_SCHEMA  # noqa: E402
+
+source_roots.put_first(ROOT)
 
 REGISTRY_PATH = ROOT / "governance" / "work_registry.json"
 MODULE_REGISTRY = ROOT / "governance" / "module_registry.json"
@@ -51,9 +54,6 @@ def _matcher():
     standard library to be borrowed this cheaply.
     """
 
-    studio = ROOT / "apps" / "archflow-studio" / "api"
-    if str(studio) not in sys.path:
-        sys.path.append(str(studio))
     from archflow_studio_api.application.capability import match_capabilities
 
     return match_capabilities

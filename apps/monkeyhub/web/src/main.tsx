@@ -1,5 +1,5 @@
-import { useT } from "../workspaces/src/i18n/useT";
-import { UserPreferencesProvider, usePreferences } from "../workspaces/src/features/settings/preferences";
+import { useT } from "./i18n/useT";
+import { UserPreferencesProvider, usePreferences } from "./features/settings/preferences";
 import { StrictMode, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { appearanceFromSearch, applyAppearance, DEFAULT_APPEARANCE, resolveAppearance, type AppearancePreferences, type Language } from "../../../../packages/web-shared/src/appearance.js";

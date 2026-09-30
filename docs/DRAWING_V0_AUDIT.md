@@ -12,10 +12,10 @@
 |---|---|---|
 | 设计真源：`state.record` | `StateRecord`、`Entity`、`Parameter`、`StateRecordOperator`；[state_record.py](../archflow/state/state_record.py)，137、175、479、965 行 | 设计实体、参数、关系、依赖与锁；Drawing 不写入这些事实 |
 | 来源与登记：`studio.artifacts` | `ModelSource`、`SourceDocument`、`DocumentPage`；[application/artifacts.py](../apps/archflow-studio/api/archflow_studio_api/application/artifacts.py)，120、217、247 行 | 已保留精确来源、逻辑 drawingId、immutable revision、recipe；可直接延伸 |
-| 投影与保留：`runtime.drawing_elevation` | `ElevationSource`、`ElevationView`、`ElevationProjection`、`ElevationDrawing`、`VerifiedElevationSource`；[drawing_elevation.py](../monkeydiagram/drawing_elevation.py)，144、187、267、326、339 行 | 已能校验 exact STEP、生成 SVG/PNG、P036 落盘及冷读回；目前只接 elevation/top |
+| 投影与保留：`runtime.drawing_elevation` | `ElevationSource`、`ElevationView`、`ElevationProjection`、`ElevationDrawing`、`VerifiedElevationSource`；[drawing_elevation.py](../packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py)，144、187、267、326、339 行 | 已能校验 exact STEP、生成 SVG/PNG、P036 落盘及冷读回；目前只接 elevation/top |
 | 几何：`adapters.cad_execution` | `StepEntry`、`OcctDrawingPolyline(object_id, kind, points)`、`OcctDrawingRegion(object_id, loops)`；[occt_backend.py](../archflow/adapters/occt_backend.py)，896、1124、1133 行 | 已有真实剖切、断面区域、深度裁切、整体 HLR；无持久 edge/vertex naming |
 | 页批注：`studio.intent` | `DocumentGesture`、`DocumentAnnotationRef`、`DocumentAnnotationPage`；`read_document_annotations` / `save_document_annotations`；[gestures.py](../apps/archflow-studio/api/archflow_studio_api/application/gestures.py)，97、149、187、313、327 行 | exact page/revision、撤销、CAS、冷重开；不是模型尺寸 |
-| 图纸表达：`documentation.drawings` | `DrawingPlan`、图纸验证、PaperCanvas 与 PDF/DXF renderer；[drawings.py](../monkeydiagram/documentation/drawings.py)、[drawing_output.py](../monkeydiagram/drawing_output.py) | 可复用纸面单位、尺寸一致性和绘制。其 `DrawingState` JSON schema 是调用方提供数据的验证格式，不是已存在的持久 Drawing 产品状态；不得将它升级为第二真源 |
+| 图纸表达：`documentation.drawings` | `DrawingPlan`、图纸验证、PaperCanvas 与 PDF/DXF renderer；[drawings.py](../packages/monkeydiagram/src/monkeydiagram/documentation/drawings.py)、[drawing_output.py](../packages/monkeydiagram/src/monkeydiagram/drawing_output.py) | 可复用纸面单位、尺寸一致性和绘制。其 `DrawingState` JSON schema 是调用方提供数据的验证格式，不是已存在的持久 Drawing 产品状态；不得将它升级为第二真源 |
 | 存储：`project.repository` | `FilesystemProjectRepository.put_json / put_workspace_file / load_json / list_json`；[repository.py](../archflow/project/repository.py) | 沿现有 `STUDIO_SOURCE_DOCUMENT`、`DRAWING_PROJECTION_RECEIPT`、`STUDIO_DOCUMENT_ANNOTATIONS` record kinds；无需新数据库 |
 
 实际已有 HTTP：`GET/POST /api/documents`、`GET /api/documents/{sha}/bytes`、`POST /api/drawings/elevations`、`GET /api/drawings/styles`、`POST /api/drawings/sheets`、`GET /api/drawings/model-view`、`GET/PUT /api/document-annotations`、`POST /api/proposals`。前两类 drawing 生成由 [routes/drawings.py](../apps/archflow-studio/api/archflow_studio_api/routes/drawings.py) → `application/drawings.py` → 当前投影 owner 调用；`model-view` 是不保留的观察 PNG。
@@ -23,11 +23,11 @@
 ## 2. 哪些 UI 可以复用？
 
 - [ChatShell.tsx](../apps/monkeyhub/web/src/ChatShell.tsx)：37–40 行只有 Arch、Board、Fab、Monitor；当前没有独立 Drawing 导航。641、697、962 行等工具路由也只有 arch/board 分支。V0 应在同一 Hub/ProjectRuntimeProvider 下增加 Drawing 页面选择，不增加应用进程、launcher 或 retired Diagram 服务。
-- [DocumentCanvas.tsx](../apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.tsx)：449 行比较 `ModelSource` 三元组；532 行恢复 style/scale；712 行生成新图；保留页面缩放、文档选择、准确 revision、来源展示、异步 scope 检查与批注保存。由 [Stage.tsx](../apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx) 2064 行挂载。复用这些交互；Drawing 专用控件只显示 view/scale/样式/尺寸/重建，Board 继续承担 review tools。
+- [DocumentCanvas.tsx](../apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx)：449 行比较 `ModelSource` 三元组；532 行恢复 style/scale；712 行生成新图；保留页面缩放、文档选择、准确 revision、来源展示、异步 scope 检查与批注保存。由 [Stage.tsx](../apps/monkeyhub/web/src/features/stage/Stage.tsx) 2064 行挂载。复用这些交互；Drawing 专用控件只显示 view/scale/样式/尺寸/重建，Board 继续承担 review tools。
 - 当前 `generateSheet()` 传 `modelSource`，但未传已有 `sourceStageRef` prop；首片须完整传递已有 Stage 字段，不能从“最新”或文件名反推。
-- [client.ts](../apps/monkeyhub/web/workspaces/src/api/client.ts)：210 行已有 `elevation/drawingStyles/drawingSheet`，423 行已有页面批注读写；沿同一客户端扩展。
-- [boardScene.ts](../apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardScene.ts)：`PageSource = runId + assetSha256 + revisionRef + pageIndex`，`pageKey()` 使用全部四项。[boardNavigation.ts](../apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardNavigation.ts) 保留 Board 视口和选中项；继续用这一准确页面交接。
-- [boardFeedback.ts](../apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardFeedback.ts) `prepareBoardDesignRequest()` → [App.tsx](../apps/monkeyhub/web/workspaces/src/app/App.tsx) 1582 行 `propose()` / 1673 行 `compileIntent()`：已有批注转设计请求、来源核验和候选路径。复用，不另造 Drawing 建模执行器。
+- [client.ts](../apps/monkeyhub/web/src/api/project-runtime/client.ts)：210 行已有 `elevation/drawingStyles/drawingSheet`，423 行已有页面批注读写；沿同一客户端扩展。
+- [boardScene.ts](../apps/monkeyhub/web/src/workspaces/monkeyboard/boardScene.ts)：`PageSource = runId + assetSha256 + revisionRef + pageIndex`，`pageKey()` 使用全部四项。[boardNavigation.ts](../apps/monkeyhub/web/src/workspaces/monkeyboard/boardNavigation.ts) 保留 Board 视口和选中项；继续用这一准确页面交接。
+- [boardFeedback.ts](../apps/monkeyhub/web/src/workspaces/monkeyboard/boardFeedback.ts) `prepareBoardDesignRequest()` → [App.tsx](../apps/monkeyhub/web/src/app/App.tsx) 1582 行 `propose()` / 1673 行 `compileIntent()`：已有批注转设计请求、来源核验和候选路径。复用，不另造 Drawing 建模执行器。
 
 现有 UI 的“文档模型与当前编辑模型不同”仅是 source mismatch，不是 dependency-based outdated。浏览历史不能自动切换设计基底。当前页面工具也没有可编辑的模型尺规；不能以现有 ruler renderer 当作尺寸产品已完成。
 
@@ -77,9 +77,9 @@ source_stage_ref, view_recipe, generated_at, replaces_pages
 - [occt_backend.py](../archflow/adapters/occt_backend.py) 1299 行：`project_occt_lines(..., depth_range=None)`；深度裁切实际对 B-rep 与 slab 作 Boolean common，再对所有参与对象统一执行 HLR。
 - 1375 行：`section_occt_lines(...)`，由 `BRepAlgoAPI_Section` 生成真实相交线，保留 `object_id`。
 - 1457 行：`section_occt_regions(...)`，按 solid 与拓扑连通性取得闭环及内孔；开壳/开线不会自动变成填黑材料。
-- [drawing_svg.py](../monkeydiagram/drawing_svg.py) 159–181 行当前只输出 visible/hidden；传入 section 会被漏掉。278 行的 PNG renderer 只接受受限 SVG 元素，尚不支持填充。必须同时扩展两者及孔洞校验，不能只接算法就声称平面完成。
-- 尺寸还需要引线/端部符号/文字的同源绘制，现有 SVG→PNG 通道也没有文字支持。[documentation/styles.py](../monkeydiagram/documentation/styles.py) 134 行 `_dimension()` 和 [drawing_output.py](../monkeydiagram/drawing_output.py) 176 行 `PaperCanvas`、311 行文字 primitive 已有纸面绘制实现。应在原 owner 延伸这些绘制原语及字体度量，避免用网页 overlay 显示新尺寸却把旧 PNG 当作完整 retained drawing；SVG/PNG 必须来自同一 recipe 和已解析尺寸。
-- [documentation/styles.py](../monkeydiagram/documentation/styles.py) 199 行的 `compose_review_sheet()` 固定 front/right/top；不是现成的单视剖切排版。`drawing_output.py` 532 行虽然有 model-view DXF/section hatch 支持，当前 sheet caller 未使用，而且该接口要求模型米→输出 mm，不能直接传任意 STEP 单位。
+- [drawing_svg.py](../packages/monkeydiagram/src/monkeydiagram/drawing_svg.py) 159–181 行当前只输出 visible/hidden；传入 section 会被漏掉。278 行的 PNG renderer 只接受受限 SVG 元素，尚不支持填充。必须同时扩展两者及孔洞校验，不能只接算法就声称平面完成。
+- 尺寸还需要引线/端部符号/文字的同源绘制，现有 SVG→PNG 通道也没有文字支持。[documentation/styles.py](../packages/monkeydiagram/src/monkeydiagram/documentation/styles.py) 134 行 `_dimension()` 和 [drawing_output.py](../packages/monkeydiagram/src/monkeydiagram/drawing_output.py) 176 行 `PaperCanvas`、311 行文字 primitive 已有纸面绘制实现。应在原 owner 延伸这些绘制原语及字体度量，避免用网页 overlay 显示新尺寸却把旧 PNG 当作完整 retained drawing；SVG/PNG 必须来自同一 recipe 和已解析尺寸。
+- [documentation/styles.py](../packages/monkeydiagram/src/monkeydiagram/documentation/styles.py) 199 行的 `compose_review_sheet()` 固定 front/right/top；不是现成的单视剖切排版。`drawing_output.py` 532 行虽然有 model-view DXF/section hatch 支持，当前 sheet caller 未使用，而且该接口要求模型米→输出 mm，不能直接传任意 STEP 单位。
 
 ## 5. 当前 anchors 是什么？首个尺寸最少需要什么？
 
@@ -171,11 +171,11 @@ Publish #66：跨 Drawing/Render/Board/文字/图片的页面组合、PPTX/PDF/r
 
 | 最小改动 | owner 与文件 | 复用/扩展检查 |
 |---|---|---|
-| 水平切面 recipe、cut geometry、immutable revision/前驱与老数据读回 | `runtime.drawing_elevation`：`monkeydiagram/drawing_elevation.py`；必要契约登记 | `tests/test_drawing_elevation.py`：旧 top 语义、冷读、same base、篡改/源缺失先拒绝；新增 plan/recipe/前驱冷读 |
-| section 笔宽、even-odd hatch、尺寸线/文字、SVG→PNG 一致 | `adapters.drawing_svg`：`monkeydiagram/drawing_svg.py`；必要时延伸 `documentation/styles.py` 与 `drawing_output.py` 的已有纸面绘制原语 | `tests/test_drawing_svg.py`、`tests/test_drawing_output.py`；`tests/test_occt_execution.py::OcctDrawingTests`：洞不填、开壳、独立切块、深度遮挡、单位 |
+| 水平切面 recipe、cut geometry、immutable revision/前驱与老数据读回 | `runtime.drawing_elevation`：`packages/monkeydiagram/src/monkeydiagram/drawing_elevation.py`；必要契约登记 | `packages/monkeydiagram/tests/test_drawing_elevation.py`：旧 top 语义、冷读、same base、篡改/源缺失先拒绝；新增 plan/recipe/前驱冷读 |
+| section 笔宽、even-odd hatch、尺寸线/文字、SVG→PNG 一致 | `adapters.drawing_svg`：`packages/monkeydiagram/src/monkeydiagram/drawing_svg.py`；必要时延伸 `documentation/styles.py` 与 `drawing_output.py` 的已有纸面绘制原语 | `packages/monkeydiagram/tests/test_drawing_svg.py`、`packages/monkeydiagram/tests/test_drawing_output.py`；`tests/test_occt_execution.py::OcctDrawingTests`：洞不填、开壳、独立切块、深度遮挡、单位 |
 | 单视 plan 接口、来源/对象核验、read set/status、重建 | `studio.artifacts`：`application/drawings.py`、`routes/drawings.py`、`transport/drawings.py`；`application/artifacts.py` 仅扩充已注册 revision 读回 | `apps/archflow-studio/api/tests/test_drawings.py`：保留旧图、精确 Stage、same-pixel revision、缺少完整 STEP；新增 outdated/rebuild/断锚/非相关输入 |
 | 一个矩形洞尺寸的 semantic feature | 当前 producer/reference/墙洞 owner：`monkeyarch/capabilities/element_producers.py`、`reference_resolver.py`、`wall_solver.py`，仅在无法直接消费既有纯结果处延伸；应用层组装，Drawing 不跨 workflow import | `tests/test_element_producers.py`、`tests/test_derivations_and_references.py`、`tests/test_wall_explicit_point_reference.py`、`tests/test_wall_solver_contact.py`；新增准确洞 id/参数/feature 对应及删除后拒绝 |
-| 独立 Drawing 页面与准确来源交接 | `hub.shell` / 既有工作区：`apps/monkeyhub/web/src/ChatShell.tsx`；workspaces `app/ProjectWorkspace.tsx`、`app/App.tsx`、`features/stage/Stage.tsx`、`workspaces/monkeydiagram/DocumentCanvas.tsx`、`api/client.ts` 及受影响现有 types/routes | `workspaces/test/drawingStyles.browser.mjs`、`documentModelSource.browser.mjs`、`documentAnnotations.test.ts`、`boardDocumentOpen.browser.mjs`；新增 Drawing 打开/关闭、迟到响应、表示操作无 design 请求、独立导航 |
+| 独立 Drawing 页面与准确来源交接 | `hub.shell` / 既有工作区：`apps/monkeyhub/web/src/ChatShell.tsx`；同一 `src/` 下的 `app/ProjectWorkspace.tsx`、`app/App.tsx`、`features/stage/Stage.tsx`、`workspaces/monkeydiagram/DocumentCanvas.tsx`、`api/project-runtime/client.ts` 及受影响现有 types/routes | `test/drawingStyles.browser.mjs`、`documentModelSource.browser.mjs`、`documentAnnotations.test.ts`、`boardDocumentOpen.browser.mjs`；新增 Drawing 打开/关闭、迟到响应、表示操作无 design 请求、独立导航 |
 | 改设计尺寸 | 复用现有 `POST /api/proposals`、candidate 和 Stage acceptance；除实际缺口外不改通用 proposal 引擎 | `apps/archflow-studio/api/tests/test_proposals.py`、`test_intents.py`：exact base、单位、参数更新、derived/locked/keep；新增从 Drawing 参数尺寸进入同一路径 |
 
 代码实施时只因 public API、owner 契约或列出的 tests 发生实际变化才更新 `governance/module_registry.json`；相关剩余验收记在对应的 GitHub Issue，不新造治理机制。需要公开 API 时同步现有 DTO/client/OpenAPI/MCP 对应项；不改并行任务的 ContextPack/Study 公共基础。

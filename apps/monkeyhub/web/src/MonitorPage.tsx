@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import type { AppearancePreferences } from "../../../../packages/web-shared/src/appearance.js";
-import { MenuCommand, MenuSeparator, MenuTabs, StatusLine, SurfaceBar } from "../workspaces/src/features/chrome/SurfaceChrome";
+import { MenuCommand, MenuSeparator, MenuTabs, StatusLine, SurfaceBar } from "./features/chrome/SurfaceChrome";
 import type { AppStatus, ApplicationSettingsDto, ChatProject } from "./api/generated";
 import {
   aggregateTokens, formatCount, formatDuration, isModelCall, uncachedInput, projectIds, summarizeUsage, quoteDraftReducer, serialMonitorRead,

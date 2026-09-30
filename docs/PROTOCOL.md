@@ -5,7 +5,7 @@ FastAPI application (`apps/archflow-studio/api`); this document says what of it 
 rely on, and what version 2 has reserved but not yet built.
 
 ArchFlow is the methodology and this protocol. **MonkeyArch** is one implementation of it: the
-server `monkeyarch-api` and the client in `apps/monkeyhub/web/workspaces`; a conforming server need
+server `monkeyarch-api` and the client in `apps/monkeyhub/web`; a conforming server need
 be neither. Application DTO fields use `camelCase`, `serverVersion` included.
 The project-transfer envelope retains P036's existing `snake_case` fields and reference values.
 

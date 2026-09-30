@@ -1,15 +1,19 @@
 """Run the local Hub or one of its fixed child services, including embedded Python."""
 
+import json
 from pathlib import Path
 import re
 import sys
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
-for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhub/api",
-                  ROOT / "apps/monkeyfab/src"):
-    if str(directory) not in sys.path:
-        sys.path.insert(0, str(directory))
+# A checkout lists where import names begin in its architecture policy; this
+# checkout's roots go first (tools/source_roots.py). An installed bundle ships
+# no policy: its python313._pth lists the same roots.
+_POLICY = ROOT / "governance" / "architecture_policy.json"
+if _POLICY.is_file():
+    _ROOTS = [str(ROOT / root) for root in json.loads(_POLICY.read_text(encoding="utf-8"))["python_source_roots"]]
+    sys.path[:0] = [root for root in _ROOTS if root not in sys.path]
 
 
 _CANDIDATE_REQUEST = re.compile(

@@ -13,7 +13,7 @@
 
 | 缩写 | 路径 |
 | --- | --- |
-| `WS` | `apps/monkeyhub/web/workspaces/src` |
+| `WS` | `apps/monkeyhub/web/src` |
 | `HUB` | `apps/monkeyhub/web/src` |
 | `API` | `apps/archflow-studio/api/archflow_studio_api` |
 | `HUBAPI` | `apps/monkeyhub/api/monkeyhub_api` |

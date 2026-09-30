@@ -27,7 +27,7 @@ perspective views placed on a sheet. A proposed change drawn in 2D does not sile
 change the 3D model; applying it to the model is an explicit handoff to MonkeyArch.
 
 **ArchFlow** owns the shared project and contract foundation. The Python source now
-separates `archflow/`, `monkeyarch/` and `monkeydiagram/`, with two peer Web workspaces
+separates `archflow/`, `monkeyarch/` and `packages/monkeydiagram/`, with two peer Web workspaces
 and a shared application host. Modeling algorithms and drawing execution live in their
 respective packages. Shared geometry values remain in `archflow.state.geometry_program`
 so CAD adapters do not import the modeling compiler. The dependency direction and

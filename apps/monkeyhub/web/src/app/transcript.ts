@@ -1,0 +1,200 @@
+/**
+ * The conversation, as this tab remembers it.
+ *
+ * An append-only list of entries: what you said, and what the server answered
+ * — a typed proposal, a question, a refusal, a candidate run, a verdict. Each
+ * entry holds the DTO or the error exactly as it arrived; the cards decide how
+ * to show it, and nothing here rewrites a server sentence into a summary.
+ *
+ * One entry is edited after the fact: a candidate's, whose job status changes
+ * while it runs. Everything else is history, and history is not version
+ * history. The task workspace may retain it as personal browser history.
+ */
+
+import { useState, useSyncExternalStore } from "react";
+
+import type { StudioApiError } from "../api/project-runtime/client";
+import type { AgentReadingDto, CompareDto, ProposalDto } from "../api/project-runtime/generated";
+
+export type SystemTextPart =
+  | { readonly kind: "prose"; readonly text: string }
+  | { readonly kind: "technical"; readonly text: string }
+  | { readonly kind: "user"; readonly text: string };
+
+export type Entry =
+  | {
+      kind: "system";
+      id: string;
+      /** Plain source retained for history and safe fallback. */
+      text: string;
+      /** Only explicitly separated prose is eligible for translation. */
+      parts?: readonly SystemTextPart[];
+    }
+  | {
+      /** The waiting half of a proposal: an agent is reading the sentence. */
+      kind: "reading";
+      id: string;
+      subject: string;
+      recordSize: string;
+      /** Who reads here, as GET /api/project said: deterministic, codex, anthropic, unknown. */
+      provider: string;
+      startedAt: number;
+    }
+  | { kind: "you"; id: string; text: string }
+  | {
+      kind: "proposal";
+      id: string;
+      proposal: ProposalDto;
+      /** Who read the sentence and what it compiled; the agent's words, kept apart. */
+      agent: AgentReadingDto | null;
+      /**
+       * How many times the hand refined this proposal after the sentence: each
+       * refinement is a new proposal in the server's store that replaced this
+       * entry's, so the transcript stays one card per intent.
+       */
+      refinements: number;
+    }
+  | {
+      /**
+       * `NEEDS_CLARIFICATION`: the server needs something only a person can
+       * settle, and said which slot. The error carries the pending intent this
+       * question belongs to; answering it continues that exchange by token.
+       */
+      kind: "question";
+      id: string;
+      error: StudioApiError;
+      utterance: string;
+    }
+  | {
+      /**
+       * `MISSING_EDITABLE_CONTROL` or `UNSUPPORTED`: the exchange is over and
+       * the server has said what it lacks. There is no input box on this card:
+       * asking again is exactly the loop these two outcomes exist to end.
+       */
+      kind: "terminal";
+      id: string;
+      error: StudioApiError;
+      utterance: string;
+    }
+  | { kind: "refusal"; id: string; error: StudioApiError; what: string }
+  | {
+      kind: "candidate";
+      id: string;
+      candidateId: string;
+      jobId: string;
+      /** Program candidates have no proposal in the intent store. */
+      proposalId: string | null;
+      /** The server's own word for the job: queued, running, succeeded, failed. */
+      status: string;
+    }
+  | {
+      kind: "verdict";
+      id: string;
+      candidateId: string;
+      /** What the sentence asked to keep, for the card's Protected line. */
+      protectedRefs: readonly string[];
+    }
+  | {
+      kind: "compare";
+      id: string;
+      /** Before / After / Why, as the server counted it from the records. */
+      comparison: CompareDto;
+    };
+
+/** An entry before the transcript names it. */
+export type EntryDraft =
+  | Omit<Extract<Entry, { kind: "system" }>, "id">
+  | Omit<Extract<Entry, { kind: "reading" }>, "id">
+  | Omit<Extract<Entry, { kind: "you" }>, "id">
+  | Omit<Extract<Entry, { kind: "proposal" }>, "id">
+  | Omit<Extract<Entry, { kind: "question" }>, "id">
+  | Omit<Extract<Entry, { kind: "terminal" }>, "id">
+  | Omit<Extract<Entry, { kind: "refusal" }>, "id">
+  | Omit<Extract<Entry, { kind: "candidate" }>, "id">
+  | Omit<Extract<Entry, { kind: "verdict" }>, "id">
+  | Omit<Extract<Entry, { kind: "compare" }>, "id">;
+
+export interface Transcript {
+  readonly entries: readonly Entry[];
+  /** Append one entry; answers the id it was given. */
+  append(draft: EntryDraft): string;
+  /** Drop one entry, for the waiting lines that an answer replaces. */
+  remove(entryId: string): void;
+  /** Update the candidate entry's job status in place, when it changed. */
+  noteJobStatus(candidateId: string, status: string): void;
+  /**
+   * Replace a proposal entry's proposal with a refinement of it, counting the
+   * refinement. An entry that is not a proposal is left alone.
+   */
+  replaceProposal(entryId: string, proposal: ProposalDto, agent: AgentReadingDto | null): void;
+  hasVerdictFor(candidateId: string): boolean;
+}
+
+/** One task owns its transcript, including replies arriving while another task is visible. */
+export function createTranscript(initial: readonly Entry[] = [], changed?: (entries: readonly Entry[]) => void) {
+  let entries = initial;
+  let counter = initial.length;
+  const listeners = new Set<() => void>();
+  const setEntries = (update: (current: readonly Entry[]) => readonly Entry[]) => {
+    const next = update(entries);
+    if (next === entries) return;
+    entries = next;
+    changed?.(entries);
+    listeners.forEach((listener) => listener());
+  };
+  const append = (draft: EntryDraft): string => {
+    let id: string;
+    do { id = `e${++counter}`; } while (entries.some((entry) => entry.id === id));
+    setEntries((current) => [...current, { ...draft, id } as Entry]);
+    return id;
+  };
+
+  const remove = (entryId: string) => {
+    setEntries((current) => current.filter((entry) => entry.id !== entryId));
+  };
+
+  const noteJobStatus = (candidateId: string, status: string) => {
+    if (!entries.some((entry) => entry.kind === "candidate" && entry.candidateId === candidateId && entry.status !== status)) return;
+    setEntries((current) =>
+      current.map((entry) =>
+        entry.kind === "candidate" &&
+        entry.candidateId === candidateId &&
+        entry.status !== status
+          ? { ...entry, status }
+          : entry,
+      ),
+    );
+  };
+
+  const replaceProposal =
+    (entryId: string, proposal: ProposalDto, agent: AgentReadingDto | null) => {
+      setEntries((current) =>
+        current.map((entry) =>
+          entry.kind === "proposal" && entry.id === entryId
+            ? { ...entry, proposal, agent, refinements: entry.refinements + 1 }
+            : entry,
+        ),
+      );
+    };
+
+  const hasVerdictFor =
+    (candidateId: string) =>
+      entries.some(
+        (entry) => entry.kind === "verdict" && entry.candidateId === candidateId,
+      );
+
+  return {
+    getSnapshot: () => entries,
+    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    append, remove, noteJobStatus, replaceProposal, hasVerdictFor,
+  };
+}
+
+export type TranscriptController = ReturnType<typeof createTranscript>;
+
+export function useTranscript(owned?: TranscriptController): Transcript {
+  const [local] = useState(createTranscript);
+  const controller = owned ?? local;
+  const entries = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  return { ...controller, entries };
+}

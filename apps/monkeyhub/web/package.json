@@ -6,12 +6,11 @@
     "dev": "npm run sync && vite",
     "build": "npm run sync && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.ts && node --test --test-concurrency=1 workspaces/test/*.test.ts",
-    "sync": "node workspaces/scripts/sync-rhino3dm.mjs",
-    "test:workspace": "node --test --test-concurrency=1 workspaces/test/*.test.ts",
-    "api:dump": "python workspaces/scripts/dump-openapi.py",
-    "api:generate": "node workspaces/scripts/check-generated.mjs --write",
-    "api:check": "node workspaces/scripts/check-generated.mjs"
+    "test": "node --test --test-concurrency=1 test/*.test.ts",
+    "sync": "node scripts/sync-rhino3dm.mjs",
+    "api:dump": "python scripts/dump-openapi.py",
+    "api:generate": "node scripts/check-generated.mjs --write",
+    "api:check": "node scripts/check-generated.mjs"
   },
   "dependencies": {
     "marked": "16.4.2",

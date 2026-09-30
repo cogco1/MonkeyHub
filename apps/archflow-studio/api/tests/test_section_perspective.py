@@ -1,8 +1,8 @@
 """POST /api/drawings/section-perspectives on a real room built through the Studio.
 
 The exact geometry, the projector convention and the retention boundary are tested
-in tests/test_drawing_section_perspective.py; here the route registers, reads back,
-reuses and refuses by name.
+in packages/monkeydiagram/tests/test_drawing_section_perspective.py; here the route
+registers, reads back, reuses and refuses by name.
 """
 
 from __future__ import annotations

@@ -41,6 +41,9 @@ from typing import Any, Callable, Mapping
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
+from tools import source_roots  # noqa: E402
+
+source_roots.put_first(REPO)
 
 from archflow.project.archive import archive_target
 from archflow.project.ports import PersistenceArea, PersistenceDestination

@@ -40,6 +40,7 @@ jobs:
           cache: pip
           cache-dependency-path: |
             pyproject.toml
+            packages/monkeydiagram/pyproject.toml
             apps/monkeyfab/pyproject.toml
             apps/archflow-studio/api/requirements.txt
 
@@ -63,6 +64,7 @@ jobs:
       - name: Install project
         run: >-
           python -m pip install -e ".[cad-occt]"
+          -e packages/monkeydiagram
           -e "apps/monkeyfab[send,test]"
           -r apps/archflow-studio/api/requirements.txt
           -r apps/monkeyhub/api/requirements.txt
@@ -75,6 +77,9 @@ jobs:
         env:
           ARCHFLOW_REQUIRE_FULL_ENV: "1"
         run: python -m unittest discover -s tests -t .
+
+      - name: MonkeyDiagram package tests
+        run: python -m pytest packages/monkeydiagram/tests -q
 
       - name: Fab geometry, CLI and upload boundaries
         run: python -m pytest apps/monkeyfab/tests -q
@@ -105,6 +110,7 @@ jobs:
           cache: pip
           cache-dependency-path: |
             pyproject.toml
+            packages/monkeydiagram/pyproject.toml
             apps/archflow-studio/api/requirements.txt
 
       - name: Set up Node
@@ -114,11 +120,11 @@ jobs:
           cache: npm
           cache-dependency-path: |
             apps/monkeyhub/web/package-lock.json
-            apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
+            apps/monkeyhub/web/tools/openapi-ts/package-lock.json
 
       - name: Install API dependencies
         run: >-
-          python -m pip install -e .
+          python -m pip install -e . -e packages/monkeydiagram
           -r apps/archflow-studio/api/requirements.txt
           -r apps/monkeyhub/api/requirements.txt
 
@@ -128,7 +134,7 @@ jobs:
 
       - name: Install schema generator
         working-directory: apps/monkeyhub/web
-        run: npm ci --prefix workspaces/tools/openapi-ts
+        run: npm ci --prefix tools/openapi-ts
 
       - name: Generated client matches API
         working-directory: apps/monkeyhub/web
@@ -157,59 +163,59 @@ jobs:
       - name: Workspace crash reload browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: node workspaces/test/errorBoundary.browser.mjs
+        run: node test/errorBoundary.browser.mjs
 
       - name: Candidate review browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: node workspaces/test/designTree.browser.mjs
+        run: node test/designTree.browser.mjs
 
       - name: Drawing browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: node workspaces/test/drawingCanvas.browser.mjs
+        run: node test/drawingCanvas.browser.mjs
 
       # In-memory API fixtures, no project runtime (#355).
       - name: Board note handoff browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: node workspaces/test/boardIntentHandoff.browser.mjs
+        run: node test/boardIntentHandoff.browser.mjs
 
       - name: Intent source browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: node workspaces/test/intentViewSource.browser.mjs
+        run: node test/intentViewSource.browser.mjs
 
       - name: Editable model export browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: node workspaces/test/workModelExport.browser.mjs
+        run: node test/workModelExport.browser.mjs
 
       - name: Elevation browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: node workspaces/test/elevation.browser.mjs
+        run: node test/elevation.browser.mjs
 
       # Stage interactions against in-memory fixtures, no project API (#355).
       - name: Push/Pull browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: node workspaces/test/pushPull.browser.mjs
+        run: node test/pushPull.browser.mjs
 
       - name: Scene snapping browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: node workspaces/test/sceneSnapping.browser.mjs
+        run: node test/sceneSnapping.browser.mjs
 
       - name: Move/Copy gizmo browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: node workspaces/test/translationGizmo.browser.mjs
+        run: node test/translationGizmo.browser.mjs
 
       - name: Viewport selection browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: node workspaces/test/viewportSelection.browser.mjs
+        run: node test/viewportSelection.browser.mjs
 
   studio:
     name: Hub first-run (${{ matrix.os }})
@@ -231,6 +237,7 @@ jobs:
           cache: pip
           cache-dependency-path: |
             pyproject.toml
+            packages/monkeydiagram/pyproject.toml
             apps/archflow-studio/api/requirements.txt
 
       - name: Set up Node
@@ -240,10 +247,10 @@ jobs:
           cache: npm
           cache-dependency-path: |
             apps/monkeyhub/web/package-lock.json
-            apps/monkeyhub/web/workspaces/tools/openapi-ts/package-lock.json
+            apps/monkeyhub/web/tools/openapi-ts/package-lock.json
 
       - name: Install API and test dependencies
-        run: python -m pip install -e ".[cad-inspection]" -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
+        run: python -m pip install -e ".[cad-inspection]" -e packages/monkeydiagram -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 
       - name: Desktop update activation checks
         if: runner.os == 'Windows'
@@ -314,7 +321,7 @@ jobs:
 
       - name: Install schema generator
         working-directory: apps/monkeyhub/web
-        run: npm ci --prefix workspaces/tools/openapi-ts
+        run: npm ci --prefix tools/openapi-ts
 
       - name: Web behavior checks
         working-directory: apps/monkeyhub/web
@@ -354,6 +361,7 @@ jobs:
           cache: pip
           cache-dependency-path: |
             pyproject.toml
+            packages/monkeydiagram/pyproject.toml
             apps/archflow-studio/api/requirements.txt
 
       # A pull request is compared with where it left its base branch; a push
@@ -372,7 +380,7 @@ jobs:
           git worktree add "$RUNNER_TEMP/base" "$base"
 
       - name: Install API and test dependencies
-        run: python -m pip install -e ".[cad-inspection]" -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
+        run: python -m pip install -e ".[cad-inspection]" -e packages/monkeydiagram -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 
       # The base code builds the project: the check promises that an existing
       # project reads the same, and a candidate that deliberately changes what

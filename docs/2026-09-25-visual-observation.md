@@ -13,7 +13,7 @@
 | --- | --- |
 | `API` | `apps/archflow-studio/api/archflow_studio_api` |
 | `HUBAPI` | `apps/monkeyhub/api/monkeyhub_api` |
-| `WS` | `apps/monkeyhub/web/workspaces/src` |
+| `WS` | `apps/monkeyhub/web/src` |
 | `MM` | `monkeymonitor` |
 
 ## 0. Summary

@@ -33,6 +33,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
+from tools import source_roots  # noqa: E402
+
+source_roots.put_first(REPO)
 
 from monkeyarch.capabilities.declaration import DeclarationQuadrant  # noqa: E402
 from monkeyarch.capabilities.discipline_seats import SeatSpec  # noqa: E402
