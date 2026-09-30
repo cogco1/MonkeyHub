@@ -8,9 +8,19 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
+import sys
 
-from monkeyhub_api.chat import store as chat
-from monkeyhub_api.models import ChatMessage
+ROOT = Path(__file__).resolve().parents[4]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from tools.dev import source_roots  # noqa: E402 - this checkout's tools, found above
+
+# The checkout's Python source roots, as its architecture policy lists them, go first,
+# so this module also runs on its own rather than only after another Hub test set them up.
+source_roots.put_first(ROOT)
+
+from monkeyhub_api.chat import store as chat  # noqa: E402
+from monkeyhub_api.models import ChatMessage  # noqa: E402
 
 
 RUN_PATH = Path(__file__).resolve().parents[2] / "run.py"
