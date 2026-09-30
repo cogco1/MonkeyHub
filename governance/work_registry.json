@@ -24,7 +24,8 @@
         "labs/checkpoint_critique/provider.py",
         "docs/architecture/project-runtime.md",
         "docs/architecture/repository-layout.md",
-        "docs/design/hub-interaction.md"
+        "docs/design/hub-interaction.md",
+        "labs/spatial_observation/README.md"
       ],
       "depends_on": []
     }
