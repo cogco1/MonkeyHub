@@ -10,7 +10,8 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from project_runtime.main import create_app
+from monkeyarch.authoring.frame import FrameError
+from project_runtime.main import OWNER_REFUSALS, create_app
 from project_runtime.settings import StudioSettings
 from project_runtime.errors import BlockedNeedsHuman, StudioError
 
@@ -180,6 +181,49 @@ class RefusalDetailTests(unittest.TestCase):
         # It still says which knob names the project, which is the actionable
         # half of the answer.
         self.assertIn("ARCHFLOW_STUDIO_PROJECT_DIR", body["detail"])
+
+
+# One refusal of each kind an owner package raises, as its own code raises it.
+OWNER_REFUSAL_EXAMPLES = (
+    FrameError("UNKNOWN_REF", "the record carries no entity:level-grond."),
+)
+
+
+class OwnerRefusalTests(unittest.TestCase):
+    """An owner package's refusal answers as the Runtime's own ``StudioError`` did (#519).
+
+    The owner names the code and says the sentence; ``OWNER_REFUSALS`` is the
+    one place that gives each kind its status, and the body is the same
+    ``{code, detail}``. The routes' own suites prove it for each real refusal.
+    """
+
+    def setUp(self) -> None:
+        self.app = create_app(StudioSettings(cad_export="off", project_dir=Path("unbound-placeholder")))
+        for index, refusal in enumerate(OWNER_REFUSAL_EXAMPLES):
+            self.app.add_api_route(f"/api/raises-owner-{index}", self._raising(refusal))
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+        self.addCleanup(self.client.close)
+
+    @staticmethod
+    def _raising(refusal: Exception):
+        def raises() -> None:
+            raise refusal
+        return raises
+
+    def test_every_kind_the_table_maps_is_exercised_here(self) -> None:
+        self.assertEqual({type(refusal) for refusal in OWNER_REFUSAL_EXAMPLES}, set(OWNER_REFUSALS))
+        self.assertEqual(dict(OWNER_REFUSALS), {FrameError: 422})
+
+    def test_each_refusal_answers_its_status_with_its_own_code_and_sentence(self) -> None:
+        for index, refusal in enumerate(OWNER_REFUSAL_EXAMPLES):
+            with self.subTest(refusal=type(refusal).__name__):
+                response = self.client.get(f"/api/raises-owner-{index}")
+                self.assertEqual(response.status_code, OWNER_REFUSALS[type(refusal)])
+                self.assertEqual(response.json(), {"code": refusal.code, "detail": str(refusal)})
+                self.assertEqual(
+                    response.json(),
+                    StudioError(OWNER_REFUSALS[type(refusal)], refusal.code, str(refusal)).body(),
+                )
 
 
 if __name__ == "__main__":

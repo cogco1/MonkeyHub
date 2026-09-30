@@ -3632,7 +3632,7 @@
         "packages/archflow/src/archflow/state/operational_state.py",
         "packages/archflow/src/archflow/state/state_record.py",
         "packages/archflow/src/archflow/state/decision_operator.py",
-        "services/project-runtime/src/project_runtime/application/frame.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/frame.py",
         "services/project-runtime/src/project_runtime/application/projection.py"
       ],
       "invariants": [
@@ -4860,7 +4860,7 @@
         "the honesty lines stating what this projection cannot tell you",
         "the component catalog derived from the record and the reference run's inspection: per component its descendant elements, editable capabilities (value, type, source, confidence, status, validator refs), object coverage and closure; per exported object the element it binds to, or MODEL_VISIBLE_CATALOG_MISSING when no Element@1 row answers for it",
         "reading PROJECT.md at the project root for names (aliases -> declared components) and the compass; nothing else is read from it",
-        "the record's frame: each Level@1 and GridAxis@1 with its role, its value (const x / const y as element_reindex.axis_lines_of reads it), the elements whose own references name it, and the closure of changing it (GET /api/state/frame, POST /api/state/closure); read-only, no grammar rule for editing a level or an axis",
+        "serving the record's frame and the closure of named refs (GET /api/state/frame, POST /api/state/closure) against the exact retained record the request selects; the reading itself is capabilities.element_reindex's (monkeyarch.authoring.frame)",
         "a capability a reference pins (a height whose top names a level, another element's datum or a grid role) is status=derived with source='derived from <ref>', read from the record's own dependency edges; it is shown, never created",
         "committed design history reads and exact Stage projections, including a descendant candidate with a retained matching Stage source",
         "explicitly configured shared-project HTTP pull/bootstrap and candidate upload through the existing P036 transfer port; no direct project file writes",
@@ -4927,8 +4927,6 @@
         "ProjectConventions",
         "GET /api/state/frame",
         "POST /api/state/closure",
-        "frame_of",
-        "closure_of_refs",
         "references_of",
         "ProjectBinding.design_history",
         "ProjectBinding.design_stage",
@@ -5016,7 +5014,8 @@
         "project.memo",
         "project.watch",
         "project.index",
-        "monkeyarch.authoring.producer_signatures"
+        "monkeyarch.authoring.producer_signatures",
+        "monkeyarch.authoring.frame"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/application/projection.py",
@@ -5075,7 +5074,6 @@
         "services/project-runtime/src/project_runtime/api/dto/state.py",
         "services/project-runtime/src/project_runtime/application/catalog.py",
         "services/project-runtime/src/project_runtime/application/conventions.py",
-        "services/project-runtime/src/project_runtime/application/frame.py",
         "services/project-runtime/src/project_runtime/synchronization.py",
         "services/project-runtime/src/project_runtime/api/routes/synchronization.py",
         "services/project-runtime/src/project_runtime/application/working_draft.py",
@@ -6033,13 +6031,15 @@
         "MonitoredCompiler.invoke_structured",
         "ConditionalReads",
         "CONDITIONAL_READS",
-        "IndexRevisionHeader: X-Monkey-Index <epoch>:<revision> on a successful write once the project index holds it (#366)"
+        "IndexRevisionHeader: X-Monkey-Index <epoch>:<revision> on a successful write once the project index holds it (#366)",
+        "OWNER_REFUSALS"
       ],
       "depends_on": [
         "monkeymonitor",
         "documentation.drawings",
         "monkeydiagram.documentation.styles",
-        "project.index"
+        "project.index",
+        "monkeyarch.authoring.frame"
       ],
       "used_by": [
         "services/project-runtime/src/project_runtime/api/routes/",
@@ -6072,7 +6072,8 @@
         "The Runtime parameter-lock proposal route uses the existing accept actor grant; local unauthenticated attribution identifies only the process boundary and does not prove a human caller",
         "POST /api/admissions uses the existing accept grant on a local-role Runtime; a shared project service does not expose it",
         "only the exact GET paths in CONDITIONAL_READS carry an ETag, answer If-None-Match with 304 and are answered from the binding's memo, and only for a 200 read under a stable token; every other method, path and status passes through unchanged",
-        "shutdown closes the bound project's binding after draining work, which stops its layout watch and lets go of the project folder"
+        "shutdown closes the bound project's binding after draining work, which stops its layout watch and lets go of the project folder",
+        "an owner package's refusal (monkeyarch.authoring.frame.FrameError, ...) carries its own wire code and sentence; OWNER_REFUSALS is the one place that gives each kind its status, and create_app answers it in the same {code, detail} body a StudioError has (#519)"
       ],
       "status": "canonical",
       "tests": [
@@ -6755,7 +6756,7 @@
     {
       "module_id": "capabilities.element_reindex",
       "owner_path": "packages/monkeyarch/src/monkeyarch/authoring/element_reindex.py",
-      "purpose": "Recover Element@1 identity from an exported model without moving it: objects (3dm inspection) -> component/family/side -> element drafts with symbolic references where the geometry snaps to declared axes and levels, proven by re-producing the drafted rows and measuring the residual; ambiguity and source conflicts are named, never resolved by guessing.",
+      "purpose": "Recover Element@1 identity from an exported model without moving it: objects (3dm inspection) -> component/family/side -> element drafts with symbolic references where the geometry snaps to declared axes and levels, proven by re-producing the drafted rows and measuring the residual; ambiguity and source conflicts are named, never resolved by guessing. It also reads the record's frame: each level and grid axis, what names it and what changing it reaches.",
       "owns": [
         "reading SourceObjects off a ThreeDmInspectionSummary (named bboxes, archflow:component / archflow:producer_op strings, geometry digests)",
         "family and side of an object from its producer op (column-west-3 -> column / west)",
@@ -6765,7 +6766,8 @@
         "the residual between produced and inspected boxes, by running the real producers on the drafted rows",
         "derived support_contact relations from vertical contact within the stage-5 tolerance",
         "the ComponentCatalog@1 payload and the typed reindex operator that adds axes, rows and relations and replaces nothing",
-        "re-seating a drafted prism onto a drafted flight's published <id>-top instead of a level"
+        "re-seating a drafted prism onto a drafted flight's published <id>-top instead of a level",
+        "the record's frame: each Level@1 and GridAxis@1 with its role, its value (const x / const y as axis_lines_of reads it), the elements whose own references name it, and the kernel's closure of changing it (frame_of); the closure of named refs with the propagating edges inside it (closure_of_refs); read-only, no grammar rule for editing a level or an axis; a ref the record does not carry, or an axis that is not three numbers, is a FrameError naming its code (UNKNOWN_REF, STATE_RECORD_INVALID)"
       ],
       "does_not_own": [
         "producing geometry from a row - capabilities.element_producers",
@@ -6784,19 +6786,33 @@
         "side_of",
         "Frame",
         "WEDGE_NOTE",
-        "SHELL_THICKNESS_NOTE"
+        "SHELL_THICKNESS_NOTE",
+        "frame_of",
+        "closure_of_refs",
+        "RecordFrame",
+        "FrameLevel",
+        "FrameAxis",
+        "ClosureAnswer",
+        "FrameError"
       ],
       "depends_on": [
         "capabilities.element_producers",
         "capabilities.reference_resolver",
         "state.geometry_program",
-        "state.record"
+        "state.record",
+        "state.dependencies"
+      ],
+      "used_by": [
+        "services/project-runtime/src/project_runtime/api/routes/state.py",
+        "services/project-runtime/src/project_runtime/api/dto/state.py"
       ],
       "files": [
-        "packages/monkeyarch/src/monkeyarch/authoring/element_reindex.py"
+        "packages/monkeyarch/src/monkeyarch/authoring/element_reindex.py",
+        "packages/monkeyarch/src/monkeyarch/authoring/frame.py"
       ],
       "tests": [
-        "packages/monkeyarch/tests/test_element_reindex.py"
+        "packages/monkeyarch/tests/test_element_reindex.py",
+        "packages/monkeyarch/tests/test_frame.py"
       ],
       "reason": "The studio's catalog (studio.binding) reads elements the record declares; a scripted project has none. Re-indexing is the one generic way to give such a project its tree: derived from the model the spine already inspected, checked by the producers the spine already runs. It extends the spine's Element@1 vocabulary; it adds no parallel geometry protocol.",
       "status": "canonical"

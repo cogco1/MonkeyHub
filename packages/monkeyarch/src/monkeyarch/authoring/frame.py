@@ -13,7 +13,8 @@ reference names is read by ``capabilities.reference_resolver.parse_reference``,
 the record's own reader. This module arranges those answers per level and per
 axis and says out loud what the record does not carry.
 
-Read-only: nothing here writes, and neither route over it does.
+Read-only: nothing here writes. A question the record cannot answer is a
+``FrameError`` naming its refusal; the host that asked answers it (#519).
 """
 
 from __future__ import annotations
@@ -33,7 +34,19 @@ from monkeyarch.domain.reference_resolver import (
 from archflow.state.dependencies import PROPAGATING_EFFECTS, DependencyEdge
 from archflow.state.state_record import StateRecord
 
-from ..errors import StudioError
+
+class FrameError(ValueError):
+    """A frame question the record cannot answer: ``code`` names the refusal.
+
+    ``UNKNOWN_REF`` when a changed ref names nothing the record carries, and
+    ``STATE_RECORD_INVALID`` when a grid axis is not three numbers; the message
+    says which ref or value.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
 
 # The flat ``Element@1`` fields that name a ``Level@1`` outright. The record's
 # own reader treats these the same way (``base_level`` / ``top_level`` /
@@ -220,8 +233,7 @@ def _axis_roles_named(value: object) -> Iterable[str]:
 def _triple(value: object) -> tuple[float, float, float]:
     numbers = tuple(float(item) for item in value)  # type: ignore[union-attr]
     if len(numbers) != 3:
-        raise StudioError(
-            422,
+        raise FrameError(
             "STATE_RECORD_INVALID",
             f"a grid axis origin and direction are three numbers, got {value!r}",
         )
@@ -238,8 +250,7 @@ def _require_known(record: StateRecord, changed_refs: tuple[str, ...]) -> None:
     """
 
     if not changed_refs:
-        raise StudioError(
-            422,
+        raise FrameError(
             "UNKNOWN_REF",
             "changedRefs must name at least one ref of the record",
         )
@@ -257,8 +268,7 @@ def _require_known(record: StateRecord, changed_refs: tuple[str, ...]) -> None:
         )
     ]
     if unknown:
-        raise StudioError(
-            422,
+        raise FrameError(
             "UNKNOWN_REF",
             "the record carries no "
             + ", ".join(sorted(unknown))

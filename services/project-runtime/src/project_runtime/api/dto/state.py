@@ -14,9 +14,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from archflow.state.state_record import component_semantics, parameter_bindings_of
 from monkeyarch.authoring.element_producers import element_vertical_extent
+from monkeyarch.authoring.frame import ClosureAnswer, RecordFrame
 
 from ...application.catalog import Catalog
-from ...application.frame import ClosureAnswer, RecordFrame
 from ...application.projection import DRAWING_INPUT_ERRORS, StateProjection, drawing_context, elevation_reference
 from .project import (
     ProjectVersionDto,
