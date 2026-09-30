@@ -883,7 +883,6 @@
         "archflow.contracts.authority",
         "archflow.contracts.canonical",
         "archflow.project.refs",
-        "archflow.state.design_maturity",
         "archflow.state.developed_design",
         "archflow.state.geometry_program",
         "archflow.state.spatial",
@@ -2992,7 +2991,6 @@
         "ArchitecturalRelationContractError"
       ],
       "depends_on": [
-        "contracts.branch",
         "contracts.canonical",
         "contracts.fields",
         "project.refs"
@@ -3088,16 +3086,13 @@
         "monkeyarch.capabilities.relation_checks",
         "archflow.contracts.authority",
         "archflow.contracts.canonical",
-        "archflow.control.stage_closure",
         "archflow.ports.model",
         "archflow.project.ports",
         "archflow.project.refs",
         "archflow.project.repository",
-        "archflow.state.design_maturity",
         "archflow.state.design_portfolio",
         "archflow.state.developed_design",
         "archflow.state.geometry_program",
-        "archflow.state.site_context",
         "archflow.state.spatial",
         "archflow.state.stage_workflow",
         "archflow.state.state_record",
@@ -3715,7 +3710,6 @@
         "contracts.canonical",
         "contracts.fields",
         "project.refs",
-        "state.design_maturity",
         "state.design_portfolio",
         "state.operational_state",
         "state.spatial",
@@ -4262,9 +4256,7 @@
         "contracts.canonical",
         "contracts.fields",
         "project.refs",
-        "state.design_maturity",
         "state.operational_state",
-        "state.site_context",
         "state.stage_workflow",
         "project.version_refs"
       ],
@@ -4351,7 +4343,6 @@
         "contracts.canonical",
         "contracts.fields",
         "project.refs",
-        "state.design_maturity",
         "state.operational_state",
         "state.record",
         "project.version_refs"
@@ -4936,7 +4927,6 @@
         "capabilities.reference_resolver",
         "contracts.fields",
         "state.design_portfolio",
-        "state.state_record",
         "capabilities.element_producers",
         "contracts.canonical",
         "studio.artifacts",
@@ -5979,7 +5969,7 @@
         "project.index"
       ],
       "used_by": [
-        "apps/archflow-studio/api/archflow_studio_api/routes/*.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/",
         "apps/archflow-studio/api/tests/test_health.py",
         "apps/archflow-studio/api/tests/test_settings.py",
         "apps/archflow-studio/api/tests/test_errors.py",
