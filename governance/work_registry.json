@@ -1,33 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-520",
-      "status": "active",
-      "branch": "codex/520-hub-grouping",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-520-hub-grouping",
-      "base_ref": "6556fbed2995d793dc9a70f0e1663eb7e4852e24",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "hub.shell",
-        "tools.package_monkeyapps"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/",
-        "apps/monkeyhub/api/tests/",
-        "apps/monkeyhub/run.py",
-        "apps/monkeyhub/README.md",
-        "apps/monkeyhub/desktop/tests/test_runtime.py",
-        "tools/release/package_monkeyapps.py",
-        "labs/checkpoint_critique/provider.py",
-        "docs/architecture/project-runtime.md",
-        "docs/architecture/repository-layout.md",
-        "docs/design/hub-interaction.md",
-        "labs/spatial_observation/README.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
