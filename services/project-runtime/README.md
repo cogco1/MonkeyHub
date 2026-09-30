@@ -94,7 +94,10 @@ wrong methods (405 `METHOD_NOT_ALLOWED`), request-validation failures (422 `REQU
 and unexpected bugs (500 `INTERNAL_ERROR`, with no traceback on the wire). Anything else the
 framework itself refuses before a route runs — a malformed `Range` header, say — keeps its own
 status under the code `HTTP_ERROR`; no route code can reach it, because route code raises
-`StudioError` and that has its own handler. No DTO carries a
+`StudioError` or lets an owner package's refusal through, and each has its own handler: an
+owner (MonkeyArch's frame and massing moves, MonkeyDiagram's sheet layout and Study method)
+names its wire code, and `main.OWNER_REFUSALS` is the one place that gives it its status (#519).
+No DTO carries a
 `schema` tag, and no DTO carries a constant-false flag such as `readOnly` or
 `canonicalWriteAuthority`.
 
