@@ -2,13 +2,14 @@
 set -euo pipefail
 
 python -m pip install --upgrade pip
-python -m pip install -e . -e packages/archflow -e packages/monkeyarch -e packages/monkeydiagram \
-  -e packages/monkeymonitor
+python -m pip install -e packages/archflow -e packages/monkeyarch -e packages/monkeydiagram \
+  -e packages/monkeymonitor -e packages/monkeycontrol
 
 python tools/archcheck.py
 python -m unittest discover -s tests -v
 python -m unittest discover -s packages/archflow/tests -v
 python -m unittest discover -s packages/monkeydiagram/tests -v
 python -m unittest discover -s packages/monkeymonitor/tests -v
+python -m unittest discover -s packages/monkeycontrol/tests -v
 
 echo "Codex Cloud ready."

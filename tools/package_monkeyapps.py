@@ -68,7 +68,8 @@ RELEASE_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*
 BUNDLED_PACKAGES = {
     "archflow": "packages/archflow/src/archflow", "monkeyarch": "packages/monkeyarch/src/monkeyarch",
     "monkeydiagram": "packages/monkeydiagram/src/monkeydiagram",
-    "monkeymonitor": "packages/monkeymonitor/src/monkeymonitor", "monkeycontrol": "monkeycontrol",
+    "monkeymonitor": "packages/monkeymonitor/src/monkeymonitor",
+    "monkeycontrol": "packages/monkeycontrol/src/monkeycontrol",
 }
 # The kernel's manifest names the Python requirements and the cad-occt extra the
 # embedded runtime installs (prepare_runtime).

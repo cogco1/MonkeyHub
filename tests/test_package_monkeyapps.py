@@ -145,7 +145,6 @@ class PackageAdapterTests(unittest.TestCase):
         self.node = self.root / "node.exe"
         self.node.write_bytes(b"selected Node runtime")
         for directory in (
-            "monkeycontrol",
             "apps/archflow-studio/api/archflow_studio_api",
             "apps/monkeyhub/api", "apps/monkeyhub/installer/third-party",
             "apps/monkeyfab/src/monkeyfab", "apps/monkeyfab/tests",
@@ -160,7 +159,8 @@ class PackageAdapterTests(unittest.TestCase):
             "tools/source_roots.py", "SECURITY.md",
             "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml",
             "apps/monkeyfab/tests/test_cli.py",
-            "monkeycontrol/__init__.py", "monkeycontrol/hosts/execution_host.ps1",
+            "packages/monkeycontrol/src/monkeycontrol/__init__.py",
+            "packages/monkeycontrol/src/monkeycontrol/hosts/execution_host.ps1",
             "packages/monkeydiagram/src/monkeydiagram/__init__.py", "packages/monkeydiagram/tests/test_svg.py",
             "packages/archflow/src/archflow/__init__.py", "packages/archflow/tests/test_project_repository.py",
             "packages/monkeyarch/src/monkeyarch/__init__.py",
@@ -220,7 +220,7 @@ class PackageAdapterTests(unittest.TestCase):
         # routes, and that package is nothing without its PowerShell hosts.
         self.assertEqual((self.bundle / "monkeycontrol/__init__.py").read_text(), "fixture")
         self.assertEqual((self.bundle / "monkeycontrol/hosts/execution_host.ps1").read_text(), "fixture")
-        self.assertIn("monkeycontrol", builder.SOURCE_PATHS)
+        self.assertIn("packages/monkeycontrol/src/monkeycontrol", builder.SOURCE_PATHS)
         # A package the repository keeps under packages/<name>/src ships at the bundle root,
         # where python313._pth's ..\.. finds it, without its tests.
         self.assertEqual((self.bundle / "monkeydiagram/__init__.py").read_text(), "fixture")

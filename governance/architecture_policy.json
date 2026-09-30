@@ -6,7 +6,7 @@
     "packages/monkeyarch",
     "packages/monkeydiagram",
     "packages/monkeymonitor",
-    "monkeycontrol",
+    "packages/monkeycontrol",
     "tools",
     "apps/archflow-studio/api",
     "tests",
@@ -25,7 +25,8 @@
     "packages/monkeydiagram/src",
     "packages/archflow/src",
     "packages/monkeyarch/src",
-    "packages/monkeymonitor/src"
+    "packages/monkeymonitor/src",
+    "packages/monkeycontrol/src"
   ],
   "repository_root_entries": [
     "apps",
@@ -53,9 +54,7 @@
     "conftest.py",
     "pyproject.toml"
   ],
-  "legacy_root_packages": [
-    "monkeycontrol"
-  ],
+  "legacy_root_packages": [],
   "shared_write_scope": [
     "governance/module_registry.json",
     "governance/work_registry.json",
@@ -64,6 +63,7 @@
     "packages/monkeydiagram/tests/",
     "packages/archflow/tests/",
     "packages/monkeymonitor/tests/",
+    "packages/monkeycontrol/tests/",
     "docs/PROTOCOL.md",
     "governance/architecture_policy.json",
     "docs/SYSTEM_MAP.md",
@@ -291,7 +291,7 @@
       "reason": "Create the caller-selected diagnostics directory and shared Hub/Studio journal lock file; no project authority."
     },
     {
-      "path": "monkeycontrol/store.py",
+      "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
       "function": "_prepare",
       "operations": [
         "mkdir"
@@ -301,7 +301,7 @@
       "reason": "Create the caller-supplied desktop-automation trace directory; monkeycontrol has no default location and no project authority."
     },
     {
-      "path": "monkeycontrol/store.py",
+      "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
       "function": "append",
       "operations": [
         "open_write"
@@ -311,7 +311,7 @@
       "reason": "Append one canonical ComputerActionReceipt@1 line to the action trace inside that directory."
     },
     {
-      "path": "monkeycontrol/store.py",
+      "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
       "function": "append_json",
       "operations": [
         "open_write"
@@ -321,7 +321,7 @@
       "reason": "Append one canonical JSON line to a recording's frame index or timeline journal inside that directory."
     },
     {
-      "path": "monkeycontrol/store.py",
+      "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
       "function": "save_bytes",
       "operations": [
         "open_write",
@@ -332,7 +332,7 @@
       "reason": "Write screenshots and recording frames under a temporary name and move them into place inside that directory."
     },
     {
-      "path": "monkeycontrol/store.py",
+      "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
       "function": "write_json",
       "operations": [
         "open_write",
@@ -761,6 +761,15 @@
       "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
     },
     {
+      "source": "packages/monkeycontrol/tests",
+      "targets": [
+        "tests",
+        "labs",
+        "archive"
+      ],
+      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+    },
+    {
       "source": "packages/archflow/src/archflow/contracts",
       "targets": [
         "archflow.adapters",
@@ -901,7 +910,7 @@
       "reason": "Fab owns print preparation and upload-only CLI behavior; the Hub composes applications and P036 alone owns project state."
     },
     {
-      "source": "monkeycontrol",
+      "source": "packages/monkeycontrol/src/monkeycontrol",
       "targets": [
         "monkeyarch",
         "monkeydiagram",

@@ -676,7 +676,7 @@ Engineering usage, trace, exact decimal token pricing and bounded algorithm reco
 
 ## monkeycontrol
 
-### monkeycontrol — `monkeycontrol/contract.py`
+### monkeycontrol — `packages/monkeycontrol/src/monkeycontrol/contract.py`
 Model-agnostic desktop automation: an action names a semantic Windows UI target, the runtime shows it, acts, verifies the declared post-condition and records an inspectable receipt under a caller-supplied diagnostics directory.
 - owns: ComputerAction@1 / ComputerActionReceipt@1 contracts, semantic Windows UI Automation target resolution, demo-mode overlays, verification of declared post-conditions, action trace and recording under a caller-supplied diagnostics directory
 - does not own: Canonical design state, P036 records or any project write; Conversation, permission prompts and navigation (MonkeyHub owns them); Browser automation (interface reserved), vision target proposal, cross-platform hosts

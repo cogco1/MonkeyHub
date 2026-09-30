@@ -1,25 +1,12 @@
-[build-system]
-requires = ["setuptools>=69"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "archflow-v4"
-version = "0.1.0"
-description = "Bounded architectural agency with controlled state promotion"
-license = { file = "LICENSE" }
-requires-python = ">=3.12"
-dependencies = []
-
-[tool.setuptools.packages.find]
-include = ["monkeycontrol*"]
-exclude = ["tests*", "governance*", "docs*", "tools*"]
-
-[tool.setuptools.package-data]
-monkeycontrol = ["hosts/*.ps1", "demos/*.json"]
+# The repository's development and test configuration. Nothing is built from here:
+# each Python package has its own manifest, packages/<name>/pyproject.toml.
 
 [tool.archflow]
 phase = "P1"
 test_command = "python -m unittest discover -s tests -v"
 
 [tool.pytest.ini_options]
+# A package suite has no __init__.py, so two suites holding modules of one name cannot
+# share a process. monkeycontrol's test_trace.py and test_cli.py repeat monkeymonitor's and
+# monkeyfab's names; its suite runs on its own, as CI runs every package suite.
 testpaths = ["tests", "packages/archflow/tests", "packages/monkeydiagram/tests", "packages/monkeymonitor/tests"]
