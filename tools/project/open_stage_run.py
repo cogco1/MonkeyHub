@@ -1,9 +1,9 @@
 """Open one stage of a project's frozen workflow as a run (ADR-007 rule 2).
 
-    python tools/open_stage_run.py --project <project root> \
+    python tools/project/open_stage_run.py --project <project root> \
       --workflow-ref project://... --stage-index 0 --run stage-0-001
 
-    python tools/open_stage_run.py --project <project root> \
+    python tools/project/open_stage_run.py --project <project root> \
       --workflow-ref project://... --stage-index 1 --run stage-1-001 \
       --predecessor-run stage-0-001
 
@@ -11,7 +11,7 @@ A stage is a property of a run, stated by the ``StageRunEnvelope@1`` retained
 in that run. This is the one command that creates such a run: it takes the
 workflow already frozen in the project, creates the run against canonical
 HEAD, computes the developed state the run will execute from the project's own
-work-in-progress record, and retains the envelope. ``tools/run_project.py``
+work-in-progress record, and retains the envelope. ``tools/project/run_project.py``
 then runs the stage and writes its closure; nothing here runs, closes or
 accepts anything.
 
@@ -29,10 +29,10 @@ import json
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
-from tools import source_roots  # noqa: E402
+from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 
@@ -255,7 +255,7 @@ def main() -> int:
     )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
     print(
-        "next: python tools/run_project.py --project <root> "
+        "next: python tools/project/run_project.py --project <root> "
         f"--run {result['run_id']} --workflow-ref {result['workflow_ref']} "
         f"--stage-envelope-ref {result['stage_envelope_ref']}",
         file=sys.stderr,

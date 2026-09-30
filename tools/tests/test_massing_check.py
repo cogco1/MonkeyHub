@@ -12,7 +12,7 @@ from OCP.Interface import Interface_Static
 from OCP.STEPControl import STEPControl_Controller, STEPControl_StepModelType, STEPControl_Writer
 
 from archflow.adapters import occt_backend
-from tests.monkeymonitor.massing_check import EXPECTED_VOLUME, check_massing
+from tools.benchmarks.massing_check import EXPECTED_VOLUME, check_massing
 
 NEEDS_OCCT = unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
 

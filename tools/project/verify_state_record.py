@@ -1,11 +1,11 @@
 """Prove a State Record reproduces a reference runner run (P102 migration receipt).
 
-    python tools/verify_state_record.py --project <project root> \\
+    python tools/project/verify_state_record.py --project <project root> \\
         --reference-run runner-002 --run equivalence-001 [--rename old=new ...] \\
         [--export [--cad-backend occt|rhino|blender]]
 
 ``--export`` defaults to OCCT unless another ``--cad-backend`` is named, exactly
-as ``tools/run_project.py`` does; ``--patch-oracle`` is Rhino's patch check and
+as ``tools/project/run_project.py`` does; ``--patch-oracle`` is Rhino's patch check and
 is refused under the other backends rather than ignored.
 
 The record and the seats are the project's own work in progress, read by
@@ -36,10 +36,10 @@ import json
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
-from tools import source_roots  # noqa: E402
+from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 
@@ -68,7 +68,7 @@ from archflow.state.stage_workflow import DesignPhase
 from archflow.state.operational_state import DesignObligation  # noqa: E402
 from archflow.state.stage_workflow import ProjectStage, ProjectStageWorkflow, open_stage_run_envelope  # noqa: E402
 from archflow.state.state_record import RecordBinding, developed_design_view  # noqa: E402
-from tools.run_project import _seat  # noqa: E402
+from tools.project.run_project import _seat  # noqa: E402
 
 _AUTH = ("canonical_write_authority", "design_authority", "stage_acceptance_authority")
 

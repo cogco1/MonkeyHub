@@ -15,7 +15,7 @@ import unittest
 from .synthetic_project import MIN_RUNS, build_synthetic_project
 
 REPOSITORY = Path(__file__).resolve().parents[3]
-_spec = importlib.util.spec_from_file_location("projection_check", REPOSITORY / "tools" / "projection_check.py")
+_spec = importlib.util.spec_from_file_location("projection_check", REPOSITORY / "tools" / "benchmarks" / "projection_check.py")
 projection_check = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(projection_check)
 
@@ -164,7 +164,7 @@ class LayoutTests(unittest.TestCase):
                          (REPOSITORY / "services" / "project-runtime" / "src", "project_runtime"))
         # _bind rewrites sys.path and imports, so each side binds in an interpreter of its own,
         # as the worker does; each answers its own package name, found under its own root.
-        tool = REPOSITORY / "tools" / "projection_check.py"
+        tool = REPOSITORY / "tools" / "benchmarks" / "projection_check.py"
         script = ("import importlib.util, sys; from pathlib import Path; "
                   "spec = importlib.util.spec_from_file_location('projection_check', sys.argv[1]); "
                   "tool = importlib.util.module_from_spec(spec); spec.loader.exec_module(tool); "

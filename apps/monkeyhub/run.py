@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 # A checkout lists where import names begin in its architecture policy; this
-# checkout's roots go first (tools/source_roots.py). An installed bundle ships
+# checkout's roots go first (tools/dev/source_roots.py). An installed bundle ships
 # no policy: its python313._pth lists the same roots.
 _POLICY = ROOT / "governance" / "architecture_policy.json"
 if _POLICY.is_file():

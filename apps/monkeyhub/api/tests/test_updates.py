@@ -24,7 +24,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[4]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from tools import source_roots  # noqa: E402 - this checkout's tools, found above
+from tools.dev import source_roots  # noqa: E402 - this checkout's tools, found above
 
 # The checkout's Python source roots, as its architecture policy lists them, go first.
 source_roots.put_first(ROOT)

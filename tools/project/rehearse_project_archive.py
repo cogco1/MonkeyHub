@@ -2,14 +2,14 @@
 
 GH-56's acceptance is not "the ZIP extracted". It is "the project survived the
 machine and can keep designing", so this driver exports a project through the
-landed ``tools/create_project.py`` command, restores it into a folder with no
+landed ``tools/project/create_project.py`` command, restores it into a folder with no
 path back to the source, re-reads the restored copy with the ordinary project
 readers, and - when a project runtime is given - asks that runtime for one
 bounded, non-destructive candidate from the restored base.
 
 Run both halves at once::
 
-    python tools/rehearse_project_archive.py --source D:/projects/my-project \
+    python tools/project/rehearse_project_archive.py --source D:/projects/my-project \
         --archive D:/backups/my-project.zip --restore-parent D:/restored
 
 Or split them, which is what ``scripts/dev/run-archive-rehearsal.ps1`` does,
@@ -38,10 +38,10 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
-from tools import source_roots  # noqa: E402
+from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 
@@ -50,7 +50,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE
 from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
 
-CREATE_PROJECT = REPO / "tools" / "create_project.py"
+CREATE_PROJECT = REPO / "tools" / "project" / "create_project.py"
 EVIDENCE_SCHEMA = "ProjectArchiveRehearsalEvidence@1"
 EVIDENCE_SUFFIX = ".rehearsal-evidence.json"
 ABSENT = "SKIPPED (absent in source)"
@@ -510,7 +510,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source", type=Path, help="the project directory to export; required by the phases that export one")
     parser.add_argument("--archive", required=True, type=Path, help="where to write the archive; outside the project. The verify phase reads the project id from it")
     parser.add_argument("--restore-parent", required=True, type=Path, help="the parent folder the archive restores into, under the project id")
-    parser.add_argument("--python", default=sys.executable, help="the interpreter that runs tools/create_project.py")
+    parser.add_argument("--python", default=sys.executable, help="the interpreter that runs tools/project/create_project.py")
     parser.add_argument("--environment-label", help="how the restore environment is described in the summary block")
     parser.add_argument("--runtime-url", help="a project runtime already bound to the restored project, e.g. http://127.0.0.1:8111")
     parser.add_argument("--phase", choices=("all", "export-restore", "verify"), default="all",

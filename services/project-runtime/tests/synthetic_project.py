@@ -1,6 +1,6 @@
 """An invented P036 project shaped like a real one, for the projection check (GH-376).
 
-Not a test module: ``tools/projection_check.py`` and ``test_synthetic_project``
+Not a test module: ``tools/benchmarks/projection_check.py`` and ``test_synthetic_project``
 call :func:`build_synthetic_project`. Every record is written the way the
 product writes it - the ``support`` helpers for what a runner or an OCCT seat
 leaves behind, the Studio API for what an architect does - so the routes the

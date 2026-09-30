@@ -24,7 +24,7 @@ DEPENDENCIES = {
     "design_loop_fixture": {
         "pull_request": 202,
         "commit": "f4399f4f9db0cab3ceba6d2fd804d90bf0261afe",
-        "api": "tests.monkeymonitor.run_design_loop: bench.project_fixture, retained_record, source_fields_preserved",
+        "api": "tools.benchmarks.run_design_loop: bench.project_fixture, retained_record, source_fields_preserved",
     },
 }
 
@@ -101,7 +101,7 @@ def _checkpoint(identifier, before, fixture, action, *, pair=("twin-a", "twin-b"
 
 def _portico_readback(root):
     """Reuse #202's retained-input checks without inventing loop outcomes."""
-    from tests.monkeymonitor import run_design_loop
+    from tools.benchmarks import run_design_loop
 
     fixture = run_design_loop.bench.project_fixture()
     repository, ref = fixture.make_project(root)

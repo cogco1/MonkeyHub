@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools.archcheck import (
+from tools.governance.archcheck import (
     REGISTRY_SCHEMA, ArchitecturePolicyError, _checked_python_files, _index_tree, _is_import_only,
     check_changed_scopes, check_imports, check_registry, check_scopes, load_policy, validate_policy,
 )

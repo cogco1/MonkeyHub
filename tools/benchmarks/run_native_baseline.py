@@ -9,7 +9,7 @@ own JSONL event stream.
 
 This is an explicitly requested, paid measurement, not a CI test:
 
-    python tests/monkeymonitor/run_native_baseline.py --output D:/path/outside/the/repo
+    python tools/benchmarks/run_native_baseline.py --output D:/path/outside/the/repo
 
 Why not a desktop modeller on the measuring machine (2026-09-28): SketchUp 2025
 started with ``-RubyStartup`` never ran its script within 120 s (the welcome

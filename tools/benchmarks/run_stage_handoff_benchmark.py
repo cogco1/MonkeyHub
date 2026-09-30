@@ -24,7 +24,7 @@ from urllib.parse import urlencode
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from tests.monkeymonitor import run_turn_benchmark as harness
+from tools.benchmarks import run_turn_benchmark as harness
 from fastapi.testclient import TestClient
 from project_runtime.main import create_app as create_studio
 from project_runtime.settings import StudioSettings
@@ -460,7 +460,7 @@ def provider_turn(base, monitor, session_id, message, output, timeout):
 def run_arm(args, prepared):
     root, mode = args.output, args.condition
     build_revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    diff_command = ["git", "diff", "HEAD", "--", "apps", "packages/archflow", "packages/monkeyarch", "packages/monkeymonitor", "tests/monkeymonitor"]
+    diff_command = ["git", "diff", "HEAD", "--", "apps", "packages/archflow", "packages/monkeyarch", "packages/monkeymonitor", "tools/benchmarks"]
     source_diff = subprocess.check_output(diff_command, cwd=ROOT)
     repository = harness.FilesystemProjectRepository.open(root / "projects" / PROJECT_ID)
     if (root / "started.json").exists() or harness.source_identity(repository) != prepared["source"]:
@@ -572,7 +572,7 @@ def main():
     parser.add_argument("--condition", choices=("continue", "stage"), help=argparse.SUPPRESS)
     parser.add_argument("--prepared", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
-    paths = json.loads(subprocess.check_output([sys.executable, "tools/workspace.py", "paths"], cwd=ROOT, text=True))
+    paths = json.loads(subprocess.check_output([sys.executable, "tools/dev/workspace.py", "paths"], cwd=ROOT, text=True))
     temp_root = (Path(paths["workspaceRoot"]) / "temp").resolve()
     if not args.output.is_absolute() or not args.output.resolve().is_relative_to(temp_root):
         parser.error(f"--output must be an explicit directory under configured temp root {temp_root}")

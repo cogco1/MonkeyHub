@@ -533,14 +533,14 @@ _TABLE: tuple[RecordKind, ...] = (
         _RUN_RECORD,
         "what re-indexing an exported model against the record found: object "
         "-> component -> element drafts with residuals, coverage per component, "
-        "ambiguities; written by tools/reindex_project.py through the repository",
+        "ambiguities; written by tools/project/reindex_project.py through the repository",
     ),
     RecordKind(
         STAGE_RUN_ENVELOPE,
         "StageRunEnvelope@1",
         _RUN_RECORD,
         "the project's own stage a run opened against, written by "
-        "tools/open_stage_run.py; the two harnesses write their own under "
+        "tools/project/open_stage_run.py; the two harnesses write their own under "
         "their own kinds",
     ),
     RecordKind(

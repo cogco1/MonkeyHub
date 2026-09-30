@@ -9,7 +9,7 @@ geometry.
 
 Example::
 
-    python tools/freeze_project_stage_workflow.py \
+    python tools/project/freeze_project_stage_workflow.py \
       --project D:\\...\\villa-rotonda-reconstruction \
       --run workflow-001 --create-run \
       --workflow D:\\...\\inputs\\villa-rotonda-stage-workflow-v1.json
@@ -23,10 +23,10 @@ import sys
 from pathlib import Path
 
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
-from tools import source_roots  # noqa: E402
+from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 

@@ -40,7 +40,7 @@ from io import BytesIO
 from PIL import Image, ImageDraw
 from starlette.responses import Response
 import uvicorn
-from tools import source_roots
+from tools.dev import source_roots
 source_roots.put_first(Path.cwd().parents[1])
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -123,7 +123,7 @@ const hubSource = `
 import sys, os, site, hashlib
 from pathlib import Path
 import uvicorn
-from tools import source_roots
+from tools.dev import source_roots
 source_roots.put_first(Path(sys.argv[2]))
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyhub_api.main import create_app, HubSettings, HubServer

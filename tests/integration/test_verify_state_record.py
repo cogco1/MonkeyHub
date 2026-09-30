@@ -1,4 +1,4 @@
-"""``tools/verify_state_record`` runs its equivalence harness in the reference run's phase (P112).
+"""``tools/project/verify_state_record`` runs its equivalence harness in the reference run's phase (P112).
 
 The reference run states the phase its stage ran in (``RunnerRunReceipt@3``
 ``stage.phase``). The verifier already read the reference state in that phase
@@ -32,8 +32,8 @@ from archflow.state.stage_workflow import DesignPhase
 from archflow.project.inputs import load_authored_record
 from archflow.state.state_record import legacy_state_digest
 from tests.integration.test_project_runner import DECLARED_LIVE_IDENTITY, _geometry_only, _ladder_project, _options, _record, _run_opened_stage, _seats
-from tools import verify_state_record
-from tools.open_stage_run import open_stage_run
+from tools.project import verify_state_record
+from tools.project.open_stage_run import open_stage_run
 
 REFERENCE_RUN = "stage-0-001"
 EQUIVALENCE_RUN = "equivalence-001"
@@ -44,7 +44,7 @@ def _reference_project(root: Path, phase: DesignPhase, record=None) -> tuple[Fil
 
     The seat pack is the same seats the runner suite hands the reference run,
     written the way the verifier's own readers expect them (a seat as
-    ``tools.run_project._seat`` reads it, the declared provider identity as the
+    ``tools.project.run_project._seat`` reads it, the declared provider identity as the
     identity's constructor fields); the reference receipt is what the real
     runner retained.
     """
@@ -69,7 +69,7 @@ def _only(records_dir: Path, record_kind: str) -> Path:
 
 
 def _verify(root: Path, *extra: str) -> tuple[int, str]:
-    """The command itself, as ``tools/verify_state_record.py --project ... --reference-run ... --run ...`` would run it."""
+    """The command itself, as ``tools/project/verify_state_record.py --project ... --reference-run ... --run ...`` would run it."""
 
     argv = ["verify_state_record.py", "--project", str(root), "--reference-run", REFERENCE_RUN, "--run", EQUIVALENCE_RUN, *extra]
     out = io.StringIO()
@@ -212,7 +212,7 @@ class VerifyStateRecordLegacyDigestTests(unittest.TestCase):
 
 
 class VerifyStateRecordCadBackendTests(unittest.TestCase):
-    """``--export`` goes to OCCT unless ``--cad-backend rhino`` is named, as ``tools/run_project.py`` does; Rhino is never reached here."""
+    """``--export`` goes to OCCT unless ``--cad-backend rhino`` is named, as ``tools/project/run_project.py`` does; Rhino is never reached here."""
 
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()

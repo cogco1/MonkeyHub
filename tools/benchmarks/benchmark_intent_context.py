@@ -17,11 +17,11 @@ import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 sys.dont_write_bytecode = True
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
-from tools import source_roots  # noqa: E402
+from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 

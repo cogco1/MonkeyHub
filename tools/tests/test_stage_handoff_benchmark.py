@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tests.monkeymonitor import run_stage_handoff_benchmark as benchmark
+from tools.benchmarks import run_stage_handoff_benchmark as benchmark
 
 
 class StageBenchmarkTests(unittest.TestCase):

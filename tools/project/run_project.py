@@ -1,6 +1,6 @@
 """Run a project from its State Record (P089 / P102).
 
-    python tools/run_project.py --project <project root> --run <run id> \
+    python tools/project/run_project.py --project <project root> --run <run id> \
       --workflow-ref project://... --stage-envelope-ref project://... \
       [--export [--cad-backend occt|rhino|blender]] [--workspace <dir>]
 
@@ -16,7 +16,7 @@ at the paths the layout owns. There is no pack directory to point elsewhere: the
 run executes the record the project holds (ADR-007). The run's records are the
 receipt; this tool prints a summary only. The run must already exist and the
 exact workflow and envelope must already be retained in P036 —
-``tools/open_stage_run.py`` is what creates them; this CLI never turns a raw
+``tools/project/open_stage_run.py`` is what creates them; this CLI never turns a raw
 run into a stage by side effect.
 
 The runner closes the stage at the end of the run: it writes the closure from
@@ -30,10 +30,10 @@ import json
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
-from tools import source_roots  # noqa: E402
+from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 

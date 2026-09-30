@@ -7,7 +7,7 @@ from pathlib import Path
 from archflow.project.repository import FilesystemProjectRepository, ProjectIntegrityError
 from archflow.state.stage_workflow import DesignPhase
 from archflow.state.stage_workflow import ProjectStage, ProjectStageWorkflow
-from tools.freeze_project_stage_workflow import freeze_workflow
+from tools.project.freeze_project_stage_workflow import freeze_workflow
 
 
 def _workflow(project_id: str = "demo") -> ProjectStageWorkflow:

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.monkeymonitor import run_native_baseline as native_baseline
+from tools.benchmarks import run_native_baseline as native_baseline
 
 NEEDS_CODEX = unittest.skipUnless(shutil.which("codex"), "codex is not on PATH")
 

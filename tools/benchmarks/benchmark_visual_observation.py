@@ -8,7 +8,7 @@ for one registered page. The review goes through the Studio's Codex transport
 and prints one JSON result; this mode writes no file and changes no project.
 ``--monitor-dir`` adds the MonkeyMonitor rows the runtime itself would record.
 
-    python tools/benchmark_visual_observation.py --runtime http://127.0.0.1:8000 \
+    python tools/benchmarks/benchmark_visual_observation.py --runtime http://127.0.0.1:8000 \
         --spec review.json --task-class spatial_formal --reason first_bundle
 
 A follow-up review replays the Harness allowance from the previous result:
@@ -27,7 +27,7 @@ runtime's configured provider. The revisions are representation only and
 never move Design HEAD, but they are retained: run it on a copy of a
 project. It writes no file and no decision and prints one JSON result.
 
-    python tools/benchmark_visual_observation.py --drawing --runtime http://127.0.0.1:8000 \
+    python tools/benchmarks/benchmark_visual_observation.py --drawing --runtime http://127.0.0.1:8000 \
         --spec drawings.json > result.json
 """
 
@@ -48,11 +48,11 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 sys.dont_write_bytecode = True
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
-from tools import source_roots  # noqa: E402
+from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 

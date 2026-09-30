@@ -1,6 +1,6 @@
 """Compare a candidate code root's projections with a base's on one project (GH-376).
 
-    python tools/projection_check.py --base <code-root> --candidate <code-root> \\
+    python tools/benchmarks/projection_check.py --base <code-root> --candidate <code-root> \\
         --project <project-dir> --out <result.json> [--summary <summary.md>] \\
         [--index-dir <cache-dir>]
 

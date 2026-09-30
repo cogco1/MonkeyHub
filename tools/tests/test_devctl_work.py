@@ -16,8 +16,8 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
-from tools import devctl
-from tools.archcheck import REGISTRY_SCHEMA
+from tools.governance import devctl
+from tools.governance.archcheck import REGISTRY_SCHEMA
 
 
 ISSUES = "https://github.com/cogco1/MonkeyHub/issues/"
@@ -31,7 +31,7 @@ class WorkLookupTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.registry_path = self.root / "governance" / "work_registry.json"
         self.registry_path.parent.mkdir()
-        source_root = Path(devctl.__file__).resolve().parents[1]
+        source_root = Path(devctl.__file__).resolve().parents[2]
         (self.registry_path.parent / "architecture_policy.json").write_bytes(
             (source_root / "governance" / "architecture_policy.json").read_bytes()
         )

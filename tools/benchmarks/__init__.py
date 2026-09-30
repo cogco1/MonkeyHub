@@ -1,1 +1,1 @@
-"""The MonkeyMonitor benchmark drivers and their tests; the package's own tests are in packages/monkeymonitor/tests."""
+"""Measurements: the explicitly requested benchmark drivers and their scenarios, and the CI projection check."""

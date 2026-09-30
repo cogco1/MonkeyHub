@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools.archcheck import (
+from tools.governance.archcheck import (
     ARCHITECTURE_POLICY, ArchitecturePolicyError, _checked_python_files, _module_name,
     check_docs_layout, check_policy_paths, check_registry, check_repository_root, validate_policy,
 )
@@ -416,7 +416,7 @@ class ImportNameTests(unittest.TestCase):
             ("packages/archflow/src/archflow/state/state_record.py", "archflow.state.state_record"),
             ("services/project-runtime/src/project_runtime/main.py", "project_runtime.main"),
             ("monkeyarch/construction/__init__.py", "monkeyarch.construction"),
-            ("tools/archcheck.py", "tools.archcheck"),
+            ("tools/governance/archcheck.py", "tools.governance.archcheck"),
             ("apps/monkeyhub/web/scripts/dump-openapi.py", None),
             ("apps/monkeyhub/desktop/", None),
         ):

@@ -16,7 +16,7 @@ import warnings
 import zipfile
 
 from apps.monkeyhub.installer import patch
-from tools import package_monkeyapps as builder
+from tools.release import package_monkeyapps as builder
 
 
 class DesktopPatchTests(unittest.TestCase):

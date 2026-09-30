@@ -139,7 +139,7 @@ jobs:
           $env:PYTHONUTF8 = '1'
           $root = Join-Path $env:RUNNER_TEMP 'mhp'
           $env:CARGO_HOME = Join-Path $HOME '.cargo'
-          python tools/package_monkeyapps.py --source-ref HEAD --desktop --staging-dir "$root/staging" --output-dir "$root/output" --cache-dir "$root/cache"
+          python tools/release/package_monkeyapps.py --source-ref HEAD --desktop --staging-dir "$root/staging" --output-dir "$root/output" --cache-dir "$root/cache"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $build = Get-ChildItem -LiteralPath "$root/staging" -Directory | Select-Object -First 1
           "PACKAGE_BUILD=$($build.FullName)" >> $env:GITHUB_ENV
@@ -161,7 +161,7 @@ jobs:
           import shutil
           import zipfile
 
-          from tools import package_monkeyapps as builder
+          from tools.release import package_monkeyapps as builder
 
           root = Path(os.environ["RUNNER_TEMP"]) / "mhp"
           build = Path(os.environ["PACKAGE_BUILD"])
@@ -344,7 +344,7 @@ jobs:
           Write-Host "Delta patch bases: $($bases -join ', ')"
           $manifest = @(Get-ChildItem -LiteralPath "$root/output" -Filter '*.release-manifest.json' -File)
           if ($manifest.Count -ne 1) { throw 'Expected exactly one release manifest.' }
-          python tools/package_monkeyapps.py --update-index $manifest[0].FullName @arguments `
+          python tools/release/package_monkeyapps.py --update-index $manifest[0].FullName @arguments `
             --update-output "$root/updates" --update-work (Join-Path $env:RUNNER_TEMP 'mhw') `
             --promoted-commit '${{ github.sha }}'
           exit $LASTEXITCODE
@@ -490,7 +490,7 @@ jobs:
           foreach ($manifest in $manifests) {
             # The assets travelled through an artifact. Re-run the packaging
             # owner's own read-only check rather than re-hashing them here.
-            python tools/package_monkeyapps.py --verify $manifest.FullName
+            python tools/release/package_monkeyapps.py --verify $manifest.FullName
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
             $document = Get-Content -LiteralPath $manifest.FullName -Raw | ConvertFrom-Json
             if ($document.release.sourceCommit -ne $expected) {
@@ -502,7 +502,7 @@ jobs:
           }
           $indexes = @(Get-ChildItem -LiteralPath $root -Filter '*-update-index.json' -File)
           if ($indexes.Count -ne 1) { throw 'The build job published no single update index' }
-          python tools/package_monkeyapps.py --verify-update-index $indexes[0].FullName
+          python tools/release/package_monkeyapps.py --verify-update-index $indexes[0].FullName
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $index = Get-Content -LiteralPath $indexes[0].FullName -Raw | ConvertFrom-Json
           if ($index.version -ne $version -or $index.releaseCommit -ne $expected -or $index.sourceCommit -ne '${{ github.sha }}') {
@@ -522,7 +522,7 @@ jobs:
           $tag = "v$env:MONKEYHUB_RELEASE_VERSION"
           $manifest = Get-ChildItem -LiteralPath "$root" -Filter '*.release-manifest.json'
           if (@($manifest).Count -ne 1) { throw 'Expected exactly one release manifest.' }
-          python tools/package_monkeyapps.py --verify $manifest.FullName
+          python tools/release/package_monkeyapps.py --verify $manifest.FullName
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $document = Get-Content -LiteralPath $manifest.FullName -Raw | ConvertFrom-Json
           if ($document.release.version -ne $env:MONKEYHUB_RELEASE_VERSION) {

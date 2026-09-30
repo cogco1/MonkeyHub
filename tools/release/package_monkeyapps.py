@@ -42,7 +42,7 @@ import zipfile
 PYTHON_VERSION = "3.13.15"
 PYTHON_SHA256 = "d1f04d990aee1253d8569e8e5104e30fa9f5fa830899f14843448872d936a2cf"
 PYTHON_URL = f"https://www.python.org/ftp/python/{PYTHON_VERSION}/python-{PYTHON_VERSION}-embed-amd64.zip"
-SOURCE_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
 # Release evidence beside the candidate. build-info.json keeps the single build
 # identity; the manifest is a derived view of it plus the closed artifact table,
 # and the SBOM is read from the assembled bundle, never from a kept list.
@@ -55,7 +55,7 @@ PYTHON_SITE = "_runtime/python/Lib/site-packages"
 CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
-from tools.workspace import (
+from tools.dev.workspace import (
     WORKSPACE_CONFIG_KEY, configured_root, configure_root, task_name, task_paths, validate_root,
 )
 from apps.monkeyhub.installer.patch import PatchError, create_patch, describe_patch
@@ -77,14 +77,19 @@ KERNEL_MANIFEST = "packages/archflow/pyproject.toml"
 # MonkeyFab ships at apps/monkeyfab, where python313._pth lists its src and installed
 # updaters require its files (apps/monkeyhub/installer/patch.py REQUIRED_FILES).
 FAB_BUNDLE, FAB_SOURCE = "apps/monkeyfab", "packages/monkeyfab"
+# Two project command lines and the source-roots helper they import ship at their
+# repository paths, so their tools.<group> imports resolve in the bundle as in a checkout.
+BUNDLED_TOOLS = (
+    "tools/project/__init__.py", "tools/project/create_project.py", "tools/project/run_project.py",
+    "tools/dev/__init__.py", "tools/dev/source_roots.py",
+)
 # Git, rather than the working directory, supplies these files. User runtime
 # configuration, projects, credentials, caches and local WIP never enter a ZIP.
 SOURCE_PATHS = (
     *BUNDLED_PACKAGES.values(), KERNEL_MANIFEST,
     "services/project-runtime",
     "apps/monkeyhub", FAB_SOURCE, "packages/web-shared", "OPEN_MONKEYHUB.cmd",
-    "README.md", "SECURITY.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
-    "tools/source_roots.py", "governance/module_registry.json",
+    "README.md", "SECURITY.md", "pyproject.toml", *BUNDLED_TOOLS, "governance/module_registry.json",
 )
 
 
@@ -305,7 +310,7 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
                      "governance/module_registry.json", "SECURITY.md",
                      # Both tools put a checkout's source roots first through source_roots;
                      # the bundle ships no architecture policy, so there it does nothing.
-                     "tools/create_project.py", "tools/run_project.py", "tools/source_roots.py"):
+                     *BUNDLED_TOOLS):
         target = bundle / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source / relative, target)

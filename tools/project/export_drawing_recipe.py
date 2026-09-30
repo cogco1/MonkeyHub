@@ -1,7 +1,7 @@
 """Carry one project's drawing recipe to another project: export it as a file, import it on a person's word.
 
-    python tools/export_drawing_recipe.py export --project <project dir> --decision <decisionId> --out <file>
-    python tools/export_drawing_recipe.py import --project <project dir> --file <file> [--confirm]
+    python tools/project/export_drawing_recipe.py export --project <project dir> --decision <decisionId> --out <file>
+    python tools/project/export_drawing_recipe.py import --project <project dir> --file <file> [--confirm]
 
 ``export`` reads one active project recipe (a person's confirmed ``require``
 drawing decision with a recipe binding) and writes it as a
@@ -39,10 +39,10 @@ from pathlib import Path
 import sys
 from typing import Any, Mapping, Sequence
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
-from tools import source_roots  # noqa: E402
+from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 

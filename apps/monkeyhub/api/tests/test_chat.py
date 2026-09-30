@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlsplit
 ROOT = Path(__file__).resolve().parents[4]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from tools import source_roots  # noqa: E402 - this checkout's tools, found above
+from tools.dev import source_roots  # noqa: E402 - this checkout's tools, found above
 
 # The checkout's Python source roots, as its architecture policy lists them, go first.
 source_roots.put_first(ROOT)
@@ -218,7 +218,7 @@ from urllib.parse import urlsplit
 
 root, runtime, project, fake, log = (Path(value) for value in sys.argv[1:6])
 sys.path.insert(0, str(root))
-from tools import source_roots
+from tools.dev import source_roots
 source_roots.put_first(root)
 
 from monkeyhub_api import chat
@@ -2805,7 +2805,7 @@ class ChatTests(unittest.TestCase):
 
     def test_benchmark_can_inspect_one_admitted_candidate_without_a_complete_readback_card(self):
         import importlib.util
-        spec = importlib.util.spec_from_file_location("turn_benchmark", ROOT / "tests/monkeymonitor/run_turn_benchmark.py")
+        spec = importlib.util.spec_from_file_location("turn_benchmark", ROOT / "tools/benchmarks/run_turn_benchmark.py")
         benchmark = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(benchmark)
         detail = {"id": "this-chat", "messages": [{"role": "tool", "candidateId": None}]}

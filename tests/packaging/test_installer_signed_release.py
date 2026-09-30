@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parents[2]
 INSTALLER = ROOT / "apps/monkeyhub/installer/install.ps1"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from tools import package_monkeyapps as builder  # noqa: E402
+from tools.release import package_monkeyapps as builder  # noqa: E402
 
 try:
     from cryptography import x509

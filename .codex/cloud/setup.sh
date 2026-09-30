@@ -5,7 +5,7 @@ python -m pip install --upgrade pip
 python -m pip install -e packages/archflow -e packages/monkeyarch -e packages/monkeydiagram \
   -e packages/monkeymonitor -e packages/monkeycontrol
 
-python tools/archcheck.py
+python tools/governance/archcheck.py
 python -m unittest discover -s tests -t . -v
 python -m unittest discover -s tools/tests -v
 python -m unittest discover -s packages/archflow/tests -v

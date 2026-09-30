@@ -17,8 +17,8 @@ from urllib.parse import urlencode
 from urllib.request import Request, ProxyHandler, build_opener
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from tests.monkeymonitor import run_turn_benchmark as bench
-from tests.monkeymonitor.run_design_loop import isolated_services, retained_record
+from tools.benchmarks import run_turn_benchmark as bench
+from tools.benchmarks.run_design_loop import isolated_services, retained_record
 from archflow.project.record_kinds import STUDIO_CANDIDATE_DELTA
 
 RULES = ("Use only connected monkeyhub tools for this isolated synthetic project. "

@@ -43,7 +43,7 @@ try {
 import base64, hashlib, json, sys
 from pathlib import Path
 from unittest import mock
-from tools import source_roots
+from tools.dev import source_roots
 source_roots.put_first(Path(sys.argv[2]))
 import archflow
 from tests.support import make_project, retain_rhino_receipt, runner_state_digest, REFERENCE_RUN_ID

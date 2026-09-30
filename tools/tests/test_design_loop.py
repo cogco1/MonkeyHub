@@ -7,7 +7,7 @@ import unittest
 from urllib.parse import urlencode
 
 from archflow.adapters.occt_backend import occt_available
-from tests.monkeymonitor import run_design_loop as design_loop
+from tools.benchmarks import run_design_loop as design_loop
 
 
 class DesignLoopChecksTests(unittest.TestCase):

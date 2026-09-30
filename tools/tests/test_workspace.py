@@ -11,7 +11,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tools import package_monkeyapps, workspace
+from tools.dev import workspace
+from tools.release import package_monkeyapps
 
 
 class DevelopmentWorkspaceTests(unittest.TestCase):

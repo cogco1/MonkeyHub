@@ -50,11 +50,11 @@ jobs:
       # Every event runs the same verification. The scope and whitespace checks
       # below only have a base to compare against on a pull request.
       - name: Architecture firewall
-        run: python tools/archcheck.py
+        run: python tools/governance/archcheck.py
 
       - name: Write scopes
         if: github.event_name == 'pull_request'
-        run: python tools/archcheck.py --changed origin/${{ github.base_ref || 'main' }}
+        run: python tools/governance/archcheck.py --changed origin/${{ github.base_ref || 'main' }}
 
       - name: Diff whitespace smoke
         if: github.event_name == 'pull_request'
@@ -451,7 +451,7 @@ jobs:
       - name: Projection parity, conditional reads and timings
         shell: bash
         run: >-
-          python tools/projection_check.py
+          python tools/benchmarks/projection_check.py
           --base "$RUNNER_TEMP/base"
           --candidate "$GITHUB_WORKSPACE"
           --project "$RUNNER_TEMP/projects/synthetic-bench"

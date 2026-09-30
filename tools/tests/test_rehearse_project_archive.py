@@ -2,7 +2,7 @@
 
 Nothing here rehearses the rehearsal. Each test builds one real P036 project,
 lets the driver export and restore it through the landed
-``tools/create_project.py`` command, and then reads the restored copy with the
+``tools/project/create_project.py`` command, and then reads the restored copy with the
 ordinary project readers. The runtime phase is the same: one test drives it
 with a fake client whose shapes are the API's, and one binds the real project
 runtime to the restored directory and asks it for a candidate, because "the
@@ -28,8 +28,8 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_BOARD_SCENE, STUDIO_SOURCE_DOCUMENT
 from archflow.project.repository import FilesystemProjectRepository
 
-import tools.rehearse_project_archive as driver
-from tools.rehearse_project_archive import (
+import tools.project.rehearse_project_archive as driver
+from tools.project.rehearse_project_archive import (
     export_and_restore,
     main,
     rehearse,

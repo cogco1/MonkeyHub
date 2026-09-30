@@ -12,7 +12,7 @@ import re
 import subprocess
 
 
-SOURCE_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
 # Retain the already-configured key instead of introducing a second root.
 WORKSPACE_CONFIG_KEY = "archflow.package.workspace-root"
 
@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
         source = args.source_root.resolve()
         root = configure_root(source, args.root) if args.command == "configure" else configured_root(source)
         if root is None:
-            raise ValueError("Run tools/workspace.py configure --root <external directory> once.")
+            raise ValueError("Run tools/dev/workspace.py configure --root <external directory> once.")
         task = task_name(source, getattr(args, "task", None), branch=getattr(args, "branch", None))
         selected = task_paths(root, task)
         if args.command == "create":

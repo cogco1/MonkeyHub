@@ -66,7 +66,7 @@ from archflow.state.state_record import StateRecord, project_grids_of, project_l
 from tests.integration.support import EVIDENCE, RECORD_PAYLOAD, authored_record, shared_bound_state
 from tests.integration.test_cad_execution import _binding as _synthetic_binding, _program as _synthetic_program
 from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
-from tools import source_roots
+from tools.dev import source_roots
 
 OCCT_AVAILABLE = occt_backend.occt_available()
 NEEDS_OCCT = unittest.skipUnless(

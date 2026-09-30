@@ -25,7 +25,7 @@ $ErrorActionPreference = 'Stop'
 # manifest, or over this manifest beside a changed package, is refused, and the
 # whole chain is checked before the first installation, shortcut or launch.
 # The manifest format and its closed artifact table belong to
-# tools/package_monkeyapps.py; this script reads them and adds no second format.
+# tools/release/package_monkeyapps.py; this script reads them and adds no second format.
 
 function Resolve-PublisherFingerprint([string]$Value) {
     # certutil and the Windows certificate dialog print separators, so accept

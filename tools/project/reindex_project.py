@@ -1,6 +1,6 @@
 """Re-index a project: draft Element@1 rows from its exported models, as records of a new run.
 
-    py tools/reindex_project.py --project <root> --out-run reindex-001 \
+    py tools/project/reindex_project.py --project <root> --out-run reindex-001 \
         --source project://<id>/runs/.../stage-4-3dm-inspection-<sha>.json@0 \
         --source project://<id>/runs/.../seat-3dm-inspection-<sha>.json@1 ...
 
@@ -23,9 +23,9 @@ import json
 from pathlib import Path
 import sys
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
-from tools import source_roots  # noqa: E402
+from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 

@@ -2,30 +2,30 @@
 
 Create a new project::
 
-    python tools/create_project.py --project D:/work/projects/my-project
-    python tools/create_project.py --project D:/work/projects/my-project \
+    python tools/project/create_project.py --project D:/work/projects/my-project
+    python tools/project/create_project.py --project D:/work/projects/my-project \
         --state-record D:/inputs/state-record.json --seats-file D:/inputs/seats.json
 
 Export a retained project as one portable archive::
 
-    python tools/create_project.py --project D:/work/projects/my-project \
+    python tools/project/create_project.py --project D:/work/projects/my-project \
         --export-archive D:/backups/my-project.monkeyhub.zip
 
 Restore that archive into a fresh project directory::
 
-    python tools/create_project.py --project D:/restored/my-project \
+    python tools/project/create_project.py --project D:/restored/my-project \
         --restore-archive D:/backups/my-project.monkeyhub.zip
 
 Report what format a retained project declares, or what migrating it would
 require, without writing anything::
 
-    python tools/create_project.py --project D:/work/projects/my-project --inspect-format
-    python tools/create_project.py --project D:/work/projects/my-project --plan-migration
+    python tools/project/create_project.py --project D:/work/projects/my-project --inspect-format
+    python tools/project/create_project.py --project D:/work/projects/my-project --plan-migration
 
 Migrate a format-1 project forward into a new empty directory named by the
 project id. The source is never written; the migrated copy carries a receipt::
 
-    python tools/create_project.py --project D:/work/projects/my-project \
+    python tools/project/create_project.py --project D:/work/projects/my-project \
         --migrate-format --into D:/migrated/my-project
 
 The directory name is the project id, as required by Studio's existing binding.
@@ -44,10 +44,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
-from tools import source_roots  # noqa: E402
+from tools.dev import source_roots  # noqa: E402
 
 source_roots.put_first(REPO)
 
@@ -72,7 +72,7 @@ from archflow.project.repository import (
 from archflow.project.refs import require_identifier
 from archflow.project.version_ref_owners import load_workflow_owners
 from archflow.state.state_record import StateRecord
-from tools.run_project import _seat
+from tools.project.run_project import _seat
 
 
 _VERSION_REF_KEYS = frozenset({"project_id", "version", "state_sha256"})
@@ -299,13 +299,13 @@ def _print_migration_plan(
         print(
             "Back up before any migration is attempted (the archive requires "
             "this directory to be named by its project id): "
-            f"python tools/create_project.py --project {inspection.root} "
+            f"python tools/project/create_project.py --project {inspection.root} "
             "--export-archive <archive.zip>"
         )
         print(
             "Then migrate into a new empty directory named for the project; the "
             "migration never writes this one, so it is a backup by construction: "
-            f"python tools/create_project.py --project {inspection.root} "
+            f"python tools/project/create_project.py --project {inspection.root} "
             "--migrate-format --into <target>"
         )
     if not plan.planned:

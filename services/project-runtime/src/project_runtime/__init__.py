@@ -20,7 +20,7 @@ import sys
 # __init__.py -> project_runtime -> src -> project-runtime -> services -> root
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 
-# The architecture policy lists where import names begin (tools/source_roots.py). A root
+# The architecture policy lists where import names begin (tools/dev/source_roots.py). A root
 # the path lacks goes in front, not at the end: this checkout's ``archflow`` is the one
 # this service answers for, and an ``archflow`` installed into the environment would
 # otherwise win the import and be answering with another checkout's kernel — silently,
