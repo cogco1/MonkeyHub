@@ -1,31 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-288",
-      "status": "active",
-      "branch": "codex/288-board-source",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-288-board-source",
-      "base_ref": "105b410a9be2345807e562fa986ab12354a7fdae",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "project_runtime.board",
-        "project_runtime.binding"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
-        "apps/monkeyhub/web/src/workspaces/monkeyboard/board.css",
-        "apps/monkeyhub/web/src/workspaces/monkeyboard/boardSourceStatus.ts",
-        "apps/monkeyhub/web/test/boardSourceStatus.test.ts",
-        "apps/monkeyhub/web/test/boardWhiteboard.browser.mjs",
-        "apps/monkeyhub/web/src/api/project-runtime/client.ts",
-        "apps/monkeyhub/web/src/api/project-runtime/generated/",
-        "services/project-runtime/src/project_runtime/api/routes/working_draft.py",
-        "services/project-runtime/src/project_runtime/api/dto/working_draft.py"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
