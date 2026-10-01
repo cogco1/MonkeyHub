@@ -31,7 +31,7 @@ import math
 import re
 from typing import Any, Mapping, NamedTuple, Sequence
 
-from archflow.semantics.facets import FACET_KEYS, suggest_facet_key
+from archflow.semantics.facets import FACET_KEYS, canonical_facet_value, suggest_facet_key
 from archflow.state.state_record import Entity, StateRecord, apply_state_record_operator, component_facets
 from monkeyarch.authoring.element_producers import ElementProducerError, wall_along_line, wall_fields_from_block
 from monkeyarch.domain.opening_solver import DoorType, WindowType
@@ -364,7 +364,8 @@ def facets_proposal(
     Each target is upserted as its ``Component@1`` with every other field as it
     was, so its elements, objects, datums and dependency edges stay
     byte-identical. Text values lose surrounding whitespace and may not be
-    blank. A map emptied by removals is written as ``{}``: the component-edit
+    blank; a ``material.color`` is kept in upper case, ``#RRGGBB``. A map
+    emptied by removals is written as ``{}``: the component-edit
     path merges an upsert's fields over the existing ones by key, so a field
     left out would come back; a component that never had facets gains none.
     An edit that would leave every target as it is proposes nothing and is refused.
@@ -625,7 +626,8 @@ def _facet_changes(identifier: str, values: object, removed: object,
     for key, value in values.items():
         if not isinstance(key, str) or not isinstance(value, str) or not value.strip():
             raise _facets_invalid(f"{identifier}: facet {key} needs a value that is text and not blank")
-        cleaned[key] = value.strip()
+        # The spelling the record keeps (a colour in upper case); the record judges the rest.
+        cleaned[key] = canonical_facet_value(key, value)
     for key in removed:
         if not isinstance(key, str) or (key not in FACET_KEYS and key not in current):
             near = ", ".join(suggest_facet_key(str(key))) or "none close"

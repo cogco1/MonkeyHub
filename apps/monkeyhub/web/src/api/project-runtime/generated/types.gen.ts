@@ -5040,7 +5040,7 @@ export type FacetTargetDto = {
     /**
      * Set
      *
-     * facet keys and values to add or change: architectural.role, architectural.enclosure, structural.role, material.name, fabrication.method
+     * facet keys and values to add or change: architectural.role, architectural.enclosure, structural.role, material.name, material.color (#RRGGBB, with material.name), fabrication.method
      */
     set?: {
         [key: string]: string;

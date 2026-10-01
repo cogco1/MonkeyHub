@@ -601,6 +601,20 @@ neighbouring element whose field shares a name is named there only to be refused
 
 Review readiness is memoised per (candidate, published version): reading it twice is one result.
 
+**Declared materials reach the candidate's model.** `POST /api/proposals/facets` sets a
+component's `material.name` (the architect's words) and, when the design states it,
+`material.color`, an sRGB `#RRGGBB` (either case is accepted and kept in upper case). The
+record refuses a colour without a name and two colours for one material, naming the components
+(`422 FACETS_INVALID`). A candidate exports what its record's components declare: the 3dm
+preview holds one native material per declared name, named by it and bound to each of its
+objects (which also carry `archflow:material`), in the declared colour or, without one, an
+identity colour derived from the name alone that claims no appearance; the component layers of
+one material share that colour. An object whose components declare no material wears none,
+keeps its component's distinction colour and carries `archflow:material_status: undeclared`.
+The export reads its preview back and fails on a material whose name, colour or binding
+differs. Nothing is inferred from names or shapes; retained candidates and their files are
+never rewritten, so only runs made after a declaration carry its material.
+
 ### 5.2 The judgement is retained
 
 Running a candidate makes a reversible result, not a design decision. It does not mark that
