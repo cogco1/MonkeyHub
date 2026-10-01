@@ -166,10 +166,10 @@ def _box(bounds, scale: float = 1.0):
     return mesh
 
 
-def _export(program, materials=None, colors=None, *, feet: bool = False):
+def _export(program, materials=None, colors=None, *, feet: bool = False, parts=None):
     """The program's native preview as the OCCT export writes it: names, layers, user text and its materials."""
 
-    semantics = expected_object_semantics(program, material_by_component=materials)
+    semantics = expected_object_semantics(program, material_by_component=materials, material_by_part=parts)
     objects = semantics["objects"]
     layer_colors = dict(_resolved_layer_colors({row["layer"] for row in objects.values()},
                                                material_by_component=materials, material_colors=colors))
@@ -529,6 +529,136 @@ class ComposedReadbackTests(unittest.TestCase):
             body.Attributes.MaterialIndex = 0
         with self.assertRaisesRegex(CadPatchError, "block member .* does not wear its instance's material"):
             self.verify(self.tampered(member))
+
+
+# The two mixed components of #580 as the compiler names their parts' objects (obj-<part>).
+PARTED = (
+    ("plinth-outer-brick", "plinth", 0.0),
+    ("plinth-inner-block", "plinth", 3.0),
+    ("floor-porcelain-1", "floor_finish", 6.0),
+    ("external-paving", "floor_finish", 9.0),
+)
+# What the run declares (``declared_materials``): the plinth's default brick and its block's own concrete,
+# the floor's tile on its inside part only.
+PART_DEFAULTS = {"plinth": "brick"}
+PART_MATERIALS = {
+    "plinth": {"plinth-outer-brick": "brick", "plinth-inner-block": "concrete block"},
+    "floor_finish": {"floor-porcelain-1": "porcelain tile", "external-paving": None},
+}
+PART_COLORS = {"brick": (158, 75, 50), "concrete block": (180, 178, 170)}
+
+
+def _parted_program() -> CompiledGeometryProgram:
+    owned: dict[str, list[str]] = {}
+    operations = []
+    for part, component, x in PARTED:
+        owned.setdefault(component, []).append(f"obj-{part}")
+        operations.append(GeometryOperation(
+            op_id=part, kind=GeometryOperationKind.SOLID, output_object_ids=(f"obj-{part}",), input_object_ids=(),
+            frame_id="world", parameters=(_vector("origin", [x, 0.0, 0.0]), _vector("size", [2.0, 0.5, 0.5])),
+            semantic_binding_ids=(f"{component}-binding",),
+        ))
+    bindings = [SemanticBinding(binding_id=f"{component}-binding", component_id=component, object_ids=tuple(sorted(objects)),
+                                commitment_refs=("commitment:compose",), evidence_refs=("evidence:compose",))
+                for component, objects in owned.items()]
+    return _compile(operations, bindings)
+
+
+def _parted_base(program) -> bytes:
+    """The parted program as an earlier step exported it (one stone per component), and what was left beside it."""
+
+    model = _export(program, {"plinth": "granite", "floor_finish": "oak"}, EARLIER_COLORS)
+    survey = rhino3dm.Layer()
+    survey.Name = "survey"
+    layer = model.Layers.Add(survey)
+    for name, component in (("imported-plinth-cap", "plinth"), ("obj-floor-porcelain-1-0", "floor_finish"),
+                            ("obj-external-paving-0", "floor_finish")):
+        attributes = rhino3dm.ObjectAttributes()
+        attributes.Name = name
+        attributes.LayerIndex = layer
+        attributes.SetUserString("archflow:component", component)
+        attributes.MaterialSource = rhino3dm.ObjectMaterialSource.MaterialFromObject
+        attributes.MaterialIndex = _material(model, f"{name} stone", (130, 130, 120))
+        model.Objects.AddMesh(_box({"bbox_min": [20, 0, 0], "bbox_max": [21, 1, 1]}), attributes)
+    return _encoded(model)
+
+
+@unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
+class ComposedPartMaterialTests(unittest.TestCase):
+    """#580 gap 2: parts of one component wear their own materials in the composed model, read back by the same rule."""
+
+    def setUp(self) -> None:
+        self.program = _parted_program()
+        self.base = _parted_base(self.program)
+        self.donor = _encoded(_export(self.program, PART_DEFAULTS, PART_COLORS, parts=PART_MATERIALS))
+        patched = patch_composed_three_dm(self.base, prior_program=self.program, program=self.program,
+                                          replacement_3dm=self.donor)
+        self.composed = rewrite_composed_materials(patched, programs=(self.program,), material_by_component=PART_DEFAULTS,
+                                                   material_by_part=PART_MATERIALS, material_colors=PART_COLORS)
+
+    def verify(self, data: bytes) -> None:
+        verify_composed_three_dm(data, base_3dm=self.base,
+                                 patches=(ComposedPatch(self.program, self.program, self.donor),),
+                                 material_by_component=PART_DEFAULTS, material_by_part=PART_MATERIALS,
+                                 material_colors=PART_COLORS)
+
+    def test_each_part_wears_its_own_material_and_an_undeclared_part_wears_none(self) -> None:
+        self.verify(self.composed)
+        inspection = inspect_three_dm_contents(self.composed)
+        rows = _by_name(inspection.object_material_bindings)
+        strings = _strings(inspection)
+        concrete = [*PART_COLORS["concrete block"], 255]
+        brick = [*PART_COLORS["brick"], 255]
+        tile = [*_material_identity_color("porcelain tile"), 255]
+        for name, material, color in (("obj-plinth-outer-brick", "brick", brick),
+                                      ("obj-plinth-inner-block", "concrete block", concrete),
+                                      # an object no part delivered takes its component's material
+                                      ("imported-plinth-cap", "brick", brick),
+                                      ("obj-floor-porcelain-1", "porcelain tile", tile),
+                                      # one an earlier export left under a part's name is that part's
+                                      ("obj-floor-porcelain-1-0", "porcelain tile", tile)):
+            row = rows[name]
+            self.assertEqual((row["material_source"], row["material_name"], row["material_diffuse_color_rgba"]),
+                             ("MaterialFromObject", material, color), name)
+            self.assertEqual(strings[row["object_id"]].get("archflow:material"), material, name)
+            self.assertNotIn("archflow:material_status", strings[row["object_id"]], name)
+        for name in ("obj-external-paving", "obj-external-paving-0"):
+            row = rows[name]
+            self.assertEqual((row["material_source"], row["material_index"], row["material_name"]),
+                             ("MaterialFromLayer", -1, None), name)
+            self.assertEqual(strings[row["object_id"]].get("archflow:material_status"), "undeclared", name)
+            self.assertNotIn("archflow:material", strings[row["object_id"]], name)
+        # nothing else moved: GUIDs, geometry and every other string are the base's
+        self.assertEqual({row["object_id"]: row["geometry_sha256"] for row in inspection.object_geometry_sha256},
+                         {row["object_id"]: row["geometry_sha256"]
+                          for row in inspect_three_dm_contents(self.base).object_geometry_sha256})
+
+    def test_a_part_wearing_its_components_material_or_an_undeclared_part_wearing_one_is_refused(self) -> None:
+        def as_component(model):
+            outer = next(item for item in model.Objects if item.Attributes.Name == "obj-plinth-outer-brick")
+            inner = next(item for item in model.Objects if item.Attributes.Name == "obj-plinth-inner-block")
+            inner.Attributes.MaterialIndex = outer.Attributes.MaterialIndex
+        with self.assertRaisesRegex(CadPatchError, "obj-plinth-inner-block .* does not wear material concrete block"):
+            self.verify(_tampered(self.composed, as_component))
+
+        def dressed(model):
+            tile = next(item for item in model.Objects if item.Attributes.Name == "obj-floor-porcelain-1")
+            paving = next(item for item in model.Objects if item.Attributes.Name == "obj-external-paving")
+            paving.Attributes.MaterialSource = rhino3dm.ObjectMaterialSource.MaterialFromObject
+            paving.Attributes.MaterialIndex = tile.Attributes.MaterialIndex
+        with self.assertRaisesRegex(CadPatchError, "obj-external-paving .* declares no material but wears one"):
+            self.verify(_tampered(self.composed, dressed))
+        # the same model read against the component materials alone is not what was composed
+        with self.assertRaisesRegex(CadPatchError, "obj-plinth-inner-block .* does not wear material brick"):
+            verify_composed_three_dm(self.composed, base_3dm=self.base,
+                                     patches=(ComposedPatch(self.program, self.program, self.donor),),
+                                     material_by_component=PART_DEFAULTS, material_colors=PART_COLORS)
+
+
+def _tampered(data: bytes, change) -> bytes:
+    model = rhino3dm.File3dm.FromByteArray(data)
+    change(model)
+    return _encoded(model)
 
 
 if __name__ == "__main__":

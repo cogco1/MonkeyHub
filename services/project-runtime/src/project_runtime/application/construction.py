@@ -9,12 +9,13 @@ the compiler's own, or the record's refusal of the rows the script produced,
 answered at the line that made the shape it names and said in construction
 words (the layer rule).
 
-``facets_proposal`` sets or removes meaning on components and changes nothing
-else (D-419-0). ``construction_model`` reads a record back in the same words as
-the script, with what each component's facets unlock and the doors and windows
-it hosts. ``hosted_opening_proposal`` is the first capability that meaning
-unlocks (Stage C, spec §3.5): a door or a window on a component whose facets
-say ``architectural.role = wall``; a block is realised as a wall in place under
+``facets_proposal`` sets or removes meaning on components, and a part's own
+material under its component (#580), and changes nothing else (D-419-0).
+``construction_model`` reads a record back in the same words as the script,
+with what each component's facets unlock and the doors and windows it hosts.
+``hosted_opening_proposal`` is the first capability that meaning unlocks
+(Stage C, spec §3.5): a door or a window on a component whose facets say
+``architectural.role = wall``; a block is realised as a wall in place under
 the same element id, so it keeps its delivered object and its published top.
 ``design_proposal`` makes one proposal of the in-app agent's answer: a script
 with its parameters, or parameters alone, then facets on what that leaves,
@@ -32,7 +33,13 @@ import re
 from typing import Any, Mapping, NamedTuple, Sequence
 
 from archflow.semantics.facets import FACET_KEYS, canonical_facet_value, suggest_facet_key
-from archflow.state.state_record import Entity, StateRecord, apply_state_record_operator, component_facets
+from archflow.state.state_record import (
+    Entity,
+    StateRecord,
+    apply_state_record_operator,
+    component_facets,
+    component_part_facets,
+)
 from monkeyarch.authoring.element_producers import ElementProducerError, wall_along_line, wall_fields_from_block
 from monkeyarch.domain.opening_solver import DoorType, WindowType
 from monkeyarch.authoring.construction.script import ConstructionError
@@ -359,27 +366,39 @@ def facets_proposal(
     summary: str | None = None,
     keep_refs: Sequence[str] = (),
 ) -> Proposal:
-    """Facets set on, or taken from, components (``[{id, set: {key: value}, remove: [key]}]``) as one proposal.
+    """Facets set on, or taken from, components or their parts (``[{id, part?, set, remove}]``) as one proposal.
 
-    Each target is upserted as its ``Component@1`` with every other field as it
-    was, so its elements, objects, datums and dependency edges stay
-    byte-identical. Text values lose surrounding whitespace and may not be
-    blank; a ``material.color`` is kept in upper case, ``#RRGGBB``. A map
-    emptied by removals is written as ``{}``: the component-edit
-    path merges an upsert's fields over the existing ones by key, so a field
-    left out would come back; a component that never had facets gains none.
-    An edit that would leave every target as it is proposes nothing and is refused.
+    Each component named is upserted once as its ``Component@1`` with every
+    other field as it was, so its elements, objects, datums and dependency
+    edges stay byte-identical. A target with ``part`` names one of the
+    component's parts - an id the model view lists as its ``parts`` - and
+    sets or removes that part's own material (``material.name``,
+    ``material.color``) under the component (``part_facets``, #580): a part
+    wears its own material, else the component's, else none. Text values
+    lose surrounding whitespace and may not be blank; a ``material.color`` is
+    kept in upper case, ``#RRGGBB``. A map emptied by removals is written as
+    ``{}`` and a part left with nothing is left out: the component-edit path
+    merges an upsert's fields over the existing ones by key, so a field left
+    out would come back; a component that never had facets gains none. An
+    edit that would leave every target as it is proposes nothing and is
+    refused.
     """
 
     existing = {entity.entity_id: entity for entity in projection.record.entities}
-    rows: list[dict[str, Any]] = []
+    parts = _parts_by_component(projection.record)
+    upserts: dict[str, dict[str, Any]] = {}  # each named component's fields as its targets leave them
+    named: set[tuple[str, str | None]] = set()
     said: list[str] = []
     for target in targets:
-        identifier = target.get("id")
+        identifier, part = target.get("id"), target.get("part")
         if not isinstance(identifier, str) or not identifier:
             raise _facets_invalid("every target names the geometry id it is about")
-        if any(row["entity_id"] == identifier for row in rows):
-            raise _facets_invalid(f"{identifier} is named twice; say everything about it in one target")
+        if part is not None and (not isinstance(part, str) or not part):
+            raise _facets_invalid(f"{identifier}: part names one of its parts, as the model view lists them")
+        label = identifier if part is None else f"{part} of {identifier}"
+        if (identifier, part) in named:
+            raise _facets_invalid(f"{label} is named twice; say everything about it in one target")
+        named.add((identifier, part))
         entity = existing.get(identifier)
         if entity is None:
             raise StudioError(404, "ENTITY_UNKNOWN",
@@ -389,19 +408,43 @@ def facets_proposal(
             raise StudioError(
                 422, "FACETS_TARGET_INVALID",
                 f"{identifier} is {entity.schema}; facets belong to a geometry id (a component)"
-                + (f", here {owner}" if owner else ""),
+                + (f", here {owner}; to give this part alone a material, send {{id: {owner}, part: {identifier}}}"
+                   if owner else ""),
             )
-        current = component_facets(entity)
-        values, removed = _facet_changes(identifier, target.get("set"), target.get("remove"), current)
-        facets = {key: value for key, value in current.items() if key not in removed}
-        facets.update(values)
-        fields = dict(entity.fields)
-        if facets or "facets" in fields:
-            fields["facets"] = facets
-        rows.append({"entity_id": identifier, "schema": "Component@1", "parent_id": entity.parent_id,
-                     "fields": fields})
-        said.append(f"{identifier} " + ", ".join([f"+{key}={value}" for key, value in values.items()]
-                                                  + [f"-{key}" for key in removed]))
+        fields = upserts.setdefault(identifier, dict(entity.fields))
+        if part is None:
+            current = component_facets(Entity(identifier, "Component@1", fields))
+            values, removed = _facet_changes(identifier, target.get("set"), target.get("remove"), current)
+            facets = {key: value for key, value in current.items() if key not in removed}
+            facets.update(values)
+            if facets or "facets" in fields:
+                fields["facets"] = facets
+        else:
+            owned = [element.entity_id for element in parts.get(identifier, ())]
+            if part not in owned:
+                other = next((component for component, elements in parts.items()
+                              if any(element.entity_id == part for element in elements)), None)
+                raise StudioError(
+                    422, "FACETS_TARGET_INVALID",
+                    (f"{part} is a part of {other}, not of {identifier}" if other is not None
+                     else f"{part} is not a part of {identifier}")
+                    + (f"; its parts are {', '.join(owned)}" if owned else f"; {identifier} has no parts"),
+                )
+            stated = component_part_facets(Entity(identifier, "Component@1", fields))
+            current = stated.get(part, {})
+            values, removed = _facet_changes(label, target.get("set"), target.get("remove"), current)
+            facets = {key: value for key, value in current.items() if key not in removed}
+            facets.update(values)
+            if facets:
+                stated[part] = facets
+            else:
+                stated.pop(part, None)
+            if stated or "part_facets" in fields:
+                fields["part_facets"] = stated
+        said.append(f"{label} " + ", ".join([f"+{key}={value}" for key, value in values.items()]
+                                             + [f"-{key}" for key in removed]))
+    rows = [{"entity_id": identifier, "schema": "Component@1", "parent_id": existing[identifier].parent_id,
+             "fields": fields} for identifier, fields in upserts.items()]
     if not rows:
         raise _facets_invalid("name at least one target")
     if all(row["fields"] == existing[row["entity_id"]].fields for row in rows):
@@ -518,7 +561,8 @@ def construction_model(projection: StateProjection) -> dict[str, Any]:
 
     ``entities`` is one row per component with geometry (``geometry_view``:
     id, form, bounds, cuts, cutBy, hidden, and parts, ``None`` unless it has
-    several) plus its ``facets``, the ``capabilities`` they unlock where the
+    several) plus its ``facets``, the material its parts state of their own
+    (``partFacets``, by part id), the ``capabilities`` they unlock where the
     capability's route takes the component (``hosted-opening`` not on a
     cutter or a geometry id of several parts), the ``openings`` a component of
     one element hosts, and the ``alongLine`` a door's or window's ``along`` is
@@ -537,7 +581,8 @@ def construction_model(projection: StateProjection) -> dict[str, Any]:
         parts = opening_hosts.parts.get(row["id"], [])
         element = parts[0] if len(parts) == 1 else None
         hosts = element is not None and any(capability["id"] == _HOSTED_OPENING for capability in capabilities)
-        entities.append({**row, "parts": row.get("parts"), "facets": facets, "capabilities": capabilities,
+        entities.append({**row, "parts": row.get("parts"), "facets": facets,
+                         "partFacets": component_part_facets(components[row["id"]]), "capabilities": capabilities,
                          "openings": [] if element is None else _openings_of(element),
                          "alongLine": _along_line_of(element) if hosts else None})
     return {

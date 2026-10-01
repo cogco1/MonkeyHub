@@ -9,7 +9,7 @@ import type { TFunction } from "../../i18n/useT";
 import type { Language } from "../settings/preferences";
 import { DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED } from "./continueUndo";
 import type { Fork } from "./layout";
-import { checkOf, CURRENT, type GrowthTree, type PendingStatus, type TreeNode } from "./model";
+import { candidateNodeId, checkOf, CURRENT, type CleanedDraft, type GrowthTree, type PendingStatus, type TreeNode } from "./model";
 import type { SceneWords } from "./scene";
 
 /**
@@ -67,10 +67,14 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
     : t("designTree.optionUnnamed", { letter: node.letter ?? "" }).trim();
   // #575: a step of Current's line is called what it was named, else what asked for it, else its place on the line.
   const stepName = (node: TreeNode) => node.label ?? node.step!.request ?? t("designTree.step.numbered", { number: node.step!.number });
+  // #575: a drafts card names the kept drafts it folds; one that holds only drafts the project cleaned says so.
+  const draftsName = (node: TreeNode) => node.drafts!.runs.length || !node.drafts!.cleaned.length
+    ? t("designTree.drafts.group", { count: node.drafts!.runs.length })
+    : t("designTree.drafts.cleanedGroup", { count: node.drafts!.cleaned.length });
   // The folds and the line's steps and drafts are named the same on a card and everywhere else.
   const lineName = (node: TreeNode): string | null => node.kind === "step" ? stepName(node)
     : node.kind === "fold" ? t("designTree.fold.steps", { count: node.fold!.steps.length })
-      : node.kind === "drafts" ? t("designTree.drafts.group", { count: node.drafts!.runs.length })
+      : node.kind === "drafts" ? draftsName(node)
         : node.kind === "draft" ? node.label ?? t("designTree.draft.unnamed") : null;
   // #353: a card's name beside its letter, which the card already shows; a label's own letter is not said twice.
   const cardName = (node: TreeNode): string => node.kind === "pending" ? node.label ?? t("designTree.pending.unnamed")
@@ -118,7 +122,12 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
     if (node.kind === "step") return t("designTree.step.numbered", { number: node.step!.number });
     if (node.kind === "draft") return t("designTree.status.superseded", { node: lineRun(node.draft!.supersededBy) ?? "—" });
     if (node.kind === "fold") return node.fold!.drafts ? t("designTree.fold.drafts", { count: node.fold!.drafts }) : t("designTree.fold.open");
-    if (node.kind === "drafts") return t("designTree.drafts.open");
+    if (node.kind === "drafts") {
+      // #575: what the project cleaned, quietly, under the kept drafts' name; nothing more where it cleaned none.
+      const { runs, cleaned, retentionDays: days } = node.drafts!;
+      return !cleaned.length ? t("designTree.drafts.open") : runs.length
+        ? t("designTree.drafts.cleanedShort", { count: cleaned.length, days }) : t("designTree.drafts.restorable", { days });
+    }
     if (node.kind !== "candidate") return "";
     const accepted = byId(node.candidate!.acceptedStage);
     // The runtime also names a Stage on the nearest admitted option its accepted run
@@ -160,13 +169,24 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
     const accept = tree?.accept;
     return { id: after !== null && after === accept?.lineHeadStage && accept.nextLabel ? accept.nextLabel : "", name: t("designTree.column.next"), next: true };
   };
+  /** #575: a drafts card's whole account of what the project cleaned, for the list and the inspector. */
+  const cleaned = (node: TreeNode): string | null => node.kind === "drafts" && node.drafts!.cleaned.length
+    ? t("designTree.drafts.cleaned", { count: node.drafts!.cleaned.length, days: node.drafts!.retentionDays }) : null;
+  /** #575: what superseded a cleaned draft: the line's step by its name, else a later result, else an attempt that never finished. */
+  const cleanedBy = (draft: CleanedDraft): string => {
+    if (!draft.supersededBy) return t("designTree.cleaned.unfinished");
+    const option = byId(candidateNodeId(draft.supersededBy));
+    const name = lineRun(draft.supersededBy) ?? (option ? title(option) : null);
+    return name ? t("designTree.status.superseded", { node: name }) : t("designTree.cleaned.later");
+  };
   const accept = tree?.accept;
   const scene: SceneWords = {
     current: t("designTree.current"), origin: t("designTree.origin"), name: cardName, pending: pendingText, currentAt: currentAt(),
     accept: accept?.nextLabel ? t("designTree.action.accept", { stage: accept.nextLabel }) : t("designTree.action.acceptNext"),
     acceptBlocked: t("designTree.action.acceptNext"), status, fork,
   };
-  return { stageName, optionName, stepName, studyName, title, actor, admitter, currentAt, status, fork, pendingText, check, column, scene, byId, lineRun };
+  return { stageName, optionName, stepName, studyName, title, actor, admitter, currentAt, status, fork, pendingText, check, column, scene, byId, lineRun,
+    cleaned, cleanedBy };
 }
 
 export type TreeWords = ReturnType<typeof treeWords>;

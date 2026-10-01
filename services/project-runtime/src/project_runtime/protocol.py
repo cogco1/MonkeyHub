@@ -60,6 +60,7 @@ BASE_CAPABILITIES: tuple[str, ...] = (
     "model-source-index",
     "pick",
     "program",
+    "project-trash",
     "projection",
     "proposals",
     "validation",

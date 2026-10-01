@@ -5,18 +5,21 @@
  * author, time and progress, and for the actions, kept apart. View and
  * Compare never move Current; Continue does; Accept as next Stage exists on Current only
  * and asks first. A done act confirms itself in the toast beside the chip
- * (FN-5); a refused one says why here.
+ * (FN-5); a refused one says why here. A drafts card that holds drafts the
+ * project cleaned lists them, each with Restore while it can be restored (#575).
  */
 import { useEffect, useRef, useState } from "react";
 import { usePreferences } from "../settings/preferences";
 import { useT } from "../../i18n/useT";
+import { CleanedDrafts } from "./DesignTreeCleaned";
 import { continuable, CURRENT, type GrowthTree, type TreeNode } from "./model";
 import { DESIGN_TREE_UNSYNCED, useRecordAndContinue, type DesignTreeData } from "./useDesignTree";
 import { refusalWords, whenText, type TreeWords } from "./words";
 import { ProjectionThumbnail } from "../artifacts/ModelThumbnail";
 import { nodeModelSource } from "./previews";
 
-export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onConfirmAccept, onClose, onView, onCompare, onRecordEdits = null }: {
+export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onConfirmAccept, onClose, onView, onCompare, onRecordEdits = null,
+  onShowDrafts }: {
   tree: GrowthTree;
   node: TreeNode;
   words: TreeWords;
@@ -29,6 +32,8 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
   onCompare?(node: TreeNode): void;
   /** Records Modeling's unrecorded edits, so a Continue they refused can go on (#302). */
   onRecordEdits?: (() => Promise<void>) | null;
+  /** Draws the kept drafts one by one, from a drafts card's inspector (#575). */
+  onShowDrafts?(): void;
 }) {
   const t = useT();
   const { language, developerMode } = usePreferences();
@@ -57,7 +62,8 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
     : node.kind === "candidate" ? (earlier ? t("designTree.role.earlier") : studyName ? t("designTree.role.option", { study: studyName }) : t("designTree.role.optionAlone"))
       : node.kind === "pending" ? t("designTree.role.pending")
         : node.kind === "step" ? t("designTree.role.step") : node.kind === "draft" ? t("designTree.role.draft")
-          : node.kind === "current" ? t("designTree.role.current") : t("designTree.role.origin");
+          : node.kind === "drafts" ? t("designTree.role.drafts")
+            : node.kind === "current" ? t("designTree.role.current") : t("designTree.role.origin");
   const facts: [string, string][] = [];
   const add = (label: string, value: string | null | undefined) => { if (value) facts.push([label, value]); };
   if (node.kind === "candidate") {
@@ -123,6 +129,10 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
       : accept.block === "no-stage" ? t("designTree.accept.noStage") : accept.block === "no-head" ? t("designTree.accept.noHead") : null;
   const showConfirm = confirmAccept && accept.allowed && confirmClosedFor !== node.id;
   const source = nodeModelSource(data.source, node);
+  const retentionDays = data.source?.trash?.retentionDays ?? 30;
+  // #575: a refused Restore names the cleaned draft it was asked for.
+  const restoreRefused = data.outcome?.kind === "refused" && data.outcome.node?.startsWith("cleaned:") && data.outcome.error
+    ? { runId: data.outcome.node.slice("cleaned:".length), error: data.outcome.error } : null;
   return <aside ref={aside} tabIndex={-1} className="design-tree-inspector" aria-label={title} data-node={node.id} data-kind={node.kind}>
     <div className="design-tree-inspector__head">
       <div className="design-tree-inspector__identity"><strong>{title}</strong><span>{role}</span></div>
@@ -157,7 +167,19 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
           {reviewing && <span>{t("designTree.action.savingReview")}</span>}
         </div>}
         <p className="design-tree-inspector__note">{!data.canContinue ? t("designTree.outcome.cannotContinue")
-          : node.kind === "step" ? t("designTree.step.note") : node.kind === "draft" ? t("designTree.draft.note") : t("designTree.action.hint")}</p>
+          : node.kind === "step" ? t("designTree.step.note") : node.kind === "draft" ? t("designTree.draft.note", { days: retentionDays })
+            : t("designTree.action.hint")}</p>
+      </>}
+      {node.kind === "drafts" && <>
+        {words.cleaned(node) && <p className="design-tree-inspector__summary">{words.cleaned(node)}</p>}
+        {node.drafts!.runs.length > 0 && onShowDrafts && <div className="design-tree-inspector__actions">
+          <button type="button" className="btn btn--small" data-action="show-drafts" onClick={onShowDrafts}>
+            {t("designTree.drafts.show", { count: node.drafts!.runs.length })}</button>
+        </div>}
+        <CleanedDrafts drafts={node.drafts!.cleaned} words={words} busy={busy} canRestore={data.canRestore}
+          restoring={data.busy?.kind === "restore" ? data.busy.runId : null} refused={restoreRefused}
+          onRestore={(runId) => void data.restoreDraft(runId)} />
+        {node.drafts!.cleaned.length > 0 && <p className="design-tree-inspector__note">{t("designTree.cleaned.note", { days: node.drafts!.retentionDays })}</p>}
       </>}
       {node.kind === "current" && <div className="design-tree-inspector__accept">
         <button type="button" className="btn btn--small btn--primary" data-action="accept" disabled={!accept.allowed || busy}

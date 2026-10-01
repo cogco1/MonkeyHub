@@ -209,12 +209,15 @@ def _retain_composed_candidate(
     projection = project_state(binding, run_id)
     if not projection.reference_state_exact:
         raise ValueError("The composed candidate's run has no exact retained record to read its declared materials from.")
-    material_by_component, material_colors = declared_materials(projection.record)
+    # What the record's components and their parts declare, part first, in the rewrite and its readback alike.
+    material_by_component, material_by_part, material_colors = declared_materials(projection.record)
     composed = rewrite_composed_materials(composed, programs=tuple(patch.program for patch in patches),
-                                          material_by_component=material_by_component, material_colors=material_colors)
+                                          material_by_component=material_by_component, material_colors=material_colors,
+                                          material_by_part=material_by_part)
     try:
         verify_composed_three_dm(composed, base_3dm=original, patches=tuple(patches),
-                                 material_by_component=material_by_component, material_colors=material_colors)
+                                 material_by_component=material_by_component, material_colors=material_colors,
+                                 material_by_part=material_by_part)
     except ValueError as exc:  # CadPatchError names each object that did not read back
         raise ValueError(f"The composed candidate model was not retained: {exc}") from exc
     register_model_asset(binding, run_id, projection.state_digest, f"{run_id}-composed.3dm", base64.b64encode(composed).decode(), generated=True)

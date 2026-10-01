@@ -64,7 +64,7 @@ export function DesignTreeList({ tree, words, selected, onSelect }: {
           <span className="design-tree-list__mark" data-kind={node.kind} aria-hidden="true">
             {node.kind === "stage" ? `S${node.stage!.number}` : node.kind === "candidate" ? node.letter ?? "·" : node.kind === "current" ? "●"
               : node.kind === "pending" ? "…" : node.kind === "step" ? String(node.step!.number) : node.kind === "fold" ? "⋯"
-                : node.kind === "drafts" ? String(node.drafts!.runs.length) : node.kind === "draft" ? "×" : "○"}
+                : node.kind === "drafts" ? String(node.drafts!.runs.length + node.drafts!.cleaned.length) : node.kind === "draft" ? "×" : "○"}
           </span>
           <span className="design-tree-list__title">{words.title(node)}</span>
           <span className="design-tree-list__status">{[group[row.group], status].filter(Boolean).join(" · ")}</span>

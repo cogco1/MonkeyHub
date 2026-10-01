@@ -125,6 +125,7 @@ MonkeyHub Usage 页   → monkeymonitor ← Project Runtime 元数据适配器
 | 内容 | 放置方式 |
 | --- | --- |
 | 活跃模型、图纸、批注、候选、保留证据 | 显式外部项目根，沿同一 P036 项目格式。按所属 run 保存，图纸成果用已有 `workspaces/documentation/` 与 records；不建三个品牌数据仓。 |
+| 项目回收区（#575） | 项目根下的 `trash/`，只经 `archflow.project` 端口（`trash_run`、`restore_trashed_run`、`purge_trash`）写入：被取代的草稿和失败的尝试整个 run 目录原样改名到 `trash/runs/<run_id>/`，旁边 `trash/entries/<run_id>.json` 记下何时、为何、按哪条规则、状态摘要和带走的工作位置行；30 天内可原样恢复，之后删除。不复制、不改写，移不动就留在原处；HEAD、canonical、Stage、行上的步骤与已准入的结果从不进入。项目回收区不随传输或归档带走。 |
 | 项目专用建模／出图消费者 | 项目工作区中已明确的源码位置；通用算法进入相应 owner。SML 的特定拼装规则不作为公共模块默认值。 |
 | 论文、私人研究资料 | 作者指定的学术工作区；不固定到某个历史 `paper/` 目录，也不成为应用启动依赖。 |
 | 测试 | Python、API、Web 现有测试目录；合成 fixture 可以随测试提交。真实项目输入只有明确晋升后进入 `probes/`。 |

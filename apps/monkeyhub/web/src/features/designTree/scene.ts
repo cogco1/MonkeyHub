@@ -90,6 +90,9 @@ export const LIGHT_TREE_PALETTE: TreePalette = {
   paper: "#ffffff", twig: "#7b837a", muted: "#9ea39c", running: "#56656e", held: "#3d7754", violated: "#a64e47", unchecked: "#8a6123",
 };
 
+/** #575: a drafts card holding drafts the project cleaned is selected, so its inspector can offer Restore. */
+const holdsCleaned = (node: TreeNode) => node.kind === "drafts" && node.drafts!.cleaned.length > 0;
+
 export interface SceneHit extends SceneBox {
   readonly node: string;
   /** `expand` opens a fold (#575): Current's earlier steps, or the drafts its line superseded. */
@@ -293,8 +296,10 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
     }
     const diameter = Math.min(16 * k, 72);
     const box = { x: cx - diameter / 2, y: cy - diameter / 2, width: diameter, height: diameter };
-    // #575: a fold is an open ring on the trunk, or a quiet one where drafts were folded; a click opens it.
+    // #575: a fold is an open ring on the trunk, or a quiet one where drafts were folded; a click opens it. A drafts
+    // fold that holds cleaned drafts opens its inspector instead, which lists them with Restore.
     const expand = node.kind === "fold" ? "steps" as const : node.kind === "drafts" ? "drafts" as const : null;
+    const inspect = holdsCleaned(node);
     const style: Style = node.kind === "pending"
       ? { strokeColor: RUNNING, strokeStyle: "dashed", strokeWidth: 2 * Math.min(k, 6), opacity }
       : expand ? { backgroundColor: PAPER, strokeColor: expand === "steps" ? ACCENT : MUTED, strokeStyle: "dashed", strokeWidth: 2 * Math.min(k, 6), opacity }
@@ -302,7 +307,8 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
     ellipse(`${node.id}:dot`, box, style, data("dot", { node: node.id }));
     if (options.selected === node.id) ring(node.id, box, 4 * k);
     const pad = Math.max(diameter, 24 * k);
-    hits.push({ x: cx - pad / 2, y: cy - pad / 2, width: pad, height: pad, node: node.id, ...(expand ? { action: "expand", expand } : { action: "select" }) });
+    hits.push({ x: cx - pad / 2, y: cy - pad / 2, width: pad, height: pad, node: node.id,
+      ...(expand && !inspect ? { action: "expand", expand } : { action: "select" }) });
   }
 
   function drawNear(node: TreeNode, placed: PlacedNode) {
@@ -373,7 +379,8 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
         y += size * LINE_HEIGHT;
       }
       if (selected) ring(node.id, card, 5);
-      hits.push({ ...card, node: node.id, action: "expand", expand: steps ? "steps" : "drafts" });
+      hits.push({ ...card, node: node.id, ...(holdsCleaned(node) ? { action: "select" as const }
+        : { action: "expand" as const, expand: steps ? "steps" as const : "drafts" as const }) });
       return;
     }
     // An option, a step of Current's line, a superseded draft or a running line: a small card with its status bar, letter and name.

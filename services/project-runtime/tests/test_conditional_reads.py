@@ -47,6 +47,7 @@ ROUTES = (
     "/api/working-source?workspace=modeling",
     "/api/board",
     "/api/render/jobs",
+    "/api/trash",
 )
 IMMUTABLE = "private, max-age=31536000, immutable"
 MODEL_BYTES = b"conditional-read-3dm"

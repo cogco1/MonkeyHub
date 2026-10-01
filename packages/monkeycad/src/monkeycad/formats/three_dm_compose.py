@@ -4,9 +4,10 @@ A composed model is an imported model with a run's native objects patched in.
 ``patch_composed_three_dm`` replaces one program's changed native objects.
 ``rewrite_composed_materials`` then gives the whole model the materials the
 run declares, whatever its geometry did: every material the model carried is
-cleared and each object wears what its component declares, or nothing
-(#580). ``verify_composed_three_dm`` reads the final bytes back against the
-model they were composed from, the native exports and those declarations.
+cleared and each object wears what its part or else its component declares,
+or nothing (#580). ``verify_composed_three_dm`` reads the final bytes back
+against the model they were composed from, the native exports and those
+declarations.
 """
 
 from __future__ import annotations
@@ -266,12 +267,13 @@ def rewrite_composed_materials(
     programs: Sequence[CompiledGeometryProgram],
     material_by_component: Mapping[str, str] | None,
     material_colors: Mapping[str, tuple[int, int, int]] | None,
+    material_by_part: Mapping[str, Mapping[str, str | None]] | None = None,
 ) -> bytes:
     """Clear every material a composed model carries and give it what the run declares (#580).
 
     It runs on every compose, whatever the geometry did, so a change of
     material alone reaches the composed model. ``programs`` are the run's
-    compiled programs, one per patched seat, and the two maps are the run's
+    compiled programs, one per patched seat, and the three maps are the run's
     ``declared_materials``. Every top-level object ends in one of two states:
 
     * declared: bound (material from object) to the one native material of
@@ -287,10 +289,13 @@ def rewrite_composed_materials(
     ``expected_object_semantics``; one the program binds to no component is
     undeclared here too. Any other object, imported or left by an earlier
     export, wears what the components its ``archflow:component`` names
-    declare, by the same ``declared_material`` and ``_material_color``, and
-    one that names no component is undeclared. Nothing is inherited from the
-    materials the model carried: layer render materials are cleared and
-    block definition members wear their instance's material (from parent).
+    declare, by the same ``declared_material`` and ``_material_color``: the
+    part its name says delivered it first (``material_by_part``), else the
+    component's own; one that names no component is undeclared. A part's
+    material binds its objects alone: no group is split, no layer changed
+    and no geometry rebuilt. Nothing is inherited from the materials the
+    model carried: layer render materials are cleared and block definition
+    members wear their instance's material (from parent).
 
     GUIDs, geometry, names, layers and every other user string are left as
     they are. A declared material reuses a table entry that is exactly the
@@ -303,7 +308,7 @@ def rewrite_composed_materials(
     import rhino3dm
 
     model = _read(rhino3dm, composed_3dm, "composed model")
-    targets = _material_targets(model, programs, material_by_component, material_colors)
+    targets = _material_targets(model, programs, material_by_component, material_colors, material_by_part)
     from_object = rhino3dm.ObjectMaterialSource.MaterialFromObject
     from_layer = rhino3dm.ObjectMaterialSource.MaterialFromLayer
     from_parent = rhino3dm.ObjectMaterialSource.MaterialFromParent
@@ -360,6 +365,7 @@ def verify_composed_three_dm(
     patches: Sequence[ComposedPatch],
     material_by_component: Mapping[str, str] | None,
     material_colors: Mapping[str, tuple[int, int, int]] | None,
+    material_by_part: Mapping[str, Mapping[str, str | None]] | None = None,
 ) -> None:
     """Read a final composed model back before it is retained; ``CadPatchError`` names what differs.
 
@@ -372,10 +378,11 @@ def verify_composed_three_dm(
     encoded geometry converted to the base's unit; block definition members
     are the base's. Geometry is compared by content, a digest of each
     object's encoded geometry, never by bounds. Materials are what
-    ``rewrite_composed_materials`` states for these declarations: a declared
-    object is bound to a table entry that is exactly its native material,
-    an undeclared one wears none, its labels say which, no layer carries a
-    render material and block members wear their instance's material.
+    ``rewrite_composed_materials`` states for these declarations, part first
+    by the same rule: a declared object is bound to a table entry that is
+    exactly its native material, an undeclared one wears none, its labels
+    say which, no layer carries a render material and block members wear
+    their instance's material.
     """
 
     import rhino3dm
@@ -415,7 +422,8 @@ def verify_composed_three_dm(
     _compare_rows(failures, "object", expected, _object_rows(final, members=False))
     _compare_rows(failures, "block member", expected_members, _object_rows(final, members=True))
 
-    targets = _material_targets(final, tuple(patch.program for patch in patches), material_by_component, material_colors)
+    targets = _material_targets(final, tuple(patch.program for patch in patches), material_by_component,
+                                material_colors, material_by_part)
     from_object = rhino3dm.ObjectMaterialSource.MaterialFromObject
     from_layer = rhino3dm.ObjectMaterialSource.MaterialFromLayer
     from_parent = rhino3dm.ObjectMaterialSource.MaterialFromParent
@@ -485,12 +493,13 @@ def _material_targets(
     programs: Sequence[CompiledGeometryProgram],
     material_by_component: Mapping[str, str] | None,
     material_colors: Mapping[str, tuple[int, int, int]] | None,
+    material_by_part: Mapping[str, Mapping[str, str | None]] | None,
 ) -> dict[Any, _Wears]:
     """What each top-level object of the model wears, by GUID."""
 
     native: dict[str, _Wears] = {}
     for program in programs:
-        for name, wears in _native_wears(program, material_by_component, material_colors).items():
+        for name, wears in _native_wears(program, material_by_component, material_colors, material_by_part).items():
             if name in native:
                 raise CadPatchError(f"two composed programs deliver native object {name}")
             native[name] = wears
@@ -506,7 +515,8 @@ def _material_targets(
             targets[attributes.Id] = native[name]
         else:
             targets[attributes.Id] = _declared_wears(
-                attributes.GetUserString("archflow:component"), material_by_component, material_colors)
+                attributes.GetUserString("archflow:component"), name, material_by_component, material_colors,
+                material_by_part)
     wrong = sorted(name for name in native if found.get(name, 0) != 1)
     if wrong:
         raise CadPatchError(f"the composed model does not hold each native object exactly once: {wrong}")
@@ -517,10 +527,12 @@ def _native_wears(
     program: CompiledGeometryProgram,
     material_by_component: Mapping[str, str] | None,
     material_colors: Mapping[str, tuple[int, int, int]] | None,
+    material_by_part: Mapping[str, Mapping[str, str | None]] | None,
 ) -> dict[str, _Wears]:
     """What the run's own preview gives each object the program delivers, and the material it declares."""
 
-    semantics = expected_object_semantics(program, material_by_component=material_by_component)
+    semantics = expected_object_semantics(program, material_by_component=material_by_component,
+                                          material_by_part=material_by_part)
     objects = semantics["objects"]
     layer_colors = dict(_resolved_layer_colors(
         {row["layer"] for row in objects.values()},
@@ -533,13 +545,16 @@ def _native_wears(
 
 def _declared_wears(
     component_text: str | None,
+    name: str | None,
     material_by_component: Mapping[str, str] | None,
     material_colors: Mapping[str, tuple[int, int, int]] | None,
+    material_by_part: Mapping[str, Mapping[str, str | None]] | None,
 ) -> _Wears:
-    """What an object no program delivers wears: the material the components it names declare, or none."""
+    """What an object no program delivers wears: what the components it names declare, its part's first, or none."""
 
-    components = tuple(part for part in (component_text or "").split("+") if part)
-    declared = declared_material(components, material_by_component)
+    components = tuple(component for component in (component_text or "").split("+") if component)
+    declared = declared_material(components, material_by_component, object_name=name,
+                                 material_by_part=material_by_part)
     if declared is None:
         return _Wears(None, None)
     color = _material_color(declared, material_colors)

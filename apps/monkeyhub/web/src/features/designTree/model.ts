@@ -14,10 +14,11 @@
  * before admission never do, with two exceptions the Worktree Graph names
  * (#575): the runs Current's own line was made through after the last node
  * the tree has for it are its steps, and the earlier ones fold behind one
- * control; the drafts that line superseded fold where they started. This
- * module is pure and has no copy: the surfaces word it.
+ * control; the drafts that line superseded fold where they started, and so do
+ * the ones the project already cleaned into its trash, restorable for a while.
+ * This module is pure and has no copy: the surfaces word it.
  */
-import type { AdmissionActorDto, DesignCandidateDto, DesignStageDto, DesignStudyDto, LineStepDto, ReviewJudgementDto, WorkingHeadDto, WorktreeLineDto } from "../../api/project-runtime/generated";
+import type { AdmissionActorDto, DesignCandidateDto, DesignStageDto, DesignStudyDto, LineStepDto, ReviewJudgementDto, TrashEntryDto, WorkingHeadDto, WorktreeLineDto } from "../../api/project-runtime/generated";
 import type { DesignTreeSource } from "./contract";
 
 export type TreeNodeKind = "origin" | "stage" | "candidate" | "pending" | "current" | "step" | "fold" | "drafts" | "draft";
@@ -82,14 +83,29 @@ export interface StepFacts {
 export interface FoldFacts {
   /** The steps it stands for, oldest first; the tree does not draw them while they are folded. */
   readonly steps: readonly TreeNode[];
-  /** Superseded drafts that started from one of them, folded with them. */
+  /** Superseded drafts that started from one of them, folded with them: those kept and those cleaned. */
   readonly drafts: number;
 }
 
-/** Superseded drafts, folded where they started (#575). */
+/** A superseded draft the project moved into its trash (#575): restorable until it is purged. */
+export interface CleanedDraft {
+  readonly runId: string;
+  /** Its name, or the words that asked for it, when it had them. */
+  readonly label: string | null;
+  /** The run that superseded it; null for an attempt that never finished. */
+  readonly supersededBy: string | null;
+  readonly trashedAt: string;
+  readonly expiresAt: string;
+}
+
+/** Superseded drafts, folded where they started (#575): the ones still kept, and the ones the project cleaned. */
 export interface DraftsFacts {
-  /** The drafts' runs, newest first. */
+  /** The kept drafts' runs, newest first; empty while they are drawn one by one. */
   readonly runs: readonly string[];
+  /** The drafts the project trash holds, newest first; empty where none were cleaned. */
+  readonly cleaned: readonly CleanedDraft[];
+  /** How many days a cleaned draft can be restored for. */
+  readonly retentionDays: number;
 }
 
 /** A draft Current's line superseded: built where the line later moved on, and never taken further (#575). */
@@ -352,22 +368,36 @@ export function buildGrowthTree(source: DesignTreeSource, includeProcessed = fal
     const at = nodeForLineRun(lineStep.get(row.supersededBy)!.step.baseRunId ?? "");
     draftsAt.set(at, [...draftsAt.get(at) ?? [], row]);
   }
+  // The drafts the project cleaned fold where kept ones would: where the line moved on through what superseded
+  // them, else where they were made from; those the line names neither way hang from the root.
+  const retentionDays = source.trash?.retentionDays ?? 30;
+  const cleanedAt = new Map<string | null, CleanedDraft[]>();
+  for (const entry of [...source.trash?.entries ?? []].reverse() as TrashEntryDto[]) {
+    const moved = entry.supersededBy ? lineStep.get(entry.supersededBy)?.step.baseRunId ?? null : null;
+    const from = moved ?? (entry.baseRunId && lineStep.has(entry.baseRunId) ? entry.baseRunId : null);
+    const at = from ? nodeForLineRun(from) : null;
+    cleanedAt.set(at, [...cleanedAt.get(at) ?? [], { runId: entry.runId, label: entry.label?.trim() || null,
+      supersededBy: entry.supersededBy ?? null, trashedAt: entry.trashedAt, expiresAt: entry.expiresAt }]);
+  }
   if (folded) {
     nodes.set(FOLD, { id: FOLD, kind: "fold", parent: null, runId: null, label: null, summary: null, letter: null, studyId: null,
-      fold: { steps: stepNodes, drafts: draftsAt.get(FOLD)?.length ?? 0 } });
+      fold: { steps: stepNodes, drafts: (draftsAt.get(FOLD)?.length ?? 0) + (cleanedAt.get(FOLD)?.length ?? 0) } });
     parents.set(FOLD, anchor);
     last = FOLD;
   }
-  for (const [at, rows] of draftsAt) {
+  for (const at of new Set([...draftsAt.keys(), ...cleanedAt.keys()])) {
     if (at === FOLD) continue;
-    if (!open.drafts) {
-      // Drafts no node of the line stands for hang from the root.
+    const rows = draftsAt.get(at) ?? [];
+    const cleaned = cleanedAt.get(at) ?? [];
+    // Folded, the kept drafts and the cleaned ones are one card. Opened, the kept ones are drawn one by one and
+    // the card stays only for what was cleaned. Drafts no node of the line stands for hang from the root.
+    if (!open.drafts || cleaned.length) {
       const id = draftsNodeId(at ?? "root");
       nodes.set(id, { id, kind: "drafts", parent: null, runId: null, label: null, summary: null, letter: null, studyId: null,
-        drafts: { runs: rows.map((row) => row.runId) } });
+        drafts: { runs: open.drafts ? [] : rows.map((row) => row.runId), cleaned, retentionDays } });
       parents.set(id, at);
-      continue;
     }
+    if (!open.drafts) continue;
     for (const row of rows) {
       const id = draftNodeId(row.runId);
       nodes.set(id, { id, kind: "draft", parent: null, runId: row.runId, label: row.label?.trim() || null, summary: null, letter: null,
