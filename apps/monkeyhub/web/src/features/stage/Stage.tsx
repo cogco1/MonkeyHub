@@ -2061,6 +2061,9 @@ export function Stage({
           {annotationToolsOpen && <div id="annotation-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.annotate")}>
             <ModelToolButton icon="erase" label={t("document.tool.eraser")} aria-pressed={eraser} disabled={!annotationsReady}
               onClick={() => { const next = !eraser; chooseDrawingTool(null); setAnnotationToolsOpen(true); setAnnotationCancel((value) => value + 1); setEraser(next); }} />
+            {/* #577: the whole tracing paper in one undoable step, through the eraser's own path. */}
+            <ModelToolButton icon="clear" label={t("stage.tools.clear.label")} disabled={!annotationsReady || gestures.length === 0}
+              onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onEraseGestures(gestures.map((_, index) => index)); }} />
             <ModelToolButton icon="undo" label={t("stage.tools.undo.label")} disabled={!canUndoGesture} onClick={onUndoGesture} />
             <ModelToolButton icon="redo" label={t("document.redo")} disabled={!canRedoGesture} onClick={onRedoGesture} />
             {(tool !== null || eraser) && <ModelToolButton icon="close" label={t("stage.tools.cancel.label")}

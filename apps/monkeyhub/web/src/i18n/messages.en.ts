@@ -613,6 +613,7 @@ export const messagesEn = {
   "stage.tools.colour": "Annotation colour",
   "stage.tools.lineWidth": "Line width",
   "stage.tools.undo.label": "Undo mark",
+  "stage.tools.clear.label": "Clear annotations",
   "stage.tools.undo.title": "Remove the last annotation",
   "stage.tools.cancel.label": "Cancel",
   "stage.tools.cancel.title": "Cancel the annotation in progress",

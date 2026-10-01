@@ -590,6 +590,7 @@ export const messagesZhCN = {
   "stage.tools.colour": "批注颜色",
   "stage.tools.lineWidth": "线宽",
   "stage.tools.undo.label": "撤销批注",
+  "stage.tools.clear.label": "清空批注",
   "stage.tools.undo.title": "移除上一笔批注",
   "stage.tools.cancel.label": "取消",
   "stage.tools.cancel.title": "取消正在绘制的批注",
