@@ -90,14 +90,13 @@ if capture_fixture:
     stage = client.post('/api/design-stages/initialize',json={'projectId':project_id,'modelSource':model['modelSource']})
     if stage.status_code != 201: raise RuntimeError(stage.text)
     model_fixture = {'projectId':project_id,'modelSource':model['modelSource'],'sourceStageRef':stage.json()['stageRef']}
-    # Another retained model, for the model Modeling shows after a change (#218).
-    other_bytes = (Path.cwd()/'tests/fixtures/model-source-b.3dm').read_bytes()
-    other = register_model(client, reference_run, runner_state_digest(repo, reference_run), other_bytes)
-    other_fixture = {'projectId':project_id,'modelSource':other['modelSource'],'sourceStageRef':None}
     @app.get('/fixture/model')
-    def source_model(which: str='a'): return other_fixture if which == 'b' else model_fixture
+    def source_model(): return model_fixture
     @app.get('/fixture/model-bytes')
-    def source_model_bytes(which: str='a'): return Response(other_bytes if which == 'b' else model_bytes,media_type='application/octet-stream')
+    def source_model_bytes(which: str='a'):
+        # b: another model's file, which the test registers when Modeling's model changes (#218).
+        data = (Path.cwd()/'tests/fixtures/model-source-b.3dm').read_bytes() if which == 'b' else model_bytes
+        return Response(data,media_type='application/octet-stream')
 @app.get('/fixture/image')
 def source_image(color: str='white'): return Response(image(color), media_type='image/png')
 @app.get('/fixture/plan-model')
@@ -219,8 +218,8 @@ function setProjection(kind){
 function readView(){return visible?{...captureRenderView(scene,camera,center,43,1),modelSource:source.modelSource,sourceStageRef:source.sourceStageRef,sourceIssue}:null;}
 window.captureFixture={source,shown:[],setProjection,setIssue:value=>{sourceIssue=value;},setVisible:value=>{visible=value;},
  moveCamera:()=>{camera.position.x+=size*.35;camera.lookAt(center);camera.updateMatrixWorld(true);},
- useModel:async which=>{const next=await loadModel(which);scene.remove(object);object=next;scene.add(next);
-  source=await fetch('/capture/fixture/model?which='+which).then(response=>response.json());visible=true;return source;},
+ useModel:async (which,shown)=>{const next=await loadModel(which);scene.remove(object);object=next;scene.add(next);
+  source={...source,...shown};visible=true;},
  snapshot:()=>{const view=readView();return view?{modelSource:view.modelSource,sourceStageRef:view.sourceStageRef,aspect:view.aspect,worldMatrix:view.camera.matrixWorld.toArray(),
   projectionMatrix:view.camera.projectionMatrix.toArray(),target:[...view.target],up:view.camera.up.toArray()}:null;}};
 createRoot(document.getElementById('root')).render(<UserPreferencesProvider baseUrl={location.origin+'/capture'}><RenderWorkspace projectId={source.projectId} active={true} refreshKey={0} onBoard={()=>{}} readModelView={readView} onModeling={()=>{}}
@@ -648,7 +647,12 @@ try {
     await capturePage.getByRole("button", { name: "Show this view in Modeling", exact: true }).click();
     assert.deepEqual(await capturePage.evaluate(() => window.captureFixture.shown), [saved.viewRecipe.camera], "Modeling is handed the saved camera");
     assert.equal(await recapture().isDisabled(), true, "no model on screen to capture the view on");
-    const current = await capturePage.evaluate(() => window.captureFixture.useModel("b"));
+    // Modeling's model changes: another retained model of the same run, registered as any model is.
+    const otherBytes = Buffer.from(await (await fetch(origins.capture + "/fixture/model-bytes?which=b")).arrayBuffer());
+    const other = await api("capture", "/api/model-assets", "POST", { projectId: saved.projectId, runId: saved.modelSource.runId,
+      stateDigest: saved.modelSource.stateDigest, fileName: "changed.3dm", contentBase64: otherBytes.toString("base64") });
+    const current = { modelSource: other.modelSource, sourceStageRef: null };
+    await capturePage.evaluate(shown => window.captureFixture.useModel("b", shown), current);
     await capturePage.evaluate(() => window.captureFixture.moveCamera());
     await capturePage.evaluate(() => window.captureFixture.setIssue("unsaved"));
     await until(() => capture().isDisabled(), Boolean, "an unsaved model view is shown");
@@ -671,10 +675,12 @@ try {
     assert.deepEqual([againBytes.readUInt32BE(16), againBytes.readUInt32BE(20)], saved.viewRecipe.screenSize);
     assert.equal(await capturePage.getByRole("textbox", { name: "Visual direction", exact: true }).inputValue(), "Captured perspective view",
       "the result's inputs come with the new source");
-    await capturePage.getByText("This view was captured again on the current model and is now the source. Generate to render it; the earlier result is kept.", { exact: true }).waitFor();
+    const recapturedNote = capturePage.getByText("This view was captured again on the current model and is now the source. Generate to render it; the earlier result is kept.", { exact: true });
+    await recapturedNote.waitFor();
     assert.equal((await api("capture", "/fixture/metrics")).calls.length, 2, "capturing a view again never calls the provider");
     await capturePage.getByRole("button", { name: "Generate", exact: true }).click();
     const next = (await until(renderJobs, value => value.jobs.length === 3 && value.jobs[0].status === "succeeded", "a new attempt from the view captured again")).jobs[0];
+    await until(() => recapturedNote.count(), count => count === 0, "the note ends once the new attempt is submitted");
     assert.equal(next.request.source.assetSha256, againSha);
     assert.deepEqual(next.document.modelSource, current.modelSource);
     assert.equal((await api("capture", "/fixture/metrics")).calls[2].source, againSha, "Generate sends the view captured again");
