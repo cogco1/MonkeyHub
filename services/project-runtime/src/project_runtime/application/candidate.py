@@ -1,4 +1,4 @@
-"""A proposal executed as a detached candidate, by the kernel's own runner.
+"""A proposal executed as a detached run, by the kernel's own runner.
 
 The whole of this module is arrangement. It takes the authored State Record,
 replaces the one value the proposal names, binds the successor to a new run,
@@ -10,13 +10,20 @@ Two things about the run are worth stating plainly. It is **detached**: the run
 is created under the project's ``runs/``, nothing is issued, ``canonical/``
 and ``input/`` are never written, and the harness workflow it runs under is the
 same one the reference-run rule refuses to follow. And it is **content
-addressed**: the candidate is identified by its run id, and what it *is* comes
-from the receipt the runner retained — ``state_record_digest`` for what the
-record says, ``design_state_digest`` for that content bound to this run.
+addressed**: the run is identified by its id, and what it *is* comes from the
+receipt the runner retained — ``state_record_digest`` for what the record
+says, ``design_state_digest`` for that content bound to this run.
 
-``changedVsProjection`` compares the two content identities, so a candidate
-that happens to say exactly what the project already says reports that it
-changed nothing rather than implying it did.
+A run is not a Candidate (#294). Every producer's execution ends here and its
+result is listed for recovery, which admits nothing: a run becomes a Candidate
+only when the loop it belongs to has finished and is admitted
+(``design_history``). The names that still say candidate here, such as
+``CandidateRun``, ``candidateId`` and ``/api/candidates/{id}``, are this run's
+names on the wire and in retained records, kept for their readers.
+
+``changedVsProjection`` compares the two content identities, so a run that
+happens to say exactly what the project already says reports that it changed
+nothing rather than implying it did.
 """
 
 from __future__ import annotations
@@ -95,7 +102,7 @@ def execute_candidate(
     *,
     monitor: StudioMonitor | None = None,
 ) -> Mapping[str, Any]:
-    """Run the proposal as a candidate and return the runner's own receipt.
+    """Execute the proposal as a detached run and return the runner's own receipt.
 
     Called on a worker thread: ``run_project`` calls ``asyncio.run`` internally
     and would refuse to start on the event loop. Every failure — a refused
@@ -103,7 +110,7 @@ def execute_candidate(
     to the caller, which is the job registry, and becomes a visible failed job.
 
     The order matters. The seat pack, the base check and the authored record
-    are all resolved *before* ``create_run``, so a candidate that cannot run
+    are all resolved *before* ``create_run``, so a run that cannot start
     leaves no run directory behind for somebody to wonder about later.
     """
 
@@ -199,9 +206,9 @@ def execute_option_candidate(
     source_stage_ref: ProjectRecordRef | None = None,
     monitor: StudioMonitor | None = None,
 ) -> Mapping[str, Any]:
-    """Run one selected massing option as a candidate, by the same arrangement.
+    """Execute one selected massing option as a detached run, by the same arrangement.
 
-    The only difference from a proposal's candidate is which successor is run:
+    The only difference from a proposal's run is which successor is run:
     the selected source record with its massing replaced by this option's pack rather
     than with one scalar replaced. Everything after that — the base check, the
     run, the harness stage, the seats — is the same code, so an option that
@@ -277,7 +284,7 @@ def _run_successor(
     """Create the run, retain what belongs to it, and hand the record to the runner.
 
     The whole of this is arrangement, and it is one function so that every
-    kind of candidate runs under the same harness stage, the same seats and
+    kind of run executes under the same harness stage, the same seats and
     the same options. ``retain`` is what the studio knows and the run records
     do not — a compilation receipt, so far — written before the run starts.
     """
@@ -373,7 +380,12 @@ def run_operator(
     combined_candidate_ids: tuple[str, ...] = (),
     monitor: StudioMonitor | None = None,
 ) -> Mapping[str, Any]:
-    """Replay a typed operator against its selected or default exact base and run it."""
+    """Replay a typed operator against its selected or default exact base and run it.
+
+    Its end lists the finished run for recovery and nothing more: the end of a
+    run never admits it, and a loop is admitted only once it has finished
+    (#294, owner decision 2026-10-01).
+    """
 
     from .working_draft import record_candidate_draft
 
@@ -460,8 +472,8 @@ def _require_built_components(operator: StateRecordOperator, receipt: Mapping[st
     # A run builds the components its seats own. The receipt says which ones
     # each seat covered, so a change whose own components appear in none of
     # them built nothing: the record would carry it and the model would show
-    # none of it, while the job reported success. That is not a candidate of
-    # this change, and it says so instead.
+    # none of it, while the job reported success. That run did not make this
+    # change, and it says so instead.
     covered: set[str] = set()
     for seat in receipt.get("seat_results", ()):
         covered.update(str(name) for name in seat.get("covered_components", ()))
@@ -517,7 +529,7 @@ def prepare_combined_candidate(
 
 
 def replay_candidate(binding: ProjectBinding, run_id: str) -> StateRecord:
-    """Verify each exact parent before replaying the candidate's retained operator."""
+    """Verify each exact parent before replaying the run's retained operator."""
     visiting: set[str] = set()
 
     def replay(current_id: str) -> StateRecord:
@@ -618,7 +630,7 @@ class RelationTotals:
 
 @dataclass(frozen=True, slots=True)
 class CandidateRun:
-    """One finished candidate, read back off the records its run retained."""
+    """One finished run, read back off the records it retained; admission alone makes it a Candidate."""
 
     candidate_id: str
     proposal_id: str | None
@@ -635,10 +647,10 @@ class CandidateRun:
     relation_checks: RelationTotals
     artifacts: tuple[ArtifactRecord, ...]
     # Runs whose records could not be listed while looking for this
-    # candidate's exported models. Normally empty, never hidden.
+    # run's exported models. Normally empty, never hidden.
     skipped_runs: tuple[str, ...]
     wall_time_s: float | None
-    # What this candidate cannot tell you, in lines the UI shows verbatim.
+    # What this readout cannot tell you, in lines the UI shows verbatim.
     honesty: tuple[str, ...]
 
 
@@ -651,16 +663,16 @@ def describe(
     status: str,
     proposal_id: str | None = None,
 ) -> CandidateRun:
-    """Read one candidate run back out of the project, or refuse by name.
+    """Read one finished run back out of the project, or refuse by name.
 
     Nothing the job remembered is used for the run's own facts: the seats, the
     digests and the relation counts all come from the retained records, so a
-    candidate reported here is one the project can still account for. The
+    run reported here is one the project can still account for. The
     proposal is here for one thing only — the honesty lines, which are about
     what the *change* did not do rather than about what the run produced.
 
-    ``proposal`` is ``None`` for a candidate this process did not make from a
-    sentence — a selected massing option, or any candidate whose proposal was
+    ``proposal`` is ``None`` for a run this process did not make from a
+    sentence — a selected massing option, or any run whose proposal was
     lost with a restart. The process-local proposal and job ids may then both
     be absent; they are never reconstructed from the run id. The run's own
     facts are unaffected: they are the records'.
@@ -680,7 +692,7 @@ def describe(
         # the base check or the authored record never reached ``create_run``:
         # there is no run directory, and asking for one would answer
         # ``RUN_NOT_FOUND`` — a code about the project's runs for a question
-        # about this candidate, when the reason it failed is on the job.
+        # about this run, when the reason it failed is on the job.
         raise StudioError(
             404,
             "CANDIDATE_NOT_FOUND",
@@ -747,9 +759,9 @@ def describe(
             for row in seat_rows
         ),
         relation_checks=_relation_totals(binding, candidate_id),
-        # Only this run's own receipts are read: a candidate never claims
+        # Only this run's own receipts are read: a run never claims
         # another run's model. A run that did not export has none, so an
-        # unexported candidate answers with an empty list by construction.
+        # unexported run answers with an empty list by construction.
         artifacts=tuple(
             record
             for record in listing.artifacts
@@ -807,7 +819,7 @@ def _honesty(
     projection: StateProjection | None,
     executed: StateRecord | None = None,
 ) -> tuple[str, ...]:
-    """What this candidate did and did not do, said out loud.
+    """What this run's change did and did not do, said out loud.
 
     The kernel's ``StateRecordOperator`` applies the explicit edit and then
     re-evaluates every derived parameter its closure reaches through the
@@ -987,7 +999,7 @@ def _block(value: object) -> Mapping[str, Any] | None:
 
     Nothing here reads what is in it. The runner wrote it, the verdict asks
     it two questions, and a copy that could be edited afterwards would let a
-    reader of this candidate change what the run said it did.
+    reader of this run change what the runner said it did.
     """
 
     return None if not isinstance(value, Mapping) else MappingProxyType(dict(value))

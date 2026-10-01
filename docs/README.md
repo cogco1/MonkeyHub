@@ -46,6 +46,7 @@ are [GitHub Issues](https://github.com/cogco1/MonkeyHub/issues); who owns which 
 - [team-onboarding.md](development/team-onboarding.md) — the checklist a new teammate or agent starts from.
 - [project-tracking.md](development/project-tracking.md) — what Issues, the GitHub Project and milestones each hold.
 - [projection-check.md](development/projection-check.md) — the CI check that a projection change leaves every answer the same.
+- [benchmarks.md](development/benchmarks.md) — the daily benchmark: what it measures, the `benchmark-data` branch, budgets and flags.
 - [nightly-release.md](development/nightly-release.md) — how a verified `main` becomes a Windows prerelease.
 
 **design/** — how a mechanism works and why.

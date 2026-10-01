@@ -50,12 +50,14 @@ def runtime_dto(value: RuntimeSnapshot) -> RuntimeDto:
     return RuntimeDto(
         project_id=value.project_id, project_dir=value.project_dir, published=version(value.published),
         jobs=[job_dto(job) for job in value.jobs],
+        # Each run keeps its first wire names (candidates[], candidateId): the
+        # Hub's recovery and the web client read them.
         candidates=[RuntimeCandidateDto(
-            candidate_id=row.candidate_id, status=row.status, job_id=row.job_id, proposal_id=row.proposal_id,
+            candidate_id=row.run_id, status=row.status, job_id=row.job_id, proposal_id=row.proposal_id,
             base=version(row.base), base_record_digest=row.base_record_digest, base_state_digest=row.base_state_digest,
             result_record_digest=row.result_record_digest, result_state_digest=row.result_state_digest,
             receipt_ref=row.receipt_ref, commit_stage_refs=list(row.commit_stage_refs), error=row.error,
-        ) for row in value.candidates],
+        ) for row in value.runs],
         branches=[branch_dto(branch) for branch in value.branches], stages=[stage_dto(stage) for stage in value.stages],
         errors=list(value.errors), runs_scanned=value.runs_scanned, has_more=value.has_more,
     )

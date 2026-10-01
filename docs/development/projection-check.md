@@ -39,6 +39,8 @@ of conditional reads (phase 0a). The check asks nothing of a base that predates 
   `immutable`, and the body hashes to that sha.
 
 **Timings** are reported for every route. A route fails only when the candidate's cold read takes more than twice as long as the base's and is also more than 200 ms slower. Shared CI runners are too noisy for a tighter gate.
+The [daily benchmark](benchmarks.md) reads the same six routes through the Hub every day, cold and warm, at 30 and 150
+runs; a slow drift shows in its trend, not in this gate.
 
 **Isolation.** Each side runs in its own interpreter with its kernel source (`<code-root>/packages/archflow/src`),
 `<code-root>` and its runtime source (`<code-root>/services/project-runtime/src`) first on `sys.path`. A side

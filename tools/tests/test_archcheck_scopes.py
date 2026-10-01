@@ -224,16 +224,26 @@ class WorkflowBoundaryTests(unittest.TestCase):
                     self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
 
     def test_registry_checks_dependencies_from_each_workflow_package(self) -> None:
-        for package in ("monkeyarch", "monkeydiagram", "monkeycad"):
+        # The policy declares the kernel, the CAD package and both workflows (#537).
+        for package in ("archflow", "monkeyarch", "monkeydiagram", "monkeycad"):
             with self.subTest(package=package), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
+                owner = f"packages/{package}/src/{package}/example.py"
+                _write(root, owner, "VALUE = 1\n")
                 _write(root, "tools/consumer.py", f"import {package}.example\n")
                 _write(root, "governance/module_registry.json", json.dumps({"modules": [{
+                    "module_id": f"{package}.example", "owner_path": owner,
+                    "depends_on": [], "untested_reason": "synthetic checker fixture",
+                }, {
                     "module_id": "tools.consumer", "owner_path": "tools/consumer.py",
                     "depends_on": [], "untested_reason": "synthetic checker fixture",
                 }]}))
                 findings = tuple(check_registry(root, self.policy))
-                self.assertTrue(any(f.code == "REGISTRY_DEPENDS_ON_DRIFT" for f in findings))
+                self.assertIn(
+                    ("REGISTRY_DEPENDS_ON_DRIFT",
+                     f"tools.consumer imports {package}.example but depends_on does not name {package}.example"),
+                    {(f.code, f.message) for f in findings},
+                )
 
     def _layer_findings(self, relative: str, source: str) -> tuple:
         return tuple(f for f in check_imports(relative, _index_tree(ast.parse(source)), self.policy)

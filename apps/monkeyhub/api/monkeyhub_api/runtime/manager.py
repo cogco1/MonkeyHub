@@ -445,7 +445,7 @@ class ProjectRuntimeManager:
         scanned = 0
         for offset, chunk in reads:
             if worker is None:
-                current = runtime_dto(inspect_runtime(runtime.binding, candidate_ids=chunk)).model_dump(by_alias=True)
+                current = runtime_dto(inspect_runtime(runtime.binding, run_ids=chunk)).model_dump(by_alias=True)
             else:
                 query = urlencode([("limit", "1"), ("offset", str(offset)), *(("candidateId", value) for value in chunk)])
                 response = request_http(worker.url, f"/api/runtime?{query}", timeout=10)

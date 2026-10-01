@@ -22,6 +22,7 @@ reads to update itself; --verify-update-index rechecks that set before publishin
 from __future__ import annotations
 
 import argparse
+import ast
 from collections.abc import Iterable, Iterator
 import hashlib
 import importlib.metadata
@@ -86,6 +87,49 @@ BUNDLED_TOOLS = (
     "tools/project/__init__.py", "tools/project/create_project.py", "tools/project/run_project.py",
     "tools/dev/__init__.py", "tools/dev/source_roots.py",
 )
+# The bundle ships the embedded interpreter's bytecode beside every Python source
+# it imports, so a newly installed or updated version does not compile ~850
+# modules on its first start. Hash-based .pyc carry no timestamp, so they stay
+# valid wherever the bundle is extracted; unchecked-hash ones are loaded without
+# reading or hashing their source, which a version directory never changes after
+# it is verified. One process compiles every file in a fixed order: marshal's
+# reference flags depend on what that process compiled before, so parallel
+# workers would give the same sources different bytes. Test packages and Node
+# packages' scripts are never imported by the application, and no .pyc may
+# lengthen the bundle's longest path, which the installer keeps within legacy
+# Windows limits.
+BYTECODE_INVALIDATION = "unchecked-hash"
+COMPILE_BYTECODE = r"""
+import json, os, py_compile, sys, warnings
+from pathlib import Path
+warnings.simplefilter("ignore")
+root, mode = Path(sys.argv[1]), py_compile.PycInvalidationMode[sys.argv[2].upper().replace("-", "_")]
+sources, budget = [], 0
+for directory, children, names in os.walk(root):
+    children[:] = [name for name in children if name != "__pycache__"]
+    for name in names:
+        relative = (Path(directory) / name).relative_to(root)
+        budget = max(budget, len(relative.as_posix()))
+        if name.endswith(".py") and not {"tests", "test", "node_modules"}.intersection(relative.parts[:-1]):
+            sources.append(relative.as_posix())
+tag, compiled, long, failed = sys.implementation.cache_tag, 0, [], []
+for source in sorted(sources):
+    relative = Path(source)
+    cache = relative.parent / "__pycache__" / f"{relative.stem}.{tag}.pyc"
+    if len(cache.as_posix()) > budget:
+        long.append(source)
+        continue
+    try:
+        py_compile.compile(str(root / relative), cfile=str(root / cache), dfile=source,
+                           doraise=True, optimize=0, invalidation_mode=mode)
+        compiled += 1
+    except py_compile.PyCompileError:
+        failed.append(source)
+print(json.dumps({"cacheTag": tag, "compiled": compiled, "tooLong": long, "failed": failed}))
+"""
+# What the Hub, a project worker (--service studio) and Monitor import as they start.
+STARTUP_IMPORTS = ("import monkeyhub_api.app.main, monkeyhub_api.app.composition, project_runtime.main, "
+                   "monkeymonitor, archflow, monkeyarch, monkeydiagram, monkeycad.registry, monkeycontrol")
 # Git, rather than the working directory, supplies these files. User runtime
 # configuration, projects, credentials, caches and local WIP never enter a ZIP.
 SOURCE_PATHS = (
@@ -325,9 +369,70 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
     (bundle / "source-version.txt").write_text(commit + "\n", encoding="utf-8")
 
 
+def _interpreter_environment(**extra: str) -> dict[str, str]:
+    # A builder's PYTHONPYCACHEPREFIX or PYTHONOPTIMIZE would send bytecode
+    # elsewhere or change it; the bundled interpreter still honours them.
+    environment = {key: value for key, value in os.environ.items() if not key.upper().startswith("PYTHON")}
+    environment.update(extra)
+    return environment
+
+
+def compile_bytecode(bundle: Path, python: Path | None = None) -> dict[str, object]:
+    """Write the bundled interpreter's bytecode beside every shipped Python source.
+
+    Returns the build-info.json ``pythonBytecode`` facts. A first-party source
+    that does not compile stops the build; a third-party file that never could
+    be imported is reported and left as source.
+    """
+    python = python or bundle / "_runtime/python/python.exe"
+    result = json.loads(run([str(python), "-B", "-P", "-c", COMPILE_BYTECODE, str(bundle), BYTECODE_INVALIDATION],
+                            cwd=bundle, capture=True, environment=_interpreter_environment(PYTHONHASHSEED="0")))
+    own = [source for source in result["failed"] if not source.startswith(PYTHON_SITE + "/")]
+    if own:
+        raise ValueError("Bundled Python sources do not compile: " + ", ".join(own))
+    for reason, sources in (("not compilable", result["failed"]),
+                            ("cache path longer than any bundle path", result["tooLong"])):
+        if sources:
+            print(f"No bytecode shipped for {len(sources)} source(s), {reason}: " + ", ".join(sources), flush=True)
+    print(f"Bundled bytecode: {result['compiled']} {result['cacheTag']} files ({BYTECODE_INVALIDATION})", flush=True)
+    return {"cacheTag": result["cacheTag"], "invalidation": BYTECODE_INVALIDATION, "files": result["compiled"]}
+
+
+def check_bytecode_loaded(bundle: Path, python: Path | None = None, imports: str = STARTUP_IMPORTS) -> int:
+    """The Hub, a project worker and Monitor import from the shipped bytecode alone.
+
+    ``-v`` names every module the interpreter compiled from source; none of
+    them may be a file of this bundle. Returns how many shipped .pyc loaded.
+    """
+    python = python or bundle / "_runtime/python/python.exe"
+    completed = subprocess.run([str(python), "-B", "-P", "-v", "-c", imports], cwd=bundle, check=True,
+                               capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               env=_interpreter_environment(PYTHONIOENCODING="utf-8"))
+    root, compiled, loaded = str(bundle.resolve()).casefold(), [], 0
+    for line in completed.stderr.splitlines():
+        if not line.startswith("# code object from "):
+            continue
+        # The import system names a loaded .pyc by repr() and a compiled source as plain text.
+        origin = line[len("# code object from "):]
+        cached = origin.startswith(("'", '"'))
+        origin = ast.literal_eval(origin) if cached else origin
+        if not origin.casefold().startswith(root):
+            continue
+        if cached:
+            loaded += 1
+        else:
+            compiled.append(origin)
+    if compiled or not loaded:
+        raise ValueError("The bundled interpreter compiled shipped sources instead of loading their bytecode: "
+                         + (", ".join(compiled) or "no shipped bytecode was loaded"))
+    print(f"Hub, worker and Monitor imports from {loaded} shipped bytecode files: PASS", flush=True)
+    return loaded
+
+
 def smoke_runtime(bundle: Path) -> None:
     python = bundle / "_runtime/python/python.exe"
     # No model services, project, GUI, or provider call is started by this check.
+    check_bytecode_loaded(bundle, python)
     run([str(python), "-B", "-c", (
         "import sys,ssl,fastapi,uvicorn,pydantic,pypdf,rhino3dm; "
         "from PIL import Image; from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox; "
@@ -1083,13 +1188,17 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
     bundle = build / f"MonkeyHub-{version}-windows-x64"
     collect_application(source, bundle, commit, node=node)
     prepare_runtime(source, bundle / "_runtime/python", cache, environment)
+    bytecode = compile_bytecode(bundle)
     smoke_runtime(bundle)
     desktop_info = build_desktop(source, bundle, commit, cargo, environment) if desktop else None
     # Version + exact inputs are distribution metadata, not project records.
+    # pythonBytecode also tells the patch builder that this version's updater
+    # accepts bytecode in a patch (apps/monkeyhub/installer/patch.py).
     build_info = {
         "sourceCommit": commit, "target": "windows-x64", "channel": "candidate",
         **({"desktop": desktop_info} if desktop_info else {}),
         "pythonVersion": PYTHON_VERSION, "pythonUrl": PYTHON_URL, "pythonSha256": PYTHON_SHA256,
+        "pythonBytecode": bytecode,
         "runtimeInventory": runtime_inventory(source, bundle),
     }
     build_info_path = bundle / "build-info.json"
