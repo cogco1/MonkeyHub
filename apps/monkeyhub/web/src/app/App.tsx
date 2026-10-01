@@ -1703,6 +1703,11 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       const step = source.head ? followStep({ baseRunId: base, head, busy: autoShowRef.current !== null, localEdits }) : "stay";
       // A deferred follow is not done: the next run of this effect reads the head again.
       if (step !== "defer") followReadAt.current = at;
+      // The Design Tree's own Continue or Undo: its toast says so, with the one 撤销 that write has (#575). It is taken
+      // here once, when this tab follows it or already stands there.
+      const move = treeMoveRef.current;
+      const treeMoved = step !== "defer" && head !== null && followsTreeMove(move, followedTreeMove.current, head.runId);
+      if (treeMoved && step === "stay") followedTreeMove.current = move!.id;
       if (step !== "follow" || head === null || !source.head) return;
       const viewed = sourceLabel === LOCAL_SOURCE_LABEL ? LOCAL_SOURCE_LABEL : loadedArtifactsRef.current[0]?.runId ?? null;
       // A model the person opens while the base moves keeps the viewer: the view follows only what was on screen now.
@@ -1715,15 +1720,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       // Null when the session refused it or a newer reload replaced it. Not `read`: the base this reload just
       // published re-runs the effect before this line, and the follow still has to say so and move the view.
       if (next === null) return;
-      const move = treeMoveRef.current;
-      if (followsTreeMove(move, followedTreeMove.current, head.runId)) {
-        // The Design Tree's own Continue or Undo: its toast already says so, with the one 撤销 that write has (#575).
-        followedTreeMove.current = move!.id;
-        setFollowNotice(null);
-      } else {
-        setFollowNotice({ id: ++followNoticeIds.current, state: undone ? "undone" : "moved", head: head.runId,
-          undo: undone ? null : followUndo(replaced, base, head.runId) });
-      }
+      // Following the tree's own move says nothing more in the project bar.
+      if (treeMoved) followedTreeMove.current = move!.id;
+      setFollowNotice(treeMoved ? null : { id: ++followNoticeIds.current, state: undone ? "undone" : "moved", head: head.runId,
+        undo: undone ? null : followUndo(replaced, base, head.runId) });
       pushNotice(t(undone ? "stage.follow.undone" : "stage.follow.moved"));
       if (viewerFollows(viewed, base)) setHeadFollow({ runId: head.runId, viewRequest });
     }).catch(() => { /* The current base stays usable; the next event reads the head again. */ });

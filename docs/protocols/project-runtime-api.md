@@ -1489,8 +1489,8 @@ it once stood on (a `design.continued` event names them), with the runs each was
 head by first parents. Where that line forked it goes on along the branch the working position moved
 onto most recently, to the last run there the head stood on. Each can be continued again; a result
 made from the head that nobody continued is not part of it, and every later step is still listed in
-`lines` as an `ahead` result. A retained result whose nearest shared source with the head is a step the line moved on
-from, whose comparison with the head conflicts (it changed what the line changed since), and which
+`lines` as an `ahead` result. A retained result whose nearest shared source with the head is a step
+the line moved on from, whose comparison with the head conflicts (it changed what the line changed since), and which
 nobody took further is a draft that line superseded: `relation: superseded`, with `supersededBy`
 naming the step made from that source. Nobody took it further when neither it nor any retained
 result built on it was continued (no `design.continued` event names it) or admitted; an admitted
