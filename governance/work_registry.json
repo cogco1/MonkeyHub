@@ -1,4 +1,59 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-575",
+      "lanes": [
+        {
+          "id": "cleanup",
+          "status": "active",
+          "branch": "codex/575-cleanup",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-575-cleanup",
+          "base_ref": "e76db51d0fb4f8ddbd43602f97094067647ea0a9",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "archflow.project.repository",
+            "archflow.project.layout",
+            "archflow.project.ports",
+            "project_runtime.candidate",
+            "project_runtime.binding",
+            "project_runtime.shell",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "packages/archflow/src/archflow/project/layout.py",
+            "packages/archflow/src/archflow/project/ports.py",
+            "packages/archflow/src/archflow/project/repository.py",
+            "packages/archflow/src/archflow/project/README.md",
+            "packages/archflow/tests/test_project_trash.py",
+            "services/project-runtime/src/project_runtime/application/retention.py",
+            "services/project-runtime/src/project_runtime/status.py",
+            "services/project-runtime/src/project_runtime/api/routes/runtime.py",
+            "services/project-runtime/src/project_runtime/api/dto/runtime.py",
+            "services/project-runtime/src/project_runtime/api/routes/working_draft.py",
+            "services/project-runtime/src/project_runtime/api/conditional.py",
+            "services/project-runtime/src/project_runtime/main.py",
+            "services/project-runtime/src/project_runtime/protocol.py",
+            "services/project-runtime/tests/test_retention.py",
+            "services/project-runtime/tests/test_protocol.py",
+            "apps/monkeyhub/web/src/api/project-runtime/generated",
+            "apps/monkeyhub/web/src/api/project-runtime/client.ts",
+            "apps/monkeyhub/web/src/features/designTree",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/designTree.test.ts",
+            "apps/monkeyhub/web/test/designTree.browser.mjs",
+            "docs/architecture/repository-layout.md",
+            "docs/protocols/project-runtime-api.md",
+            "governance/module_registry.json",
+            "governance/architecture_policy.json",
+            "docs/architecture/system-map.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
