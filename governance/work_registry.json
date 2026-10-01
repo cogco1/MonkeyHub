@@ -1,4 +1,23 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-549",
+      "status": "active",
+      "branch": "codex/549-component-info",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-549-component-info",
+      "base_ref": "d54dcea30b4e7c0b4f3c201165e7ac91b37a77df",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "hub.shell",
+        "project_runtime.board"
+      ],
+      "write_scope": [
+        "docs/README.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
