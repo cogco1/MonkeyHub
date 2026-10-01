@@ -5971,6 +5971,54 @@ export type LevelFootprintDto = {
 };
 
 /**
+ * LineStepDto
+ *
+ * One run of the Working Head's line (#575), in the words its retained facts give it.
+ */
+export type LineStepDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Baserunid
+     *
+     * The run this step was made from; null for a run made from no other. The line's first step names its own base only when the line was cut short.
+     */
+    baseRunId: string | null;
+    /**
+     * Label
+     *
+     * The name it was given: a saved version's label, else its accepted Stage's, else its admitted result's.
+     */
+    label: string | null;
+    /**
+     * Request
+     *
+     * The words that asked for it, when retained: its admission's rawLanguage, else the sentence an intent model compiled into it.
+     */
+    request: string | null;
+    /**
+     * Summary
+     *
+     * An admitted result's own summary of the change.
+     */
+    summary: string | null;
+    /**
+     * Stageref
+     *
+     * The accepted Stage this run is, if it is one.
+     */
+    stageRef: string | null;
+    /**
+     * Updatedat
+     *
+     * When the working position last listed or moved onto it.
+     */
+    updatedAt: string | null;
+};
+
+/**
  * LocalDraftDto
  */
 export type LocalDraftDto = {
@@ -13333,6 +13381,12 @@ export type WorktreeGraphDto = {
      */
     revisionSha256: string | null;
     /**
+     * Line
+     *
+     * The Working Head's line, oldest first and ending at the head: its first-parent chain, each step with its retained label, request and summary (#575). Empty without a head.
+     */
+    line: Array<LineStepDto>;
+    /**
      * Lines
      */
     lines: Array<WorktreeLineDto>;
@@ -13349,7 +13403,7 @@ export type WorktreeGraphDto = {
 /**
  * WorktreeLineDto
  *
- * One line of work: the head, another accepted line, running work or a retained result.
+ * One line of work: the head, another accepted line, running work or a retained result, superseded or not.
  */
 export type WorktreeLineDto = {
     /**
@@ -13393,9 +13447,9 @@ export type WorktreeLineDto = {
     /**
      * Relation
      *
-     * ahead continues the head; behind started from an older head; diverged shares an older source; separate shares none shown here.
+     * ahead continues the head; behind started from an older head; diverged shares an older source; superseded is a diverged draft built where the head's line later moved on through another step (supersededBy) and changing what the line changed since (reconcile conflict), which nobody continued or admitted, nor anything built on it (#575); separate shares none shown here.
      */
-    relation: 'head' | 'ahead' | 'behind' | 'diverged' | 'separate';
+    relation: 'head' | 'ahead' | 'behind' | 'diverged' | 'superseded' | 'separate';
     /**
      * Reads
      */
@@ -13436,6 +13490,12 @@ export type WorktreeLineDto = {
      * The Study that verdict grouped the run into, if any.
      */
     studyId: string | null;
+    /**
+     * Supersededby
+     *
+     * For a superseded draft: the step of the head's line that replaced it, the one made from where the draft started. Null for every other line.
+     */
+    supersededBy: string | null;
 };
 
 export type ReadHealthApiHealthGetData = {

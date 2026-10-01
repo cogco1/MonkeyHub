@@ -852,3 +852,175 @@ test("a refused or failed ask is kept, and waits longer each time it fails again
   await thumbnails.askThumbnail(studio, source, now + wait);
   assert.equal(asks, 4, "an answer ends the backoff: pending waits the usual time");
 });
+
+// ---- #575: Current's line, its folded earlier steps, and the drafts it superseded.
+
+test("a project that admitted nothing draws Current's line as one chain, its earlier steps folded behind one control", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture(api.unadmittedLineFacts());
+  const source = sourceOf(fixture);
+  // The runtime names the line and both drafts; nothing is admitted and nothing is staged.
+  assert.deepEqual(source.worktrees.line.map((step) => step.runId),
+    ["studio-projection", "run-site-massing", "run-v1", "run-v2", "run-v3", "run-v3-materials"]);
+  assert.deepEqual(source.worktrees.lines.filter((line) => line.kind === "result").map((line) => [line.runId, line.relation, line.supersededBy]),
+    [["run-v3-closed", "superseded", "run-v3"], ["run-v3-glazed", "superseded", "run-v3"]]);
+  const tree = api.buildGrowthTree(source);
+  assert.deepEqual(tree.trunk, ["origin", "fold", "current"], "the project start, the earlier steps folded, Current");
+  assert.equal(tree.nodes.get("origin")!.runId, "studio-projection", "the project start is the run the line began from");
+  const fold = tree.nodes.get("fold")!;
+  assert.deepEqual(fold.fold!.steps.map((step) => step.runId), ["run-site-massing", "run-v1", "run-v2", "run-v3"]);
+  assert.deepEqual(fold.fold!.steps.map((step) => step.step!.number), [1, 2, 3, 4]);
+  assert.equal(fold.fold!.drafts, 2, "the drafts started from a folded step: they fold with it");
+  assert.deepEqual([tree.steps, tree.drafts], [{ count: 4, open: false }, { count: 2, open: false }]);
+  assert.equal([...tree.nodes.values()].some((node) => node.kind === "draft" || node.kind === "drafts" || node.kind === "step"), false);
+  const current = tree.nodes.get("current")!;
+  assert.deepEqual([current.parent, current.current!.editsAfter, current.current!.request], ["fold", 1, "Give V3's walls and ribs their materials"]);
+  assert.equal(tree.accept.block, "no-stage");
+  assert.deepEqual(planarProblems(tree, api.layoutGrowthTree(tree)), []);
+  for (const [catalog, words] of [[messagesEn, ["4 earlier steps", "2 superseded drafts inside", "1 edit after V3 - ribbed roof, open side triangles"]],
+    [messagesZhCN, ["之前 4 步", "含 2 份已被取代的草稿", "V3 - ribbed roof, open side triangles 之后 1 次修改"]]] as const) {
+    const named = api.treeWords(translator(catalog) as never, tree);
+    assert.deepEqual([named.title(fold), named.status(fold), named.currentAt()], words);
+  }
+  // Without the line the runtime names, the tree is what it was: Current some edits after the project start.
+  const before = api.buildGrowthTree({ ...source, worktrees: { ...source.worktrees, line: undefined } as never });
+  assert.deepEqual(before.trunk, ["origin", "current"]);
+  assert.deepEqual([before.nodes.get("origin")!.runId, before.nodes.get("current")!.current!.editsAfter, before.steps.count], [null, 6, 0]);
+});
+
+test("opened, the steps stand on the trunk oldest first, and the superseded drafts fold where the line moved on", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture(api.unadmittedLineFacts());
+  const tree = api.buildGrowthTree(sourceOf(fixture), false, { steps: true });
+  const steps = ["run-site-massing", "run-v1", "run-v2", "run-v3"].map((run) => `step:${run}`);
+  assert.deepEqual(tree.trunk, ["origin", ...steps, "current"]);
+  assert.equal(tree.nodes.get("current")!.parent, "step:run-v3");
+  assert.deepEqual(tree.steps, { count: 4, open: true });
+  const group = tree.nodes.get("drafts:step:run-v2")!;
+  assert.deepEqual([group.kind, group.parent, group.drafts!.runs], ["drafts", "step:run-v2", ["run-v3-closed", "run-v3-glazed"]],
+    "the drafts hang from V2, where the line moved on through V3");
+  const en = api.treeWords(translator(messagesEn) as never, tree), zh = api.treeWords(translator(messagesZhCN) as never, tree);
+  assert.deepEqual(steps.map((id) => en.title(tree.nodes.get(id)!)),
+    ["Step 1", "V1 - timber frame and hemp walls", "V2 - pitched roof, open gable ends", "V3 - ribbed roof, open side triangles"]);
+  assert.deepEqual([zh.title(tree.nodes.get(steps[0])!), zh.status(tree.nodes.get(steps[2])!), zh.title(group), en.title(group)],
+    ["第 1 步", "第 3 步", "已被取代的草稿 · 2", "Superseded drafts · 2"]);
+  assert.equal(en.currentAt(), "1 edit after V3 - ribbed roof, open side triangles");
+  const drawing = api.layoutGrowthTree(tree);
+  assert.deepEqual(planarProblems(tree, drawing), []);
+  assert.ok(steps.every((id) => drawing.nodes.get(id)!.role === "trunk" && !drawing.nodes.get(id)!.muted));
+  assert.deepEqual([drawing.nodes.get(group.id)!.muted, drawing.edges.find((edge) => edge.to === group.id)!.kind], [true, "muted-twig"]);
+  // Steps are the line's own runs: Continue can return to each of them, and to the project start.
+  assert.ok([...steps, "origin"].every((id) => api.continuable(tree.nodes.get(id)!)));
+  assert.equal(api.continuable(tree.nodes.get("current")!), false);
+  assert.equal(api.continuable(group), false, "a fold is a control, not a run");
+
+  const open = api.buildGrowthTree(sourceOf(fixture), false, { steps: true, drafts: true });
+  assert.deepEqual(["draft:run-v3-closed", "draft:run-v3-glazed"].map((id) => [open.nodes.get(id)!.parent, open.nodes.get(id)!.draft!.supersededBy]),
+    [["step:run-v2", "run-v3"], ["step:run-v2", "run-v3"]]);
+  assert.equal(open.nodes.has(group.id), false);
+  const words = api.treeWords(translator(messagesEn) as never, open);
+  assert.deepEqual([words.title(open.nodes.get("draft:run-v3-closed")!), words.status(open.nodes.get("draft:run-v3-closed")!)],
+    ["V3 - closed wall and simple mono-pitch roof", "Superseded by V3 - ribbed roof, open side triangles"]);
+  assert.ok(api.continuable(open.nodes.get("draft:run-v3-glazed")!), "a superseded draft is kept, and can be returned to");
+  const openDrawing = api.layoutGrowthTree(open);
+  assert.deepEqual(planarProblems(open, openDrawing), []);
+  assert.ok(["draft:run-v3-closed", "draft:run-v3-glazed"].every((id) => openDrawing.nodes.get(id)!.muted));
+  // Opening the drafts alone leaves the steps folded: the drafts stay inside the fold that holds where they started.
+  const draftsOnly = api.buildGrowthTree(sourceOf(fixture), false, { drafts: true });
+  assert.deepEqual([draftsOnly.trunk, draftsOnly.nodes.get("fold")!.fold!.drafts], [["origin", "fold", "current"], 2]);
+});
+
+test("returning to an earlier step is the existing Continue, and its Undo puts the line back", async (t) => {
+  const api = await harness(t);
+  const project = "riverside-library";
+  const fixture = api.createDesignTreeFixture(api.unadmittedLineFacts());
+  const before = api.buildGrowthTree(sourceOf(fixture), false, { steps: true });
+  const target = before.nodes.get("step:run-v2")!;
+  const read = fixture.workingDraft();
+  const request = api.continueRequest(project, { runId: target.runId!, branchId: null }, read);
+  assert.deepEqual(request, { projectId: project, runId: "run-v2", baseRevisionSha256: "rev-0001", branchId: null });
+  fixture.selectWorkingDraft(request);
+  const returned = api.buildGrowthTree(sourceOf(fixture), false, { steps: true });
+  assert.deepEqual(returned.trunk, ["origin", "step:run-site-massing", "step:run-v1", "current"], "Current is V2; its line is shorter");
+  assert.equal(returned.drafts.count, 0, "built on V2, the drafts continue Current now: nothing is superseded");
+  assert.deepEqual(sourceOf(fixture).worktrees.lines.filter((line) => line.kind === "result").map((line) => line.relation),
+    ["ahead", "ahead", "ahead", "ahead"], "the later steps and the drafts are all retained, ahead of Current");
+  const undo = api.continueUndo(read, "run-v2")!;
+  assert.deepEqual(undo, { runId: "run-v3-materials", branchId: null, continued: "run-v2" });
+  fixture.selectWorkingDraft(api.undoRequest(project, undo, fixture.workingDraft())!);
+  assert.deepEqual(api.buildGrowthTree(sourceOf(fixture), false, { steps: true }).trunk, before.trunk, "Undo puts the line back");
+  // One earlier step is simply drawn: there is nothing to fold.
+  fixture.selectWorkingDraft({ projectId: project, runId: "run-v1", baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
+  const short = api.buildGrowthTree(sourceOf(fixture));
+  assert.deepEqual([short.trunk, short.steps], [["origin", "step:run-site-massing", "current"], { count: 1, open: true }]);
+});
+
+test("a line read before the head moved draws no steps, and a line with Stages keeps its tree", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture(api.unadmittedLineFacts());
+  const stale = sourceOf(fixture);
+  fixture.selectWorkingDraft({ projectId: "riverside-library", runId: "run-v2", baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
+  const moved = api.buildGrowthTree({ ...stale, workingSource: fixture.workingSource() });
+  assert.deepEqual([moved.trunk, moved.steps.count, moved.drafts.count], [["origin", "current"], 0, 0],
+    "the graph's line names another head: the tree draws none of it");
+  // Riverside's Current is exactly S2: its line runs through Stages and options the tree already draws.
+  const riverside = api.createDesignTreeFixture();
+  const source = sourceOf(riverside);
+  assert.equal(source.worktrees.line.at(-1)!.runId, "run-s2-layout");
+  assert.equal(source.worktrees.line.find((step) => step.runId === "run-s1-massing")!.label, "Massing");
+  const tree = api.buildGrowthTree(source);
+  assert.deepEqual([tree.steps.count, tree.drafts.count], [0, 0]);
+  assert.equal(tree.lineNodes.get("run-massing-c")!.id, "candidate:run-massing-c");
+  // Edits after S2 that nobody admitted are Current's steps there too.
+  riverside.state.runs.set("run-s2-edit-a", { parent: "run-s2-layout", sourceStage: riverside.state.branchHead });
+  riverside.state.runs.set("run-s2-edit-b", { parent: "run-s2-edit-a", sourceStage: riverside.state.branchHead });
+  riverside.state.runs.set("run-s2-edit-c", { parent: "run-s2-edit-b", sourceStage: riverside.state.branchHead });
+  riverside.selectWorkingDraft({ projectId: "riverside-library", runId: "run-s2-edit-c", baseRevisionSha256: riverside.workingDraft().revisionSha256 ?? null });
+  const edited = api.buildGrowthTree(sourceOf(riverside));
+  const s2 = `stage:${riverside.state.branchHead}`;
+  assert.deepEqual(edited.trunk.slice(-3), [s2, "fold", "current"]);
+  assert.deepEqual(edited.nodes.get("fold")!.fold!.steps.map((step) => step.runId), ["run-s2-edit-a", "run-s2-edit-b"]);
+  assert.deepEqual(planarProblems(edited, api.layoutGrowthTree(edited)), []);
+  const opened = api.buildGrowthTree(sourceOf(riverside), false, { steps: true });
+  assert.deepEqual(opened.trunk.slice(-4), [s2, "step:run-s2-edit-a", "step:run-s2-edit-b", "current"]);
+  assert.deepEqual(planarProblems(opened, api.layoutGrowthTree(opened)), []);
+});
+
+test("the scene draws the folds as controls that open them, at every level, in both languages", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture(api.unadmittedLineFacts());
+  type Text = { id: string; type: string; x: number; y: number; text?: string; fontSize?: number; customData: { tree: { node?: string; role: string } } };
+  for (const folds of [{}, { steps: true }, { steps: true, drafts: true }]) {
+    const tree = api.buildGrowthTree(sourceOf(fixture), false, folds);
+    const drawing = api.layoutGrowthTree(tree);
+    for (const catalog of [messagesEn, messagesZhCN]) {
+      const words = api.treeWords(translator(catalog) as never, tree);
+      for (const [level, textScale] of [["far", 4], ["mid", 1], ["mid", 1.5], ["mid", 2], ["close", 1]] as const) {
+        const scene = api.buildTreeScene(tree, drawing, { level, textScale, selected: null, fontFamily: 2, words: words.scene });
+        for (const id of tree.nodes.keys()) {
+          const kind = tree.nodes.get(id)!.kind;
+          const action = kind === "fold" || kind === "drafts" ? "expand" : "select";
+          assert.ok(scene.hits.some((hit) => hit.node === id && hit.action === action), `${level}: ${id} can be clicked to ${action}`);
+        }
+        for (const hit of scene.hits.filter((row) => row.action === "expand")) assert.equal(hit.expand, hit.node === "fold" ? "steps" : "drafts");
+        const texts = (scene.skeletons as unknown as Text[]).filter((element) => element.type === "text");
+        assert.ok(!texts.some((element) => /run-|studio-projection|[0-9a-f]{16}/.test(element.text ?? "")), "no ids on the canvas");
+        if (level === "far") continue;
+        for (const element of texts) {
+          const placed = element.customData.tree.node ? drawing.nodes.get(element.customData.tree.node) : undefined;
+          if (!placed || element.customData.tree.role === "fork") continue;
+          const right = element.x + Math.max(...element.text!.split("\n").map((row) => api.textWidth(row, element.fontSize!)));
+          const bottom = element.y + element.text!.split("\n").length * element.fontSize! * 1.2;
+          assert.ok(element.x >= placed.card.x && right <= placed.card.x + placed.card.width + 1e-6 && element.y >= placed.card.y
+            && bottom <= placed.card.y + placed.card.height + 1e-6, `${level} ${textScale}: ${placed.id} "${element.text}" leaves its card`);
+        }
+      }
+    }
+  }
+  const folded = api.buildGrowthTree(sourceOf(fixture));
+  const scene = api.buildTreeScene(folded, api.layoutGrowthTree(folded), { level: "mid", textScale: 1, selected: null, fontFamily: 2,
+    words: api.treeWords(translator(messagesZhCN) as never, folded).scene });
+  const words = (scene.skeletons as unknown as { id: string; type: string; text?: string }[])
+    .filter((element) => element.type === "text" && element.id.startsWith("fold:")).map((element) => element.text);
+  assert.deepEqual(words, ["之前 4 步", "含 2 份已被取代的草稿"]);
+});

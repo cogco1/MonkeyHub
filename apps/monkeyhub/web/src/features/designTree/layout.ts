@@ -14,8 +14,10 @@
  * options hang below that row in turn; the last point of a side row hands the
  * row on to its first option. A row's stacks stand side by side, each clear
  * of everything the row already hangs below itself, so no edge crosses
- * another and no footprint overlaps (a tree has E = V - 1). Positions never
- * depend on zoom; the scene only changes what it draws.
+ * another and no footprint overlaps (a tree has E = V - 1). Current's earlier
+ * steps stand on the trunk before it, or the one control that folds them
+ * does, and the drafts its line superseded hang muted where they started
+ * (#575). Positions never depend on zoom; the scene only changes what it draws.
  * Grown from the #284 prototype (`docs/prototypes/candidate-graph/prototype.js`).
  */
 import type { GrowthTree, TreeNodeKind } from "./model";
@@ -104,6 +106,8 @@ export const GEOMETRY = {
   stage: { width: 72, height: 44 },
   current: { width: 240, height: 108 },
   origin: { width: 160, height: 44 },
+  /** Current's earlier steps folded behind one control on the trunk (#575). */
+  fold: { width: 184, height: 48 },
   /** Between cards that follow each other along a row. */
   gap: 32,
   /** From a card to the first elbow that leaves after it. */
@@ -121,7 +125,9 @@ export const GEOMETRY = {
 } as const;
 
 const visual = (kind: TreeNodeKind) => kind === "stage" ? GEOMETRY.stage : kind === "current" ? GEOMETRY.current
-  : kind === "origin" ? GEOMETRY.origin : GEOMETRY.card;
+  : kind === "origin" ? GEOMETRY.origin : kind === "fold" ? GEOMETRY.fold : GEOMETRY.card;
+/** What Current's line superseded is kept, but quiet, wherever it hangs (#575). */
+const superseded = (kind: TreeNodeKind) => kind === "drafts" || kind === "draft";
 
 export function layoutGrowthTree(tree: GrowthTree): GrowthLayout {
   const placed = new Map<string, PlacedNode>();
@@ -221,7 +227,7 @@ export function layoutGrowthTree(tree: GrowthTree): GrowthLayout {
       if (closes && index > 0) x = Math.max(x, far + GEOMETRY.gap);
       if (side === 0 && starts[column] === undefined) starts[column] = x;
       const role: NodeRole = side === 0 ? "trunk" : index === 0 ? (fromTrunk ? "twig" : "option") : "branch";
-      const card = place(id, x, y, side, role, side !== 0 && !(fromTrunk && index === 0));
+      const card = place(id, x, y, side, role, (side !== 0 && !(fromTrunk && index === 0)) || superseded(kindOf(id)));
       if (closes) heads[column] = id;
       if (side === 0) trunk.push([x + card.width / 2, y]);
       else if (previous) edges.push({ kind: "branch", from: path[index - 1], to: id, points: [[previous.x + previous.width, y], [x, y]] });
@@ -254,8 +260,8 @@ export function layoutGrowthTree(tree: GrowthTree): GrowthLayout {
           // Nearest first, on the rightmost elbow: the elbows nest and never cross.
           const memberY = top + visual(kindOf(member)).height / 2;
           const stem = stack! - GEOMETRY.elbow - rank * GEOMETRY.stemStep;
-          edges.push({ kind: side !== 0 ? "muted-twig" : kindOf(member) === "pending" ? "pending" : "twig", from: id, to: member,
-            points: [[stem, y], [stem, memberY], [stack!, memberY]] });
+          edges.push({ kind: side !== 0 || superseded(kindOf(member)) ? "muted-twig" : kindOf(member) === "pending" ? "pending" : "twig",
+            from: id, to: member, points: [[stem, y], [stem, memberY], [stack!, memberY]] });
           const from = order.length;
           const reach = lay(chainFrom(member), stack!, memberY, 1, side === 0);
           right = Math.max(right, reach);
