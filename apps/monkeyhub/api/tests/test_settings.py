@@ -113,6 +113,22 @@ class UserSettingsRouteTests(HubCase):
         self.assertEqual(response.json(), {"language": "en"})
         self.assertEqual(self.client.get("/api/settings/user").json(), {"language": "en"})
 
+    def test_the_sidebar_pin_survives_a_restart_and_unpinning_leaves_no_field(self) -> None:
+        # #283: pinned, the projects list stays open beside a workspace, and a fresh Hub reads it back.
+        pinned = {"theme": "dark", "sidebarPinned": True}
+        self.assertEqual(self.client.put("/api/settings/user", json=pinned).json(), pinned)
+        self.assertEqual(self.hub(self.root / "restarted runtime").get("/api/settings/user").json(), pinned)
+        self.assertIs(read_user_settings().sidebar_pinned, True)
+        # Unpinned is the default and is not written: a version older than the field reads the file.
+        response = self.client.put("/api/settings/user", json={"theme": "dark", "sidebarPinned": None})
+        self.assertEqual(response.json(), {"theme": "dark"})
+        self.assertNotIn("sidebarPinned", json.loads(user_settings_path().read_text(encoding="utf-8")))
+        self.assertIsNone(read_user_settings().sidebar_pinned)
+        for invalid in ({"sidebarPinned": "true"}, {"sidebarPinned": 1}, {"sidebarPinned": [True]}):
+            with self.subTest(payload=invalid):
+                self.assertEqual(self.client.put("/api/settings/user", json=invalid).status_code, 422)
+                self.assertEqual(self.client.get("/api/settings/user").json(), {"theme": "dark"})
+
     def test_render_preferences_save_and_a_key_is_never_one(self) -> None:
         payload = {"renderProvider": "gemini", "renderModel": "gemini-3-pro-image", "renderTimeoutS": 120.0}
         self.assertEqual(self.client.put("/api/settings/user", json=payload).json(), payload)

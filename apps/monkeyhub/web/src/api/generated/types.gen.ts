@@ -2132,6 +2132,10 @@ export type UserSettingsDto = {
      * Autoupdate
      */
     autoUpdate?: boolean | null;
+    /**
+     * Sidebarpinned
+     */
+    sidebarPinned?: boolean | null;
 };
 
 /**
