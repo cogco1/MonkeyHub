@@ -5726,6 +5726,7 @@
         "the checks: forbidden imports including archive reverse imports, instance-answer literals, filesystem writes outside allowed functions, forbidden framework identifiers, probe-boundary executables, configured policy paths that do not exist and src directories missing from python_source_roots, forbidden-import targets that name no module, the top-level entries Git tracks against the root allowlist, the docs tree Git tracks (README.md alone at the docs root; lowercase kebab-case document and directory names, NNN-kebab-case decisions, no date-prefixed names, non-Markdown files only in docs/prototypes/), registry owner/test/public-symbol truth, every other path the registry names, registry depends_on as registered module ids that the module's files import, with every import of a file in a unit whose namespace the policy's declared_dependency_namespaces lists declared, and duplicate owned function bodies",
         "the Finding shape and the JSON/text report and exit code",
         "the placement checks over the paths Git tracks (#553): the entries directly under each directory directory_entries lists (the Hub web source root, the docs categories), test files that test_file_patterns names only under test_roots, and the first-level directories of each Python package under packages/<name>/src/ and services/<name>/src/ against subpackages",
+        "the file-ownership check over the paths Git tracks (#559): every Python file under checked_source_roots, outside the test suites and import_only_source_roots, held by exactly one module's files, listed directly or through a listed directory; a file no module holds is reported with its nearest plausible owner and a file two modules hold with both, while a package's __init__.py may go unheld",
         "Validating the live work registry (ArchFlowDevelopmentRegistry@3): GitHub Issue claims only, claimed directly or through lanes, with checkout, base, contributor, paths and dependencies; reporting competing live path and checkout claims; checking each commit against the claim it names in its own registry, and reading commits made before #358 by their card-era rules"
       ],
       "does_not_own": [
@@ -5773,7 +5774,8 @@
         "a commit on the pre-#358 registry keeps its card-era reading, where a subject ending in a single (#n) with no other Issue reference or GH- marker names GH-n; once a parent is on the current registry a commit cannot return to the old one, so that reading cannot authorize card work again",
         "a current commit whose subject opens with a P###, M###, R### or P000-governance id is reported as a retired claim",
         "a layer rule may list allowed exceptions under its targets: a module, or a member a module defines at its top level; an import is let through only when its module is allowed, or, for from x import y, every x.y it takes is; an exception that names neither a module nor a defined member is reported like a dead target (#519)",
-        "depends_on lists module ids only (#537): an import is held by the entry whose files list the imported module (a listed directory holds the Python below it), named from the policy's python_source_roots, and an import of a module no entry holds is matched to nothing; an entry that is no module id, the module itself or a module the files no longer import is reported; what must be declared is decided by the unit the imported file lies in, not by the id that holds it; who uses a module is read from the imports, so the hand-kept used_by field is reported as retired"
+        "depends_on lists module ids only (#537): an import is held by the entry whose files list the imported module (a listed directory holds the Python below it), named from the policy's python_source_roots, and an import of a module no entry holds is matched to nothing; an entry that is no module id, the module itself or a module the files no longer import is reported; what must be declared is decided by the unit the imported file lies in, not by the id that holds it; who uses a module is read from the imports, so the hand-kept used_by field is reported as retired",
+        "file ownership uses the held-file mapping that depends_on uses (#537) and takes the files to check from Git's index, so an untracked local file decides nothing; the test suites, labs, a package's __init__.py and web sources (.ts/.tsx) are outside it, and the rule configures no exemption list"
       ],
       "status": "canonical",
       "tests": [
@@ -5781,7 +5783,8 @@
         "tools/tests/test_archcheck_placement.py",
         "tools/tests/test_archcheck_github_claims.py",
         "tools/tests/test_archcheck_paths.py",
-        "tools/tests/test_archcheck_dependencies.py"
+        "tools/tests/test_archcheck_dependencies.py",
+        "tools/tests/test_archcheck_ownership.py"
       ],
       "notes": "Architecture checks parse source without importing application code; scope behavior is verified with disposable Git repositories."
     },
