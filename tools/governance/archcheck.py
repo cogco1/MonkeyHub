@@ -1001,6 +1001,237 @@ def check_docs_layout(root: Path) -> Iterator[PolicyFinding]:
             )
 
 
+# Placement (#553): where a new file may land. Next to repository_root_entries
+# the policy lists what each place holds today; a new entry there is a reviewed
+# policy edit, so a misplaced file fails whoever wrote it. A Python package
+# lies at <parent>/<name>/src/<package>/: a library under packages/, a service
+# the Hub starts under services/ (docs/architecture/repository-layout.md 6).
+PACKAGE_PARENTS = frozenset({"packages", "services"})
+
+
+def _placement_names(value: object, where: str, *, empty: bool = False) -> tuple[str, ...]:
+    """One placement list from the policy: distinct names, each a single path segment."""
+
+    if not isinstance(value, list) or any(
+        not isinstance(name, str) or "/" in name or not _repository_path(name) for name in value
+    ):
+        raise ArchitecturePolicyError(f"{where} must list names, each a single path segment")
+    if len(value) != len(set(value)) or not (value or empty):
+        raise ArchitecturePolicyError(f"{where} must list distinct names, at least one")
+    return tuple(value)
+
+
+def _either(names: Iterable[str]) -> str:
+    """``a/, b/ or c/``: the directories a placement message offers."""
+
+    items = [f"{name}/" for name in names]
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} or {items[-1]}"
+
+
+def _misplaced_entries(tracked: list[str], places: dict[str, Any]) -> Iterator[PolicyFinding]:
+    """What Git tracks directly under each ``directory_entries`` directory, against its lists."""
+
+    for directory, rule in places.items():
+        prefix = "/".join(_scope_parts(directory)) + "/"
+        directories, files = rule["directories"], rule.get("files")
+        offer = (
+            f"{_either(directories)}, or list it in directory_entries in a reviewed policy edit. "
+            + rule["reason"]
+        )
+        held_files: set[str] = set()
+        held_directories: set[str] = set()
+        for path in tracked:
+            if not path.startswith(prefix):
+                continue
+            name, slash, _ = path[len(prefix):].partition("/")
+            if not slash:
+                held_files.add(name)
+                if files is not None and name not in files:
+                    yield PolicyFinding(
+                        path, 1, "PLACEMENT_ENTRY", f"{name} is a new file in {prefix}; put it under {offer}",
+                    )
+            elif name not in held_directories:
+                held_directories.add(name)
+                if name not in directories:
+                    yield PolicyFinding(
+                        prefix + name, 1, "PLACEMENT_ENTRY",
+                        f"{name}/ is a new directory in {prefix}; put its files under {offer}",
+                    )
+        if not held_files and not held_directories:
+            yield PolicyFinding(
+                ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
+                f"directory_entries entry {directory!r} holds nothing Git tracks; the rule guards nothing",
+            )
+            continue
+        for kind, listed, held in (("directory", directories, held_directories), ("file", files or (), held_files)):
+            for name in listed:
+                if name not in held:
+                    yield PolicyFinding(
+                        ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
+                        f"directory_entries[{directory!r}] lists the {kind} {name!r}, which Git does not track "
+                        "there; remove it, or it lets that path back unreviewed",
+                    )
+
+
+def _misplaced_tests(tracked: list[str], patterns: list[str], test_roots: list[str]) -> Iterator[PolicyFinding]:
+    """Test files outside every test root, and test roots that hold no test file."""
+
+    names = tuple(re.compile(re.escape(pattern).replace(r"\*", ".*")) for pattern in patterns)
+    roots = {test_root: _scope_parts(test_root) for test_root in test_roots}
+    holding: set[str] = set()
+    for path in tracked:
+        parts = _scope_parts(path)
+        # A vendored or installed tree holds no test of this repository.
+        if not any(name.fullmatch(parts[-1]) for name in names) or any(map(_not_source_directory, parts[:-1])):
+            continue
+        inside = [name for name, root in roots.items() if len(parts) > len(root) and parts[: len(root)] == root]
+        if inside:
+            holding.update(inside)
+            continue
+        # Offer the nearest test roots whose parent directory holds the file.
+        beside = {
+            name: len(root) for name, root in roots.items() if len(root) > 1 and parts[: len(root) - 1] == root[:-1]
+        }
+        depth = max(beside.values(), default=0)
+        nearest = [name for name, length in beside.items() if length == depth]
+        where = (
+            f"{_either(nearest)}, the test root{'s' if len(nearest) > 1 else ''} beside it" if nearest
+            else "the test root of the owner it tests (test_roots lists them; "
+            "docs/architecture/repository-layout.md 6.4)"
+        )
+        yield PolicyFinding(
+            path, 1, "PLACEMENT_TEST",
+            f"{parts[-1]} is a test file outside the test roots; put it in {where}, "
+            "or list a new root in test_roots in a reviewed policy edit",
+        )
+    for test_root in test_roots:
+        if test_root not in holding:
+            yield PolicyFinding(
+                ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
+                f"test_roots entry {test_root!r} holds no test file Git tracks; remove it, or it lets tests in "
+                "there unreviewed",
+            )
+
+
+def _misplaced_subpackages(tracked: list[str], subpackages: dict[str, list[str]]) -> Iterator[PolicyFinding]:
+    """The first-level directories of each Python package, against the subpackages listed for it."""
+
+    listed = {"/".join(_scope_parts(package)): tuple(names) for package, names in subpackages.items()}
+    held: dict[str, set[str]] = {}
+    python: set[str] = set()
+    for path in tracked:
+        parts = path.split("/")
+        package = max((key for key in listed if path.startswith(key + "/")), key=len, default=None)
+        if package is None and len(parts) > 4 and parts[0] in PACKAGE_PARENTS and parts[2] == "src":
+            package = "/".join(parts[:4])
+        if package is None:
+            continue
+        if path.endswith(".py"):
+            python.add(package)
+        name, slash, _ = path[len(package) + 1:].partition("/")
+        directories = held.setdefault(package, set())
+        if slash:
+            directories.add(name)
+    for package, directories in sorted(held.items()):
+        names = listed.get(package)
+        if names is None and package not in python:
+            continue  # no Python package: packages/web-shared/src keeps its own layout
+        for name in sorted(directories - set(names or ())):
+            if names is None:
+                detail = f"{package} is a package subpackages does not list; list it with its subpackages there"
+            elif names:
+                detail = f"put its modules in one of its subpackages, {_either(names)}, or list it under subpackages"
+            else:
+                detail = f"{package} has no subpackages; put its modules at its root, or list it under subpackages"
+            yield PolicyFinding(
+                f"{package}/{name}", 1, "PLACEMENT_SUBPACKAGE",
+                f"{name}/ is a new first-level directory of {package}; {detail} in a reviewed policy edit",
+            )
+    for package, names in listed.items():
+        if package not in held:
+            yield PolicyFinding(
+                ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
+                f"subpackages entry {package!r} holds nothing Git tracks; the rule guards nothing",
+            )
+            continue
+        for name in names:
+            if name not in held[package]:
+                yield PolicyFinding(
+                    ARCHITECTURE_POLICY, 1, "POLICY_PATH_MISSING",
+                    f"subpackages[{package!r}] lists {name!r}, which holds nothing Git tracks; remove it, "
+                    "or it lets that directory back unreviewed",
+                )
+
+
+def check_placement(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
+    """A new file lands where docs/architecture/repository-layout.md 6.4 places it (#553).
+
+    Read from Git's index, like the root entries. Each rule is configured by
+    policy keys next to repository_root_entries and is off while its keys are
+    absent; a key that is present but malformed fails ArchitecturePolicyError
+    before anything is reported.
+
+    - ``directory_entries``: directly under each listed directory Git tracks
+      only the directories listed for it, and only the files listed when
+      ``files`` is given (``PLACEMENT_ENTRY``). docs/ gives no files: README.md
+      alone at its root is ``DOCS_ROOT``'s rule.
+    - ``test_file_patterns`` with ``test_roots``: a file whose name matches a
+      pattern lies under a test root (``PLACEMENT_TEST``), unless a vendored or
+      installed tree holds it.
+    - ``subpackages``: the first-level directories of a Python package under
+      packages/<name>/src/ or services/<name>/src/ are the ones listed for it,
+      and none for a package it does not name (``PLACEMENT_SUBPACKAGE``).
+
+    The lists record the tree as it is, so a new entry is a reviewed policy
+    edit. A listed directory, file, test root or package that Git no longer
+    tracks is ``POLICY_PATH_MISSING``: kept, it would let that path back
+    without review.
+    """
+
+    places = policy.get("directory_entries", {})
+    patterns, test_roots = policy.get("test_file_patterns"), policy.get("test_roots")
+    subpackages = policy.get("subpackages")
+    if not isinstance(places, dict) or (subpackages is not None and not isinstance(subpackages, dict)):
+        raise ArchitecturePolicyError(
+            "directory_entries and subpackages must map directories to the names they hold"
+        )
+    for directory, rule in places.items():
+        where = f"directory_entries[{directory!r}]"
+        if not (
+            _repository_path(directory) and isinstance(rule, dict)
+            and isinstance(rule.get("reason"), str) and rule["reason"]
+        ):
+            raise ArchitecturePolicyError(
+                f"{where} must give a repository directory its directories, files and a reason"
+            )
+        _placement_names(rule.get("directories"), f"{where}.directories")
+        if "files" in rule:
+            _placement_names(rule["files"], f"{where}.files", empty=True)
+    if (patterns is None) != (test_roots is None):
+        raise ArchitecturePolicyError("test_file_patterns and test_roots make one rule; give both or neither")
+    if patterns is not None:
+        if not isinstance(patterns, list) or not patterns or any(
+            not isinstance(pattern, str) or not pattern or "/" in pattern for pattern in patterns
+        ):
+            raise ArchitecturePolicyError("test_file_patterns must list file-name patterns")
+        if not isinstance(test_roots, list) or not test_roots or any(
+            not isinstance(test_root, str) or not _repository_path(test_root) for test_root in test_roots
+        ) or len(test_roots) != len(set(test_roots)):
+            raise ArchitecturePolicyError("test_roots must list distinct repository directories")
+    for package, names in (subpackages or {}).items():
+        if not _repository_path(package):
+            raise ArchitecturePolicyError(f"subpackages entry {package!r} must be a repository directory")
+        _placement_names(names, f"subpackages[{package!r}]", empty=True)
+    if not places and patterns is None and subpackages is None:
+        return
+    tracked = sorted(path for path in _git(root, "ls-files", "-z").split("\0") if path)
+    yield from _misplaced_entries(tracked, places)
+    if patterns is not None:
+        yield from _misplaced_tests(tracked, patterns, test_roots)
+    if subpackages is not None:
+        yield from _misplaced_subpackages(tracked, subpackages)
+
+
 def _normalized_body(src: str, node: ast.FunctionDef) -> str:
     seg = ast.get_source_segment(src, node) or ""
     seg = re.sub(r'"""[\s\S]*?"""', "", seg)
@@ -1811,11 +2042,11 @@ def check_changed_scopes(
 def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
     """Check the tree under ``root``, which must be a Git checkout.
 
-    The root entries and the docs tree are read from Git's index
-    (``check_repository_root``, ``check_docs_layout``), and a layer-rule
-    target that no module or import accounts for is looked up in Git's ignore
-    rules (``check_layer_targets``); everything else is read from the files
-    on disk.
+    The root entries, the docs tree and the placement rules are read from
+    Git's index (``check_repository_root``, ``check_docs_layout``,
+    ``check_placement``), and a layer-rule target that no module or import
+    accounts for is looked up in Git's ignore rules (``check_layer_targets``);
+    everything else is read from the files on disk.
     """
 
     validate_policy(policy, root)
@@ -1823,6 +2054,7 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
     findings.extend(check_policy_paths(root, policy))
     findings.extend(check_repository_root(root, policy))
     findings.extend(check_docs_layout(root))
+    findings.extend(check_placement(root, policy))
     findings.extend(check_registry(root, policy))
     findings.extend(check_scopes(root, policy, load_work_registry(root)))
     imported: set[str] = set()
