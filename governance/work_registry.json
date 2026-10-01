@@ -1,36 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-575",
-      "lanes": [
-        {
-          "id": "cleanup",
-          "status": "active",
-          "branch": "codex/integration-588-589",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-588-589",
-          "base_ref": "b1c83190d86b740cd39f79fdbe4df5ee7eb7e8cd",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "archflow.project.repository",
-            "archflow.project.layout",
-            "archflow.project.ports",
-            "project_runtime.candidate",
-            "project_runtime.binding",
-            "project_runtime.shell",
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
-            "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
-            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
-            "docs/protocols/project-runtime-api.md"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
