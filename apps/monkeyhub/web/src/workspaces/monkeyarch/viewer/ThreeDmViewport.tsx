@@ -327,9 +327,11 @@ export interface ViewportController {
   /** Remove temporary display projections and restore the loaded file exactly. */
   showOriginal(): void;
   /**
-   * Paint the model in its file's own look or the pale Modeling look. A view
-   * preference only: it survives model loads, keeps the camera and the current
-   * selection, and never writes geometry, design state or the file's materials.
+   * Paint the model in its file's own look, the pale Modeling look or the
+   * Presentation look. A view preference only: it survives model loads, keeps
+   * the current selection, and never writes geometry, design state or the file's
+   * materials. Choosing a style keeps the camera; leaving Presentation stands the
+   * camera back exactly where it was when Presentation was chosen.
    */
   setDisplayStyle(style: ModelDisplayStyle): void;
   setLayerVisibility(index: number, visible: boolean): void;

@@ -130,6 +130,22 @@ try {
   await context.addInitScript(() => {
     class QuietEventSource { constructor() { this.readyState = 1; } addEventListener() {} removeEventListener() {} close() {} }
     window.EventSource = QuietEventSource;
+    // The live canvas around world points, as drawn now: a width × height patch of RGB per point, and where it fell.
+    window.__canvasAt = (points, width, height) => {
+      const runtime = window.readRuntime(), canvas = runtime.renderer.domElement;
+      runtime.render();
+      const copy = document.createElement("canvas");
+      copy.width = canvas.width; copy.height = canvas.height;
+      const context = copy.getContext("2d");
+      context.drawImage(canvas, 0, 0);
+      return points.map(([x, y, z]) => {
+        const ndc = runtime.camera.position.clone().set(x, y, z).project(runtime.camera);
+        const px = Math.round((ndc.x + 1) / 2 * canvas.width), py = Math.round((1 - ndc.y) / 2 * canvas.height);
+        const data = context.getImageData(px - (width >> 1), py - (height >> 1), width, height).data, rgb = [];
+        for (let index = 0; index < data.length; index += 4) rgb.push([data[index], data[index + 1], data[index + 2]]);
+        return { ndc: [ndc.x, ndc.y], rgb };
+      });
+    };
   });
   const page = await context.newPage();
   page.setDefaultTimeout(30_000);
@@ -164,36 +180,13 @@ try {
     await settle();
   };
   const settle = () => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const mean = (rgb) => [0, 1, 2].map((channel) => Math.round(rgb.reduce((total, pixel) => total + pixel[channel], 0) / rgb.length));
   /** The live canvas at world points: the mean colour of a 3×3 patch around each, as the person sees it. */
-  const sample = (points) => page.evaluate((points) => {
-    const runtime = window.readRuntime(), canvas = runtime.renderer.domElement;
-    runtime.render();
-    const copy = document.createElement("canvas");
-    copy.width = canvas.width; copy.height = canvas.height;
-    const context = copy.getContext("2d");
-    context.drawImage(canvas, 0, 0);
-    return points.map(([x, y, z]) => {
-      const ndc = runtime.camera.position.clone().set(x, y, z).project(runtime.camera);
-      const px = Math.round((ndc.x + 1) / 2 * canvas.width), py = Math.round((1 - ndc.y) / 2 * canvas.height);
-      const data = context.getImageData(px - 1, py - 1, 3, 3).data, mean = [0, 0, 0];
-      for (let index = 0; index < data.length; index += 4) for (let channel = 0; channel < 3; channel++) mean[channel] += data[index + channel] / 9;
-      return { ndc: [ndc.x, ndc.y], rgb: mean.map(Math.round) };
-    });
-  }, points);
+  const sample = async (points) => (await page.evaluate((points) => window.__canvasAt(points, 3, 3), points))
+    .map(({ ndc, rgb }) => ({ ndc, rgb: mean(rgb) }));
   /** Light and dark along a short horizontal run through a point: a hatch has both. */
-  const run = (point) => page.evaluate(([x, y, z]) => {
-    const runtime = window.readRuntime(), canvas = runtime.renderer.domElement;
-    runtime.render();
-    const copy = document.createElement("canvas");
-    copy.width = canvas.width; copy.height = canvas.height;
-    const context = copy.getContext("2d");
-    context.drawImage(canvas, 0, 0);
-    const ndc = runtime.camera.position.clone().set(x, y, z).project(runtime.camera);
-    const px = Math.round((ndc.x + 1) / 2 * canvas.width), py = Math.round((1 - ndc.y) / 2 * canvas.height);
-    const data = context.getImageData(px - 10, py, 21, 1).data, light = [];
-    for (let index = 0; index < data.length; index += 4) light.push(data[index] + data[index + 1] + data[index + 2]);
-    return light;
-  }, point);
+  const run = async (point) => (await page.evaluate((point) => window.__canvasAt([point], 21, 1), point))[0].rgb
+    .map(([red, green, blue]) => red + green + blue);
   /** A PNG's pixels at normalised device coordinates: the mean of a 3×3 patch around each. */
   const pixelsOf = (png, points) => page.evaluate(async ({ base64, points }) => {
     const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
