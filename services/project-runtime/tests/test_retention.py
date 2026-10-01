@@ -331,3 +331,16 @@ class WhenItRunsTests(RetentionFixture):
         self.assertEqual(sorted(entry["runId"] for entry in self.trash()["entries"]), sorted(drafts))
         [cleaned] = self.retained_events(DESIGN_CLEANED)
         self.assertEqual(cleaned["trigger"], "continue")
+
+    def test_a_stopping_runtime_moves_nothing_more(self) -> None:
+        _a, _b, _c, _d, drafts = self.line()
+        sweep = clean_superseded(bound_project(self.app.state), now=NOW, jobs=self.app.state.jobs, stopping=lambda: True)
+        self.assertEqual(sweep.cleaned, ())
+        self.assertEqual({run_id: sweep.kept[run_id] for run_id in drafts}, dict.fromkeys(drafts, "the Runtime is stopping"))
+        self.assertTrue(set(drafts) <= set(self.repository.run_ids()))
+        sweeps = RetentionSweeps(self.app.state, clock=lambda: NOW)
+        sweeps.stop()
+        sweeps.after_continue()
+        self.assertTrue(sweeps.wait(1))
+        self.assertIsNone(sweeps.last, "no sweep starts once the Runtime stops")
+        self.assertEqual(self.trash()["entries"], [])

@@ -443,11 +443,11 @@ def _retain_event(binding: ProjectBinding, *, action: str, occurred_at: str, act
 
 
 def clean_superseded(binding: ProjectBinding, *, now: datetime, jobs: JobRegistry | None = None,
-                     trigger: str = "open") -> Sweep:
+                     trigger: str = "open", stopping: Callable[[], bool] = lambda: False) -> Sweep:
     """Move every run the plan allows into the trash: runs that name another go before it.
 
     A run the repository refuses, or cannot move whole, stays, and so does every run only it named.
-    One ``design.cleaned`` event names everything that moved.
+    Once ``stopping`` says so, nothing more moves. One ``design.cleaned`` event names everything that moved.
     """
 
     moment = _iso(now)
@@ -465,8 +465,8 @@ def clean_superseded(binding: ProjectBinding, *, now: datetime, jobs: JobRegistr
         for run_id in ready:
             cleanable = remaining.pop(run_id)
             blocked = sorted(plan.named_by.get(run_id, frozenset()) & stayed)
-            if blocked:
-                kept[run_id] = f"{blocked[0]} names it and stayed"
+            if blocked or stopping():
+                kept[run_id] = f"{blocked[0]} names it and stayed" if blocked else "the Runtime is stopping"
                 stayed.add(run_id)
                 continue
             try:
@@ -623,7 +623,8 @@ class RetentionSweeps:
         if trigger == "open":
             binding.await_index(self._index_wait_s)
             purged = purge_expired(binding, now=self._clock())
-        result = clean_superseded(binding, now=self._clock(), jobs=getattr(self._state, "jobs", None), trigger=trigger)
+        result = clean_superseded(binding, now=self._clock(), jobs=getattr(self._state, "jobs", None), trigger=trigger,
+                                  stopping=lambda: self._stopping)
         if result.cleaned or purged:
             _LOG.info("project %s: %d runs moved to the trash, %d purged (%s)", binding.project_id,
                       len(result.cleaned), len(purged), trigger)
@@ -635,7 +636,7 @@ class RetentionSweeps:
         return self._idle.wait(timeout)
 
     def stop(self, timeout: float = 10.0) -> None:
-        """No sweep starts after this; one running finishes the run it is moving."""
+        """No sweep starts after this, and one running moves nothing more once its current run has moved."""
 
         with self._lock:
             self._stopping = True
