@@ -14,7 +14,9 @@ are never opened. A project comes from
 (``docs/development/benchmarks.md``): a repository tool takes nothing from a
 test suite.
 
-Scenarios, each repeated ``--samples`` times in a Hub of its own:
+Scenarios, every sample in a Hub of its own: ``hub_start.first_launch``
+``--first-launch-samples`` times, idle once per project size, and the rest
+``--samples`` times at each size:
 
 - ``hub_start``: process start to the first ``/api/health`` that answers, as a
   first launch (an empty ``PYTHONPYCACHEPREFIX``: every module is compiled, as

@@ -35,9 +35,10 @@ moved back (`projection_check.settle`); no scenario writes to it.
 `<N>` is the project size. Every scenario runs at **30 runs**, the projection check's project, and at **150 runs**:
 five times as large, and three times the 50 most recent runs the Hub reads each time it refreshes a project, so the
 Hub's paging and every route's growth with the project are measured. The projection job builds 30 runs in about
-15 s on a GitHub runner, so both projects should take about two minutes. Each scenario is sampled `--samples` times
-(5 by default), each sample in a Hub of its own; a metric records its samples, their median and their p90 (linear
-interpolation between ranks). `hub_start.warm` gathers a sample from every measured Hub.
+15 s on a GitHub runner, so both projects should take about two minutes. Each scenario but idle is sampled
+`--samples` times (5 by default) at each size, and idle once per size; every sample runs in a Hub of its own. A
+metric records its samples, their median and their p90 (linear interpolation between ranks). `hub_start.warm`
+gathers a sample from every measured Hub.
 
 **Before anything is measured**, one unmeasured Hub per project size opens everything once. It leaves the compiled
 bytecode in the warm prefix and the project's index in that size's runtime root. Every measured Hub of that size
@@ -119,7 +120,7 @@ python tools/benchmarks/daily_benchmark.py run --project 30=../bench-projects/sy
 python tools/benchmarks/benchmark_data.py summary --result ../bench/result.json
 ```
 
-Add `--project 150=…` after building a 150-run project, which takes a few minutes. `--work` must be new or empty.
+Add `--project 150=…` after building a 150-run project, which takes minutes. `--work` must be new or empty.
 It keeps every Hub's log under `logs/`. On a machine where other work is running, the numbers say little: run a
 short check there, and leave the trend to CI.
 
