@@ -233,7 +233,8 @@ class RetireWorktreeTests(unittest.TestCase):
         self.assertEqual([path.name for path in planned.iterdir()], ["earlier.txt"])
         self.assertTrue((planned.with_name("codex-done-2") / "codex-done.txt").is_file())
 
-    def test_unmerged_dirty_detached_locked_and_outside_worktrees_are_untouched(self) -> None:
+    def test_unmerged_new_dirty_detached_locked_and_outside_worktrees_are_untouched(self) -> None:
+        workspace.create_worktree(self.source, self.worktrees / "codex-new", "codex/new")
         self.task("codex/open", merge=False)
         (self.task("codex/untracked") / "notes.txt").write_text("WIP\n", encoding="utf-8")
         (self.task("codex/edited") / "model.txt").write_text("edited\n", encoding="utf-8")
@@ -246,11 +247,15 @@ class RetireWorktreeTests(unittest.TestCase):
         report = self.retire(apply=True)
         self.assertEqual(self.snapshot(outside.parent), before)
         self.assertFalse(list(self.root.glob("_TRASH_*")))
-        self.assertEqual({name: entry["state"] for name, entry in self.by_name(report).items()}, {
+        entries = self.by_name(report)
+        self.assertEqual({name: entry["state"] for name, entry in entries.items()}, {
             "codex-open": "unmerged", "codex-untracked": "local-changes", "codex-edited": "local-changes",
             "review-detached": "detached", "codex-locked": "locked", "release-candidate": "merged-clean",
+            "codex-new": "merged-clean",
         })
-        self.assertEqual(self.by_name(report)["release-candidate"]["note"], "kept branch")
+        self.assertEqual(entries["release-candidate"]["note"], "kept branch")
+        # Just created from main by another session: no commits of its own, so nothing of it has merged.
+        self.assertIn("no commits of its own", entries["codex-new"]["note"])
         self.assertTrue(all(entry["action"] == "keep" and "result" not in entry for entry in report["worktrees"]))
         self.assertEqual((report["branches"], report["summary"]["outsideRoot"]), ([], 2))
 

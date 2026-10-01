@@ -156,7 +156,9 @@ def retire_worktrees(
 
     A worktree qualifies when it is on a branch, `git status` lists nothing
     (ignored files such as node_modules move with it) and its branch head is an
-    ancestor of base. Retiring renames it into <root>/_TRASH_<YYYYMMDD>, runs
+    ancestor of base but not a commit of base's first-parent line, which would
+    mean a task with no commits of its own yet, such as one another session
+    has just created. Retiring renames it into <root>/_TRASH_<YYYYMMDD>, runs
     `git worktree prune` and deletes its branch with `git branch -d`; merged
     local branches no worktree holds are deleted the same way, and a
     registration under the root whose directory is gone is pruned. The source
@@ -186,6 +188,9 @@ def retire_worktrees(
     heads = {ref: (commit, upstream) for ref, commit, upstream in (line.split("\0") for line in listing.splitlines())}
     merged, in_head = refs("--merged", base_commit, "refs/heads"), refs("--merged", "HEAD", "refs/heads")
     existing = refs("refs/heads", "refs/remotes")
+    # A worktree whose head is a commit of the base's own line has no commits of its own: a task just
+    # created from main (or a fast-forwarded branch). Its work has not merged, so it is not retired.
+    base_line = set(git(source, "rev-list", "--first-parent", base_commit).splitlines())
     kept = set(keep) | {git(source, "branch", "--show-current")}
 
     def refusal(ref: str) -> str | None:
@@ -235,6 +240,8 @@ def retire_worktrees(
             entry["action"] = "prune"
         elif state == "merged-clean" and entry["branch"] in keep:
             note = "kept branch"
+        elif state == "merged-clean" and record.get("HEAD") in base_line:
+            note = "no commits of its own yet: a new task or a fast-forwarded branch"
         elif state == "merged-clean" and any(path in other.parents for other in paths):
             note = "contains another worktree"
         elif state == "merged-clean":
