@@ -65,7 +65,8 @@ from archflow.state.spatial import (
     SpatialOptionProposal,
 )
 from archflow.state.state_record import RECORD_BINDING_PHASE, developed_design_view
-from tests.integration.support import ProjectFormatFixture, _record as state_record_fixture, authored_record
+from tests.integration.support import ProjectFormatFixture, _record as state_record_fixture
+from tests.support.spine_fixture import authored_record
 from archflow.state.stage_workflow import (
     CompositeStageClosureReceipt,
     DesignPhase,
