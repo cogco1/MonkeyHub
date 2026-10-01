@@ -1030,3 +1030,130 @@ test("the scene draws the folds as controls that open them, at every level, in b
     .filter((element) => element.type === "text" && element.id.startsWith("fold:")).map((element) => element.text);
   assert.deepEqual(words, ["之前 4 步", "含 2 份已被取代的草稿"]);
 });
+
+// ---- #575 slice 4: the drafts the project cleaned into its trash, and Restore.
+
+test("the drafts the project cleaned fold where the line moved on, and a restored one is a kept draft again", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture(api.unadmittedLineFacts());
+  fixture.clean(["run-v3-closed", "run-v3-glazed"]);
+  const read = () => ({ ...sourceOf(fixture), trash: fixture.trash() });
+  // Folded, the steps hold where the drafts started: the fold counts the cleaned drafts as it counts kept ones.
+  const folded = api.buildGrowthTree(read());
+  assert.equal(folded.nodes.get("fold")!.fold!.drafts, 2);
+  assert.equal(folded.drafts.count, 0, "nothing in the project is superseded any more: the drafts left it");
+  const tree = api.buildGrowthTree(read(), false, { steps: true });
+  const card = tree.nodes.get("drafts:step:run-v2")!;
+  assert.deepEqual([card.kind, card.parent, card.drafts!.runs, card.drafts!.cleaned.map((draft) => draft.runId), card.drafts!.retentionDays],
+    ["drafts", "step:run-v2", [], ["run-v3-glazed", "run-v3-closed"], 30], "they hang from V2, newest first");
+  assert.equal(api.continuable(card), false, "a card is a control: a cleaned draft is restored first");
+  for (const [catalog, words] of [
+    [messagesEn, ["Superseded drafts cleaned · 2", "Restorable for 30 days", "Superseded drafts cleaned · 2 · restorable for 30 days",
+      "Superseded by V3 - ribbed roof, open side triangles"]],
+    [messagesZhCN, ["已清理 2 份被取代的草稿", "30 天内可恢复", "已清理 2 份被取代的草稿 · 30 天内可恢复",
+      "已被 V3 - ribbed roof, open side triangles 取代"]]] as const) {
+    const named = api.treeWords(translator(catalog) as never, tree);
+    assert.deepEqual([named.title(card), named.status(card), named.cleaned(card), named.cleanedBy(card.drafts!.cleaned[0])], words);
+  }
+  // Its card opens the inspector, which lists them with Restore, at every level of detail; its words stay on it.
+  const en = api.treeWords(translator(messagesEn) as never, tree);
+  const drawing = api.layoutGrowthTree(tree);
+  assert.deepEqual(planarProblems(tree, drawing), []);
+  for (const level of ["far", "mid", "close"] as const) {
+    const scene = api.buildTreeScene(tree, drawing, { level, textScale: 1, selected: null, fontFamily: 2, words: en.scene });
+    assert.ok(scene.hits.some((hit) => hit.node === card.id && hit.action === "select"), `${level}: the cleaned drafts' card is selected`);
+    assert.ok(!scene.hits.some((hit) => hit.node === card.id && hit.action === "expand"), `${level}: it does not open as a fold`);
+  }
+  // Its words stay on the card at every size, in both languages.
+  type Text = { type: string; x: number; text?: string; fontSize?: number; customData: { tree: { node?: string } } };
+  const placed = drawing.nodes.get(card.id)!;
+  for (const catalog of [messagesEn, messagesZhCN]) {
+    const named = api.treeWords(translator(catalog) as never, tree);
+    for (const [level, textScale] of [["mid", 1], ["mid", 2], ["close", 1]] as const) {
+      const scene = api.buildTreeScene(tree, drawing, { level, textScale, selected: null, fontFamily: 2, words: named.scene });
+      const words = (scene.skeletons as unknown as Text[]).filter((element) => element.type === "text" && element.customData.tree.node === card.id);
+      assert.ok(words.length > 0);
+      for (const element of words) {
+        const right = element.x + Math.max(...element.text!.split("\n").map((row) => api.textWidth(row, element.fontSize!)));
+        assert.ok(element.x >= placed.card.x && right <= placed.card.x + placed.card.width + 1e-6, `${level} ${textScale}: "${element.text}" leaves its card`);
+      }
+    }
+  }
+  // Opened, nothing kept is left to draw there; the card stays for what was cleaned.
+  const open = api.buildGrowthTree(read(), false, { steps: true, drafts: true });
+  assert.deepEqual([open.nodes.has("draft:run-v3-closed"), open.nodes.get(card.id)!.drafts!.cleaned.length], [false, 2]);
+  assert.deepEqual(planarProblems(open, api.layoutGrowthTree(open)), []);
+
+  // Restored, a draft is a kept superseded draft again, beside the one still cleaned.
+  const answer = fixture.restoreTrashed({ projectId: "riverside-library", runId: "run-v3-closed" });
+  assert.deepEqual([answer.restored, answer.trash.entries.map((entry) => entry.runId)], [["run-v3-closed"], ["run-v3-glazed"]]);
+  const restored = api.buildGrowthTree(read(), false, { steps: true });
+  const both = restored.nodes.get(card.id)!;
+  assert.deepEqual([both.drafts!.runs, both.drafts!.cleaned.map((draft) => draft.runId), restored.drafts.count],
+    [["run-v3-closed"], ["run-v3-glazed"], 1]);
+  const zh = api.treeWords(translator(messagesZhCN) as never, restored);
+  assert.deepEqual([zh.title(both), zh.status(both)], ["已被取代的草稿 · 1", "已清理 1 份 · 30 天内可恢复"]);
+  const drawn = api.buildGrowthTree(read(), false, { steps: true, drafts: true });
+  assert.deepEqual([drawn.nodes.get("draft:run-v3-closed")!.parent, drawn.nodes.get(card.id)!.drafts!.runs, drawn.nodes.get(card.id)!.drafts!.cleaned.length],
+    ["step:run-v2", [], 1]);
+  // Restored as well, nothing is cleaned and the tree is exactly the one before the cleaning.
+  fixture.restoreTrashed({ projectId: "riverside-library", runId: "run-v3-glazed" });
+  const whole = api.buildGrowthTree(read(), false, { steps: true });
+  assert.deepEqual(whole.nodes.get(card.id)!.drafts, { runs: ["run-v3-closed", "run-v3-glazed"], cleaned: [], retentionDays: 30 });
+  assert.equal(api.treeWords(translator(messagesEn) as never, whole).status(whole.nodes.get(card.id)!), "Click to show them");
+  // Without a trash, as from a runtime that keeps none, the tree is what it was.
+  assert.deepEqual([...api.buildGrowthTree(sourceOf(fixture), false, { steps: true }).nodes.keys()], [...whole.nodes.keys()]);
+});
+
+test("a cleaned draft the line names neither way hangs from the root, and failed attempts say they never finished", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture(api.unadmittedLineFacts());
+  const trash = { projectId: "riverside-library", retentionDays: 30, entries: [
+    { runId: "run-old-attempt", trashedAt: "2026-10-01T09:00:00+00:00", expiresAt: "2026-10-31T09:00:00+00:00", rule: "failed-attempt",
+      reason: "Its run never finished.", supersededBy: null, baseRunId: "run-elsewhere", label: null, stateDigest: null },
+  ] };
+  const tree = api.buildGrowthTree({ ...sourceOf(fixture), trash });
+  const card = [...tree.nodes.values()].find((node) => node.kind === "drafts")!;
+  assert.equal(card.parent, "origin");
+  const words = api.treeWords(translator(messagesZhCN) as never, tree);
+  assert.deepEqual([words.title(card), words.cleanedBy(card.drafts!.cleaned[0])], ["已清理 1 份被取代的草稿", "没有完成的尝试"]);
+});
+
+test("the inspector lists cleaned drafts with Restore, says while it restores, and names a refusal", async (t) => {
+  const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
+    logLevel: "silent", server: { middlewareMode: true, watch: null } });
+  t.after(() => vite.close());
+  const { CleanedDrafts } = await vite.ssrLoadModule("/src/features/designTree/DesignTreeCleaned.tsx") as
+    typeof import("../src/features/designTree/DesignTreeCleaned.tsx");
+  const { UserPreferencesProvider } = await vite.ssrLoadModule("/src/features/settings/preferences.tsx") as
+    typeof import("../src/features/settings/preferences.tsx");
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const drafts = [
+    { runId: "run-v3-glazed", label: "V3 - full-width glazing", supersededBy: "run-v3", trashedAt: "2026-10-01T09:00:00+00:00",
+      expiresAt: "2026-10-31T09:00:00+00:00" },
+    { runId: "run-v3-closed", label: null, supersededBy: null, trashedAt: "2026-09-02T09:00:00+00:00", expiresAt: "2026-10-02T09:00:00+00:00" },
+  ];
+  const now = Date.parse("2026-10-02T08:00:00+00:00");
+  const words = { cleanedBy: (draft: { supersededBy: string | null }) => draft.supersededBy ? "已被 V3 取代" : "没有完成的尝试" };
+  const draw = (props: Record<string, unknown>) => renderToStaticMarkup(createElement(UserPreferencesProvider as never,
+    { appearance: { language: "zh-CN", theme: "light", fontScale: 1 } },
+    createElement(CleanedDrafts as never, { drafts, words, busy: false, canRestore: true, restoring: null, refused: null, onRestore() {}, now, ...props })));
+  const idle = draw({});
+  assert.match(idle, /<h3 class="design-tree-cleaned__title">已清理<\/h3>/);
+  assert.ok(idle.includes("V3 - full-width glazing") && idle.includes("已被 V3 取代") && idle.includes("还剩 30 天"), idle);
+  assert.ok(idle.includes("草稿") && idle.includes("没有完成的尝试") && idle.includes("一天内删除"), "the last day says so");
+  const buttons = [...idle.matchAll(/<button[^>]*data-action="restore"[^>]*>([^<]*)<\/button>/g)];
+  assert.deepEqual(buttons.map(([, text]) => text), ["恢复", "恢复"]);
+  assert.ok(buttons.every(([tag]) => !/disabled/.test(tag)));
+  const restoring = draw({ busy: true, restoring: "run-v3-glazed" });
+  assert.deepEqual([...restoring.matchAll(/<button[^>]*data-action="restore"[^>]*>([^<]*)<\/button>/g)].map(([tag, text]) => [/disabled/.test(tag), text]),
+    [[true, "正在恢复…"], [true, "恢复"]], "one Restore at a time, and the one on its way says so");
+  const { StudioApiError } = await vite.ssrLoadModule("/src/api/project-runtime/client.ts") as typeof import("../src/api/project-runtime/client.ts");
+  const refused = draw({ refused: { runId: "run-v3-closed", error: new StudioApiError({ status: 409, code: "TRASH_RESTORE_REFUSED",
+    detail: "the project already has a run named run-v3-closed" }) } });
+  assert.match(refused, /<li data-run="run-v3-closed">[\s\S]*role="alert"[^>]*>[^<]*the project already has a run named run-v3-closed/);
+  assert.doesNotMatch(refused.slice(0, refused.indexOf('data-run="run-v3-closed"')), /role="alert"/, "only the refused draft says why");
+  assert.equal(draw({ drafts: [] }), "", "nothing cleaned, nothing drawn");
+  assert.ok(draw({ canRestore: false }).match(/<button[^>]*disabled/g)!.length === 2, "a runtime without the trash restores nothing");
+});

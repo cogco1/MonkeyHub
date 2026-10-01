@@ -8865,6 +8865,28 @@ export type ProjectTransferDto = {
 };
 
 /**
+ * ProjectTrashDto
+ *
+ * The project trash, oldest entry first.
+ */
+export type ProjectTrashDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Retentiondays
+     *
+     * How long an entry can be restored before it is purged.
+     */
+    retentionDays: number;
+    /**
+     * Entries
+     */
+    entries: Array<TrashEntryDto>;
+};
+
+/**
  * ProjectVersionDto
  *
  * One canonical project version.
@@ -12425,6 +12447,101 @@ export type TransformElementRequestDto = {
 };
 
 /**
+ * TrashEntryDto
+ *
+ * One run in the project trash: what moved, why, what superseded it, and until when it can be restored.
+ */
+export type TrashEntryDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Trashedat
+     *
+     * When it moved into the trash.
+     */
+    trashedAt: string;
+    /**
+     * Expiresat
+     *
+     * When it is purged; until then it can be restored.
+     */
+    expiresAt: string;
+    /**
+     * Rule
+     *
+     * Which retention rule moved it: superseded (a draft the head's line superseded), replaced-attempt (an attempt an admitted result replaced, or one its loop withdrew) or failed-attempt (a design change whose run never finished).
+     */
+    rule: string;
+    /**
+     * Reason
+     *
+     * Why it was moved, in one sentence.
+     */
+    reason: string;
+    /**
+     * Supersededby
+     *
+     * The run that superseded it: the line's step for a superseded draft, the admitted result for a replaced attempt.
+     */
+    supersededBy: string | null;
+    /**
+     * Baserunid
+     *
+     * The run it was made from.
+     */
+    baseRunId: string | null;
+    /**
+     * Label
+     *
+     * Its name or the words that asked for it, when it had them.
+     */
+    label: string | null;
+    /**
+     * Statedigest
+     *
+     * Its design state's digest, when it finished.
+     */
+    stateDigest: string | null;
+};
+
+/**
+ * TrashRestoreDto
+ *
+ * What came back, and the trash as it now is.
+ */
+export type TrashRestoreDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Restored
+     *
+     * The runs that came back: the one asked for first, then those it names.
+     */
+    restored: Array<string>;
+    trash: ProjectTrashDto;
+};
+
+/**
+ * TrashRestoreRequestDto
+ *
+ * Restore one trashed run: it comes back whole, with any trashed run it was made from.
+ */
+export type TrashRestoreRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+};
+
+/**
  * UnknownCoverageDto
  *
  * The components no edge touches: unknown impact, not zero impact.
@@ -13804,6 +13921,76 @@ export type ReadWorktreesApiWorktreesGetResponses = {
 };
 
 export type ReadWorktreesApiWorktreesGetResponse = ReadWorktreesApiWorktreesGetResponses[keyof ReadWorktreesApiWorktreesGetResponses];
+
+export type ReadProjectTrashApiTrashGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/trash';
+};
+
+export type ReadProjectTrashApiTrashGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadProjectTrashApiTrashGetError = ReadProjectTrashApiTrashGetErrors[keyof ReadProjectTrashApiTrashGetErrors];
+
+export type ReadProjectTrashApiTrashGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectTrashDto;
+};
+
+export type ReadProjectTrashApiTrashGetResponse = ReadProjectTrashApiTrashGetResponses[keyof ReadProjectTrashApiTrashGetResponses];
+
+export type RestoreFromTrashApiTrashRestorePostData = {
+    body: TrashRestoreRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/trash/restore';
+};
+
+export type RestoreFromTrashApiTrashRestorePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RestoreFromTrashApiTrashRestorePostError = RestoreFromTrashApiTrashRestorePostErrors[keyof RestoreFromTrashApiTrashRestorePostErrors];
+
+export type RestoreFromTrashApiTrashRestorePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: TrashRestoreDto;
+};
+
+export type RestoreFromTrashApiTrashRestorePostResponse = RestoreFromTrashApiTrashRestorePostResponses[keyof RestoreFromTrashApiTrashRestorePostResponses];
 
 export type ReadIndexChangesApiIndexGetData = {
     body?: never;

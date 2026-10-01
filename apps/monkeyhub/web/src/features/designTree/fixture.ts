@@ -11,10 +11,11 @@
  * unit tests can serve it from a stubbed runtime. Everything in it is invented.
  * `unadmittedLineFacts` is a second project (#575): nothing admitted or
  * staged, one line of continued runs, and two drafts that line superseded;
- * its Worktree Graph names the line and the drafts as the runtime does.
+ * its Worktree Graph names the line and the drafts as the runtime does, and
+ * `clean` moves drafts into its project trash as the runtime's sweep would.
  */
-import type { DesignBranchDto, DesignCandidateDto, DesignHistoryDto, DesignStageDto, DesignStudyDto, LineStepDto, WorkingDraftDto, WorkingHeadDto,
-  WorkingSourceDto, WorktreeGraphDto, WorktreeLineDto } from "../../api/project-runtime/generated";
+import type { DesignBranchDto, DesignCandidateDto, DesignHistoryDto, DesignStageDto, DesignStudyDto, LineStepDto, ProjectTrashDto, TrashEntryDto,
+  TrashRestoreDto, WorkingDraftDto, WorkingHeadDto, WorkingSourceDto, WorktreeGraphDto, WorktreeLineDto } from "../../api/project-runtime/generated";
 
 export const FIXTURE_PROJECT = "riverside-library";
 const ref = (run: string, record = "design-stage") => `project://${FIXTURE_PROJECT}/runs/${run}/review/${record}.json`;
@@ -81,6 +82,8 @@ export interface DesignTreeFixtureState {
   readonly continued: Set<string>;
   /** #575: results whose comparison with Current's line conflicts: they changed what it changed. */
   readonly conflicting: Set<string>;
+  /** #575: the project trash, oldest first; absent until something is cleaned. */
+  trashed?: TrashEntryDto[];
 }
 
 export class FixtureRefusal extends Error {
@@ -254,8 +257,38 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
     acceptance: { eventId: `audit-${stage.run}`, occurredAt: stage.acceptedAt, action: "design.accepted", status: "accepted",
       actorId: stage.acceptedBy, authenticated: false, origin: "studio", auditRef: ref(stage.run, "audit-event") },
   });
+  const RETENTION_DAYS = 30;
   return {
     state,
+    /** #575: the runtime's sweep, for these runs: each leaves the results for the trash, with what superseded it. */
+    clean(runIds: readonly string[], trashedAt = "2026-10-01T09:00:00+00:00"): void {
+      const superseded = new Map(resultLines(line()).map((row) => [row.runId, row.supersededBy]));
+      const expires = new Date(Date.parse(trashedAt) + RETENTION_DAYS * 24 * 3600 * 1000).toISOString();
+      for (const run of runIds) {
+        const at = state.results.indexOf(run);
+        if (at < 0) throw new FixtureRefusal(409, "RUN_NOT_TRASHED", `${run} is no retained result.`);
+        state.results.splice(at, 1);
+        state.trashed = [...state.trashed ?? [], { runId: run, trashedAt, expiresAt: expires, rule: "superseded",
+          reason: "Built where the line moved on; nobody continued or admitted it.", supersededBy: superseded.get(run) ?? null,
+          baseRunId: state.runs.get(run)?.parent ?? null, label: state.labels.get(run) ?? null, stateDigest: digest(`state:${run}`) }];
+      }
+      state.revision += 1;
+    },
+    /** GET /api/trash. */
+    trash(): ProjectTrashDto {
+      return { projectId: FIXTURE_PROJECT, retentionDays: RETENTION_DAYS, entries: [...state.trashed ?? []] };
+    },
+    /** POST /api/trash/restore: the run is a retained result again, exactly as before. */
+    restoreTrashed(body: { projectId: string; runId: string }): TrashRestoreDto {
+      if (body.projectId !== FIXTURE_PROJECT) throw new FixtureRefusal(409, "PROJECT_MISMATCH", "The request belongs to another project.");
+      if (!(state.trashed ?? []).some((entry) => entry.runId === body.runId)) {
+        throw new FixtureRefusal(404, "TRASH_ENTRY_NOT_FOUND", `The project trash holds no run ${body.runId}.`);
+      }
+      state.trashed = (state.trashed ?? []).filter((entry) => entry.runId !== body.runId);
+      state.results.push(body.runId);
+      state.revision += 1;
+      return { projectId: FIXTURE_PROJECT, restored: [body.runId], trash: this.trash() };
+    },
     designHistory(branchId = "main"): DesignHistoryDto {
       if (branchId !== "main") throw new FixtureRefusal(404, "DESIGN_BRANCH_NOT_FOUND", "The design branch does not exist.");
       const branches: DesignBranchDto[] = state.branchHead === null ? []

@@ -104,7 +104,7 @@ async function runtime(request, response, url, body) {
   const name = url.pathname, method = request.method;
   try {
     if (method === "GET" && name === "/api/protocol") return json({ protocol: "archflow/2", server: "design-tree-fixture", serverVersion: "test", mode: "local",
-      capabilities: ["candidate-admission", "candidate-review", "design-history", "working-draft", "working-source"] });
+      capabilities: ["candidate-admission", "candidate-review", "design-history", "project-trash", "working-draft", "working-source"] });
     if (method === "GET" && name === "/api/project") return json({ projectId: PROJECT, projectDir: "D:\\fixture\\riverside-library",
       published: { version: 2, stateSha256: "0".repeat(64) }, referenceRun: { runId: "run-site", baseVersion: 2, baseSha256: "0".repeat(64) },
       intentProvider: "fixture", intentModel: "fixture" });
@@ -117,6 +117,9 @@ async function runtime(request, response, url, body) {
         candidates: history.candidates.map(candidate => ({ ...candidate, review: reviews.get(`candidate:${candidate.candidateId}`) ?? null })) });
     }
     if (method === "GET" && name === "/api/worktrees") { treeReads.push(name); return json(fixture.worktrees()); }
+    // #575: the project trash, and Restore of one cleaned draft.
+    if (method === "GET" && name === "/api/trash") return json(fixture.trash());
+    if (method === "POST" && name === "/api/trash/restore") { writes.push({ method, name, body }); return json(fixture.restoreTrashed(body)); }
     // #367: a model's thumbnail status (a miss queues it; here, it stays pending until the test draws it) and its bytes.
     if (method === "GET" && name === "/api/projections") {
       const run = url.searchParams.get("runId"), asset = url.searchParams.get("assetSha256"), drawn = thumbnails.get(asset);
@@ -1280,7 +1283,8 @@ try {
   let lineCard = await clickCanvasNode(linePage, lineSurface, "draft:run-v3-closed");
   assert.match(await lineCard.innerText(), /Superseded draft · kept for now/);
   assert.match(await lineCard.innerText(), /Superseded by\s*V3 - ribbed roof, open side triangles/);
-  assert.match(await lineCard.innerText(), /Nothing is deleted/);
+  // #575: a draft nothing refers to goes to the project trash at the next open or Continue, restorable for 30 days.
+  assert.match(await lineCard.innerText(), /moves it into the project trash, restorable for 30 days/);
   assert.equal(await lineCard.locator('[data-action="continue"]').isEnabled(), true, "a draft is kept and can be returned to");
   await lineBar.getByRole("button", { name: "Hide superseded drafts", exact: true }).click();
   await lineCard.waitFor({ state: "detached" });
@@ -1317,12 +1321,42 @@ try {
   assert.deepEqual(await lineSurface.getByRole("treeitem").evaluateAll((rows) => rows.map((row) => row.dataset.node)),
     ["origin", ...lineSteps.slice(0, 3), "drafts:step:run-v2", lineSteps[3], "current"]);
   await shoot(linePage, "17-line-list");
+  // #575 slice 4: the runtime cleaned both drafts into the project trash. Their row says so quietly, Enter opens
+  // the inspector that lists them, and Restore brings one back as a kept draft, through POST /api/trash/restore.
+  fixture.clean(["run-v3-closed", "run-v3-glazed"]);
+  await linePage.evaluate(() => window.dispatchEvent(new Event("focus")));
+  const cleanedRow = lineSurface.locator('[role="treeitem"][data-node="drafts:step:run-v2"]');
+  await cleanedRow.filter({ hasText: "Superseded drafts cleaned · 2" }).waitFor();
+  assert.match(await cleanedRow.innerText(), /Restorable for 30 days/);
+  await cleanedRow.focus();
+  await linePage.keyboard.press("Enter");
+  const cleanedCard = lineSurface.locator('.design-tree-inspector[data-kind="drafts"]');
+  await cleanedCard.waitFor();
+  assert.match(await cleanedCard.innerText(), /Superseded drafts cleaned · 2 · restorable for 30 days/);
+  assert.match(await cleanedCard.innerText(), /Superseded by V3 - ribbed roof, open side triangles/);
+  assert.deepEqual(await cleanedCard.locator(".design-tree-cleaned li").evaluateAll((rows) => rows.map((row) => row.dataset.run)),
+    ["run-v3-glazed", "run-v3-closed"], "newest first");
+  await shoot(linePage, "18-cleaned-drafts");
+  await cleanedCard.locator('li[data-run="run-v3-closed"] [data-action="restore"]').click();
+  await cleanedCard.locator('li[data-run="run-v3-closed"]').waitFor({ state: "detached" });
+  assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/trash/restore", body: { projectId: PROJECT, runId: "run-v3-closed" } });
+  await cleanedRow.filter({ hasText: "Superseded drafts · 1" }).waitFor();
+  assert.match(await cleanedRow.innerText(), /1 cleaned · restorable for 30 days/);
+  assert.deepEqual(await cleanedCard.locator(".design-tree-cleaned li").evaluateAll((rows) => rows.map((row) => row.dataset.run)), ["run-v3-glazed"]);
+  await shoot(linePage, "19-draft-restored");
+  // On the canvas the card says the same, quietly, and a click on it opens the same inspector.
+  await lineBar.getByRole("button", { name: "Canvas", exact: true }).click();
+  await linePage.waitForFunction(() => window.__treeApi?.getSceneElements().some((element) => element.id === "drafts:step:run-v2:card"));
+  // Beside the open inspector the canvas is narrower, and a card's words are clipped to it.
+  const cleanedTexts = texts(await scene(linePage), "drafts:step:run-v2");
+  assert.ok(cleanedTexts.length === 2 && cleanedTexts[0].startsWith("Superseded drafts") && cleanedTexts[1].startsWith("1 cleaned"), cleanedTexts.join(" / "));
+  await shoot(linePage, "20-cleaned-canvas");
   await lineContext.close();
 
   assert.deepEqual(unexpected, [], "the tree reads only what it declares");
   assert.deepEqual(external, [], "no external request");
   assert.deepEqual(errors.filter((message) => !/Failed to load resource: the server responded with a status of 404/.test(message)), []);
-  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, Current's line as one chain with its earlier steps folded and opened, superseded drafts folded where the line moved on, return to a step via Continue and Undo, three zoom levels with close-card server thumbnails read on demand and arriving through the index, inspector, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
+  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, Current's line as one chain with its earlier steps folded and opened, superseded drafts folded where the line moved on, cleaned drafts listed and one restored, return to a step via Continue and Undo, three zoom levels with close-card server thumbnails read on demand and arriving through the index, inspector, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
     writes: writes.map((row) => `${row.method} ${row.name}`) }));
 } catch (error) {
   console.error("FAILED:", error);
