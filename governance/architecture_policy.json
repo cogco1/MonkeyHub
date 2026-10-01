@@ -371,7 +371,7 @@
       ],
       "kind": "benchmark_evidence",
       "owner": "tools.benchmarks.daily_benchmark",
-      "reason": "The local runner's log: creates <development root>/temp/benchmark-local/logs and appends one timestamped line per start, skip, result and failure to local.log there. Its run directories (the result and summary through benchmark_data.write_file, copies of the installed version, projects, Hub logs) are written under runs/<YYYYMMDD-HHMMSS> beside it; the installed version is only read."
+      "reason": "The local runner's log: creates <development root>/temp/benchmark-local/logs and appends one timestamped line per start, skip, result and failure to local.log there. Beside it, runs/<YYYYMMDD-HHMMSS> holds a run's result, summary and published record (through benchmark_data.write_file), projects and Hub logs, and installed/ the one copy of the installed version kept across runs and its record; the installed version is only read."
     },
     {
       "path": "tools/benchmarks/daily_benchmark.py",
@@ -386,14 +386,14 @@
     },
     {
       "path": "tools/benchmarks/daily_benchmark.py",
-      "function": "retire_runs",
+      "function": "move_to_trash",
       "operations": [
         "mkdir",
         "rename"
       ],
       "kind": "benchmark_evidence",
       "owner": "tools.benchmarks.daily_benchmark",
-      "reason": "Renames the local runner's earlier run directories from <development root>/temp/benchmark-local/runs into <development root>/_TRASH_<YYYYMMDD>/benchmark-local, on the same volume, for a person to empty; nothing is deleted."
+      "reason": "Renames the local runner's earlier run directories (<development root>/temp/benchmark-local/runs) and the kept copies and records of earlier installed versions (<development root>/temp/benchmark-local/installed) into <development root>/_TRASH_<YYYYMMDD>/benchmark-local, on the same volume, for a person to empty; nothing is deleted."
     },
     {
       "path": "tools/benchmarks/benchmark_data.py",

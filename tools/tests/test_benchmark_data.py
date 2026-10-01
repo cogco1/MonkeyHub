@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import subprocess
 import tempfile
@@ -150,8 +151,28 @@ class ReadingTests(unittest.TestCase):
                                                 "channel": "candidate", "python": "3.13.15", "bytecodeFiles": 2986},
                                   "harnessCommit": "f" * 40})
         text = data.summary_markdown(local)
-        self.assertIn("Installed MonkeyHub 0.1.980 (`046fdbdafe70-desktop`, candidate), measured on fresh copies · "
+        self.assertIn("Installed MonkeyHub 0.1.980 (`046fdbdafe70-desktop`, candidate), measured from fresh copies · "
                       "harness `ffffffffffff`", text)
+        local["settings"]["installed"]["copies"] = "kept"
+        local["settings"]["local"] = {"monkeyhub": {"desktopOpen": True, "checks": 3, "desktopSeen": 3}}
+        self.assertIn("measured from the copy kept since its first launch · the desktop app was open beside the run",
+                      data.summary_markdown(local))
+
+    def test_a_metric_a_day_did_not_measure_is_neither_judged_nor_drawn(self):
+        # A local run measures the first launch only when the installed version changes.
+        days = [result(f"2026-10-0{day}T14:00:00Z", runner="windows-local", hub_start__warm=1200.0,
+                       **({"hub_start__first_launch": 2000.0} if day == 1 else {})) for day in (1, 2, 3)]
+        self.assertEqual(data.evaluate(days[2], days, {"hub_start.first_launch": 2500}), [])
+        self.assertEqual(data.trailing_median(days, "hub_start.first_launch", "windows-local",
+                                              datetime(2026, 10, 3, 14, tzinfo=timezone.utc)), (2000.0, 1))
+        later = result("2026-10-04T14:00:00Z", runner="windows-local", hub_start__warm=1200.0,
+                       hub_start__first_launch=2900.0)
+        self.assertEqual([flag["reasons"] for flag in data.evaluate(later, days + [later], {})], [["regression"]])
+        trend = data.trend_markdown(days, {"hub_start.first_launch": 2500})
+        row = next(line for line in trend.splitlines() if line.startswith("| `hub_start.first_launch` | ms |"))
+        self.assertIn("`▄  `", row)
+        self.assertIn("| – | 2000 | 2500 |  |", row)
+        self.assertNotIn("hub_start.first_launch", data.latest_document(days)["runners"]["windows-local"]["metrics"])
 
     def test_the_trend_shows_the_last_30_runs_per_runner_oldest_first(self):
         runs = [result(f"2026-09-{day:02d}T20:30:00Z", commit=f"{day:02d}" * 20, hub_start__warm=float(day))

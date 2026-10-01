@@ -9,10 +9,10 @@ checkout with pythonw.exe (no window), as the current user and without elevation
 - Task Scheduler starts it when Windows declares the computer idle (an idle trigger), never on battery,
   and stops it when the computer stops being idle or goes on battery, or after two hours.
 - The runner waits until nobody has used the computer for 15 minutes (Windows 8 and later no longer use
-  a task's own idle duration), measures at most once a day, and skips while any MonkeyHub runs or the
-  processors are busy. It logs every start, skip and result to
-  <development root>\temp\benchmark-local\logs\local.log and pushes each result to
-  results/windows-local/ on benchmark-data with this account's Git credentials.
+  a task's own idle duration), measures at most once a day, and skips while the processors are busy. It
+  runs beside an open MonkeyHub, records that it was open, and never touches a process it did not start.
+  It logs every start, skip and result to <development root>\temp\benchmark-local\logs\local.log and
+  pushes each result to results/windows-local/ on benchmark-data with this account's Git credentials.
 
 Without -Register or -Unregister the script only prints the task it would register; -WhatIf prints the
 same and changes nothing. See docs/development/benchmarks.md ("Local runs").
@@ -130,7 +130,7 @@ $xml = @"
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Author>$(& $escape $identity.Name)</Author>
-    <Description>MonkeyHub daily local benchmark (GH-547): once a day while nobody uses the computer, measures fresh copies of the installed MonkeyHub on an isolated runtime root and pushes the result to results/windows-local/ on benchmark-data. Log: $(& $escape (Join-Path $DevRoot 'temp\benchmark-local\logs\local.log')). See docs/development/benchmarks.md.</Description>
+    <Description>MonkeyHub daily local benchmark (GH-547): once a day while nobody uses the computer, measures the copy it keeps of the installed MonkeyHub on an isolated runtime root and pushes the result to results/windows-local/ on benchmark-data. Log: $(& $escape (Join-Path $DevRoot 'temp\benchmark-local\logs\local.log')). See docs/development/benchmarks.md.</Description>
     <URI>$(& $escape "$TaskPath$TaskName")</URI>
   </RegistrationInfo>
   <Triggers>

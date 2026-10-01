@@ -288,8 +288,12 @@ def summary_markdown(result: Mapping[str, Any], budgets: Mapping[str, Any] | Non
     installed = settings.get("installed")
     if isinstance(installed, Mapping):
         harness = settings.get("harnessCommit")
+        source = {"new": "a new copy, its first launch included",
+                  "kept": "the copy kept since its first launch"}.get(installed.get("copies"), "fresh copies")
+        beside = (settings.get("local") or {}).get("monkeyhub") or {}
         lines += [f"Installed MonkeyHub {installed.get('release') or ''} (`{installed.get('version')}`, "
-                  f"{installed.get('channel') or 'no channel'}), measured on fresh copies"
+                  f"{installed.get('channel') or 'no channel'}), measured from {source}"
+                  + (" · the desktop app was open beside the run" if beside.get("desktopOpen") else "")
                   + (f" · harness `{harness[:12]}`" if isinstance(harness, str) else ""), ""]
     lines += [
         "| Metric | Unit | Median | p90 | n | Budget | |",

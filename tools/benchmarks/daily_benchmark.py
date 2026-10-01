@@ -5,7 +5,7 @@
         [--first-launch-samples 5] [--idle-seconds 60] [--budget-override METRIC=VALUE] \\
         [--installed <version dir>] [--runner-key KEY]
     python tools/benchmarks/daily_benchmark.py local [--version-dir <version dir>] [--dev-root <dir>] \\
-        [--sizes 30,150] [--samples 3] [--first-launch-samples 2] [--remote-url URL] [--no-publish] [--force]
+        [--sizes 30,150] [--samples 3] [--remote-url URL] [--no-publish] [--force]
 
 Every Hub this starts runs this checkout's ``apps/monkeyhub/run.py`` on its own
 port, with its own runtime root, ``APPDATA``, ``LOCALAPPDATA`` and bytecode
@@ -18,33 +18,37 @@ are never opened. A project comes from
 test suite.
 
 With ``--installed`` the Hubs run an installed version instead: its own
-interpreter (``_runtime/python``) and ``run.py``, from fresh copies of the
-version directory under ``--work``, never from the directory given, with every
-``PYTHON*`` variable dropped as the package's updater drops them. A copy never
-sits directly under a ``versions`` directory, so the Hub's update transaction
-stays off: it neither checks for an update nor points the desktop shortcut
-anywhere. Each first launch starts a new copy, as shipped; the first copy, once
-launched, is the warm version every later Hub of the run starts from.
+interpreter (``_runtime/python``) and ``run.py``, from copies of the version
+directory, never from the directory given, with every ``PYTHON*`` variable
+dropped as the package's updater drops them. A copy never sits directly under
+a ``versions`` directory, so the Hub's update transaction stays off: it neither
+checks for an update nor points the desktop shortcut anywhere. A first launch
+starts a new copy, as shipped; the first copy, once launched, is the warm
+version every later Hub starts from. ``run --installed`` makes its copies under
+``--work``; a run given ``Options.keep_in`` keeps one copy per version there,
+and launches a version first only when that copy does not exist yet.
 
 ``local`` is the scheduled entry on a person's Windows machine: it measures the
 version the desktop shortcut opens in installed mode under
-``<development root>/temp/benchmark-local``. It skips when any MonkeyHub runs,
-when the processors are busy, on battery, when nobody has left the computer
-idle long enough or when today's result is already published; it builds the
-projects with this checkout's generator in a process of their own, and pushes
-the result to ``results/windows-local/`` on the data branch. It never stops a
-process it did not start and deletes nothing: earlier runs are renamed into
-the development root's ``_TRASH_<YYYYMMDD>``. ``register_local_benchmark.ps1``
-registers it.
+``<development root>/temp/benchmark-local``, from the copy it keeps of that
+version, so ``hub_start.first_launch`` is measured once per version. It skips on
+battery, when the processors are busy, when nobody has left the computer idle
+long enough or when today's result is already published, and runs beside an
+open MonkeyHub, recording that it was open. It builds the projects with this
+checkout's generator in a process of their own, and pushes the result to
+``results/windows-local/`` on the data branch. It never stops a process it did
+not start and deletes nothing: earlier runs and the copies of earlier versions
+are renamed into the development root's ``_TRASH_<YYYYMMDD>``.
+``register_local_benchmark.ps1`` registers it.
 
 Scenarios, every sample in a Hub of its own: ``hub_start.first_launch``
-``--first-launch-samples`` times, idle once per project size, and the rest
-``--samples`` times at each size:
+``--first-launch-samples`` times (locally once per version), idle once per
+project size, and the rest ``--samples`` times at each size:
 
 - ``hub_start``: process start to the first ``/api/health`` that answers, as a
   first launch and warm. From a checkout, a first launch has an empty
   ``PYTHONPYCACHEPREFIX``, so every module is compiled, and warm keeps a prefix
-  from earlier launches. An installed first launch starts a fresh copy with the
+  from earlier launches. An installed first launch starts a new copy with the
   bytecode the package ships (#548); warm starts the copy launched before.
 - ``project_open``: the requests the web client's ``ensureProject`` sends, from
   opening the project's runtime until its worker is ready and answers the
@@ -160,8 +164,10 @@ runpy.run_path(sys.argv[0], run_name="__main__")
 """
 # Where an installed version's results go on the data branch.
 LOCAL_RUNNER_KEY = "windows-local"
-# The local runner's directory under the development root (tools/dev/workspace.py).
+# The local runner's directory under the development root (tools/dev/workspace.py),
+# and where in it one copy of each installed version is kept: never named versions.
 LOCAL_DIRECTORY = Path("temp") / "benchmark-local"
+KEPT_DIRECTORY = "installed"
 # The desktop shortcut the installer writes (apps/monkeyhub/installer/install.ps1).
 SHORTCUT_NAME = "MonkeyHub.lnk"
 # The desktop host's executable, now and before the rename.
@@ -177,6 +183,8 @@ print(build_synthetic_project(pathlib.Path(sys.argv[1]), project_id=sys.argv[2],
 # Input this recent while the runner waits for an idle computer means somebody is back.
 IDLE_TOLERANCE_S = 2.0
 IDLE_POLL_S = 30.0
+# How often, between scenarios, a local run looks at what MonkeyHub runs beside it.
+BESIDE_EVERY_S = 10.0
 
 
 class HarnessError(RuntimeError):
@@ -1154,6 +1162,9 @@ class Options:
     runner_key: str | None = None
     # An installed version directory to measure instead of the checkout; only ever copied.
     installed: Path | None = None
+    # Where one copy per installed version is kept across runs: a version whose copy is
+    # there is not launched first again, and first_launch_samples does not apply.
+    keep_in: Path | None = None
 
 
 class _Collector:
@@ -1246,29 +1257,41 @@ def run(options: Options, say: Callable[[str], None] = print) -> dict[str, Any]:
                 collect.details.setdefault("primeRetried", []).append(collect.failures.pop())
                 session("prime", size, work / "runtime" / str(size), warm, prime)
 
-    def first_launches(launch: Callable[[int], Path]) -> None:
-        say(f"hub start, first launch x{options.first_launch_samples}")
-        for sample in range(1, options.first_launch_samples + 1):
+    def first_launches(launch: Callable[[int], Path], samples: int) -> None:
+        say(f"hub start, first launch x{samples}")
+        for sample in range(1, samples + 1):
             def first_launch(hub: Hub) -> None:
                 collect.add("hub_start.first_launch", "ms", hub.start())
 
             session("hub_start", None, work / "runtime" / "first-launch", launch(sample), first_launch)
 
+    first_launch_samples = options.first_launch_samples
+    copies = None
     if installed is None:
         warm = work / "pycache" / "warm"
         prime_all(warm)
-        first_launches(lambda sample: work / "pycache" / f"first-{sample}")
+        first_launches(lambda sample: work / "pycache" / f"first-{sample}", first_launch_samples)
     else:
-        def fresh_copy(label: str) -> Path:
-            say(f"copying {installed.name} for {label}")
-            return copy_version(installed, work / "hubs" / label)
+        def fresh_copy(parent: Path, why: str) -> Path:
+            say(f"copying {installed.name} {why}")
+            return copy_version(installed, parent)
 
-        # Every first launch starts a copy as shipped. The first copy, once launched,
-        # is warm, as an installed version is after its first launch: every later Hub
-        # of the run starts from it.
-        first_launches(lambda sample: fresh_copy(f"first-{sample}"))
-        warm = (work / "hubs" / "first-1" / installed.name if options.first_launch_samples > 0
-                else fresh_copy("warm"))
+        # A first launch starts a copy as shipped. That copy, once launched, is warm, as an
+        # installed version is after its first launch: every later Hub starts from it.
+        if options.keep_in is not None:
+            warm = options.keep_in / installed.name
+            if warm.is_dir():
+                copies, first_launch_samples = "kept", 0
+                say(f"starting every Hub from the copy of {installed.name} kept since its first launch")
+            else:
+                copies, first_launch_samples = "new", 1
+                first_launches(lambda sample: fresh_copy(options.keep_in, "to keep, for its first launch"), 1)
+        else:
+            copies = "per-run"
+            first_launches(lambda sample: fresh_copy(work / "hubs" / f"first-{sample}", f"for first launch {sample}"),
+                           first_launch_samples)
+            warm = (work / "hubs" / "first-1" / installed.name if first_launch_samples > 0
+                    else fresh_copy(work / "hubs" / "warm", "for the warm Hubs"))
         prime_all(warm)
 
     for size, project in projects.items():
@@ -1306,11 +1329,13 @@ def run(options: Options, say: Callable[[str], None] = print) -> dict[str, Any]:
 
         session("idle", size, runtime_root, warm, idle)
 
-    settings: dict[str, Any] = {"samples": options.samples, "firstLaunchSamples": options.first_launch_samples,
+    settings: dict[str, Any] = {"samples": options.samples, "firstLaunchSamples": first_launch_samples,
                                 "idleSeconds": options.idle_seconds, "settleSeconds": options.settle_seconds,
                                 "sizes": sorted(projects)}
     if installed is not None:
-        settings.update({"installed": installed.describe(), "harnessCommit": harness})
+        # copies: "new" when this run made and first launched the kept copy, "kept" when it
+        # started from one an earlier run made, "per-run" when every copy is the run's own.
+        settings.update({"installed": {**installed.describe(), "copies": copies}, "harnessCommit": harness})
     return {
         "schema": SCHEMA,
         "commit": installed.commit if installed is not None else _revision(code_root),
@@ -1341,42 +1366,47 @@ def _windows_path(value: str) -> str:
     return ntpath.normcase(ntpath.normpath(text))
 
 
-def blocking_processes(processes: Iterable[Mapping[str, Any]], roots: Iterable[Path | str],
-                       own: int | None = None) -> list[str]:
-    """Why running processes stop a local run, one line per kind.
+def _under(root: Path | str) -> str:
+    return _windows_path(str(root)).rstrip("\\") + "\\"
 
-    A desktop host (MonkeyHub.exe, or MonkeyArch.exe before the rename), any
-    process whose executable lies under one of ``roots`` (an installation, or
-    this runner's own copies), and any Python whose command line runs a Hub, a
-    Hub service or a Project Runtime process, from any checkout or version.
+
+def monkeyhub_processes(processes: Iterable[Mapping[str, Any]], installations: Iterable[Path | str], *,
+                        own_root: Path | str | None = None, own_pid: int | None = None) -> dict[str, list[str]]:
+    """The MonkeyHub processes running beside a local run, as ``name pid`` by kind; the runner's own left out.
+
+    ``desktop``: the desktop app, a desktop host (MonkeyHub.exe, or
+    MonkeyArch.exe before the rename) or any process whose executable lies
+    under one of ``installations``, the folders holding a ``versions``
+    directory. ``elsewhere``: any Python whose command line runs a Hub, a Hub
+    service or a Project Runtime process from anywhere else, such as a
+    checkout. A process whose executable lies under ``own_root`` (the runner's
+    copies) or whose id is ``own_pid`` is the runner's own.
     """
 
-    places = [(_windows_path(str(root)).rstrip("\\") + "\\", str(root)) for root in roots]
-    hosts: list[str] = []
-    located: dict[str, list[str]] = {}
-    elsewhere: list[str] = []
+    installed = [_under(root) for root in installations]
+    own = _under(own_root) if own_root is not None else None
+    found: dict[str, list[str]] = {"desktop": [], "elsewhere": []}
     for row in processes:
         pid = row.get("pid")
-        if own is not None and pid == own:
-            continue
         name, path = str(row.get("name") or ""), str(row.get("path") or "")
-        command = str(row.get("commandLine") or "").casefold()
         where = _windows_path(path) if path else ""
-        place = next((shown for folded, shown in places if where and where.startswith(folded)), None)
-        if name.casefold() in DESKTOP_HOSTS:
-            hosts.append(f"{name} (pid {pid}) is running")
-        elif place is not None:
-            located.setdefault(place, []).append(f"{name} {pid}")
+        if (own_pid is not None and pid == own_pid) or (own and where.startswith(own)):
+            continue
+        command = str(row.get("commandLine") or "").casefold()
+        if name.casefold() in DESKTOP_HOSTS or (where and any(where.startswith(root) for root in installed)):
+            found["desktop"].append(f"{name} {pid}")
         elif name.casefold().startswith("python") and any(marker in command for marker in HUB_COMMANDS):
-            elsewhere.append(f"{name} {pid}")
-
-    def count(rows: list[str]) -> str:
-        return f"{len(rows)} process{'es run' if len(rows) > 1 else ' runs'}"
-
-    found = hosts + [f"{count(rows)} from {place} ({', '.join(rows)})" for place, rows in located.items()]
-    if elsewhere:
-        found.append(f"{count(elsewhere)} a Hub or the Project Runtime from elsewhere ({', '.join(elsewhere)})")
+            found["elsewhere"].append(f"{name} {pid}")
     return found
+
+
+def monkeyhub_beside(checks: Sequence[Mapping[str, Sequence[str]]]) -> dict[str, Any]:
+    """What ``monkeyhub_processes`` saw over a run: whether the desktop app was open, at how many checks, how big."""
+
+    return {"desktopOpen": any(check["desktop"] for check in checks), "checks": len(checks),
+            "desktopSeen": sum(1 for check in checks if check["desktop"]),
+            "desktopProcesses": max((len(check["desktop"]) for check in checks), default=0),
+            "otherHubs": any(check["elsewhere"] for check in checks)}
 
 
 def cpu_busy_percent(first: Sequence[int], second: Sequence[int]) -> float:
@@ -1649,29 +1679,42 @@ def hold_lock(path: Path) -> Iterator[bool]:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
-def retire_runs(runs: Path, trash: Path, say: Callable[[str], None]) -> list[Path]:
-    """Rename every earlier run directory into ``trash``; nothing is deleted. Answer where each went.
+def move_to_trash(paths: Iterable[Path], trash: Path, say: Callable[[str], None]) -> list[Path]:
+    """Rename each path into ``trash``; nothing is deleted. Answer where each went.
 
-    A run holds copies of a whole version (about 1 GB each). The development
-    root's ``_TRASH_<YYYYMMDD>`` is where a person empties them from; a rename
-    keeps them on the same volume and never copies.
+    The development root's ``_TRASH_<YYYYMMDD>`` is where a person empties
+    things from; a rename keeps them on the same volume and never copies. A
+    name already there gets ``-2``, ``-3``; a path that cannot move stays.
     """
 
     moved = []
-    for directory in sorted(runs.iterdir()) if runs.is_dir() else ():
-        if not directory.is_dir():
-            continue
-        target, number = trash / directory.name, 2
+    for path in paths:
+        target, number = trash / path.name, 2
         while os.path.lexists(target):
-            target, number = trash / f"{directory.name}-{number}", number + 1
+            target, number = trash / f"{path.name}-{number}", number + 1
         try:
             trash.mkdir(parents=True, exist_ok=True)
-            directory.rename(target)
+            path.rename(target)
         except OSError as error:
-            say(f"could not move {directory} to {target}: {error}")
+            say(f"could not move {path} to {target}: {error}")
             continue
         moved.append(target)
     return moved
+
+
+def stale_kept(kept: Path, name: str) -> list[Path]:
+    """What in the kept directory no run will start from: every entry but this version's copy and its record.
+
+    A copy counts once its record (``<name>.json``) says a published run
+    measured its first launch; a copy without one, left by a run that stopped
+    or did not publish, is stale with the copies and records of other versions.
+    """
+
+    if not kept.is_dir():
+        return []
+    ready = (kept / name).is_dir() and (kept / f"{name}.json").is_file()
+    keep = {name, f"{name}.json"} if ready else set()
+    return [entry for entry in sorted(kept.iterdir()) if entry.name not in keep]
 
 
 def console_python() -> str:
@@ -1731,10 +1774,13 @@ def publishing_identity(code_root: Path, url: str | None = None) -> tuple[str, t
     return url, (name, email)
 
 
-def _instances_and_power(roots: Iterable[Path]) -> list[str]:
-    reasons = blocking_processes(running_processes(), roots, own=os.getpid())
-    power = power_reason(*power_status())
-    return reasons + ([power] if power else [])
+def _monkeyhub_now(installations: Sequence[Path], root: Path) -> dict[str, list[str]] | None:
+    """The MonkeyHub processes running now beside this runner, or None when Windows will not list them."""
+
+    try:
+        return monkeyhub_processes(running_processes(), installations, own_root=root, own_pid=os.getpid())
+    except OSError:
+        return None
 
 
 def run_local(arguments: argparse.Namespace) -> int:
@@ -1763,7 +1809,7 @@ def run_local(arguments: argparse.Namespace) -> int:
 
 
 def _measure_locally(arguments: argparse.Namespace, dev_root: Path, root: Path, log: Callable[[str], None]) -> int:
-    runs = root / "runs"
+    runs, kept = root / "runs", root / KEPT_DIRECTORY
     if not arguments.force:
         done = published_today(runs, date.today())
         if done:
@@ -1775,8 +1821,8 @@ def _measure_locally(arguments: argparse.Namespace, dev_root: Path, root: Path, 
         log("failed: no desktop shortcut opens an installed MonkeyHub; pass --version-dir")
         return 1
     installed = read_installed(version)
-    roots = sorted({installation_root(installed.directory), root, *([installation_root(shortcut)] if shortcut else [])},
-                   key=str)
+    installations = sorted({installation_root(installed.directory),
+                            *([installation_root(shortcut)] if shortcut else [])}, key=str)
     budgets = benchmark_data.load_budgets(arguments.budgets)
     # Known before anything is measured: a run that could not be published would be lost.
     url, author = (None, None) if arguments.no_publish else publishing_identity(CODE_ROOT, arguments.remote_url)
@@ -1785,9 +1831,10 @@ def _measure_locally(arguments: argparse.Namespace, dev_root: Path, root: Path, 
         log("skipped: " + "; ".join(reasons))
         return 0
 
-    reasons = _instances_and_power(roots)
-    if reasons and not arguments.force:
-        return skip(reasons)
+    # An open MonkeyHub does not stop a run: what was open beside it is kept in the result.
+    power = power_reason(*power_status())
+    if power and not arguments.force:
+        return skip([power])
     if arguments.min_idle_minutes > 0 and not arguments.force:
         reason = wait_until_idle(arguments.min_idle_minutes * 60, arguments.idle_wait_minutes * 60)
         if reason:
@@ -1795,32 +1842,60 @@ def _measure_locally(arguments: argparse.Namespace, dev_root: Path, root: Path, 
     first = system_times()
     time.sleep(arguments.cpu_seconds)
     busy = cpu_busy_percent(first, system_times())
+    reasons = [power] if power else []
     if busy > arguments.max_cpu:
         reasons.append(f"the processors were {busy:.0f}% busy over {arguments.cpu_seconds:g} s "
                        f"(the limit is {arguments.max_cpu:g}%)")
-    reasons += [reason for reason in _instances_and_power(roots) if reason not in reasons]
+    power = power_reason(*power_status())
+    if power and power not in reasons:
+        reasons.append(power)
     if reasons and not arguments.force:
         return skip(reasons)
     if reasons:
         log("forced past: " + "; ".join(reasons))
 
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    for moved in retire_runs(runs, dev_root / f"_TRASH_{date.today():%Y%m%d}" / "benchmark-local", log):
+    checks: list[dict[str, list[str]]] = []
+    looked = [0.0]
+
+    def look() -> None:
+        seen = _monkeyhub_now(installations, root)
+        looked[0] = time.monotonic()
+        if seen is not None:
+            checks.append(seen)
+
+    look()
+    if checks and checks[0]["desktop"]:
+        log(f"MonkeyHub is open beside this run: {', '.join(checks[0]['desktop'])}")
+    trash = dev_root / f"_TRASH_{date.today():%Y%m%d}" / "benchmark-local"
+    for moved in move_to_trash(sorted(path for path in runs.iterdir() if path.is_dir()) if runs.is_dir() else [],
+                               trash, log):
         # A run Task Scheduler stopped, or one that failed, leaves no result.
         ended = "" if (moved / "result.json").is_file() else " (it ended without a result)"
         log(f"moved an earlier run to {moved}{ended}")
+    for moved in move_to_trash(stale_kept(kept, installed.name), trash, log):
+        log(f"moved {moved.name}, no longer a kept copy, to {moved}")
+    new = not (kept / installed.name).is_dir()
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = runs / stamp
     log(f"started: {installed.name} ({installed.release or 'no release'}) at {run_dir}; sizes "
-        f"{', '.join(map(str, arguments.sizes))}; {arguments.samples} samples, {arguments.first_launch_samples} "
-        f"first launches; processors {busy:.0f}% busy")
+        f"{', '.join(map(str, arguments.sizes))}; {arguments.samples} samples; "
+        f"{'a new version: its first launch is measured' if new else 'from its kept copy'}; "
+        f"processors {busy:.0f}% busy")
     projects = build_projects(CODE_ROOT, run_dir / "projects", arguments.sizes, log)
-    result = run(Options(CODE_ROOT, projects, run_dir / "work", samples=arguments.samples,
-                         first_launch_samples=arguments.first_launch_samples, idle_seconds=arguments.idle_seconds,
-                         settle_seconds=arguments.settle_seconds, runner_key=LOCAL_RUNNER_KEY,
-                         installed=installed.directory),
-                 say=log)
+
+    def say(line: str) -> None:
+        log(line)
+        # Between scenarios, never during one: whether the desktop app was open beside the run.
+        if time.monotonic() - looked[0] >= BESIDE_EVERY_S:
+            look()
+
+    result = run(Options(CODE_ROOT, projects, run_dir / "work", samples=arguments.samples, first_launch_samples=1,
+                         idle_seconds=arguments.idle_seconds, settle_seconds=arguments.settle_seconds,
+                         runner_key=LOCAL_RUNNER_KEY, installed=installed.directory, keep_in=kept),
+                 say=say)
+    look()
     result["settings"]["local"] = {"cpuPercent": round(busy, 1), "cpuSeconds": arguments.cpu_seconds,
-                                   "forcedPast": reasons}
+                                   "forcedPast": reasons, "monkeyhub": monkeyhub_beside(checks)}
     benchmark_data.write_file(run_dir / "result.json", json.dumps(result, indent=2, ensure_ascii=False) + "\n")
     benchmark_data.write_file(run_dir / "summary.md", benchmark_data.summary_markdown(result, budgets))
     failures = result["failures"]
@@ -1839,6 +1914,13 @@ def _measure_locally(arguments: argparse.Namespace, dev_root: Path, root: Path, 
         {"url": url, "branch": benchmark_data.DATA_BRANCH, "commit": outcome["commit"], "file": outcome["written"][0],
          "flags": [flag["metric"] for flag in outcome["flags"]]}, indent=2) + "\n")
     log(f"published {outcome['written'][0]} to {benchmark_data.DATA_BRANCH} at {outcome['commit'][:12]} ({url})")
+    first_launch = result["metrics"].get("hub_start.first_launch") or {}
+    if result["settings"]["installed"].get("copies") == "new" and first_launch.get("samples"):
+        # Its first launch is published: later runs start from this copy and launch it first no more.
+        benchmark_data.write_file(kept / f"{installed.name}.json", json.dumps(
+            {"version": installed.name, "commit": installed.commit, "firstLaunchMs": first_launch.get("median"),
+             "run": stamp, "file": outcome["written"][0]}, indent=2) + "\n")
+        log(f"kept {kept / installed.name} for later runs")
     for flag in outcome["flags"]:
         log(f"  flagged {flag['metric']}: {', '.join(flag['reasons'])} (median {flag['median']} {flag['unit']})")
     return 1 if failures else 0
@@ -1888,15 +1970,13 @@ def build_parser() -> argparse.ArgumentParser:
     command.add_argument("--budget-override", action="append", default=[], metavar="METRIC=VALUE")
 
     local = commands.add_parser("local", help="the scheduled run on a person's machine: check, measure the installed "
-                                              "MonkeyHub, publish to results/windows-local/")
+                                              "MonkeyHub from its kept copy, publish to results/windows-local/")
     local.add_argument("--version-dir", type=Path, help="the installed version to measure (default: the version the "
-                                                       "desktop shortcut opens); only ever copied")
+                                                       "desktop shortcut opens); only ever copied, once per version")
     local.add_argument("--dev-root", type=Path, help="the development root (default: the one tools/dev/workspace.py "
                                                     "configured); the runner works in <dev root>/temp/benchmark-local")
     local.add_argument("--sizes", type=_sizes_option, default=(30, 150), help="project sizes in runs (default: 30,150)")
     local.add_argument("--samples", type=int, default=3)
-    local.add_argument("--first-launch-samples", type=int, default=2,
-                       help="first launches, each on a fresh copy of the version (about 1 GB each)")
     local.add_argument("--idle-seconds", type=float, default=60.0)
     local.add_argument("--settle-seconds", type=float, default=2.0)
     local.add_argument("--min-idle-minutes", type=float, default=15.0,
@@ -1908,8 +1988,8 @@ def build_parser() -> argparse.ArgumentParser:
     local.add_argument("--remote-url", help="where results are pushed (default: the checkout's origin)")
     local.add_argument("--no-publish", action="store_true", help="measure and write the result, push nothing")
     local.add_argument("--force", action="store_true",
-                       help="measure even when a check would skip, without waiting for an idle computer; the "
-                            "reasons are logged and kept in the result")
+                       help="measure even on battery, with busy processors or today already published, without "
+                            "waiting for an idle computer; the reasons are logged and kept in the result")
     local.add_argument("--budgets", type=Path, default=benchmark_data.DEFAULT_BUDGETS)
     return parser
 

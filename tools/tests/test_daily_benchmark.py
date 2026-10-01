@@ -418,16 +418,32 @@ class InstalledModeTests(unittest.TestCase):
         self.assertEqual(result["runner"]["key"], "windows-local")
         self.assertEqual(result["runner"]["python"], "3.13.15")
         self.assertEqual(result["settings"]["installed"]["release"], "0.1.980")
+        self.assertEqual(result["settings"]["installed"]["copies"], "per-run")
         self.assertIn("harnessCommit", result["settings"])
         self.assertEqual(result["failures"], [])
+
+    def test_a_kept_copy_is_launched_first_once_per_version_and_then_starts_every_hub(self):
+        version = installed_version(self.root)
+        keep = self.root / "benchmark-local" / bench.KEPT_DIRECTORY
+        first, started = self.first_launches(runner_key=bench.LOCAL_RUNNER_KEY, installed=version, keep_in=keep)
+        self.assertEqual([hub.code_root for hub in started], [keep / version.name])
+        self.assertEqual(first["metrics"]["hub_start.first_launch"]["samples"], [1501.0])
+        self.assertEqual((first["settings"]["firstLaunchSamples"], first["settings"]["installed"]["copies"]), (1, "new"))
+        self.assertEqual((keep / version.name / "apps/monkeyhub/api/__pycache__/x.pyc").read_bytes(), b"shipped")
+        self.assertFalse((self.root / "work" / "hubs").exists())
+        # The next run starts from the kept copy: no first launch, so the metric is absent that day.
+        later, started = self.first_launches(runner_key=bench.LOCAL_RUNNER_KEY, installed=version, keep_in=keep)
+        self.assertEqual(started, [])
+        self.assertNotIn("hub_start.first_launch", later["metrics"])
+        self.assertEqual((later["settings"]["firstLaunchSamples"], later["settings"]["installed"]["copies"]), (0, "kept"))
 
     def test_run_and_local_take_their_options(self):
         parser = bench.build_parser()
         run = parser.parse_args(["run", "--project", "30=p", "--out", "r.json", "--installed", "v"])
         self.assertEqual(run.installed, Path("v"))
         local = parser.parse_args(["local"])
-        self.assertEqual((local.version_dir, local.dev_root, local.sizes, local.samples, local.first_launch_samples),
-                         (None, None, (30, 150), 3, 2))
+        self.assertEqual((local.version_dir, local.dev_root, local.sizes, local.samples), (None, None, (30, 150), 3))
+        self.assertFalse(hasattr(local, "first_launch_samples"))
         self.assertEqual((local.min_idle_minutes, local.idle_wait_minutes, local.max_cpu, local.cpu_seconds),
                          (15.0, 30.0, 30.0, 60.0))
         self.assertFalse(local.force or local.no_publish)
@@ -478,7 +494,7 @@ class LocalRunnerTests(unittest.TestCase):
             (Path(desktop) / bench.SHORTCUT_NAME).write_bytes(shell_link(self.TARGET, self.DIRECTORY))
             self.assertEqual(bench.shortcut_version(Path(desktop)), Path(self.DIRECTORY))
 
-    def test_any_monkeyhub_process_stops_a_local_run_and_nothing_else_does(self):
+    def test_the_monkeyhub_beside_a_run_is_told_apart_from_the_runners_own_hubs(self):
         installed = "D:\\MonkeyHub\\versions\\v"
         rows = [
             {"pid": 1, "name": "MonkeyHub.exe", "path": installed + "\\MonkeyHub.exe", "commandLine": "MonkeyHub.exe"},
@@ -490,8 +506,9 @@ class LocalRunnerTests(unittest.TestCase):
              "commandLine": "python D:\\work\\checkout\\apps\\monkeyhub\\run.py --service monitor"},
             {"pid": 5, "name": "python.exe", "path": "C:\\Python312\\python.exe",
              "commandLine": "python -m project_runtime.application.projections --project-dir x"},
-            {"pid": 6, "name": "python.exe", "path": "D:\\DEV\\temp\\benchmark-local\\runs\\r\\work\\hubs\\first-1\\v"
-                                                     "\\_runtime\\python\\python.exe", "commandLine": None},
+            # The runner's own Hub, from its kept copy, and the runner itself.
+            {"pid": 6, "name": "python.exe", "path": "D:\\DEV\\temp\\benchmark-local\\installed\\v\\_runtime\\python"
+                                                     "\\python.exe", "commandLine": "python.exe -u -c x apps\\monkeyhub\\run.py"},
             {"pid": 7, "name": "python.exe", "path": "C:\\Python312\\python.exe",
              "commandLine": "python -m pytest services/project-runtime/tests"},
             {"pid": 8, "name": "pythonw.exe", "path": "C:\\Python312\\pythonw.exe",
@@ -501,15 +518,21 @@ class LocalRunnerTests(unittest.TestCase):
             {"pid": 11, "name": "git.exe", "path": "C:\\Program Files\\Git\\bin\\git.exe",
              "commandLine": "git log -- apps/monkeyhub/run.py"},
         ]
-        roots = ["D:\\MonkeyHub", "D:\\DEV\\temp\\benchmark-local"]
-        self.assertEqual(bench.blocking_processes(rows, roots, own=8), [
-            "MonkeyHub.exe (pid 1) is running",
-            "MonkeyArch.exe (pid 9) is running",
-            "2 processes run from D:\\MonkeyHub (python.exe 2, node.exe 3)",
-            "1 process runs from D:\\DEV\\temp\\benchmark-local (python.exe 6)",
-            "2 processes run a Hub or the Project Runtime from elsewhere (python.exe 4, python.exe 5)",
-        ])
-        self.assertEqual(bench.blocking_processes([rows[6], rows[7], rows[9], rows[10]], roots), [])
+        seen = bench.monkeyhub_processes(rows, ["D:\\MonkeyHub"], own_root="D:\\DEV\\temp\\benchmark-local", own_pid=8)
+        self.assertEqual(seen, {"desktop": ["MonkeyHub.exe 1", "python.exe 2", "node.exe 3", "MonkeyArch.exe 9"],
+                                "elsewhere": ["python.exe 4", "python.exe 5"]})
+        self.assertEqual(bench.monkeyhub_processes([rows[5], rows[6], rows[9], rows[10]], ["D:\\MonkeyHub"],
+                                                   own_root="D:\\DEV\\temp\\benchmark-local"),
+                         {"desktop": [], "elsewhere": []})
+
+    def test_a_result_says_whether_the_desktop_app_was_open_beside_the_run(self):
+        open_app = {"desktop": ["MonkeyHub.exe 1", "python.exe 2"], "elsewhere": []}
+        closed = {"desktop": [], "elsewhere": ["python.exe 4"]}
+        self.assertEqual(bench.monkeyhub_beside([open_app, closed, open_app]),
+                         {"desktopOpen": True, "checks": 3, "desktopSeen": 2, "desktopProcesses": 2, "otherHubs": True})
+        self.assertEqual(bench.monkeyhub_beside([]),
+                         {"desktopOpen": False, "checks": 0, "desktopSeen": 0, "desktopProcesses": 0,
+                          "otherHubs": False})
 
     def test_processor_use_is_the_busy_share_of_every_processor(self):
         self.assertEqual(bench.cpu_busy_percent((100, 300, 100), (160, 400, 200)), 70.0)
@@ -572,13 +595,32 @@ class LocalRunnerTests(unittest.TestCase):
                 (runs / name / "result.json").write_text(name, encoding="utf-8")
             (trash / "20260930-120000").mkdir(parents=True)
             lines = []
-            moved = bench.retire_runs(runs, trash, lines.append)
+            moved = bench.move_to_trash(sorted(runs.iterdir()), trash, lines.append)
             self.assertEqual([path.name for path in moved], ["20260930-120000-2", "20261001-090000"])
             self.assertEqual((trash / "20260930-120000-2" / "result.json").read_text(encoding="utf-8"), "20260930-120000")
             self.assertTrue((trash / "20260930-120000").is_dir())
             self.assertEqual(list(runs.iterdir()), [])
             self.assertEqual(lines, [])
-            self.assertEqual(bench.retire_runs(Path(temporary) / "none", trash, lines.append), [])
+            self.assertEqual(bench.move_to_trash([], trash, lines.append), [])
+            # What cannot move stays where it is, and says so.
+            missing = Path(temporary) / "gone"
+            self.assertEqual(bench.move_to_trash([missing], trash, lines.append), [])
+            self.assertEqual(len(lines), 1)
+
+    def test_only_this_versions_copy_with_its_published_first_launch_is_kept(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            kept = Path(temporary) / "installed"
+            self.assertEqual(bench.stale_kept(kept, "new-desktop"), [])
+            for name in ("old-desktop", "new-desktop"):
+                (kept / name).mkdir(parents=True)
+            (kept / "old-desktop.json").write_text("{}", encoding="utf-8")
+            # This version's copy has no record of a published first launch yet: nothing is kept.
+            self.assertEqual([path.name for path in bench.stale_kept(kept, "new-desktop")],
+                             ["new-desktop", "old-desktop", "old-desktop.json"])
+            (kept / "new-desktop.json").write_text("{}", encoding="utf-8")
+            self.assertEqual([path.name for path in bench.stale_kept(kept, "new-desktop")],
+                             ["old-desktop", "old-desktop.json"])
+            self.assertEqual(bench.stale_kept(kept, "old-desktop"), [kept / "new-desktop", kept / "new-desktop.json"])
 
     def test_the_local_log_keeps_every_line_with_its_time(self):
         with tempfile.TemporaryDirectory() as temporary:

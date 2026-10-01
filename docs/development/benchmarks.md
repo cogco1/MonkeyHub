@@ -23,7 +23,7 @@ moved back (`projection_check.settle`); no scenario writes to it.
 
 | Metric | What is timed or counted | Unit |
 |---|---|---|
-| `hub_start.first_launch` | From process start to the first `/api/health` answer, with an empty `PYTHONPYCACHEPREFIX`: every module is compiled. A checkout ships no bytecode; the release package does since #548, and a [local run](#local-runs) starts a fresh copy of the installed version with it. | ms |
+| `hub_start.first_launch` | From process start to the first `/api/health` answer, with an empty `PYTHONPYCACHEPREFIX`: every module is compiled. A checkout ships no bytecode; the release package does since #548, and a [local run](#local-runs) measures a new copy of the installed version with it, once per version. | ms |
 | `hub_start.warm` | The same, with the bytecode earlier launches left in the prefix; locally, the copy launched before. | ms |
 | `project_open.<N>runs` | The requests of the web client's `ensureProject` (`ChatShell.tsx`): open the project's runtime, read `/api/runtime`, start its worker, ask `/api/apps` until the worker runs, read the project binding through the Hub. The harness asks every 25 ms; the page waits 400 ms between asks. | ms |
 | `open_modeling.cold.<N>runs` | The requests the Modeling workspace sends when it opens, in the client's order and parallel rounds, through the Hub, until every one has answered. Cold is the first opening on a new worker. | ms |
@@ -144,45 +144,58 @@ with the same scenarios and metric names, and pushes the result to `results/wind
 
 **What runs.** The version the desktop shortcut (`MonkeyHub.lnk` on the Desktop) opens, or `--version-dir`:
 
-- Each first launch copies the version directory into the run directory (`--first-launch-samples`, 2 by default,
-  about 1 GB each) and starts the copy's own `_runtime\python\python.exe` with its `run.py`, as the desktop host does
-  (`-u`), headless (`--no-browser --managed-stdin`, stopped with `stop` on stdin). That is the first start of the
-  version as shipped, with its bytecode, from files just written, as after an update. The first copy, once launched,
-  is the warm version every later Hub of the run starts from. The installed directory is only read.
+- The runner keeps one copy of the installed version, `installed\<version>` in its directory (about 1 GB), and
+  starts every Hub from that copy's own `_runtime\python\python.exe` with its `run.py`, as the desktop host does
+  (`-u`), headless (`--no-browser --managed-stdin`, stopped with `stop` on stdin). The installed directory is only
+  read.
+- The first run that sees a version copies it and measures `hub_start.first_launch` once on the new copy: the first
+  start of the version as shipped, with its bytecode, from files just written, as after an update. Once that run
+  has published its result, `installed\<version>.json` records it, and every later run starts warm from the same
+  copy and has no first-launch sample. A run that did not publish leaves the copy unrecorded, and the next run
+  copies the version again. When the version changes, the earlier version's copy is renamed into the trash.
 - Every Hub has its own port, runtime root, `APPDATA` and `LOCALAPPDATA` under the run directory, an account
   credential store that holds nothing, and no `PYTHON*`, `ARCHFLOW_*` or `MONKEYHUB_*` variable. A copy never sits
   right under a `versions` directory, so its update transaction stays off: it does not check for updates and never
-  points the desktop shortcut anywhere.
+  points the desktop shortcut anywhere. That is why the copies live in `installed\`, not `versions\`.
 - The synthetic projects are built with this checkout's generator, in a process of their own as the workflow builds
   them: 30 and 150 runs (`--sizes`). Each scenario is sampled 3 times (`--samples`), idle 60 s.
 - The result names the installed version's commit; `settings.installed` names the version, its release, channel,
-  bundled Python and shipped bytecode, `settings.harnessCommit` the checkout that measured it, and `settings.local`
-  the processor use before the run. It is published from a new repository of the run's own, never a person's
-  checkout, to the checkout's `origin` (`--remote-url`), as the checkout's Git author and with the account's
-  existing credentials; Git never prompts. Flags are judged against the same runner's history and only logged.
+  bundled Python, shipped bytecode and `copies` (`new` on the day of a first launch, `kept` after it),
+  `settings.harnessCommit` the checkout that measured it, and `settings.local` the processor use before the run and
+  what MonkeyHub ran beside it. It is published from a new repository of the run's own, never a person's checkout,
+  to the checkout's `origin` (`--remote-url`), as the checkout's Git author and with the account's existing
+  credentials; Git never prompts. Flags are judged against the same runner's history and only logged. A day without
+  a first launch has no `hub_start.first_launch`: nothing is judged for it, and the trend leaves a gap.
 
 **When it skips.** A skip writes one `skipped: <reason>` line to the log and exits 0:
 
 - another local run holds `local.lock`, or a run already published today's result (its `published.json`): a run
   that failed, stopped early or was not published leaves the day open;
-- any MonkeyHub runs: `MonkeyHub.exe` (or `MonkeyArch.exe`), any process from the installation (the folder above
-  `versions`) or from the runner's own copies, or any Hub, Hub service or Project Runtime process from any checkout;
 - the computer runs on battery, or its power source is unknown on a machine with a battery;
 - nobody left the computer idle for 15 minutes within 30 minutes of waiting, or somebody used it during the wait
   (`--min-idle-minutes`, `--idle-wait-minutes`);
-- the processors were more than 30% busy, averaged over 60 s (`--max-cpu`, `--cpu-seconds`). Instances and power are
-  checked again after that minute.
+- the processors were more than 30% busy, averaged over 60 s (`--max-cpu`, `--cpu-seconds`). Power is checked
+  again after that minute.
 
-The runner never stops a process it did not start. Each Hub it starts stops with its workers when told to, or when
-the runner ends and the Hub's managed stdin closes. `--force` measures without waiting and despite the checks, and
-keeps the reasons in the log and in `settings.local.forcedPast`; `--no-publish` pushes nothing.
+**An open MonkeyHub does not stop a run** (the owner's decision of 2026-10-01). The runner looks at the processes
+before the run, between scenarios at most every 10 s, and after it, and keeps what it saw in
+`settings.local.monkeyhub`: `desktopOpen` (the desktop app, `MonkeyHub.exe` or a process of its installation, was
+open at some check), `checks`, `desktopSeen` (at how many), `desktopProcesses` (the most at one check) and
+`otherHubs` (a Hub or Project Runtime from a checkout). Its summary says when the desktop app was open beside the
+run. Read such a day with the app's own work in mind: an open project's workers and projections share the machine.
+
+The runner never stops or touches a process it did not start; its own Hubs, which run from its copy, are told
+apart from the desktop app's. Each Hub it starts stops with its workers when told to, or when the runner ends and
+the Hub's managed stdin closes. `--force` measures without waiting and despite the checks, and keeps the reasons in
+the log and in `settings.local.forcedPast`; `--no-publish` pushes nothing.
 
 **Where things go.** Under `<development root>\temp\benchmark-local` (`python tools/dev/workspace.py paths` names the
-root): `logs\local.log`, one timestamped line per start, skip, result and failure; `local.lock`; and
-`runs\<YYYYMMDD-HHMMSS>\` with the result, its summary, the Hub logs under `work\logs`, the copies, the projects, the
-publishing repository and, once pushed, `published.json`. Nothing is deleted: each run renames the earlier run
-directories into `<development root>\_TRASH_<YYYYMMDD>\benchmark-local\`, about 1 GB per first launch, for a person to
-empty, and logs any that ended without a result.
+root): `logs\local.log`, one timestamped line per start, skip, result and failure; `local.lock`; `installed\`, the
+kept copy of the current version and its record; and `runs\<YYYYMMDD-HHMMSS>\` with the result, its summary, the Hub
+logs under `work\logs`, the projects, the publishing repository and, once pushed, `published.json`. Nothing is
+deleted: each run renames the earlier run directories, and the copies of earlier versions, into
+`<development root>\_TRASH_<YYYYMMDD>\benchmark-local\` for a person to empty (about 1 GB per installed version), and
+logs any run that ended without a result.
 
 **Schedule.** `tools/benchmarks/register_local_benchmark.ps1` registers one task, `\MonkeyHub\DailyLocalBenchmark`,
 for the current user, only while logged on, without elevation:
@@ -200,9 +213,10 @@ duration, so the runner waits for the 15 idle minutes itself. The task runs `pyt
 from the main checkout: `daily_benchmark.py local --dev-root <development root>`. `-Python`, `-Checkout` and
 `-DevRoot` replace what the script finds; `-WhatIf` prints the task and registers nothing.
 
-**By hand.** `local --force --sizes 30 --samples 1 --first-launch-samples 1 --no-publish` is a short check while the
-app is open. `run --installed <version dir> --project 30=<dir> --out <result.json>` measures any installed version
-without the checks, as `run` measures a checkout; its runner key is then `windows-local` unless given.
+**By hand.** `local --force --sizes 30 --samples 1 --no-publish` is a short check. `run --installed <version dir>
+--project 30=<dir> --out <result.json>` measures any installed version without the checks, from copies of its own
+under `--work` (`--first-launch-samples` of them), as `run` measures a checkout; its runner key is then
+`windows-local` unless given.
 
 Local numbers come from one laptop that also runs other work, against CI's shared virtual machines: compare a local
 run with the local trend, never with CI's `windows` runner.
