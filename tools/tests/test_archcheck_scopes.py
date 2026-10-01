@@ -190,7 +190,7 @@ class WorkflowBoundaryTests(unittest.TestCase):
         suites = sorted(path.relative_to(root).as_posix() for path in (root / "packages").glob("*/tests"))
         self.assertIn("packages/monkeyarch/tests", suites)
         for suite in suites:
-            for target in ("tests.support", "labs.spatial_observation.fixture"):
+            for target in ("tests.integration.support", "labs.spatial_observation.fixture"):
                 with self.subTest(suite=suite, target=target):
                     findings = tuple(check_imports(f"{suite}/test_example.py",
                                                    _index_tree(ast.parse(f"import {target}")), self.policy))
@@ -199,6 +199,33 @@ class WorkflowBoundaryTests(unittest.TestCase):
             "from monkeydiagram.rendering.svg import drawing_svg\nfrom monkeycad.backends.occt import kernel"
         )), self.policy))
         self.assertEqual((), findings)
+        # MonkeyArch's tests may import the shared test support, which holds the spine fixture they
+        # share with the integration suite (#534).
+        findings = tuple(check_imports("packages/monkeyarch/tests/test_example.py", _index_tree(ast.parse(
+            "from tests.support.spine_fixture import COMMITMENT, _proposal, _state"
+        )), self.policy))
+        self.assertEqual((), findings)
+
+    def test_shipped_code_imports_no_test_suite(self) -> None:
+        """The shared test support is for tests (#534): no package, the Runtime, the Hub or a tool imports it.
+
+        Every package under a Python source root is held to the rule; one added without it fails here.
+        """
+
+        root = Path(__file__).resolve().parents[2]
+        packages = sorted(
+            init.parent.relative_to(root).as_posix()
+            for python_root in self.policy["python_source_roots"] if python_root != "."
+            for init in (root / python_root).glob("*/__init__.py")
+        )
+        self.assertLessEqual({"packages/archflow/src/archflow", "services/project-runtime/src/project_runtime",
+                              "apps/monkeyhub/api/monkeyhub_api"}, set(packages))
+        for source in (*(f"{package}/example.py" for package in packages), "apps/monkeyhub/run.py", "tools/example.py"):
+            with self.subTest(source=source):
+                findings = tuple(check_imports(source, _index_tree(ast.parse(
+                    "from tests.support.spine_fixture import authored_record"
+                )), self.policy))
+                self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
 
     def test_every_test_root_refuses_a_lab_and_retired_lane_code(self) -> None:
         """Each test root on disk is held to the rule, function-local imports included.

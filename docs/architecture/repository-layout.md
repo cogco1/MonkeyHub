@@ -62,6 +62,7 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 ├─ scripts/dev/                  仅供开发的薄启动脚本（显式 --project-dir）；生产入口只有 MonkeyHub
 ├─ tools/                        对应既有能力的 CLI 与治理命令，按用途分为 dev/、project/、governance/、release/、benchmarks/，测试在 tools/tests/
 ├─ tests/                        跨 owner 的测试：integration/、packaging/
+│  └─ support/                   几个测试根共用的夹具，只留一份；不放测试，生产代码不导入
 ├─ probes/                       明确晋升的项目输入与回归证据
 ├─ governance/                   现有模块、工作、策略三类来源
 └─ docs/                         README.md 索引；architecture、product、protocols、development、design、
@@ -116,7 +117,8 @@ MonkeyHub Usage 页   → monkeymonitor ← Project Runtime 元数据适配器
 - MonkeyDiagram 保存自己的图纸修订；查看某个模型不会悄悄替换图纸的来源。更新产生新图，旧图与批注仍可追溯。
 - 共享是由真实消费者证明的职责。只有一个工作流使用的业务逻辑留在该工作流，不为了“以后能共用”提前抽进核心。
 - archcheck 按 policy 的 `forbidden_layer_imports` 拒绝底座反向导入工作流或 MonkeyCAD、MonkeyCAD 导入工作流、Runtime 与 Hub、两个工作流互导、MonkeyArch 各层逆向导入，以及核心、两个工作流、
-  `apps/`、`tools/` 和 `tests/` 导入 `labs/`；Runtime 的 `application/` 不导入 `api`，Hub 在进程内只经 Runtime 声明的读取接口读项目（#519）。
+  `apps/`、`tools/` 和 `tests/` 导入 `labs/`；Runtime 的 `application/` 不导入 `api`，Hub 在进程内只经 Runtime 声明的读取接口读项目（#519）；
+  各包的 `src`、Runtime、`apps/` 与 `tools/` 都不导入根 `tests`，`tests/support/` 的共用夹具也只给测试用（#534）。
 
 ## 5. 项目数据、测试与发布文件
 
@@ -158,6 +160,7 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
 ├─ labs/                            包名保持 snake_case
 ├─ probes/                          不改名
 ├─ tests/                           只留跨 owner 的测试：integration/、packaging/
+│  └─ support/                      几个测试根共用的夹具，只留一份（#534）；不放测试，生产代码不导入
 ├─ tools/{dev,project,governance,release,benchmarks}/   模块名保持 snake_case；测 tools 的在 tools/tests/
 ├─ scripts/dev/
 ├─ docs/{architecture,product,protocols,development,design,research,audits,decisions,prototypes}/ 与 README.md
@@ -181,12 +184,13 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
   基准驱动在 `tools/benchmarks/`。一个测试离开 `tests/integration/`，要同时满足两条（#522）：它导入的只有某个 owner 和这个 owner
   自己可以导入的（MonkeyArch 的测试可以经内核和 MonkeyCAD 执行几何，MonkeyDiagram 的测试可以用 MonkeyCAD 取截面），而且这个 owner
   自己的测试夹具就能满足它，需要复制的单份不超过约 100 行。否则它的夹具跨 owner，它留在 `tests/integration/`，用那里共用的 support。
-- 测试模块不兼当夹具库。包的测试根里共用的夹具放在按内容命名的 `*_fixture.py`（如 `packages/monkeyarch/tests/spine_fixture.py`），
+- 测试模块不兼当夹具库。包的测试根里共用的夹具放在按内容命名的 `*_fixture.py`（如 `packages/monkeyarch/tests/portico_fixture.py`），
   名字在共用一个 pytest 进程的测试根（根 `pyproject.toml` 的 `testpaths`）之间不重复；`tests/integration/` 共用的放在 `support.py`、
-  `runner_support.py` 与 `window_support.py`。一个测试根不能导入另一个根的测试，复制的夹具在文首写明出处。现有的复制：MonkeyArch
-  `spine_fixture.py` 的内核部分（作者记录、绑定状态与编译器的夹具提案）在 `tests/integration/support.py` 另有一份，因为留在那里的
-  OCCT 执行、版本引用与格式迁移测试要用它；另有几份不超过约 35 行的小复制（portico 网格、villa 记录、CAD 绑定、runner 的证据与构件行、
-  OCCT 测试的 `_compile`）。
+  `runner_support.py` 与 `window_support.py`。几个测试根都要用的夹具只留一份，放在 `tests/support/`（#534）：MonkeyArch 的测试与
+  `tests/integration/` 的 OCCT 执行、prism 开洞、版本引用与格式迁移测试共用 `tests/support/spine_fixture.py`（作者记录、绑定状态、
+  编译器的夹具提案与 `_compile`），按 `tests.support.spine_fixture` 导入：根 `conftest.py` 与 `unittest discover -t .` 把检出根放上
+  `sys.path`，policy 给 MonkeyArch 的测试根开了导入 `tests.support` 的例外（6.3）。除此之外一个测试根不能导入另一个根的测试，
+  复制的夹具在文首写明出处；现有的都是不超过约 35 行的小复制（portico 网格、villa 记录、CAD 绑定、runner 的证据与构件行）。
 - `tests/integration/` 是跨包测试和它们共用的 support：MonkeyArch 的 runner 加 `tools.project` 的阶段命令与 MonkeyMonitor 的用量行
   （`test_project_runner`），经 runner 运行 `tools/project/verify_state_record`（`test_verify_state_record`）；MonkeyCAD 的后端经
   MonkeyArch 的 runner 验收，并与之共用受控 Rhino 宿主和 Blender 请求（`test_cad_backend_contract`、`test_blender_cad`、
@@ -246,7 +250,7 @@ Project Runtime 自 #491 起按仓库路径 `services/project-runtime/src/projec
 | --- | --- |
 | `repository_root_entries` | 根目录的完整清单：第 6 节的目录加上根文件。`ROOT_ENTRY` 按 `git ls-files` 检查，被 git 忽略的本地文件不算；清单外的条目都是 finding，搬回根目录的包也一样 |
 | `python_source_roots` | 模块导入名从哪一级目录开始算，当前是 `.`、`services/project-runtime/src`、`apps/monkeyhub/api`、`packages/monkeyfab/src`、`packages/monkeydiagram/src`、`packages/archflow/src`、`packages/monkeyarch/src`、`packages/monkeymonitor/src`、`packages/monkeycontrol/src`、`packages/monkeycad/src`。这是唯一的清单：本地开发的各入口按检出读它（第 6 节）。新的 src 布局包加上自己的 `packages/<包名>/src`；含受检 Python 的 `src` 目录不在表里时报 `POLICY_PATH_MISSING` |
-| `checked_source_roots`、`forbidden_layer_imports` 的 `source` | `packages/` 下的包：检查根写包根 `packages/<包名>`，包的层规则 `source` 写 `packages/<包名>/src/<包名>`，`packages/<包名>/tests` 另有一条不导入根 `tests`、`labs`、`archive` 的规则，也和根 `tests/` 一样列入 `shared_write_scope`。Runtime 是服务：检查根和层规则的 `source` 都写服务根 `services/project-runtime`，包与它的 `tests/` 同受一条规则约束，`services/project-runtime/tests/` 列入 `shared_write_scope`；包内分层（#518）的规则写到层目录，如 `services/project-runtime/src/project_runtime/application` 不导入 `project_runtime.api`（#519）。一条规则可以带 `allowed`：目标之下仍可导入的模块或模块顶层成员，其余都拒绝；`from x import y` 在 `x` 或 `x.y` 被列出时放行，`import x` 与 `from x import *` 要 `x` 本身被列出。Hub 的 `apps/monkeyhub/api/monkeyhub_api` 就这样只能导入 Runtime 的 `main`、`errors`、`api.dto` 与声明的读取接口（#519）。`source` 为 `packages` 的一条规则让每个包和包自己的测试都不导入 `project_runtime`。相对导入先按所在文件的导入名解析成完整模块名再比对，`from x import y` 按 `x` 和 `x.y` 两个名字比对。路径不存在、检查根下没有 Python 源码、或层规则匹配不到任何受检文件时报 `POLICY_PATH_MISSING`；`allowed_write_sites` 与 `allowed_authority_symbols` 的文件缺失时 archcheck 直接以错误退出 |
+| `checked_source_roots`、`forbidden_layer_imports` 的 `source` | `packages/` 下的包：检查根写包根 `packages/<包名>`，包的层规则 `source` 写 `packages/<包名>/src/<包名>`，`packages/<包名>/tests` 另有一条不导入根 `tests`、`labs`、`archive` 的规则（MonkeyArch 的测试以 `allowed` 放行共用夹具 `tests.support`，#534），也和根 `tests/` 一样列入 `shared_write_scope`。Runtime 是服务：检查根和层规则的 `source` 都写服务根 `services/project-runtime`，包与它的 `tests/` 同受一条规则约束，`services/project-runtime/tests/` 列入 `shared_write_scope`；包内分层（#518）的规则写到层目录，如 `services/project-runtime/src/project_runtime/application` 不导入 `project_runtime.api`（#519）。一条规则可以带 `allowed`：目标之下仍可导入的模块或模块顶层成员，其余都拒绝；`from x import y` 在 `x` 或 `x.y` 被列出时放行，`import x` 与 `from x import *` 要 `x` 本身被列出。Hub 的 `apps/monkeyhub/api/monkeyhub_api` 就这样只能导入 Runtime 的 `main`、`errors`、`api.dto` 与声明的读取接口（#519）。`source` 为 `packages` 的一条规则让每个包和包自己的测试都不导入 `project_runtime`。相对导入先按所在文件的导入名解析成完整模块名再比对，`from x import y` 按 `x` 和 `x.y` 两个名字比对。路径不存在、检查根下没有 Python 源码、或层规则匹配不到任何受检文件时报 `POLICY_PATH_MISSING`；`allowed_write_sites` 与 `allowed_authority_symbols` 的文件缺失时 archcheck 直接以错误退出 |
 | `forbidden_layer_imports` 的 `targets` | 写导入名，不写路径。目标是 `python_source_roots` 下的模块或它上面的包，例如 `monkeyarch.application`、`archflow`；以本仓顶层包开头的名字只能这样解析，残留的 import 不能让已经删掉的模块继续算数。其他名字是第三方库，要有受检文件实际导入它，例如 `shapely`、`OCP`。另一类是 Git 忽略的目录，例如 `archive/`：退役 lane 只留在部分检出里，规则防止已提交的代码导入它。解析不了的目标报 `POLICY_TARGET_MISSING`（#511）；模块搬走或删除时，同一个 PR 把目标改到新位置或删掉。`allowed` 的每项同样要解析到一个模块或某个模块顶层定义的名字，否则也报 `POLICY_TARGET_MISSING` |
 
 module registry 里的路径同样必须存在：`owner_path`（`REGISTRY_OWNER_MISSING`）、`tests`（`REGISTRY_TEST_MISSING`），

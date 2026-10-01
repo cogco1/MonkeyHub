@@ -1051,7 +1051,7 @@ class RecessTests(ConstructionTestCase):
         from monkeycad.backends.occt.build import build_program_shapes
         from monkeycad.backends.occt.kernel import occt_available
         from monkeycad.backends.occt.measure import measure_shape
-        from spine_fixture import _compile as compile_program
+        from tests.support.spine_fixture import _compile as compile_program
 
         successor = _apply(record, result)
         program = compile_program(successor)

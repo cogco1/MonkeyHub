@@ -21,7 +21,7 @@ from monkeycad.program import expected_object_semantics
 from archflow.state.geometry_program import delivered_object_ids
 from monkeyarch.compilation.geometry import compile_geometry_program
 from portico_fixture import _binding, _compile, _rows
-from spine_fixture import COMMITMENT, _only, _proposal, _state
+from tests.support.spine_fixture import COMMITMENT, _only, _proposal, _state
 
 
 def _capital_rows(**capital_params):
