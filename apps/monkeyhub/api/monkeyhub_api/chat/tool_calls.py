@@ -35,7 +35,7 @@ _AUTHORED_PROPOSALS = {"/api/proposals", "/api/proposals/construction", "/api/pr
 # such as a producer cannot pass for one that took effect.
 _TOOL_ARGUMENTS = {
     "studio_schema": frozenset({"method", "path", "body", "pathPrefix", "offset", "limit"}),
-    "studio_request": frozenset({"method", "path", "body", "operationId", "feedbackQuote", "awaitSeconds"}),
+    "studio_request": frozenset({"method", "path", "body", "operationId", "feedbackQuote", "awaitSeconds", "taskClass"}),
     "fab_request": frozenset({"method", "path", "body"}),
 }
 
@@ -214,6 +214,9 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if "feedbackQuote" in arguments and (name != "studio_request" or not judgments._binds_words(method, parsed.path)
                                          or not isinstance(arguments["feedbackQuote"], str)):
         raise HubFailure(422, "CHAT_FEEDBACK_QUOTE", "feedbackQuote only selects the user's words for feedback, an admission or a Continue.")
+    if "taskClass" in arguments and (name, method, parsed.path) != ("studio_request", "POST", "/api/admissions"):
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "taskClass beside method/path names the loop POST /api/admissions "
+                         "closes; visual_review takes its own.")
     if "operationId" in arguments and (name != "studio_request" or method == "GET" or (
             method == "POST" and parsed.path in {"/api/board/export", "/api/drawings/plans/status"})):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "operationId identifies a Studio mutation request.")
@@ -382,6 +385,9 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             raise HubFailure(422, "CHAT_TOOL_INVALID", f"{method} {parsed.path} takes its whole request in the body, without query parameters.")
         bind = judgments._admission_body if method == "POST" else judgments._continue_body
         body = bind(chat_id, session, body, arguments.get("feedbackQuote"))
+        if method == "POST":
+            # A loop is admitted once it has finished, its declared look first (#294).
+            visual_review._require_look(chat_id, body, arguments.get("taskClass"))
     if method == "POST" and parsed.path == "/api/board/export":
         if parsed.query:
             raise HubFailure(422, "CHAT_TOOL_INVALID", "The registered page read takes its source in the body, without query parameters.")

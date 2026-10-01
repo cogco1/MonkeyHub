@@ -68,6 +68,7 @@ def _policy(**changes: object) -> dict[str, object]:
         "authority_symbol_patterns": [],
         "allowed_authority_symbols": [],
         "module_id_namespaces": {"tools": "tools"},
+        "declared_dependency_namespaces": [],
     }
     policy.update(changes)
     validate_policy(policy)
@@ -549,7 +550,7 @@ class DocsLayoutTests(unittest.TestCase):
 
 
 class RegistryPathTests(unittest.TestCase):
-    """Every path the module registry names exists; a module id names a module."""
+    """Every path the module registry names exists."""
 
     def setUp(self) -> None:
         self.root = _temporary_root(self)
@@ -560,12 +561,11 @@ class RegistryPathTests(unittest.TestCase):
         _write(self.root, REGISTRY_PATH, registry)
         return [(item.code, item.message) for item in check_registry(self.root, _policy())]
 
-    def test_paths_directories_and_module_ids_that_exist_pass(self) -> None:
+    def test_paths_and_directories_that_exist_pass(self) -> None:
         self.assertEqual([], self.findings({
             "modules": [{
                 "module_id": "tools.check", "owner_path": "tools/check.py", "tests": ["tests/test_check.py"],
-                "files": ["tools/check.py", "tools/helpers/"], "used_by": ["tools.check", "docs/index.md"],
-                "depends_on": [],
+                "files": ["tools/check.py", "tools/helpers/"], "depends_on": [],
             }],
             "spine": {"spec": "docs/index.md", "entry_points": ["tools/check.py"]},
             "interfaces": [{"interface_id": "check", "implementations": [{"implementation_file": "tools/check.py"}]}],
@@ -576,21 +576,18 @@ class RegistryPathTests(unittest.TestCase):
         findings = self.findings({
             "modules": [{
                 "module_id": "tools.check", "owner_path": "tools/check.py", "tests": ["tests/test_check.py"],
-                "files": ["tools/check.py", "tools/moved.py"],
-                "used_by": ["docs/moved.md", "tools/*.py", "tools.retired"],
+                "files": ["tools/check.py", "tools/moved.py", "tools/*.py"],
                 "depends_on": [],
             }],
             "spine": {"spec": "docs/SPINE.md", "entry_points": ["tools/run_moved.py"]},
             "interfaces": [{"interface_id": "check", "implementations": [{"implementation_file": "tools/backend.py"}]}],
             "capabilities": [{"capability_id": "project.check", "tests": ["tests/test_moved.py"]}],
         })
-        self.assertEqual(["REGISTRY_PATH_MISSING"] * 8, [code for code, _ in findings])
+        self.assertEqual(["REGISTRY_PATH_MISSING"] * 6, [code for code, _ in findings])
         messages = "\n".join(message for _, message in findings)
         for text in (
             "tools.check files: tools/moved.py does not exist",
-            "tools.check used_by: docs/moved.md does not exist",
-            "tools.check used_by: 'tools/*.py' is not a literal repository-relative path",
-            "tools.check used_by: 'tools.retired' is neither a repository path nor a module id",
+            "tools.check files: 'tools/*.py' is not a literal repository-relative path",
             "spine.spec: docs/SPINE.md does not exist",
             "spine.entry_points: tools/run_moved.py does not exist",
             "interface check implementation_file: tools/backend.py does not exist",
@@ -769,14 +766,16 @@ class ImportNameTests(unittest.TestCase):
             {"module_id": "tools.consumer", "owner_path": "tools/consumer.py", "depends_on": [owner_id],
              "untested_reason": "synthetic consumer"},
         ]})
-        policy = _policy(python_source_roots=python_source_roots, module_id_namespaces=self.NAMESPACES)
+        policy = _policy(python_source_roots=python_source_roots, module_id_namespaces=self.NAMESPACES,
+                         declared_dependency_namespaces=["archflow", "monkeyarch"])
         return [item.code for item in check_registry(root, policy)]
 
     def test_an_owner_under_a_src_layout_is_matched_through_its_source_root(self) -> None:
         owner = "packages/archflow/src/archflow/state/record.py"
         self.assertEqual([], self.registry_findings([".", "packages/archflow/src"], owner, "archflow.ledger", "archflow.state.record"))
+        # Named after the directories around it, the owner holds no module the consumer imports.
         self.assertEqual(
-            ["REGISTRY_DEPENDS_ON_DRIFT"],
+            ["REGISTRY_DEPENDS_ON_STALE"],
             self.registry_findings(["."], owner, "archflow.ledger", "archflow.state.record"),
         )
 

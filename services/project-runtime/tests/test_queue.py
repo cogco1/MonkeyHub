@@ -17,6 +17,7 @@ from project_runtime.jobs import (
     EXCLUSIVE_REASON,
     PARALLEL,
     QUEUED,
+    RUN,
     RUNNING,
     SUCCEEDED,
     JobRegistry,
@@ -376,6 +377,23 @@ class FailureReleasesTheQueueTests(QueueTestCase):
         self.assertTrue(b.started.wait(2))
         b.release.set()
         self.assertTrue(wait_until(lambda: len(self.events.of("candidate.succeeded")) == 2))
+
+
+class JobKindTests(QueueTestCase):
+    def test_a_run_keeps_its_published_event_names_and_another_kind_says_what_it_is(self) -> None:
+        # A run is the job's own kind now (#294); its lifecycle events keep the names
+        # the web client and the Hub relay read, and an export is named an export.
+        run, export = Gate(), Gate()
+        run.release.set()
+        export.release.set()
+        self.assertEqual(self.submit("run-1", run).kind, RUN)
+        self.registry.submit(candidate_id="export-1", proposal_id="export-1", work=export, kind="export")
+        self.assertTrue(wait_until(lambda: len(self.events.of("candidate.succeeded")) == 1
+                                   and len(self.events.of("export.succeeded")) == 1))
+        published = {name: [event["type"] for event in self.events.events if event["candidate_id"] == name]
+                     for name in ("run-1", "export-1")}
+        self.assertEqual(published, {"run-1": ["candidate.queued", "candidate.running", "candidate.succeeded"],
+                                     "export-1": ["export.queued", "export.running", "export.succeeded"]})
 
 
 if __name__ == "__main__":

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import importlib.util
 import io
 import json
+import marshal
 import os
 from pathlib import Path
 import shutil
@@ -50,13 +52,25 @@ class DesktopPatchTests(unittest.TestCase):
         path.write_bytes(data)
 
     @staticmethod
-    def identity(root, commit):
+    def identity(root, commit, *, bytecode=False):
         (root / "source-version.txt").write_text(commit, encoding="utf-8")
         (root / "build-info.json").write_text(json.dumps({
             "sourceCommit": commit, "target": "windows-x64", "channel": "candidate",
             "desktop": {"sourceCommit": commit, "version": "0.1.0",
                         "executableSha256": hashlib.sha256((root / "MonkeyHub.exe").read_bytes()).hexdigest()},
+            # The packager declares the bytecode it ships; see package_monkeyapps.compile_bytecode.
+            **({"pythonBytecode": {"cacheTag": "cpython-313", "invalidation": "unchecked-hash", "files": 1}}
+               if bytecode else {}),
         }), encoding="utf-8")
+
+    @staticmethod
+    def shipped(text: bytes) -> bytes:
+        """Bytecode as a build ships it: an unchecked hash-based .pyc."""
+        return (importlib.util.MAGIC_NUMBER + (1).to_bytes(4, "little") + importlib.util.source_hash(text)
+                + marshal.dumps(compile(text, "module.py", "exec")))
+
+    # What the import system writes for a module it compiled: a timestamp-based .pyc.
+    RUNTIME_CACHE = importlib.util.MAGIC_NUMBER + bytes(12) + b"runtime cache"
 
     @staticmethod
     def snapshot(root):
@@ -116,6 +130,74 @@ class DesktopPatchTests(unittest.TestCase):
         patch.create_patch(self.base, self.target, other)
         installed = patch.stage_patch(other, self.base, self.versions)
         self.assertFalse(list(installed.rglob("*.pyc")))
+
+    def test_shipped_bytecode_travels_whole_and_base_bytecode_is_never_reused(self):
+        same, changed = "apps/monkeyhub/__pycache__/same.cpython-313.pyc", "apps/monkeyhub/__pycache__/changed.cpython-313.pyc"
+        for root, commit in ((self.base, "a" * 40), (self.target, "b" * 40)):
+            self.write(root / same, self.shipped(b"same = 1\n"))
+            self.identity(root, commit, bytecode=True)
+        self.write(self.target / changed, self.shipped(b"changed = 2\n"))
+        # Caches the import system writes at runtime are never part of a version.
+        self.write(self.target / "apps/monkeyhub/__pycache__/runtime.cpython-313.pyc", self.RUNTIME_CACHE)
+        self.write(self.target / "apps/monkeyhub/__pycache__/same.cpython-313.opt-1.pyc", self.RUNTIME_CACHE)
+        carried = self.root / "bytecode.zip"
+        summary = patch.create_patch(self.base, self.target, carried)
+        with zipfile.ZipFile(carried) as archive:
+            document = json.loads(archive.read(patch.MANIFEST_NAME))
+            entries = set(archive.namelist())
+        self.assertEqual({name for name in document["targetFiles"] if patch._cache_file(name)}, {same, changed})
+        self.assertFalse([name for name in document["baseFiles"] if patch._cache_file(name)])
+        # Byte-identical bytecode is still carried: the installed base may hold other caches, or none.
+        self.assertLessEqual({same, changed}, set(document["changed"]))
+        self.assertLessEqual({"payload/" + same, "payload/" + changed}, entries)
+        # This base was staged by an older updater: its first start wrote a runtime cache instead.
+        (self.base / same).write_bytes(self.RUNTIME_CACHE)
+        before = self.snapshot(self.base)
+        installed = patch.stage_patch(carried, self.base, self.versions)
+        self.assertEqual(self.snapshot(self.base), before)
+        self.assertEqual(self.snapshot(installed), {name: data for name, data in self.snapshot(self.target).items()
+                                                    if not patch._cache_file(name) or name in (same, changed)})
+        self.assertEqual(patch.verify_target(carried, installed), summary)
+        # A cache Python writes once the version runs is runtime state.
+        self.write(installed / "apps/monkeyhub/__pycache__/later.cpython-313.pyc", self.RUNTIME_CACHE)
+        patch.verify_target(carried, installed)
+        patch.verify_target_layout(carried, installed)
+        # Shipped bytecode runs without its source being read, so it is checked like source.
+        listed = installed / changed
+        listed.write_bytes(bytes(byte ^ 1 for byte in listed.read_bytes()))
+        with self.assertRaisesRegex(patch.PatchError, "Prepared version files changed"):
+            patch.verify_target(carried, installed)
+        listed.unlink()
+        with self.assertRaisesRegex(patch.PatchError, "Prepared version files changed"):
+            patch.verify_target_layout(carried, installed)
+
+    def test_a_base_without_shipped_bytecode_gets_a_patch_its_updater_accepts(self):
+        self.write(self.target / "apps/monkeyhub/__pycache__/run.cpython-313.pyc", self.shipped(b"run = 1\n"))
+        self.identity(self.target, "b" * 40, bytecode=True)
+        plain = self.root / "plain.zip"
+        patch.create_patch(self.base, self.target, plain)
+        with zipfile.ZipFile(plain) as archive:
+            document = json.loads(archive.read(patch.MANIFEST_NAME))
+            entries = archive.namelist()
+        # An updater released before shipped bytecode refuses any cache name in a patch.
+        self.assertFalse([name for name in (*document["baseFiles"], *document["targetFiles"], *entries)
+                          if patch._cache_file(name)])
+        installed = patch.stage_patch(plain, self.base, self.versions)
+        self.assertFalse(list(installed.rglob("*.pyc")))
+        # Its first start compiles and caches as before; the version still confirms itself.
+        self.write(installed / "apps/monkeyhub/__pycache__/run.cpython-313.pyc", self.RUNTIME_CACHE)
+        patch.verify_target(plain, installed)
+
+    def test_bytecode_is_listed_only_in_a_target_table_at_its_shipped_place(self):
+        original = self.output.read_bytes()
+        fact = {"size": 0, "sha256": "a" * 64}
+        for table, name in (("baseFiles", "apps/monkeyhub/__pycache__/run.cpython-313.pyc"),
+                            ("targetFiles", "run.pyc"), ("targetFiles", "apps/__pycache__/notes.txt"),
+                            ("targetFiles", "apps/__pycache__/nested/__pycache__/run.cpython-313.pyc")):
+            with self.subTest(table=table, name=name):
+                self.output.write_bytes(original)
+                self.rewrite(lambda document: document[table].update({name: fact}))
+                self.assert_refused("shipped bytecode")
 
     def test_wrong_base_commit_and_modified_unchanged_file_are_refused(self):
         self.rewrite(lambda document: document.update(baseCommit="c" * 40))
@@ -389,16 +471,20 @@ class DesktopPatchTests(unittest.TestCase):
 class ReleaseUpdateIndexTests(unittest.TestCase):
     """The release path's delta patches and index, from small published fixtures."""
 
-    RELEASES = (("0.1.1", "a" * 40), ("0.1.2", "c" * 40), ("0.1.3", "b" * 40))
+    # The two newest releases ship bytecode; 0.1.1 predates it.
+    RELEASES = (("0.1.1", "a" * 40, False), ("0.1.2", "c" * 40, True), ("0.1.3", "b" * 40, True))
+    BYTECODE = ("apps/monkeyhub/api/monkeyhub_api/__pycache__/updates.cpython-313.pyc",
+                "archflow/__pycache__/__init__.cpython-313.pyc")
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="mh-index-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
-        self.published = {version: self.publish(version, commit) for version, commit in self.RELEASES}
+        self.published = {version: self.publish(version, commit, bytecode)
+                          for version, commit, bytecode in self.RELEASES}
         self.output, self.work = self.root / "updates", self.root / "work"
 
-    def publish(self, version, commit):
+    def publish(self, version, commit, bytecode=False):
         """One complete desktop bundle, released the way the workflow does it."""
         bundle = self.root / "bundles" / version
         for name in patch.REQUIRED_FILES:
@@ -406,12 +492,18 @@ class ReleaseUpdateIndexTests(unittest.TestCase):
         DesktopPatchTests.write(bundle / "MonkeyHub.exe", f"desktop {version}\n".encode())
         DesktopPatchTests.write(bundle / "_runtime/dependency.dat", b"shared dependency\n" * 4096)
         DesktopPatchTests.write(bundle / "apps/monkeyhub/api/monkeyhub_api/updates.py", f"# {version}\n".encode())
+        DesktopPatchTests.write(bundle / "archflow/__init__.py", b"# unchanged\n")
+        if bytecode:
+            for name, text in zip(self.BYTECODE, (f"# {version}\n".encode(), b"# unchanged\n")):
+                DesktopPatchTests.write(bundle / name, DesktopPatchTests.shipped(text))
         (bundle / "source-version.txt").write_text(commit, encoding="utf-8")
         build_info = {
             "sourceCommit": commit, "target": "windows-x64", "channel": "candidate", "releaseVersion": version,
             "desktop": {"sourceCommit": commit, "version": version,
                         "executableSha256": hashlib.sha256((bundle / "MonkeyHub.exe").read_bytes()).hexdigest()},
             "pythonVersion": builder.PYTHON_VERSION, "pythonUrl": builder.PYTHON_URL, "pythonSha256": builder.PYTHON_SHA256,
+            **({"pythonBytecode": {"cacheTag": "cpython-313", "invalidation": builder.BYTECODE_INVALIDATION,
+                                   "files": len(self.BYTECODE)}} if bytecode else {}),
             "runtimeInventory": {"nodeVersion": "v24.14.0", "acpAdapter": {"name": "fixture", "version": "1"},
                                  "pythonRequirements": {"path": "_runtime/requirements-lock.txt", "sha256": "0" * 64}},
         }
@@ -460,13 +552,23 @@ class ReleaseUpdateIndexTests(unittest.TestCase):
         self.assertFalse(any(self.work.iterdir()), "extracted releases are removed")
         self.assertEqual(builder.verify_update_index(index, manifest.parent), [])
         # The published base, installed as its ZIP extracts, is rebuilt into
-        # exactly the files the new release's ZIP carries.
+        # exactly the files the new release's ZIP carries. A base released
+        # before shipped bytecode gets the release without it, in a patch its
+        # updater accepts: no table or entry names a bytecode cache.
         with zipfile.ZipFile(full) as opened:
             expected = {name.split("/", 1)[1]: opened.read(name) for name in opened.namelist()}
+        self.assertLessEqual(set(self.BYTECODE), set(expected))
         for row in document["patches"]:
             with self.subTest(base=row["baseVersion"]):
                 self.assertEqual((self.output / row["name"]).stat().st_size, row["size"])
                 self.assertEqual(builder.sha256(self.output / row["name"]), row["sha256"])
+                with zipfile.ZipFile(self.output / row["name"]) as opened:
+                    manifest = json.loads(opened.read(patch.MANIFEST_NAME))
+                    cached = {name for name in (*manifest["baseFiles"], *manifest["targetFiles"], *opened.namelist())
+                              if patch._cache_file(name)}
+                carries = row["baseVersion"] == "0.1.2"
+                self.assertEqual(cached, {*self.BYTECODE, *("payload/" + name for name in self.BYTECODE)}
+                                 if carries else set())
                 versions = self.root / "installed" / row["baseVersion"] / "versions"
                 base = versions / (row["baseCommit"][:12] + "-desktop")
                 with zipfile.ZipFile(self.published[row["baseVersion"]].parent /
@@ -476,7 +578,9 @@ class ReleaseUpdateIndexTests(unittest.TestCase):
                 staged = patch.stage_patch(self.output / row["name"], base, versions)
                 self.assertEqual(staged.name, "b" * 12 + "-desktop")
                 self.assertEqual({path.relative_to(staged).as_posix(): path.read_bytes()
-                                  for path in staged.rglob("*") if path.is_file()}, expected)
+                                  for path in staged.rglob("*") if path.is_file()},
+                                 expected if carries else {name: data for name, data in expected.items()
+                                                           if not patch._cache_file(name)})
 
     def test_changed_unlisted_or_misnamed_files_fail_verification(self):
         index = self.build("0.1.2")
