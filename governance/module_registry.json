@@ -7523,7 +7523,6 @@
         "publish"
       ],
       "depends_on": [],
-      "used_by": [],
       "invariants": [
         "A measured Hub reads and writes only under --work: never an installed MonkeyHub's settings, data, ports or saved keys",
         "A project given is never opened: every Hub reads a settled copy, and no scenario writes to it",
