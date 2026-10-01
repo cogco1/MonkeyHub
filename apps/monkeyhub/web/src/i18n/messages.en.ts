@@ -1358,4 +1358,10 @@ export const chatCopy = {
     updateReady: "New version ready", updateReadyHint: "Opens Software Update to restart into it.",
     interject: "Interject", interjectPlaceholder: "Add a message to change direction…", interjected: "Interjected", interjectionPending: "Delivers at the next step", interjectionDelivered: "Delivered", interjectionRestarted: "Stopped the current step and continued with this message", interjectionUndelivered: "Not delivered",
     tree: "Design tree",
+    // #283: the projects list folds beside a workspace unless pinned; Focus folds the conversation into a strip.
+    pinSidebar: "Keep projects open",
+    pinSidebarOn: "Pinned: projects stay open beside a workspace. Press to let them fold again.",
+    pinSidebarOff: "Projects fold to icons while a workspace is open. Press to keep them open.",
+    focus: "Focus", focusHint: "Fold the conversation into a strip so the workspace takes the rest of the width",
+    focusExit: "Show the conversation", focusExitHint: "Leaves Focus", focusStrip: "Chat",
   } as const;

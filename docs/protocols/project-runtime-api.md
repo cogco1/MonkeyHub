@@ -1683,8 +1683,10 @@ The optional fields are `language` (`en` or `zh-CN`), `theme`
 `titleblock`, `night`), `intentProvider` (`deterministic`, `codex`, `anthropic`), a nonempty
 `intentModel`, positive finite `intentTimeoutS`, `renderProvider` (`off`, `gemini`), a nonempty
 `renderModel` of at most 160 characters, `renderTimeoutS` from 1 to 300, `chatProvider`
-(`codex`, `claude`, `coding-plan`), a nonempty `chatModel`, an http(s) `codingPlanBaseUrl`, and
-boolean `autoUpdate`. Other fields are refused. Both routes return saved fields only; nulls are
+(`codex`, `claude`, `coding-plan`), a nonempty `chatModel`, an http(s) `codingPlanBaseUrl`,
+boolean `autoUpdate`, and boolean `sidebarPinned` (#283: the projects list kept open beside a
+project workspace; the Hub page writes it only while pinned). Other fields are refused.
+Both routes return saved fields only; nulls are
 omitted. PUT replaces the file, so a client preserves any saved fields it is not editing. A
 malformed file answers 422 `USER_SETTINGS_INVALID` and can be replaced by an explicit valid PUT.
 The client restores appearance from GET. When the Hub next starts a Project Runtime, saved intent

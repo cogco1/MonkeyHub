@@ -1314,4 +1314,10 @@ export const chatCopy = {
     updateReady: "新版本已就绪", updateReadyHint: "打开「软件更新」，重启到新版本。",
     interject: "插话", interjectPlaceholder: "补充一句，改变方向…", interjected: "插话", interjectionPending: "将在下一步送达", interjectionDelivered: "已送达", interjectionRestarted: "已停止当前步骤，按新消息继续", interjectionUndelivered: "未送达",
     tree: "状态树",
+    // #283：打开工作区时项目栏自动收起，可钉住；「专注」把对话收成窄条。
+    pinSidebar: "钉住项目栏",
+    pinSidebarOn: "已钉住：打开工作区时项目栏保持展开。再按一次恢复自动收起。",
+    pinSidebarOff: "打开工作区时项目栏收成图标。按一下保持展开。",
+    focus: "专注", focusHint: "把对话收成窄条，工作区占满其余宽度",
+    focusExit: "显示对话", focusExitHint: "退出专注", focusStrip: "对话",
   } as const;

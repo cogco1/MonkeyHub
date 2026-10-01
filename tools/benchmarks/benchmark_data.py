@@ -18,7 +18,8 @@ run. This module reads such files and owns everything after the measurement:
   of ``--repo`` (or starts it, unborn, when the remote has none), adds each
   result as ``results/<runner>/<YYYY-MM-DD>-<sha12>.json``, regenerates the
   trend and ``latest.json``, commits and, with ``--push``, pushes. A push that
-  loses a race starts again from the remote branch.
+  loses a race starts again from the remote branch. The local runner publishes
+  from a new ``publisher_repository`` each run, never a person's checkout.
 
 Nothing here measures, and nothing but ``publish`` writes into a checkout.
 """
@@ -30,6 +31,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import json
 import math
+import os
 from pathlib import Path
 import statistics
 import subprocess
@@ -51,10 +53,14 @@ REGRESSION_DAYS = 7
 TREND_RUNS = 30
 SPARKS = "▁▂▃▄▅▆▇█"
 DEFAULT_BUDGETS = Path(__file__).resolve().parent / "budgets.json"
+# A process started without a console, as the scheduled local run is, opens none for its children.
+NO_WINDOW: dict[str, Any] = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 README = """# benchmark-data
 
 Results of MonkeyHub's daily benchmark (GH-547), written by
-`tools/benchmarks/benchmark_data.py publish` from `.github/workflows/benchmark.yml`.
+`tools/benchmarks/benchmark_data.py publish` from `.github/workflows/benchmark.yml`,
+and by the local runner (`tools/benchmarks/daily_benchmark.py local`) for `results/windows-local/`:
+the installed app on the owner's Windows machine.
 This branch is an orphan: it shares no history with `main` and is never merged.
 
 - `results/<runner>/<YYYY-MM-DD>-<sha12>.json`: one `MonkeyHubBenchmark@1` file per run.
@@ -278,6 +284,18 @@ def summary_markdown(result: Mapping[str, Any], budgets: Mapping[str, Any] | Non
         f"{settings.get('samples', '?')} samples · idle {settings.get('idleSeconds', '?')} s · "
         f"projects of {', '.join(str(size) for size in settings.get('sizes', ()))} runs",
         "",
+    ]
+    installed = settings.get("installed")
+    if isinstance(installed, Mapping):
+        harness = settings.get("harnessCommit")
+        source = {"new": "a new copy, its first launch included",
+                  "kept": "the copy kept since its first launch"}.get(installed.get("copies"), "fresh copies")
+        beside = (settings.get("local") or {}).get("monkeyhub") or {}
+        lines += [f"Installed MonkeyHub {installed.get('release') or ''} (`{installed.get('version')}`, "
+                  f"{installed.get('channel') or 'no channel'}), measured from {source}"
+                  + (" · the desktop app was open beside the run" if beside.get("desktopOpen") else "")
+                  + (f" · harness `{harness[:12]}`" if isinstance(harness, str) else ""), ""]
+    lines += [
         "| Metric | Unit | Median | p90 | n | Budget | |",
         "|---|---|---:|---:|---:|---:|---|",
     ]
@@ -425,11 +443,26 @@ def write_file(path: Path, text: str) -> None:
 
 def _git(cwd: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
     completed = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True,
-                               encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL)
+                               encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, **NO_WINDOW)
     if check and completed.returncode != 0:
         raise BenchmarkDataError(f"git {' '.join(args)} failed ({completed.returncode}): "
                                  f"{completed.stderr.strip() or completed.stdout.strip()}")
     return completed
+
+
+def publisher_repository(directory: Path, url: str, remote: str = "origin") -> Path:
+    """A new, empty repository at ``directory`` whose ``remote`` is ``url``: what ``publish`` checks the branch out of.
+
+    The local runner publishes from a new one each run. A person's own
+    checkout would keep every run's data worktree registered, and the next run
+    could not check the branch out again. ``directory``'s parent must exist.
+    """
+
+    if directory.exists():
+        raise BenchmarkDataError(f"{directory} already exists; a publisher repository is new")
+    _git(directory.parent, "init", "--quiet", directory.name)
+    _git(directory, "remote", "add", remote, url)
+    return directory
 
 
 def prepare_checkout(repo: Path, data_dir: Path, remote: str = "origin", branch: str = DATA_BRANCH) -> bool:
