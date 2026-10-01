@@ -23,7 +23,12 @@ import unittest
 from fastapi.testclient import TestClient
 
 from monkeycad.formats.three_dm_inspector import inspect_three_dm
-from archflow.state.state_record import apply_state_record_operator, component_facets
+from archflow.state.state_record import (
+    apply_state_record_operator,
+    component_facets,
+    component_part_facets,
+    declared_materials,
+)
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from monkeyarch.authoring.construction.vocabulary import layer_rule_violations, vocabulary
@@ -578,7 +583,7 @@ class ConstructionModelTestCase(ConstructionTestCase):
         [portico] = model["entities"]
         self.assertEqual(portico, {
             "id": "portico", "form": "solid", "bounds": [[0, 0, 0], [4, 0.9, 2]], "cuts": [], "cutBy": [],
-            "hidden": False, "parts": ["portico-base", "portico-cornice"], "facets": {}, "capabilities": [],
+            "hidden": False, "parts": ["portico-base", "portico-cornice"], "facets": {}, "partFacets": {}, "capabilities": [],
             "openings": [], "alongLine": None,
         })
 
@@ -727,6 +732,9 @@ class FacetsProposalTestCase(ConstructionTestCase):
                 body = self.facets(targets, expect=status)
                 self.assertEqual(body["code"], code, body)
                 self.assertIn(said, body["detail"])
+        # an element is reached as a part of its geometry id, and the refusal says how
+        body = self.facets([{"id": "portico-base", "set": {"material.name": "brick"}}], expect=422)
+        self.assertIn('{id: portico, part: portico-base}', body["detail"])
         stale = self.facets([{"id": "portico", "set": {"material.name": "brick"}}], expect=409, stateDigest="0" * 64)
         self.assertEqual(stale["code"], "STALE_BASE")
         for invalid in ([], [{"id": f"c{i}", "remove": ["material.name"]} for i in range(51)],
@@ -736,6 +744,104 @@ class FacetsProposalTestCase(ConstructionTestCase):
                                                                           "targets": invalid})
                 self.assertEqual(response.status_code, 422, response.text)
                 self.assertEqual(response.json()["code"], "REQUEST_INVALID")
+
+
+class PartFacetsProposalTestCase(ConstructionTestCase):
+    """#580 gap 2: ``POST /api/proposals/facets`` names a part of a geometry id, and that part alone takes a material."""
+
+    def assert_only_the_component_changed(self, after, component: str = "portico") -> None:
+        """Every part, its ownership and every dependency edge are as they were; the component kept its other fields."""
+
+        before = self.record()
+        self.assertEqual([entity.to_dict() for entity in before.entities if entity.entity_id != component],
+                         [entity.to_dict() for entity in after.entities if entity.entity_id != component])
+        self.assertEqual(before.dependency_edges(), after.dependency_edges())
+        self.assertEqual(before.parameters, after.parameters)
+        was, now = before.entity(component), after.entity(component)
+        self.assertEqual({key: value for key, value in now.fields.items() if key not in ("facets", "part_facets")},
+                         {key: value for key, value in was.fields.items() if key not in ("facets", "part_facets")})
+
+    def test_each_part_of_one_geometry_id_takes_its_own_material(self) -> None:
+        proposal = self.facets([
+            {"id": "portico", "part": "portico-base", "set": {"material.name": "travertine", "material.color": "#d8cbb0"}},
+            {"id": "portico", "part": "portico-cornice", "set": {"material.name": "limestone"}},
+        ])
+        self.assertEqual(proposal["utterance"], "facets: portico-base of portico +material.name=travertine, "
+                                                "+material.color=#D8CBB0; portico-cornice of portico +material.name=limestone")
+        [row] = proposal["change"]["edits"]["entities"]
+        self.assertEqual((row["entity_id"], row["schema"]), ("portico", "Component@1"))
+        self.assertEqual(row["fields"]["part_facets"], {
+            "portico-base": {"material.name": "travertine", "material.color": "#D8CBB0"},
+            "portico-cornice": {"material.name": "limestone"}})
+        self.assertNotIn("facets", row["fields"])
+        after = self.successor(proposal)
+        self.assert_only_the_component_changed(after)
+        self.assertEqual(declared_materials(after), ({}, {"portico": {"portico-base": "travertine",
+                                                                       "portico-cornice": "limestone"}},
+                                                     {"travertine": (216, 203, 176)}))
+        # the model view reads each part's material back, beside the geometry id's own facets
+        rows = {row["id"]: row for row in self.model(self.run_candidate(proposal["proposalId"]))["entities"]}
+        self.assertEqual(rows["portico"]["facets"], {})
+        self.assertEqual(rows["portico"]["partFacets"], {
+            "portico-base": {"material.name": "travertine", "material.color": "#D8CBB0"},
+            "portico-cornice": {"material.name": "limestone"}})
+        self.assertEqual(rows["portico"]["parts"], ["portico-base", "portico-cornice"])
+
+    def test_a_part_overrides_its_geometry_ids_material_and_one_part_may_stay_undeclared(self) -> None:
+        overridden = self.facets([{"id": "portico", "set": {"material.name": "brick"}},
+                                  {"id": "portico", "part": "portico-cornice", "set": {"material.name": "limestone"}}])
+        after = self.successor(overridden)
+        self.assert_only_the_component_changed(after)
+        self.assertEqual(component_facets(after.entity("portico")), {"material.name": "brick"})
+        self.assertEqual(declared_materials(after).by_part,
+                         {"portico": {"portico-base": "brick", "portico-cornice": "limestone"}})
+        # with no material on the geometry id, the part without its own stays undeclared
+        alone = self.facets([{"id": "portico", "part": "portico-base", "set": {"material.name": "travertine"}}])
+        self.assertEqual(declared_materials(self.successor(alone)).by_part,
+                         {"portico": {"portico-base": "travertine", "portico-cornice": None}})
+
+    def test_removing_a_parts_last_facet_leaves_it_out_and_the_rest_as_it_was(self) -> None:
+        first = self.facets([{"id": "portico", "part": "portico-base", "set": {"material.name": "travertine"}},
+                             {"id": "portico", "part": "portico-cornice", "set": {"material.name": "limestone"}}])
+        second = self.facets([{"id": "portico", "part": "portico-base", "remove": ["material.name"]}],
+                             stateDigest=first["baseStateDigest"], sourceProposalId=first["proposalId"])
+        self.assertEqual(second["utterance"], "facets: portico-base of portico -material.name")
+        after = self.successor(second)
+        self.assertEqual(component_part_facets(after.entity("portico")), {"portico-cornice": {"material.name": "limestone"}})
+        third = self.facets([{"id": "portico", "part": "portico-cornice", "remove": ["material.name"]}],
+                            stateDigest=second["baseStateDigest"], sourceProposalId=second["proposalId"])
+        emptied = self.successor(third)
+        self.assertEqual(emptied.entity("portico").fields["part_facets"], {})
+        self.assertEqual(declared_materials(emptied), ({}, {}, {}))
+        self.assert_only_the_component_changed(emptied)
+        # taking off what a part does not say proposes nothing
+        body = self.facets([{"id": "portico", "part": "portico-base", "remove": ["material.name"]}], expect=422)
+        self.assertIn("nothing to propose", body["detail"])
+
+    def test_part_refusals_name_what_is_wrong(self) -> None:
+        for targets, code, said in (
+            ([{"id": "portico", "part": "portico-roof", "set": {"material.name": "slate"}}],
+             "FACETS_TARGET_INVALID", "its parts are portico-base, portico-cornice"),
+            ([{"id": "building", "part": "portico-base", "set": {"material.name": "slate"}}],
+             "FACETS_TARGET_INVALID", "portico-base is a part of portico"),
+            ([{"id": "portico", "part": "portico-base", "set": {"architectural.role": "wall"}}],
+             "FACETS_INVALID", "a part takes material.name and material.color"),
+            ([{"id": "portico", "part": "portico-base", "set": {"material.color": "#D8CBB0"}}],
+             "FACETS_INVALID", "names no material"),
+            ([{"id": "portico", "set": {"material.name": "travertine", "material.color": "#D8CBB0"}},
+              {"id": "portico", "part": "portico-base", "set": {"material.name": "travertine", "material.color": "#000000"}}],
+             "FACETS_INVALID", "more than one material.color"),
+            ([{"id": "portico", "part": "portico-base", "set": {"material.name": "slate"}},
+              {"id": "portico", "part": "portico-base", "remove": ["material.name"]}],
+             "FACETS_INVALID", "portico-base of portico is named twice"),
+        ):
+            with self.subTest(targets=targets):
+                body = self.facets(targets, expect=422)
+                self.assertEqual(body["code"], code, body)
+                self.assertIn(said, body["detail"])
+        response = self.client.post("/api/proposals/facets", json={
+            "stateDigest": self.digest(), "targets": [{"id": "portico", "part": "", "set": {"material.name": "slate"}}]})
+        self.assertEqual((response.status_code, response.json()["code"]), (422, "REQUEST_INVALID"))
 
 
 if __name__ == "__main__":

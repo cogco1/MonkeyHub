@@ -140,7 +140,7 @@ from archflow.state.geometry_program import (
     load_compiled_geometry_program,
 )
 from archflow.state.spatial import SiteBounds
-from archflow.state.state_record import RecordBinding, Relation, SchematicPack, StateRecord, ValidatorBinding, bootstrap_developed_state, declared_materials, developed_design_view, project_grids_of, project_levels_of, volume_boxes_of
+from archflow.state.state_record import DeclaredMaterials, RecordBinding, Relation, SchematicPack, StateRecord, ValidatorBinding, bootstrap_developed_state, declared_materials, developed_design_view, project_grids_of, project_levels_of, volume_boxes_of
 from archflow.state.stage_workflow import (
     HARNESS_WORKFLOW_IDS,
     ProjectStageWorkflow,
@@ -686,12 +686,13 @@ def _observe_runner_operation(observer, phase: str, *, parent_event_id=None, det
 
 def _export(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict, *, source: _SourceSeat | None = None,
             operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
-            materials: tuple[Mapping[str, str], Mapping[str, tuple[int, int, int]]] = ({}, {})) -> dict:
+            materials: DeclaredMaterials = DeclaredMaterials({}, {}, {})) -> dict:
     """Export through the selected executor, retaining one parent for its real steps.
 
-    ``materials`` is what the record's components declare (``declared_materials``):
-    the export names each declared material and gives it one colour, and says
-    of every other component's objects that their material is undeclared.
+    ``materials`` is what the record's components and their parts declare
+    (``declared_materials``): the export names each declared material and
+    gives it one colour, a part's own before its component's, and says of
+    every other object of a component that its material is undeclared.
     """
 
     details = {"scope": "cad_export", "input_identity": {"program_digest": program.program_digest},
@@ -865,19 +866,21 @@ def _prior_patch_source(repository, run, request, backend):
 
 
 def _execute_cad(repository, run, branch, branch_destination, program, stage_id, options, provenance, *, source=None,
-                 operation_observer=None, observation_parent_id=None, materials=({}, {})):
+                 operation_observer=None, observation_parent_id=None, materials=DeclaredMaterials({}, {}, {})):
     backend = get_cad_backend(options.cad_backend)
     workspace = _export_workspace(options, stage_id)
     destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
     program_ref = repository.put_json(run=run, destination=branch_destination, record_kind=stage_geometry_program(stage_id), payload=program.to_dict())
     binding = CadProgramBinding(program_ref, branch, stage_id, program.program_digest,
                                 program.proposal.design_state_digest, program.proposal.predecessor_program_digest)
-    # The record's declared materials, keyed by the component ids the program binds its objects to.
-    material_by_component, material_colors = materials
+    # The record's declared materials, keyed by the component ids the program binds its objects to,
+    # and by the parts of a component one of whose parts declares its own.
+    material_by_component, material_by_part, material_colors = materials
     request = CadExecutionRequest(program, binding, workspace, f"{stage_id}@{program.program_digest[:12]}",
         provenance=provenance, backend_options=options.execution_options(), operation_observer=operation_observer,
         observation_parent_id=observation_parent_id,
-        material_by_component=dict(material_by_component) or None, material_colors=dict(material_colors) or None)
+        material_by_component=dict(material_by_component) or None, material_colors=dict(material_colors) or None,
+        material_by_part=dict(material_by_part) or None)
 
     def summary(result, ref, *, path=None, seconds=None):
         artifacts = {a.name: a for a in result.artifacts}

@@ -59,7 +59,7 @@ def _extrusion(profile, vector, op_id):
 def _scene_plan(request):
     semantics = expected_object_semantics(
         request.program, material_by_component=request.material_by_component,
-        layer_by_component=request.layer_by_component,
+        material_by_part=request.material_by_part, layer_by_component=request.layer_by_component,
     )
     objects = []
     for operation in request.program.proposal.operations:

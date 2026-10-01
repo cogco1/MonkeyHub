@@ -137,11 +137,17 @@ class ConstructionRefusalDto(BaseModel):
 
 
 class FacetTargetDto(BaseModel):
-    """Facets to set or remove on one geometry id (a component)."""
+    """Facets to set or remove on one geometry id (a component), or on one of its parts."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str = Field(min_length=1, description="the geometry id the model view lists")
+    part: str | None = Field(
+        default=None, min_length=1,
+        description="one of the ids the model view lists as this geometry id's parts: set or remove that part's own "
+                    "material.name and material.color, which it wears instead of the geometry id's; a part without "
+                    "its own wears the geometry id's, or none",
+    )
     set: dict[str, str] | None = Field(
         default=None,
         description="facet keys and values to add or change: architectural.role, architectural.enclosure, "
@@ -298,6 +304,9 @@ class ConstructionEntityDto(BaseModel):
     parts: list[str] | None = Field(description="its part ids when it has several, which get() reaches one by one; "
                                                 "null for one")
     facets: dict[str, str] = Field(description="the meaning given to it so far; empty until someone says")
+    part_facets: dict[str, dict[str, str]] = Field(
+        alias="partFacets",
+        description="the material each of its parts states of its own, by part id; empty when none does")
     capabilities: list[ConstructionCapabilityDto] = Field(description="what its facets allow, where its geometry "
                                                                       "can take it")
     openings: list[ConstructionOpeningDto] = Field(description="the doors and windows it hosts, when it is one part")

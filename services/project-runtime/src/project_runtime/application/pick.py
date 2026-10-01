@@ -28,6 +28,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
+from archflow.state.state_record import part_of_object
+
 from ..errors import StudioError
 from .artifacts import _text
 from .projection import StateProjection
@@ -50,10 +52,6 @@ PROGRAM_DIGEST_KEY = "archflow:program_digest"
 
 # ``archflow:object_ref`` is a CAD-object reference, not a bare name.
 OBJECT_REF_PREFIX = "cad-object:"
-
-# How an exported object's name is built from an ``Element@1`` id: ``obj-<id>``,
-# and ``obj-<id>-<suffix>`` when one element produced several objects.
-OBJECT_NAME_PREFIX = "obj-"
 
 RESOLVED = "resolved"
 UNBOUND = "unbound"
@@ -248,25 +246,15 @@ def _element_id(
     next request an element the picked component does not contain; the
     component still answers, and the element stays unresolved.
 
-    Among that component's elements, an exact ``obj-<id>`` beats a prefix match
-    and the longest prefix wins: with elements ``portico`` and ``portico-base``
-    both declared, ``obj-portico-base-0`` belongs to the second.
+    Among that component's elements the one naming rule decides
+    (``part_of_object``, which the export also reads a part's material by):
+    an exact ``obj-<id>`` beats a prefix match and the longest prefix wins:
+    with elements ``portico`` and ``portico-base`` both declared,
+    ``obj-portico-base-0`` belongs to the second.
     """
 
-    if object_name is None or not object_name.startswith(OBJECT_NAME_PREFIX):
-        return None
-    stem = object_name[len(OBJECT_NAME_PREFIX) :]
-    prefixed: list[str] = []
-    for element in projection.elements:
-        if element.component_id != component_id:
-            continue
-        if stem == element.element_id:
-            return element.element_id
-        if stem.startswith(f"{element.element_id}-"):
-            prefixed.append(element.element_id)
-    if not prefixed:
-        return None
-    return max(prefixed, key=len)
+    return part_of_object(object_name, (element.element_id for element in projection.elements
+                                        if element.component_id == component_id))
 
 
 def _source_state(documents: Mapping[str, str], state_digest: str) -> str:

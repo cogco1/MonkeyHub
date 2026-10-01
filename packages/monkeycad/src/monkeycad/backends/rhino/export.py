@@ -490,6 +490,7 @@ def prepare_rhino_three_dm_export(
     layer_by_component: Mapping[str, str] | None = None,
     step_import: StepImportSource | None = None,
     source_materials: Mapping[str, Mapping[str, object]] | None = None,
+    material_by_part: Mapping[str, Mapping[str, str | None]] | None = None,
 ) -> RhinoCadExportPlan:
     """Prepare one immutable export plan in an existing explicit workspace.
 
@@ -550,7 +551,9 @@ def prepare_rhino_three_dm_export(
         patch_prelude = build_patch_prelude(
             selection,
             prior_model_path=prior_model,
-            semantics=expected_object_semantics(program, material_by_component=material_by_component, layer_by_component=layer_by_component)["objects"],
+            semantics=expected_object_semantics(program, material_by_component=material_by_component,
+                                                material_by_part=material_by_part,
+                                                layer_by_component=layer_by_component)["objects"],
         )
         patch_record = {
             **selection.to_dict(),
@@ -581,6 +584,7 @@ def prepare_rhino_three_dm_export(
             expected_object_semantics(
                 program,
                 material_by_component=material_by_component,
+                material_by_part=material_by_part,
                 layer_by_component=layer_by_component,
             )
         )
@@ -607,6 +611,7 @@ def prepare_rhino_three_dm_export(
             },
             provenance=supplied,
             material_by_component=material_by_component,
+            material_by_part=material_by_part,
             material_colors=material_colors,
             layer_by_component=layer_by_component,
         )
@@ -615,6 +620,7 @@ def prepare_rhino_three_dm_export(
             program,
             provenance=supplied,
             material_by_component=material_by_component,
+            material_by_part=material_by_part,
             material_colors=material_colors,
             operation_subset=None if selection is None else selection.rebuilt_op_ids,
             layer_by_component=layer_by_component,
@@ -628,6 +634,7 @@ def prepare_rhino_three_dm_export(
         expected_object_semantics(
             program,
             material_by_component=material_by_component,
+            material_by_part=material_by_part,
             layer_by_component=layer_by_component,
         )
     )

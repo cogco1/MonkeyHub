@@ -23,13 +23,16 @@ already writes (``producer_op``, ``object_ref``, ``operation_ref``,
 fails ``CadTranslationError`` rather than overwriting an object's identity.
 
 Materials come only from the caller's ``material_by_component`` - the
-``material.name`` its components declare - and never from a name or a
-shape. An object of a declaring component carries ``archflow:material``;
-one whose components declare none carries ``archflow:material_status`` =
-``undeclared`` and keeps its layer's distinction colour. A declared
-material wears one colour wherever it is used: the caller's
-``material_colors`` entry for it, else an identity colour derived from the
-material's name (``_material_color``), which claims no appearance.
+``material.name`` its components declare - and ``material_by_part``, what
+each part of a component wears when one of them declares its own (#580) -
+and are never derived from a name or a shape: an object's name says only
+which part delivered it. An object of a declaring component or part
+carries ``archflow:material``; one whose components and part declare none
+carries ``archflow:material_status`` = ``undeclared`` and keeps its layer's
+distinction colour. A declared material wears one colour wherever it is
+used: the caller's ``material_colors`` entry for it, else an identity colour
+derived from the material's name (``_material_color``), which claims no
+appearance.
 
 The producers on the spine state these today — keys and formats exactly:
 
@@ -59,6 +62,7 @@ import re
 from typing import Iterable, Mapping
 
 from archflow.state.geometry_program import delivered_object_ids, operation_parameters
+from archflow.state.state_record import part_of_object
 
 
 ROOT_LAYER = "archflow"
@@ -166,19 +170,33 @@ def _material_color(
 def declared_material(
     components: Iterable[str],
     material_by_component: Mapping[str, str] | None,
+    *,
+    object_name: str | None = None,
+    material_by_part: Mapping[str, Mapping[str, str | None]] | None = None,
 ) -> str | None:
     """The material an object of these components declares, or None when none of them declares one.
 
-    The ``material.name`` values its components declare in
-    ``material_by_component``, each once, sorted and joined with ``,``: the
+    Each component gives the object one material or none, part first (#580):
+    a component listed in ``material_by_part`` gives it what the part that
+    delivered it wears - matched by the object's name among all of that
+    component's parts (``part_of_object``), the part's own material, else the
+    component's, else none - and any other object of it, like any object of
+    a component not listed there, the component's ``material_by_component``
+    entry. Those values, each once, sorted and joined with ``,``: the
     ``archflow:material`` text an export writes on the object and the name of
-    the one native material it wears. A component that declares nothing adds
+    the one native material it wears. A component that gives nothing adds
     nothing, so an object is undeclared only when none of its components
-    declares a material.
+    gives it a material.
     """
 
-    materials = sorted({(material_by_component or {}).get(component) for component in components} - {None})
-    return ",".join(materials) if materials else None
+    materials: set[str] = set()
+    for component in components:
+        parts = (material_by_part or {}).get(component)
+        part = part_of_object(object_name, parts) if parts else None
+        material = parts[part] if part is not None else (material_by_component or {}).get(component)
+        if material is not None:
+            materials.add(material)
+    return ",".join(sorted(materials)) if materials else None
 
 
 def _rgb(value: object, field: str) -> tuple[int, int, int]:
@@ -233,6 +251,7 @@ def expected_object_semantics(
     program,
     *,
     material_by_component: Mapping[str, str] | None = None,
+    material_by_part: Mapping[str, Mapping[str, str | None]] | None = None,
     layer_by_component: Mapping[str, str] | None = None,
 ) -> dict[str, dict]:
     """The semantics each physical object must carry in the CAD document.
@@ -244,10 +263,11 @@ def expected_object_semantics(
     ``archflow:<key>``. A statement that names a reserved identity key
     fails ``CadTranslationError``. Objects the program leaves unbound stay
     on the root layer with no invented component. A bound object names the
-    material its components declare in ``material_by_component``, or says
-    ``archflow:material_status`` = ``undeclared`` when none of them declares
-    one. Families report the block definitions arrays must create with their
-    instance multiplicities.
+    material its components declare (``declared_material``: its part's in
+    ``material_by_part`` first, else its component's in
+    ``material_by_component``), or says ``archflow:material_status`` =
+    ``undeclared`` when none of them declares one. Families report the block
+    definitions arrays must create with their instance multiplicities.
     """
 
     proposal = program.proposal
@@ -297,7 +317,8 @@ def expected_object_semantics(
                 user_text["archflow:bindings"] = ",".join(binding_ids)
             if components:
                 user_text["archflow:component"] = "+".join(components)
-                material = declared_material(components, material_by_component)
+                material = declared_material(components, material_by_component, object_name=object_id,
+                                             material_by_part=material_by_part)
                 if material:
                     user_text["archflow:material"] = material
                 else:

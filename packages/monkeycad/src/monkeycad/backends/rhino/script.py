@@ -259,6 +259,7 @@ def translate_step_import_to_rhino_python(
     material_by_component: Mapping[str, str] | None = None,
     material_colors: Mapping[str, tuple[int, int, int]] | None = None,
     layer_by_component: Mapping[str, str] | None = None,
+    material_by_part: Mapping[str, Mapping[str, str | None]] | None = None,
 ) -> CadTranslation:
     """Emit the script that imports one already exact STEP per physical object.
 
@@ -279,6 +280,7 @@ def translate_step_import_to_rhino_python(
     semantics = expected_object_semantics(
         program,
         material_by_component=material_by_component,
+        material_by_part=material_by_part,
         layer_by_component=layer_by_component,
     )
     physical = delivered_object_ids(program.proposal)
@@ -423,6 +425,7 @@ def translate_to_rhino_python(
     material_colors: Mapping[str, tuple[int, int, int]] | None = None,
     operation_subset: Iterable[str] | None = None,
     layer_by_component: Mapping[str, str] | None = None,
+    material_by_part: Mapping[str, Mapping[str, str | None]] | None = None,
 ) -> CadTranslation:
     """Emit one deterministic, semantics-carrying rhinoscriptsyntax script.
 
@@ -450,6 +453,7 @@ def translate_to_rhino_python(
     semantics = expected_object_semantics(
         program,
         material_by_component=material_by_component,
+        material_by_part=material_by_part,
         layer_by_component=layer_by_component,
     )
     losses: list[dict] = []
