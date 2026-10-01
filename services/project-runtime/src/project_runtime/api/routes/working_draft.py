@@ -6,12 +6,13 @@ from starlette.requests import Request
 from ...application.artifacts import ModelSource
 from ...authentication import request_attribution
 from ...binding import bound_project
+from ...application.representation_dependencies import UNAVAILABLE, ReplacementCycle, representation_status
 from ...application.working_draft import (
     WorkingDraftDto, read_working_draft, resolve_working_source, retain_local_draft, save_working_draft,
     select_working_draft, working_revision,
 )
 from ..dto.working_draft import (
-    LocalDraftRequestDto, WorkingDraftSaveDto, WorkingDraftSelectionDto, WorkingRevisionDto,
+    LocalDraftRequestDto, RepresentationStatusDto, WorkingDraftSaveDto, WorkingDraftSelectionDto, WorkingRevisionDto,
     WorkingSourceDto, working_source_dto,
 )
 from .proposals import _require_bound_project
@@ -70,3 +71,25 @@ def read_working_source(
     pinned = ModelSource(*pin) if all(pin) else None
     return working_source_dto(resolve_working_source(bound_project(request.app.state), workspace,
                                                      policy=policy, pinned=pinned))
+
+
+@router.get("/representation-status", response_model=RepresentationStatusDto)
+def read_representation_status(
+    request: Request,
+    runId: str = Query(min_length=1, description="The page's storage run."),
+    assetSha256: str = Query(pattern=r"^[0-9a-f]{64}$", description="The registered document's digest."),
+    revisionRef: str | None = Query(None, min_length=1, description="The drawing revision; omit for a page without one."),
+    pageIndex: int = Query(0, ge=0, description="Zero-based page index."),
+) -> RepresentationStatusDto:
+    """Whether one exact registered page still shows what its inputs say now, compared with the Working Head (#223).
+
+    The representation-status projection the Worktree Graph and Publish read, asked of the page's owner on
+    every read. Replacements that loop are unavailable, as the graph reads them. Nothing is written.
+    """
+    binding = bound_project(request.app.state)
+    try:
+        status = representation_status(binding, (runId, assetSha256, revisionRef, pageIndex))
+        state, reason = status.state, status.reason
+    except ReplacementCycle as exc:
+        state, reason = UNAVAILABLE, str(exc)
+    return RepresentationStatusDto(projectId=binding.project_id, state=state, reason=reason)

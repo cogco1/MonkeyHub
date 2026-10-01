@@ -55,8 +55,11 @@
 .monkeyboard-context-identity { display: grid; flex: 1 1 180px; gap: 3px; min-width: 0; }
 .monkeyboard-context-identity > span { color: var(--muted); font-size: var(--text-caption); }
 .monkeyboard-context-identity > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.monkeyboard-context-identity > .monkeyboard-context-details { overflow-wrap: anywhere; }
 .monkeyboard-context-binding { max-width: 100%; overflow-wrap: anywhere; padding: 4px 7px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); font-size: var(--text-caption); }
-.monkeyboard-context-binding.is-linked { color: var(--accent); background: var(--accent-soft); }
+/* #288: the Runtime's answer for the selected page; a page the editing base has moved past is flagged, never changed. */
+.monkeyboard-context-binding.is-current { color: var(--accent); background: var(--accent-soft); }
+.monkeyboard-context-binding.is-outdated { color: var(--unchecked); border-color: currentColor; }
 .monkeyboard-context-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .monkeyboard-context-actions > button { max-width: 100%; overflow-wrap: anywhere; }
 .monkeyboard-context-actions > .monkeyboard-context-next { margin-left: auto; }

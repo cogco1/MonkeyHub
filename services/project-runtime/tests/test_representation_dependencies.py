@@ -48,6 +48,31 @@ def reread(client, job):
     return result.json()
 
 
+def on_the_wire(client, ref):
+    """One page's status as GET /api/representation-status answers it, the read Board shows (#288)."""
+    answer = client.get("/api/representation-status", params={name: value for name, value in ref.items() if value is not None})
+    assert answer.status_code == 200, answer.text
+    body = answer.json()
+    assert body["projectId"] == PROJECT_ID
+    return body["state"], body["reason"]
+
+
+def test_a_page_status_on_the_wire_is_the_projection_and_writes_nothing(setup):
+    client, _, repository, _ = setup
+    head, branches = repository.read_head(), repository.read_design_branches()
+    upload = renders.upload(client)
+    assert on_the_wire(client, upload) == ("current", None)
+    # A newer registered page answers before what the page shows, and the newest is current.
+    newer = renders.upload(client, "red", replacesPages=[upload | {"newPageIndex": 0}])
+    assert on_the_wire(client, upload) == ("outdated", "A newer registered page replaces this one.")
+    assert on_the_wire(client, newer) == ("current", None)
+    # A page that cannot be read is unavailable, never rebound to another page.
+    assert on_the_wire(client, upload | {"pageIndex": 3}) == ("unavailable", "The exact source page is unavailable.")
+    assert on_the_wire(client, upload | {"assetSha256": "f" * 64})[0] == "unavailable"
+    assert client.get("/api/representation-status", params={"runId": upload["runId"], "assetSha256": "x"}).status_code == 422
+    assert (repository.read_head(), repository.read_design_branches()) == (head, branches)
+
+
 def test_replaced_reference_propagates_through_render_but_not_independent_variant(setup):
     client, app, repository, adapter = setup
     source, reference = renders.upload(client), renders.upload(client, "red")
@@ -278,9 +303,15 @@ def test_one_status_vocabulary_for_drawing_render_and_upload_pages(room):
         return {row["elementId"].removesuffix("-image"): (row["status"], row["replacement"])
                 for row in client.get("/api/publication").json()["sources"]}
 
+    def wire_agrees(answers):
+        # The route Board reads is this projection for every kind of page, reason included.
+        assert {name: on_the_wire(client, ref) for name, ref in pages.items()} == {
+            name: (status.state, status.reason) for name, status in answers.items()}
+
     before = statuses()
     assert {name: status.state for name, status in before.items()} == {
         "drawing": "current", "kept": "frozen", "render": "current", "view": "current", "upload": "current"}
+    wire_agrees(before)
     # Each page names only the exact inputs its own owner retained.
     assert before["drawing"].upstream == ({"modelSource": model}, {"sourceStageRef": stage_ref})
     assert before["render"].upstream == ({"source": page(drawing)},)
@@ -295,6 +326,7 @@ def test_one_status_vocabulary_for_drawing_render_and_upload_pages(room):
     after = statuses()
     assert {name: status.state for name, status in after.items()} == {
         "drawing": "current", "kept": "frozen", "render": "current", "view": "outdated", "upload": "outdated"}
+    wire_agrees(after)
     # Each answer is its owner's: the plan's read set, the render's retained
     # request, the viewed model state, the page's own replacement.
     assert after["drawing"].reason == fixture.status(drawing)["detail"]
@@ -309,5 +341,6 @@ def test_one_status_vocabulary_for_drawing_render_and_upload_pages(room):
     fixture.repository.layout.resolve_relative(f"objects/sha256/{digest[:2]}/{digest}").write_bytes(b"damaged")
     lost = representation_status(binding, key(upload))
     assert (lost.state, lost.page_available) == ("unavailable", False)
+    assert on_the_wire(client, upload) == ("unavailable", lost.reason)
     assert published()["upload"][0] == published()["kept-upload"][0] == "missing"
     assert fixture.repository.read_head() == fixture.head

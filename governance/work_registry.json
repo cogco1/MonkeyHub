@@ -21,8 +21,7 @@
         "apps/monkeyhub/web/test/boardSourceStatus.test.ts",
         "apps/monkeyhub/web/test/boardWhiteboard.browser.mjs",
         "apps/monkeyhub/web/src/api/project-runtime/client.ts",
-        "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
-        "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+        "apps/monkeyhub/web/src/api/project-runtime/generated/",
         "services/project-runtime/src/project_runtime/api/routes/working_draft.py",
         "services/project-runtime/src/project_runtime/api/dto/working_draft.py"
       ],

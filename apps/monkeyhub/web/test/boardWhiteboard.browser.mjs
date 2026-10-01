@@ -243,7 +243,109 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   const feedback = () => page.locator(".monkeyboard-context").getByRole("button", { name: "Send design feedback", exact: true });
   await feedback().waitFor(); assert.equal(await feedback().isEnabled(), true);
   assert.equal(await page.locator(".monkeyboard-context").getByRole("button", { name: "Link model in MonkeyDiagram", exact: true }).count(), 0);
-  assert.equal(await page.locator(".monkeyboard-context-binding").innerText(), "Model linked");
+
+  // #288: the selected page against the editing base is the Runtime's representation status
+  // for exactly that page, read when the selection names it. The real route answers first: the
+  // upload is bound to the reference run's exact state, which is this project's Working Head.
+  const sourceStatus = page.locator(".monkeyboard-context-binding");
+  const statusReads = () => requests.filter((entry) => entry.method === "GET" && entry.path.startsWith("/api/representation-status?"));
+  await page.getByText("Up to date with the editing base", { exact: true }).waitFor();
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(statusReads().at(-1).path.split("?")[1])),
+    { runId: firstDocument.runId, assetSha256: firstDocument.assetSha256, pageIndex: "0" });
+  assert.equal(await page.locator(".monkeyboard-context-details").count(), 0, "An upload names no Stage or generation time");
+
+  // Each answer the Runtime can give, and the page's own Stage and time, are stubbed around the
+  // real project: the same page, generated at a known time from a Stage only another branch holds.
+  // Outside the Hub no project store moves, so window focus reads again; no timer ever does.
+  const datedList = await call("GET", "/api/documents");
+  const datedPage = datedList.documents.find((document) => document.assetSha256 === firstDocument.assetSha256);
+  Object.assign(datedPage, { generatedAt: "2026-09-26T12:00:00Z", sourceStageRef: "atrium-stage", projectId: "another-project" });
+  const stageOf = (stageRef, label, branchId) => ({ stageRef, label, branchId, parentStageRef: null, candidateId: `${stageRef}-run`,
+    modelSource, recordDigest: "e".repeat(64), acceptedBy: "architect" });
+  const histories = { main: [stageOf("first-stage", "S0", "main")],
+    atrium: [stageOf("first-stage", "S0", "main"), stageOf("atrium-stage", "Atrium study", "atrium")] };
+  const historyReads = [];
+  const historyRoute = /\/api\/design-history\?/, statusRoute = /\/api\/representation-status\?/;
+  const serveDocuments = (route) => route.fulfill({ json: datedList });
+  const serveHistory = (route) => {
+    const branchId = new URL(route.request().url()).searchParams.get("branchId");
+    historyReads.push(branchId);
+    return route.fulfill({ json: { projectId: project.projectId, branchId, stages: histories[branchId] ?? [], explorations: [],
+      branches: [{ branchId: "main", parentBranch: null, forkStageRef: "first-stage", headStageRef: "first-stage" },
+        { branchId: "atrium", parentBranch: "main", forkStageRef: "first-stage", headStageRef: "atrium-stage" }] } });
+  };
+  let statusAnswer = { state: "current", reason: null }, stubbedReads = 0, heldRequest = null;
+  const serveStatus = async (route) => {
+    const answer = statusAnswer; stubbedReads += 1;
+    if (answer.hold) { heldRequest = route.request(); await answer.hold; }
+    if (answer.fail) return route.fulfill({ status: 500, json: { code: "INTERNAL_ERROR", detail: "The status read failed." } });
+    return route.fulfill({ json: { projectId: answer.projectId ?? project.projectId, state: answer.state, reason: answer.reason ?? null } });
+  };
+  const reopen = async () => {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
+    await fit(); await selectAll(); await page.locator(".monkeyboard-context").waitFor();
+  };
+  const readAgain = async (answer, shown) => {
+    statusAnswer = answer; const before = stubbedReads;
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await page.getByText(shown, { exact: true }).waitFor();
+    assert.ok(stubbedReads > before, `"${shown}" must be the answer of a new read`);
+    assert.equal(submissions.length, 0, "Showing the page's status never sends feedback");
+  };
+  await page.route("**/api/documents", serveDocuments);
+  await page.route(historyRoute, serveHistory);
+  await page.route(statusRoute, serveStatus);
+  try {
+    // A page naming another project is never judged against this project's editing base.
+    await reopen();
+    await page.getByText("Cannot be checked against the editing base", { exact: true }).waitFor();
+    assert.equal(stubbedReads, 0, "A page of another project is not read against this project's editing base");
+    assert.match(await page.locator(".monkeyboard-context-details").innerText(), /^Generated Sep 26, 2026, /);
+    datedPage.projectId = project.projectId;
+    await reopen();
+    await page.getByText("Up to date with the editing base", { exact: true }).waitFor();
+    // The page's own Stage, found on the branch that holds it, and its generation time; never its raw source.
+    await page.getByText(/^Stage · Atrium study · Generated Sep 26, 2026, /).waitFor();
+    assert.deepEqual(historyReads, ["main", "atrium"]);
+    assert.doesNotMatch(await page.locator(".monkeyboard-context-source").innerText(), /atrium-stage|[0-9a-f]{64}/);
+    await readAgain({ state: "outdated", reason: "The project model has changed since this was made." }, "Out of date with the editing base");
+    assert.equal(await sourceStatus.getAttribute("title"), "The project model has changed since this was made.");
+    assert.equal(await feedback().isEnabled(), true, "An outdated page is flagged; sending it still asks first in Modeling (#302)");
+    await readAgain({ state: "frozen" }, "Kept on its chosen version");
+    await readAgain({ state: "unavailable", reason: "The exact inputs of this page can no longer be verified." }, "Cannot be checked against the editing base");
+    await readAgain({ state: "current" }, "Up to date with the editing base");
+    await readAgain({ fail: true }, "Cannot be checked against the editing base");
+    await readAgain({ state: "current" }, "Up to date with the editing base");
+    await readAgain({ state: "current", projectId: "another-project" }, "Cannot be checked against the editing base");
+    assert.deepEqual(historyReads, ["main", "atrium"], "A Stage once named is not read again");
+    // A read sent earlier that answers later never replaces a newer answer.
+    let release; const hold = new Promise((resolve) => { release = resolve; });
+    statusAnswer = { state: "outdated", reason: "Held.", hold }; const beforeHeld = stubbedReads;
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    for (let attempt = 0; stubbedReads === beforeHeld && attempt < 100; attempt++) await delay(20);
+    assert.ok(heldRequest, "The earlier read must be held before the newer one is sent");
+    await readAgain({ state: "current" }, "Up to date with the editing base");
+    const lateAnswer = page.waitForResponse((response) => response.request() === heldRequest);
+    release(); await (await lateAnswer).finished();
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await sourceStatus.innerText(), "Up to date with the editing base");
+    // The Stage and time fit the phone-width dock.
+    await page.setViewportSize({ width: 390, height: 844 });
+    const fits = await page.locator(".monkeyboard-context").evaluate((element) =>
+      element.scrollWidth <= element.clientWidth + 1 && element.getBoundingClientRect().right <= innerWidth);
+    assert.equal(fits, true, "The selected page's Stage and time must fit a 390px viewport");
+    await screenshot("source-status-phone");
+    await page.setViewportSize({ width: 1440, height: 1000 });
+  } finally {
+    await page.unroute("**/api/documents", serveDocuments);
+    await page.unroute(historyRoute, serveHistory);
+    await page.unroute(statusRoute, serveStatus);
+  }
+  // Back on the real project's documents for the rest of the run.
+  await reopen();
+  await page.getByText("Up to date with the editing base", { exact: true }).waitFor();
+  await feedback().waitFor(); assert.equal(await feedback().isEnabled(), true);
   for (const [name, width, height] of [["dock-wide", 1440, 1000], ["dock-narrow", 620, 900], ["dock-phone", 390, 844]]) {
     await page.setViewportSize({ width, height });
     const dock = page.locator(".monkeyboard-context");
@@ -408,6 +510,8 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   const refreshDone = new Promise(resolve => { refreshContinued = resolve; });
   const holdDocuments = async route => { sawRefresh(); await refreshHeld; await route.continue(); refreshContinued(); };
   await page.route("**/api/documents", holdDocuments);
+  // No timer reads the documents (GH-366); outside the Hub, window focus does.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await Promise.race([refreshSeen, delay(15000).then(() => assert.fail("Background document refresh did not start"))]);
   const replacementDialog = page.getByRole("dialog", { name: "Update this page", exact: true });
   try {
@@ -450,6 +554,7 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   // Receive a genuinely new registered file while the documents panel is hidden.
   const extra = await call("POST", "/api/documents", { projectId: project.projectId, runId: modelSource.runId,
     fileName: "自动到达.png", mimeType: "image/png", contentBase64: png, modelSource });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await savedWhere((value) => active(value, "image").some((element) => element.customData.sourceDocument.runId === extra.runId
     && element.customData.sourceDocument.assetSha256 === extra.assetSha256
     && element.customData.sourceDocument.revisionRef === extra.revisionRef), "Hidden documents panel prevented automatic discovery");
