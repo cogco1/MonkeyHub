@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { ACESFilmicToneMapping, SRGBColorSpace, WebGLRenderer } from "three";
 import { previewSize, type RenderView } from "../monkeyarch/viewer/renderView";
 
-export default function ModelPreview({ active, readView, onModeling, onCapture, capturing, zh }: {
+export default function ModelPreview({ active, readView, onModeling, onCapture, onReady, capturing, zh }: {
   active: boolean; readView?: () => RenderView | null; onModeling?: () => void; onCapture(): void; capturing: boolean; zh: boolean;
+  /** Whether a retained model's view is on screen to capture, as the preview last read it. */
+  onReady?(ready: boolean): void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [available, setAvailable] = useState(false);
@@ -19,8 +21,10 @@ export default function ModelPreview({ active, readView, onModeling, onCapture, 
       if (stopped) return;
       try {
         const view = readView();
+        const issue = view?.sourceIssue ?? (view?.modelSource ? null : "unbound");
         setAvailable(Boolean(view));
-        setSourceIssue(view?.sourceIssue ?? (view?.modelSource ? null : "unbound"));
+        setSourceIssue(issue);
+        onReady?.(Boolean(view) && !issue);
         if (view) {
           if (!renderer) {
             renderer = new WebGLRenderer({ antialias: true });
@@ -40,7 +44,7 @@ export default function ModelPreview({ active, readView, onModeling, onCapture, 
           renderer.render(view.scene, view.camera);
         } else if (renderer) renderer.domElement.hidden = true;
       } catch {
-        setFailed(true);
+        setFailed(true); onReady?.(false);
         if (renderer) renderer.domElement.hidden = true;
         return;
       }
@@ -48,11 +52,11 @@ export default function ModelPreview({ active, readView, onModeling, onCapture, 
     };
     draw();
     return () => {
-      stopped = true; window.clearTimeout(frame);
+      stopped = true; window.clearTimeout(frame); onReady?.(false);
       // Only this renderer is ours. Scene, geometries and materials belong to Modeling.
       renderer?.dispose(); renderer?.forceContextLoss(); renderer?.domElement.remove();
     };
-  }, [active, readView]);
+  }, [active, readView, onReady]);
   return <section className="render-model-preview" aria-label={zh ? "建模视角" : "Modeling view"}>
     <header><strong>{zh ? "建模视角 · 实时预览" : "Modeling view · Live preview"}</strong>
       <div className="render-model-actions"><button type="button" onClick={onModeling}>{zh ? "前往建模调整视角" : "Adjust view in Modeling"}</button>

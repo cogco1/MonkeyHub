@@ -1101,6 +1101,11 @@ export const messagesEn = {
   "designTree.list.trunk": "Current line",
   "designTree.list.earlier": "Earlier line",
   "designTree.list.twig": "Not taken",
+  "render.savedView.show": "Show this view in Modeling",
+  "render.savedView.recapture": "Re-capture on current model",
+  "render.savedView.recaptured": "This view was captured again on the current model and is now the source. Generate to render it; the earlier result is kept.",
+  "render.savedView.noModel": "Open a retained model in Modeling before capturing this view on it.",
+  "render.savedView.outdated": "The project model has changed. Re-capture this view on the current model, or choose an updated image, then render again.",
 } as const;
 
 export type MessageKey = keyof typeof messagesEn;

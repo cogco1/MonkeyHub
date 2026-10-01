@@ -1,10 +1,11 @@
 import ModelPreview from "./ModelPreview";
-import { renderViewImage, type RenderView } from "../monkeyarch/viewer/renderView";
+import { renderSavedViewImage, renderViewImage, type RenderView, type SavedView } from "../monkeyarch/viewer/renderView";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useProjectRevision, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
 import { asStudioApiError } from "../../api/project-runtime/client";
-import type { RenderCapabilityDto, RenderJobDto, SourceDocumentDto } from "../../api/project-runtime/generated";
+import type { RenderCameraDto, RenderCapabilityDto, RenderJobDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { usePreferences } from "../../features/settings/preferences";
+import { useT } from "../../i18n/useT";
 import { documentKey, documentMime, findSource, pageKey, pageReplacements, pageSource, type PageSource } from "../monkeyboard/boardScene";
 import RenderResults, { ImageThumbnail, renderStatus } from "./RenderResults";
 import "./render.css";
@@ -13,11 +14,13 @@ import "./render.css";
 /** How many times Render reads its attempts again after a submit whose answer was lost. */
 const UNCERTAIN_READS = 5;
 
-export default function RenderWorkspace({ projectId, active, refreshKey, onBoard, readModelView, onModeling }: {
+export default function RenderWorkspace({ projectId, active, refreshKey, onBoard, readModelView, onModeling, onShowInModeling }: {
   readModelView?: () => RenderView | null; onModeling?: () => void;
+  /** Stand Modeling's camera in a saved view; the host shows Modeling, which applies it once its model is on screen (#218). */
+  onShowInModeling?: (camera: RenderCameraDto) => void;
   projectId: string; active: boolean; refreshKey: number; onBoard(source: PageSource): void;
 }) {
-  const studio = useStudio(), { language } = usePreferences(), zh = language === "zh-CN";
+  const studio = useStudio(), { language } = usePreferences(), zh = language === "zh-CN", t = useT();
   const [mode, setMode] = useState<"ai" | "physical">("ai");
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]);
   const [providers, setProviders] = useState<RenderCapabilityDto[]>([]);
@@ -29,6 +32,8 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
   const [loading, setLoading] = useState(false), [sending, setSending] = useState(false), [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null), [submitError, setSubmitError] = useState<string | null>(null);
   const [uncertain, setUncertain] = useState<string | null>(null);
+  // Whether Modeling shows a retained model a saved view can be captured on, and the source last captured that way.
+  const [modelViewReady, setModelViewReady] = useState(false), [recaptured, setRecaptured] = useState<string | null>(null);
   const reading = useRef(false), submitting = useRef(false), uploadingRef = useRef(false), readEpoch = useRef(0);
   const alive = useRef(true), uncertainRef = useRef<string | null>(null);
   const submittedRequest = useRef<string | null>(null);
@@ -157,7 +162,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
         source, references, direction: direction.trim(), output: { size: actualSize, aspectRatio: actualAspect } });
       if (job.projectId !== projectId || job.requestId !== requestId) throw new Error("The render response does not match this request.");
       if (!alive.current) return;
-      setJobs((rows) => [job, ...rows.filter((row) => row.jobId !== job.jobId)]);
+      setJobs((rows) => [job, ...rows.filter((row) => row.jobId !== job.jobId)]); setRecaptured(null);
       // Keep the previous result visible while a new task is running or fails.
       if (job.status === "succeeded") setSelectedId(job.jobId);
       uncertainRef.current = null; setUncertain(null);
@@ -178,6 +183,26 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
     setSize(job.request.output?.size ?? ""); setAspectRatio(job.request.output?.aspectRatio ?? "");
     setSubmitError(null); setMode("ai");
   };
+  // #218: the saved camera drawn on the model Modeling shows now, kept as a new source for the same
+  // request. Generating from it is a new attempt; the earlier result and its source stay as they were.
+  const recapture = async (job: RenderJobDto, saved: SavedView) => {
+    if (uploadingRef.current || submitting.current || !active || !job.request) return;
+    const view = readModelView?.();
+    if (!view?.modelSource || view.sourceIssue) { setSubmitError(t("render.savedView.noModel")); return; }
+    uploadingRef.current = true; setUploading(true); setSubmitError(null);
+    ++readEpoch.current;
+    try {
+      const png = await renderSavedViewImage(view, saved);
+      const retained = await studio.retainRenderView({ projectId, modelSource: view.modelSource,
+        sourceStageRef: view.sourceStageRef ?? null, camera: saved.camera, screenSize: saved.screenSize }, png);
+      if (retained.projectId !== projectId) throw new Error("The captured view belongs to another project.");
+      if (!alive.current) return;
+      ++readEpoch.current;
+      setDocuments(rows => [...rows.filter(row => documentKey(row) !== documentKey(retained)), retained]);
+      reuse(job); setSource(pageSource(retained, 0)); setRecaptured(documentKey(retained));
+    } catch (cause) { if (alive.current) setSubmitError(asStudioApiError(cause).detail); }
+    finally { uploadingRef.current = false; if (alive.current) setUploading(false); }
+  };
   const selectedKey = sourceDocument ? documentKey(sourceDocument) : "";
   const updateSource = (job: RenderJobDto) => {
     if (!job.request) return;
@@ -194,9 +219,11 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
       const hasReplacement = !!next || nextReferences.some((source, index) => pageKey(source) !== pageKey(originalReferences[index]));
       setSource(hasReplacement ? next ?? original : null);
       setReferences(nextReferences);
-      if (!hasReplacement) setSubmitError(findSource(documents, original)?.viewRecipe?.kind === "cut-plan"
+      const kind = findSource(documents, original)?.viewRecipe?.kind;
+      if (!hasReplacement) setSubmitError(kind === "cut-plan"
         ? (zh ? "此图纸没有登记的新修订。请在图纸中重建，或选择更新的图片后再渲染。" : "This drawing has no registered newer revision. Rebuild it in Drawings, or choose an updated image, then render again.")
-        : (zh ? "项目模型已更新。请在建模中截取当前视图，或选择更新的图片后再渲染。" : "The project model has changed. Capture the current view in Modeling, or choose an updated image, then render again."));
+        : kind === "model-view" ? t("render.savedView.outdated")
+          : (zh ? "项目模型已更新。请在建模中截取当前视图，或选择更新的图片后再渲染。" : "The project model has changed. Capture the current view in Modeling, or choose an updated image, then render again."));
     } catch (cause) { setSubmitError(asStudioApiError(cause).detail); }
   };
   const addReference = (key: string) => {
@@ -216,7 +243,8 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
       </div>
       <button type="button" onClick={() => void refresh()} disabled={loading}>{loading ? (zh ? "读取中…" : "Reading…") : (zh ? "刷新状态" : "Refresh status")}</button>
     </header>
-    <ModelPreview active={active} readView={readModelView} onModeling={onModeling} onCapture={() => void captureModelView()} capturing={uploading || sending} zh={zh} />
+    <ModelPreview active={active} readView={readModelView} onModeling={onModeling} onCapture={() => void captureModelView()} onReady={setModelViewReady}
+      capturing={uploading || sending} zh={zh} />
     {error && <div className="render-error" role="alert">{error}</div>}
     {mode === "physical" && <div className="render-physical" role="status">
       <h2>Physical Render</h2>
@@ -241,6 +269,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
           {sourceDocument && <div className="render-source-preview"><ImageThumbnail image={sourceDocument} active={active && mode === "ai"} />
             <small>{sourceDocument.viewRecipe?.kind === "model-view" ? (zh ? "已保存这个视角；调整模型或镜头后，可重新使用当前视角。" : "View saved. Capture the current view again after changing the model or camera.")
               : sourceDocument.modelSource ? (zh ? "保留原模型来源" : "Original model source retained") : (zh ? "独立图片来源" : "Independent image source")}</small></div>}
+          {sourceDocument && recaptured === selectedKey && <p className="render-note" role="status">{t("render.savedView.recaptured")}</p>}
           <label className="render-upload">{zh ? "上传底图" : "Upload source"}<input type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" onChange={(event) => {
             void upload(event.target.files, "source"); event.target.value = "";
           }} /></label>
@@ -283,7 +312,9 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
         {uploading && <p role="status">{zh ? "正在保存项目图片…" : "Saving project images…"}</p>}
         {latest && <p className="render-note" role="status">{zh ? "最近任务：" : "Latest: "}{renderStatus(latest.status, zh)}</p>}
       </form>
-      <RenderResults active={active} jobs={sortedJobs} documents={documents} selectedId={selectedId} onSelect={setSelectedId} onBoard={onBoard} onReuse={reuse} onUpdateSource={updateSource} />
+      <RenderResults active={active} jobs={sortedJobs} documents={documents} selectedId={selectedId} onSelect={setSelectedId} onBoard={onBoard} onReuse={reuse} onUpdateSource={updateSource}
+        onShowInModeling={onShowInModeling} onRecapture={readModelView ? (job, saved) => void recapture(job, saved) : undefined}
+        recaptureReady={modelViewReady && !uploading && !sending} />
     </div>
   </section>;
 }

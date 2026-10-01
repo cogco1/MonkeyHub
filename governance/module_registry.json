@@ -5843,7 +5843,7 @@
         "Derived transitive Render source/reference freshness, reusing Drawing read-set status and declared Stage branches; no inferred model source",
         "One configured Gemini image HTTP attempt with bounded inputs, final-image validation and measured usage; no retry, redirect or model fallback",
         "Read-only PR #235 native history; no fabricated AI recipe or resumed native executor",
-        "Freeze the current Modeling camera image as a model-bound SourceDocument with projection/world matrices and pixel dimensions; no provider call or design change occurs during capture"
+        "Freeze the current Modeling camera image as a model-bound SourceDocument with projection/world matrices, the orbit target/up when given and pixel dimensions; a capture without target/up keeps the recipe and identity earlier runtimes retained; no provider call or design change occurs during capture"
       ],
       "does_not_own": [
         "SourceDocument persistence and bytes: project_runtime.documents",
@@ -5897,7 +5897,7 @@
       "inputs": [
         "Exact SourceDocument runId/assetSha256/revisionRef/pageIndex, ordered references, direction and output options",
         "Explicitly injected image adapter and optional StudioMonitor",
-        "Captured PNG with exact retained modelSource, optional verified Stage, camera matrices/exposure and matching pixel dimensions"
+        "Captured PNG with exact retained modelSource, optional verified Stage, camera matrices/exposure with an optional orbit target/up, and matching pixel dimensions"
       ],
       "outputs": [
         "Project-scoped immutable render-job transitions and SourceDocument result references",
@@ -7573,7 +7573,7 @@
         "Render as a peer project workspace with lazy first mount and preserved per-project inputs/history; hidden views suspend polling without cancelling image attempts",
         "Explicit Render result handoff to the existing Board using its exact SourceDocument page identity",
         "Nonsecret Render preferences through existing Hub settings; only MONKEYHUB_RENDER_API_KEY is mapped to the configured Gemini Runtime, never exposed over HTTP",
-        "Modeling-to-Render preview borrows the mounted project scene and camera; explicit capture freezes an exact retained model view as the AI source. Local edits, loading and blended/unbound views cannot claim a saved model source.",
+        "Modeling-to-Render preview borrows the mounted project scene and camera; explicit capture freezes an exact retained model view as the AI source. A result's saved view can be shown in Modeling through applyCamera, or captured again on the model Modeling shows as a new source while the earlier result stays (#218). Local edits, loading and blended/unbound views cannot claim a saved model source.",
         "The project Design Tree (状态树) surface and its Stage chip: a planar growth tree of Stages, admitted Candidates and Studies (the #294 design-history contract), the Working Head and running work; View is read-only, Continue uses the working-draft route and Accept as next Stage the existing accept route, on Current only",
         "The shared project canvas host (features/canvas): Excalidraw mount defaults, the local font path, theme mapping, wheel zoom and scene-point click hit testing, used by MonkeyBoard and the Design Tree",
         "Hub-local integration diagnostic snapshot and explicit bounded rescan; qualification and bridge execution stay with the existing adapter owner.",

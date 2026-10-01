@@ -13,6 +13,15 @@ fixed source commit `6f39e67116a2716c2dac70bb4ee3cf1b369afd9d`:
 - `render.css`: gallery, image viewer, toolbar and history layout. Adapted to
   existing Hub theme tokens and narrow workspace panels.
 
+Saved cameras (#218) re-implement Panny's design from the same PR, commits
+[`22285bd4`](https://github.com/cogco1/MonkeyHub/commit/22285bd4d093cde6bd5967564badcf6111ea3025)
+(a camera captured with position, target, up and projection before Render
+navigation can resize the view) and
+[`6f39e671`](https://github.com/cogco1/MonkeyHub/commit/6f39e67116a2716c2dac70bb4ee3cf1b369afd9d)
+(saved cameras, and returning a result to its source camera). The design is
+rebuilt on today's `RenderCameraDto`, `ThreeDmViewport.applyCamera` and shared
+results; no code from those commits is copied.
+
 The following completed PR #235 sources stay at their original fixed commit for
 the Physical integration in #218/#40. They are not copied as unused production
 code or advertised as connected executors in this AI slice:
@@ -60,6 +69,39 @@ viewportFit.test.ts covers hiding/returning without changing aspect or pose.
 Manual local Hub verification used an authorized architectural .3dm, perspective
 and Top orthographic views, Render entry and return to Modeling. The model is not
 included in the repository or sent to an image provider.
+
+## Saved cameras
+
+A captured view keeps its camera in its source document's `viewRecipe`: the world
+and projection matrices, exposure and pixel size, and now the orbit `target` and
+`up` it was turned with. A result made from such a source offers two actions:
+
+- **Show this view in Modeling** stands Modeling's camera in the saved view through
+  `ThreeDmViewport.applyCamera`: the same eye, target, upright and lens, keeping the
+  saved vertical extent in Modeling's own frame. Only the view moves; the model
+  shown, its edits and the project are unchanged. ProjectWorkspace holds the request
+  until Modeling is on screen with its model shown.
+- **Re-capture on current model** draws the scene Modeling shows now through the
+  saved matrices, pixel size and exposure, and retains it with `POST /api/render/views`
+  as a new source bound to that model, sending the saved camera unchanged. The
+  result's inputs are loaded with the new source, so Generate makes a new attempt.
+  The earlier result and its source are kept as they were.
+
+A capture retained before `target` and `up` keeps its recipe and identity. Shown in
+Modeling, it orbits about the point of its view line nearest the model's centre, and
+keeps the model's Z upright unless that would turn the picture (a top view), when it
+keeps its own screen up.
+
+Both actions use the model Modeling shows; opening the exact earlier model version at
+the saved camera, drawing-linked renders and physical execution at a saved camera
+remain #218 work.
+
+Validation: renderView.test.ts reads a saved camera back as the Runtime returns it,
+draws the same matrices again, and stands it in through Modeling's orbit with the
+same projected points, for perspective, orthographic, older and top views.
+test_rendering.py covers the retained orbit, the same camera on another model and
+older captures. renderWorkspace.browser.mjs re-captures a saved view on another
+registered model and checks that the earlier result keeps its source.
 
 ## Integration handoff to Panny
 
