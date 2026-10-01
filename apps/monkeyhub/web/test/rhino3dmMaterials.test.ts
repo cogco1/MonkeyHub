@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
 import test from "node:test";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { Color, Material, Mesh, MeshStandardMaterial, SRGBColorSpace, type Object3D } from "three";
 
@@ -17,6 +15,7 @@ import {
   savedObjectVisible,
   type MaterialOpacity,
 } from "../src/workspaces/monkeyarch/viewer/modelDisplay.ts";
+import { decodeWithLoaderWorker, loaderPath, type DecodedFile } from "./rhino3dmLoaderWorker.ts";
 
 /**
  * The preview ``execute_occt_export`` just wrote, opened by the installed
@@ -29,92 +28,15 @@ import {
  * own, this file skips and says so. That preview carries two object
  * materials, ``frame`` opaque and ``glazing`` at openNURBS transparency 0.6,
  * bound MaterialFromObject; the plinth, the cut wall and the aperture on the
- * layer, the aperture saved hidden.
- *
- * The loader's worker cannot start here (no Web Worker), so its body is
- * assembled exactly as ``Rhino3dmLoader._initLibrary`` assembles it -
- * ``rhino3dm.js`` text followed by the ``Rhino3dmWorker`` function body -
- * and run in-process with a ``self`` shim; the decode message it posts is
- * then handed to the real ``_createGeometry``. Nothing of the decoder is
- * re-implemented.
+ * layer, the aperture saved hidden. The file is decoded by the loader's own
+ * worker body, run in this process (rhino3dmLoaderWorker.ts), and handed to the
+ * real ``_createGeometry``.
  */
-
-const here = dirname(fileURLToPath(import.meta.url));
-const web = dirname(here);
-const loaderPath = join(web, "node_modules", "three", "examples", "jsm", "loaders", "3DMLoader.js");
-const rhinoDir = join(web, "node_modules", "rhino3dm");
 
 const previewPath = process.env.ARCHFLOW_PREVIEW_3DM;
 const skip = previewPath
   ? false
   : "no current preview: tests/integration/test_occt_execution.py exports one and hands its path in ARCHFLOW_PREVIEW_3DM";
-
-interface WorkerMessage {
-  type: string;
-  id: number;
-  data?: DecodedFile;
-  error?: unknown;
-}
-
-interface DecodedFile {
-  layers: Array<{ name: string; visible: boolean; color: { r: number; g: number; b: number } }>;
-  materials: Array<{ name: string; transparency: number; diffuseColor: { r: number; g: number; b: number } }>;
-  objects: Array<{
-    objectType: string;
-    attributes: {
-      name: string;
-      visible: boolean;
-      layerIndex: number;
-      materialSource: { name: string; value: number };
-      materialIndex: number;
-      drawColor: { r: number; g: number; b: number };
-    };
-  }>;
-}
-
-/** Run the loader's own worker body in this process and decode one file with it. */
-async function decodeWithLoaderWorker(bytes: Buffer): Promise<DecodedFile> {
-  const source = readFileSync(loaderPath, "utf8");
-  const start = source.indexOf("function Rhino3dmWorker()");
-  const end = source.indexOf("export {", start);
-  assert.ok(start >= 0 && end > start, "the installed 3DMLoader.js carries Rhino3dmWorker");
-  const fn = source.slice(start, end);
-  const body = [
-    "/* rhino3dm.js */",
-    readFileSync(join(rhinoDir, "rhino3dm.js"), "utf8"),
-    "/* worker */",
-    fn.substring(fn.indexOf("{") + 1, fn.lastIndexOf("}")),
-  ].join("\n");
-
-  const posted: WorkerMessage[] = [];
-  const self = { postMessage: (message: WorkerMessage) => posted.push(message) };
-  const scope = globalThis as { onmessage?: (event: { data: unknown }) => void };
-  const previous = scope.onmessage;
-  try {
-    // rhino3dm.js detects Node and asks for fs; the loader hands the wasm over as bytes.
-    new Function("require", "__dirname", "__filename", "self", body)(
-      createRequire(import.meta.url),
-      rhinoDir,
-      join(rhinoDir, "rhino3dm.js"),
-      self,
-    );
-    const onmessage = scope.onmessage;
-    assert.equal(typeof onmessage, "function", "the worker body installs onmessage");
-    onmessage!({ data: { type: "init", libraryConfig: { wasmBinary: readFileSync(join(rhinoDir, "rhino3dm.wasm")) } } });
-    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-    onmessage!({ data: { type: "decode", id: 1, buffer } });
-    const deadline = Date.now() + 30_000;
-    while (posted.length === 0) {
-      assert.ok(Date.now() < deadline, "the worker decoded the file within 30 s");
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-  } finally {
-    scope.onmessage = previous;
-  }
-  const [message] = posted;
-  assert.equal(message.type, "decode", `worker replied ${message.type}: ${String(message.error)}`);
-  return message.data!;
-}
 
 function meshesByName(root: Object3D): Map<string, Mesh> {
   const meshes = new Map<string, Mesh>();
@@ -203,19 +125,19 @@ test("the current preview's native materials reach the viewer through the instal
   for (const [material, state] of loaded) assert.deepEqual(opacityOf(material), state, material.name);
 
   // Layer display colors are saved in the native file, but the loader leaves
-  // unassigned meshes white. Preparation restores that display color only.
+  // unassigned meshes white. Preparation restores that display color, and
+  // decodes the native material's saved sRGB colour in place (#562).
   const savedPlinth = decoded.objects.find((object) => object.attributes.name === "obj-plinth")!.attributes;
   const rgb = savedPlinth.drawColor;
   assert.deepEqual(rgb, decoded.layers[savedPlinth.layerIndex].color);
   const expectedColor = new Color().setRGB(rgb.r / 255, rgb.g / 255, rgb.b / 255, SRGBColorSpace);
-  const frameColor = (frame as MeshStandardMaterial).color.clone();
   const displayed = meshesByName(prepareLoadedModel(model.clone(true)));
   const displayedPlinth = displayed.get("obj-plinth")!.material as MeshStandardMaterial;
   assert.notEqual(displayedPlinth, plinth);
   assert.ok(displayedPlinth.color.equals(expectedColor));
   assert.equal(displayed.get(FRAME)!.material, frame);
   assert.equal(displayed.get(PANE)!.material, glass);
-  assert.ok((frame as MeshStandardMaterial).color.equals(frameColor));
+  assert.equal((frame as MeshStandardMaterial).color.getHexString(SRGBColorSpace), "6b5266", "the frame shows the colour the file saved");
   assert.deepEqual(opacityOf(displayedPlinth), loaded.get(plinth));
 });
 

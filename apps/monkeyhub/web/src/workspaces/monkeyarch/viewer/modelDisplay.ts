@@ -1,6 +1,6 @@
 import {
   BufferGeometry, Color, Float32BufferAttribute, Group, Line, LineBasicMaterial, LineSegments, Mesh,
-  MeshStandardMaterial, SRGBColorSpace, Texture, type Material, type Object3D,
+  MeshStandardMaterial, Points, SRGBColorSpace, Texture, type Material, type Object3D,
 } from "three";
 import type { FeatureEdge } from "./featureEdges";
 
@@ -103,18 +103,55 @@ function savedDisplayColor(object: Object3D): Color | null {
   return new Color().setRGB(rgb.r / 255, rgb.g / 255, rgb.b / 255, SRGBColorSpace);
 }
 
+/** Set on a loader material once its file colours are decoded, so a material many objects share is decoded once. */
+const DECODED_FILE_COLOURS = "fileColoursDecoded";
+
+/** The objects three's 3DM loader draws in a colour it read off the file: its curves and points. */
+const DRAWN_IN_FILE_COLOUR = new Set(["Curve", "Point", "PointSet"]);
+
+/**
+ * Decode the colours three's Rhino3dmLoader read off the file into the renderer's working colour space.
+ *
+ * Rhino saves every colour as sRGB channels, and the renderer encodes its working (linear)
+ * colours to sRGB on output. The loader builds a material's diffuse colour as
+ * ``new Color(r / 255, g / 255, b / 255)`` - a PBR base colour and a curve's or point's draw
+ * colour the same way - which three takes as already linear, so the output encoding lifted
+ * every one of them: a declared #687073 left the renderer as #abb1b3 before any light, and
+ * Original showed declared colours far paler than the file says. The emission colour it passes
+ * as raw 0-255 channels. Each is decoded here, in place: the loader shares one material among
+ * the objects that wear it (and among the files of one batch), so the material is marked and
+ * decoded once. Only what the loader made from the file is touched - a material from the file's
+ * material table (it carries the table's ``userData.id``), or the material of a curve or point
+ * the loader drew; layer and object display colours already arrive decoded (savedDisplayColor),
+ * and anything this viewer drew itself is left alone.
+ */
+function decodeFileColours(object: Object3D): void {
+  const drawn = (object instanceof Line || object instanceof Points) && DRAWN_IN_FILE_COLOUR.has(object.userData.objectType);
+  if (!drawn && !(object instanceof Mesh)) return;
+  const worn = (object as Mesh | Line | Points).material;
+  for (const material of Array.isArray(worn) ? worn : [worn]) {
+    if (material.userData[DECODED_FILE_COLOURS] === true || (!drawn && material.userData.id === undefined)) continue;
+    const { color, emissive } = material as { color?: unknown; emissive?: unknown };
+    if (color instanceof Color) color.setRGB(color.r, color.g, color.b, SRGBColorSpace);
+    if (emissive instanceof Color && !drawn) emissive.setRGB(emissive.r / 255, emissive.g / 255, emissive.b / 255, SRGBColorSpace);
+    material.userData[DECODED_FILE_COLOURS] = true;
+  }
+}
+
 /**
  * Give a freshly parsed model the display state its file saved: the layer
  * visibility the loader applied, and each object's own saved visibility on
  * top of it. Every loaded model - the reference, a local file, the second
  * side of a comparison - passes through here before its appearance is
  * captured, so a hidden construction object is remembered as hidden and no
- * restoration brings it back. The loader's unassigned white mesh material
- * uses the file's display color; native materials and textures stay intact.
+ * restoration brings it back. The colours the loader read off the file are
+ * decoded from sRGB (decodeFileColours), and the loader's unassigned white mesh
+ * material uses the file's display color; textures stay intact.
  */
 export function prepareLoadedModel<T extends Object3D>(root: T): T {
   root.traverse((object) => {
     if (object.visible && !savedObjectVisible(object)) object.visible = false;
+    decodeFileColours(object);
     if (!(object instanceof Mesh)) return;
     const color = savedDisplayColor(object);
     if (!color) return;
