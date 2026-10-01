@@ -7127,7 +7127,8 @@
         "A composer holding a Board image discussion sends nothing while a reply runs: the images and their words wait for the next message, and a mid-turn message is never labelled as about them; an external, archived or closing chat refuses a render context before its images are read",
         "A chat render request names a provider the Runtime reports available, or is refused before admission: with none configured the answer says image generation is not configured and nothing is submitted; one requestId is one Runtime dispatch",
         "saving preferences never changes a running Project Runtime, its compiler or its project, and null clears a saved override",
-        "Hub application launch choices do not replace user appearance or provider preferences, and never write project state"
+        "Hub application launch choices do not replace user appearance or provider preferences, and never write project state",
+        "Beside a project workspace the projects list folds to its icons unless pinned (#283): the pin is UserSettingsDto.sidebarPinned, written only while pinned so a version older than it still reads the file; the folding, Focus and the conversation's width are this window's view state and reach no Project Runtime or project"
       ],
       "files": [
         "apps/monkeyhub/api/monkeyhub_api/__init__.py",
@@ -7306,7 +7307,8 @@
         "apps/monkeyhub/web/test/projectStore.test.ts",
         "apps/monkeyhub/api/tests/test_chat_render.py",
         "apps/monkeyhub/api/tests/test_chat_progress.py",
-        "apps/monkeyhub/web/test/componentInfo.test.ts"
+        "apps/monkeyhub/web/test/componentInfo.test.ts",
+        "apps/monkeyhub/web/test/workspaceWidth.test.ts"
       ],
       "depends_on": [
         "archflow.contracts.canonical",

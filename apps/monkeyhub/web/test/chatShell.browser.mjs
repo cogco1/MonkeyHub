@@ -141,8 +141,9 @@ let runtimeOpenGate = null;
 let runtimeOpenCaptured = null;
 let runtimeReadGate = null;
 let settings = { projectDir: "D:\\fixture\\A", referenceRun: null, cadExport: "off", studioPort: 18789, monitorPort: server.address().port };
-// The one saved preferences document: appearance and the new-conversation defaults.
-let preferences = { language: "en", theme: "light", fontScale: 1 };
+// The one saved preferences document: appearance and the new-conversation defaults. The walk keeps the
+// projects list pinned open, as it was before #283; the #283 section unpins it and measures the frame.
+let preferences = { language: "en", theme: "light", fontScale: 1, sidebarPinned: true };
 // GH-302: settings save themselves; a test holds one write to see what waits for it.
 let settingsWriteGate = null;
 // #438: a test holds the launch settings read so they arrive after a conversation opened.
@@ -2488,16 +2489,19 @@ try {
   assert.equal(await page.getByRole("button", { name: "Design tree", exact: true }).getAttribute("aria-pressed"), "true");
   await urlParamIs("view", "tree");
   await viewCandidate("cand-A-1");
-  const originalPanelWidth = Number(await page.locator('.chat-resizer').getAttribute('aria-valuenow'));
+  const originalPanelWidth = await boxOf('.chat-browser');
   await page.setViewportSize({ width: 1920, height: 960 });
+  // #283: the separator moves the conversation's edge by 32 px a key; its value is the workspace's width as drawn.
   const resizePanel = async (width) => {
     const separator = page.locator('.chat-resizer');
     for (let step = 0; step < 32; step++) {
-      const current = Number(await separator.getAttribute('aria-valuenow'));
+      const current = await boxOf('.chat-browser');
       if (Math.abs(current - width) < 16) break;
       await separator.press(current < width ? 'ArrowLeft' : 'ArrowRight');
     }
     await page.evaluate(() => new Promise(requestAnimationFrame));
+    await page.waitForFunction(() => Math.abs(Number(document.querySelector('.chat-resizer').getAttribute('aria-valuenow'))
+      - document.querySelector('.chat-browser').getBoundingClientRect().width) <= 1);
   };
   for (const width of [940, 620, 332]) {
     await resizePanel(width);
@@ -2512,8 +2516,9 @@ try {
     if (width === 940) assert.ok(layout.height <= 52, 'wide toolbar is one strip');
     await visibleWorkspace().locator('.stage').screenshot({ path: path.join(temporary, `toolbar-${width}.png`) });
   }
-  await resizePanel(originalPanelWidth);
+  // The conversation keeps its own width, so the workspace is put back at the window it was measured in.
   await page.setViewportSize({ width: 1440, height: 960 });
+  await resizePanel(originalPanelWidth);
   const savedEditingBases = await page.evaluate(() => localStorage.getItem("archflow-studio.user-preferences"));
   assert.ok(!savedEditingBases?.includes("cand-A-1"), "viewing a candidate does not save it as an editing choice");
   await visibleWorkspace().evaluate((element) => { element.switchMarker = "retained"; element.retainedCanvas = element.querySelector(".stage canvas"); });
@@ -2624,9 +2629,11 @@ try {
   await waitWorkspace();
 
   // A — dragging really moves the boundary: the conversation and the tool page
-  // both change width, and the conversation keeps its floor.
-  const before = { chat: await boxOf(".chat-main"), frame: await boxOf(".chat-project-workspace:not([hidden])") };
+  // both change width, and the conversation keeps its floor. Beside a workspace the
+  // conversation starts near its floor (#283), so it is widened first to leave room.
   const handle = page.getByRole("separator", { name: "Resize right panel" });
+  for (let step = 0; step < 8; step++) await handle.press("ArrowRight");
+  const before = { chat: await boxOf(".chat-main"), frame: await boxOf(".chat-project-workspace:not([hidden])") };
   const bounds = await handle.boundingBox();
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   await page.mouse.down();
@@ -2777,6 +2784,123 @@ try {
   assert.equal(await page.locator('.chat-process__row[aria-expanded="true"]').count(), 0, "a reloaded chat shows its turns folded");
   await page.locator(".chat-browser").waitFor();
   assert.ok(Math.abs(await boxOf(".chat-browser") - savedWidth) < 12, "the panel width is restored");
+
+  // #283: unpinned, a project workspace folds the projects list to its icons and the workspace takes the width:
+  // at 1440 at least 850 px, and in Focus, with the conversation folded into a strip, at least 80 %. The pin is a
+  // Hub user setting, so it survives a restart. The conversation starts from its own default width again.
+  const shell = page.locator(".chat-shell");
+  const frameIs = (name, value) => page.waitForFunction(([key, expected]) => document.querySelector(".chat-shell")?.dataset[key] === expected, [name, value]);
+  const frameNow = () => page.evaluate(() => {
+    const width = (selector) => Math.round(document.querySelector(selector)?.getBoundingClientRect().width ?? 0);
+    return { window: innerWidth, sidebar: width(".chat-sidebar"), conversation: width(".chat-main"), strip: width(".chat-strip"),
+      workspace: width(".chat-browser"), canvas: width(".chat-project-workspace:not([hidden]) .stage canvas") };
+  });
+  const userSettingsSaved = () => page.waitForRequest((request) => request.method() === "PUT" && new URL(request.url()).pathname === "/api/settings/user");
+  delete preferences.sidebarPinned;
+  // The page saves its frame as it changes, so the dragged width is forgotten as the next document starts, once.
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("fixture.forget-chat-width") !== "once") return;
+    sessionStorage.removeItem("fixture.forget-chat-width");
+    const key = "monkeyhub.chat-view.v1", view = JSON.parse(localStorage.getItem(key));
+    delete view.chatWidth;
+    localStorage.setItem(key, JSON.stringify(view));
+  });
+  await page.evaluate(() => sessionStorage.setItem("fixture.forget-chat-width", "once"));
+  await page.reload();
+  await waitWorkspace();
+  await frameIs("sidebar", "false");
+  const folded = await frameNow();
+  console.log(JSON.stringify({ frame283: "unpinned", ...folded }));
+  assert.deepEqual([folded.window, folded.sidebar, folded.conversation], [1440, 60, 420], "the folded list and the conversation at its own width");
+  assert.ok(folded.workspace >= 850, `at 1440 the workspace is at least 850 px wide: ${JSON.stringify(folded)}`);
+  await page.screenshot({ path: path.join(temporary, "workspace-1440.png") });
+  // Closing the workspace gives the list back and opening it folds the list again; opened by hand, it stays open.
+  await page.getByRole("button", { name: "Hide tools", exact: true }).click();
+  await frameIs("sidebar", "true");
+  await page.getByRole("button", { name: "Show tools", exact: true }).click();
+  await waitWorkspace();
+  await frameIs("sidebar", "false");
+  await page.getByRole("button", { name: "Show projects", exact: true }).first().click();
+  await frameIs("sidebar", "true");
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await waitWorkspace("board");
+  assert.equal(await shell.getAttribute("data-sidebar"), "true", "a list opened by hand stays open from one workspace to the next");
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitWorkspace();
+  // The pin keeps the list open beside a workspace. It is saved with every other preference, and after a restart
+  // the list is still open beside the workspace.
+  const pin = page.getByRole("button", { name: "Keep projects open", exact: true });
+  assert.equal(await pin.getAttribute("aria-pressed"), "false");
+  const beforePin = { ...preferences }, pinWrite = userSettingsSaved();
+  await pin.click();
+  assert.deepEqual((await pinWrite).postDataJSON(), { ...beforePin, sidebarPinned: true });
+  await page.reload();
+  await waitWorkspace();
+  await page.waitForFunction(() => document.querySelector(".chat-pin")?.getAttribute("aria-pressed") === "true");
+  assert.equal(await shell.getAttribute("data-sidebar"), "true", "pinned, the list stays open beside the workspace after a restart");
+  console.log(JSON.stringify({ frame283: "pinned", ...await frameNow() }));
+  await page.screenshot({ path: path.join(temporary, "workspace-pinned-1440.png") });
+  // The same controls in Chinese, by their Chinese names.
+  preferences = { ...preferences, language: "zh-CN" };
+  await page.reload();
+  await waitWorkspace();
+  await page.getByRole("button", { name: "钉住项目栏", exact: true }).waitFor();
+  await page.waitForFunction(() => document.querySelector(".chat-pin")?.getAttribute("aria-pressed") === "true");
+  await page.getByRole("button", { name: "专注", exact: true }).click();
+  await frameIs("focus", "true");
+  await page.screenshot({ path: path.join(temporary, "workspace-focus-1440-zh.png") });
+  await page.getByRole("button", { name: "显示对话", exact: true }).click();
+  await frameIs("focus", "false");
+  preferences = { ...preferences, language: "en" };
+  await page.reload();
+  await waitWorkspace();
+  // Focus folds the conversation into a strip and the list with it, pinned or not. The strip takes the keyboard,
+  // the conversation out of sight takes no input, and the strip brings it back.
+  const focusButton = page.getByRole("button", { name: "Focus", exact: true });
+  const strip = page.getByRole("button", { name: "Show the conversation", exact: true });
+  const focusCheck = async (label) => {
+    await focusButton.click();
+    await frameIs("focus", "true");
+    const frame = await frameNow();
+    console.log(JSON.stringify({ frame283: label, ...frame }));
+    assert.ok(frame.workspace >= 0.8 * frame.window, `in Focus the workspace takes at least 80 % of the width: ${JSON.stringify(frame)}`);
+    assert.equal(await shell.getAttribute("data-sidebar"), "false");
+    assert.ok(await strip.evaluate((node) => node === document.activeElement), "the strip takes the keyboard focus");
+    assert.equal(await page.locator(".chat-main").evaluate((node) => node.inert), true);
+  };
+  await focusCheck("focus, pinned");
+  await page.screenshot({ path: path.join(temporary, "workspace-focus-1440.png") });
+  await strip.click();
+  await frameIs("focus", "false");
+  assert.ok(await focusButton.evaluate((node) => node === document.activeElement), "leaving Focus returns to its button");
+  assert.equal(await shell.getAttribute("data-sidebar"), "true", "a pinned list comes back with the conversation");
+  // Unpinned, the list folds at once, and the setting is written by leaving it out.
+  const unpinWrite = userSettingsSaved();
+  await pin.click();
+  assert.equal((await unpinWrite).postDataJSON().sidebarPinned, null);
+  await frameIs("sidebar", "false");
+  await focusCheck("focus");
+  // Opened by hand in Focus, the list leads to a conversation, and the conversation chosen comes out of Focus.
+  await page.getByRole("button", { name: "Show projects", exact: true }).first().click();
+  await frameIs("sidebar", "true");
+  await page.locator('.chat-thread[aria-current="page"]').click();
+  await frameIs("focus", "false");
+  await frameIs("sidebar", "false");
+  // Focus also ends with its workspace: hiding the tools brings the conversation back as it was.
+  await focusButton.click();
+  await frameIs("focus", "true");
+  await page.getByRole("button", { name: "Hide tools", exact: true }).click();
+  await frameIs("panel", "false");
+  await frameIs("focus", "false");
+  assert.equal(await page.locator(".chat-main").evaluate((node) => node.inert), false);
+  // The rest of the walk keeps the list pinned, as it was.
+  await page.getByRole("button", { name: "Show tools", exact: true }).click();
+  await waitWorkspace();
+  await page.getByRole("button", { name: "Show projects", exact: true }).first().click();
+  const repinWrite = userSettingsSaved();
+  await pin.click();
+  assert.equal((await repinWrite).postDataJSON().sidebarPinned, true);
+  await frameIs("sidebar", "true");
 
   // #337: the menu row. File opens from the keyboard and names what it does; Escape
   // returns to the word; View changes the theme through the same saved preferences.

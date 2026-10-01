@@ -51,6 +51,11 @@ class UserSettingsDto(BaseModel):
     # MonkeyHub's automatic desktop updates; absent means on. The Hub reads
     # and writes it; the Project Runtime ignores it.
     auto_update: bool | None = Field(default=None, alias="autoUpdate")
+    # The projects list kept open beside a project workspace (#283); absent,
+    # it folds to its icons while one is open. The Hub page writes it only
+    # while pinned, so versions older than this field still read the file
+    # unless it is pinned, as with autoUpdate turned off.
+    sidebar_pinned: bool | None = Field(default=None, alias="sidebarPinned")
 
     @field_validator("font_scale", mode="before")
     @classmethod
