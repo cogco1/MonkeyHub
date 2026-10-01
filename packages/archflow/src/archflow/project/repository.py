@@ -34,7 +34,7 @@ from archflow.project.digests import project_state_sha256
 from archflow.project.layout import AUTHORED_RECORD_PATH, ProjectLayout, RunLayout
 from archflow.project.manifest import ProjectManifest, ProjectManifestError
 from archflow.project.memo import ContentMemo, settled
-from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.ports import PersistenceArea, PersistenceDestination, TrashEntry
 from archflow.project.record_kinds import (
     DESIGN_STAGE,
     PROJECT_FORMAT_MIGRATION,
@@ -94,6 +94,18 @@ class StaleWorkingDraft(ProjectRepositoryError):
 
 class PromotionAuthorityError(ProjectRepositoryError):
     pass
+
+
+class RunNotTrashed(ProjectRepositoryError):
+    """The run stays where it is: something still holds it, or it could not be moved whole (#575)."""
+
+
+class TrashEntryNotFound(ProjectRepositoryError):
+    """The project trash holds no whole entry for this run."""
+
+
+class RunNotRestored(ProjectRepositoryError):
+    """The trashed run stays in the trash: its place in ``runs/`` is taken, or it could not be moved whole."""
 
 
 def _transfer_path(value: str) -> str:
@@ -1044,6 +1056,33 @@ def _unpublish_directory(root: Path) -> str | None:
         return _remove_directory(root)
     _discard_staging(hidden)
     return None
+
+
+# ---- the project trash's names (#575; ``FilesystemProjectRepository.trash_run``)
+
+TRASH_ENTRY_SCHEMA = "ProjectTrashEntry@1"
+# How long a trashed run can be restored before ``purge_trash`` deletes it.
+TRASH_RETENTION = timedelta(days=30)
+_TRASH_ENTRY_FIELDS = frozenset({
+    "schema", "projectId", "runId", "trashedAt", "rule", "reason", "stateDigest", "supersededBy", "baseRunId",
+    "label", "workingRow",
+})
+# A trashed run being purged is renamed to a dot name ending so: never an entry, and removed by the next purge.
+_PURGING = ".purge"
+_IDENTIFIER_BYTES = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+
+
+def _names_identifier(data: bytes, needle: bytes) -> bool:
+    """Whether ``needle`` stands whole in ``data``: no identifier character right before it or right after it."""
+
+    start = data.find(needle)
+    while start >= 0:
+        end = start + len(needle)
+        if ((start == 0 or data[start - 1] not in _IDENTIFIER_BYTES)
+                and (end == len(data) or data[end] not in _IDENTIFIER_BYTES)):
+            return True
+        start = data.find(needle, start + 1)
+    return False
 
 
 def _version_from_dict(value: object, *, field: str) -> ProjectVersionRef:
@@ -2616,9 +2655,10 @@ class FilesystemProjectRepository:
     def prune_working_draft(self, *, now: str) -> tuple[str, ...]:
         """Expire superseded local recovery snapshots; never remove a run.
 
-        Every run stays, including an automatic candidate that nothing refers
-        to: an alternative leaves only by the architect's explicit act, never
-        on a timer (ADR-007: old runs are archived, and nobody deletes them).
+        Every run stays here, including an automatic candidate that nothing
+        refers to: a run leaves ``runs/`` only through the project trash
+        (``trash_run``, #575), whole and restorable, under the rules its caller
+        owns, never on this timer.
         A snapshot is a crash-recovery copy of unsynced local commands and only
         the one ``localDraftRef`` names is ever read back, so that one is kept
         however old it is; any other snapshot expires 24 hours after its
@@ -2643,6 +2683,327 @@ class FilesystemProjectRepository:
                 path.unlink(missing_ok=True)
                 _note_write(path)
             return tuple(path.relative_to(self.layout.root).as_posix() for path in expired)
+
+    # ---- the project trash (#575)
+    #
+    # A run its caller's retention rules may clean leaves ``runs/`` whole: its
+    # directory is renamed to ``trash/runs/<run_id>`` in one step, unchanged,
+    # beside the manifest ``trash/entries/<run_id>.json``. Restoring renames it
+    # back; purging deletes an entry once it is older than the retention.
+    # Nothing is ever copied, and a run that cannot be renamed whole stays where
+    # it is, so a run is never in two places or in part of one.
+    #
+    # The working position names its runs, and reopening refuses a row whose
+    # run is gone (``verify``), so a run's row travels with it. Trashing writes
+    # the manifest, then drops the row, then renames the run; restoring renames
+    # the run back, then puts the row back, then removes the manifest. Every
+    # interruption therefore leaves a manifest whose run is in ``runs/`` whole
+    # (or already purged): ``_recover_trash`` puts a missing row back and
+    # removes that manifest before the next trash, restore or purge.
+
+    def trash_run(
+        self, run_id: str, *, now: str, rule: str, reason: str, state_digest: str | None = None,
+        superseded_by: str | None = None, base_run_id: str | None = None, label: str | None = None,
+    ) -> TrashEntry:
+        """Move one whole run into the project trash, or refuse and leave it where it is.
+
+        The caller decides which run may go and says why; this refuses a run
+        that anything the repository owns still holds: the Working Head, an
+        execution's ledger (as run or source), a saved or chosen working row,
+        the local recovery, a review, Stage or attributed act retained in the
+        run, a design branch, or the published history. Its unlabelled
+        automatic row, if it has one, moves with it. ``RunNotTrashed`` says
+        why a run stayed.
+        """
+
+        require_identifier(run_id, "run_id")
+        self._working_time(now)
+        require_identifier(rule, "rule")
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 2000:
+            raise ValueError("reason must be one sentence of at most 2000 characters")
+        for field, value in (("state_digest", state_digest), ("label", label)):
+            if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > 2000):
+                raise ValueError(f"{field} must be non-empty text or None")
+        for field, value in (("superseded_by", superseded_by), ("base_run_id", base_run_id)):
+            if value is not None:
+                require_identifier(value, field)
+        with self._lock, self._head_lock, self._design_lock:
+            self._recover_trash()
+            source, target = self.layout.run(run_id).root, self.layout.trashed_run(run_id)
+            manifest = self.layout.trash_manifest(run_id)
+            try:
+                self.load_run(run_id)
+            except (ProjectRepositoryError, OSError, ValueError) as exc:
+                raise RunNotTrashed(f"{run_id} is not a whole run of this project") from exc
+            if os.path.lexists(target) or os.path.lexists(manifest):
+                raise RunNotTrashed(f"the trash already holds a run named {run_id}")
+            working, revision = self.read_working_draft()
+            held = self._trash_holds(run_id, working)
+            if held:
+                raise RunNotTrashed(f"{run_id} stays: {held}")
+            row = working["runs"].get(run_id)
+            payload = {
+                "schema": TRASH_ENTRY_SCHEMA, "projectId": self.layout.project_id, "runId": run_id,
+                "trashedAt": now, "rule": rule, "reason": reason.strip(), "stateDigest": state_digest,
+                "supersededBy": superseded_by, "baseRunId": base_run_id, "label": label,
+                "workingRow": None if row is None else dict(row),
+            }
+            _write_immutable(manifest, _json_bytes(payload))
+            if row is not None:
+                remaining = {**working, "runs": {key: value for key, value in working["runs"].items() if key != run_id}}
+                self.compare_and_swap_working_draft(expected_revision=revision, value=remaining)
+            _make_directory(target.parent)
+            failure: BaseException | None = None
+            try:
+                moved = _rename_directory(source, target)
+            except (_DirectoryBusy, OSError) as exc:
+                moved, failure = False, exc
+            if not moved:
+                # Still whole in runs/: its row goes back and the manifest goes.
+                self._settle_trash_entry(run_id, payload)
+                raise RunNotTrashed(
+                    f"{run_id} could not be moved whole and was left where it is"
+                    + (f": {failure}" if failure is not None else "")
+                ) from failure
+            return self._trash_entry_of(payload)
+
+    def trash_entries(self) -> tuple[TrashEntry, ...]:
+        """Every whole entry of the project trash, oldest first; reading writes nothing.
+
+        An entry is whole when its manifest and its run are both there. A
+        manifest an interrupted move left without its run is not an entry: the
+        next trash, restore or purge settles it. One that cannot be read is
+        left out and logged, and is never purged or restored.
+        """
+
+        directory = self.layout.trash / "entries"
+        if not directory.is_dir():
+            return ()
+        entries: list[TrashEntry] = []
+        for path in sorted(directory.glob("*.json")):
+            run_id = path.name[: -len(".json")]
+            try:
+                require_identifier(run_id, "run_id")
+                if not self.layout.trashed_run(run_id).is_dir():
+                    continue
+                entries.append(self._trash_entry_of(self._trash_payload(path, run_id)))
+            except (ProjectRepositoryError, OSError, ValueError) as exc:
+                _LOG.warning("a project trash manifest could not be read: %s: %s", path.name, exc)
+        return tuple(sorted(entries, key=lambda entry: (self._working_time(entry.trashed_at), entry.run_id)))
+
+    def restore_trashed_run(self, run_id: str) -> TrashEntry:
+        """Move a trashed run back into ``runs/`` exactly as it left, with its working row.
+
+        ``TrashEntryNotFound`` when the trash holds no whole entry for it;
+        ``RunNotRestored`` when ``runs/<run_id>`` is taken or the run cannot be
+        moved back whole, and then it stays in the trash.
+        """
+
+        require_identifier(run_id, "run_id")
+        with self._lock, self._head_lock, self._design_lock:
+            self._recover_trash()
+            source, manifest = self.layout.trashed_run(run_id), self.layout.trash_manifest(run_id)
+            if not manifest.is_file() or not source.is_dir():
+                raise TrashEntryNotFound(f"the project trash holds no run named {run_id}")
+            payload = self._trash_payload(manifest, run_id)
+            target = self.layout.run(run_id).root
+            if os.path.lexists(target):
+                raise RunNotRestored(f"{run_id} stays in the trash: the project already has a run named {run_id}")
+            _make_directory(target.parent)
+            try:
+                moved = _rename_directory(source, target)
+            except (_DirectoryBusy, OSError) as exc:
+                raise RunNotRestored(f"{run_id} could not be moved back whole and stays in the trash: {exc}") from exc
+            if not moved:
+                raise RunNotRestored(f"{run_id} stays in the trash: the project already has a run named {run_id}")
+            self._settle_trash_entry(run_id, payload)
+            return self._trash_entry_of(payload)
+
+    def purge_trash(self, *, now: str, retention: timedelta | None = None) -> tuple[str, ...]:
+        """Delete every trash entry older than the retention (30 days); the purged run ids.
+
+        An entry is taken out of the trash's listing in one step (renamed to
+        a dot name) before its manifest and its files are deleted; files that
+        will not go yet are tried again by the next purge.
+        """
+
+        cutoff = self._working_time(now) - (TRASH_RETENTION if retention is None else retention)
+        purged: list[str] = []
+        with self._lock, self._head_lock, self._design_lock:
+            self._recover_trash()
+            for entry in self.trash_entries():
+                if self._working_time(entry.trashed_at) >= cutoff:
+                    continue
+                trashed = self.layout.trashed_run(entry.run_id)
+                hidden = trashed.with_name(f".{uuid4().hex}{_PURGING}")
+                try:
+                    moved = _rename_directory(trashed, hidden)
+                except (_DirectoryBusy, OSError) as exc:
+                    _LOG.warning("trashed run %s stays until the next purge: %s", entry.run_id, exc)
+                    continue
+                if not moved:
+                    continue
+                manifest = self.layout.trash_manifest(entry.run_id)
+                manifest.unlink(missing_ok=True)
+                _note_write(manifest)
+                failure = _remove_directory(hidden)
+                if failure is not None:
+                    _LOG.warning("a purged run's files are removed by the next purge: %s", failure)
+                purged.append(entry.run_id)
+        return tuple(purged)
+
+    def run_mentions(self, run_ids: Iterable[str]) -> dict[str, frozenset[str]]:
+        """Where the project's retained JSON names each run, outside that run's own directory.
+
+        A byte search, not a parse: a run id counts wherever it stands whole,
+        between characters no identifier contains, as in ``"<id>"`` or
+        ``runs/<id>/``. Each place is ``run:<id>`` for a file in another run's
+        directory, else the file's project-relative path. The trash, exports
+        (shared copies, never project state), shared objects and staging or
+        temporary files are not searched. Reading writes nothing and takes no
+        lock: a caller checks again as it acts.
+        """
+
+        wanted = {require_identifier(run_id, "run_id"): run_id.encode("ascii") for run_id in dict.fromkeys(run_ids)}
+        if not wanted:
+            return {}
+        found: dict[str, set[str]] = {run_id: set() for run_id in wanted}
+        root = os.fspath(self.layout.root)
+        skipped = {"trash", "exports", "objects"}
+        for directory, directories, files in os.walk(root):
+            relative = os.path.relpath(directory, root)
+            parts = [] if relative == os.curdir else relative.split(os.sep)
+            if not parts:
+                directories[:] = [name for name in directories if name not in skipped and not name.startswith(".")]
+            else:
+                directories[:] = [name for name in directories if not name.startswith(".")]
+            owner = parts[1] if len(parts) > 1 and parts[0] == "runs" else None
+            for name in files:
+                if not name.endswith(".json") or name.startswith("."):
+                    continue
+                try:
+                    with open(os.path.join(directory, name), "rb") as handle:
+                        data = handle.read()
+                except OSError:
+                    continue
+                for run_id, needle in wanted.items():
+                    if run_id == owner or not _names_identifier(data, needle):
+                        continue
+                    found[run_id].add(f"run:{owner}" if owner is not None else "/".join((*parts, name)))
+        return {run_id: frozenset(places) for run_id, places in found.items()}
+
+    def _trash_holds(self, run_id: str, working: Mapping[str, Any]) -> str | None:
+        """What keeps a run out of the trash, in words, or None. The caller holds every lock."""
+
+        if working["current"] == run_id:
+            return "it is the Working Head"
+        if run_id in working["active"] or any(run_id in sources for sources in working["active"].values()):
+            return "an execution is using it"
+        row = working["runs"].get(run_id)
+        if row is not None and row["label"] is not None:
+            return "it is a saved version"
+        if row is not None and not row["automatic"]:
+            return "a person chose it as the working position"
+        local = working["localDraftRef"]
+        if local is not None:
+            if PurePosixPath(local["relative_path"]).parts[:2] == ("runs", run_id):
+                return "it holds the local recovery"
+            draft = self.load_json(ProjectRecordRef.from_dict(local))
+            source = (draft.get("draft") or {}).get("source") or {}
+            if source.get("sourceRunId") == run_id:
+                return "the local recovery was made from it"
+        run_layout = self.layout.run(run_id)
+        for area, words in ((run_layout.reviews, "it keeps a review, Stage or attributed act"),
+                            (run_layout.recovery, "it keeps local recovery")):
+            if any(path.is_file() for path in area.glob("*.json")):
+                return words
+        for branch in self.read_design_branches().values():
+            for field in ("fork_stage", "head_stage"):
+                if PurePosixPath(branch[field]["relative_path"]).parts[:2] == ("runs", run_id):
+                    return "a design branch stands on it"
+        if run_id in self._published_runs():
+            return "the published history names it"
+        return None
+
+    def _published_runs(self) -> set[str]:
+        """The runs the published event chain names, as its run or as where its decision is kept."""
+
+        runs: set[str] = set()
+        _, _, event_ref = self._read_head_document()
+        seen: set[str] = set()
+        current: ProjectRecordRef | None = event_ref
+        while current is not None and current.relative_path not in seen:
+            seen.add(current.relative_path)
+            event = self.load_json(current)
+            if isinstance(event.get("run_id"), str):
+                runs.add(event["run_id"])
+            receipt = event.get("decision_receipt")
+            if isinstance(receipt, Mapping) and isinstance(receipt.get("relative_path"), str):
+                parts = PurePosixPath(receipt["relative_path"]).parts
+                if len(parts) > 1 and parts[0] == "runs":
+                    runs.add(parts[1])
+            previous = event.get("previous_event")
+            current = None if previous is None else _record_from_dict(
+                previous, project_id=self._manifest.project_id, field="previous_event")
+        return runs
+
+    def _trash_payload(self, path: Path, run_id: str) -> dict[str, Any]:
+        payload = _read_json(path)
+        if (set(payload) != _TRASH_ENTRY_FIELDS or payload["schema"] != TRASH_ENTRY_SCHEMA
+                or payload["projectId"] != self.layout.project_id or payload["runId"] != run_id
+                or not all(isinstance(payload[key], str) for key in ("trashedAt", "rule", "reason"))
+                or not all(payload[key] is None or isinstance(payload[key], str)
+                           for key in ("stateDigest", "supersededBy", "baseRunId", "label"))
+                or not (payload["workingRow"] is None or isinstance(payload["workingRow"], dict))):
+            raise ProjectIntegrityError(f"project trash manifest is invalid: {path.name}")
+        self._working_time(payload["trashedAt"])
+        return payload
+
+    @staticmethod
+    def _trash_entry_of(payload: Mapping[str, Any]) -> TrashEntry:
+        return TrashEntry(
+            run_id=payload["runId"], trashed_at=payload["trashedAt"], rule=payload["rule"], reason=payload["reason"],
+            state_digest=payload["stateDigest"], superseded_by=payload["supersededBy"],
+            base_run_id=payload["baseRunId"], label=payload["label"],
+            working_row=None if payload["workingRow"] is None else dict(payload["workingRow"]),
+        )
+
+    def _settle_trash_entry(self, run_id: str, payload: Mapping[str, Any]) -> None:
+        """A manifest whose run is not in the trash: the run's row back if it is in ``runs/``, then no manifest."""
+
+        row = payload["workingRow"]
+        if row is not None and self.layout.run(run_id).manifest.is_file():
+            working, revision = self.read_working_draft()
+            if run_id not in working["runs"]:
+                working["runs"][run_id] = dict(row)
+                self.compare_and_swap_working_draft(expected_revision=revision, value=working)
+        manifest = self.layout.trash_manifest(run_id)
+        manifest.unlink(missing_ok=True)
+        _note_write(manifest)
+
+    def _recover_trash(self) -> None:
+        """Settle what an interrupted trash, restore or purge left; the caller holds every lock."""
+
+        entries = self.layout.trash / "entries"
+        if entries.is_dir():
+            for path in sorted(entries.glob("*.json")):
+                run_id = path.name[: -len(".json")]
+                try:
+                    require_identifier(run_id, "run_id")
+                    if self.layout.trashed_run(run_id).is_dir():
+                        continue
+                    payload = self._trash_payload(path, run_id)
+                except (ProjectRepositoryError, OSError, ValueError) as exc:
+                    _LOG.warning("a project trash manifest is left as it is: %s: %s", path.name, exc)
+                    continue
+                self._settle_trash_entry(run_id, payload)
+        runs = self.layout.trash / "runs"
+        if runs.is_dir():
+            for item in runs.iterdir():
+                if item.name.startswith(".") and item.name.endswith(_PURGING):
+                    failure = _remove_directory(item)
+                    if failure is not None:
+                        _LOG.warning("a purged run's files are removed by the next purge: %s", failure)
 
     def read_design_branches(self) -> dict[str, dict[str, Any]]:
         """Read verified design references, including projects predating them.

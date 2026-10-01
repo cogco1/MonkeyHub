@@ -278,7 +278,7 @@
       ],
       "kind": "project_repository",
       "owner": "P036",
-      "reason": "The durable project repository is the sole project-document filesystem writer. It renames a directory only to publish a run it staged beside the runs whole, or to take back a run its failed batch had just published (#327)."
+      "reason": "The durable project repository is the sole project-document filesystem writer. It renames a directory only to publish a run it staged beside the runs whole, to take back a run its failed batch had just published (#327), or to move a whole run into the project trash and back (#575); a purge deletes only trash entries past their retention."
     },
     {
       "path": "packages/monkeycad/src/monkeycad/backends/rhino/export.py",
