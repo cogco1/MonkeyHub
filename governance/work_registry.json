@@ -18,7 +18,8 @@
           ],
           "write_scope": [
             "apps/monkeyhub/web/test/boardDocumentOpen.browser.mjs",
-            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx"
+            "apps/monkeyhub/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
+            ".github/workflows/verify.yml"
           ],
           "depends_on": []
         }
