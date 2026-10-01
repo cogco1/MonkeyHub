@@ -1,4 +1,36 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-575",
+      "lanes": [
+        {
+          "id": "land",
+          "status": "active",
+          "branch": "codex/575-land",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-575-land",
+          "base_ref": "e82516cd89d30128092ff5fc0b372d2adafd9cc1",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+            "apps/monkeyhub/api/tests/test_chat_admission.py",
+            "apps/monkeyhub/web/src/app/App.tsx",
+            "apps/monkeyhub/web/src/app/workingHead.ts",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/workingHead.test.ts",
+            "docs/architecture/overview.md",
+            "docs/protocols/project-runtime-api.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
