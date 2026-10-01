@@ -4,10 +4,14 @@
  * The Project Runtime resolves the head from retained facts
  * (`GET /api/working-source`); nothing here guesses a newest candidate. These
  * rules only decide when a mounted workspace may follow the head without
- * taking work away from the person using it.
+ * taking work away from the person using it, and what puts a followed head
+ * back (#575).
  */
 
-import type { WorkingSourceDto } from "../api/project-runtime/generated";
+import type { StudioClient } from "../api/project-runtime/client";
+import { asStudioApiError, StudioApiError } from "../api/project-runtime/error";
+import type { WorkingDraftDto, WorkingSourceDto } from "../api/project-runtime/generated";
+import { continueUndo, undoRequest, type ContinueUndo } from "../features/designTree/continueUndo";
 
 export interface HeadRef {
   readonly runId: string;
@@ -51,4 +55,43 @@ export function pinStep(followsHead: boolean, gate: FollowGate): FollowStep | "v
 /** The viewer moves with the base only when it was showing that base, or nothing yet. */
 export function viewerFollows(viewedRunId: string | null, previousBaseRunId: string | null): boolean {
   return viewedRunId === null || viewedRunId === previousBaseRunId;
+}
+
+/**
+ * The 撤销 a followed head offers (#575): Continue's own Undo (continueUndo.ts), onto the base this tab
+ * followed from, exactly as the working position it last read named that base: a run and its line. A base
+ * no entry named, because a line's accepted Stage or the reference run answered for it, or one that
+ * position had already left, offers none: putting it back would be a guess.
+ */
+export function followUndo(read: WorkingDraftDto | null | undefined, baseRunId: string | null, followed: string): ContinueUndo | null {
+  return read && baseRunId !== null && read.current?.runId === baseRunId ? continueUndo(read, followed) : null;
+}
+
+/** What 撤销 did: put the base back, or nothing, because Current moved on or holds unrecorded model edits. */
+export type FollowUndoOutcome = "undone" | "moved-on" | "unsynced";
+
+/**
+ * 撤销 itself: the Design Tree's Undo write (`undoRequest`), against the working position as it is read
+ * now. It holds only while Current still stands on the followed run, and unrecorded model edits keep their
+ * own source, so it waits for them. A write that lost a race with an autosave reads again, up to three times.
+ */
+export async function undoFollow(studio: Pick<StudioClient, "workingDraft" | "selectWorkingDraft">, projectId: string,
+  undo: ContinueUndo): Promise<FollowUndoOutcome> {
+  for (let attempt = 1; ; attempt += 1) {
+    const position = await studio.workingDraft();
+    if (position.projectId !== projectId) {
+      throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED",
+        detail: "The working position belongs to another project. Reconnect this project's runtime before undoing." });
+    }
+    if (position.localDraft) return "unsynced";
+    const request = undoRequest(projectId, undo, position);
+    if (request === null) return "moved-on";
+    try {
+      await studio.selectWorkingDraft(request);
+      return "undone";
+    } catch (cause) {
+      // An autosave moved the position between the read and this write.
+      if (asStudioApiError(cause).code !== "WORKING_DRAFT_STALE" || attempt >= 3) throw cause;
+    }
+  }
 }
