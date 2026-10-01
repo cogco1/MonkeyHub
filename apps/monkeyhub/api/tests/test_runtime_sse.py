@@ -154,15 +154,22 @@ class RuntimeSseTests(LocalHubCase):
                     epoch, revision = written.headers["X-Monkey-Index"].split(":")
                 self.assertEqual(epoch, snapshot["epoch"])
                 self.assertGreater(int(revision), snapshot["revision"])
+                # The write's commits, not one frame: the worker's watcher commits the objects the
+                # write stored about 60 ms after it answered, and a write answered late names that
+                # later revision.
+                domains: set[str] = set()
                 for _ in range(200):
                     name, body = self.frame(stream)
-                    if name == "index" and (body["index"] or {}).get("revision", 0) >= int(revision):
+                    index = (body["index"] or {}) if name == "index" else {}
+                    if index.get("revision", 0) > snapshot["revision"]:
+                        domains.update(index.get("domains") or ())
+                    if index.get("revision", 0) >= int(revision):
                         break
                 else:
                     self.fail("the write's index commit did not reach the Hub stream")
                 self.assertEqual(body["runtimeId"], runtime_id)
                 self.assertEqual(body["index"]["epoch"], epoch)
-                self.assertIn("run", body["index"]["domains"])
+                self.assertIn("run", domains)
                 changes = http_json(studio + "/api/index?" + urlencode({"since": snapshot["revision"], "epoch": epoch}))
                 self.assertFalse(changes["reset"])
                 self.assertTrue(changes["upserts"])
