@@ -1,6 +1,6 @@
 import {
-  BufferGeometry, Color, Float32BufferAttribute, Group, Line, LineBasicMaterial, LineSegments, Mesh,
-  MeshStandardMaterial, SRGBColorSpace, Texture, type Material, type Object3D,
+  BufferGeometry, Color, Float32BufferAttribute, Group, Line, LineBasicMaterial, LineSegments, Mesh, MeshLambertMaterial,
+  MeshStandardMaterial, Points, SRGBColorSpace, Texture, type Material, type Object3D, type WebGLProgramParametersWithUniforms,
 } from "three";
 import type { FeatureEdge } from "./featureEdges";
 
@@ -103,18 +103,55 @@ function savedDisplayColor(object: Object3D): Color | null {
   return new Color().setRGB(rgb.r / 255, rgb.g / 255, rgb.b / 255, SRGBColorSpace);
 }
 
+/** Set on a loader material once its file colours are decoded, so a material many objects share is decoded once. */
+const DECODED_FILE_COLOURS = "fileColoursDecoded";
+
+/** The objects three's 3DM loader draws in a colour it read off the file: its curves and points. */
+const DRAWN_IN_FILE_COLOUR = new Set(["Curve", "Point", "PointSet"]);
+
+/**
+ * Decode the colours three's Rhino3dmLoader read off the file into the renderer's working colour space.
+ *
+ * Rhino saves every colour as sRGB channels, and the renderer encodes its working (linear)
+ * colours to sRGB on output. The loader builds a material's diffuse colour as
+ * ``new Color(r / 255, g / 255, b / 255)`` - a PBR base colour and a curve's or point's draw
+ * colour the same way - which three takes as already linear, so the output encoding lifted
+ * every one of them: a declared #687073 left the renderer as #abb1b3 before any light, and
+ * Original showed declared colours far paler than the file says. The emission colour it passes
+ * as raw 0-255 channels. Each is decoded here, in place: the loader shares one material among
+ * the objects that wear it (and among the files of one batch), so the material is marked and
+ * decoded once. Only what the loader made from the file is touched - a material from the file's
+ * material table (it carries the table's ``userData.id``), or the material of a curve or point
+ * the loader drew; layer and object display colours already arrive decoded (savedDisplayColor),
+ * and anything this viewer drew itself is left alone.
+ */
+function decodeFileColours(object: Object3D): void {
+  const drawn = (object instanceof Line || object instanceof Points) && DRAWN_IN_FILE_COLOUR.has(object.userData.objectType);
+  if (!drawn && !(object instanceof Mesh)) return;
+  const worn = (object as Mesh | Line | Points).material;
+  for (const material of Array.isArray(worn) ? worn : [worn]) {
+    if (material.userData[DECODED_FILE_COLOURS] === true || (!drawn && material.userData.id === undefined)) continue;
+    const { color, emissive } = material as { color?: unknown; emissive?: unknown };
+    if (color instanceof Color) color.setRGB(color.r, color.g, color.b, SRGBColorSpace);
+    if (emissive instanceof Color && !drawn) emissive.setRGB(emissive.r / 255, emissive.g / 255, emissive.b / 255, SRGBColorSpace);
+    material.userData[DECODED_FILE_COLOURS] = true;
+  }
+}
+
 /**
  * Give a freshly parsed model the display state its file saved: the layer
  * visibility the loader applied, and each object's own saved visibility on
  * top of it. Every loaded model - the reference, a local file, the second
  * side of a comparison - passes through here before its appearance is
  * captured, so a hidden construction object is remembered as hidden and no
- * restoration brings it back. The loader's unassigned white mesh material
- * uses the file's display color; native materials and textures stay intact.
+ * restoration brings it back. The colours the loader read off the file are
+ * decoded from sRGB (decodeFileColours), and the loader's unassigned white mesh
+ * material uses the file's display color; textures stay intact.
  */
 export function prepareLoadedModel<T extends Object3D>(root: T): T {
   root.traverse((object) => {
     if (object.visible && !savedObjectVisible(object)) object.visible = false;
+    decodeFileColours(object);
     if (!(object instanceof Mesh)) return;
     const color = savedDisplayColor(object);
     if (!color) return;
@@ -142,6 +179,8 @@ export interface ModelAppearance {
   readonly visibility: WeakMap<Object3D, boolean>;
   readonly materials: WeakMap<Mesh | Line, Material | Material[]>;
   readonly layerVisibility: WeakMap<Object3D, ReadonlyArray<boolean | undefined>>;
+  /** Each surface's own cast and receive shadow flags; only Presentation's sun draws shadows. */
+  readonly shadows: WeakMap<Mesh, readonly [cast: boolean, receive: boolean]>;
 }
 
 /** Remember the loaded file's display state before any temporary projection touches it. */
@@ -149,9 +188,11 @@ export function captureModelAppearance(root: Object3D): ModelAppearance {
   const visibility = new WeakMap<Object3D, boolean>();
   const materials = new WeakMap<Mesh | Line, Material | Material[]>();
   const layerVisibility = new WeakMap<Object3D, ReadonlyArray<boolean | undefined>>();
+  const shadows = new WeakMap<Mesh, readonly [boolean, boolean]>();
   root.traverse((object) => {
     visibility.set(object, object.visible);
     if (object instanceof Mesh || object instanceof Line) materials.set(object, object.material);
+    if (object instanceof Mesh) shadows.set(object, [object.castShadow, object.receiveShadow]);
     const layers = object.userData.layers;
     if (Array.isArray(layers)) {
       layerVisibility.set(
@@ -164,7 +205,7 @@ export function captureModelAppearance(root: Object3D): ModelAppearance {
       );
     }
   });
-  return { visibility, materials, layerVisibility };
+  return { visibility, materials, layerVisibility, shadows };
 }
 
 /** A material's own opacity state, as the file's loader set it. */
@@ -222,23 +263,59 @@ export function restoreOpacity(own: Map<Material, MaterialOpacity>): void {
  * How the loaded model is painted. ``original`` is the file's own look: its
  * render materials, or its object/layer display colour where it has none.
  * ``modeling`` is a SketchUp-direction working look - matte surfaces in the
- * file's muted colours, thin feature edges, plain light. Neither touches geometry, names, visibility or
- * anything a project records; the file's own materials are never modified.
+ * file's muted colours, thin feature edges, plain light. ``presentation`` (展示,
+ * #562) previews a restrained offline look in real time: matte surfaces in the
+ * colours the file's materials declare, one sun with soft shadows over a sky
+ * fill, faint edges, on paper; a surface whose component declares no material
+ * keeps its distinction colour under a fine hatch. None of them touches geometry,
+ * names, visibility or anything a project records; the file's own materials are
+ * never modified.
  */
-export type ModelDisplayStyle = "original" | "modeling";
+export type ModelDisplayStyle = "original" | "modeling" | "presentation";
+
+/** Every style, in the order the display selector lists them. */
+export const MODEL_DISPLAY_STYLES: readonly ModelDisplayStyle[] = ["modeling", "original", "presentation"];
 
 /** The look a viewer opens in; Original stays one switch away. */
 export const DEFAULT_MODEL_DISPLAY_STYLE: ModelDisplayStyle = "modeling";
 
-export interface ModelingPalette {
+/** Where this browser keeps the style last chosen, so a refreshed page opens in it. */
+export const DISPLAY_STYLE_STORAGE_KEY = "monkeyhub.model-display-style.v1";
+
+function browserStorage(): Storage | null {
+  try { return typeof window === "undefined" ? null : window.localStorage; } catch { return null; }
+}
+
+/** The style this browser chose last: the default when it chose none, or none it still knows, or cannot say. */
+export function rememberedDisplayStyle(storage: Pick<Storage, "getItem"> | null = browserStorage()): ModelDisplayStyle {
+  try {
+    const saved = storage?.getItem(DISPLAY_STYLE_STORAGE_KEY);
+    return MODEL_DISPLAY_STYLES.find((style) => style === saved) ?? DEFAULT_MODEL_DISPLAY_STYLE;
+  } catch {
+    return DEFAULT_MODEL_DISPLAY_STYLE;
+  }
+}
+
+/** Keep the chosen style for the next page; a browser that cannot keep it still shows it on this one. */
+export function rememberDisplayStyle(style: ModelDisplayStyle, storage: Pick<Storage, "setItem"> | null = browserStorage()): void {
+  try { storage?.setItem(DISPLAY_STYLE_STORAGE_KEY, style); } catch { /* The choice still holds on this page. */ }
+}
+
+/** How feature edges are drawn: their colour, how strongly, and how faintly over a see-through surface. */
+export interface EdgePalette {
+  readonly edge: string;
+  /** Solid edges' opacity; fully opaque when not given. */
+  readonly edgeOpacity?: number;
+  /** Edges of a translucent surface stay visible but lighter than solid ones. */
+  readonly translucentEdgeOpacity: number;
+}
+
+export interface ModelingPalette extends EdgePalette {
   readonly background: string;
   /** The pale base every surface is lifted toward. */
   readonly paper: string;
   /** How much of the file's own colour survives in a pale surface, 0..1. */
   readonly tint: number;
-  readonly edge: string;
-  /** Edges of a translucent surface stay visible but lighter than solid ones. */
-  readonly translucentEdgeOpacity: number;
 }
 
 /**
@@ -252,10 +329,37 @@ export function modelingPalette(dark: boolean): ModelingPalette {
     : { background: "#f7f7f4", paper: "#f8f7f3", tint: 0.85, edge: "#333333", translucentEdgeOpacity: 0.45 };
 }
 
+/**
+ * Presentation's paper and lines, the same in a light or a dark shell: a still made
+ * from it does not depend on the theme it was made in. The paper is the offline
+ * look's warm white; an edge is a faint darkening of the face it bounds, as that
+ * look drew each boundary in a darker shade of its own material.
+ */
+export const PRESENTATION_PALETTE: EdgePalette & { readonly background: string } = {
+  background: "#f7f6f2", edge: "#1c1a17", edgeOpacity: 0.26, translucentEdgeOpacity: 0.12,
+};
+
+/** The user string an export writes on an object whose components declare no material (#560), and its value. */
+export const MATERIAL_STATUS_KEY = "archflow:material_status";
+export const UNDECLARED_MATERIAL = "undeclared";
+
+/** Whether an object's own strings say its components declare no material; nothing else is read into it. */
+export function declaresNoMaterial(userStrings: Readonly<Record<string, string>> | null | undefined): boolean {
+  return userStrings?.[MATERIAL_STATUS_KEY] === UNDECLARED_MATERIAL;
+}
+
 /** Whether a material lets the model behind it through, by opacity or by transmission. */
 function seeThrough(material: Material): boolean {
   const transmission = (material as { transmission?: unknown }).transmission;
   return (material.transparent && material.opacity < 1) || (typeof transmission === "number" && transmission > 0);
+}
+
+/** What a stand-in keeps of a material's see-through state; glass the loader made physical (transmission) shows as opacity. */
+function seeThroughState(material: Material): { transparent: boolean; opacity: number; depthWrite: boolean } {
+  const transmission = (material as { transmission?: unknown }).transmission;
+  const opacity = material.transparent ? material.opacity
+    : typeof transmission === "number" && transmission > 0 ? Math.max(0.25, 1 - transmission) : 1;
+  return { transparent: material.transparent || opacity < 1, opacity, depthWrite: material.depthWrite && opacity >= 1 };
 }
 
 /**
@@ -285,22 +389,84 @@ export function modelingMaterial(material: Material, palette: ModelingPalette): 
   const own = (material as { color?: unknown }).color;
   const colour = new Color(palette.paper);
   if (own instanceof Color) colour.lerp(own, palette.tint);
-  const transmission = (material as { transmission?: unknown }).transmission;
-  // Transmission is glass the loader expressed physically; the working look shows it as opacity.
-  const opacity = material.transparent ? material.opacity
-    : typeof transmission === "number" && transmission > 0 ? Math.max(0.25, 1 - transmission) : 1;
   const surface = new MeshStandardMaterial({
     color: colour,
     roughness: 0.9,
     metalness: 0,
     toneMapped: false,
     side: material.side,
-    transparent: material.transparent || opacity < 1,
-    opacity,
-    depthWrite: material.depthWrite && opacity >= 1,
+    ...seeThroughState(material),
   });
   surface.name = material.name;
   surface.userData.displayStyle = "modeling";
+  return surface;
+}
+
+/** How far apart, how wide (device pixels) and how dark the lines of the undeclared hatch are. */
+export const UNDECLARED_HATCH = { spacing: 7, width: 1.5, depth: 0.3 } as const;
+
+/**
+ * A fine 45-degree hatch over the lit colour: a thin line every few pixels of the
+ * picture darkens the distinction colour beneath it. It is laid in screen pixels, so
+ * it reads the same on a small part and a large one, and in a still as on screen.
+ */
+const UNDECLARED_HATCH_GLSL = `
+	{
+		float archflowUndeclared = 1.0 - step( ${UNDECLARED_HATCH.width.toFixed(1)}, mod( gl_FragCoord.x + gl_FragCoord.y, ${UNDECLARED_HATCH.spacing.toFixed(1)} ) );
+		outgoingLight *= 1.0 - ${UNDECLARED_HATCH.depth.toFixed(2)} * archflowUndeclared;
+	}
+`;
+
+/**
+ * Presentation's surface for an object whose components declare no material: its own
+ * (distinction) colour, matte, under the undeclared hatch. The hatch belongs to the
+ * class, not to one instance, so a copy - a selection mark clones what an object
+ * wears - is hatched too.
+ */
+export class UndeclaredSurfaceMaterial extends MeshLambertMaterial {
+  readonly isUndeclaredSurface = true;
+
+  onBeforeCompile(shader: WebGLProgramParametersWithUniforms): void {
+    shader.fragmentShader = shader.fragmentShader.replace("#include <opaque_fragment>", `${UNDECLARED_HATCH_GLSL}#include <opaque_fragment>`);
+  }
+
+  customProgramCacheKey(): string {
+    return "archflow-undeclared-hatch";
+  }
+}
+
+/**
+ * Presentation's stand-in for one of the file's materials (#562): a matte (Lambert)
+ * surface in the material's own colour - the colour its material declares, decoded
+ * from the file's sRGB by prepareLoadedModel - lit by Presentation's sun and sky and
+ * not tone mapped, so a face turned square to the sun shows that colour itself and
+ * the rest of the model the same colour in shade. It keeps what the file says about
+ * seeing through, so glass stays glass. ``undeclared`` gives a surface whose
+ * components declare no material the hatched surface: its colour is still its own,
+ * the distinction colour the export gave it, never one picked from a name. Curves
+ * keep their own colour; points keep their own material.
+ *
+ * Textures stay with Original. No texture can be declared yet (#560 declares a
+ * material's name and colour), and none is guessed from a material's name or taken
+ * from a file's bitmap. A texture a material's appearance declares would be applied
+ * here, as the stand-in's ``map``: this is the one place Presentation's surfaces are made.
+ */
+export function presentationMaterial(material: Material, undeclared = false): Material {
+  if (material instanceof LineBasicMaterial) {
+    const line = new LineBasicMaterial({
+      color: material.color, transparent: material.transparent, opacity: material.opacity, depthWrite: material.depthWrite,
+      toneMapped: false,
+    });
+    line.name = material.name;
+    line.userData.displayStyle = "presentation";
+    return line;
+  }
+  if (material.type === "PointsMaterial") return material;
+  const own = (material as { color?: unknown }).color;
+  const parameters = { color: own instanceof Color ? own : new Color(1, 1, 1), side: material.side, toneMapped: false, ...seeThroughState(material) };
+  const surface = undeclared ? new UndeclaredSurfaceMaterial(parameters) : new MeshLambertMaterial(parameters);
+  surface.name = material.name;
+  surface.userData.displayStyle = "presentation";
   return surface;
 }
 
@@ -309,9 +475,14 @@ export function modelingMaterial(material: Material, palette: ModelingPalette): 
  *
  * The file's own materials come from ``appearance``, never from what an
  * object wears now, so switching back returns the exact references the loader
- * made. ``derived`` holds one stand-in per original material, shared the way
- * the originals are shared. A primitive the appearance never saw is left alone.
- * The caller takes any selection mark off first and puts it back after.
+ * made, and each surface its own shadow flags. ``derived`` holds one style's
+ * stand-ins: one per original material, shared the way the originals are
+ * shared, and in Presentation one hatched copy of a stand-in for the surfaces
+ * ``undeclared`` names, kept under the stand-in it copies. In Presentation a
+ * surface casts the sun's shadow where the file lets it (Rhino's own default
+ * is yes) unless one sees through it, and receives it where the file lets it.
+ * A primitive the appearance never saw is left alone. The caller takes any
+ * selection mark off first and puts it back after.
  */
 export function applyDisplayStyle(
   root: Object3D,
@@ -319,22 +490,85 @@ export function applyDisplayStyle(
   style: ModelDisplayStyle,
   derived: Map<Material, Material>,
   palette: ModelingPalette,
+  undeclared: (object: Object3D) => boolean = () => false,
 ): void {
-  const paint = (material: Material): Material => {
+  const standIn = (material: Material): Material => {
     let stand = derived.get(material);
     if (stand === undefined) {
-      stand = modelingMaterial(material, palette);
+      stand = style === "presentation" ? presentationMaterial(material) : modelingMaterial(material, palette);
       derived.set(material, stand);
     }
     return stand;
+  };
+  const hatched = (material: Material): Material => {
+    const plain = standIn(material);
+    let marked = derived.get(plain);
+    if (marked === undefined) {
+      marked = presentationMaterial(material, true);
+      derived.set(plain, marked);
+    }
+    return marked;
   };
   root.traverse((object) => {
     if (!(object instanceof Mesh || object instanceof Line)) return;
     const own = appearance.materials.get(object);
     if (own === undefined) return;
-    if (style === "original") object.material = own;
-    else object.material = Array.isArray(own) ? own.map(paint) : paint(own);
+    const shadows = object instanceof Mesh ? appearance.shadows.get(object) : undefined;
+    if (object instanceof Mesh && shadows !== undefined) [object.castShadow, object.receiveShadow] = shadows;
+    if (style === "original") {
+      object.material = own;
+      return;
+    }
+    const paint = style === "presentation" && object instanceof Mesh && undeclared(object) ? hatched : standIn;
+    const worn = Array.isArray(own) ? own.map(paint) : paint(own);
+    object.material = worn;
+    if (style === "presentation" && object instanceof Mesh) {
+      const attributes = object.userData.attributes as { castsShadows?: unknown; receivesShadows?: unknown } | undefined;
+      object.castShadow = attributes?.castsShadows !== false && !(Array.isArray(worn) ? worn : [worn]).some(seeThrough);
+      object.receiveShadow = attributes?.receivesShadows !== false;
+    }
   });
+}
+
+/** What Presentation tells a person beside the model: the materials it paints, and how many objects declare none. */
+export interface PresentationLegend {
+  /** Each material from the file's table a shown object wears, by its name, in its colour (#rrggbb). */
+  readonly materials: ReadonlyArray<{ readonly name: string; readonly colour: string }>;
+  /** Shown objects whose components declare no material: the hatched ones. */
+  readonly undeclared: number;
+}
+
+/**
+ * The legend of a model in Presentation, read off the file's own materials as the
+ * appearance holds them and the objects ``undeclared`` names; objects the file
+ * hid are not part of the picture and not counted.
+ */
+export function presentationLegend(
+  root: Object3D,
+  appearance: ModelAppearance,
+  undeclared: (object: Object3D) => boolean,
+): PresentationLegend {
+  const materials = new Map<string, { name: string; colour: string }>();
+  let count = 0;
+  root.traverse((object) => {
+    if (!(object instanceof Mesh) || appearance.visibility.get(object) === false) return;
+    const own = appearance.materials.get(object);
+    if (own === undefined) return;
+    if (undeclared(object)) {
+      count += 1;
+      return;
+    }
+    for (const material of Array.isArray(own) ? own : [own]) {
+      const colour = (material as { color?: unknown }).color;
+      if (material.userData.id === undefined || !(colour instanceof Color)) continue;
+      const entry = { name: material.name, colour: `#${colour.getHexString(SRGBColorSpace)}` };
+      materials.set(`${entry.name}\u0000${entry.colour}`, entry);
+    }
+  });
+  return {
+    materials: [...materials.values()].sort((a, b) => a.name.localeCompare(b.name) || a.colour.localeCompare(b.colour)),
+    undeclared: count,
+  };
 }
 
 /** Dispose the stand-ins a style made; the file's own materials are never disposed here. */
@@ -393,13 +627,15 @@ export function buildFeatureEdgeOverlay(
   root: Object3D,
   appearance: ModelAppearance,
   edgesOf: (mesh: Mesh) => readonly FeatureEdge[],
-  palette: ModelingPalette,
+  palette: EdgePalette,
   selectedColour: string,
 ): FeatureEdgeOverlay {
   const group = new Group();
   group.name = "archflow-feature-edges";
+  const solidOpacity = palette.edgeOpacity ?? 1;
   const materials = {
-    solid: edgeMaterial({ color: palette.edge }),
+    solid: edgeMaterial(solidOpacity < 1
+      ? { color: palette.edge, transparent: true, opacity: solidOpacity, depthWrite: false } : { color: palette.edge }),
     translucent: edgeMaterial({ color: palette.edge, transparent: true, opacity: palette.translucentEdgeOpacity, depthWrite: false }),
     selected: edgeMaterial({ color: selectedColour }),
   };
@@ -424,7 +660,7 @@ export function buildFeatureEdgeOverlay(
     group.add(line);
     lines.push({ source: object, line, translucent });
   });
-  const opacity = { solid: 1, translucent: palette.translucentEdgeOpacity, selected: 1 };
+  const opacity = { solid: solidOpacity, translucent: palette.translucentEdgeOpacity, selected: 1 };
   return { root, group, lines, materials, opacity, geometries: [...shared.values()] };
 }
 
@@ -464,7 +700,7 @@ export function disposeFeatureEdgeOverlay(overlay: FeatureEdgeOverlay): void {
   for (const material of Object.values(overlay.materials)) material.dispose();
 }
 
-/** Restore visibility, layer flags and the exact material references loaded from the file. */
+/** Restore visibility, layer flags, shadow flags and the exact material references loaded from the file. */
 export function restoreModelAppearance(root: Object3D, appearance: ModelAppearance): void {
   root.traverse((object) => {
     const visible = appearance.visibility.get(object);
@@ -473,6 +709,8 @@ export function restoreModelAppearance(root: Object3D, appearance: ModelAppearan
       const material = appearance.materials.get(object);
       if (material !== undefined) object.material = material;
     }
+    const shadows = object instanceof Mesh ? appearance.shadows.get(object) : undefined;
+    if (object instanceof Mesh && shadows !== undefined) [object.castShadow, object.receiveShadow] = shadows;
     const savedLayers = appearance.layerVisibility.get(object);
     const layers = object.userData.layers;
     if (savedLayers && Array.isArray(layers)) {

@@ -63,6 +63,13 @@ are part of the shared scene and may be visible. Current-session local .3dm file
 remain subject to Modeling's existing retention behavior; this branch does not
 include the separate external-model-ingest work.
 
+Modeling's 展示 (Presentation) style (#562) is drawn the same way: the preview and
+**Use current view as source** draw its sun's shadows too (`RenderView.shadows`), so
+the source kept is the presentation still on screen, bound to the exact model source
+and its camera like any captured view. `presentationStyle.browser.mjs` checks the
+declared colour, the shadow and the paper in the live view, the preview and the
+kept still.
+
 Validation: renderView.test.ts compares shared scene/object identity, camera pose,
 lens/clipping/zoom, projection matrices and projected points for both camera types.
 viewportFit.test.ts covers hiding/returning without changing aspect or pose.
