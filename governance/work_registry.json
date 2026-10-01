@@ -24,6 +24,7 @@
             "apps/monkeyhub/web/src/app/workingHead.ts",
             "apps/monkeyhub/web/src/i18n/messages.en.ts",
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/monkeyhub/web/test/workingHead.test.ts",
             "docs/architecture/overview.md",
             "docs/protocols/project-runtime-api.md"
