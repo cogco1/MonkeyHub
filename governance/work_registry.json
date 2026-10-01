@@ -1,29 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-575",
-      "lanes": [
-        {
-          "id": "tree",
-          "status": "active",
-          "branch": "codex/575-tree",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-575-tree",
-          "base_ref": "1b2ce1b037be5d32349b90de990de0c27edfddb0",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "project_runtime.candidate",
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
