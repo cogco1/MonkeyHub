@@ -59,7 +59,6 @@ from monkeycad.program import CadTranslationError
 from monkeyarch.authoring.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
 from monkeyarch.domain.reference_resolver import ReferenceContext
 from archflow.state.geometry_program import CompiledGeometryProgram
-from monkeyarch.compilation.geometry import compile_geometry_program
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import stage_geometry_program
 from archflow.project.refs import BranchRef
@@ -73,24 +72,17 @@ from archflow.state.geometry_program import (
 )
 from archflow.state.state_record import StateRecord, project_grids_of, project_levels_of
 from tests.integration.support import (
-    COMMITMENT,
-    EVIDENCE,
-    RECORD_PAYLOAD,
     _array,
     _binding as _synthetic_binding,
     _box,
     _loft,
     _no_process,
-    _only,
     _program as _synthetic_program,
     _program_of,
-    _proposal,
     _radial_array,
     _single_operation_program,
-    _state,
-    authored_record,
-    shared_bound_state,
 )
+from tests.support.spine_fixture import EVIDENCE, RECORD_PAYLOAD, _compile, authored_record, shared_bound_state
 from tools.dev import source_roots
 
 OCCT_AVAILABLE = occt_available()
@@ -163,34 +155,6 @@ def _record_with(element: dict) -> StateRecord:
         relation for relation in payload["relations"] if relation["relation_id"] != "plinth-supports-wall-south"
     ]
     return StateRecord.from_dict(payload)
-
-
-def _compile(record: StateRecord) -> CompiledGeometryProgram:
-    """Producers, then the compiler, exactly as the authored-record tests do it.
-
-    The producers' hosted assemblies travel into the proposal as the runner
-    carries them, re-homed onto the fixture's one semantic binding.
-    """
-
-    levels = project_levels_of(record)
-    context = ProductionContext(
-        references=ReferenceContext(grids=project_grids_of(record), levels=levels), published={}, frame_id="world"
-    )
-    produced = produce_rows(element_rows_of(record), context)
-    state = _state()
-    operations = tuple(replace(op, semantic_binding_ids=("building-binding",)) for element in produced for op in element.operations)
-    assemblies = tuple(replace(a, semantic_binding_ids=("building-binding",)) for element in produced for a in element.assemblies)
-    datums = tuple(sorted(list(context.published.values()) + list(levels.datums()), key=lambda d: d.datum_id))
-    result = compile_geometry_program(
-        state,
-        _only(_proposal(state, extra_operations=operations), operations, assemblies),
-        active_commitment_refs=(COMMITMENT,),
-        interface_datums=datums,
-        datum_bindings=tuple(b for element in produced for b in element.bindings),
-    )
-    if result.program is None:
-        raise AssertionError([(i.code.value, i.subject_id, i.detail) for i in result.receipt.issues])
-    return result.program
 
 
 @NEEDS_OCCT

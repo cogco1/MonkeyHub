@@ -16,11 +16,10 @@ projection does in production, and every caller states one.
 
 The geometry compiler's fixture proposal over that state (``_state``,
 ``_proposal``, ``_only``) and ``_compile``, which produces a record's element
-rows and compiles them into it, are here too. The kernel-level part is copied
-into the repository's integration support (tests/integration/support.py): the
-OCCT execution, version-reference and format migration tests there need it, and
-a package's tests cannot import another suite's. ``_compile`` is a copy of the
-OCCT execution tests' own.
+rows and compiles them into it, are here too. MonkeyArch's tests and the
+integration suite's OCCT execution, prism cut-out, version-reference and format
+migration tests all use them, so this one copy lives in the shared test support
+rather than in either suite (#534).
 """
 
 from __future__ import annotations

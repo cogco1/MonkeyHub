@@ -60,7 +60,7 @@ from archflow.state.state_record import (
     StateRecord,
     developed_design_view,
 )
-from tests.integration.support import authored_record
+from tests.support.spine_fixture import authored_record
 from archflow.state.stage_workflow import (
     CompositeStageClosureReceipt,
     DesignPhase,

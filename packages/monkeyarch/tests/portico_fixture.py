@@ -19,7 +19,7 @@ from archflow.state.geometry_program import CompiledGeometryProgram, ProjectGrid
 from monkeyarch.authoring.element_producers import ElementRow, ProductionContext, produce_rows
 from monkeyarch.compilation.geometry import compile_geometry_program
 from monkeyarch.domain.reference_resolver import ReferenceContext
-from spine_fixture import COMMITMENT, _only, _proposal, _state
+from tests.support.spine_fixture import COMMITMENT, _only, _proposal, _state
 
 BASIS = ("reading:plate",)
 PN = "level-piano-nobile"
