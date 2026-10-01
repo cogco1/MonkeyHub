@@ -63,6 +63,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
             **request_fields,
             "operationId": {"type": "string", "format": "uuid", "description": "Optional stable identity for this mutation. Reusing it returns the same admission/result and never executes the request twice. Different requests must use different ids."},
             "feedbackQuote": {"type": "string", "minLength": 1, "maxLength": 2000, "description": "Only for POST /api/decisions, /api/memory, their /revisions, /api/admissions or PUT /api/working-draft: select one exact, unique, continuous passage in the current user's message that carries the decision. Hub extracts these unedited words itself and retains the original message identity. Use for long messages; invented, rewritten or ambiguous passages are refused. Omit to retain the entire message when it fits."},
+            "taskClass": {"type": "string", "enum": ["spatial_formal", "polish", "deterministic_edit"], "description": "Only for POST /api/admissions that admits a result: the class of the loop it closes, as visual_review names it, required unless a review of this user message already fixed it. deterministic_edit is complete once readback checks it; a spatial_formal or polish loop is admitted only after visual_review looked at its result or at an attempt the result supersedes."},
             "awaitSeconds": {
                 "type": "integer", "minimum": 1, "maximum": tool_calls._AWAIT_MAX_S,
                 "description": "Wait for one submitted change, in seconds; 60 suits an ordinary change. "
@@ -125,6 +126,8 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "viewRecipe page-<pageIndex> of each (deduplicate repeated page numbers); different documents may each have page 0 and receive unique frame names. criteria [{criterionId, text}] say what to inspect, preserve what must not be",
         "disturbed, and knownFacts are exact readback values (levels, clear sizes) the observer should not ask about again.",
         "A finding marked escalate touches a preserve condition: ask the user about it instead of repairing and reviewing again.",
+        "A look admits, continues and accepts nothing. A spatial_formal or polish loop is admitted only after a look at its",
+        "result or at an attempt the result supersedes: look, then repair or stop, then admit.",
         "Refusals spend nothing: VISUAL_BUDGET_EXHAUSTED, VISUAL_REVIEW_NOT_WARRANTED, VISUAL_REVIEW_OUT_OF_ORDER,",
         "VISUAL_SOURCE_MISMATCH (read the current exact source), VISUAL_PROVIDER_UNAVAILABLE. VISUAL_PROVIDER_FAILED spends the review.",
     ])

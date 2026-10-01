@@ -96,6 +96,8 @@ _MODELLING = chr(10).join([
     "",
     "ADMIT: when a model revision loop is complete, POST /api/admissions once with",
     "{results: [{runId: <candidateId>, outcome: 'admitted', supersedes: [attempt runIds it replaced], label}]}; supersedes may be [].",
+    "Beside method/path/body put the loop's taskClass: deterministic_edit when readback checks it; spatial_formal or polish",
+    "when the result needs a look, and then only after visual_review looked at that result or an attempt it supersedes.",
     "Add study: {id, label, baseRunId} (id an ASCII slug) for several alternatives built from one run.",
     "outcome 'rejected' only where the user's words reject that result; add feedbackQuote with their exact passage.",
     "outcome 'withdrawn', alone in its request: your own result from this chat, no longer proposed.",

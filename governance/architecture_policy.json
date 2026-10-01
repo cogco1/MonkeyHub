@@ -42,6 +42,12 @@
     "apps/monkeyhub/api/monkeyhub_api": "hub",
     "tools": "tools"
   },
+  "declared_dependency_namespaces": [
+    "archflow",
+    "monkeyarch",
+    "monkeycad",
+    "monkeydiagram"
+  ],
   "repository_root_entries": [
     "apps",
     "services",
@@ -232,6 +238,28 @@
       "kind": "verification_report",
       "owner": "tools.projection_check",
       "reason": "Writes the response bodies and side results of one base/candidate comparison under the caller's scratch --work directory, and the JSON result and Markdown summary a person names with --out and --summary. The project it is given is only copied; every read and the one review write go to that scratch copy."
+    },
+    {
+      "path": "tools/benchmarks/daily_benchmark.py",
+      "function": "start",
+      "operations": [
+        "mkdir",
+        "open_write"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.benchmarks.daily_benchmark",
+      "reason": "Creates --work/logs and appends one Hub's output to its own log there while that Hub runs."
+    },
+    {
+      "path": "tools/benchmarks/benchmark_data.py",
+      "function": "write_file",
+      "operations": [
+        "mkdir",
+        "open_write"
+      ],
+      "kind": "benchmark_evidence",
+      "owner": "tools.benchmarks.daily_benchmark",
+      "reason": "The daily benchmark's one file writer. The harness writes through it the MonkeyHubBenchmark@1 result and summary a person names with --out and --summary, and each Hub's launch configuration (config/applications.json: its own ports and an empty workspace folder) in that Hub's runtime root under --work; publish writes results/<runner>/*.json, trend.md, latest.json and README.md in the benchmark-data worktree it checked out at the new --data-dir, and the flags and issue plan a person names with --flags-out and --issues-out. A project is copied into --work and only read there."
     },
     {
       "path": "tools/benchmarks/run_turn_benchmark.py",

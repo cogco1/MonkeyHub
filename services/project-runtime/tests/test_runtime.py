@@ -44,7 +44,7 @@ def no_design_projection():
 class RuntimeTests(CandidateTestCase):
     def cold(self, *candidate_ids: str, limit: int = 50, offset: int = 0) -> dict:
         binding = ProjectBinding.open(StudioSettings(project_dir=self.root / PROJECT_ID, cad_export="off"))
-        return runtime_dto(inspect_runtime(binding, candidate_ids=candidate_ids, limit=limit, offset=offset)).model_dump(by_alias=True)
+        return runtime_dto(inspect_runtime(binding, run_ids=candidate_ids, limit=limit, offset=offset)).model_dump(by_alias=True)
 
     def test_completed_result_is_reconstructed_without_jobs_or_writes(self) -> None:
         accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
