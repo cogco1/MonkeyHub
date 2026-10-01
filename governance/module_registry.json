@@ -285,21 +285,7 @@
         "archflow.state.geometry_program",
         "monkeycad.blender",
         "monkeycad.occt",
-        "monkeycad.rhino",
-        "monkeycad.program"
-      ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/application/drawing_plans.py",
-        "packages/monkeydiagram/src/monkeydiagram/sources.py",
-        "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
-        "tests/integration/test_cad_backend_contract.py",
-        "tests/integration/test_cad_execution.py",
-        "packages/monkeyarch/tests/test_cad_patch.py",
-        "packages/monkeyarch/tests/test_cad_program.py",
-        "packages/monkeyarch/tests/test_element_producers.py"
+        "monkeycad.rhino"
       ],
       "invariants": [
         "the common result preserves native success/readback evidence and validates exact binding, semantic identity, workspace containment and artifact bytes; it is not a new retained receipt or write authority",
@@ -382,33 +368,10 @@
         "read_three_dm"
       ],
       "depends_on": [
-        "archflow.state.geometry_program",
         "archflow.project.refs",
+        "archflow.state.geometry_program",
         "monkeycad.execution",
-        "monkeycad.formats",
-        "monkeycad.backends.occt",
-        "monkeycad.backends.occt.boolean",
-        "monkeycad.backends.occt.build",
-        "monkeycad.backends.occt.errors",
-        "monkeycad.backends.occt.kernel",
-        "monkeycad.backends.occt.measure",
-        "monkeycad.backends.occt.preview",
-        "monkeycad.backends.occt.projection",
-        "monkeycad.backends.occt.step",
-        "monkeycad.patch",
-        "monkeycad.program"
-      ],
-      "used_by": [
-        "packages/monkeydiagram/src/monkeydiagram/sources.py",
-        "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
-        "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py",
-        "packages/monkeydiagram/src/monkeydiagram/projection/mesh_views.py",
-        "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "services/project-runtime/src/project_runtime/application/drawings.py",
-        "services/project-runtime/src/project_runtime/application/drawing_dimensions.py",
-        "tests/integration/test_occt_execution.py",
-        "packages/monkeydiagram/tests/test_drawing_elevation.py"
+        "monkeycad.formats"
       ],
       "invariants": [
         "OCCT execution never starts Rhino and never silently falls back; unsupported operations are named before file writes",
@@ -520,29 +483,13 @@
         "build_patch_prelude"
       ],
       "depends_on": [
-        "archflow.state.geometry_program",
-        "archflow.project.refs",
         "archflow.contracts.canonical",
+        "archflow.project.refs",
+        "archflow.state.geometry_program",
         "monkeycad.execution",
         "monkeycad.formats",
         "monkeycad.integrations",
-        "monkeycad.occt",
-        "monkeycad.backends.occt.export",
-        "monkeycad.backends.occt.measure",
-        "monkeycad.backends.occt.step",
-        "monkeycad.backends.rhino",
-        "monkeycad.backends.rhino.script",
-        "monkeycad.backends.rhino.step_import",
-        "monkeycad.discovery",
-        "monkeycad.patch",
-        "monkeycad.program"
-      ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "packages/monkeyarch/tests/test_cad_program.py",
-        "tests/integration/test_cad_execution.py",
-        "packages/monkeyarch/tests/test_cad_patch.py",
-        "packages/monkeyarch/tests/test_element_producers.py"
+        "monkeycad.occt"
       ],
       "invariants": [
         "an unsupported operation kind fails CadTranslationError rather than being dropped silently",
@@ -610,18 +557,7 @@
         "archflow.state.geometry_program",
         "monkeycad.execution",
         "monkeycad.integrations",
-        "monkeycad.occt",
-        "monkeycad.backends.blender.worker",
-        "monkeycad.backends.occt.export",
-        "monkeycad.backends.occt.preview",
-        "monkeycad.backends.occt.step",
-        "monkeycad.discovery",
-        "monkeycad.program"
-      ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "tests/integration/test_blender_cad.py",
-        "tests/integration/test_blender_projection.py"
+        "monkeycad.occt"
       ],
       "invariants": [
         "Blender supports positive solids and straight extrusions of simple planar profiles in the initial slice; all other operations fail before host execution or workspace writes. Complete rebuilds preserve source artifacts; cached exact requests verify retained proof and bytes without starting a host",
@@ -694,17 +630,7 @@
         "archflow.contracts.canonical",
         "archflow.state.geometry_program",
         "monkeycad.execution",
-        "monkeycad.integrations",
-        "monkeycad.patch"
-      ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/application/candidate.py",
-        "services/project-runtime/src/project_runtime/application/episodes.py",
-        "services/project-runtime/src/project_runtime/application/model_exports.py",
-        "packages/monkeycad/tests/test_three_dm_inspector.py",
-        "tests/integration/test_cad_execution.py",
-        "tests/integration/test_occt_execution.py"
+        "monkeycad.integrations"
       ],
       "invariants": [
         "read-only: rhino3dm is imported lazily, one immutable byte snapshot is read, and no Rhino process is started",
@@ -764,11 +690,6 @@
         "monkeycad.execution",
         "monkeycad.blender",
         "monkeycad.formats"
-      ],
-      "used_by": [
-        "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
-        "apps/monkeyhub/api/tests/test_integrations.py",
-        "tests/integration/test_integration_packs.py"
       ],
       "invariants": [
         "Discovery/status never launches software, loads vendor libraries, queries a network/license or writes project data. Detected software, installed components and verified capabilities remain separate; qualification never grants project authority. CAD_BACKEND_REGISTRY remains the only compiled execution registry."
@@ -835,14 +756,7 @@
         "dressing_assets"
       ],
       "depends_on": [
-        "monkeycad.occt",
-        "monkeycad.backends.occt.projection"
-      ],
-      "used_by": [
-        "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
-        "packages/monkeydiagram/tests/test_drawing_svg.py",
-        "packages/monkeydiagram/tests/test_drawing_elevation.py"
+        "monkeycad.occt"
       ],
       "invariants": [
         "the same polylines, crop and options give the same SVG bytes; the same SVG gives the same PNG bytes",
@@ -901,13 +815,7 @@
       ],
       "depends_on": [
         "monkeycad.occt",
-        "monkeycad.backends.occt.errors",
-        "monkeycad.backends.occt.preview",
-        "monkeycad.backends.occt.step"
-      ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/application/drawings.py",
-        "packages/monkeydiagram/tests/test_mesh_views.py"
+        "monkeydiagram.drawing_runs"
       ],
       "invariants": [
         "the same shapes, frame and size give the same PNG bytes",
@@ -983,13 +891,6 @@
         "archflow.state.spatial",
         "archflow.state.state_record",
         "archflow.state.stage_workflow"
-      ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "tools/project/run_project.py",
-        "services/project-runtime/src/project_runtime/application/seats.py",
-        "packages/monkeyarch/tests/test_discipline_seats.py",
-        "tests/integration/test_project_runner.py"
       ],
       "invariants": [
         "a seat's authoring context contains only its subtree, its ancestors and the handovers it consumes - a sibling subtree is never visible",
@@ -1075,20 +976,13 @@
         "canonical_params"
       ],
       "depends_on": [
-        "monkeyarch.domain.opening_solver",
-        "monkeyarch.domain.reference_resolver",
-        "monkeyarch.domain.wall_solver",
-        "monkeyarch.authoring.producer_signatures",
+        "archflow.contracts.fields",
         "archflow.project.refs",
         "archflow.state.geometry_program",
-        "archflow.contracts.fields",
-        "archflow.state.state_record"
-      ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "packages/monkeyarch/tests/test_element_producers.py",
-        "packages/monkeyarch/tests/test_cad_patch.py",
-        "services/project-runtime/src/project_runtime/application/construction.py"
+        "archflow.state.state_record",
+        "monkeyarch.domain.opening_solver",
+        "monkeyarch.domain.reference_resolver",
+        "monkeyarch.domain.wall_solver"
       ],
       "invariants": [
         "no producer computes a plan coordinate itself; every position goes through resolve_plan",
@@ -1191,15 +1085,6 @@
         "archflow.contracts.fields",
         "archflow.project.record_kinds"
       ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "tools/project/run_project.py",
-        "tools/project/verify_state_record.py",
-        "services/project-runtime/src/project_runtime/application/candidate.py",
-        "packages/monkeyarch/tests/test_production_policy.py",
-        "packages/monkeyarch/tests/test_element_producers.py",
-        "packages/monkeyarch/tests/test_state_record.py"
-      ],
       "invariants": [
         "no fallback: a round that does not compile is rejected with issues, never patched into acceptance",
         "the provider receipt's identity must match the declared GeometryProposalProviderIdentity",
@@ -1265,10 +1150,6 @@
         "archflow.project.refs",
         "archflow.state.geometry_program",
         "archflow.contracts.fields"
-      ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
-        "packages/monkeyarch/tests/test_element_producers.py"
       ],
       "invariants": [
         "a type carries proportions only - no position, no level, no absolute size",
@@ -1339,13 +1220,6 @@
         "archflow.state.geometry_program",
         "archflow.contracts.fields"
       ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "packages/monkeyarch/tests/test_derivations_and_references.py",
-        "packages/monkeyarch/tests/test_element_producers.py",
-        "packages/monkeyarch/tests/test_cad_patch.py"
-      ],
       "invariants": [
         "resolve_elevation never returns a number - the compiler is the only thing that turns a datum id into one",
         "a grid role matches exactly; there is no id fallback, and a miss fails ReferenceError naming the role and the roles that exist",
@@ -1410,10 +1284,6 @@
       "depends_on": [
         "archflow.state.state_record",
         "archflow.contracts.canonical"
-      ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "packages/monkeyarch/tests/test_relation_checks.py"
       ],
       "invariants": [
         "nothing is healed: a check only measures and reports",
@@ -1481,11 +1351,6 @@
         "archflow.project.refs",
         "archflow.state.geometry_program",
         "archflow.contracts.fields"
-      ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
-        "packages/monkeyarch/src/monkeyarch/domain/opening_solver.py",
-        "packages/monkeyarch/tests/test_element_producers.py"
       ],
       "invariants": [
         "the wall is one solid; every opening is a void request the wall hosts, never a separate subtraction chain",
@@ -1556,15 +1421,6 @@
         "archflow.contracts.canonical",
         "archflow.contracts.fields"
       ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
-        "packages/monkeyarch/tests/test_geometry_compiler.py",
-        "packages/monkeyarch/tests/test_interface_datums.py",
-        "packages/monkeyarch/tests/test_element_producers.py",
-        "packages/monkeyarch/tests/test_cad_patch.py",
-        "packages/monkeyarch/tests/test_semantic_geometry_tree.py",
-        "packages/monkeyarch/tests/test_state_record.py"
-      ],
       "invariants": [
         "pure: it reads inputs and returns a result, and never writes or mutates anything",
         "a structurally invalid input raises; a semantically rejected proposal returns a receipt with issues and no program",
@@ -1607,14 +1463,6 @@
         "DEFAULT_AUTHORITY_FIELDS"
       ],
       "depends_on": [],
-      "used_by": [
-        "packages/archflow/src/archflow/state/stage_workflow.py",
-        "packages/monkeyarch/src/monkeyarch/domain/discipline_seats.py",
-        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "tools/project/freeze_project_stage_workflow.py",
-        "tools/project/verify_state_record.py"
-      ],
       "invariants": [
         "every returned flag is exactly False",
         "field names are lowercase identifiers ending in _authority",
@@ -1657,18 +1505,6 @@
         "CanonicalValueError"
       ],
       "depends_on": [],
-      "used_by": [
-        "packages/archflow/src/archflow/project/digests.py",
-        "packages/archflow/src/archflow/state/state_record.py",
-        "packages/archflow/src/archflow/state/geometry_program.py",
-        "packages/archflow/src/archflow/state/spatial.py",
-        "packages/archflow/src/archflow/state/operational_state.py",
-        "packages/archflow/src/archflow/state/stage_workflow.py",
-        "packages/archflow/src/archflow/state/decision_operator.py",
-        "packages/archflow/src/archflow/state/developed_design.py",
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "packages/archflow/src/archflow/ports/model.py"
-      ],
       "invariants": [
         "a pure function of the value: no filesystem, no clock, no randomness",
         "ascii=True and ascii=False digest differently, so a record keeps the form it was written in",
@@ -1734,18 +1570,6 @@
       "depends_on": [
         "archflow.project.refs"
       ],
-      "used_by": [
-        "packages/archflow/src/archflow/state/operational_state.py",
-        "packages/archflow/src/archflow/state/geometry_program.py",
-        "packages/monkeyarch/src/monkeyarch/domain/wall_solver.py",
-        "packages/archflow/src/archflow/state/design_portfolio.py",
-        "packages/archflow/src/archflow/state/developed_design.py",
-        "packages/archflow/src/archflow/state/spatial.py",
-        "packages/archflow/src/archflow/state/stage_workflow.py",
-        "packages/archflow/src/archflow/state/decision_operator.py",
-        "packages/monkeyarch/src/monkeyarch/compilation/geometry.py",
-        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py"
-      ],
       "invariants": [
         "a tuple field must already be sorted and unique; the validator never sorts on the caller's behalf",
         "collections are bounded at 4096 items",
@@ -1790,12 +1614,6 @@
       "depends_on": [
         "archflow.contracts.canonical",
         "archflow.project.refs"
-      ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "services/project-runtime/src/project_runtime/application/intent_agent.py",
-        "services/project-runtime/tests/test_intent_agent_timeout.py"
       ],
       "invariants": [
         "a request is bound to a checkpoint digest and a context digest; nothing is invoked without both",
@@ -1843,11 +1661,6 @@
       ],
       "depends_on": [
         "archflow.project.repository"
-      ],
-      "used_by": [
-        "tools.project.create_project",
-        "tools.project.rehearse_project_archive",
-        "hub.shell"
       ],
       "invariants": [
         "Archive bytes are installed only through the P036 immutable writer",
@@ -1908,9 +1721,6 @@
         "archflow.project.refs",
         "archflow.project.repository"
       ],
-      "used_by": [
-        "packages/archflow/tests/test_project_containers.py"
-      ],
       "invariants": [
         "no persistence, no pointer beside HEAD, no write of any kind",
         "records and the list of runs are read through the repository, records digest-verified; no directory is listed by path, so a run still being published is not yet a container",
@@ -1947,9 +1757,6 @@
       ],
       "depends_on": [
         "archflow.contracts.canonical"
-      ],
-      "used_by": [
-        "packages/archflow/src/archflow/project/repository.py"
       ],
       "invariants": [
         "a declared state_sha256 that disagrees with the content raises",
@@ -2016,12 +1823,6 @@
         "archflow.state.state_record",
         "archflow.state.program_sheet"
       ],
-      "used_by": [
-        "tools/project/run_project.py",
-        "tools/project/verify_state_record.py",
-        "services/project-runtime/src/project_runtime/application/projection.py",
-        "services/project-runtime/src/project_runtime/application/seats.py"
-      ],
       "invariants": [
         "absent and unreadable are different refusals, and each names the file it wanted",
         "the record's content digest is taken from the record, never recomputed here (ADR-003)",
@@ -2081,10 +1882,6 @@
         "archflow.state.stage_workflow",
         "archflow.state.state_record",
         "archflow.project.version_refs"
-      ],
-      "used_by": [
-        "tools/project/issue_project.py",
-        "tools/tests/test_issue_project.py"
       ],
       "invariants": [
         "nothing is written until every refusal has passed, so a refused issue leaves the project exactly as it was",
@@ -2151,16 +1948,6 @@
       "depends_on": [
         "archflow.project.refs"
       ],
-      "used_by": [
-        "packages/archflow/src/archflow/project/repository.py",
-        "packages/archflow/src/archflow/project/inputs.py",
-        "services/project-runtime/src/project_runtime/application/projection.py",
-        "services/project-runtime/src/project_runtime/application/intent.py",
-        "services/project-runtime/src/project_runtime/application/seats.py",
-        "services/project-runtime/src/project_runtime/api/dto/state.py",
-        "packages/archflow/src/archflow/project/memo.py",
-        "packages/archflow/src/archflow/project/watch.py"
-      ],
       "invariants": [
         "never creates a directory and never writes",
         "a resolved path that escapes the project root raises",
@@ -2212,10 +1999,6 @@
         "archflow.project.refs",
         "archflow.project.repository"
       ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/binding.py",
-        "packages/archflow/tests/test_project_location.py"
-      ],
       "invariants": [
         "never creates directories and never writes state",
         "a relocation anchor whose digest disagrees is rejected rather than followed",
@@ -2253,11 +2036,6 @@
       ],
       "depends_on": [
         "archflow.project.refs"
-      ],
-      "used_by": [
-        "packages/archflow/src/archflow/project/repository.py",
-        "packages/archflow/src/archflow/project/location.py",
-        "packages/archflow/src/archflow/project/ports.py"
       ],
       "invariants": [
         "the manifest carries no mutable state: exactly schema, project_id and format_version",
@@ -2299,13 +2077,6 @@
       ],
       "depends_on": [
         "archflow.project.layout"
-      ],
-      "used_by": [
-        "packages/archflow/src/archflow/project/repository.py",
-        "services/project-runtime/src/project_runtime/binding.py",
-        "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/application/projection.py",
-        "packages/archflow/src/archflow/project/watch.py"
       ],
       "invariants": [
         "a memo is never a source of truth: a kept value answers only what reading its files again would answer, and dropping any entry costs only that read",
@@ -2417,13 +2188,6 @@
         "archflow.project.repository",
         "archflow.project.watch"
       ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/binding.py",
-        "services/project-runtime/src/project_runtime/index.py",
-        "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/api/routes/index.py",
-        "services/project-runtime/src/project_runtime/api/conditional.py"
-      ],
       "invariants": [
         "never a source of truth and never evidence: every row names the P036 record it was read from, and the index can be deleted at any time and rebuilt from P036",
         "the file is never inside the project folder and never migrated with it; no absolute machine path is stored as identity",
@@ -2500,10 +2264,6 @@
         "archflow.project.memo",
         "archflow.project.repository"
       ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/binding.py",
-        "packages/archflow/src/archflow/project/index/keeper.py"
-      ],
       "invariants": [
         "metadata only, like layout_fingerprint: it stats and lists directories and stats the pointer files; it opens, reads and writes no project file",
         "one watch and at most one directory handle per project root (project_root_key) and process; the handle shares read, write and delete, so the root can be renamed, moved or deleted while watched, and it is closed when the root goes or is replaced, when the watch fails and when the last lease is released",
@@ -2561,16 +2321,6 @@
         "archflow.project.manifest",
         "archflow.project.refs"
       ],
-      "used_by": [
-        "packages/archflow/src/archflow/project/repository.py",
-        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "services/project-runtime/src/project_runtime/application/harness.py",
-        "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/binding.py",
-        "tools/project/freeze_project_stage_workflow.py",
-        "tools/project/verify_state_record.py"
-      ],
       "invariants": [
         "a run-scoped area requires run_id and a project-scoped area forbids it",
         "branch_id belongs only to the RUN_BRANCH area",
@@ -2626,25 +2376,6 @@
       ],
       "depends_on": [
         "archflow.project.ports"
-      ],
-      "used_by": [
-        "packages/archflow/src/archflow/project/repository.py",
-        "packages/archflow/src/archflow/project/containers.py",
-        "packages/archflow/src/archflow/project/issue.py",
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
-        "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/binding.py",
-        "services/project-runtime/src/project_runtime/application/candidate.py",
-        "services/project-runtime/src/project_runtime/application/compare.py",
-        "services/project-runtime/src/project_runtime/application/harness.py",
-        "tools/project/freeze_project_stage_workflow.py",
-        "tools/project/verify_state_record.py",
-        "packages/archflow/tests/test_record_kinds.py",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
-        "packages/monkeydiagram/tests/test_drawing_elevation.py",
-        "services/project-runtime/src/project_runtime/application/gestures.py",
-        "services/project-runtime/src/project_runtime/application/decisions.py"
       ],
       "invariants": [
         "a kind is matched exactly, or by its declared pattern; never as a prefix",
@@ -2711,23 +2442,6 @@
       "depends_on": [
         "archflow.project.version_refs"
       ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/binding.py",
-        "services/project-runtime/src/project_runtime/application/validation.py",
-        "packages/archflow/src/archflow/project/manifest.py",
-        "packages/archflow/src/archflow/contracts/fields.py",
-        "packages/archflow/src/archflow/project/containers.py",
-        "packages/archflow/src/archflow/project/layout.py",
-        "packages/archflow/src/archflow/project/ports.py",
-        "packages/archflow/src/archflow/project/repository.py",
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "packages/archflow/src/archflow/state/geometry_program.py",
-        "packages/archflow/src/archflow/state/operational_state.py",
-        "packages/archflow/src/archflow/state/state_record.py",
-        "packages/archflow/tests/test_project_repository.py",
-        "tools/project/run_project.py",
-        "tools/project/verify_state_record.py"
-      ],
       "invariants": [
         "never touches the filesystem; PurePosixPath only",
         "every ref is frozen, slotted and fully validated at construction",
@@ -2776,10 +2490,6 @@
         "archflow.state.spatial",
         "archflow.state.stage_workflow",
         "archflow.project.version_refs"
-      ],
-      "used_by": [
-        "packages/archflow/src/archflow/project/repository.py",
-        "tools/project/create_project.py"
       ],
       "invariants": [
         "holds no rule of its own: it names owners and loads them, and each declaration it makes is borrowed and says so; it imports no CAD adapter, so a core-only process sees the CAD declarations without loading CAD code",
@@ -2845,16 +2555,6 @@
         "VersionRefDeclarationError"
       ],
       "depends_on": [],
-      "used_by": [
-        "packages/archflow/src/archflow/project/repository.py",
-        "packages/archflow/src/archflow/project/refs.py",
-        "packages/archflow/src/archflow/project/issue.py",
-        "packages/archflow/src/archflow/state/state_record.py",
-        "packages/archflow/src/archflow/state/spatial.py",
-        "packages/archflow/src/archflow/state/stage_workflow.py",
-        "packages/archflow/src/archflow/state/developed_design.py",
-        "packages/archflow/src/archflow/project/version_ref_owners.py"
-      ],
       "invariants": [
         "never writes the filesystem and imports no other archflow module",
         "a schema with no declaration returns None, never an empty declaration: silence is not read as absence",
@@ -2963,31 +2663,12 @@
         "archflow.project.digests",
         "archflow.project.layout",
         "archflow.project.manifest",
+        "archflow.project.memo",
         "archflow.project.ports",
         "archflow.project.record_kinds",
         "archflow.project.refs",
-        "archflow.state.state_record",
-        "archflow.project.version_refs",
         "archflow.project.version_ref_owners",
-        "archflow.project.memo"
-      ],
-      "used_by": [
-        "packages/archflow/src/archflow/project/inputs.py",
-        "packages/archflow/src/archflow/project/issue.py",
-        "packages/archflow/src/archflow/project/location.py",
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "services/project-runtime/src/project_runtime/application/harness.py",
-        "services/project-runtime/src/project_runtime/application/seats.py",
-        "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/binding.py",
-        "tools/project/run_project.py",
-        "tools/project/verify_state_record.py",
-        "tools/project/freeze_project_stage_workflow.py",
-        "tools/project/issue_project.py",
-        "packages/monkeydiagram/src/monkeydiagram/sources.py",
-        "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
-        "tools/project/create_project.py",
-        "packages/archflow/src/archflow/project/watch.py"
+        "archflow.project.version_refs"
       ],
       "invariants": [
         "an existing content path is never overwritten; new content is installed or the write fails",
@@ -3082,18 +2763,12 @@
         "CAD_BACKENDS"
       ],
       "depends_on": [
-        "archflow.project.layout",
-        "monkeycad.execution",
-        "monkeycad.blender",
-        "monkeyarch.domain.discipline_seats",
-        "monkeyarch.authoring.element_producers",
-        "monkeyarch.application.geometry_proposal",
-        "monkeyarch.domain.reference_resolver",
-        "monkeyarch.domain.relation_checks",
         "archflow.contracts.authority",
         "archflow.contracts.canonical",
         "archflow.ports.model",
+        "archflow.project.layout",
         "archflow.project.ports",
+        "archflow.project.record_kinds",
         "archflow.project.refs",
         "archflow.project.repository",
         "archflow.state.design_portfolio",
@@ -3102,25 +2777,16 @@
         "archflow.state.spatial",
         "archflow.state.stage_workflow",
         "archflow.state.state_record",
-        "archflow.project.record_kinds",
-        "monkeyarch.authoring",
-        "monkeyarch.domain",
-        "monkeycad.occt",
-        "monkeycad.backends.blender.projection",
-        "monkeycad.backends.occt.errors",
-        "monkeycad.backends.occt.measure",
-        "monkeycad.backends.occt.step",
-        "monkeycad.registry"
-      ],
-      "used_by": [
-        "tools/project/run_project.py",
-        "tools/project/verify_state_record.py",
-        "packages/archflow/src/archflow/state/state_record.py",
-        "services/project-runtime/src/project_runtime/application/candidate.py",
-        "services/project-runtime/src/project_runtime/application/harness.py",
-        "tests/integration/test_project_runner.py",
-        "packages/monkeyarch/tests/test_state_record.py",
-        "tools/project/open_stage_run.py"
+        "monkeyarch.application.geometry_proposal",
+        "monkeyarch.authoring.element_producers",
+        "monkeyarch.domain.discipline_seats",
+        "monkeyarch.domain.opening_solver",
+        "monkeyarch.domain.reference_resolver",
+        "monkeyarch.domain.relation_checks",
+        "monkeyarch.domain.wall_solver",
+        "monkeycad.blender",
+        "monkeycad.execution",
+        "monkeycad.occt"
       ],
       "invariants": [
         "the record is the only design input; seats arrive beside it and are never part of state",
@@ -3236,27 +2902,13 @@
         "CLASSES"
       ],
       "depends_on": [
-        "monkeycad.occt",
-        "monkeydiagram.rendering.svg",
         "archflow.project.ports",
         "archflow.project.record_kinds",
         "archflow.project.refs",
         "archflow.project.repository",
         "archflow.project.version_refs",
-        "monkeydiagram.sources",
-        "monkeydiagram.projection.views",
-        "monkeycad.backends.occt.errors",
-        "monkeycad.backends.occt.kernel",
-        "monkeycad.backends.occt.measure",
-        "monkeycad.backends.occt.native_models",
-        "monkeycad.backends.occt.projection",
-        "monkeycad.backends.occt.section",
-        "monkeycad.backends.occt.step"
-      ],
-      "used_by": [
-        "packages/monkeydiagram/tests/test_drawing_elevation.py",
-        "services/project-runtime/src/project_runtime/application/drawings.py",
-        "services/project-runtime/src/project_runtime/application/drawing_corrections.py"
+        "monkeycad.occt",
+        "monkeydiagram.rendering.svg"
       ],
       "invariants": [
         "nothing is written before the source verified, the frame checked and the projection and both renderings succeeded",
@@ -3310,10 +2962,6 @@
       "depends_on": [
         "archflow.semantics.roles"
       ],
-      "used_by": [
-        "packages/archflow/src/archflow/semantics/registry.py",
-        "packages/archflow/src/archflow/state/state_record.py"
-      ],
       "invariants": [
         "a condition is not an object; one geometry may form several"
       ],
@@ -3346,9 +2994,6 @@
         "suggest_facet_key"
       ],
       "depends_on": [],
-      "used_by": [
-        "packages/archflow/src/archflow/state/state_record.py"
-      ],
       "invariants": [
         "a facet is not an entity type and not a role or a condition (ADR-006); an enumerated key accepts only its closed set of values, a free-text key accepts 1-120 characters"
       ],
@@ -3390,10 +3035,6 @@
         "archflow.semantics.conditions",
         "archflow.semantics.roles"
       ],
-      "used_by": [
-        "packages/archflow/src/archflow/state/state_record.py",
-        "tools/governance/devctl.py"
-      ],
       "invariants": [
         "a string that resolves to nothing never enters canonical state",
         "aliases resolve to ids and are never stored"
@@ -3425,10 +3066,6 @@
         "ArchitecturalRelationKind"
       ],
       "depends_on": [],
-      "used_by": [
-        "packages/archflow/src/archflow/state/state_record.py",
-        "packages/archflow/src/archflow/state/program_sheet.py"
-      ],
       "invariants": [
         "a relation kind is one of these ids; the record refuses any other",
         "never writes the filesystem"
@@ -3461,10 +3098,6 @@
         "ROLE_IDS"
       ],
       "depends_on": [],
-      "used_by": [
-        "packages/archflow/src/archflow/semantics/registry.py",
-        "packages/archflow/src/archflow/state/state_record.py"
-      ],
       "invariants": [
         "ids are role.<name>; a term is added with a written reason why existing terms cannot compose it (ADR-006)"
       ],
@@ -3512,12 +3145,6 @@
       ],
       "depends_on": [
         "archflow.contracts.fields"
-      ],
-      "used_by": [
-        "packages/archflow/src/archflow/submission/canonical_state.py",
-        "packages/archflow/src/archflow/state/operational_state.py",
-        "packages/archflow/src/archflow/state/decision_operator.py",
-        "packages/archflow/src/archflow/submission/model.py"
       ],
       "invariants": [
         "a transition never mutates history; it returns a new commitment with a predecessor link",
@@ -3575,10 +3202,6 @@
         "archflow.state.dependencies",
         "archflow.state.operational_state"
       ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/application/intent.py",
-        "services/project-runtime/src/project_runtime/application/proposals.py"
-      ],
       "invariants": [
         "exact-base: an operator names the state digest it applies to and is refused against any other",
         "a decision carries no write authority; compiling produces values, never a persisted state",
@@ -3626,13 +3249,6 @@
       "depends_on": [
         "archflow.contracts.canonical",
         "archflow.contracts.fields"
-      ],
-      "used_by": [
-        "packages/archflow/src/archflow/state/operational_state.py",
-        "packages/archflow/src/archflow/state/state_record.py",
-        "packages/archflow/src/archflow/state/decision_operator.py",
-        "packages/monkeyarch/src/monkeyarch/authoring/frame.py",
-        "services/project-runtime/src/project_runtime/application/projection.py"
       ],
       "invariants": [
         "a closure contains its changed refs and everything downstream of them, sorted; each group's closure is independent of the others",
@@ -3687,10 +3303,6 @@
         "archflow.contracts.canonical",
         "archflow.contracts.fields",
         "archflow.project.refs"
-      ],
-      "used_by": [
-        "packages/archflow/src/archflow/state/state_record.py",
-        "packages/monkeyarch/src/monkeyarch/domain/reference_resolver.py"
       ],
       "invariants": [
         "never calls Python eval; the operator and function set is closed",
@@ -3753,10 +3365,6 @@
         "archflow.project.refs",
         "archflow.state.spatial"
       ],
-      "used_by": [
-        "packages/archflow/src/archflow/state/developed_design.py",
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py"
-      ],
       "invariants": [
         "ordinary A/B and agent tasks do not create branches",
         "advancing requires candidate base = expected head = current head and the exact parent Stage",
@@ -3816,15 +3424,6 @@
         "archflow.state.spatial",
         "archflow.state.stage_workflow",
         "archflow.project.version_refs"
-      ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/domain/discipline_seats.py",
-        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
-        "packages/monkeyarch/src/monkeyarch/compilation/geometry.py",
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "services/project-runtime/src/project_runtime/application/harness.py",
-        "services/project-runtime/src/project_runtime/application/projection.py",
-        "tools/project/run_project.py"
       ],
       "invariants": [
         "no candidate or execution authority",
@@ -3943,33 +3542,6 @@
         "archflow.contracts.fields",
         "archflow.project.refs"
       ],
-      "used_by": [
-        "packages/archflow/src/archflow/state/state_record.py",
-        "packages/monkeyarch/src/monkeyarch/domain/discipline_seats.py",
-        "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
-        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
-        "packages/monkeyarch/src/monkeyarch/domain/opening_solver.py",
-        "packages/monkeyarch/src/monkeyarch/domain/reference_resolver.py",
-        "packages/monkeyarch/src/monkeyarch/domain/wall_solver.py",
-        "packages/monkeyarch/src/monkeyarch/compilation/geometry.py",
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "services/project-runtime/src/project_runtime/application/drawing_plans.py",
-        "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/application/candidate.py",
-        "tools/project/verify_state_record.py",
-        "packages/monkeyarch/src/monkeyarch/authoring/construction/shapes.py",
-        "packages/monkeyarch/src/monkeyarch/authoring/construction/lowering.py",
-        "packages/monkeycad/src/monkeycad/execution.py",
-        "packages/monkeycad/src/monkeycad/backends/occt/export.py",
-        "packages/monkeycad/src/monkeycad/backends/rhino/export.py",
-        "packages/monkeycad/src/monkeycad/backends/rhino/step_import.py",
-        "packages/monkeycad/src/monkeycad/formats/three_dm_compose.py",
-        "packages/monkeycad/src/monkeycad/backends/occt/build.py",
-        "packages/monkeycad/src/monkeycad/backends/occt/boolean.py",
-        "packages/monkeycad/src/monkeycad/program.py",
-        "packages/monkeycad/src/monkeycad/backends/rhino/script.py",
-        "packages/monkeycad/src/monkeycad/patch.py"
-      ],
       "invariants": [
         "the operation vocabulary is generic: no project, style or external-tool routing authority",
         "statements are declared facts for the export; parameters are geometry; the contract checks parameters by kind and statements by shape",
@@ -4037,12 +3609,6 @@
         "archflow.project.refs",
         "archflow.state.commitments"
       ],
-      "used_by": [
-        "packages/archflow/src/archflow/validation/engine.py",
-        "packages/archflow/src/archflow/validation/model.py",
-        "packages/archflow/src/archflow/submission/model.py",
-        "services/project-runtime/src/project_runtime/application/validation.py"
-      ],
       "invariants": [
         "facts, commitments, obligations and artifacts each carry unique ids",
         "GoalContract is compatibility/test-only; production hard authority belongs to authorized typed commitments",
@@ -4108,12 +3674,6 @@
         "archflow.project.refs",
         "archflow.state.commitments",
         "archflow.state.dependencies"
-      ],
-      "used_by": [
-        "packages/archflow/tests/test_operational_markov_compiler.py",
-        "packages/archflow/src/archflow/state/stage_workflow.py",
-        "packages/archflow/src/archflow/state/decision_operator.py",
-        "services/project-runtime/src/project_runtime/application/intent.py"
       ],
       "invariants": [
         "stores only future-relevant compiled consequences: no prompt history, tool transcripts or rejected drafts",
@@ -4243,21 +3803,6 @@
         "archflow.state.stage_workflow",
         "archflow.project.version_refs"
       ],
-      "used_by": [
-        "packages/archflow/src/archflow/project/inputs.py",
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "packages/monkeyarch/src/monkeyarch/compilation/geometry.py",
-        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
-        "packages/monkeyarch/src/monkeyarch/domain/relation_checks.py",
-        "services/project-runtime/src/project_runtime/application/projection.py",
-        "services/project-runtime/src/project_runtime/application/candidate.py",
-        "services/project-runtime/src/project_runtime/application/options.py",
-        "services/project-runtime/src/project_runtime/application/program.py",
-        "packages/archflow/src/archflow/state/program_sheet.py",
-        "packages/monkeyarch/src/monkeyarch/authoring/element_reindex.py",
-        "tools/project/reindex_project.py",
-        "tools/project/verify_state_record.py"
-      ],
       "invariants": [
         "never writes the filesystem",
         "digest excludes run_id and base, so the same design content authored in two runs digests identically",
@@ -4345,15 +3890,6 @@
         "archflow.state.stage_workflow",
         "archflow.project.version_refs"
       ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "packages/monkeyarch/src/monkeyarch/domain/discipline_seats.py",
-        "packages/monkeyarch/src/monkeyarch/application/geometry_proposal.py",
-        "packages/archflow/src/archflow/state/state_record.py",
-        "packages/archflow/src/archflow/state/developed_design.py",
-        "packages/archflow/src/archflow/state/design_portfolio.py",
-        "services/project-runtime/src/project_runtime/application/projection.py"
-      ],
       "invariants": [
         "no framework defaults: an option is always project-authored",
         "component ids are stable across refinement; a removed component needs an exact explicit retirement set",
@@ -4431,14 +3967,6 @@
         "archflow.state.operational_state",
         "archflow.state.state_record",
         "archflow.project.version_refs"
-      ],
-      "used_by": [
-        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
-        "services/project-runtime/src/project_runtime/application/harness.py",
-        "tools/project/run_project.py",
-        "tools/project/freeze_project_stage_workflow.py",
-        "tools/project/verify_state_record.py",
-        "tools/project/open_stage_run.py"
       ],
       "invariants": [
         "these records are guards only: they never select design, accept a stage, mutate geometry, persist state, promote a candidate or write canonical state",
@@ -4614,55 +4142,30 @@
         "drawing_pipeline"
       ],
       "depends_on": [
-        "monkeycad.execution",
-        "monkeycad.occt",
-        "monkeycad.rhino",
-        "monkeycad.formats",
+        "archflow.contracts.canonical",
+        "archflow.project.index",
+        "archflow.project.layout",
+        "archflow.project.memo",
+        "archflow.project.ports",
+        "archflow.project.record_kinds",
         "archflow.project.refs",
         "archflow.project.repository",
         "archflow.state.geometry_program",
-        "archflow.project.layout",
-        "archflow.project.ports",
-        "archflow.project.record_kinds",
-        "monkeydiagram.drawing_runs",
-        "monkeydiagram.sources",
-        "monkeydiagram.projection.views",
-        "monkeydiagram.documentation.styles",
-        "monkeydiagram.rendering.paper",
-        "archflow.contracts.canonical",
-        "project_runtime.binding",
-        "project_runtime.shell",
-        "monkeyarch.authoring.element_producers",
-        "monkeydiagram.rendering.svg",
-        "project_runtime.intent",
-        "monkeyarch.domain.reference_resolver",
-        "archflow.state.design_portfolio",
         "archflow.state.state_record",
-        "archflow.project.memo",
-        "archflow.project.index",
+        "monkeyarch.authoring.element_producers",
+        "monkeyarch.domain.reference_resolver",
+        "monkeycad.execution",
+        "monkeycad.formats",
+        "monkeycad.occt",
+        "monkeycad.rhino",
+        "monkeydiagram.documentation.styles",
+        "monkeydiagram.drawing_runs",
         "monkeydiagram.projection.mesh_views",
+        "monkeydiagram.rendering.svg",
+        "project_runtime.binding",
         "project_runtime.board",
-        "monkeydiagram.corrections",
-        "monkeydiagram.documentation.sheet_layout",
-        "monkeycad.backends.occt.errors",
-        "monkeycad.backends.occt.kernel",
-        "monkeycad.backends.occt.projection",
-        "monkeycad.backends.occt.section",
-        "monkeycad.backends.rhino.export",
-        "monkeycad.backends.rhino.step_import",
-        "monkeycad.formats.conversion",
-        "monkeycad.formats.meshes",
-        "monkeycad.formats.sketchup_reader",
-        "monkeycad.patch",
-        "monkeycad.program"
-      ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/application/candidate.py",
-        "services/project-runtime/src/project_runtime/application/validation.py",
-        "services/project-runtime/tests/test_artifacts.py",
-        "services/project-runtime/tests/test_captures.py",
-        "services/project-runtime/src/project_runtime/application/gestures.py",
-        "services/project-runtime/tests/test_documents.py"
+        "project_runtime.intent",
+        "project_runtime.shell"
       ],
       "invariants": [
         "a viewport capture is a non-canonical workspace file bound to the existing run named by the request; invalid or incomplete PNG data is refused before persistence; saving it never changes StateRecord or HEAD",
@@ -4807,20 +4310,12 @@
         "page_export_png"
       ],
       "depends_on": [
-        "project_runtime.documents",
-        "project_runtime.binding",
         "archflow.contracts.canonical",
         "archflow.project.ports",
-        "archflow.project.repository",
         "archflow.project.record_kinds",
-        "project_runtime.intent",
-        "archflow.project.index"
-      ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/api/routes/boards.py",
-        "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
-        "services/project-runtime/src/project_runtime/application/decisions.py",
-        "services/project-runtime/src/project_runtime/application/drawings.py"
+        "archflow.project.repository",
+        "project_runtime.binding",
+        "project_runtime.documents"
       ],
       "invariants": [
         "reading an empty board creates no run; a valid first save uses runs/studio-board/records through P036",
@@ -5009,41 +4504,28 @@
         "INDEX_CATCH_UP_S"
       ],
       "depends_on": [
+        "archflow.contracts.canonical",
+        "archflow.project.index",
         "archflow.project.inputs",
         "archflow.project.layout",
         "archflow.project.location",
+        "archflow.project.memo",
         "archflow.project.ports",
         "archflow.project.record_kinds",
         "archflow.project.refs",
         "archflow.project.repository",
-        "archflow.state.developed_design",
+        "archflow.project.watch",
         "archflow.state.dependencies",
-        "archflow.state.state_record",
+        "archflow.state.design_portfolio",
+        "archflow.state.developed_design",
         "archflow.state.spatial",
         "archflow.state.stage_workflow",
+        "archflow.state.state_record",
+        "monkeyarch.authoring.element_producers",
         "monkeyarch.authoring.element_reindex",
         "monkeyarch.domain.reference_resolver",
-        "archflow.contracts.fields",
-        "archflow.state.design_portfolio",
-        "monkeyarch.authoring.element_producers",
-        "archflow.contracts.canonical",
         "project_runtime.documents",
-        "project_runtime.render",
-        "archflow.project.memo",
-        "archflow.project.watch",
-        "archflow.project.index",
-        "monkeyarch.authoring.producer_signatures",
-        "monkeyarch.authoring.frame"
-      ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/application/projection.py",
-        "services/project-runtime/src/project_runtime/application/candidate.py",
-        "services/project-runtime/src/project_runtime/application/compare.py",
-        "services/project-runtime/src/project_runtime/application/artifacts.py",
-        "services/project-runtime/src/project_runtime/api/routes/health.py",
-        "services/project-runtime/tests/test_binding.py",
-        "services/project-runtime/tests/test_projection.py",
-        "services/project-runtime/src/project_runtime/api/routes/projects.py"
+        "project_runtime.render"
       ],
       "invariants": [
         "the project root is never defaulted in code - it comes from the environment or --project-dir",
@@ -5200,35 +4682,25 @@
         "RepresentationState"
       ],
       "depends_on": [
-        "monkeyarch.domain.discipline_seats",
-        "monkeyarch.application.geometry_proposal",
         "archflow.project.inputs",
         "archflow.project.layout",
         "archflow.project.ports",
         "archflow.project.record_kinds",
         "archflow.project.refs",
         "archflow.project.repository",
-        "monkeyarch.application.project_runner",
+        "archflow.state.design_portfolio",
         "archflow.state.developed_design",
         "archflow.state.geometry_program",
         "archflow.state.operational_state",
-        "archflow.state.state_record",
         "archflow.state.stage_workflow",
-        "project_runtime.documents",
-        "project_runtime.intent",
-        "archflow.state.design_portfolio",
-        "project_runtime.binding",
+        "archflow.state.state_record",
+        "monkeyarch.application.geometry_proposal",
+        "monkeyarch.application.project_runner",
+        "monkeyarch.domain.discipline_seats",
         "monkeycad.formats",
-        "monkeycad.formats.three_dm_compose"
-      ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/application/validation.py",
-        "services/project-runtime/tests/test_candidate.py",
-        "services/project-runtime/tests/test_queue.py",
-        "services/project-runtime/tests/test_events.py",
-        "services/project-runtime/tests/test_sse.py",
-        "services/project-runtime/tests/test_timings.py",
-        "services/project-runtime/tests/test_validation.py"
+        "project_runtime.binding",
+        "project_runtime.documents",
+        "project_runtime.intent"
       ],
       "invariants": [
         "a candidate is detached: it runs under the studio-candidate harness stage and advances no project stage",
@@ -5561,45 +5033,29 @@
         "archflow.contracts.canonical",
         "archflow.ports.model",
         "archflow.project.layout",
-        "archflow.state.decision_operator",
-        "archflow.state.operational_state",
-        "archflow.state.state_record",
-        "project_runtime.binding",
-        "archflow.project.record_kinds",
         "archflow.project.ports",
+        "archflow.project.record_kinds",
         "archflow.project.refs",
+        "archflow.project.repository",
+        "archflow.semantics.facets",
+        "archflow.semantics.registry",
+        "archflow.state.decision_operator",
+        "archflow.state.design_portfolio",
+        "archflow.state.operational_state",
+        "archflow.state.stage_workflow",
+        "archflow.state.state_record",
+        "monkeyarch.authoring.construction",
         "monkeyarch.authoring.element_producers",
         "monkeyarch.domain.reference_resolver",
-        "archflow.semantics.registry",
-        "project_runtime.documents",
-        "monkeycad.occt",
         "monkeycad.formats",
-        "project_runtime.shell",
-        "archflow.state.design_portfolio",
-        "archflow.project.repository",
-        "archflow.state.stage_workflow",
-        "project_runtime.board",
-        "project_runtime.study",
+        "monkeycad.occt",
         "monkeydiagram.rendering.svg",
-        "monkeyarch.authoring.construction",
-        "monkeyarch.authoring.construction.vocabulary",
-        "monkeyarch.authoring.construction.identity",
-        "monkeyarch.authoring.producer_signatures",
-        "archflow.semantics.facets",
+        "project_runtime.binding",
+        "project_runtime.board",
+        "project_runtime.documents",
         "project_runtime.memory",
-        "monkeycad.backends.occt.projection"
-      ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/application/candidate.py",
-        "services/project-runtime/src/project_runtime/application/validation.py",
-        "services/project-runtime/tests/test_intent_grammar.py",
-        "services/project-runtime/tests/test_intents.py",
-        "services/project-runtime/tests/test_clarification.py",
-        "services/project-runtime/tests/test_intent_agent_timeout.py",
-        "services/project-runtime/tests/test_gestures.py",
-        "services/project-runtime/tests/test_pick.py",
-        "services/project-runtime/tests/test_proposals.py",
-        "services/project-runtime/src/project_runtime/application/drawing_plans.py"
+        "project_runtime.shell",
+        "project_runtime.study"
       ],
       "invariants": [
         "an utterance is parsed, never interpreted; scalar edits use the four forms; the in-app Agent changes geometry only with a construction script, meaning only with facets and controls with parameters or one scalar sentence, and the construction owner chooses every realisation; direct component edits (POST /api/proposals semanticEdit) use the typed Entity, Parameter and Relation payload",
@@ -5810,10 +5266,6 @@
         "project_runtime.intent",
         "project_runtime.shell"
       ],
-      "used_by": [
-        "project_runtime.intent",
-        "hub.shell"
-      ],
       "invariants": [
         "every revision of a memory item is retained in the one fixed explicit studio-memory run under record kind studio-memory-record and read only from it; nothing is written to studio-decisions, so a build that knows only decisions never reads one, and memory reads never enumerate the project's runs",
         "an item is one complete chain (stable memoryId, exact previousRevisionRef, version counting from 1); competing, branching or incomplete chains fail closed; superseded is derived and no retained revision is rewritten",
@@ -5872,15 +5324,14 @@
         "POST /api/render/views"
       ],
       "depends_on": [
-        "project_runtime.documents",
-        "project_runtime.binding",
-        "project_runtime.shell",
+        "archflow.contracts.canonical",
         "archflow.project.ports",
         "archflow.project.record_kinds",
-        "archflow.project.refs",
         "archflow.project.repository",
-        "archflow.contracts.canonical",
-        "monkeymonitor"
+        "monkeymonitor",
+        "project_runtime.binding",
+        "project_runtime.documents",
+        "project_runtime.shell"
       ],
       "files": [
         "services/project-runtime/src/project_runtime/application/rendering.py",
@@ -6060,23 +5511,12 @@
         "OWNER_REFUSALS"
       ],
       "depends_on": [
-        "monkeymonitor",
-        "monkeydiagram.documentation.styles",
         "archflow.project.index",
-        "monkeyarch.authoring.frame",
-        "monkeyarch.domain.massing_transforms",
-        "monkeydiagram.documentation.sheet_layout",
-        "monkeydiagram.study"
-      ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/api/routes/",
-        "services/project-runtime/tests/test_health.py",
-        "services/project-runtime/tests/test_settings.py",
-        "services/project-runtime/tests/test_errors.py",
-        "apps/monkeyhub/api/monkeyhub_api/app/composition.py",
-        "apps/monkeyhub/api/monkeyhub_api/runtime/routes.py",
-        "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
-        "apps/monkeyhub/launch-hub.ps1"
+        "monkeyarch.authoring.element_reindex",
+        "monkeyarch.domain.massing_metrics",
+        "monkeydiagram.documentation.styles",
+        "monkeymonitor",
+        "project_runtime.study"
       ],
       "invariants": [
         "create_app binds no project; only explicitly supplied external actor configuration is read at creation",
@@ -6200,14 +5640,6 @@
         "archflow.submission.canonical_state",
         "archflow.state.state_record"
       ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/api/routes/validation.py",
-        "services/project-runtime/src/project_runtime/api/routes/candidates.py",
-        "services/project-runtime/src/project_runtime/application/intent.py",
-        "services/project-runtime/tests/test_validation.py",
-        "services/project-runtime/tests/test_impact.py",
-        "services/project-runtime/tests/test_compare.py"
-      ],
       "invariants": [
         "the receipt and review readiness are deliberately two different answers and are never merged",
         "review_ready requires all five clauses; every refusal is named in blocked_by",
@@ -6267,10 +5699,6 @@
         "archflow.state.commitments",
         "archflow.submission.canonical_state"
       ],
-      "used_by": [
-        "packages/archflow/src/archflow/validation/engine.py",
-        "services/project-runtime/src/project_runtime/application/validation.py"
-      ],
       "invariants": [
         "the content digest covers the complete submission, so a receipt proves which delta was checked, not merely which id",
         "claim keys and discharged obligation ids are unique",
@@ -6290,7 +5718,7 @@
       "owns": [
         "loading and validating ArchFlowArchitecturePolicy@1",
         "the checked-file set for the configured roots, without bytecode caches, installed environments or vendored third-party trees, and the single AST index per file",
-        "the checks: forbidden imports including archive reverse imports, instance-answer literals, filesystem writes outside allowed functions, forbidden framework identifiers, probe-boundary executables, configured policy paths that do not exist and src directories missing from python_source_roots, forbidden-import targets that name no module, the top-level entries Git tracks against the root allowlist, the docs tree Git tracks (README.md alone at the docs root; lowercase kebab-case document and directory names, NNN-kebab-case decisions, no date-prefixed names, non-Markdown files only in docs/prototypes/), registry owner/test/public-symbol truth, every other path the registry names, registry dependencies matched by import names that begin at the policy's python_source_roots, and duplicate owned function bodies",
+        "the checks: forbidden imports including archive reverse imports, instance-answer literals, filesystem writes outside allowed functions, forbidden framework identifiers, probe-boundary executables, configured policy paths that do not exist and src directories missing from python_source_roots, forbidden-import targets that name no module, the top-level entries Git tracks against the root allowlist, the docs tree Git tracks (README.md alone at the docs root; lowercase kebab-case document and directory names, NNN-kebab-case decisions, no date-prefixed names, non-Markdown files only in docs/prototypes/), registry owner/test/public-symbol truth, every other path the registry names, registry depends_on as registered module ids that the module's files import, with every import of a file in a unit whose namespace the policy's declared_dependency_namespaces lists declared, and duplicate owned function bodies",
         "the Finding shape and the JSON/text report and exit code",
         "Validating the live work registry (ArchFlowDevelopmentRegistry@3): GitHub Issue claims only, claimed directly or through lanes, with checkout, base, contributor, paths and dependencies; reporting competing live path and checkout claims; checking each commit against the claim it names in its own registry, and reading commits made before #358 by their card-era rules"
       ],
@@ -6323,7 +5751,6 @@
         "REGISTRY_SCHEMA"
       ],
       "depends_on": [],
-      "used_by": [],
       "invariants": [
         "no archflow import: the checker parses source and never executes it",
         "a policy that cannot be interpreted deterministically fails ArchitecturePolicyError rather than passing vacuously",
@@ -6338,13 +5765,15 @@
         "only active and review claims hold paths and checkouts; a lane is a claim of its own, and an Issue claimed through lanes carries nothing but its lanes",
         "a commit on the pre-#358 registry keeps its card-era reading, where a subject ending in a single (#n) with no other Issue reference or GH- marker names GH-n; once a parent is on the current registry a commit cannot return to the old one, so that reading cannot authorize card work again",
         "a current commit whose subject opens with a P###, M###, R### or P000-governance id is reported as a retired claim",
-        "a layer rule may list allowed exceptions under its targets: a module, or a member a module defines at its top level; an import is let through only when its module is allowed, or, for from x import y, every x.y it takes is; an exception that names neither a module nor a defined member is reported like a dead target (#519)"
+        "a layer rule may list allowed exceptions under its targets: a module, or a member a module defines at its top level; an import is let through only when its module is allowed, or, for from x import y, every x.y it takes is; an exception that names neither a module nor a defined member is reported like a dead target (#519)",
+        "depends_on lists module ids only (#537): an import is held by the entry whose files list the imported module (a listed directory holds the Python below it), named from the policy's python_source_roots, and an import of a module no entry holds is matched to nothing; an entry that is no module id, the module itself or a module the files no longer import is reported; what must be declared is decided by the unit the imported file lies in, not by the id that holds it; who uses a module is read from the imports, so the hand-kept used_by field is reported as retired"
       ],
       "status": "canonical",
       "tests": [
         "tools/tests/test_archcheck_scopes.py",
         "tools/tests/test_archcheck_github_claims.py",
-        "tools/tests/test_archcheck_paths.py"
+        "tools/tests/test_archcheck_paths.py",
+        "tools/tests/test_archcheck_dependencies.py"
       ],
       "notes": "Architecture checks parse source without importing application code; scope behavior is verified with disposable Git repositories."
     },
@@ -6393,7 +5822,6 @@
         "archflow.state.stage_workflow",
         "tools.governance.archcheck"
       ],
-      "used_by": [],
       "invariants": [
         "the work registry holds only live claims; a finished claim is removed, and its record is the closed Issue, its PR and Git history",
         "the system and semantic maps are generated, never hand-edited; render-map does not read the work registry",
@@ -6442,9 +5870,6 @@
         "archflow.state.stage_workflow",
         "archflow.project.record_kinds"
       ],
-      "used_by": [
-        "tools/tests/test_freeze_project_stage_workflow.py"
-      ],
       "invariants": [
         "the stored payload is exactly what was validated",
         "the published version must be unchanged across the freeze, and the receipt says so",
@@ -6486,9 +5911,6 @@
       "depends_on": [
         "archflow.project.issue",
         "archflow.project.repository"
-      ],
-      "used_by": [
-        "tools/tests/test_issue_project.py"
       ],
       "invariants": [
         "the command checks nothing itself; every refusal is archflow.project.issue's, printed with its type",
@@ -6545,9 +5967,6 @@
         "archflow.state.operational_state",
         "archflow.state.state_record",
         "archflow.state.stage_workflow"
-      ],
-      "used_by": [
-        "tests/integration/test_project_runner.py"
       ],
       "invariants": [
         "stage 0 opens with no predecessor; stage N>0 opens only against the retained SATISFIED exit binding of the run that closed stage N-1, and refuses before the run is created",
@@ -6606,9 +6025,6 @@
         "archflow.state.stage_workflow",
         "archflow.state.state_record"
       ],
-      "used_by": [
-        "tools/project/verify_state_record.py"
-      ],
       "invariants": [
         "every input is a retained record loaded by ref; the tool authors no design content",
         "the stage guard is assembled before the runner is called, so a run cannot acquire a stage by side effect"
@@ -6661,7 +6077,6 @@
         "archflow.state.stage_workflow",
         "tools.project.run_project"
       ],
-      "used_by": [],
       "invariants": [
         "the equivalence claim is recorded as a retained record, never printed only",
         "the harness workflow is explicitly not a project stage advance"
@@ -6710,9 +6125,6 @@
         "archflow.submission.model",
         "archflow.validation.model"
       ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/application/validation.py"
-      ],
       "invariants": [
         "read-only: the gates never mutate state and never write anything",
         "a base mismatch between the submission and the checked state is itself an ERROR finding",
@@ -6755,11 +6167,6 @@
       ],
       "depends_on": [
         "archflow.submission.canonical_state"
-      ],
-      "used_by": [
-        "packages/archflow/src/archflow/validation/engine.py",
-        "services/project-runtime/src/project_runtime/application/validation.py",
-        "services/project-runtime/src/project_runtime/api/dto/validation.py"
       ],
       "invariants": [
         "passed is true exactly when no ERROR finding exists",
@@ -6820,10 +6227,6 @@
         "archflow.state.geometry_program",
         "archflow.state.state_record",
         "archflow.state.dependencies"
-      ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/api/routes/state.py",
-        "services/project-runtime/src/project_runtime/api/dto/state.py"
       ],
       "files": [
         "packages/monkeyarch/src/monkeyarch/authoring/element_reindex.py",
@@ -6927,11 +6330,6 @@
       "depends_on": [
         "archflow.state.state_record"
       ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/application/options.py",
-        "services/project-runtime/src/project_runtime/api/dto/options.py",
-        "labs/candidate_evaluation/retained_fixture.py"
-      ],
       "invariants": [
         "never writes the filesystem and decides nothing",
         "a plan bound that is not a whole cell is reported in honesty, never rounded",
@@ -6982,16 +6380,15 @@
         "record_massing"
       ],
       "depends_on": [
-        "monkeyarch.domain.massing_metrics",
-        "monkeyarch.domain.massing_transforms",
-        "archflow.state.state_record",
-        "archflow.state.spatial",
         "archflow.project.ports",
         "archflow.project.record_kinds",
-        "project_runtime.candidate",
+        "archflow.project.refs",
+        "archflow.state.spatial",
+        "archflow.state.state_record",
+        "monkeyarch.domain.massing_metrics",
         "project_runtime.binding",
-        "project_runtime.documents",
-        "archflow.project.refs"
+        "project_runtime.candidate",
+        "project_runtime.documents"
       ],
       "invariants": [
         "never writes the authored record and never touches canonical",
@@ -7050,15 +6447,11 @@
         "script_result"
       ],
       "depends_on": [
-        "monkeyarch.authoring.element_producers",
-        "monkeyarch.domain.opening_solver",
-        "monkeyarch.authoring.construction",
-        "monkeyarch.authoring.construction.vocabulary",
-        "monkeyarch.authoring.construction.identity",
-        "monkeyarch.authoring.construction.lowering",
-        "monkeyarch.authoring.construction.script",
         "archflow.semantics.facets",
-        "archflow.state.state_record"
+        "archflow.state.state_record",
+        "monkeyarch.authoring.construction",
+        "monkeyarch.authoring.element_producers",
+        "monkeyarch.domain.opening_solver"
       ],
       "invariants": [
         "a script is compiled against the exact record of the proposal's source, including an unexecuted proposal it continues; nothing is written and nothing runs until the candidate route runs the proposal",
@@ -7129,11 +6522,6 @@
         "archflow.semantics.relation_kinds",
         "archflow.semantics.registry",
         "archflow.project.refs"
-      ],
-      "used_by": [
-        "packages/archflow/src/archflow/project/inputs.py",
-        "services/project-runtime/src/project_runtime/application/program.py",
-        "services/project-runtime/src/project_runtime/api/routes/program.py"
       ],
       "invariants": [
         "pure: no I/O, no run, no record written",
@@ -7243,9 +6631,6 @@
         "tools.project.run_project",
         "archflow.project.version_ref_owners"
       ],
-      "used_by": [
-        "docs/development/work-environment.md"
-      ],
       "invariants": [
         "all project writes go through the existing repository initializer",
         "the source repository and occupied project directories are not initialization targets",
@@ -7299,10 +6684,6 @@
         "archflow.project.repository",
         "archflow.project.ports",
         "archflow.project.record_kinds"
-      ],
-      "used_by": [
-        "scripts/dev/run-archive-rehearsal.ps1",
-        "apps/monkeyhub/README.md"
       ],
       "invariants": [
         "a category the source project genuinely lacks is reported SKIPPED and never answered MATCH",
@@ -7381,13 +6762,6 @@
         "POST /api/quote"
       ],
       "depends_on": [],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/monitoring.py",
-        "apps/monkeyhub/api/monkeyhub_api/chat/turn_trace.py",
-        "packages/monkeymonitor/src/monkeymonitor/__main__.py",
-        "apps/monkeyhub/api/monkeyhub_api/runtime/applications.py",
-        "apps/monkeyhub/web/src/MonitorPage.tsx"
-      ],
       "invariants": [
         "No prompts, responses, tool contents or credentials are exported in usage events",
         "Missing counters never become zero and cache/reasoning subsets are never charged twice",
@@ -7487,9 +6861,6 @@
       ],
       "depends_on": [
         "archflow.contracts.canonical"
-      ],
-      "used_by": [
-        "hub.shell"
       ],
       "invariants": [
         "A coordinate is only ever an execution projection: without a UIA resolution the receipt says visual-fallback",
@@ -7746,10 +7117,6 @@
         "saving preferences never changes a running Project Runtime, its compiler or its project, and null clears a saved override",
         "Hub application launch choices do not replace user appearance or provider preferences, and never write project state"
       ],
-      "used_by": [
-        "apps/monkeyhub/run.py",
-        "apps/monkeyhub/launch-hub.ps1"
-      ],
       "files": [
         "apps/monkeyhub/api/monkeyhub_api/__init__.py",
         "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
@@ -7928,25 +7295,21 @@
         "apps/monkeyhub/api/tests/test_chat_progress.py"
       ],
       "depends_on": [
-        "archflow.project.repository",
-        "archflow.project.refs",
-        "archflow.project.record_kinds",
-        "archflow.state.state_record",
-        "archflow.project.manifest",
-        "project_runtime.binding",
-        "project_runtime.candidate",
-        "project_runtime.intent",
-        "monkeymonitor",
         "archflow.contracts.canonical",
-        "monkeyfab",
-        "project_runtime.documents",
         "archflow.project.archive",
-        "monkeycontrol",
-        "project_runtime.board",
-        "tools.release.package_monkeyapps",
-        "archflow.project.layout",
+        "archflow.project.manifest",
+        "archflow.project.record_kinds",
+        "archflow.project.refs",
+        "archflow.project.repository",
+        "archflow.state.state_record",
         "monkeycad.integrations",
-        "project_runtime.skills"
+        "monkeycontrol",
+        "monkeymonitor",
+        "project_runtime.binding",
+        "project_runtime.board",
+        "project_runtime.candidate",
+        "project_runtime.documents",
+        "tools.release.package_monkeyapps"
       ]
     },
     {
@@ -7988,9 +7351,6 @@
         "main"
       ],
       "depends_on": [],
-      "used_by": [
-        "tools.release.package_monkeyapps"
-      ],
       "invariants": [
         "The CLI resolves task paths below the saved root, outside the source checkout; no drive-root default or per-invocation dated root is invented",
         "paths creates nothing; configure updates only the existing personal Git setting",
@@ -8030,21 +7390,6 @@
         "put_first"
       ],
       "depends_on": [],
-      "used_by": [
-        "tests/__init__.py",
-        "tools.project.create_project",
-        "tools.project.run_project",
-        "tools.governance.devctl",
-        "tools.project.freeze_project_stage_workflow",
-        "tools.project.issue_project",
-        "tools.project.open_stage_run",
-        "tools.project.rehearse_project_archive",
-        "tools.project.reindex_project",
-        "tools.project.verify_state_record",
-        "project_runtime.intent",
-        "labs/spatial_observation/fixture.py",
-        "apps/monkeyhub/web/test/drawingCanvas.browser.mjs"
-      ],
       "invariants": [
         "A root already on sys.path keeps its place; a missing one goes before everything else, so neither an installed copy nor another checkout answers in its name",
         "Only this checkout's policy is read; nothing is installed and no environment variable is required"
@@ -8097,8 +7442,7 @@
         "install.ps1 -ActivateInstalled [-CreateDesktopShortcut] [-DesktopDirectory PATH]"
       ],
       "depends_on": [
-        "tools.dev.workspace",
-        "monkeyfab"
+        "tools.dev.workspace"
       ],
       "invariants": [
         "Only the selected committed source is collected; local WIP and project/runtime folders are not selected inputs",
@@ -8113,9 +7457,6 @@
         "Local patches are explicitly unsigned developer artifacts. Full base and target file hashes, exact commits and executable identity are checked; traversal, Windows path aliases and reparse points are rejected. Unchanged files are copied, never hardlinked; existing versions are never overwritten. Bytecode Python writes at runtime is neither distributed nor verified; a base never lists bytecode, and a target's shipped hash-based bytecode is listed and carried whole only to a base whose build-info.json declares pythonBytecode, since an older updater refuses any .pyc in a patch.",
         "Shipped bytecode is unchecked-hash, compiled by the bundled interpreter in one process in a fixed order so equal sources give equal bytes, named by its bundle-relative path, never longer than the bundle's longest path, and recorded as build-info.json pythonBytecode; a bundled module the Hub, a project worker or Monitor imports at start that compiles from source fails the build",
         "A package under packages/<name>/src/<name> ships at the bundle root as <name>/, where python313._pth's ..\\.. finds it, so the bundle's layout and the installed updater's required files do not change when a package moves (#488)"
-      ],
-      "used_by": [
-        "apps/monkeyhub/installer/README.md"
       ],
       "files": [
         "tools/release/package_monkeyapps.py",
@@ -8248,15 +7589,8 @@
         "SheetLayoutError"
       ],
       "depends_on": [
-        "monkeydiagram.projection.views",
         "monkeycad.occt",
-        "monkeycad.backends.occt.projection"
-      ],
-      "used_by": [
-        "packages/monkeydiagram/tests/test_drawing_output.py",
-        "packages/monkeydiagram/tests/test_drawing_styles.py",
-        "services/project-runtime/src/project_runtime/main.py",
-        "services/project-runtime/src/project_runtime/application/drawings.py"
+        "monkeydiagram.drawing_runs"
       ],
       "invariants": [
         "Source design and project information remain the only facts; drawing values do not confirm or mutate them.",
@@ -8308,10 +7642,6 @@
         "send_file"
       ],
       "depends_on": [],
-      "used_by": [
-        "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
-        "tools/release/package_monkeyapps.py"
-      ],
       "invariants": [
         "Source geometry and existing outputs are preserved",
         "Only the caller-selected fabrication output directory is written; no project state is created",
@@ -8389,20 +7719,16 @@
         "study_evidence_context"
       ],
       "depends_on": [
-        "project_runtime.documents",
-        "project_runtime.binding",
         "archflow.contracts.canonical",
-        "archflow.project.ports",
-        "archflow.project.repository",
-        "archflow.project.refs",
-        "archflow.project.record_kinds",
         "archflow.ports.model",
-        "project_runtime.intent",
+        "archflow.project.ports",
+        "archflow.project.record_kinds",
+        "archflow.project.refs",
+        "archflow.project.repository",
+        "project_runtime.binding",
         "project_runtime.board",
-        "monkeydiagram.study"
-      ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/api/routes/study.py"
+        "project_runtime.documents",
+        "project_runtime.intent"
       ],
       "invariants": [
         "Study writes only its named study run and retained records; it does not accept a DesignStage, advance a branch or issue canonical HEAD",
@@ -8456,13 +7782,11 @@
         "POST /api/publication/export"
       ],
       "depends_on": [
-        "project_runtime.board",
-        "project_runtime.documents",
-        "project_runtime.binding",
-        "project_runtime.render",
         "archflow.project.ports",
         "archflow.project.record_kinds",
-        "archflow.project.repository"
+        "project_runtime.binding",
+        "project_runtime.board",
+        "project_runtime.documents"
       ],
       "files": [
         "services/project-runtime/src/project_runtime/application/publications.py",
@@ -8540,21 +7864,12 @@
         "LAYER_RULE_TOKENS"
       ],
       "depends_on": [
-        "monkeyarch.authoring.element_producers",
-        "monkeyarch.domain.reference_resolver",
-        "monkeyarch.authoring.construction.identity",
-        "monkeyarch.authoring.construction.lowering",
-        "monkeyarch.authoring.construction.script",
-        "monkeyarch.authoring.construction.shapes",
-        "monkeyarch.authoring.construction.vocabulary",
         "archflow.project.refs",
         "archflow.state.derivation",
         "archflow.state.geometry_program",
-        "archflow.state.state_record"
-      ],
-      "used_by": [
-        "packages/monkeyarch/tests/test_construction_script.py",
-        "packages/monkeyarch/tests/test_construction_lowering.py"
+        "archflow.state.state_record",
+        "monkeyarch.authoring.element_producers",
+        "monkeyarch.domain.reference_resolver"
       ],
       "invariants": [
         "A script is parsed with ast and walked by an allow-list; Python never compiles or executes it.",
@@ -8626,10 +7941,6 @@
         "archflow.semantics.facets",
         "archflow.state.state_record"
       ],
-      "used_by": [
-        "packages/monkeyarch/tests/test_domain_readiness.py",
-        "services/project-runtime/src/project_runtime/application/domains.py"
-      ],
       "invariants": [
         "never infers architectural.role, structural.role, architectural.enclosure or material.name from geometry, producer or names (D-419-0)",
         "a Component@1 with no owned Element@1 is neither read nor asked about",
@@ -8673,11 +7984,6 @@
         "monkeyarch.domain.domain_readiness",
         "project_runtime.binding",
         "project_runtime.shell"
-      ],
-      "used_by": [
-        "services/project-runtime/src/project_runtime/api/routes/domains.py",
-        "services/project-runtime/src/project_runtime/api/routes/__init__.py",
-        "services/project-runtime/tests/test_domains.py"
       ],
       "files": [
         "services/project-runtime/src/project_runtime/application/domains.py",
