@@ -1,29 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-580",
-      "lanes": [
-        {
-          "id": "compose",
-          "status": "active",
-          "branch": "codex/integration-575land-580verify",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-575land-580verify",
-          "base_ref": "e76db51d0fb4f8ddbd43602f97094067647ea0a9",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "monkeycad.formats",
-            "monkeycad.execution",
-            "project_runtime.candidate"
-          ],
-          "write_scope": [
-            "docs/protocols/project-runtime-api.md"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
