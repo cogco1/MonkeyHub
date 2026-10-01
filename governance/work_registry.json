@@ -1,4 +1,35 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-580",
+      "lanes": [
+        {
+          "id": "verify",
+          "status": "active",
+          "branch": "codex/integration-575land-580verify",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-575land-580verify",
+          "base_ref": "e76db51d0fb4f8ddbd43602f97094067647ea0a9",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "project_runtime.documents",
+            "project_runtime.intent",
+            "monkeydiagram.projection.mesh_views",
+            "monkeycad.formats",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+            "docs/protocols/project-runtime-api.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
