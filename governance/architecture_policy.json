@@ -1104,7 +1104,10 @@
         "labs",
         "archive"
       ],
-      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code, so they run from the package alone."
+      "allowed": [
+        "tests.support"
+      ],
+      "reason": "A package's own tests import that package and what it may import, never the repository suite, a lab or retired code. MonkeyArch's tests share the spine fixture with the integration suite, so they may import the shared test support (tests/support, #534), which the root conftest.py puts on the path."
     },
     {
       "source": "packages/monkeymonitor/tests",

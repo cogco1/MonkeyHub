@@ -20,7 +20,7 @@ from monkeyarch.domain.massing_metrics import (
 )
 from archflow.state.state_record import Entity, StateRecord, volume_boxes_of
 
-from spine_fixture import authored_record
+from tests.support.spine_fixture import authored_record
 
 EVIDENCE = "evidence:massing"
 

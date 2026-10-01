@@ -12,7 +12,7 @@ from monkeyarch.compilation.geometry import (
 from archflow.state.spatial import NEUTRAL_SEMANTIC_KIND, ComponentMaturity, DesignComponent, SpatialProposalError, compile_component_transition
 from archflow.state.spatial import ConstraintResponseStatus, MassingVolume, SchematicOption, SiteBounds, SpatialConstraintResponse, SpatialGridBasis, SpatialLevel, SpatialOptionProposal, SpatialZone
 from archflow.state.geometry_program import SemanticBinding
-from spine_fixture import COMMITMENT, _proposal, _state
+from tests.support.spine_fixture import COMMITMENT, _proposal, _state
 
 
 # The option these tests deepen, as ArchFlow's own suite builds it

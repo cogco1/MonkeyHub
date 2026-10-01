@@ -34,7 +34,7 @@ from monkeyarch.compilation.geometry import compile_geometry_program
 from archflow.state.geometry_program import GeometryOperationKind, SemanticBinding
 from archflow.state.state_record import project_grids_of, project_levels_of
 from portico_fixture import BASIS, PN, _grids, _levels, _op_params, _produce, _rows
-from spine_fixture import COMMITMENT, ProducerFixture, _only, _proposal, _state, authored_record
+from tests.support.spine_fixture import COMMITMENT, ProducerFixture, _only, _proposal, _state, authored_record
 
 
 def _on(axis: str, along: float) -> dict:
@@ -224,7 +224,7 @@ class SemanticWallContractTests(unittest.TestCase):
 class PlanarSurfaceProducerTests(unittest.TestCase):
     def test_a_bound_elevation_edit_moves_the_surface_and_keeps_the_base(self) -> None:
         from archflow.state.state_record import Parameter, StateRecordEditKind, StateRecordOperator, apply_state_record_operator
-        from spine_fixture import shared_bound_state
+        from tests.support.spine_fixture import shared_bound_state
 
         record = authored_record()
         surface = replace(next(e for e in record.entities if e.entity_id == "wall-south"), fields={
@@ -681,7 +681,7 @@ class PrismElevationTests(unittest.TestCase):
 
     def test_parameter_edits_keep_panel_elevation_and_thickness_independent(self) -> None:
         from archflow.state.state_record import Parameter, StateRecordEditKind, StateRecordOperator, apply_state_record_operator
-        from spine_fixture import shared_bound_state
+        from tests.support.spine_fixture import shared_bound_state
 
         record = authored_record()
         panel = replace(next(e for e in record.entities if e.entity_id == "wall-south"), fields={
@@ -709,7 +709,7 @@ class PrismElevationTests(unittest.TestCase):
 class PlanarSurfaceProposalTests(ProducerFixture):
     async def test_surface_passes_the_real_proposal_contract_and_datum_compiler(self) -> None:
         from monkeyarch.application.geometry_proposal import proposal_authoring_output
-        from spine_fixture import ScriptedProvider
+        from tests.support.spine_fixture import ScriptedProvider
 
         context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=_levels()), published={}, frame_id="world")
         row = ElementRow("surface", "building", "planar-surface", {"base": {"level": PN}},
@@ -1239,7 +1239,7 @@ class BoundRowTests(unittest.TestCase):
 class BoundProfileContractTests(unittest.TestCase):
     def _record(self, producer):
         from archflow.state.state_record import Parameter
-        from spine_fixture import shared_bound_state
+        from tests.support.spine_fixture import shared_bound_state
 
         record = authored_record()
         profile = [[0, 0], ["@width", 0], ["@width", "@half_width"], [0, "@half_width"]]
@@ -1304,7 +1304,7 @@ class StatedRowsThroughTheProposalTests(ProducerFixture):
 
     def _accepted(self):
         from monkeyarch.application.geometry_proposal import proposal_authoring_output
-        from spine_fixture import ScriptedProvider
+        from tests.support.spine_fixture import ScriptedProvider
 
         context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=_levels()), published={}, frame_id="world")
         produced = produce_rows((_wedge_row(), _shell_row()), context)

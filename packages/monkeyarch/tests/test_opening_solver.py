@@ -175,7 +175,7 @@ class ContractTests(unittest.TestCase):
         from monkeycad.backends.occt.measure import measure_shape
         from monkeyarch.compilation.geometry import compile_geometry_program
         from archflow.state.geometry_program import InterfaceDatum, InterfaceDatumKind, LengthUnit
-        from spine_fixture import COMMITMENT, _only, _proposal, _state
+        from tests.support.spine_fixture import COMMITMENT, _only, _proposal, _state
 
         for leaf_count in (1, 2):
             for count in (1, 3):

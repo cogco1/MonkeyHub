@@ -190,13 +190,19 @@ class WorkflowBoundaryTests(unittest.TestCase):
         suites = sorted(path.relative_to(root).as_posix() for path in (root / "packages").glob("*/tests"))
         self.assertIn("packages/monkeyarch/tests", suites)
         for suite in suites:
-            for target in ("tests.support", "labs.spatial_observation.fixture"):
+            for target in ("tests.integration.support", "labs.spatial_observation.fixture"):
                 with self.subTest(suite=suite, target=target):
                     findings = tuple(check_imports(f"{suite}/test_example.py",
                                                    _index_tree(ast.parse(f"import {target}")), self.policy))
                     self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
         findings = tuple(check_imports("packages/monkeydiagram/tests/test_example.py", _index_tree(ast.parse(
             "from monkeydiagram.rendering.svg import drawing_svg\nfrom monkeycad.backends.occt import kernel"
+        )), self.policy))
+        self.assertEqual((), findings)
+        # MonkeyArch's tests may import the shared test support, which holds the spine fixture they
+        # share with the integration suite (#534).
+        findings = tuple(check_imports("packages/monkeyarch/tests/test_example.py", _index_tree(ast.parse(
+            "from tests.support.spine_fixture import COMMITMENT, _proposal, _state"
         )), self.policy))
         self.assertEqual((), findings)
 

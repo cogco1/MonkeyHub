@@ -37,7 +37,7 @@ from monkeyarch.application.geometry_proposal import GeometryProposalStatus
 from monkeyarch.domain.reference_resolver import ReferenceContext
 from monkeyarch.compilation.geometry import compile_geometry_program
 from portico_fixture import BASIS, PN, _grids, _levels
-from spine_fixture import COMMITMENT, ProducerFixture, _only, _proposal, _state, authored_record
+from tests.support.spine_fixture import COMMITMENT, ProducerFixture, _only, _proposal, _state, authored_record
 
 LONG, DEEP = 5.0, 0.25
 NOT_A_RECTANGLE = "the block's footprint is not a rectangle"
@@ -368,7 +368,7 @@ class OpeningInterfaceTests(ProducerFixture):
 
     async def _produced_with(self, interface_refs: tuple[str, ...]):
         from monkeyarch.application.geometry_proposal import proposal_authoring_output
-        from spine_fixture import ScriptedProvider
+        from tests.support.spine_fixture import ScriptedProvider
 
         [assembly] = self.proposal.assemblies
         proposal = replace(self.proposal, assemblies=(replace(assembly, interface_refs=interface_refs),))
@@ -382,7 +382,7 @@ class OpeningInterfaceTests(ProducerFixture):
         self.assertIs(status, GeometryProposalStatus.ACCEPTED, issues)
 
     async def test_a_declared_interface_is_delivered(self) -> None:
-        from spine_fixture import INTERFACE_REF
+        from tests.support.spine_fixture import INTERFACE_REF
 
         status, issues = await self._produced_with((INTERFACE_REF,))
         self.assertIs(status, GeometryProposalStatus.ACCEPTED, issues)
