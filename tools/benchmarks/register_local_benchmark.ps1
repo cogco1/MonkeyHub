@@ -119,6 +119,8 @@ if (-not $DevRoot) {
     $DevRoot = ($paths.Output | ConvertFrom-Json).workspaceRoot
 }
 if (-not $DevRoot -or -not [IO.Path]::IsPathRooted($DevRoot)) { throw 'No development root; pass -DevRoot.' }
+# A trailing backslash would escape the closing quote of the task's argument.
+$DevRoot = $DevRoot.TrimEnd('\', '/')
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $escape = { param([string]$value) [Security.SecurityElement]::Escape($value) }

@@ -1369,6 +1369,7 @@ def blocking_processes(processes: Iterable[Mapping[str, Any]], roots: Iterable[P
             located.setdefault(place, []).append(f"{name} {pid}")
         elif name.casefold().startswith("python") and any(marker in command for marker in HUB_COMMANDS):
             elsewhere.append(f"{name} {pid}")
+
     def count(rows: list[str]) -> str:
         return f"{len(rows)} process{'es run' if len(rows) > 1 else ' runs'}"
 
