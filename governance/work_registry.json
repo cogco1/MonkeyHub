@@ -1,4 +1,26 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-540",
+      "status": "active",
+      "branch": "codex/540-render-fixes",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-540-render-fixes",
+      "base_ref": "105b410a9be2345807e562fa986ab12354a7fdae",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "monkeycad.blender",
+        "project_runtime.candidate",
+        "project_runtime.render"
+      ],
+      "write_scope": [
+        "packages/monkeycad/src/monkeycad/backends/blender/backend.py",
+        "services/project-runtime/src/project_runtime/application/rendering.py",
+        "services/project-runtime/src/project_runtime/status.py"
+      ],
+      "depends_on": []
+    }
+  ]
 }
