@@ -17,6 +17,7 @@
             "hub.shell"
           ],
           "write_scope": [
+            "apps/monkeyhub/README.md",
             "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
             "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
             "apps/monkeyhub/api/tests/test_chat_admission.py",
