@@ -123,7 +123,7 @@ tolerate it.
 | GET | `/api/working-draft/revision` | `{projectId, revisionSha256}` of the working position alone, for polling whether the head may have moved; no local draft and no project guard | reads the working position | provisional |
 | PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words | **writes the working position + that run's review** | provisional |
 | GET | `/api/representation-status?runId=&assetSha256=&revisionRef=&pageIndex=` | one exact registered page's representation status (§4.1) in the projection's own words: `{projectId, state, reason}`, `state` one of `current`, `outdated`, `frozen`, `unavailable`. A page that cannot be read, or whose replacements loop, is `unavailable`; nothing is stored | reads the working position + shared + design refs | provisional |
-| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged or started | reads the working position + shared + design refs + the admissions review + server memory | provisional |
+| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, the head's `line` of steps oldest first with their retained `label`, `request`, `summary` and `stageRef` (#575), other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), a draft the line superseded as `relation: superseded` with `supersededBy`, each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged, started, moved or deleted | reads the working position + shared + design refs + the admissions review + each result's Continue events + server memory | provisional |
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
 | POST | `/api/drawings/section-perspectives` → 201 | exact-model section perspective document: `section` (`{line, keep}` or `{origin, normal}`) cuts the retained STEP, the kept side is drawn in perspective with the section plane as picture plane (true to scale at `scaleDenominator`), the cut in poché; optional `camera` (`{eye, target, up?, fovDeg?}` or the default one-point `{eyeHeight?, fovDeg?}`), `depth`, `hiddenObjectIds`; `cutLineMm`, `visibleLineMm`, `hatchSpacingMm` and, validated and stored as a cut plan's, `hatch.byMaterial.<material>` (`{spacingMm 0.5–20, angleDeg 0–<180, poche}`, stored complete: spacing defaults to this request's `hatchSpacingMm`, angle 45, poché false) and `beyond.fade` (0–1), so the cut takes the material hatch/poché and the fade greys what lies beyond it; an empty `byMaterial` or a zero fade is the request without them; the view recipe records the request, plane and resolved camera; refusals are named (`SECTION_PLANE_MISSES_MODEL`, `SECTION_EYE_ON_KEPT_SIDE`, …) | writes shared drawing artifacts and document registration | provisional |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
@@ -1440,6 +1440,22 @@ chosen version (`follow: "frozen"` in its recipe) stays on that version until it
 candidate deltas and the job queue; its `reconcile` is the StateRecord combine rule applied as a
 dry run from the nearest shared source. Owner attribution belongs to the Hub journal, not to
 project records.
+
+The graph also names the head's own line (#575): `line` is its first-parent chain, oldest first and
+ending at the head, so the inputs a combine merged stay off it. Each step carries `runId`,
+`baseRunId` (null for a run made from no other; the first step names one only when the line was cut
+short at 64 runs), `label` (a saved version's label, else its accepted Stage's, else its admitted
+result's), `request` (the admission's `rawLanguage`, else the sentence an intent model compiled into
+the run), `summary` (an admitted result's own), `stageRef` and `updatedAt` from the working
+position. A retained result whose nearest shared source with the head is a step the line moved on
+from, whose comparison with the head conflicts (it changed what the line changed since), and which
+nobody took further is a draft that line superseded: `relation: superseded`, with `supersededBy`
+naming the step made from that source. Nobody took it further when neither it nor any retained
+result built on it was continued (no `design.continued` event names it) or admitted; an admitted
+option and work that combines with the head stay `diverged`. A superseded draft keeps its `writes`,
+`reconcile` and `conflicts` for whoever asks; the Design Tree folds it where the line moved on
+instead of showing it as a line with conflicts. Nothing is moved, deleted or rewritten: what a later
+cleanup may do with a superseded draft is not decided here.
 
 The position's `revisionSha256` (from `GET /api/working-draft`, `/api/working-draft/revision` and
 `/api/working-source`) is the compare-and-swap token that `PUT /api/working-draft`, `POST

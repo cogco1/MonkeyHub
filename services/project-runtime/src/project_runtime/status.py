@@ -8,8 +8,10 @@ interrupted operation, never permission to submit the modification again.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Any, Mapping
 
-from archflow.project.record_kinds import STUDIO_CANDIDATE_WORKFLOW, STUDIO_MODEL_ASSET
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import AUDIT_EVENT, INTENT_COMPILATION, STUDIO_CANDIDATE_WORKFLOW, STUDIO_MODEL_ASSET
 from archflow.project.refs import ProjectVersionRef, record_ref_from_uri, require_identifier
 from archflow.project.repository import ProjectRepositoryError
 from archflow.state.design_portfolio import DesignBranch
@@ -19,17 +21,22 @@ from .application.artifacts import ModelSource, list_artifacts, require_complete
 from .binding import ProjectBinding, ReferenceRun, record_kind
 from .application.candidate import _receipt
 from .application.design_history import (
+    ADMITTED,
+    AdmissionStore,
     StageView,
     _exact_runner,
     _retained_acceptance_attribution,
     admission_index,
+    admission_store,
     read_acceptance,
 )
 from .jobs import FAILED, QUEUED, RUNNING, RUN, Job, JobRegistry
 from .application.representation_dependencies import (
     CURRENT, FROZEN, OUTDATED, UNAVAILABLE, ReplacementCycle, RepresentationReads, representation_status,
 )
-from .application.working_draft import WorkingHead, lineage_of, read_working_draft, resolve_working_source
+from .application.working_draft import (
+    DESIGN_CONTINUED, WorkingHead, _parents, lineage_of, read_working_draft, resolve_working_source,
+)
 from .errors import StudioError
 
 
@@ -211,6 +218,9 @@ def inspect_runtime(
 
 _RESULT_LIMIT = 50
 _OVERLAP = "candidate changes overlap or depend on each other: "
+# As far as a lineage is walked (working_draft's limit).
+_LINE_LIMIT = 64
+_UNREADABLE = (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError)
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,7 +236,7 @@ class WorktreeLine:
     branch_id: str | None
     # current | accepted | queued | running | interrupted | ready
     status: str
-    # head | ahead | behind | diverged | separate
+    # head | ahead | behind | diverged | superseded | separate
     relation: str
     reads: tuple[str, ...] = ()
     writes: tuple[str, ...] = ()
@@ -238,6 +248,30 @@ class WorktreeLine:
     # admitted | rejected | superseded | none, from retained admission facts (#294)
     admission: str = "none"
     study_id: str | None = None
+    # For a superseded draft: the step of the head's line that replaced it (#575).
+    superseded_by: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LineStep:
+    """One run of the Working Head's line, in the words its retained facts give it (#575).
+
+    The line is the head's first-parent chain: each step names the run it was
+    made from, so the inputs a combine merged stay off it. ``label`` is the
+    name a person gave the run (a saved version's label), else its accepted
+    Stage's, else its admitted result's; ``request`` is the words that asked
+    for it, when they were retained (its admission's ``rawLanguage``, else the
+    sentence an intent model compiled into it); ``summary`` is an admitted
+    result's own account of the change.
+    """
+
+    run_id: str
+    base_run_id: str | None
+    label: str | None = None
+    request: str | None = None
+    summary: str | None = None
+    stage_ref: str | None = None
+    updated_at: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,6 +294,8 @@ class WorktreeGraph:
     lines: tuple[WorktreeLine, ...]
     representations: tuple[RepresentationState, ...]
     warnings: tuple[str, ...]
+    # The head's line, oldest first and ending at the head (#575).
+    line: tuple[LineStep, ...] = ()
 
 
 def _exact_record(binding: ProjectBinding, run_id: str, cache: dict[str, StateRecord]) -> StateRecord:
@@ -317,6 +353,118 @@ def _relation(lineage: tuple[str, ...], head: WorkingHead | None) -> tuple[str, 
     return ("diverged", ancestor) if ancestor is not None else ("separate", None)
 
 
+# ---- The head's line and the drafts it left behind (#575) ---------------------
+#
+# The person sees one line: the runs the Working Head was made through, each
+# named by what its retained facts say about it. A retained result built where
+# the line later moved on through another step, which changes what the line
+# changed since (its comparison with the head conflicts), which nobody
+# continued or admitted, and on which nothing that somebody continued or
+# admitted was built, is a draft that step superseded. It is listed as
+# superseded rather than as a diverged line; nothing about it is moved or
+# deleted.
+
+# Retained records never change, so each run's compiled request is read once per process.
+_REQUESTS: dict[tuple[str, str], str | None] = {}
+# Continue events are never removed: a run once continued stays continued.
+_CONTINUED: set[tuple[str, str]] = set()
+_MEMO_LIMIT = 4096
+
+
+def _compiled_request(binding: ProjectBinding, run_id: str) -> str | None:
+    """The sentence an intent model compiled into this run, when its run retained one."""
+
+    key = (str(binding.repository.layout.root), run_id)
+    if key in _REQUESTS:
+        return _REQUESTS[key]
+    try:
+        payloads = [binding.repository.load_json(ref) for ref in binding.record_refs(run_id, kind=INTENT_COMPILATION)]
+    except _UNREADABLE:
+        return None
+    words = next((payload["utterance"].strip() for payload in payloads
+                  if isinstance(payload.get("utterance"), str) and payload["utterance"].strip()), None)
+    if len(_REQUESTS) >= _MEMO_LIMIT:
+        _REQUESTS.clear()
+    _REQUESTS[key] = words
+    return words
+
+
+def _admitted_words(store: AdmissionStore, run_id: str) -> tuple[str | None, str | None, str | None]:
+    """An admitted result's label and summary, and the words its loop was asked in."""
+
+    claims = store.claims.get(run_id, ())
+    # A run that live records compete for is left out of every read.
+    if len(claims) != 1 or claims[0].superseded or claims[0].outcome != ADMITTED:
+        return None, None, None
+    row: Mapping[str, Any] = next((row for row in claims[0].record.results if row["runId"] == run_id), {})
+    return row.get("label"), row.get("summary"), claims[0].record.payload.get("rawLanguage")
+
+
+def _head_line(binding: ProjectBinding, head: WorkingHead | None, value: dict,
+               warnings: list[str]) -> tuple[LineStep, ...]:
+    """The head's first-parent chain, oldest first, each step in its retained words."""
+
+    if head is None:
+        return ()
+    runs = [head.run_id]
+    bases: dict[str, str | None] = {}
+    for run_id in runs:
+        try:
+            parents = _parents(binding, run_id)
+        except _UNREADABLE:
+            parents = ()
+        bases[run_id] = parents[0] if parents else None
+        if parents and parents[0] not in runs and len(runs) < _LINE_LIMIT:
+            runs.append(parents[0])
+    stages: dict[str, str] = {}
+    labels: dict[str, str] = {}
+    for branch_id in sorted(binding.repository.read_design_branches()):
+        try:
+            for ref, stage in binding.design_history(branch_id):
+                if stage.candidate_id not in stages:
+                    stages[stage.candidate_id], labels[stage.candidate_id] = ref.uri, stage.label
+        except _UNREADABLE as exc:
+            warnings.append(f"Branch {branch_id} could not be read for the line: {getattr(exc, 'detail', exc)}")
+    store = admission_store(binding)
+    steps = []
+    for run_id in reversed(runs):
+        entry = value["runs"].get(run_id) or {}
+        label, summary, words = _admitted_words(store, run_id)
+        steps.append(LineStep(
+            run_id=run_id, base_run_id=bases[run_id],
+            label=entry.get("label") or labels.get(run_id) or label,
+            request=words or _compiled_request(binding, run_id), summary=summary,
+            stage_ref=stages.get(run_id), updated_at=entry.get("updatedAt"),
+        ))
+    return tuple(steps)
+
+
+def _was_continued(binding: ProjectBinding, run_id: str, warnings: list[str]) -> bool:
+    """Whether the Working Head ever stood on this run, as the Continue events beside it say.
+
+    A run whose events cannot be read counts as continued: it is compared as
+    a diverged line, as it was before anything was called superseded.
+    """
+
+    key = (str(binding.repository.layout.root), run_id)
+    if key in _CONTINUED:
+        return True
+    try:
+        refs = binding.repository.list_json(
+            run=binding.load_run(run_id), record_kind=AUDIT_EVENT,
+            destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run_id))
+        continued = any(payload.get("action") == DESIGN_CONTINUED and payload.get("targetRunId") == run_id
+                        for payload in map(binding.repository.load_json, refs))
+    except _UNREADABLE as exc:
+        warnings.append(f"Working result {run_id}'s Continue events could not be read: {getattr(exc, 'detail', exc)}")
+        return True
+    if continued:
+        if len(_CONTINUED) >= _MEMO_LIMIT:
+            _CONTINUED.clear()
+        _CONTINUED.add(key)
+    return continued
+
+
 def _running_lines(binding: ProjectBinding, active: dict, jobs: JobRegistry | None,
                    head: WorkingHead | None) -> list[WorktreeLine]:
     live = {job.candidate_id: job for job in (() if jobs is None else jobs.list()) if job.status in (QUEUED, RUNNING)}
@@ -352,15 +500,21 @@ def _running_lines(binding: ProjectBinding, active: dict, jobs: JobRegistry | No
     return lines
 
 
-def _result_lines(binding: ProjectBinding, value: dict, head: WorkingHead | None,
-                  warnings: list[str]) -> list[WorktreeLine]:
-    """Retained working results that are not part of the head's line."""
+def _result_lines(binding: ProjectBinding, value: dict, head: WorkingHead | None, line: tuple[LineStep, ...],
+                  admissions: Mapping[str, tuple[str, str | None]], warnings: list[str]) -> list[WorktreeLine]:
+    """Retained working results that are not part of the head's line.
+
+    A diverged result that changes what the head's line changed after it
+    moved on from the result's source, and that nobody took further, is a
+    draft that line's step superseded (#575). It keeps the comparison that
+    says so, for whoever asks; clients fold it rather than show its conflicts.
+    """
 
     draft = read_working_draft(binding)
     entries = sorted([*draft.recovery, *draft.saved], key=lambda row: row.updatedAt, reverse=True)
     skip = set(value["active"]) | ({head.run_id} if head is not None else set())
-    cache: dict[str, StateRecord] = {}
-    lines: list[WorktreeLine] = []
+    known: dict[str, tuple[str, ...]] = {}
+    found = []
     seen: set[str] = set()
     for entry in entries:
         if entry.runId in skip or entry.runId in seen:
@@ -369,43 +523,77 @@ def _result_lines(binding: ProjectBinding, value: dict, head: WorkingHead | None
         # A result the head already contains is its history, not another line.
         if head is not None and entry.runId in head.lineage:
             continue
-        if len(lines) == _RESULT_LIMIT:
+        if len(found) == _RESULT_LIMIT:
             warnings.append("More retained working results exist than this view lists.")
             break
         try:
             delta = binding.candidate_delta(entry.runId)
             if delta is None:
                 continue
-            lineage = lineage_of(binding, entry.runId)
+            lineage = lineage_of(binding, entry.runId, known=known)
             relation, ancestor = _relation(lineage, head)
-            if relation == "included":
-                continue
-            writes, reconcile, conflicts, detail = (), "unknown", (), None
+            if relation != "included":
+                found.append((entry, delta, lineage, relation, ancestor))
+        except (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError) as exc:
+            warnings.append(f"Working result {entry.runId} could not be compared: {getattr(exc, 'detail', exc)}")
+    # Where the line moved on: each of its runs, and the step made from it.
+    moved_on = {step.base_run_id: step.run_id for step in line if step.base_run_id is not None}
+    # A result somebody took further keeps its whole line: what was continued or admitted, and all it was built on.
+    kept: set[str] = set()
+    for entry, _delta, lineage, relation, _ancestor in found:
+        if relation == "diverged" and ((admissions.get(entry.runId) or ("none",))[0] == ADMITTED
+                                       or _was_continued(binding, entry.runId, warnings)):
+            kept.update(lineage)
+    if any(relation == "diverged" and ancestor in moved_on and entry.runId not in kept
+           for entry, _delta, _lineage, relation, ancestor in found):
+        # An admitted Candidate this view does not list (a Stage's run, an older result) keeps its line too.
+        listed = {entry.runId for entry, *_rest in found}
+        for run_id, (outcome, _study) in admissions.items():
+            if outcome == ADMITTED and run_id not in listed and run_id not in kept and run_id not in head.lineage:
+                kept.update(lineage_of(binding, run_id, known=known))
+    cache: dict[str, StateRecord] = {}
+    lines: list[WorktreeLine] = []
+    for entry, delta, lineage, relation, ancestor in found:
+        try:
+            writes, reconcile, conflicts, detail, superseded_by = (), "unknown", (), None, None
             if relation == "ahead":
                 writes = changed_refs(_exact_record(binding, head.run_id, cache), _exact_record(binding, entry.runId, cache))
                 reconcile, detail = "none", "This result already continues the current head."
             elif relation == "diverged":
                 writes, reconcile, conflicts, detail = _reconcile(binding, ancestor, head.run_id, entry.runId, cache)
+                # Another attempt at what the line went on to change, which nobody took further. Work that
+                # combines with the head replaced nothing and stays a diverged line. The comparison stays.
+                if reconcile == "conflict" and ancestor in moved_on and entry.runId not in kept:
+                    relation, superseded_by = "superseded", moved_on[ancestor]
+                    detail = (f"Built from {ancestor}, where the line moved on through {superseded_by} and changed what "
+                              "it changes; nobody continued or admitted it, or anything built on it.")
             lines.append(WorktreeLine(
                 line_id=f"result:{entry.runId}", kind="result", run_id=entry.runId, job_id=None, label=entry.label,
                 base_run_id=delta["source_run_ref"]["run_id"], base_stage_ref=entry.sourceStageRef,
                 branch_id=entry.branchId, status="ready", relation=relation, writes=tuple(writes),
                 reconcile=reconcile, conflicts=conflicts, detail=detail, updated_at=entry.updatedAt,
+                superseded_by=superseded_by,
             ))
         except (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError) as exc:
             warnings.append(f"Working result {entry.runId} could not be compared: {getattr(exc, 'detail', exc)}")
     return lines
 
 
-def _with_admissions(binding: ProjectBinding, lines: list[WorktreeLine], warnings: list[str]) -> list[WorktreeLine]:
-    """Each finished line's retained verdict and Study; running work has none yet."""
+def _admissions(binding: ProjectBinding, warnings: list[str]) -> dict[str, tuple[str, str | None]]:
+    """Each run's retained admission and Study (#294), read once for the whole graph."""
 
     try:
         index, found = admission_index(binding)
     except (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError) as exc:
         warnings.append(f"Candidate admissions could not be read: {getattr(exc, 'detail', exc)}")
-        return lines
+        return {}
     warnings.extend(warning for warning in found if warning not in warnings)
+    return index
+
+
+def _with_admissions(lines: list[WorktreeLine], index: Mapping[str, tuple[str, str | None]]) -> list[WorktreeLine]:
+    """Each finished line's retained verdict and Study; running work has none yet."""
+
     return [
         replace(line, admission=index[line.run_id][0], study_id=index[line.run_id][1])
         if line.kind != "running" and line.run_id in index else line
@@ -461,11 +649,13 @@ def _representations(binding: ProjectBinding, render_jobs, warnings: list[str]) 
 
 
 def worktree_graph(binding: ProjectBinding, *, jobs: JobRegistry | None = None, render_jobs=None) -> WorktreeGraph:
-    """Derive the project's current head, active work and other lines without writing."""
+    """Derive the project's current head, its line, active work and other lines without writing."""
 
     resolved = resolve_working_source(binding)
     head, warnings = resolved.head, list(resolved.warnings)
     value, _ = binding.repository.read_working_draft()
+    admissions = _admissions(binding, warnings)
+    line = _head_line(binding, head, value, warnings)
     lines: list[WorktreeLine] = []
     if head is not None:
         lines.append(WorktreeLine(
@@ -489,8 +679,8 @@ def worktree_graph(binding: ProjectBinding, *, jobs: JobRegistry | None = None, 
             relation="separate",
         ))
     lines.extend(_running_lines(binding, value["active"], jobs, head))
-    lines.extend(_result_lines(binding, value, head, warnings))
-    lines = _with_admissions(binding, lines, warnings)
+    lines.extend(_result_lines(binding, value, head, line, admissions, warnings))
+    lines = _with_admissions(lines, admissions)
     representations = _representations(binding, render_jobs, warnings)
     return WorktreeGraph(binding.project_id, head, resolved.revision_sha256, tuple(lines),
-                         tuple(representations), tuple(warnings))
+                         tuple(representations), tuple(warnings), line)

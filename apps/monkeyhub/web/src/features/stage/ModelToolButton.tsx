@@ -18,6 +18,7 @@ const paths = {
   measure: "m3 15 12-12 6 6L9 21 3 15Zm3-3 2 2m1-5 3 3m0-6 2 2m1-5 3 3",
   annotate: "m4 16 12-12 4 4L8 20H4v-4Zm9-9 4 4M4 16l4 4",
   erase: "m4 13 9-9 7 7-9 9H8l-4-4v-3Zm5-5 7 7M11 20h9",
+  clear: "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6m4-6v6",
   fit: "M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5M8 8h8v8H8Z",
   front: "M5 20V5h14v15M3 20h18M9 20v-7h6v7M9 9h1m4 0h1",
   more: "M5 12a1 1 0 1 1-2 0 1 1 0 1 1 2 0Zm8 0a1 1 0 1 1-2 0 1 1 0 1 1 2 0Zm8 0a1 1 0 1 1-2 0 1 1 0 1 1 2 0Z",

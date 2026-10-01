@@ -11,7 +11,9 @@
  * Colours come from a palette the canvas reads from the Hub's tokens (#337), so
  * the tree follows the theme and interface style and is never inverted.
  * Every hit target is produced with the element it stands for, because view
- * mode leaves clicks to the host (`useScenePointer` + `topmostAt`).
+ * mode leaves clicks to the host (`useScenePointer` + `topmostAt`). The two
+ * folds (#575), Current's earlier steps and its line's superseded drafts, are
+ * controls: their hit opens them rather than selecting a node.
  */
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { SceneBox } from "../canvas/sceneHit";
@@ -90,8 +92,10 @@ export const LIGHT_TREE_PALETTE: TreePalette = {
 
 export interface SceneHit extends SceneBox {
   readonly node: string;
-  readonly action: "select" | "accept" | "zoom";
+  /** `expand` opens a fold (#575): Current's earlier steps, or the drafts its line superseded. */
+  readonly action: "select" | "accept" | "zoom" | "expand";
   readonly zoomTo?: Box;
+  readonly expand?: "steps" | "drafts";
 }
 
 export interface TreeScene {
@@ -289,13 +293,16 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
     }
     const diameter = Math.min(16 * k, 72);
     const box = { x: cx - diameter / 2, y: cy - diameter / 2, width: diameter, height: diameter };
+    // #575: a fold is an open ring on the trunk, or a quiet one where drafts were folded; a click opens it.
+    const expand = node.kind === "fold" ? "steps" as const : node.kind === "drafts" ? "drafts" as const : null;
     const style: Style = node.kind === "pending"
       ? { strokeColor: RUNNING, strokeStyle: "dashed", strokeWidth: 2 * Math.min(k, 6), opacity }
-      : { backgroundColor: placed.role === "trunk" ? ACCENT : INK_2, strokeColor: placed.role === "trunk" ? ACCENT : INK_2, opacity };
+      : expand ? { backgroundColor: PAPER, strokeColor: expand === "steps" ? ACCENT : MUTED, strokeStyle: "dashed", strokeWidth: 2 * Math.min(k, 6), opacity }
+        : { backgroundColor: placed.role === "trunk" ? ACCENT : INK_2, strokeColor: placed.role === "trunk" ? ACCENT : INK_2, opacity };
     ellipse(`${node.id}:dot`, box, style, data("dot", { node: node.id }));
     if (options.selected === node.id) ring(node.id, box, 4 * k);
     const pad = Math.max(diameter, 24 * k);
-    hits.push({ x: cx - pad / 2, y: cy - pad / 2, width: pad, height: pad, node: node.id, action: "select" });
+    hits.push({ x: cx - pad / 2, y: cy - pad / 2, width: pad, height: pad, node: node.id, ...(expand ? { action: "expand", expand } : { action: "select" }) });
   }
 
   function drawNear(node: TreeNode, placed: PlacedNode) {
@@ -337,7 +344,11 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
         const slot = { x: card.x + card.width - 12 - PICTURE.current, y: card.y + 9, width: PICTURE.current, height: box.y - 6 - (card.y + 9) };
         picture(node.id, slot, preview, 100);
       }
-      text(`${node.id}:summary`, card.x + 14, card.y + 12 + title * LINE_HEIGHT, clip(words.currentAt, sub, card.width - 28 - aside), sub, INK, data("summary", { node: node.id }));
+      // Where Current stands takes a second line when the card has room above its button: a long version name keeps its end.
+      const summaryTop = card.y + 12 + title * LINE_HEIGHT;
+      const lines = Math.max(1, Math.min(2, Math.floor((box.y - 4 - summaryTop) / (sub * LINE_HEIGHT))));
+      text(`${node.id}:summary`, card.x + 14, summaryTop, wrap(words.currentAt, sub, card.width - 28 - aside, lines).join("\n"), sub, INK,
+        data("summary", { node: node.id }));
       const allowed = tree.accept.allowed;
       rect(`${node.id}:accept`, box, allowed ? { backgroundColor: ACCENT, strokeColor: ACCENT, strokeWidth: 1.5 } : { strokeColor: MUTED, strokeStyle: "dashed", strokeWidth: 1.5 },
         data("accept", { node: node.id }));
@@ -348,7 +359,24 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
       hits.push({ ...box, node: node.id, action: "accept" });
       return;
     }
-    // An option or a running line: a small card with its status bar, letter and name.
+    if (node.kind === "fold" || node.kind === "drafts") {
+      // #575: a fold is a control, not a run: a dashed card naming what it holds, which a click opens.
+      const steps = node.kind === "fold";
+      rect(`${node.id}:card`, card, { backgroundColor: PAPER, strokeColor: steps ? ACCENT : TWIG, strokeStyle: "dashed", strokeWidth: steps ? 2 : 1.5,
+        opacity }, data("card", { node: node.id }));
+      const nameSize = Math.min(13 * s, 16), small = Math.min(11 * s, 13), width = card.width - 24, note = words.status(node);
+      const rows: [string, number, string, "name" | "status"][] = [[clip(words.name(node), nameSize, width), nameSize, steps ? ACCENT : INK_2, "name"]];
+      if (note && (nameSize + small) * LINE_HEIGHT <= card.height - 12) rows.push([clip(note, small, width), small, FAINT, "status"]);
+      let y = placed.y - rows.reduce((sum, [, size]) => sum + size * LINE_HEIGHT, 0) / 2;
+      for (const [value, size, color, role] of rows) {
+        text(`${node.id}:${role}`, card.x + 12, y, value, size, color, data(role, { node: node.id }), opacity);
+        y += size * LINE_HEIGHT;
+      }
+      if (selected) ring(node.id, card, 5);
+      hits.push({ ...card, node: node.id, action: "expand", expand: steps ? "steps" : "drafts" });
+      return;
+    }
+    // An option, a step of Current's line, a superseded draft or a running line: a small card with its status bar, letter and name.
     const pending = node.kind === "pending";
     rect(`${node.id}:card`, card, pending
       ? { strokeColor: RUNNING, strokeStyle: "dotted", strokeWidth: 1.5, opacity }
@@ -387,7 +415,8 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
     if (close) {
       // A running line's summary is its progress detail.
       if (node.summary && !slot) rows.push({ role: "summary", value: clip(node.summary, small, width), size: small, color: INK_2 });
-      if (!pending) rows.push({ role: "status", value: clip(words.status(node), small, width), size: small, color: FAINT });
+      // A step no words name is called by its place on the line, which its status says too: it is said once.
+      if (!pending && words.status(node) !== words.name(node)) rows.push({ role: "status", value: clip(words.status(node), small, width), size: small, color: FAINT });
     }
     const height = rows.reduce((sum, row) => sum + row.size * LINE_HEIGHT, 0);
     let y = placed.y - height / 2;

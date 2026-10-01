@@ -66,7 +66,7 @@ async function harness(t: TestContext) {
   const draw = (shown: typeof card) => renderToStaticMarkup(createElement(UserPreferencesProvider as (props: { appearance: unknown; children: ReactNode }) => ReactNode,
     { appearance: { language: "en", theme: "light", fontScale: 1 } },
     createElement(ComponentInfoPanel, { subject: { kind: "card", card: shown }, onClose() {} })));
-  return { info, card, draw, en };
+  return { info, card, draw, en, ready };
 }
 
 test("each item shows its key information and folds its notes, links and sources", async (t) => {
@@ -113,4 +113,20 @@ test("a block without a heading names its fold, and Copy keeps what is folded", 
   for (const folded of ["building part", "Allowances only, not quotes.", "https://example.com/stock-a", "Shared stock; no cost per piece is allocated."]) {
     assert.ok(text.includes(folded), `Copy keeps ${folded}`);
   }
+});
+
+test("an inherited card shows its data, flags a changed shape once and names where the data was written", async (t) => {
+  const { info, draw, ready } = await harness(t);
+  const card = info.buildComponentCard({ componentId: "post-1", elementId: "post-1-body", modelLabel: "Post 1", pickMatchesShown: true,
+    shown: { projectId: "fixture-project", runId: "run-c", stateDigest: "c".repeat(64) }, board: ready,
+    lineage: { runId: "run-c", ancestors: ["run-b"], states: new Map() },
+    changes: new Map([["run-b", new Map([["post-1", true]])]]) }, ((status: string) => status) as never);
+  const markup = draw(card);
+  const seen = visibleText(markup);
+
+  assert.equal(card.state, "ready");
+  assert.ok(seen.includes("Written for version B; this component&#x27;s shape has changed since"), "the flag shows above the data");
+  assert.ok(seen.includes("timber") && seen.includes("Example Timber"), "the inherited data shows");
+  assert.equal(markup.match(/data-card-state="reshaped"/g)?.length, 1);
+  assert.match(markup, /<li data-inherited="true"><strong>Basics<\/strong>[^]*?inherited from version B<\/li>/);
 });
