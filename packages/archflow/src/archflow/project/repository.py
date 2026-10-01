@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import errno
 import functools
 import hashlib
 import json
@@ -13,7 +14,7 @@ import shutil
 import threading
 import tempfile
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
@@ -30,7 +31,7 @@ else:  # pragma: no cover - exercised only on POSIX hosts
     import fcntl
 
 from archflow.project.digests import project_state_sha256
-from archflow.project.layout import AUTHORED_RECORD_PATH, ProjectLayout
+from archflow.project.layout import AUTHORED_RECORD_PATH, ProjectLayout, RunLayout
 from archflow.project.manifest import ProjectManifest, ProjectManifestError
 from archflow.project.memo import ContentMemo, settled
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -885,6 +886,164 @@ def _replace_atomic(path: Path, data: bytes) -> None:
     finally:
         temporary.unlink(missing_ok=True)
     _note_write(path)
+
+
+# ---- publishing a run whole (#327)
+#
+# A reader lists a project's runs by their directories and then loads each
+# one's ``run.json``. So a new run's directory must never be visible before
+# that file and the run's areas are in it. Everything a new run starts with -
+# its manifest and record areas, or the files a transfer brings for it - is
+# staged in a directory beside the runs named ``.<uuid>.tmp``, and that
+# directory is renamed to ``runs/<run_id>`` in one step. No run id begins with
+# a dot, so a staging directory, still in flight or left behind by an
+# interrupted writer, is never listed as a run (``run_ids``). Only a run that
+# is not there yet is published so; adding to an existing run stays one
+# immutable file at a time. A run whose staging directory something outside
+# this process keeps busy past every retry is completed in place, as every run
+# was before, rather than refused.
+_PUBLISH_RETRY_ATTEMPTS = 400
+_PUBLISH_RETRY_SECONDS = 0.005
+
+
+class _DirectoryBusy(ProjectRepositoryError):
+    """A handle below a directory outlasted every retry of its rename."""
+
+
+def _run_manifest_bytes(run: RunRef) -> bytes:
+    """The bytes of a run's ``run.json``: its identity and exact base."""
+
+    return _json_bytes({
+        "schema": "ProjectRun@1",
+        "project_id": run.project_id,
+        "run_id": run.run_id,
+        "base": run.base.to_dict(),
+    })
+
+
+def _run_areas(run_layout: RunLayout) -> tuple[Path, ...]:
+    """The record areas every run is created with."""
+
+    return (
+        run_layout.records,
+        run_layout.branches,
+        run_layout.candidates,
+        run_layout.reviews,
+        run_layout.workspaces,
+        run_layout.recovery,
+    )
+
+
+def _complete_run_in_place(run_layout: RunLayout, manifest: bytes) -> None:
+    """Install a run's manifest and areas where it stands, as every run was created before #327."""
+
+    _write_immutable(run_layout.manifest, manifest)
+    for directory in _run_areas(run_layout):
+        _make_directory(directory)
+
+
+def _stage_directory(
+    parent: Path,
+    files: Iterable[tuple[str, bytes]],
+    directories: Iterable[str] = (),
+) -> Path:
+    """A new dot-named directory in ``parent`` holding ``files`` and ``directories``.
+
+    ``files`` are POSIX paths below the new directory with their bytes. A
+    failure removes what was staged before it propagates.
+    """
+
+    _make_directory(parent)
+    staging = parent / f".{uuid4().hex}.tmp"
+    staging.mkdir()
+    _note_write(staging)
+    try:
+        for relative, data in files:
+            _write_immutable(staging.joinpath(*PurePosixPath(relative).parts), data)
+        for name in directories:
+            _make_directory(staging / name)
+    except BaseException:
+        _discard_staging(staging)
+        raise
+    return staging
+
+
+def _rename_directory(source: Path, target: Path) -> bool:
+    """Rename ``source`` to ``target`` in one step; False when ``target`` exists.
+
+    The rename never replaces anything: Windows refuses an existing target, and
+    POSIX, which would replace an empty directory, has the target looked for
+    first, under the writer's locks. On Windows a handle open below ``source``
+    (a scanner reading it, such as the layout watch, an indexer or antivirus)
+    refuses the rename for a moment; that is retried within a bound, as the
+    HEAD swap's sharing violations are.
+    """
+
+    last_error: OSError | None = None
+    for _ in range(_PUBLISH_RETRY_ATTEMPTS):
+        if os.path.lexists(target):
+            return False
+        try:
+            os.rename(source, target)
+        except FileExistsError:
+            return False
+        except PermissionError as exc:
+            if os.name != "nt":
+                raise
+            last_error = exc
+            time.sleep(_PUBLISH_RETRY_SECONDS)
+            continue
+        except OSError as exc:
+            if exc.errno in (errno.EEXIST, errno.ENOTEMPTY):
+                return False
+            raise
+        _note_write(source)
+        _note_write(target)
+        return True
+    raise _DirectoryBusy(
+        f"the directory stayed busy and was not renamed: {source.name} -> {target.name}"
+    ) from last_error
+
+
+def _remove_directory(path: Path) -> str | None:
+    """Remove a directory this module staged or took back; what stopped it, if anything."""
+
+    if not os.path.lexists(path):
+        return None
+    try:
+        shutil.rmtree(path)
+    except OSError as exc:
+        if os.path.lexists(path):
+            _note_write(path)
+            return f"{path}: {exc}"
+    _note_write(path)
+    return None
+
+
+def _discard_staging(staging: Path) -> None:
+    """Remove a staging directory. One that stays is never read as a run, so it is only logged."""
+
+    failure = _remove_directory(staging)
+    if failure is not None:
+        _LOG.warning("a staging directory was left behind: %s", failure)
+
+
+def _unpublish_directory(root: Path) -> str | None:
+    """Take a directory just published back in one step, then remove it; what stopped it, if anything.
+
+    It is renamed to a dot name first, so a reader sees it whole until it is
+    gone. When even that is refused, it is removed where it is.
+    """
+
+    hidden = root.with_name(f".{uuid4().hex}.tmp")
+    try:
+        renamed = _rename_directory(root, hidden)
+    except (ProjectRepositoryError, OSError):
+        renamed = False
+    if not renamed:
+        return _remove_directory(root)
+    _discard_staging(hidden)
+    return None
 
 
 def _version_from_dict(value: object, *, field: str) -> ProjectVersionRef:
@@ -1965,23 +2124,17 @@ class FilesystemProjectRepository:
         self._require_project_version(chosen_base, durable=True)
         run = RunRef(self._manifest.project_id, run_id, chosen_base)
         run_layout = self.layout.run(run_id)
-        payload = {
-            "schema": "ProjectRun@1",
-            "project_id": run.project_id,
-            "run_id": run.run_id,
-            "base": run.base.to_dict(),
-        }
+        manifest = _run_manifest_bytes(run)
         with self.working_draft_guard():
-            _write_immutable(run_layout.manifest, _json_bytes(payload))
-            for directory in (
-                run_layout.records,
-                run_layout.branches,
-                run_layout.candidates,
-                run_layout.reviews,
-                run_layout.workspaces,
-                run_layout.recovery,
+            if not self._publish_run(
+                run_layout.root,
+                ((run_layout.manifest.name, manifest),),
+                tuple(area.name for area in _run_areas(run_layout)),
             ):
-                _make_directory(directory)
+                # Already there - a run created before, or a directory an
+                # interrupted writer left without its manifest - or held
+                # busy: completed in place, and never replaced.
+                _complete_run_in_place(run_layout, manifest)
         return run
 
     def create_run_batch(
@@ -1996,7 +2149,8 @@ class FilesystemProjectRepository:
         This is intentionally narrower than a general record transaction: it
         atomically guards fixed sibling-run bootstrap under the repository's
         process and HEAD locks, and rolls back only roots proven absent before
-        this call if filesystem creation fails.
+        this call if filesystem creation fails. Every sibling is staged before
+        the first is published; each is published whole (``create_run``).
         """
 
         if not isinstance(run_ids, tuple) or not run_ids:
@@ -2014,7 +2168,6 @@ class FilesystemProjectRepository:
             for run_id in run_ids
         )
         layouts = tuple(self.layout.run(run.run_id) for run in runs)
-        created_roots: list[Path] = []
         with self._lock, self._head_lock:
             if require_current_base:
                 current, _, _ = self._read_head_document()
@@ -2032,45 +2185,51 @@ class FilesystemProjectRepository:
                     "run batch target already exists: "
                     + ", ".join(str(path) for path in existing)
                 )
+            resolved_runs = self.layout.runs.resolve(strict=False)
+            roots: list[Path] = []
+            for run_layout in layouts:
+                resolved_root = run_layout.root.resolve(strict=False)
+                if (
+                    not resolved_root.is_relative_to(resolved_runs)
+                    or resolved_root.parent != resolved_runs
+                ):
+                    raise ProjectIntegrityError(
+                        "run batch target escaped the assigned runs root"
+                    )
+                roots.append(resolved_root)
+            staged: list[Path] = []
+            published: list[Path] = []
             try:
                 for run, run_layout in zip(runs, layouts, strict=True):
-                    resolved_root = run_layout.root.resolve(strict=False)
-                    resolved_runs = self.layout.runs.resolve(strict=False)
-                    if (
-                        not resolved_root.is_relative_to(resolved_runs)
-                        or resolved_root.parent != resolved_runs
-                    ):
-                        raise ProjectIntegrityError(
-                            "run batch target escaped the assigned runs root"
-                        )
-                    created_roots.append(resolved_root)
-                    payload = {
-                        "schema": "ProjectRun@1",
-                        "project_id": run.project_id,
-                        "run_id": run.run_id,
-                        "base": run.base.to_dict(),
-                    }
-                    _write_immutable(run_layout.manifest, _json_bytes(payload))
-                    for directory in (
-                        run_layout.records,
-                        run_layout.branches,
-                        run_layout.candidates,
-                        run_layout.reviews,
-                        run_layout.workspaces,
-                        run_layout.recovery,
-                    ):
-                        _make_directory(directory)
-            except BaseException as exc:
-                cleanup_failures: list[str] = []
-                for created_root in reversed(created_roots):
+                    staged.append(_stage_directory(
+                        resolved_runs,
+                        ((run_layout.manifest.name, _run_manifest_bytes(run)),),
+                        tuple(area.name for area in _run_areas(run_layout)),
+                    ))
+                for run, run_layout, staging, root in zip(runs, layouts, staged, roots, strict=True):
                     try:
-                        if created_root.exists():
-                            shutil.rmtree(created_root)
-                            _note_write(created_root)
-                    except OSError as cleanup_exc:  # pragma: no cover - OS fault
-                        cleanup_failures.append(
-                            f"{created_root}: {cleanup_exc}"
+                        renamed = _rename_directory(staging, root)
+                    except _DirectoryBusy as busy:
+                        # As in ``_publish_run``: completed in place rather
+                        # than refused, and taken back with the rest on failure.
+                        _LOG.warning("run %s is completed in place instead of published whole: %s", root.name, busy)
+                        _discard_staging(staging)
+                        published.append(root)
+                        _complete_run_in_place(run_layout, _run_manifest_bytes(run))
+                        continue
+                    if not renamed:
+                        raise ProjectAlreadyExists(
+                            f"run batch target already exists: {root}"
                         )
+                    published.append(root)
+            except BaseException as exc:
+                cleanup_failures = [
+                    failure
+                    for failure in (_unpublish_directory(root) for root in reversed(published))
+                    if failure is not None
+                ]
+                for staging in staged:
+                    _discard_staging(staging)
                 if cleanup_failures:
                     raise ProjectIntegrityError(
                         "run batch failed and rollback was incomplete: "
@@ -2078,6 +2237,58 @@ class FilesystemProjectRepository:
                     ) from exc
                 raise
         return runs
+
+    def _publish_run(
+        self,
+        root: Path,
+        files: Iterable[tuple[str, bytes]],
+        directories: Iterable[str] = (),
+    ) -> bool:
+        """Publish a run that is not here yet whole; False when the caller must complete it in place.
+
+        Its ``files`` and ``directories`` are staged beside the runs and the
+        staged directory is renamed to ``root`` in one step, so a reader lists
+        the run complete or not at all. False, with nothing staged left behind,
+        when ``root`` already exists, or when a handle below the staging
+        directory outlasts every retry of the rename (a slow scanner, a sync
+        client): the caller then completes the run in place, as every run was
+        before #327, rather than refusing the write. The caller holds the
+        project and HEAD locks.
+        """
+
+        if os.path.lexists(root):
+            return False
+        staging = _stage_directory(root.parent, files, directories)
+        try:
+            published = _rename_directory(staging, root)
+        except _DirectoryBusy as exc:
+            _LOG.warning("run %s is completed in place instead of published whole: %s", root.name, exc)
+            published = False
+        except BaseException:
+            _discard_staging(staging)
+            raise
+        if not published:
+            _discard_staging(staging)
+        return published
+
+    def run_ids(self) -> tuple[str, ...]:
+        """The project's run directories by name, in name order.
+
+        A run published whole (``create_run``) appears here complete, never
+        before its ``run.json`` and record areas. A dot-named entry is never a
+        run - no run id begins with a dot - so a run still being staged, or a
+        staging directory an interrupted writer left behind, is not listed.
+        Every other directory is, whether or not its ``run.json`` can be read:
+        ``load_run`` refuses a damaged one, so a survey can name it.
+        """
+
+        runs = self.layout.runs
+        if not runs.is_dir():
+            return ()
+        return tuple(sorted(
+            item.name for item in runs.iterdir()
+            if not item.name.startswith(".") and item.is_dir()
+        ))
 
     def load_run(self, run_id: str) -> RunRef:
         require_identifier(run_id, "run_id")
@@ -3054,8 +3265,9 @@ class FilesystemProjectRepository:
                     for local in self.layout.runs.glob(f"*/recovery/{STUDIO_LOCAL_DRAFT}-*.json"):
                         _, digest = parse_record_file_name(local.name)
                         add(local.relative_to(self.layout.root).as_posix(), digest)
-                    for manifest in sorted(self.layout.runs.glob("*/run.json")):
-                        add_run(manifest.parent.name)
+                    for listed in self.run_ids():
+                        if (self.layout.runs / listed / "run.json").exists():
+                            add_run(listed)
             else:
                 add_run(run_id)
             while pending:
@@ -3713,7 +3925,7 @@ class FilesystemProjectRepository:
                 _replace_atomic(self.layout.design_branches, files["design/branches.json"])
 
     def _install_transfer_files(self, files: Mapping[str, bytes]) -> None:
-        writes: list[tuple[Path, bytes]] = []
+        writes: list[tuple[str, Path, bytes]] = []
         for path, data in files.items():
             if path in ("design/branches.json", "design/working.json") or path.startswith("input/"):
                 continue
@@ -3727,9 +3939,31 @@ class FilesystemProjectRepository:
                     raise StaleProjectHead("TRANSFER_PUBLISHED_HEAD_CHANGED: retained published history differs")
                 continue
             if not target.exists():
-                writes.append((target, data))
-        for target, data in writes:
-            _write_immutable(target, data)
+                writes.append((path, target, data))
+        # A run the transfer brings that is not here yet arrives whole
+        # (``_publish_run``), at its place in the order; a run already here
+        # gains its new files one immutable file at a time.
+        arriving: dict[str, list[tuple[str, bytes]]] = {}
+        for path, _, data in writes:
+            parts = PurePosixPath(path).parts
+            if parts[0] == "runs" and len(parts) > 2 and (
+                parts[1] in arriving or not os.path.lexists(self.layout.runs / parts[1])
+            ):
+                arriving.setdefault(parts[1], []).append(("/".join(parts[2:]), data))
+        installed: set[str] = set()
+        for path, target, data in writes:
+            parts = PurePosixPath(path).parts
+            run_id = parts[1] if parts[0] == "runs" and len(parts) > 2 else None
+            if run_id not in arriving:
+                _write_immutable(target, data)
+                continue
+            if run_id in installed:
+                continue
+            installed.add(run_id)
+            root = self.layout.runs / run_id
+            if not self._publish_run(root, arriving[run_id]):
+                for relative, content in arriving[run_id]:
+                    _write_immutable(root.joinpath(*PurePosixPath(relative).parts), content)
 
     @_reads_fresh
     def verify(self) -> RecoveryReport:

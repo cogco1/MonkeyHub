@@ -3,6 +3,7 @@ import base64
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from io import BytesIO
+import json
 from pathlib import Path
 import threading
 import time
@@ -237,8 +238,8 @@ def test_history_read_waits_for_a_concurrent_attempt_registration(setup, monkeyp
     write_immutable = project_repository._write_immutable
 
     def pause_manifest(path, data):
-        if path.name == "run.json" and path.parent.name == job_id:
-            path.parent.mkdir(parents=True, exist_ok=True)
+        # The job's run manifest, while its run is staged and not yet visible.
+        if path.name == "run.json" and json.loads(data)["run_id"] == job_id:
             entered.set()
             assert release.wait(5), "test did not release run registration"
         return write_immutable(path, data)

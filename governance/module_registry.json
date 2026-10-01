@@ -1913,7 +1913,7 @@
       ],
       "invariants": [
         "no persistence, no pointer beside HEAD, no write of any kind",
-        "records are read through the repository and are digest-verified; only the run and canonical directories the layout owns are listed by path",
+        "records and the list of runs are read through the repository, records digest-verified; no directory is listed by path, so a run still being published is not yet a container",
         "a run whose manifest or records cannot be read is reported as a shared container saying so, never skipped silently",
         "S4 needs both halves - a runner receipt with seats complete and a SATISFIED stage closure; nothing writes a closure yet, so every run is S1 today",
         "an absent work-in-progress slot is an empty tuple, not a refusal"
@@ -2877,7 +2877,7 @@
         "byte identity of a written record (sorted-key JSON plus a trailing newline, sha-256)",
         "HEAD read and compare-and-swap under a thread lock and an OS advisory file lock (compare_and_swap, StaleProjectHead, ProjectHeadLocked)",
         "promotion gating on an accepted exact-base PromotionDecision@1 receipt (prepare_transition, PromotionAuthorityError)",
-        "run creation and the run record areas (create_run, create_run_batch, load_run)",
+        "run creation, publication and listing, and the run record areas (create_run, create_run_batch, load_run, run_ids)",
         "format-version compatibility between CanonicalSnapshot@1 and CanonicalSnapshot@2",
         "integrity verification of the snapshot/event chain and orphan reporting (verify, RecoveryReport)",
         "installing caller-authored State Record and seat-pack mappings at creation or on explicit initial-input preparation with exact previous input and initial HEAD checks; no run, accepted Stage or issue is created",
@@ -2920,6 +2920,7 @@
       "public_api": [
         "FilesystemProjectRepository",
         "FilesystemProjectRepository.list_json",
+        "FilesystemProjectRepository.run_ids",
         "ProjectRepositoryError",
         "ProjectAlreadyExists",
         "ProjectIntegrityError",
@@ -3002,7 +3003,8 @@
         "Working-draft cleanup never removes a run, input or shared object: an automatic candidate stays whether or not anything refers to it. It removes only local recovery snapshots that are neither the current localDraftRef nor updated within the last 24 hours, and one inconsistent snapshot refuses the whole expiry.",
         "Source validation and reference writes share the same cross-process guard as cleanup; in-process and filesystem locks are acquired in project, HEAD, design order. Full project archives preserve working metadata and local recovery; candidate synchronization never replaces the local working position.",
         "every on-disk mutation this module makes is counted by write_serial for each registered root containing it and reported to that root's add_write_observer callbacks after it lands; an observer that raises is logged and never fails the write; roots are keyed by project_root_key (normalized case, absolute, resolved, without a Win32 extended-length prefix), so every spelling of one root shares its serial and observers",
-        "load_json parses a payload of its own for every caller; kept verified bytes are used only while their file keeps the size and time it was read with, and only once that time was settled; a listing, a run manifest or the design branches are kept only under a settled stat stamp of the place they were read from, and a write this process makes forgets the kept places it can have changed (the written path, what lies below it and its directory's listing); verify reads every file itself"
+        "load_json parses a payload of its own for every caller; kept verified bytes are used only while their file keeps the size and time it was read with, and only once that time was settled; a listing, a run manifest or the design branches are kept only under a settled stat stamp of the place they were read from, and a write this process makes forgets the kept places it can have changed (the written path, what lies below it and its directory's listing); verify reads every file itself",
+        "a run is published whole: create_run, create_run_batch and a transfer bringing a run not yet present stage its run.json and areas (or its transferred files) in a dot-named directory beside the runs and rename that into runs/<run_id> in one step, never replacing an existing directory; one whose staging directory something outside the process keeps busy past every retry is completed in place, as before; no run id begins with a dot, so run_ids never lists a run still being staged, nor a staging directory an interrupted writer left behind; adding to an existing run stays one immutable file at a time"
       ],
       "status": "canonical",
       "tests": [

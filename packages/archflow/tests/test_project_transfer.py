@@ -19,7 +19,7 @@ from archflow.project.record_kinds import (
 from archflow.project.refs import RunRef
 from archflow.project.repository import (
     FilesystemProjectRepository, ProjectAlreadyExists, ProjectIntegrityError,
-    StaleDesignBranch, StaleProjectHead,
+    StaleDesignBranch, StaleProjectHead, add_write_observer,
 )
 from archflow.state.state_record import StateRecord
 
@@ -397,6 +397,42 @@ class ProjectTransferTests(unittest.TestCase):
         self.shared.import_candidate_transfer(transfer)
         self.assertEqual(self.shared.load_json(candidate), a.load_json(candidate))
         self.assertEqual(self.shared.read_design_branches(), before)
+
+    def test_an_arriving_run_is_never_listed_before_it_is_whole(self):
+        a = self.clone("a")
+        candidate = self.stage(a, "candidate-a", self.s0)
+        transfer = a.export_transfer(run_id="candidate-a")
+        arriving = {row["path"] for row in transfer["files"] if row["path"].startswith("runs/candidate-a/")}
+        root = self.shared.layout.root
+        reader = FilesystemProjectRepository.open(root)
+        problems: list[str] = []
+        steps = 0
+
+        def look(path):
+            # After every write of the install, while it holds its locks.
+            nonlocal steps
+            steps += 1
+            for run_id in reader.run_ids():
+                try:
+                    reader.load_run(run_id)
+                except Exception as exc:  # noqa: BLE001 - every refusal is the finding
+                    problems.append(f"{run_id} listed but not loadable: {exc!r}")
+            if "candidate-a" in reader.run_ids():
+                present = {item.relative_to(root).as_posix()
+                           for item in (root / "runs" / "candidate-a").rglob("*") if item.is_file()}
+                if arriving - present:
+                    problems.append(f"candidate-a listed without {sorted(arriving - present)}")
+
+        remove = add_write_observer(root, look)
+        self.addCleanup(remove)
+        self.shared.import_candidate_transfer(transfer)
+        remove()
+
+        self.assertEqual(problems, [])
+        self.assertGreater(steps, 0)
+        self.assertIn("candidate-a", reader.run_ids())
+        self.assertEqual(self.shared.load_json(candidate), a.load_json(candidate))
+        self.assertEqual([item.name for item in self.shared.layout.runs.iterdir() if item.name.startswith(".")], [])
 
     def test_interrupted_bootstrap_retries_matching_partial_files_only(self):
         transfer = self.shared.export_transfer()
