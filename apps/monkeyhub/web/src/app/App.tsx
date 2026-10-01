@@ -1695,6 +1695,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (step !== "defer") followReadAt.current = at;
       if (step !== "follow" || head === null || !source.head) return;
       const viewed = sourceLabel === LOCAL_SOURCE_LABEL ? LOCAL_SOURCE_LABEL : loadedArtifactsRef.current[0]?.runId ?? null;
+      // A model the person opens while the base moves keeps the viewer: the view follows only what was on screen now.
+      const viewRequest = modelLoadRequest.current;
       // A move back onto the base the last follow came from undoes that follow, whoever made it: it offers no 撤销 of its own.
       const last = followNoticeRef.current;
       const undone = last !== null && last.head === base && last.undo?.runId === head.runId;
@@ -1706,7 +1708,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       setFollowNotice({ id: ++followNoticeIds.current, state: undone ? "undone" : "moved", head: head.runId,
         undo: undone ? null : followUndo(replaced, base, head.runId) });
       pushNotice(t(undone ? "stage.follow.undone" : "stage.follow.moved"));
-      if (viewerFollows(viewed, base)) setHeadFollow({ runId: head.runId, viewRequest: modelLoadRequest.current });
+      if (viewerFollows(viewed, base)) setHeadFollow({ runId: head.runId, viewRequest });
     }).catch(() => { /* The current base stays usable; the next event reads the head again. */ });
     return () => controller.abort();
   }, [followsHead, active, session.status, followBusy, editingRunId, versionRefreshRequest, refreshKey, followNudge, studio, reload, pushNotice, t, sourceLabel, storeRevision]);
