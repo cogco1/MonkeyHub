@@ -282,13 +282,17 @@ class RenderJobRecords:
             status, error = "unknown", "The runtime stopped before confirming this attempt. Refresh never resends it."
         document = None
         result_available = False
-        # A crash between save_document and the completion transition must not
-        # hide an already retained image or dispatch the paid request again.
-        for item in list_documents(binding, job_id):
+        # A queued or running attempt is still this runtime's own: its executor
+        # registers the image and then retains the outcome with its usage, so
+        # until that transition it reads as running, without a result. Once no
+        # executor will retain the outcome (unknown), a registered image is the
+        # result: a crash between save_document and the completion transition
+        # must not hide it or dispatch the paid request again.
+        for item in (() if status in ("queued", "running") else list_documents(binding, job_id)):
             recipe = item.view_recipe or {}
             if recipe.get("jobId") == job_id and recipe.get("request") == row["request"]:
                 document = item
-                if status in ("queued", "running", "unknown"):
+                if status == "unknown":
                     status, error = "succeeded", None
                 try:
                     document_bytes(binding, job_id, item.asset_sha256, item.revision_ref)
@@ -417,8 +421,6 @@ class RenderJobRecords:
                                  "sourceSnapshots": row["sourceSnapshots"], "providerId": row["providerId"], "model": row["model"]},
                     generated_at=_now(),
                 )
-            # A retained result already reads as succeeded, before its transition.
-            self._changed()
             status = "succeeded"
             self._transition(binding, row, status=status, finishedAt=_now(), documentSha256=document.asset_sha256,
                              providerRequestId=output.provider_request_id, inputTokens=output.input_tokens,
