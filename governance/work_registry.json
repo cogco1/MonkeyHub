@@ -1,4 +1,31 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-282",
+      "lanes": [
+        {
+          "id": "cli-limit-failure",
+          "status": "active",
+          "branch": "codex/282-cli-limit-failure",
+          "worktree": "/workspace/shared/monkeyhub-dev/workspace/worktrees/codex-282-cli-limit-failure",
+          "base_ref": "64fff11bbeafbb90fa49489b2975ae8d4fbe29ec",
+          "contributor": "Acacia",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/web/src/chatError.ts",
+            "apps/monkeyhub/web/test/chatError.test.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
