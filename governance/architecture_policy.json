@@ -42,6 +42,12 @@
     "apps/monkeyhub/api/monkeyhub_api": "hub",
     "tools": "tools"
   },
+  "declared_dependency_namespaces": [
+    "archflow",
+    "monkeyarch",
+    "monkeycad",
+    "monkeydiagram"
+  ],
   "repository_root_entries": [
     "apps",
     "services",
