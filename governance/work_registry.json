@@ -1,4 +1,28 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-355",
+      "lanes": [
+        {
+          "id": "document-canvas",
+          "status": "active",
+          "branch": "codex/355-document-canvas",
+          "worktree": "/workspace/shared/monkeyhub-dev/workspace/worktrees/codex-355-document-canvas",
+          "base_ref": "e76db51d0fb4f8ddbd43602f97094067647ea0a9",
+          "contributor": "dot",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/test/documentCanvas.browser.mjs",
+            ".github/workflows/verify.yml"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
