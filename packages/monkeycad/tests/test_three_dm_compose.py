@@ -342,11 +342,18 @@ class ComposedMaterialTests(unittest.TestCase):
         geometry_before = {row["object_id"]: row for row in old.object_geometry_sha256 if row["name"] not in except_names}
         geometry_after = {row["object_id"]: row for row in new.object_geometry_sha256 if row["name"] not in except_names}
         self.assertEqual(geometry_after, geometry_before)
-        labels = {"archflow:material", "archflow:material_status"}
-        strip = lambda rows: {object_id: {k: v for k, v in pairs.items() if k not in labels}  # noqa: E731
-                              for object_id, pairs in rows.items() if object_id in geometry_before}
-        self.assertEqual({k: v for k, v in strip(_strings(new)).items() if v},
-                         {k: v for k, v in strip(_strings(old)).items() if v})
+
+        def other_strings(inspection) -> dict[str, dict[str, str]]:
+            # every user string but the two material labels the rewrite owns
+            rows = {}
+            for object_id, pairs in _strings(inspection).items():
+                kept = {key: value for key, value in pairs.items()
+                        if key not in ("archflow:material", "archflow:material_status")}
+                if object_id in geometry_before and kept:
+                    rows[object_id] = kept
+            return rows
+
+        self.assertEqual(other_strings(new), other_strings(old))
 
     def test_a_material_only_change_rewrites_the_composed_model(self) -> None:
         program = _program()

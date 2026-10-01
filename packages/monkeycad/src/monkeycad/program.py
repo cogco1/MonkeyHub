@@ -56,7 +56,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Mapping
+from typing import Iterable, Mapping
 
 from archflow.state.geometry_program import delivered_object_ids, operation_parameters
 
@@ -164,7 +164,7 @@ def _material_color(
 
 
 def declared_material(
-    components: tuple[str, ...] | list[str],
+    components: Iterable[str],
     material_by_component: Mapping[str, str] | None,
 ) -> str | None:
     """The material an object of these components declares, or None when none of them declares one.
