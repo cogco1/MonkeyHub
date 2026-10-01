@@ -1,0 +1,44 @@
+{
+  "schema": "MonkeyHubComponentInfo@1",
+  "id": "supply-fixture",
+  "title": "Supply",
+  "role": "section",
+  "order": 20,
+  "preparedAt": "2026-10-01",
+  "appliesTo": {
+    "projectId": "fixture-project",
+    "runId": "run-b",
+    "stateDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "versionLabel": "version B"
+  },
+  "statusLabels": { "verified": "Price checked", "estimate": "Budget estimate", "to-ask": "Ask for a price" },
+  "missing": "No supply recorded",
+  "note": "Allowances only, not quotes.",
+  "sources": [
+    { "id": "budget", "label": "initial budget sheet", "date": "2026-09-30", "kind": "budget-estimate" },
+    { "id": "catalog", "label": "supplier page", "date": "2026-10-01", "kind": "catalog" }
+  ],
+  "groups": {
+    "stock-a": {
+      "title": "Timber stock A",
+      "fields": [
+        { "label": "Supplier", "value": "Example Timber", "url": "https://example.com/stock-a", "source": "catalog" },
+        { "label": "Budget", "value": "5 pieces $25", "status": "estimate", "source": "budget" },
+        { "label": "Lead time", "value": "to confirm", "status": "to-confirm" }
+      ],
+      "shared": true,
+      "sharedBy": 2,
+      "allocation": null,
+      "note": "Shared stock; no cost per piece is allocated."
+    }
+  },
+  "components": {
+    "post-1": {
+      "fields": [ { "label": "Cut from", "value": "stock A, ripped" } ],
+      "group": "stock-a"
+    },
+    "brace-1": {
+      "fields": [ { "label": "Cut from", "value": "not stated", "status": "to-confirm" } ]
+    }
+  }
+}

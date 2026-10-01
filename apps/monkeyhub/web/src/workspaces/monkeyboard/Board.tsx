@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ClipboardEvent as ReactC
 import { CaptureUpdateAction, convertToExcalidrawElements, MainMenu, newElementWith, WelcomeScreen } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement, FileId } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, DataURL, ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
+import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 
 import { useProjectMoved, useProjectRevision, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
 import type { StudioClient } from "../../api/project-runtime/client";
@@ -19,6 +20,9 @@ import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFra
 import { pageSourceDetails, pageSourceReason, pageSourceState, pageStageLabel, pageStatusShows, readStageLabels, type PageStatusRead } from "./boardSourceStatus";
 import "./board.css";
 import { MenuCommand, StatusLine, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
+import { BOARD_SCENE_LIMIT_BYTES, cardElementId, cardLabelText, componentInfoCardIds, isComponentInfoElement, placeDatasetCards, sceneBytes } from "../../features/componentInfo/boardDatasets";
+import { ComponentInfoError, parseDatasetImport, problemText, type ComponentInfoDataset } from "../../features/componentInfo/componentInfo";
+import { useT } from "../../i18n/useT";
 
 const copy = {
   en: { loading: "Opening board…", loadFailed: "The board could not be opened.", retry: "Retry", sources: "Project documents", upload: "Upload PDF / image", title: "Board title", saved: "Saved", saving: "Saving…", dirty: "Unsaved changes", saveError: "Changes have not been saved.", conflict: "Another saved version exists. Your current canvas is preserved; these changes have not overwritten the saved board.", add: "Add page", open: "Open in MonkeyDiagram", openPage: "Edit this page", openHint: "Double-click a drawing to edit its page", fit: "Fit board", busy: "Receiving document…", clearAnnotations: "Clear annotations", clearAnnotationsHint: "Clear all drawn marks and text; keep drawings and frames. Ctrl+Z to undo.", crit: "Crit mode", critSubmit: "Submit", critExit: "Exit", export: "Export board pages", exportClean: "Clean originals · marks excluded", exportMerged: "Merged PDF", exportPages: "One PDF per page", exportPng: "PNG", exportJpeg: "JPEG", exportZip: "ZIP for transfer", exporting: "Preparing export…", exportDone: "Export ready.", exportEmpty: "Place at least one registered drawing page on the board before exporting.", empty: "Upload a PDF, PNG or JPEG to begin. New project drawings will appear here.", hint: "Wheel to zoom · Space or middle mouse to pan · Shift to select several", auto: "New documents arrive automatically", previewError: "Some page previews could not be loaded. The saved layout is retained.", unsupported: "Use PDF, PNG or JPEG files.", unbound: "This image has no registered project source. Upload its original file first.", page: "Page", pages: "pages", received: "Received", pending: "Pending", dismiss: "Dismiss", sourceError: "Project documents could not be refreshed.", select: "Select a drawing to open its original.", refresh: "Retry previews / receive", unknown: "Unknown error" },
@@ -66,8 +70,10 @@ function feedbackContext(elements: readonly ExcalidrawElement[], selectedIds: Ap
 
 // A shape drawn inside a sketch frame is the architect's own geometry, not a
 // mark on someone else's drawing, so clearing marks never reaches into one.
-function isAnnotation(element: ExcalidrawElement, sketchFrames: ReadonlySet<string>): boolean {
+// A component information card (#549) is the project's data, not a mark either.
+function isAnnotation(element: ExcalidrawElement, sketchFrames: ReadonlySet<string>, infoCards: ReadonlySet<string>): boolean {
   return !element.isDeleted && !insideSketchFrame(element, sketchFrames)
+    && !isComponentInfoElement(element as unknown as Record<string, unknown>, infoCards)
     && ["freedraw", "line", "arrow", "rectangle", "ellipse", "diamond", "text"].includes(element.type);
 }
 
@@ -514,6 +520,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const canvas = useRef<ExcalidrawImperativeAPI | null>(null);
   const root = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
+  const infoInput = useRef<HTMLInputElement | null>(null);
+  const t = useT();
   const [title, setTitle] = useState(board.title);
   const titleRef = useRef(title);
   const [documents, setDocuments] = useState(initialDocuments);
@@ -837,6 +845,44 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       replacementOpen.current = false; setReplacement(null);
     } finally { busyRef.current = false; if (alive.current) setBusy(false); }
   };
+  // #549: one MonkeyHubComponentInfo@1 dataset (or an array) becomes one card per dataset: a dataset
+  // id already on the board replaces its card in place, a new id adds one. The file is checked here,
+  // before the scene changes, against the format, this project and the Board's own refusals, and
+  // the scene is saved through the ordinary queue at its base revision. Ctrl+Z takes it back.
+  const importComponentInfo = (file: File) => serial(async () => {
+    const api = canvas.current;
+    if (!api || !initialized.current || queue.getState().conflict) return;
+    const refused = (error: unknown) => {
+      if (!(error instanceof ComponentInfoError)) return t("componentInfo.board.importFailed", { problems: errorText(error) });
+      const listed = error.problems.slice(0, 4).map((problem) => problemText(problem, t)).join(" ");
+      const more = error.problems.length > 4 ? ` ${t("componentInfo.board.more", { count: error.problems.length - 4 })}` : "";
+      return t("componentInfo.board.importFailed", { problems: listed + more });
+    };
+    let datasets: ComponentInfoDataset[];
+    try {
+      datasets = parseDatasetImport(await file.text());
+      const elsewhere = datasets.flatMap((dataset, index) => dataset.appliesTo.projectId === board.projectId ? []
+        : [{ code: "project" as const, path: `${datasets.length > 1 ? `$[${index}]` : "$"}.appliesTo.projectId` }]);
+      if (elsewhere.length) throw new ComponentInfoError(elsewhere);
+    } catch (error) { setNotice(refused(error)); return; }
+    if (!alive.current || canvas.current !== api) return;
+    const placed = placeDatasetCards(api.getSceneElementsIncludingDeleted(), datasets, {
+      at: nextDocumentPosition(records(api.getSceneElements())),
+      label: (dataset) => cardLabelText(dataset, t),
+      convert: (skeleton) => convertToExcalidrawElements([skeleton as unknown as ExcalidrawElementSkeleton], { regenerateIds: false }),
+      retire: (element) => newElementWith(element, { isDeleted: true }),
+    });
+    const next = { title: titleRef.current.trim() || "MonkeyBoard", elements: records(placed.elements), seenDocuments: [...seen.current] };
+    if (sceneBytes(next) > BOARD_SCENE_LIMIT_BYTES) { setNotice(refused(new ComponentInfoError([{ code: "tooLarge", path: file.name }]))); return; }
+    api.updateScene({ elements: placed.elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+    capture(placed.elements);
+    const cards = new Set(datasets.map((dataset) => cardElementId(dataset.id)));
+    api.scrollToContent(api.getSceneElements().filter((element) => cards.has(element.id)), { fitToContent: false, animate: false });
+    await queue.flush();
+    if (!alive.current) return;
+    setNotice(t("componentInfo.board.imported", { titles: datasets.map((dataset) => t(placed.replaced.includes(dataset.id)
+      ? "componentInfo.board.replaced" : "componentInfo.board.added", { title: dataset.title })).join(t("componentInfo.listSeparator")) }));
+  });
 
   useEffect(() => {
     alive.current = true;
@@ -1220,7 +1266,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     if (!api || !ready || busyRef.current || queue.getState().conflict) return;
     const current = api.getSceneElementsIncludingDeleted();
     const sketchFrames = sketchFrameIds(current);
-    const removed = new Set(current.filter((element) => isAnnotation(element, sketchFrames)).map((element) => element.id));
+    const infoCards = componentInfoCardIds(current as unknown as readonly Record<string, unknown>[]);
+    const removed = new Set(current.filter((element) => isAnnotation(element, sketchFrames, infoCards)).map((element) => element.id));
     if (removed.size === 0) return;
     const elements = current.map((element) => {
       if (element.isDeleted) return element;
@@ -1348,6 +1395,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       <input className="surface-title monkeyboard-title" aria-label={text.title} value={title} maxLength={200} onChange={(event) => { const value = event.target.value; setTitle(value); titleRef.current = value; capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} onBlur={() => { const value = titleRef.current.trim() || "MonkeyBoard"; titleRef.current = value; setTitle(value); capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} />
       <MenuCommand aria-expanded={sourcesOpen} aria-controls="monkeyboard-project-documents" onClick={() => setSourcesOpen((open) => !open)}>{text.sources}</MenuCommand>
       <MenuCommand disabled={!ready || busy || saveState.conflict} onClick={() => input.current?.click()}>{text.upload}</MenuCommand>
+      <MenuCommand disabled={!ready || busy || saveState.conflict} title={t("componentInfo.board.importTitle")}
+        onClick={() => infoInput.current?.click()}>{t("componentInfo.board.import")}</MenuCommand>
       <details ref={actions} className="monkeyboard-actions" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) closeActions(); }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeActions(); actions.current?.querySelector("summary")?.focus(); } }}>
         <summary className="menu-command">{boardText.more}</summary>
         <div className="monkeyboard-actions-panel" role="group" aria-label={boardText.more}>
@@ -1369,6 +1418,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       </details>
     </SurfaceMenus>
     <input ref={input} type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" multiple hidden onChange={(event) => { void upload([...event.target.files ?? []]); event.target.value = ""; }} />
+    <input ref={infoInput} type="file" accept="application/json,.json" hidden data-component-info-import
+      onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importComponentInfo(file); }} />
     {saveState.error !== null && <div className="monkeyboard-alert" role="alert"><span>{saveState.conflict ? text.conflict : `${text.saveError} ${errorText(saveState.error)}`}</span>{!saveState.conflict && <button onClick={() => { void queue.retry().catch(() => {}); }}>{text.retry}</button>}</div>}
     {(previewFailed || sourceError) && <div className="monkeyboard-alert" role="alert"><span>{previewFailed ? text.previewError : `${text.sourceError} ${sourceError}`}</span><button onClick={retryVisuals} disabled={busy}>{text.refresh}</button></div>}
     {notice && <div className="monkeyboard-alert" role="alert"><span>{notice}</span><button onClick={() => setNotice("")} aria-label={text.dismiss}>×</button></div>}
@@ -1421,7 +1472,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
             const selectedSource = selectedPageSource(records(elements), appState.selectedElementIds);
             setSelected((previous) => JSON.stringify(previous) === JSON.stringify(selectedSource) ? previous : selectedSource);
             const sketchFrames = sketchFrameIds(elements);
-            setHasAnnotations(elements.some((element) => isAnnotation(element, sketchFrames)));
+            const infoCards = componentInfoCardIds(elements as unknown as readonly Record<string, unknown>[]);
+            setHasAnnotations(elements.some((element) => isAnnotation(element, sketchFrames, infoCards)));
             updateContext(elements, appState);
             capture(elements);
             scheduleUpdateFocus();
