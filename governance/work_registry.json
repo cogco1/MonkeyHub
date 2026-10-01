@@ -1,4 +1,38 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-560",
+      "status": "active",
+      "branch": "codex/560-materials",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-560-materials",
+      "base_ref": "2461e7243f9b919d8ca6f4ef1b952f2fd08e0d46",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "archflow.semantics.facets",
+        "archflow.state.state_record",
+        "monkeyarch.application.project_runner",
+        "monkeycad.execution",
+        "monkeycad.occt",
+        "hub.shell",
+        "project_runtime.construction",
+        "tools.governance.devctl"
+      ],
+      "write_scope": [
+        "packages/archflow/src/archflow/semantics/facets.py",
+        "packages/archflow/src/archflow/state/state_record.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
+        "packages/monkeycad/src/monkeycad/program.py",
+        "packages/monkeycad/src/monkeycad/backends/occt/export.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
+        "services/project-runtime/src/project_runtime/application/construction.py",
+        "services/project-runtime/src/project_runtime/api/dto/construction.py",
+        "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+        "tools/governance/devctl.py"
+      ],
+      "depends_on": []
+    }
+  ]
 }
