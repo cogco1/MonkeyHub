@@ -4761,7 +4761,8 @@
         "An explicit BoardPageRequest source focuses that exact registered page or reinstates only that intentionally removed page through the existing insertion path, preserving the current scene draft",
         "the one raster of a registered document page (page_raster, cached_page, #368): at most 2048 px with transparency, a bounded PNG served as its own bytes; Board previews, Publish images and the publication exports' raster previews read it from the projection cache (GET /api/projections/pages) instead of each rasterising the page",
         "handing one explicitly chosen registered image page, up to three reference pages and the person's words to the host conversation as an image discussion (#253), re-verified against the registered documents on confirmation, without reading the Board scene for it or saving the Board; the dialog closes only once the host took the request, and a host's refusal keeps it open with the reason",
-        "the export raster of a registered document page (page_export_png): the PNG a Board PNG export writes at full size, a PDF page at 144 dpi over white; a view sheet's retained PNG is this export of its PDF"
+        "the export raster of a registered document page (page_export_png): the PNG a Board PNG export writes at full size, a PDF page at 144 dpi over white; a view sheet's retained PNG is this export of its PDF",
+        "showing the selected page against the editing base as project_runtime.binding's representation status answers it for that exact page (#288), read again only when the selection or what that status is derived from moves, with the page's own Stage label and generation time; the Board compares no sources itself, and showing the status never changes, rebinds or sends a page"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (project_runtime.documents and monkeydiagram.drawing_runs)",
@@ -4849,7 +4850,8 @@
         "apps/monkeyhub/web/test/boundWorkCopy.browser.mjs",
         "apps/monkeyhub/web/test/renderWorkspace.browser.mjs",
         "apps/monkeyhub/web/test/boardRender.test.ts",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/test/boardSourceStatus.test.ts"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },
@@ -4878,7 +4880,7 @@
         "Read-only element elevation facts and their actual base/top references, plus named Level datums, projected from the exact StateRecord for contextual Stage 1 editing.",
         "The current project working position (moved only by an explicit selection, never by recording a generated candidate), the automatic recovery listing of every unlabelled generated candidate however old, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request; every selection onto a run retains who made it as an AuditEvent@1 design.continued beside that run, ids only (actor, origin, previous head run, target run, chat message ids), and a selection whose event cannot be retained is undone.",
         "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing; a live rejection of the working position is reported as a warning and never moves it",
-        "The representation-status projection (#223): for one exact registered page, current, outdated, frozen or unavailable, the exact retained refs it was made from and its newest registered replacement, derived on every read by asking the page's owner (a cut plan's read set through plan_status, an AI render's retained request through Render's freshness, a page bound to one model state through model_is_current, a page bound to nothing through its replacements alone); it writes nothing and stores no status or dependency edge: the project-level dependency is this projection, not a second state",
+        "The representation-status projection (#223): for one exact registered page, current, outdated, frozen or unavailable, the exact retained refs it was made from and its newest registered replacement, derived on every read by asking the page's owner (a cut plan's read set through plan_status, an AI render's retained request through Render's freshness, a page bound to one model state through model_is_current, a page bound to nothing through its replacements alone); it writes nothing and stores no status or dependency edge: the project-level dependency is this projection, not a second state; GET /api/representation-status answers it for one exact page in the projection's own words (#288)",
         "the Studio projector of the project index (StudioProjector): each run's records, artifacts, documents and candidate source and the committed stages, read through the same readers the routes use; attaching the index in StudioSettings.project_index_dir (the index subdirectory of the Hub's project cache directory) to the one binding, kept current by its keeper; which listing reads the index (only when it holds every write this process made) and the read-only agent query route GET /api/index/{table}; the client stores' catch-up route GET /api/index?since=&epoch= (#366): empty when current, the changes while the change log reaches back, otherwise a reset snapshot, tagged \"<epoch>:<revision>\""
       ],
       "does_not_own": [
@@ -4905,7 +4907,8 @@
         "ProjectVersionDto",
         "StateProjectionDto",
         "ProjectListDto",
-        "RepresentationStatus"
+        "RepresentationStatus",
+        "RepresentationStatusDto"
       ],
       "public_api": [
         "GET /api/project",
@@ -4981,6 +4984,8 @@
         "RepresentationStatus",
         "RepresentationReads",
         "ReplacementCycle",
+        "GET /api/representation-status",
+        "RepresentationStatusDto",
         "ReadToken",
         "READ_EPOCH",
         "ProjectBinding.read_token",

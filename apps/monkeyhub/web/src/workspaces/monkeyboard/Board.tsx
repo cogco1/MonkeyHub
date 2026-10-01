@@ -3,7 +3,7 @@ import { CaptureUpdateAction, convertToExcalidrawElements, MainMenu, newElementW
 import type { ExcalidrawElement, FileId } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, DataURL, ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 
-import { useProjectRevision, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
+import { useProjectMoved, useProjectRevision, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
 import type { StudioClient } from "../../api/project-runtime/client";
 import type { BoardDto, FrameLevelDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { CANVAS_APP_STATE, PROJECT_CANVAS_CLASS, ProjectCanvas, useScenePointer, useWheelZoom } from "../../features/canvas/ProjectCanvas";
@@ -16,6 +16,7 @@ import { boardViewAppState, captureBoardView, pageSourceAt, type BoardDocumentOp
 import { BoardRenderError, handOverBoardRender, RENDER_REFERENCE_LIMIT, renderReferenceChoices, selectedRenderPages, type BoardRenderChatRequest } from "./boardRender";
 import { boardDocumentFrameName, documentKey, documentMime, findSource, imageSource, isTracingPaperReview, nextDocumentPosition, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
 import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchFrameIds, sketchSummary, type BoardSketchRequest, type SketchFrameData, type SketchSkipReason } from "./boardSketch";
+import { pageSourceDetails, pageSourceReason, pageSourceState, pageStageLabel, pageStatusShows, readStageLabels, type PageStatusRead } from "./boardSourceStatus";
 import "./board.css";
 import { MenuCommand, StatusLine, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
 
@@ -25,9 +26,14 @@ const copy = {
 };
 type Copy = typeof copy.en;
 
+// #288: the selected page against the editing base, in the Runtime's representation-status words.
 const selectionCopy = {
-  en: { selected: "Selected drawing", linked: "Model linked", unlinked: "Drawing only" },
-  "zh-CN": { selected: "选中图纸", linked: "已关联模型", unlinked: "尚未关联模型" },
+  en: { selected: "Selected drawing", unlinked: "Drawing only", checking: "Checking against the editing base…",
+    current: "Up to date with the editing base", outdated: "Out of date with the editing base", frozen: "Kept on its chosen version",
+    unavailable: "Cannot be checked against the editing base" },
+  "zh-CN": { selected: "选中图纸", unlinked: "尚未关联模型", checking: "正在与修改起点核对…",
+    current: "与当前修改起点一致", outdated: "已过期：与当前修改起点不一致", frozen: "保持在选定的版本",
+    unavailable: "暂无法与修改起点核对" },
 };
 
 const whiteboardCopy = {
@@ -1091,6 +1097,49 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const source = selected && findSource(documents, selected);
   const contextSource = context?.source ?? selected;
   const contextDocument = contextSource && findSource(documents, contextSource);
+  // #288: the selected page against the editing base. The Runtime answers for exactly this page
+  // (its representation status, #223): read when the selection names another page and when what
+  // that status is derived from moves in the project's store, never on a timer. Outside the Hub
+  // no store moves, so focus reads again, as it does for the documents.
+  const statusRevision = useProjectMoved(pageStatusShows);
+  const statusPage = !critMode && contextSource && contextDocument?.modelSource && contextDocument.projectId === board.projectId
+    ? contextSource : null;
+  const statusKey = statusPage ? pageKey(statusPage) : null;
+  const statusPageRef = useRef(statusPage); statusPageRef.current = statusPage;
+  const statusStageRef = statusPage ? contextDocument?.sourceStageRef ?? null : null;
+  const [pageStatus, setPageStatus] = useState<PageStatusRead | null>(null);
+  // Which read last answered: one sent earlier that answers later never replaces a newer answer.
+  const statusReads = useRef({ sent: 0, shown: 0 });
+  // A Stage's label by its ref; null once looked for and not found. A Stage never changes its label.
+  const [stageLabels, setStageLabels] = useState<ReadonlyMap<string, string | null>>(() => new Map());
+  const stageLabelsRef = useRef(stageLabels); stageLabelsRef.current = stageLabels;
+  const [focusReads, setFocusReads] = useState(0);
+  useEffect(() => {
+    if (statusRevision !== null) return;
+    const focused = () => setFocusReads((value) => value + 1);
+    window.addEventListener("focus", focused);
+    return () => window.removeEventListener("focus", focused);
+  }, [statusRevision]);
+  useEffect(() => {
+    const page = statusPageRef.current;
+    if (!active || !ready || statusKey === null || page === null) return;
+    const request = ++statusReads.current.sent;
+    const show = (status: PageStatusRead["status"]) => {
+      if (!alive.current || request < statusReads.current.shown) return;
+      statusReads.current.shown = request;
+      setPageStatus({ key: statusKey, status });
+    };
+    void studio.representationStatus(page).then(show, () => show(null));
+    const stageRef = statusStageRef;
+    if (stageRef === null || typeof stageLabelsRef.current.get(stageRef) === "string") return;
+    const remember = (found: ReadonlyMap<string, string>) => {
+      if (alive.current) setStageLabels((known) => new Map<string, string | null>([...known, ...found, [stageRef, found.get(stageRef) ?? null]]));
+    };
+    void readStageLabels((branchId) => studio.designHistory(branchId), board.projectId, stageRef).then(remember, () => remember(new Map()));
+  }, [active, ready, statusKey, statusStageRef, statusRevision, focusReads, studio, board.projectId]);
+  const contextState = contextDocument && contextSource ? pageSourceState(contextDocument, pageKey(contextSource), board.projectId, pageStatus) : null;
+  const contextReason = contextState ? pageSourceReason(contextState, pageStatus) : null;
+  const contextDetails = contextDocument ? pageSourceDetails(contextDocument, pageStageLabel(contextDocument, stageLabels), language) : "";
   const openReplacement = (document: SourceDocumentDto, pageIndex: number) => {
     replacementReturnFocus.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null;
     replacementOpen.current = true; setReplacement({ document, pageIndex });
@@ -1387,8 +1436,10 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
             <div className="monkeyboard-context-identity">
               <span>{selectionCopy[language].selected} · {contextSource.pageIndex + 1}/{contextDocument.pageCount}</span>
               <strong title={contextDocument.fileName}>{contextDocument.fileName}</strong>
+              {contextDetails && <span className="monkeyboard-context-details">{contextDetails}</span>}
             </div>
-            <span className={`monkeyboard-context-binding${contextDocument.modelSource ? " is-linked" : ""}`}>{contextDocument.modelSource ? selectionCopy[language].linked : selectionCopy[language].unlinked}</span>
+            {contextState && <span className={`monkeyboard-context-binding is-${contextState}`} data-source-state={contextState}
+              title={contextReason ?? undefined}>{selectionCopy[language][contextState]}</span>}
           </div>}
           <div className="monkeyboard-context-actions">
             {source && selected && onOpenDocument && <button disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(selected)}>{text.openPage}</button>}
