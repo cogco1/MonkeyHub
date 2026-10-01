@@ -4,7 +4,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useM
 import { applicationUrl, type AppearancePreferences } from "../../../../packages/web-shared/src/appearance.js";
 import type { WorktreeGraphDto } from "./api/project-runtime/generated";
 import { projectStatus } from "./worktreeGraph";
-import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus } from "./api/generated";
+import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus, UserSettingsDto } from "./api/generated";
 import { ProjectRuntimeProvider, useProjectRevision, useStudio } from "./api/project-runtime/ProjectRuntimeContext";
 import { projectStores, relayHubStream } from "./api/project-runtime/projectStore";
 import type { ModelSourceDto, RenderPageRefDto, SourceDocumentDto } from "./api/project-runtime/generated";
@@ -108,8 +108,30 @@ const operationTime = (value: string | null | undefined, language: string) => {
 const VIEW_KEY = "monkeyhub.chat-view.v1";
 /** SS-9: unsent composer text by conversation (`new:<project>` before one exists), with when it last changed. */
 const DRAFTS_KEY = "monkeyhub.chat-drafts.v1", DRAFT_LIMIT = 50;
-/** The rail is always on screen; the conversation never shrinks past this. */
-const RAIL_WIDTH = 76, RESIZER_WIDTH = 5, CHAT_MIN_WIDTH = 360;
+/**
+ * #283: beside a workspace the conversation keeps its own width, CHAT_WIDTH until it is dragged, and the
+ * workspace takes the rest: what the projects list or a wider window gives up goes to the workspace. The
+ * conversation never shrinks past CHAT_MIN_WIDTH, nor takes the workspace below PANEL_MIN_WIDTH; ChatShell.css
+ * draws the same bounds.
+ */
+const RESIZER_WIDTH = 5, CHAT_MIN_WIDTH = 360, CHAT_WIDTH = 420, PANEL_MIN_WIDTH = 320;
+/** The conversation's width beside a workspace, in `room`: the space between the projects list and the rail. */
+export const chatWidthWithin = (width: number, room: number) =>
+  Math.round(Math.max(CHAT_MIN_WIDTH, Math.min(width, room - RESIZER_WIDTH - PANEL_MIN_WIDTH)));
+/**
+ * #283: the frame while a project workspace is on the right. The projects list folds to its icons unless the
+ * architect pinned it (`pinned` is null until the Hub's settings are read, and nothing folds before then), and
+ * Focus folds the conversation into a strip and the projects list with it, pinned or not. `open` is the projects
+ * list as the architect left it without a workspace; `peek` is it opened or closed by hand while it is folded,
+ * kept until the frame changes mode. A narrow window has no Focus: its workspace covers the conversation already.
+ */
+export function shellFrame({ workspace, narrow, pinned, focus, open, peek }: {
+  workspace: boolean; narrow: boolean; pinned: boolean | null; focus: boolean; open: boolean; peek: boolean | null;
+}) {
+  const focused = focus && workspace && !narrow;
+  const mode: "open" | "auto" | "focus" = focused ? "focus" : workspace && pinned === false ? "auto" : "open";
+  return { mode, focused, sidebar: mode === "open" ? open : peek ?? false };
+}
 import { chatCopyCatalog as words } from "./i18n/catalogs";
 /**
  * GH-285: the composer's and the operation notice's own copy, in both languages.
@@ -287,6 +309,7 @@ function Icon({ name }: { name: string }) {
     drawing: <><path d="M5 3h10l4 4v14H5ZM15 3v5h4M8 11h8v5H8Z" /><path d="M8 19h8M8 18v2m8-2v2" /></>,
     plus: <path d="M12 5v14M5 12h14" />, panel: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></>,
     sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>, close: <path d="m6 6 12 12M6 18 18 6" />,
+    pin: <path d="M9 4h6m-5 0v6l-3 4h10l-3-4V4m-2 10v6" />, focus: <path d="M4 9V4h5m6 0h5v5m0 6v5h-5m-6 0H4v-5" />,
     send: <path d="M12 19V5m-6 6 6-6 6 6" />, stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
     down: <path d="M12 5v14m-6-6 6 6 6-6" />,
     tasks: <><path d="M10 6h10M10 12h10M10 18h10" /><path d="m3.5 6 1.5 1.5L7.5 5m-4 7 1.5 1.5 2.5-2.5m-4 7 1.5 1.5 2.5-2.5" /></>,
@@ -365,10 +388,14 @@ function keepDrafts(changes: readonly (readonly [string, string])[]): boolean {
     return true;
   } catch { return false; }
 }
-/** What this page looked like last time: the same conversation and the same frame. */
-function readView(): { chatId: string | null; projectDir: string | null; sidebar: boolean | null; panel: boolean | null; panelWidth: number | null; tools: SavedTool[]; activeTool: AppId | null } {
+/**
+ * What this page looked like last time: the same conversation and the same frame. `sidebar` is the
+ * projects list as left without a workspace (#283), and `chatWidth` the conversation's width beside
+ * one; the panel width kept before #283 is no longer read, so every frame starts from the new default.
+ */
+function readView(): { chatId: string | null; projectDir: string | null; sidebar: boolean | null; panel: boolean | null; chatWidth: number | null; tools: SavedTool[]; activeTool: AppId | null } {
   const routeChatId = new URLSearchParams(window.location.search).get("chatId") || null;
-  const empty = { chatId: routeChatId, projectDir: null, sidebar: null, panel: null, panelWidth: null, tools: [], activeTool: null };
+  const empty = { chatId: routeChatId, projectDir: null, sidebar: null, panel: null, chatWidth: null, tools: [], activeTool: null };
   try {
     const saved = JSON.parse(localStorage.getItem(VIEW_KEY) ?? "null");
     const changedRoute = routeChatId && routeChatId !== saved?.chatId;
@@ -377,7 +404,7 @@ function readView(): { chatId: string | null; projectDir: string | null; sidebar
       projectDir: changedRoute ? null : typeof saved?.projectDir === "string" ? saved.projectDir : null,
       sidebar: typeof saved?.sidebar === "boolean" ? saved.sidebar : null,
       panel: changedRoute ? false : typeof saved?.panel === "boolean" ? saved.panel : null,
-      panelWidth: typeof saved?.panelWidth === "number" && Number.isFinite(saved.panelWidth) ? saved.panelWidth : null,
+      chatWidth: typeof saved?.chatWidth === "number" && Number.isFinite(saved.chatWidth) ? saved.chatWidth : null,
       tools: !changedRoute && Array.isArray(saved?.tools) ? saved.tools.filter((item: SavedTool) => item && tools.some((tool) => tool.id === item.id))
         .map((item: SavedTool) => ({ id: item.id, ...(typeof item.candidate === "string" ? { candidate: item.candidate } : {}) })) : [],
       activeTool: !changedRoute && tools.some((tool) => tool.id === saved?.activeTool) ? saved.activeTool : null,
@@ -608,7 +635,13 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [busy, setBusy] = useState(false);
   // PP-3: a send says Sending… once its project is connected; connecting it keeps its own words.
   const [sending, setSending] = useState<"connecting" | "posting" | null>(null);
-  const [sidebar, setSidebar] = useState(() => initial.sidebar ?? window.innerWidth > 900);
+  // #283: the projects list as the architect leaves it without a workspace; beside one, shellFrame folds it.
+  const [sidebarOpen, setSidebarOpen] = useState(() => initial.sidebar ?? window.innerWidth > 900);
+  const [sidebarPeek, setSidebarPeek] = useState<boolean | null>(null);
+  // The pin is a Hub user setting: it survives a restart, and every installed version reads the same file.
+  const [sidebarPinned, setSidebarPinned] = useState<boolean | null>(null);
+  const [focus, setFocus] = useState(false);
+  const [narrow, setNarrow] = useState(() => window.matchMedia?.("(max-width: 900px)").matches ?? false);
   const [panel, setPanel] = useState(() => initial.panel ?? false);
   const [tabs, setTabs] = useState<ToolTab[]>([]);
   const [activeTool, setActiveTool] = useState<AppId | null>(null);
@@ -622,7 +655,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const browserPages = useRef<HTMLDivElement>(null);
   // Cancelling clears the request its workspace receives; it neither restores the view nor answers as Back.
   const endComparison = () => { comparisonRef.current = null; setComparison(null); };
-  const [panelWidth, setPanelWidth] = useState(() => initial.panelWidth ?? 620);
+  const [chatWidth, setChatWidth] = useState(() => initial.chatWidth ?? CHAT_WIDTH);
   const [toolBusy, setToolBusy] = useState<AppId | null>(null);
   // PP-1: the tool being opened, and the step each project's start path is on.
   const [opening, setOpening] = useState<Opening | null>(null);
@@ -957,9 +990,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (chatId) url.searchParams.set("chatId", chatId); else url.searchParams.delete("chatId");
     window.history.replaceState(null, "", url);
   }, [chatId]);
-  useEffect(() => { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ chatId, projectDir, sidebar, panel, panelWidth, activeTool,
+  useEffect(() => { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ chatId, projectDir, sidebar: sidebarOpen, panel, chatWidth, activeTool,
     tools: !restoredTools.current && initial.projectDir === projectDir ? initial.tools : currentTabs.map((item) => ({ id: item.id, candidate: item.candidate })),
-  })); } catch { /* Navigation stays in this page. */ } }, [chatId, projectDir, sidebar, panel, panelWidth, tabs, activeTool, initial]);
+  })); } catch { /* Navigation stays in this page. */ } }, [chatId, projectDir, sidebarOpen, panel, chatWidth, tabs, activeTool, initial]);
   const nearLatest = (node: HTMLElement) => node.scrollHeight - node.scrollTop - node.clientHeight <= 80;
   // The list scrolls smoothly by its own style; following output must not lag behind it.
   const toLatest = (behavior: ScrollBehavior = "instant") => { messages.current?.scrollTo({ top: messages.current.scrollHeight, behavior }); };
@@ -1077,9 +1110,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     document.getElementById(`settings-tab-${tab.id}`)?.focus();
   };
   useEffect(() => { if (input.current) { input.current.style.height = "auto"; input.current.style.height = `${Math.min(input.current.scrollHeight, 180)}px`; } }, [draft]);
+  /** #283: what asks for the conversation brings it out of Focus first, then gives the composer the keyboard. */
+  const toComposer = () => { if (focus) { setFocus(false); requestAnimationFrame(() => input.current?.focus()); } else input.current?.focus(); };
   const focusConversation = () => {
     setDrafts((value) => ({ ...value, [draftKey]: value[draftKey]?.trim() ? value[draftKey]! : t.startingDraft }));
-    input.current?.focus();
+    toComposer();
   };
   // #253: a Board's image discussion arrives as a draft in its project's conversation: its words in the
   // composer, its exact pages on the card above them. Nothing is sent until the architect sends.
@@ -1101,8 +1136,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     setDrafts((value) => ({ ...value, [key]: value[key]?.trim() ? `${value[key]}\n\n${request.content}` : request.content }));
     setRenderContexts((value) => ({ ...value, [key]: { projectId: request.projectId, source: request.source, references: request.references } }));
     setError(null);
-    // Below 900 px the tool panel covers the conversation; the composer is what comes next.
+    // Below 900 px the tool panel covers the conversation, and Focus folds it; the composer is what comes next.
     if (window.matchMedia?.("(max-width: 900px)").matches) setPanel(false);
+    setFocus(false);
     requestAnimationFrame(() => input.current?.focus());
   };
   const renderCallbacks = useRef(new Map<string, (request: BoardRenderChatRequest) => void>());
@@ -1127,9 +1163,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     input.current?.focus();
   };
 
+  /** A conversation chosen is one to read: it comes out of Focus (#283). */
   const selectChat = (item: ChatSummary) => {
     if (item.projectDir !== projectDir) { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
-    setArchivedView(Boolean(item.archived)); setProjectDir(item.projectDir); setChatId(item.id);
+    setArchivedView(Boolean(item.archived)); setProjectDir(item.projectDir); setChatId(item.id); setFocus(false);
   };
   // GH-300: a notice's 查看 opens its chat here, in place (src/notifications/openChat.ts).
   const openFromNotice = useRef<(chatId: string, projectDir: string) => void>(() => undefined);
@@ -1153,7 +1190,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const selectProject = (item: ChatProject) => {
     const recent = visibleSessions.find((session) => session.projectDir === item.projectDir);
     if (recent) selectChat(recent);
-    else { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setProjectDir(item.projectDir); setChatId(null); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
+    else { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setProjectDir(item.projectDir); setChatId(null); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); setFocus(false); }
   };
 
   /** Ask the Hub to start an application and poll until it runs. `signal` stops only this polling (PP-1 Cancel). */
@@ -1690,6 +1727,86 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const railShown = skeleton ? skeleton.id : panel && selectedTab ? activeTool : null;
   /** NA-2: the Stage chip's words for the chat header, unless a project surface with its own chip is on screen. */
   const headerChip = position?.chip && !(panel && !skeleton && selectedTab?.runtimeId) ? position.chip : null;
+  // #283: a project workspace on screen folds the projects list unless it is pinned, and Focus folds the
+  // conversation as well. Usage and Fabrication are the Hub's own tools and leave the frame as it is.
+  const workspaceShown = panel && railShown !== null && railShown !== "monkeymonitor" && railShown !== "monkeyfab";
+  const frame = shellFrame({ workspace: workspaceShown, narrow, pinned: sidebarPinned, focus, open: sidebarOpen, peek: sidebarPeek });
+  const sidebar = frame.sidebar, focused = frame.focused;
+  // A peek lasts until the frame changes mode, and Focus ends with its workspace or on a narrow window.
+  // Both are adjusted while rendering, so no frame is drawn in the old mode.
+  const [frameMode, setFrameMode] = useState(frame.mode);
+  if (frameMode !== frame.mode) { setFrameMode(frame.mode); setSidebarPeek(null); }
+  if (focus && !focused) setFocus(false);
+  useEffect(() => {
+    const query = window.matchMedia?.("(max-width: 900px)");
+    if (!query) return;
+    const change = () => setNarrow(query.matches);
+    query.addEventListener("change", change);
+    return () => query.removeEventListener("change", change);
+  }, []);
+  useEffect(() => {
+    let live = true;
+    // Unreadable settings leave the list unpinned; a pin pressed before this answer wins over it.
+    void request<UserSettingsDto>("/api/settings/user").then((saved) => { if (live) setSidebarPinned((pinned) => pinned ?? saved.sidebarPinned === true); },
+      () => { if (live) setSidebarPinned((pinned) => pinned ?? false); });
+    return () => { live = false; };
+  }, []);
+  /** The projects list's toggle: a peek while it folds beside a workspace, otherwise the architect's own choice. */
+  const toggleSidebar = () => { if (frame.mode === "open") setSidebarOpen(!sidebarOpen); else setSidebarPeek(!sidebar); };
+  // One write at a time, each carrying the newest choice and every other saved preference as it was read.
+  const pinWrite = useRef({ wanted: false, running: false });
+  const savePin = async () => {
+    const job = pinWrite.current;
+    if (job.running) return;
+    job.running = true;
+    try {
+      for (let written: boolean | null = null; written !== job.wanted;) {
+        const wanted: boolean = job.wanted;
+        const saved = await request<UserSettingsDto>("/api/settings/user");
+        // Unpinned is the default and stays out of the file, which versions older than the pin still read.
+        if ((saved.sidebarPinned === true) !== wanted) await request<UserSettingsDto>("/api/settings/user", { ...saved, sidebarPinned: wanted || null }, "PUT");
+        written = wanted;
+      }
+    } catch (cause) { setError(asFailure(cause)); }
+    finally { job.running = false; }
+  };
+  const togglePin = () => {
+    const pinned = !sidebarPinned;
+    pinWrite.current.wanted = pinned;
+    setSidebarPinned(pinned);
+    // A pinned list is an open one, beside a workspace and without.
+    if (pinned) setSidebarOpen(true);
+    void savePin();
+  };
+  // The Focus control pressed leaves the screen with its mode; its counterpart takes the keyboard focus.
+  const focusToggle = useRef<HTMLButtonElement>(null), focusStrip = useRef<HTMLButtonElement>(null), focusPressed = useRef(false);
+  const toggleFocus = () => { focusPressed.current = true; setFocus(!focused); };
+  useEffect(() => {
+    if (!focusPressed.current) return;
+    focusPressed.current = false;
+    (focused ? focusStrip : focusToggle).current?.focus();
+  }, [focused]);
+  // What the strip says about the conversation it stands for: waiting on the architect, or working.
+  const stripState = sessions.find((item) => item.id === chatId)?.attention === "permission" ? "needs" : running ? "running" : null;
+  const mainRef = useRef<HTMLElement>(null), browserRef = useRef<HTMLElement>(null), railRef = useRef<HTMLElement>(null);
+  /** The conversation beside a workspace, resized from where its column is drawn now. */
+  const resizeChat = (next: (main: DOMRect) => number) => {
+    const main = mainRef.current?.getBoundingClientRect(), rail = railRef.current?.getBoundingClientRect();
+    if (main && rail) setChatWidth(chatWidthWithin(next(main), rail.left - main.left));
+  };
+  // The separator states the workspace's width as drawn, and the widest it can be.
+  const [separator, setSeparator] = useState<{ now: number; max: number } | null>(null);
+  const measureSeparator = useCallback(() => {
+    const main = mainRef.current?.getBoundingClientRect(), shown = browserRef.current?.getBoundingClientRect(), rail = railRef.current?.getBoundingClientRect();
+    if (!main || !shown || !rail) return;
+    const next = { now: Math.round(shown.width), max: Math.round(Math.max(PANEL_MIN_WIDTH, rail.left - main.left - RESIZER_WIDTH - CHAT_MIN_WIDTH)) };
+    setSeparator((current) => current?.now === next.now && current.max === next.max ? current : next);
+  }, []);
+  useLayoutEffect(() => { if (panel && !focused) measureSeparator(); }, [panel, focused, chatWidth, sidebar, measureSeparator]);
+  useEffect(() => {
+    window.addEventListener("resize", measureSeparator);
+    return () => window.removeEventListener("resize", measureSeparator);
+  }, [measureSeparator]);
 
   const initialRuntimeRoute = useRef(new URLSearchParams(window.location.search).get("runtimeId")).current;
   const initialMonitorRoute = useRef(new URLSearchParams(window.location.search).get("view") === "monitor").current;
@@ -1752,9 +1869,6 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // visible surface, opens the panel or replaces the model on screen. The request's
   // Study card and the Stage chip's "ready" notice lead to it, in the Design Tree.
 
-  // The tool panel may take everything except the rail and a usable conversation.
-  const clampWidth = (width: number) => Math.max(320, Math.min(width, window.innerWidth - (sidebar ? 244 : 60) - RAIL_WIDTH - RESIZER_WIDTH - CHAT_MIN_WIDTH));
-
   /** The user's words and the Agent's answer, with their files: never folded. */
   const messageEntry = (message: ChatMessage) => <article className={`chat-message chat-message--${message.role}`} key={message.id}>
     {message.role === "user" && message.contextMode === "project" && <p className="chat-muted">{t.contextProjectMessage}</p>}
@@ -1804,7 +1918,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (target.id !== chatId) { walking.current = true; selectChat(target); }
   };
   const mw = menuWords[preferences.language];
-  const startChat = () => { setArchivedView(false); setChatId(null); setChat(null); setError(null); input.current?.focus(); };
+  const startChat = () => { setArchivedView(false); setChatId(null); setChat(null); setError(null); toComposer(); };
   const appearanceChoices = (onAppearance ? [
     { kind: "separator", id: "look" },
     { kind: "heading", id: "theme", label: mw.theme },
@@ -1840,7 +1954,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       { kind: "command", id: "select-all", label: mw.selectAll, hint: "Ctrl+A", onSelect: () => editFocused("selectAll") },
     ] },
     { id: "view", label: mw.view, items: [
-      { kind: "check", id: "sidebar", label: mw.sidebar, checked: sidebar, onSelect: () => setSidebar(!sidebar) },
+      { kind: "check", id: "sidebar", label: mw.sidebar, checked: sidebar, onSelect: toggleSidebar },
       { kind: "check", id: "tools", label: mw.tools, checked: panel, onSelect: () => setPanel(!panel) },
       ...appearanceChoices,
     ] },
@@ -1848,16 +1962,21 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       { kind: "command", id: "update", label: mw.update, onSelect: openSoftwareUpdate },
     ] },
   ];
-  return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} style={{ "--browser-width": `${panelWidth}px` } as CSSProperties}>
+  return <div className="chat-shell" data-sidebar={sidebar} data-panel={panel} data-focus={focused} style={{ "--chat-width": `${chatWidth}px` } as CSSProperties}>
     {/* #337 L0: the Hub's text menu row, as desktop apps have it: back, forward, the sidebar, then words. */}
     <div className="chat-menubar"><HubMenuBar label={mw.menus} menus={hubMenus} before={<>
       <button type="button" className="chat-icon" aria-label={mw.back} title={mw.back} disabled={trail.index <= 0} onClick={() => walk(-1)}><Icon name="back" /></button>
       <button type="button" className="chat-icon" aria-label={mw.forward} title={mw.forward} disabled={trail.index >= trail.ids.length - 1} onClick={() => walk(1)}><Icon name="forward" /></button>
-      <button type="button" className="chat-icon" aria-label={sidebar ? t.collapse : t.expand} title={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button>
+      <button type="button" className="chat-icon" aria-label={sidebar ? t.collapse : t.expand} title={sidebar ? t.collapse : t.expand} onClick={toggleSidebar}><Icon name="sidebar" /></button>
     </>} /></div>
     <aside className="chat-sidebar" aria-label={t.projects}>
       <div className="chat-sidebar__body">
-        <button className="chat-new" onClick={() => { setArchivedView(false); setChatId(null); setChat(null); setError(null); input.current?.focus(); }}><Icon name="plus" /><span>{t.newChat}</span></button>
+        {/* #283: the pin keeps this list open when a workspace opens on the right. */}
+        <div className="chat-sidebar__head">
+          <button className="chat-new" onClick={startChat}><Icon name="plus" /><span>{t.newChat}</span></button>
+          <button type="button" className="chat-icon chat-pin" aria-pressed={sidebarPinned === true} aria-label={t.pinSidebar}
+            aria-description={sidebarPinned ? t.pinSidebarOn : t.pinSidebarOff} title={sidebarPinned ? t.pinSidebarOn : t.pinSidebarOff} onClick={togglePin}><Icon name="pin" /></button>
+        </div>
         <button className="chat-new chat-new--project" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}><Icon name="folder" /><span>{t.newProject}</span></button>
         {/* #300: Agent work running or waiting in any open project, one entry away. */}
         <button className="chat-new chat-tasks-toggle" aria-expanded={tasksOpen} aria-controls="chat-tasks" onClick={() => setTasksOpen(!tasksOpen)}>
@@ -1928,12 +2047,15 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         <button className="chat-settings" aria-label={t.settings} title={t.settings} onClick={openSettings}><Icon name="settings" /><span>{t.settings}</span></button>
       </div>
     </aside>
-    <main className="chat-main">
-      <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button><div className="chat-header__text"><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}{external && <small className="chat-external-badge">{t.externalChat}</small>}</h1></div>
+    {/* #283: in Focus the conversation keeps its place and layout out of sight, and the strip beside it stands in for it. */}
+    <main className="chat-main" ref={mainRef} inert={focused} aria-hidden={focused || undefined}>
+      <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={toggleSidebar}><Icon name="sidebar" /></button><div className="chat-header__text"><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}{external && <small className="chat-external-badge">{t.externalChat}</small>}</h1></div>
         {/* NA-2: below 900 px this header stays above an open panel. It carries the Stage chip whenever no
             project surface, whose bar has the chip, is on screen, so exactly one chip shows. */}
         {headerChip && <button type="button" className="chat-header__chip" aria-description={t.openInTree} title={t.openInTree}
-          onClick={() => void openTool("tree")}><Icon name="tree" /><span>{headerChip}</span></button>}</header>
+          onClick={() => void openTool("tree")}><Icon name="tree" /><span>{headerChip}</span></button>}
+        {workspaceShown && <button type="button" ref={focusToggle} className="chat-focus" aria-description={t.focusHint} title={t.focusHint}
+          onClick={toggleFocus}><Icon name="focus" /><span>{t.focus}</span></button>}</header>
       {(!eventsConnected || crashed || recovering || workCopyRefusal) && <div className="chat-runtime" role="status" aria-live="polite">
         <div>{!eventsConnected && <p>{t.reconnecting}</p>}
           {(crashed || recovering) && <><p>{recovering ? t.recovering : t.workerCrashed}</p><small>{t.recoveryHint}</small></>}
@@ -2104,10 +2226,23 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         <p className="chat-composer-note" role="status">{sending === "posting" ? w.sending : busy ? t.working : !availableProvider?.available && !chatId ? availableProvider?.detail ?? (loading ? "" : t.noProvider) : ""}</p>
       </div>
     </main>
-    {panel && <div className="chat-resizer" role="separator" aria-label={t.resize} aria-keyshortcuts="ArrowLeft ArrowRight" aria-orientation="vertical" aria-valuemin={320} aria-valuemax={Math.max(320, window.innerWidth - 400)} aria-valuenow={panelWidth} tabIndex={0}
-      onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); setPanelWidth((width) => clampWidth(width + (event.key === "ArrowLeft" ? 32 : -32))); } }}
-      onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setPanelWidth(clampWidth(window.innerWidth - event.clientX)); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} />}
-    {(panel || workspaceTabs.length > 0) && <aside className="chat-browser" aria-label={t.browser} hidden={!panel} inert={!panel} aria-hidden={!panel}>
+    {/* #283: Focus folds the conversation into this strip; it says when the conversation is working or waits on
+        the architect, and pressed, shows the conversation again. */}
+    {focused && <div className="chat-strip">
+      <button type="button" ref={focusStrip} className="chat-strip__open" aria-label={t.focusExit}
+        aria-description={[stripState === "needs" ? s.needsYouThread : stripState === "running" ? t.processWorking : null, t.focusExitHint].filter(Boolean).join(" · ")}
+        title={[t.focusExit, stripState === "needs" ? s.needsYouThread : stripState === "running" ? t.processWorking : null].filter(Boolean).join(" · ")}
+        onClick={toggleFocus}><Icon name="chat" /><span aria-hidden="true">{t.focusStrip}</span>
+        {stripState && <span className="chat-strip__state" data-state={stripState} aria-hidden="true" />}</button>
+    </div>}
+    {/* The separator moves the conversation's edge; its value is the workspace's width, as drawn. */}
+    {panel && !focused && <div className="chat-resizer" role="separator" aria-label={t.resize} aria-keyshortcuts="ArrowLeft ArrowRight" aria-orientation="vertical"
+      aria-valuemin={PANEL_MIN_WIDTH} aria-valuemax={separator?.max} aria-valuenow={separator?.now} tabIndex={0}
+      onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); const step = event.key === "ArrowLeft" ? -32 : 32; resizeChat((main) => main.width + step); } }}
+      onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); }}
+      onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) { const x = event.clientX; resizeChat((main) => x - main.left - RESIZER_WIDTH / 2); } }}
+      onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} />}
+    {(panel || workspaceTabs.length > 0) && <aside className="chat-browser" ref={browserRef} aria-label={t.browser} hidden={!panel} inert={!panel} aria-hidden={!panel}>
       <div className="chat-browser__pages" ref={browserPages}>{workspaceTabs.map((item) => {
         const visible = panel && item === selectedTab;
         if (item.id === "monkeymonitor") return <div className="chat-monitor-workspace" key={`${item.id}:${item.revision}`} hidden={!visible} inert={!visible}>
@@ -2145,7 +2280,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     </aside>}
     {/* One column of entries for the whole right-hand side: the tools, this
         conversation's project, and whether the tool content is open at all. */}
-    <nav className="chat-rail" aria-label={t.rail}>
+    <nav className="chat-rail" ref={railRef} aria-label={t.rail}>
       {/* The workspaces of this project, then the tools used over it (Drawing on
           the project's state, Usage on the machine): one rail, two kinds of
           entry, told apart on sight. */}

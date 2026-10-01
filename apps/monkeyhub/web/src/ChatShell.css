@@ -1,11 +1,13 @@
 .chat-shell{position:relative;height:100dvh;min-height:460px;display:grid;grid-template-columns:var(--sidebar-width) minmax(360px,1fr) var(--rail-width);overflow:hidden;background:var(--ground);--chat-border:var(--line);--sidebar-width:244px;--rail-width:76px;--chat-header-height:64px;--menu-height:40px;grid-template-rows:var(--menu-height) minmax(0,1fr)}
+/* #283: beside a workspace the conversation keeps its own width (--chat-width, set by the separator), never under
+   360 px nor leaving the workspace under 320 px, and the workspace takes the rest. */
+.chat-shell{--chat-width:420px;--chat-column:clamp(360px,var(--chat-width),calc(100% - var(--sidebar-width) - 5px - var(--rail-width) - 320px))}
 .chat-shell[data-sidebar=false]{--sidebar-width:60px}
 /* #302: Record edits and continue, under the refusal it clears. */
 .chat-composer .chat-record{min-height:32px;margin:6px 0 2px;padding:5px 12px}
-/* Keep the saved panel width only while it fits beside the conversation and both rails. */
-.chat-shell[data-panel=true]{grid-template-columns:var(--sidebar-width) minmax(360px,1fr) 5px minmax(0,min(var(--browser-width),calc(100% - var(--sidebar-width) - 360px - 5px - var(--rail-width)))) var(--rail-width)}
+.chat-shell[data-panel=true]{grid-template-columns:var(--sidebar-width) var(--chat-column) 5px minmax(0,1fr) var(--rail-width)}
 /* A closed panel keeps each canvas at its last layout size and in its own page. */
-.chat-browser[hidden]{display:flex;position:absolute;top:var(--menu-height);bottom:0;right:var(--rail-width);width:max(0px,min(var(--browser-width),calc(100% - var(--sidebar-width) - 360px - 5px - var(--rail-width))));visibility:hidden;pointer-events:none}
+.chat-browser[hidden]{display:flex;position:absolute;top:var(--menu-height);bottom:0;right:var(--rail-width);width:max(0px,calc(100% - var(--sidebar-width) - var(--chat-column) - 5px - var(--rail-width)));visibility:hidden;pointer-events:none}
 @media(max-width:900px){.chat-browser[hidden]{inset:calc(var(--menu-height) + var(--chat-header-height)) 68px 0 0;width:auto}}
 @media(max-width:500px){.chat-browser[hidden]{inset:calc(var(--menu-height) + var(--chat-header-height)) 64px 0 0}}
 .chat-icon{display:inline-flex;align-items:center;justify-content:center;width:36px;min-width:36px;height:36px;border:0;background:transparent;border-radius:8px;color:var(--muted);padding:8px;cursor:pointer}
@@ -306,3 +308,29 @@
 .hub-menu__heading{padding:8px 10px 2px 30px;color:var(--faint);font-size:var(--text-caption)}
 .hub-menu__separator{height:1px;margin:4px 6px;background:var(--line)}
 :where([data-ui-style=quiet],[data-ui-style=titleblock],[data-ui-style=night]) .chat-menubar{border-bottom-color:var(--rule-soft)}
+/* #283: the pin beside New chat keeps the projects list open when a workspace opens on the right. */
+.chat-sidebar__head{display:flex;align-items:center;gap:4px}
+.chat-sidebar__head .chat-new{flex:1;width:auto;min-width:0}
+.chat-pin{flex:none}.chat-shell .chat-pin svg{width:18px;height:18px}
+.chat-pin[aria-pressed=true]{background:var(--panel-2);color:var(--accent)}
+/* #283: Focus, at the end of the conversation's header while a workspace is open. Below 900 px the workspace
+   covers the conversation already, and there is no Focus. */
+.chat-focus{display:inline-flex;align-items:center;gap:6px;flex:none;min-height:32px;padding:4px 11px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);font-size:var(--text-caption);white-space:nowrap;cursor:pointer}
+.chat-shell .chat-focus svg{width:15px;height:15px}
+.chat-focus:hover{background:var(--panel-2);color:var(--ink)}
+/* In Focus the conversation keeps its place and layout out of sight, so its scroll position and draft come back
+   as they were, and a strip as narrow as the folded projects list stands in for it. */
+.chat-strip{display:none}
+@media(min-width:901px){
+  .chat-shell[data-focus=true]{--strip-width:60px;grid-template-columns:var(--sidebar-width) var(--strip-width) minmax(0,1fr) var(--rail-width)}
+  .chat-shell[data-focus=true] .chat-main{position:absolute;top:var(--menu-height);bottom:0;left:var(--sidebar-width);width:var(--chat-column);visibility:hidden;pointer-events:none}
+  .chat-strip{display:flex;flex-direction:column;align-items:stretch;min-width:0;min-height:0;padding:8px 6px;border-right:1px solid var(--chat-border);background:var(--panel)}
+}
+@media(max-width:900px){.chat-focus{display:none}}
+.chat-strip__open{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;min-height:52px;padding:7px 2px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:var(--text-caption);line-height:1.25;cursor:pointer}
+.chat-strip__open:hover{background:var(--panel-2);color:var(--ink)}
+.chat-shell .chat-strip__open svg{width:18px;height:18px}
+.chat-strip__state{position:absolute;top:7px;right:9px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.chat-strip__state[data-state=running]{animation:chat-pulse 1.6s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.chat-strip__state[data-state=running]{animation:none}}
+:where([data-ui-style=quiet],[data-ui-style=titleblock],[data-ui-style=night]) .chat-strip__open{border-radius:var(--radius-sm)}
