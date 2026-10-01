@@ -52,6 +52,7 @@ from .application.monitored_compiler import MonitoredCompiler
 from .monitoring import StudioMonitor
 from .application.options import OptionStore
 from .application.proposals import ProposalStore
+from .application.retention import RetentionSweeps
 from .application.validation import ValidationStore
 from .protocol import SERVER_VERSION
 from .settings import BIND_ENV, PROJECT_DIR_ENV, REMOTE_MODE, SHARED_PROJECT_ROLE, StudioSettings
@@ -328,7 +329,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Prepare native drawing libraries and follow index commits; on shutdown drain accepted work and close the binding.
 
     From startup on, every commit of the project index queues the design
-    tree's thumbnails that are not drawn yet (``_project_commits``).
+    tree's thumbnails that are not drawn yet (``_project_commits``). A
+    process ``main`` started also cleans the project's superseded drafts into
+    its trash once the index has loaded (``RetentionSweeps``, #575).
 
     A candidate run writes P036 records; killing its thread mid-run would
     leave a run directory nobody can account for. Shutting the worker down and
@@ -349,8 +352,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         _derive_routes(app)
         app.state.first_reads = {path: threading.Event() for path in CONDITIONAL_READS}
         threading.Thread(target=_prepare_first_reads, args=(app,), name="studio-first-reads", daemon=True).start()
+    # #575: the project trash takes what the line moved past, once the index has loaded; on its own thread.
+    retention = getattr(app.state, "retention", None)
+    if retention is not None:
+        retention.at_open()
 
     yield
+    if retention is not None:
+        await run_in_threadpool(retention.stop)
     app.state.stop_index_events()
     app.state.jobs.stop_accepting()
     app.state.render_jobs.stop_accepting()
@@ -706,6 +715,9 @@ def main(argv: list[str] | None = None) -> None:
     app.state.source_revision = _source_revision()
     app.state.managed_instance_id = args.managed_instance_id
     app.state.prepare_first_reads = True
+    if settings.service_role != SHARED_PROJECT_ROLE:
+        # The project's own process cleans what its line moved past (#575): at open and after each Continue.
+        app.state.retention = RetentionSweeps(app.state)
     if not args.managed_stdin:
         uvicorn.run(app, host=settings.bind_host, port=args.port)
         return

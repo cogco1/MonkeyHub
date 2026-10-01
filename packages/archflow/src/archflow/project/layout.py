@@ -148,6 +148,26 @@ class ProjectLayout:
         """Current working position and retention choices, independent of issued HEAD."""
         return self.root / "design" / "working.json"
 
+    @property
+    def trash(self) -> Path:
+        """The project trash (#575): runs moved out of ``runs/`` whole, restorable until they are purged.
+
+        ``trash/runs/<run_id>/`` is a run's own directory, renamed there
+        unchanged; ``trash/entries/<run_id>.json`` is the manifest saying when
+        it moved, why, under which rule, and the working-draft row it took.
+        """
+        return self.root / "trash"
+
+    def trashed_run(self, run_id: str) -> Path:
+        """Where a run's whole directory stands while it is in the trash."""
+        require_identifier(run_id, "run_id")
+        return self.trash / "runs" / run_id
+
+    def trash_manifest(self, run_id: str) -> Path:
+        """The manifest of a run in the trash, kept apart from the runs so no run id can collide with it."""
+        require_identifier(run_id, "run_id")
+        return self.trash / "entries" / f"{run_id}.json"
+
     def run(self, run_id: str) -> RunLayout:
         require_identifier(run_id, "run_id")
         return RunLayout(self.runs / run_id)

@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ...application.retention import TrashView
 from ...status import RuntimeSnapshot, WorktreeGraph
 from .candidate import JobDto, job_dto
 from .design_history import DesignBranchDto, DesignStageDto, branch_dto, stage_dto
@@ -159,4 +160,62 @@ def worktree_graph_dto(value: WorktreeGraph) -> WorktreeGraphDto:
             source_run_id=row.source_run_id, detail=row.detail,
         ) for row in value.representations],
         warnings=list(value.warnings),
+    )
+
+
+# ---- the project trash (#575) ------------------------------------------------------------------------
+
+
+class TrashEntryDto(BaseModel):
+    """One run in the project trash: what moved, why, what superseded it, and until when it can be restored."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    run_id: str = Field(alias="runId")
+    trashed_at: str = Field(alias="trashedAt", description="When it moved into the trash.")
+    expires_at: str = Field(alias="expiresAt", description="When it is purged; until then it can be restored.")
+    rule: str = Field(description=
+        "Which retention rule moved it: superseded (a draft the head's line superseded), replaced-attempt (an attempt "
+        "an admitted result replaced, or one its loop withdrew) or failed-attempt (a design change whose run never finished).")
+    reason: str = Field(description="Why it was moved, in one sentence.")
+    superseded_by: str | None = Field(alias="supersededBy", description=
+        "The run that superseded it: the line's step for a superseded draft, the admitted result for a replaced attempt.")
+    base_run_id: str | None = Field(alias="baseRunId", description="The run it was made from.")
+    label: str | None = Field(description="Its name or the words that asked for it, when it had them.")
+    state_digest: str | None = Field(alias="stateDigest", description="Its design state's digest, when it finished.")
+
+
+class ProjectTrashDto(BaseModel):
+    """The project trash, oldest entry first."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    project_id: str = Field(alias="projectId")
+    retention_days: int = Field(alias="retentionDays", description="How long an entry can be restored before it is purged.")
+    entries: list[TrashEntryDto]
+
+
+class TrashRestoreRequestDto(BaseModel):
+    """Restore one trashed run: it comes back whole, with any trashed run it was made from."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+    project_id: str = Field(alias="projectId")
+    run_id: str = Field(alias="runId", pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+
+
+class TrashRestoreDto(BaseModel):
+    """What came back, and the trash as it now is."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    project_id: str = Field(alias="projectId")
+    restored: list[str] = Field(description="The runs that came back: the one asked for first, then those it names.")
+    trash: ProjectTrashDto
+
+
+def trash_dto(value: TrashView) -> ProjectTrashDto:
+    return ProjectTrashDto(
+        project_id=value.project_id, retention_days=value.retention_days,
+        entries=[TrashEntryDto(
+            run_id=entry.run_id, trashed_at=entry.trashed_at, expires_at=value.expires_at(entry), rule=entry.rule,
+            reason=entry.reason, superseded_by=entry.superseded_by, base_run_id=entry.base_run_id, label=entry.label,
+            state_digest=entry.state_digest,
+        ) for entry in value.entries],
     )

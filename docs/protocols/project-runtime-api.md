@@ -121,9 +121,11 @@ tolerate it.
 | POST | `/api/design-branches` → 201 | a sustained branch forked from a reachable historical Stage | writes design ref | provisional |
 | GET | `/api/working-source?workspace=` | the Working Head (§4.1) and the exact source one workspace (`modeling`, `drawing`, `render`, `board`) follows: `head{runId, stateDigest, sourceStageRef, branchId, accepted, origin, lineage}`, `compatible`, `source`, `stageRef` (only for an exact accepted Stage model), `reason`, `warnings`. `policy=frozen` with `runId`/`stateDigest`/`assetSha256` keeps that pin and says whether the head moved past it | reads the working position + shared + design refs | provisional |
 | GET | `/api/working-draft/revision` | `{projectId, revisionSha256}` of the working position alone, for polling whether the head may have moved; no local draft and no project guard | reads the working position | provisional |
-| PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words | **writes the working position + that run's review** | provisional |
+| PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words. In the project's own Runtime a move onto a run then cleans what the line now moves past into the project trash, on a thread of its own (§4.1) | **writes the working position + that run's review** | provisional |
 | GET | `/api/representation-status?runId=&assetSha256=&revisionRef=&pageIndex=` | one exact registered page's representation status (§4.1) in the projection's own words: `{projectId, state, reason}`, `state` one of `current`, `outdated`, `frozen`, `unavailable`. A page that cannot be read, or whose replacements loop, is `unavailable`; nothing is stored | reads the working position + shared + design refs | provisional |
 | GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, the head's `line` of steps oldest first with their retained `label`, `request`, `summary` and `stageRef` (#575), other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), a draft the line superseded as `relation: superseded` with `supersededBy`, each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged, started, moved or deleted | reads the working position + shared + design refs + the admissions review + each result's Continue events + server memory | provisional |
+| GET | `/api/trash` | the project trash (#575, §4.1): `retentionDays` (30) and each entry oldest first, `runId`, `trashedAt`, `expiresAt`, `rule` (`superseded`, `replaced-attempt`, `failed-attempt`), `reason`, `supersededBy`, `baseRunId`, `label` and `stateDigest`. Answered conditionally (ETag) like the tree's other views | reads `trash/entries/` | provisional |
+| POST | `/api/trash/restore` | `{projectId, runId}`: moves that trashed run back into `runs/` exactly as it left, with its working-draft row and every trashed run it names (what it was made from); answers `restored` and the trash as it now is. A restored run is never cleaned again. `TRASH_ENTRY_NOT_FOUND` (404), `TRASH_RESTORE_REFUSED` (409, its place in `runs/` is taken or it could not be moved whole) | **moves runs back + writes the working position + the retention run's review** | provisional |
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
 | POST | `/api/drawings/section-perspectives` → 201 | exact-model section perspective document: `section` (`{line, keep}` or `{origin, normal}`) cuts the retained STEP, the kept side is drawn in perspective with the section plane as picture plane (true to scale at `scaleDenominator`), the cut in poché; optional `camera` (`{eye, target, up?, fovDeg?}` or the default one-point `{eyeHeight?, fovDeg?}`), `depth`, `hiddenObjectIds`; `cutLineMm`, `visibleLineMm`, `hatchSpacingMm` and, validated and stored as a cut plan's, `hatch.byMaterial.<material>` (`{spacingMm 0.5–20, angleDeg 0–<180, poche}`, stored complete: spacing defaults to this request's `hatchSpacingMm`, angle 45, poché false) and `beyond.fade` (0–1), so the cut takes the material hatch/poché and the fade greys what lies beyond it; an empty `byMaterial` or a zero fade is the request without them; the view recipe records the request, plane and resolved camera; refusals are named (`SECTION_PLANE_MISSES_MODEL`, `SECTION_EYE_ON_KEPT_SIDE`, …) | writes shared drawing artifacts and document registration | provisional |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
@@ -1186,7 +1188,8 @@ wherever a server offers it.
 
 `capabilities` is how a client hides what a server cannot do instead of discovering it as a 404.
 A capability name is a feature, not a route: `projection`, `pick`, `gestures`, `intents`,
-`proposals`, `candidates`, `candidate-admission` (§5.5), `captures`, `compare`, `artifacts`, `program`, `validation`, `events`, and
+`proposals`, `candidates`, `candidate-admission` (§5.5), `captures`, `compare`, `artifacts`, `program`, `validation`, `events`,
+`project-trash` (§4.1: `GET /api/trash` and its restore), and
 `cad-export` when geometry export is enabled, and `rhino-export` when Rhino is explicitly selected.
 
 An explicitly configured MonkeyMonitor diagnostic directory adds `operation-timing`
@@ -1481,8 +1484,37 @@ naming the step made from that source. Nobody took it further when neither it no
 result built on it was continued (no `design.continued` event names it) or admitted; an admitted
 option and work that combines with the head stay `diverged`. A superseded draft keeps its `writes`,
 `reconcile` and `conflicts` for whoever asks; the Design Tree folds it where the line moved on
-instead of showing it as a line with conflicts. Nothing is moved, deleted or rewritten: what a later
-cleanup may do with a superseded draft is not decided here.
+instead of showing it as a line with conflicts. Reading the graph moves, deletes and rewrites nothing.
+
+**The project trash (#575).** Like autosave, a project keeps the steps one can return to, not every
+version made on the way (Kaiwen, 2026-10-01). Only these may be cleaned: a draft the graph names
+`superseded`; an attempt an admitted result `supersedes`, or a result its own loop withdrew, with the
+attempts that result replaced; and a failed attempt, a design change whose run never finished. Each
+is cleaned only when all of these hold: it is on no kept line (the Working Head's, a design branch
+Stage's or an admitted result's); nobody continued, admitted or rejected it, and nothing built on it
+stays; it is no saved version, no working position a person chose and no execution's input; its own
+run holds only what its execution wrote (no drawing page, render, annotation, Board scene, working
+copy, review, Stage or attributed act); and no retained record outside it names it, except the
+admission that replaced or withdrew it. The search for its id covers every run's records (Board
+component-info datasets' `appliesTo.runId`, registered drawing pages and their model sources, render
+attempts and model-source pins, document annotations, admissions and Studies, saved versions, Stages,
+working copies), `design/branches.json`, `events/`, `canonical/` and `input/`; the project index is
+derived from those records and adds nothing. A run another cleaned run names goes after it, and one
+a kept run names stays. When anything that could keep a run cannot be read - the working position,
+the admissions, a design branch - nothing is cleaned.
+
+What may go moves, whole and unchanged, into the project's `trash/` (`trash/runs/<runId>/`, beside a
+`ProjectTrashEntry@1` manifest in `trash/entries/`), taking its working-draft row with it; the
+repository refuses the Working Head, a run in an execution's ledger, a saved or chosen row, the local
+recovery, a run keeping a review, Stage or attributed act, a branch Stage and the published history.
+The project index forgets a trashed run and sees a restored one again. The project's own Runtime
+cleans on a thread of its own at project open, once the index has loaded and entries older than 30
+days are purged, and after each Continue; each sweep that moved runs retains one `AuditEvent@1`
+`design.cleaned` (actor `studio:retention-rule`, origin `runtime`, the runs with their rule and
+reason) and each restore one `design.restored`, in the fixed `studio-retention` run. A run those
+events name is never cleaned again, so a draft a person restored stays. `GET /api/trash` lists the
+trash and `POST /api/trash/restore` brings one run back; shared objects (`objects/sha256`) never move
+and a purge does not reclaim them.
 
 The position's `revisionSha256` (from `GET /api/working-draft`, `/api/working-draft/revision` and
 `/api/working-source`) is the compare-and-swap token that `PUT /api/working-draft`, `POST

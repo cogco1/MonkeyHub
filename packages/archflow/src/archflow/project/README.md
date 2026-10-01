@@ -110,6 +110,7 @@ Known ownership:
 | speculative tool files | `runs/<run_id>/workspaces/` |
 | external-world reconciliation | `runs/<run_id>/recovery/` |
 | non-authoritative share packages | `exports/` |
+| a whole run its caller's retention rules cleaned, restorable for 30 days (#575) | `trash/runs/<run_id>/`, its manifest in `trash/entries/<run_id>.json` |
 
 If an output does not fit exactly one row, stop before writing and ask the
 project owner to assign it.

@@ -61,8 +61,11 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
   }, [folds, setFolds, tree]);
   const select = useCallback((id: string | null) => {
     const chosen = id ? tree?.nodes.get(id) : undefined;
-    // A fold is a control, not a node to inspect: choosing it opens it, from the canvas or the list alike.
-    if (chosen?.kind === "fold" || chosen?.kind === "drafts") { expand(chosen.kind === "fold" ? "steps" : "drafts"); return; }
+    // A fold is a control, not a node to inspect: choosing it opens it, from the canvas or the list alike. A drafts
+    // card that holds drafts the project cleaned opens its inspector instead, which lists them with Restore (#575).
+    if (chosen?.kind === "fold" || (chosen?.kind === "drafts" && !chosen.drafts!.cleaned.length)) {
+      expand(chosen.kind === "fold" ? "steps" : "drafts"); return;
+    }
     setSelected(id);
     setConfirmAccept(false);
     if (chosen?.kind === "candidate" && chosen.runId) markSeen(chosen.runId);
@@ -130,6 +133,7 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
       </> : <DesignTreeList tree={tree} words={words} selected={selected} onSelect={select} />}
       {tree && node && <DesignTreeDetails tree={tree} node={node} words={words} data={data} confirmAccept={confirmAccept}
         onConfirmAccept={setConfirmAccept} onClose={() => select(null)} onView={view} onRecordEdits={onRecordEdits}
+        onShowDrafts={() => expand("drafts")}
         onCompare={onCompare && ((target) => { if (target.runId) { markSeen(target.runId); onCompare(target.runId); } })} />}
     </div>
     {/* #337 L5: what is selected, else how to work the canvas; at the right end, what the canvas's colours and

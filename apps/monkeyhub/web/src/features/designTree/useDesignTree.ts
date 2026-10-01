@@ -5,8 +5,9 @@
  * Continue is the existing working-position write (`PUT /api/working-draft`,
  * the path `changeEditingBase` takes); its Undo is the same write onto the
  * Current it replaced (continueUndo.ts). Accept as next Stage is the existing
- * `POST /api/candidates/{id}/accept`, on the Working Head only. View changes
- * nothing here. Each act that changed the design confirms itself in a toast
+ * `POST /api/candidates/{id}/accept`, on the Working Head only. Restore brings
+ * a superseded draft the project cleaned back from its trash
+ * (`POST /api/trash/restore`, #575). View changes nothing here. Each act that changed the design confirms itself in a toast
  * beside the chip (FN-5); a refusal stays inline where it was asked for. The
  * facts are read again when an entity the tree shows moves in the project's
  * store (#366: its index committed, whoever wrote; `treeShows`), when a job
@@ -33,20 +34,22 @@ export { DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED } from "./continueUndo";
 /**
  * The index entities the tree is read from, and so the only ones whose move reads it again:
  * the design branches and their Stages (`tree`), the working position the head and running
- * lines come from (`working`), HEAD for a project without one (`area:head`), and every run
- * (candidates, admissions, reviews, the head's own model). Not what a run keeps aside
+ * lines come from (`working`), HEAD for a project without one (`area:head`), every run
+ * (candidates, admissions, reviews, the head's own model), and the project trash
+ * (`area:trash`, #575: what was cleaned, restored or purged). Not what a run keeps aside
  * (`aside:<id>`: Board scenes, page and model annotations, one record per save), nor the
  * working pointer's own file (`area:working`), which Modeling's every autosave rewrites, nor
  * any other area. The index says which is which; nothing here knows a run by its id.
  */
 export function treeShows(id: string): boolean {
-  return id === "tree" || id === "working" || id === "area:head" || id.startsWith("run:");
+  return id === "tree" || id === "working" || id === "area:head" || id === "area:trash" || id.startsWith("run:");
 }
 
 /** A job's lifecycle (`<kind>.queued|waiting|running|succeeded|failed`): the tree's running work moved. */
 const JOB_LIFECYCLE = /\.(queued|waiting|running|succeeded|failed)$/;
 
-export type DesignTreeAction = { readonly kind: "continue" | "review"; readonly node: string } | { readonly kind: "accept" } | { readonly kind: "undo" };
+export type DesignTreeAction = { readonly kind: "continue" | "review"; readonly node: string } | { readonly kind: "accept" } | { readonly kind: "undo" }
+  | { readonly kind: "restore"; readonly runId: string };
 
 export interface DesignTreeOutcome {
   readonly kind: "continued" | "accepted" | "refused";
@@ -86,6 +89,8 @@ export interface DesignTreeData {
   /** The runtime can move the Working Head. */
   readonly canContinue: boolean;
   readonly canReview: boolean;
+  /** The runtime keeps a project trash (#575): cleaned drafts are read, and can be restored. */
+  readonly canRestore: boolean;
   readonly busy: DesignTreeAction | null;
   readonly outcome: DesignTreeOutcome | null;
   /** The last act's confirmation, until it has had its time (FN-5). */
@@ -96,6 +101,8 @@ export interface DesignTreeData {
   review(nodeId: string, action: "reject" | "archive" | "restore" | "endorse", reason?: string): Promise<boolean>;
   /** Puts back the Current the last Continue replaced, through the same Continue write. */
   undo(): Promise<boolean>;
+  /** #575: brings a cleaned draft back from the project trash; a refusal is the outcome of `cleaned:<runId>`. */
+  restoreDraft(runId: string): Promise<boolean>;
   clearOutcome(): void;
   /** The toast with this id has had its time; its Undo goes with it. */
   dismissToast(id: number): void;
@@ -147,7 +154,7 @@ const readInOrder = new WeakSet<DesignTreeSource>();
  * for nothing, and the next refresh reads every line again.
  */
 export async function readDesignTreeSource(studio: StudioClient, projectId: string, signal?: AbortSignal,
-  previous: DesignTreeSource | null = null): Promise<DesignTreeSource> {
+  previous: DesignTreeSource | null = null, { trash: readTrash = false }: { readonly trash?: boolean } = {}): Promise<DesignTreeSource> {
   const last = previous?.projectId === projectId && wholeSources.has(previous) ? previous : null;
   let worktrees: WorktreeGraphDto | null;
   let workingSource: DesignTreeSource["workingSource"];
@@ -159,8 +166,10 @@ export async function readDesignTreeSource(studio: StudioClient, projectId: stri
     [workingSource, worktrees] = await Promise.all([studio.workingSource("modeling", signal), studio.worktrees(signal).catch(() => null)]);
   }
   if (workingSource.projectId !== projectId || (worktrees && worktrees.projectId !== projectId)) throw projectChanged();
+  // #575: the project trash moves only with a run or the trash itself, which the Graph's tag already covers.
+  const trash = readTrash ? await studio.trash(signal).then((value) => value.projectId === projectId ? value : null, () => null) : null;
   if (last && workingSource === last.workingSource) {
-    const kept = worktrees === last.worktrees ? last : { ...last, worktrees };
+    const kept = worktrees === last.worktrees && trash === (last.trash ?? null) ? last : { ...last, worktrees, trash };
     wholeSources.add(kept);
     if (worktrees !== null) readInOrder.add(kept);
     return kept;
@@ -190,7 +199,7 @@ export async function readDesignTreeSource(studio: StudioClient, projectId: stri
   }
   const merged: DesignHistoryDto = { ...history, stages: [...stages.values()], candidates: [...candidates.values()],
     studies: [...studies.values()], warnings: [...warnings] };
-  const source = { projectId, history: merged, workingSource, worktrees };
+  const source = { projectId, history: merged, workingSource, worktrees, trash };
   if (whole && others.every((other) => other !== null)) {
     wholeSources.add(source);
     if (last && worktrees !== null) readInOrder.add(source);
@@ -212,6 +221,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   const canContinue = available && capabilities!.includes("working-draft");
   const admissions = available && capabilities!.includes("candidate-admission");
   const canReview = available && capabilities!.includes("candidate-review");
+  const canRestore = available && capabilities!.includes("project-trash");
   const [source, setSource] = useState<DesignTreeSource | null>(null);
   const [status, setStatus] = useState<DesignTreeData["status"]>("loading");
   const [error, setError] = useState<StudioApiError | null>(null);
@@ -250,7 +260,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     const key = fresh || shown === null ? `read:${read}` : shown;
     try {
       const next = await store.derive(`design-tree:${projectId}`, key,
-        () => readDesignTreeSource(studio, projectId, undefined, sourceRef.current));
+        () => readDesignTreeSource(studio, projectId, undefined, sourceRef.current, { trash: canRestore }));
       if (read !== reads.current) return;
       setSource(next); setError(null); setStatus("ready");
     } catch (cause) {
@@ -258,7 +268,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
       setError(asStudioApiError(cause));
       setStatus((previous) => previous === "ready" ? previous : "failed");
     }
-  }, [available, projectId, studio, store]);
+  }, [available, projectId, studio, store, canRestore]);
 
   /**
    * Read the tree, or take the read already made at the store's revision. `fresh` reads again
@@ -420,6 +430,20 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     });
   }, [canContinue, projectId, run, studio]);
 
+  /** #575: a cleaned draft back from the project trash, exactly where it was; it is never cleaned again. */
+  const restoreDraft = useCallback(async (runId: string) => {
+    if (!canRestore || !projectId || busyRef.current) return false;
+    busyRef.current = true; setBusy({ kind: "restore", runId }); setOutcome(null);
+    try {
+      const before = store.current();
+      await studio.restoreTrashed({ projectId, runId });
+      await reload(before);
+      return true;
+    } catch (cause) {
+      setOutcome({ kind: "refused", node: `cleaned:${runId}`, error: asStudioApiError(cause) }); return false;
+    } finally { busyRef.current = false; setBusy(null); }
+  }, [canRestore, projectId, reload, store, studio]);
+
   const dismissToast = useCallback((id: number) => {
     if (shownToast.current?.id !== id) return;
     undoable.current = null;
@@ -428,9 +452,9 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
 
   return {
     available, admissions, status: available ? status : "loading", source, tree, showProcessed, setShowProcessed, folds, setFolds,
-    error, canContinue, canReview, busy, outcome, toast,
+    error, canContinue, canReview, canRestore, busy, outcome, toast,
     reload: () => setNudge((value) => value + 1),
-    continueFrom, acceptCurrent, review, undo,
+    continueFrom, acceptCurrent, review, undo, restoreDraft,
     clearOutcome: () => setOutcome(null),
     dismissToast,
   };

@@ -7,9 +7,11 @@
  * (`candidates[]`: admitted only, unless a reader asks for `include=rejected`)
  * and their Studies (`studies[]`). `GET /api/working-source` names the
  * Working Head and its lineage; `GET /api/worktrees` names the running and
- * queued work and each line's admission verdict.
+ * queued work and each line's admission verdict; `GET /api/trash` (#575)
+ * names the superseded drafts the project cleaned and until when each can be
+ * restored.
  */
-import type { DesignHistoryDto, WorkingSourceDto, WorktreeGraphDto } from "../../api/project-runtime/generated";
+import type { DesignHistoryDto, ProjectTrashDto, WorkingSourceDto, WorktreeGraphDto } from "../../api/project-runtime/generated";
 
 /** Everything one tree is built from, read together. */
 export interface DesignTreeSource {
@@ -19,4 +21,6 @@ export interface DesignTreeSource {
   readonly workingSource: WorkingSourceDto;
   /** Null when the Worktree Graph could not be read: the tree still shows its facts. */
   readonly worktrees: WorktreeGraphDto | null;
+  /** The project trash (#575); absent or null where the runtime keeps none or it could not be read. */
+  readonly trash?: ProjectTrashDto | null;
 }
