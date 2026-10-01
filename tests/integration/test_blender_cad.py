@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -90,6 +91,29 @@ class BlenderRequestTests(unittest.TestCase):
                     self.assertFalse(result.readback_verified)
                     self.assertEqual(result.artifacts, ())
                 self.assertEqual(list(workspace.iterdir()), [])
+
+    def test_every_blender_process_starts_with_an_empty_standard_input(self):
+        # A managed Runtime's stdin is its Hub's control pipe, with a thread waiting
+        # on it. A worker that inherited it blocked at startup on Windows (#540).
+        launches = []
+
+        def run(command, **options):
+            launches.append((command, options))
+            if command[command.index("--") + 1] == "build":
+                Path(command[-1]).write_bytes(b"saved scene")
+                return subprocess.CompletedProcess(command, 0, "", "")
+            raise subprocess.CalledProcessError(1, command, "", "the cold read is not part of this test")
+
+        with tempfile.TemporaryDirectory() as temporary, _without_other_backends(), \
+                patch.object(subprocess, "run", side_effect=run), \
+                patch.object(subprocess, "Popen", side_effect=AssertionError("Blender started outside the worker")):
+            request = _request(Path(temporary), backend_options={"blender_executable": sys.executable})
+            result = get_cad_backend("blender").execute(request)
+        result.validate(request, "blender")
+        self.assertEqual(result.status, "failed")
+        self.assertEqual([command[command.index("--") + 1] for command, _ in launches], ["build", "inspect"])
+        for command, options in launches:
+            self.assertIs(options.get("stdin"), subprocess.DEVNULL, command)
 
     def test_wrong_program_binding_and_workspace_traversal_are_refused_at_request_construction(self):
         with tempfile.TemporaryDirectory() as temporary, _without_processes():

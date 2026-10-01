@@ -229,11 +229,15 @@ def _readback_failures(request, plan, readback, provenance):
 
 
 def _run_worker(executable, workspace, timeout, *arguments):
+    # Every Blender process starts here, and none reads its parent's input. A
+    # managed Runtime's stdin is its Hub's control pipe, with a thread waiting
+    # on it: Blender sharing that pipe could take the Hub's "stop", and on
+    # Windows it blocks at startup until the Hub writes to the pipe.
     return subprocess.run(
         [str(executable), "--background", "--factory-startup", "--disable-autoexec", "--python-exit-code", "1",
          "--python", str(Path(__file__).with_name("worker.py")), "--", *map(str, arguments)],
-        cwd=workspace, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True,
-        timeout=timeout, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        cwd=workspace, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        check=True, timeout=timeout, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
 
 
