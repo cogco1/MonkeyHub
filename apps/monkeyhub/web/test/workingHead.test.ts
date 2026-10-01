@@ -150,3 +150,18 @@ test("#575 no 撤销 when nothing names the previous position, and none once Cur
   // Another project's position is refused, not written.
   await assert.rejects(api.undoFollow(held, "another-project", undo), (error: { code?: string }) => error.code === "EDITING_PROJECT_CHANGED");
 });
+
+test("#575 a Continue from the Design Tree is followed without a second 撤销: its toast already offers the one that write has", async (t) => {
+  const { followsTreeMove } = await harness(t);
+  const move = { runId: "cand-3", id: 7 };
+  // Modeling follows the tree's own move onto cand-3: the tree's toast confirms it, so the follow says nothing.
+  assert.equal(followsTreeMove(move, null, "cand-3"), true);
+  // That move is followed once; the same head reached again later (another window, the Agent) gets its own notice.
+  assert.equal(followsTreeMove(move, 7, "cand-3"), false);
+  // A head the tree did not move Current onto is someone else's move, followed with its notice and 撤销.
+  assert.equal(followsTreeMove(move, null, "cand-4"), false);
+  assert.equal(followsTreeMove(null, null, "cand-3"), false);
+  assert.equal(followsTreeMove(undefined, null, "cand-3"), false);
+  // The tree's Undo is its own move too: back onto the base, confirmed by the same toast.
+  assert.equal(followsTreeMove({ runId: "cand-2", id: 8 }, 7, "cand-2"), true);
+});

@@ -8,7 +8,8 @@
  * `POST /api/candidates/{id}/accept`, on the Working Head only. Restore brings
  * a superseded draft the project cleaned back from its trash
  * (`POST /api/trash/restore`, #575). View changes nothing here. Each act that changed the design confirms itself in a toast
- * beside the chip (FN-5); a refusal stays inline where it was asked for. The
+ * beside the chip (FN-5); a refusal stays inline where it was asked for. A Continue or Undo also names the run it moved
+ * Current onto (`headMove`), so Modeling following it offers no second 撤销 for the same write (#575). The
  * facts are read again when an entity the tree shows moves in the project's
  * store (#366: its index committed, whoever wrote; `treeShows`), when a job
  * starts, waits or ends while the tree is on screen (its running work lives in
@@ -72,6 +73,15 @@ export type DesignTreeToast =
 
 type ToastBody = DesignTreeToast extends infer Toast ? Toast extends unknown ? Omit<Toast, "id"> : never : never;
 
+/**
+ * A move of the Working Head this tree made (#575): a Continue, or its Undo, onto `runId`. The tree's toast confirms
+ * it with its own 撤销, so a workspace that follows the head says nothing more about this move. Each move has its own id.
+ */
+export interface DesignTreeHeadMove {
+  readonly runId: string;
+  readonly id: number;
+}
+
 export interface DesignTreeData {
   /** The runtime serves what the tree reads; without it there is no chip and no tree. */
   readonly available: boolean;
@@ -95,6 +105,8 @@ export interface DesignTreeData {
   readonly outcome: DesignTreeOutcome | null;
   /** The last act's confirmation, until it has had its time (FN-5). */
   readonly toast: DesignTreeToast | null;
+  /** The last move of the Working Head this tree made, which its toast confirms (#575); null before any. */
+  readonly headMove: DesignTreeHeadMove | null;
   reload(): void;
   continueFrom(nodeId: string): Promise<boolean>;
   acceptCurrent(): Promise<boolean>;
@@ -228,6 +240,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   const [busy, setBusy] = useState<DesignTreeAction | null>(null);
   const [outcome, setOutcome] = useState<DesignTreeOutcome | null>(null);
   const [toast, setToast] = useState<DesignTreeToast | null>(null);
+  const [headMove, setHeadMove] = useState<DesignTreeHeadMove | null>(null);
   const [nudge, setNudge] = useState(0);
   const [showProcessed, setShowProcessed] = useState(false);
   const [folds, setFolds] = useState<TreeFolds>({});
@@ -345,7 +358,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   const tree = useMemo(() => source ? buildGrowthTree(source, showProcessed, folds) : null, [source, showProcessed, folds]);
 
   const run = useCallback(async (action: DesignTreeAction,
-    write: () => Promise<{ outcome: DesignTreeOutcome | null; toast: ToastBody; undo: ContinueUndo | null }>) => {
+    write: () => Promise<{ outcome: DesignTreeOutcome | null; toast: ToastBody; undo: ContinueUndo | null; moved?: string }>) => {
     if (busyRef.current) return false;
     busyRef.current = true;
     setBusy(action);
@@ -356,7 +369,10 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
       const done = await write();
       setOutcome(done.outcome);
       undoable.current = done.undo;
-      setToast({ ...done.toast, id: ++toastIds.current } as DesignTreeToast);
+      const id = ++toastIds.current;
+      setToast({ ...done.toast, id } as DesignTreeToast);
+      // The run Current moved onto, said with the toast that confirms it (#575): Modeling follows it without a notice of its own.
+      if (done.moved) setHeadMove({ runId: done.moved, id });
       headMoved.current();
       await reload(before);
       return true;
@@ -383,7 +399,8 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
       const replaced = await moveHead(studio, projectId, (position) => continueRequest(projectId, target, position));
       // The previous Current is what this write replaced: recorded before it, from the position it read.
       const undo = continueUndo(replaced, target.runId);
-      return { outcome: { kind: "continued", node: nodeId }, toast: { kind: "continued", node, undo: undo !== null, refusal: null }, undo };
+      return { outcome: { kind: "continued", node: nodeId }, toast: { kind: "continued", node, undo: undo !== null, refusal: null }, undo,
+        moved: target.runId };
     });
   }, [canContinue, projectId, run, studio, tree]);
 
@@ -426,7 +443,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
         }
         return request;
       });
-      return { outcome: null, toast: { kind: "undone" }, undo: null };
+      return { outcome: null, toast: { kind: "undone" }, undo: null, moved: last.runId };
     });
   }, [canContinue, projectId, run, studio]);
 
@@ -452,7 +469,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
 
   return {
     available, admissions, status: available ? status : "loading", source, tree, showProcessed, setShowProcessed, folds, setFolds,
-    error, canContinue, canReview, canRestore, busy, outcome, toast,
+    error, canContinue, canReview, canRestore, busy, outcome, toast, headMove,
     reload: () => setNudge((value) => value + 1),
     continueFrom, acceptCurrent, review, undo, restoreDraft,
     clearOutcome: () => setOutcome(null),

@@ -13,6 +13,10 @@
  * staged, one line of continued runs, and two drafts that line superseded;
  * its Worktree Graph names the line and the drafts as the runtime does, and
  * `clean` moves drafts into its project trash as the runtime's sweep would.
+ * `landedChangesFacts` is a third: three requested changes that landed, each
+ * admitted alone on the person's words and continued, named by those words;
+ * after a return to an earlier step its Worktree Graph names the line Current
+ * left (`later`), as the runtime does.
  */
 import type { DesignBranchDto, DesignCandidateDto, DesignHistoryDto, DesignStageDto, DesignStudyDto, LineStepDto, ProjectTrashDto, TrashEntryDto,
   TrashRestoreDto, WorkingDraftDto, WorkingHeadDto, WorkingSourceDto, WorktreeGraphDto, WorktreeLineDto } from "../../api/project-runtime/generated";
@@ -80,6 +84,8 @@ export interface DesignTreeFixtureState {
   readonly results: string[];
   /** #575: runs the Working Head once stood on (each Continue leaves an event beside its run). */
   readonly continued: Set<string>;
+  /** #575: when the working position last moved onto each run, as a revision; the later line follows the newest. */
+  readonly movedAt: Map<string, number>;
   /** #575: results whose comparison with Current's line conflicts: they changed what it changed. */
   readonly conflicting: Set<string>;
   /** #575: the project trash, oldest first; absent until something is cleaned. */
@@ -152,6 +158,7 @@ export function riversideLibraryFacts(): DesignTreeFixtureState {
     requests: new Map(),
     results: [],
     continued: new Set(),
+    movedAt: new Map(),
     conflicting: new Set(),
   };
 }
@@ -186,7 +193,51 @@ export function unadmittedLineFacts(): DesignTreeFixtureState {
     requests: new Map([["run-v3-materials", "Give V3's walls and ribs their materials"]]),
     results: [...runs.keys()].filter((run) => run !== start),
     continued: new Set(["run-site-massing", "run-v1", "run-v2", "run-v3", "run-v3-materials"]),
+    movedAt: new Map(),
     conflicting: new Set(["run-v3-closed", "run-v3-glazed"]),
+  };
+}
+
+/**
+ * A project whose requested changes landed (#575 rule 3), shaped like thi-hemp-study-01 once slice 2 lands them:
+ * from the project start an outside agent made the timber frame, then the person asked for three changes in chat,
+ * and the Hub Agent admitted each result alone on their words and continued it. Nothing is staged. Every run keeps
+ * the words that asked for it, which name it.
+ */
+export function landedChangesFacts(): DesignTreeFixtureState {
+  const start = "studio-projection";
+  const runs = new Map<string, RunFact>([
+    [start, { parent: null, sourceStage: null }],
+    ["run-frame", { parent: start, sourceStage: null }],
+    ["run-roof", { parent: "run-frame", sourceStage: null }],
+    ["run-glazing", { parent: "run-roof", sourceStage: null }],
+    ["run-materials", { parent: "run-glazing", sourceStage: null }],
+  ]);
+  const landed = (run: string, label: string, summary: string, admittedAt: string, continuedFrom: string | null): CandidateFact =>
+    ({ run, label, summary, studyId: `study-${run}`, admittedBy: "Arch Agent", admittedAt, continuedFrom, acceptedStage: null, blockedBy: [] });
+  const candidates = [
+    landed("run-roof", "Ribbed timber roof", "Timber ribs at 1.2 m carry the roof over the hall.", "2026-10-01T09:10:00Z", null),
+    landed("run-glazing", "Full-height south glazing", "The south wall opens to full-height glazing between the ribs.", "2026-10-01T09:40:00Z", "run-roof"),
+    landed("run-materials", "Materials for every component", "238 components declare their materials; the model wears them.", "2026-10-01T10:05:00Z",
+      "run-glazing"),
+  ];
+  return {
+    runs, stages: [], candidates, rejected: new Set(), running: [], branchHead: null, head: "run-materials", followsLine: false, revision: 1,
+    // A closed loop's own Study carries no name and starts where the loop did.
+    studies: candidates.map((candidate) => ({ id: candidate.studyId!, label: null, baseRunId: runs.get(candidate.run)!.parent, baseStageRef: null,
+      candidateIds: [candidate.run], source: "admission" })),
+    localDraft: null,
+    labels: new Map(),
+    requests: new Map([
+      ["run-frame", "Timber frame with hemp-lime walls"],
+      ["run-roof", "把屋顶改成木肋拱"],
+      ["run-glazing", "南立面改成通高玻璃"],
+      ["run-materials", "给 238 个构件定材质"],
+    ]),
+    results: [...runs.keys()].filter((run) => run !== start),
+    continued: new Set(["run-frame", "run-roof", "run-glazing", "run-materials"]),
+    movedAt: new Map([["run-frame", 1], ["run-roof", 1], ["run-glazing", 1], ["run-materials", 1]]),
+    conflicting: new Set(),
   };
 }
 
@@ -217,13 +268,39 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
       origin: state.followsLine ? "branch-head" : "working-position", label: state.labels.get(state.head) ?? null,
       modelSource: modelSource(state.head), lineage: lineageOf(state.head) };
   };
-  /** #575: Current's line as the Worktree Graph names it, oldest first, each run in its retained words. */
-  const line = (): LineStepDto[] => lineageOf(state.head).reverse().map((run) => {
+  /** #575: one run of a line, in its retained words. */
+  const stepOf = (run: string): LineStepDto => {
     const option = state.candidates.find((candidate) => candidate.run === run);
     return { runId: run, baseRunId: state.runs.get(run)?.parent ?? null,
       label: state.labels.get(run) ?? stageOfRun(run)?.label ?? option?.label ?? null, request: state.requests.get(run) ?? null,
       summary: option?.summary ?? null, stageRef: stageOfRun(run)?.ref ?? null, updatedAt: null };
-  });
+  };
+  /** #575: Current's line as the Worktree Graph names it, oldest first, each run in its retained words. */
+  const line = (): LineStepDto[] => lineageOf(state.head).reverse().map(stepOf);
+  /**
+   * #575: after a return to an earlier step, the line Current left, as the runtime reads it: the retained results
+   * that continue Current and that it once stood on, with the runs each was made through, oldest first, along the
+   * branch the working position moved onto last.
+   */
+  const later = (): LineStepDto[] => {
+    const paths = state.results.filter((run) => state.continued.has(run)).map((run) => {
+      const lineage = lineageOf(run);
+      const at = lineage.indexOf(state.head);
+      return at > 0 ? lineage.slice(0, at).reverse() : null;
+    }).filter((path): path is string[] => path !== null);
+    const out: string[] = [];
+    for (;;) {
+      const depth = out.length;
+      const newest = new Map<string, number>();
+      for (const path of paths) {
+        if (path.length <= depth || out.some((run, index) => path[index] !== run)) continue;
+        newest.set(path[depth], Math.max(newest.get(path[depth]) ?? -1, state.movedAt.get(path.at(-1)!) ?? 0));
+      }
+      if (!newest.size) break;
+      out.push([...newest].sort(([a, x], [b, y]) => y - x || b.localeCompare(a))[0][0]);
+    }
+    return out.map(stepOf);
+  };
   /**
    * #575: the retained results off Current's line, as the runtime reads them: a diverged result whose source the
    * line moved on from, which conflicts with it and which nobody continued or admitted (nor anything built on it), is
@@ -337,7 +414,8 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
           admission: "none", studyId: null, supersededBy: null })),
         ...resultLines(steps),
       ];
-      return { projectId: FIXTURE_PROJECT, head: current, revisionSha256: revision(), line: steps, lines, representations: [], warnings: [] };
+      return { projectId: FIXTURE_PROJECT, head: current, revisionSha256: revision(), line: steps, later: later(), lines, representations: [],
+        warnings: [] };
     },
     workingDraft(): WorkingDraftDto {
       const current = head();
@@ -354,8 +432,8 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
       // Without a run, the line's accepted head answers; without a line, the project's start.
       state.head = body.runId ?? state.stages.find((stage) => stage.ref === state.branchHead)?.run
         ?? [...state.runs].find(([, run]) => run.parent === null)![0];
-      // A move onto a run leaves its Continue event beside it.
-      if (body.runId !== null) state.continued.add(body.runId);
+      // A move onto a run leaves its Continue event beside it, and the working position notes when it moved onto it.
+      if (body.runId !== null) { state.continued.add(body.runId); state.movedAt.set(body.runId, state.revision); }
       state.revision += 1;
       return this.workingDraft();
     },

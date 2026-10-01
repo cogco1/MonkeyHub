@@ -61,7 +61,8 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
   const role = node.kind === "stage" ? t("designTree.role.stage")
     : node.kind === "candidate" ? (earlier ? t("designTree.role.earlier") : studyName ? t("designTree.role.option", { study: studyName }) : t("designTree.role.optionAlone"))
       : node.kind === "pending" ? t("designTree.role.pending")
-        : node.kind === "step" ? t("designTree.role.step") : node.kind === "draft" ? t("designTree.role.draft")
+        : node.kind === "step" ? t("designTree.role.step") : node.kind === "later" ? t("designTree.role.later")
+          : node.kind === "draft" ? t("designTree.role.draft")
           : node.kind === "drafts" ? t("designTree.role.drafts")
             : node.kind === "current" ? t("designTree.role.current") : t("designTree.role.origin");
   const facts: [string, string][] = [];
@@ -82,10 +83,11 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
     add(t("designTree.fact.at"), words.currentAt());
     add(t("designTree.fact.request"), node.current!.request);
     add(t("designTree.fact.stage"), tree.currentStage ? words.title(tree.nodes.get(tree.currentStage)!) : t("designTree.chip.noStage"));
-  } else if (node.kind === "step") {
-    // #575: a step of Current's line, named by what its run retained.
+  } else if (node.kind === "step" || node.kind === "later") {
+    // #575: a step of Current's line, or of the line it left, named by the words that asked for it; a name it was
+    // also given is said here.
     add(t("designTree.fact.from"), parent ? words.title(parent) : null);
-    if (node.label) add(t("designTree.fact.request"), node.step!.request);
+    if (node.step!.request) add(t("designTree.fact.label"), node.label);
     add(t("designTree.fact.status"), words.status(node));
     add(t("designTree.fact.updated"), whenText(node.step!.updatedAt, language));
   } else if (node.kind === "draft") {
@@ -167,7 +169,8 @@ export function DesignTreeDetails({ tree, node, words, data, confirmAccept, onCo
           {reviewing && <span>{t("designTree.action.savingReview")}</span>}
         </div>}
         <p className="design-tree-inspector__note">{!data.canContinue ? t("designTree.outcome.cannotContinue")
-          : node.kind === "step" ? t("designTree.step.note") : node.kind === "draft" ? t("designTree.draft.note", { days: retentionDays })
+          : node.kind === "step" ? t("designTree.step.note") : node.kind === "later" ? t("designTree.later.note")
+            : node.kind === "draft" ? t("designTree.draft.note", { days: retentionDays })
             : t("designTree.action.hint")}</p>
       </>}
       {node.kind === "drafts" && <>

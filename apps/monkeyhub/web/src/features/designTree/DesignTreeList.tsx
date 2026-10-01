@@ -10,12 +10,13 @@ import { useT } from "../../i18n/useT";
 import type { GrowthTree } from "./model";
 import type { TreeWords } from "./words";
 
-interface Row { readonly id: string; readonly depth: number; readonly group: "trunk" | "twig" | "earlier" }
+interface Row { readonly id: string; readonly depth: number; readonly group: "trunk" | "twig" | "earlier" | "later" }
 
 export function listRows(tree: GrowthTree): Row[] {
   const rows: Row[] = [];
   const visit = (id: string, depth: number, group: Row["group"]) => {
-    rows.push({ id, depth, group });
+    // #575: the line Current left after a return is its own group, whatever it hangs from.
+    rows.push({ id, depth, group: tree.nodes.get(id)?.kind === "later" ? "later" : group });
     for (const child of tree.children.get(id) ?? []) if (!tree.onTrunk.has(child)) visit(child, depth + 1, "earlier");
   };
   for (const id of tree.trunk) {
@@ -49,7 +50,8 @@ export function DesignTreeList({ tree, words, selected, onSelect }: {
     }
     if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(id); }
   };
-  const group = { trunk: t("designTree.list.trunk"), twig: t("designTree.list.twig"), earlier: t("designTree.list.earlier") };
+  const group = { trunk: t("designTree.list.trunk"), twig: t("designTree.list.twig"), earlier: t("designTree.list.earlier"),
+    later: t("designTree.list.later") };
   return <div className="design-tree-list">
     <p className="design-tree-list__hint">{t("designTree.list.hint")}</p>
     <ul role="tree" aria-label={t("designTree.list.label")}>
@@ -63,7 +65,7 @@ export function DesignTreeList({ tree, words, selected, onSelect }: {
           onClick={() => { setFocus(row.id); onSelect(row.id); }} onKeyDown={(event) => move(event, row.id)}>
           <span className="design-tree-list__mark" data-kind={node.kind} aria-hidden="true">
             {node.kind === "stage" ? `S${node.stage!.number}` : node.kind === "candidate" ? node.letter ?? "·" : node.kind === "current" ? "●"
-              : node.kind === "pending" ? "…" : node.kind === "step" ? String(node.step!.number) : node.kind === "fold" ? "⋯"
+              : node.kind === "pending" ? "…" : node.kind === "step" || node.kind === "later" ? String(node.step!.number) : node.kind === "fold" ? "⋯"
                 : node.kind === "drafts" ? String(node.drafts!.runs.length + node.drafts!.cleaned.length) : node.kind === "draft" ? "×" : "○"}
           </span>
           <span className="design-tree-list__title">{words.title(node)}</span>

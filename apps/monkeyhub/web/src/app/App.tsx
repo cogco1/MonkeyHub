@@ -148,7 +148,8 @@ import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { editingDigestForView, useSession, type StaleBase } from "./useSession";
 import { EMPTY_MODEL_HISTORY, recordEditingBase, redoTarget, undoTarget, type ModelHistory } from "./modelHistory";
-import { followStep, followUndo, headOf, pinStep, undoFollow, viewerFollows, type FollowUndoOutcome } from "./workingHead";
+import { followStep, followsTreeMove, followUndo, headOf, pinStep, undoFollow, viewerFollows, type FollowUndoOutcome,
+  type TreeHeadMove } from "./workingHead";
 import { useTranscript, type SystemTextPart } from "./transcript";
 import { useCandidateRuns } from "./useCandidateRuns";
 import { finishEditTiming, startClientTiming, type ClientTimingSpan, type EditTimingTicket } from "./clientTiming";
@@ -275,8 +276,13 @@ const FOLLOW_WORDS: Readonly<Record<FollowNotice["state"], MessageKey>> = {
   "moved-on": "stage.follow.undoMoved", unsynced: "stage.follow.undoUnsynced", failed: "stage.follow.undoFailed",
 };
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraRequest = null, onView, onRecorder, onOpenTree }: {
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraRequest = null, onView, onRecorder, onOpenTree, treeMove = null }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
+  /**
+   * The last move of the Working Head the project's Design Tree made, a Continue or its Undo (#575). The tree's toast
+   * confirms it with 撤销, so following it here says nothing in the project bar: one write, one 撤销.
+   */
+  treeMove?: TreeHeadMove | null;
   /**
    * A saved Render view for this viewport's camera to stand in (#218), once per request id, when
    * Modeling is on screen with its model shown. It moves the view only: the model, its edits and
@@ -1659,6 +1665,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const followNoticeIds = useRef(0);
   // 撤销's write is in flight; once it lands the head is read again at once (followNudge) and followed back.
   const [followUndoing, setFollowUndoing] = useState(false);
+  // The Design Tree's last move, read when a follow lands, and the last one followed without a notice (#575).
+  const treeMoveRef = useRef(treeMove);
+  treeMoveRef.current = treeMove;
+  const followedTreeMove = useRef<number | null>(null);
   const [followNudge, setFollowNudge] = useState(0);
   const followBusy = changingBase || proposalBusy || candidateBusy || modelSyncBusy || selectingWorkingCopy ||
     historyBusy || refiningEntryId !== null || documentIntentStatus !== "done" || openingModel || followUndoing;
@@ -1705,8 +1715,15 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       // Null when the session refused it or a newer reload replaced it. Not `read`: the base this reload just
       // published re-runs the effect before this line, and the follow still has to say so and move the view.
       if (next === null) return;
-      setFollowNotice({ id: ++followNoticeIds.current, state: undone ? "undone" : "moved", head: head.runId,
-        undo: undone ? null : followUndo(replaced, base, head.runId) });
+      const move = treeMoveRef.current;
+      if (followsTreeMove(move, followedTreeMove.current, head.runId)) {
+        // The Design Tree's own Continue or Undo: its toast already says so, with the one 撤销 that write has (#575).
+        followedTreeMove.current = move!.id;
+        setFollowNotice(null);
+      } else {
+        setFollowNotice({ id: ++followNoticeIds.current, state: undone ? "undone" : "moved", head: head.runId,
+          undo: undone ? null : followUndo(replaced, base, head.runId) });
+      }
       pushNotice(t(undone ? "stage.follow.undone" : "stage.follow.moved"));
       if (viewerFollows(viewed, base)) setHeadFollow({ runId: head.runId, viewRequest });
     }).catch(() => { /* The current base stays usable; the next event reads the head again. */ });
