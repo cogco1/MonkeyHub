@@ -1,15 +1,17 @@
-"""Where a candidate run happens, and how it is watched while it does.
+"""Where a design run happens, and how it is watched while it does.
 
 ``run_project`` calls ``asyncio.run`` internally, so it cannot be called on the
 event loop thread at all: it would refuse. This module owns the worker
 threads it runs on instead, and the queue in front of them.
 
-Candidates run in separate workspaces against immutable sources. Their read
+Runs execute in separate workspaces against immutable sources. Their read
 and write refs describe the proposed change; even overlapping edits can be
 computed independently. Deciding whether their results can be combined is
 not queue admission. A Rhino export still takes the exclusive lane because
-there is one Rhino process on this machine; other candidates share the worker
-pool without a design-ref lock.
+there is one Rhino process on this machine; other runs share the worker
+pool without a design-ref lock. A run is an execution, never a Candidate:
+what its end lists is recovery, and only a finished loop's admission makes a
+Candidate (#294).
 
 The registry is an in-process dict, like the proposal store and for the same
 reason: it is not history. It remembers what this service did since it started
@@ -50,10 +52,17 @@ EXCLUSIVE_REASON = "the export lane: one Rhino export at a time on this machine"
 # client showing a job has been told what kind of thing it is looking at.
 PERSISTENCE = "in-memory (not version history)"
 
+# What a job does: a design run (proposal, option, program and combine), or
+# another kind of work on the same queue, such as a model export. A run's
+# lifecycle events keep their published names, candidate.queued to
+# candidate.failed, which the web client and the Hub relay read; another
+# kind publishes under its own name (export.queued).
+RUN = "run"
+
 
 @dataclass(frozen=True, slots=True)
 class Job:
-    """One candidate run, as this process last saw it."""
+    """One run, or another queued job, as this process last saw it."""
 
     job_id: str
     status: str
@@ -65,8 +74,8 @@ class Job:
     error: str | None = None
     wall_time_s: float | None = None
     # The queue's own facts: which lane the job runs in, and while it is
-    # queued, which candidate it is waiting for and why.
-    kind: str = "candidate"
+    # queued, which run it is waiting for and why.
+    kind: str = RUN
     lane: str = PARALLEL
     read_refs: frozenset[str] = frozenset()
     write_refs: frozenset[str] = frozenset()
@@ -75,7 +84,7 @@ class Job:
 
 
 class JobRegistry:
-    """The worker threads candidates run on, the queue in front of them, and
+    """The worker threads runs execute on, the queue in front of them, and
     what became of each job.
 
     A queued job is registered with its work and announced before another
@@ -120,7 +129,7 @@ class JobRegistry:
         self,
         *,
         candidate_id: str,
-        kind: str = "candidate",
+        kind: str = RUN,
         proposal_id: str,
         work: Callable[[], Any],
         read_refs: Iterable[str] = (),
@@ -130,17 +139,18 @@ class JobRegistry:
         source_ref: str | None = None,
         related_event_id: str | None = None,
     ) -> Job:
-        """Queue one candidate run and answer with the job that will do it.
+        """Queue one run and answer with the job that will do it.
 
         ``read_refs`` and ``write_refs`` describe the design inputs and edits.
-        Separate candidate workspaces may compute overlapping edits. An
+        Separate run workspaces may compute overlapping edits. An
         ``exclusive`` job never runs beside another exclusive job.
 
-        A candidate id is claimed here, once. Rebinding one to a second job
-        would silently orphan the first: ``GET /api/candidates/{id}`` would
-        start answering for a different run, and the job that actually made
-        those records would become unreachable through the id it was given.
-        The second submission is refused instead, naming both jobs.
+        A run id (``candidate_id``, its name on the wire) is claimed here,
+        once. Rebinding one to a second job would silently orphan the first:
+        ``GET /api/candidates/{id}`` would start answering for a different
+        run, and the job that actually made those records would become
+        unreachable through the id it was given. The second submission is
+        refused instead, naming both jobs.
         """
 
         if self._monitor is not None:
@@ -381,11 +391,14 @@ class JobRegistry:
         return job
 
     def _publish(self, job: Job, event_type: str) -> None:
-        self._events.publish(event=_event(job, event_type.replace("candidate.", job.kind + ".", 1)))
+        # A run keeps the published event names; another kind says what it is.
+        if job.kind != RUN:
+            event_type = event_type.replace("candidate.", job.kind + ".", 1)
+        self._events.publish(event=_event(job, event_type))
 
 
 def _event(job: Job, event_type: str) -> Mapping[str, Any]:
-    """One lifecycle event: which job, which candidate, and what it cost."""
+    """One lifecycle event: which job, which run, and what it cost."""
 
     return {
         "type": event_type,

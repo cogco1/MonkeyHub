@@ -12,9 +12,17 @@ The architect's own judgments stay separate and attributable:
 
 The Agent may withdraw a result it made in the same chat (`withdrawn`, #464). That is its own act, never a rejection.
 
+**Refined (Kaiwen, 2026-10-01, #294):** an admission is the Agent's completed and self-inspected result entering the pool of comparable candidates, still attributed to the Agent acting on the user's words. It requires:
+- the completion loop has finished; the end of a run admits nothing;
+- deterministic readback of the exact result has passed (the Runtime's admission gate);
+- for a loop that declares a look (`spatial_formal`, `polish`), one source-bound visual observation (#303) of a result it admits or of an attempt that result supersedes, followed by a repair or a stop. The observer never creates or adopts a candidate.
+
+Internal runs and repairs never enter the pool. Continuing a candidate, endorsing a direction and formally issuing a project version stay separate judgments, each recorded with whoever made it. The Hub checks the loop's class and its look before it sends the admission; the retained record keeps its shape.
+
 **Why:** registering every finished loop keeps the design tree complete without asking the architect to approve intermediate results. The distinctions the vision asks for (continuing a candidate, endorsing a direction, formally issuing) are carried by Continue, Stage acceptance and issue, not by making an admission mean approval.
 
 **Do not:**
+- admit at the end of a run, or before the look a loop declared;
 - ask for the user's words or approval before an ordinary admission;
 - show an Agent admission as the architect's;
 - read an admitted result as an endorsed direction or an accepted Stage;

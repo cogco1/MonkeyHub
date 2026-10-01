@@ -1190,6 +1190,14 @@ def fork_design_branch(
 # the number of runs. Lineage is not recorded again; it is derived from each
 # run's StudioCandidateDelta@1. An admission advances no branch, moves no
 # Working Head and changes no design state.
+#
+# What an Agent's admission means (owner decision, 2026-10-01): its completed
+# and self-inspected result entering the pool of comparable Candidates, in the
+# Agent's name on the user's words, and never the user's endorsement. The end
+# of a run admits nothing. The Hub sends a ``hub-chat`` admission only once
+# its loop has finished, with the visual look a spatial or formal loop
+# declares taken first; this gate then reads the exact result back. Internal
+# runs and repairs stay out of the pool as the attempts a result superseded.
 
 ADMISSIONS_RUN_ID = "studio-admissions"
 ADMISSION_SCHEMA = "CandidateAdmission@1"
