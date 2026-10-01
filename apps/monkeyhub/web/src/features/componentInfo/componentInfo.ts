@@ -598,8 +598,8 @@ function blockText(block: CardBlock, t: CardWords, heading: boolean): string[] {
 }
 
 /**
- * The card as plain text, for Copy: exactly what it shows, data and technical section alike, so a
- * pasted card can be checked against the model it came from.
+ * The card as plain text, for Copy: everything it holds, folded notes and technical section alike,
+ * so a pasted card can be checked against the model it came from.
  */
 export function componentCardText(card: ComponentCard, t: CardWords): string {
   const lines = [card.name];

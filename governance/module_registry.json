@@ -227,8 +227,8 @@
         "CadProgramBinding and backend export identities: the exact P036 record/branch/stage identity an export is bound to; RhinoCadProgramBinding remains a compatibility alias with unchanged serialization",
         "the execution status and errors every backend reports (CadExecutionStatus, CadExecutionError, CadCapabilityError)",
         "the speculative-workspace rules shared by the OCCT, Rhino and Blender backends: an existing absolute caller-supplied directory, workspace-relative portable artifact paths and their SHA-256",
-        "the layer path and layer colour tables derived from components and material assignment",
-        "the archflow:* object user text each physical object must carry (expected_object_semantics)",
+        "the layer path and layer colour tables derived from components and material assignment: a layer whose components declare one material wears its colour (declared, else an identity colour derived from its name alone), any other keeps its path-derived distinction colour",
+        "the archflow:* object user text each physical object must carry (expected_object_semantics), including archflow:material for a declaring component and archflow:material_status = undeclared for one that declares none",
         "writing each of an operation's statements through as an archflow:<key> user string, verbatim, and the reserved identity keys a statement may not take",
         "per-object structural digests of what the CAD script actually emits",
         "the diff into changed / added / retired / kept object ids, with a reason per object",
@@ -292,14 +292,16 @@
         "an object is rebuilt only when its structural digest or its analytic bounds actually changed, beyond tolerance",
         "the rebuild set is closed over input edges - nothing consumed or produced by a rebuilt operation is left stale",
         "an inexpressible patch fails CadPatchError, which is a signal to rebuild, never a partial document",
-        "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError"
+        "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError",
+        "a declared material has one colour wherever it is used and no colour is derived from a component or layer path for it; an undeclared component is never given a material name or colour of one"
       ],
       "status": "canonical",
       "tests": [
         "tests/integration/test_cad_backend_contract.py",
         "packages/monkeyarch/tests/test_cad_patch.py",
         "tests/integration/test_cad_execution.py",
-        "packages/monkeyarch/tests/test_cad_program.py"
+        "packages/monkeyarch/tests/test_cad_program.py",
+        "packages/monkeycad/tests/test_material_colors.py"
       ],
       "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added. P103 incremental export; the only reason a run may reuse a prior .3dm. #515: execution.py holds the interface, binding, status and errors, the export provenance and bounds helpers both exporters share, and the speculative-workspace and hash helpers (they raise CadExecutionError and the interface calls them, so they are not a module of their own); registry.py the backend table; program.py the object semantics every backend's readback is checked against; patch.py the operation diff.",
       "files": [
@@ -317,7 +319,7 @@
       "purpose": "The in-process OCCT backend: build a compiled program as exact B-reps, write and cold-read STEP with a mesh .3dm preview from the same model, and answer drawing and measurement queries on named shapes: hidden-line projection, plane sections, section perspectives, native 3dm decoding and solid-pair measurement.",
       "owns": [
         "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, bounded planar surface, retained polyline curve, capped or uncapped polyline loft, circular revolve, boolean and linear array operations; exact STEP write/readback and tessellated mesh and native curve .3dm preview from one model",
-        "native preview material assignment and readback for caller-declared component materials and existing FRAME/GLAZING role fallbacks, including actual glass transparency",
+        "native preview material assignment and readback for caller-declared component materials - one native material per declared name, in its one colour, bound to each of its objects - and existing FRAME/GLAZING role fallbacks, including actual glass transparency",
         "verifying source OCCT STEP shape reuse for unchanged physical objects while rebuilding changed operations and required intermediate inputs",
         "how the OCCT executor realizes a difference: a profile-with-holes extrusion when every void pierces an extruded base along its extrusion, otherwise a boolean cut (difference_strategy auto, boolean or profile_with_holes), recorded as the receipt's lowering",
         "orthographic visible/hidden polylines of named STEP shapes with their source object ids (project_occt_lines): one exact HLRBRep_Algo solve over every selected shape in a caller-stated right/up frame, an exact near/far depth slab, chord-deflection discretization in the STEP read unit",
@@ -389,7 +391,8 @@
       "tests": [
         "tests/integration/test_occt_execution.py",
         "tests/integration/test_cad_backend_contract.py",
-        "packages/monkeycad/tests/test_occt_native_models.py"
+        "packages/monkeycad/tests/test_occt_native_models.py",
+        "packages/monkeycad/tests/test_material_colors.py"
       ],
       "notes": "P107 in-process OCCT executor; OCP and rhino3dm are imported lazily, so importing the package or any of its modules loads neither. #515 splits it by concern: kernel (the binding and the shape helpers the others share), build and boolean, measure, step, native_models, projection, section and preview, with the export orchestration in export.py and the registered OcctBackend in backend.py.",
       "files": [
@@ -2713,7 +2716,7 @@
         "per-seat orchestration: scope, exclusions, production context, proposal authoring, program retention, handover compilation",
         "component coverage: what counts as covered, what is declined, what is undeclared and when that is fatal",
         "assembling what reaches the relation check across the existing seat order: the record's declared relations and producer-built support relations wait for their checker inputs; final unmeasurable relations remain retained unchecked",
-        "backend-neutral dispatch through get_cad_backend().execute(request), retaining native receipts; exact verified result reuse, source reuse and declared patch/rebuild/oracle behavior",
+        "backend-neutral dispatch through get_cad_backend().execute(request), retaining native receipts; exact verified result reuse, source reuse and declared patch/rebuild/oracle behavior; every request carries the materials the record's components declare (declared_materials: material.name by component id, material.color by material)",
         "the retained record kinds (state-record, stage-closure, stage-exit-binding, project-levels, project-grids, selected-spatial-option, discipline-seat, seat-authoring-context, seat-geometry-program, seat-relation-check, seat-handover, seat-round-receipt, runner-run-failure, RunnerRunReceipt@3)",
         "the stage closure and exit binding of a run: the CompositeStageClosureReceipt compiled from the run's own relation checks and seat results, and the StageExitBinding derived from a SATISFIED one",
         "the synthetic bounds that make a Space@1 zone measurable: its volumes' declared min/max, entered in objects_by_element under the zone's entity id",
@@ -2804,14 +2807,16 @@
         "source ProducedElement values and STEP shapes are reused only after verifying row inputs, dependency context and retained source execution; current-run relation and solid checks still receive the complete model; missing legacy producer results fall back to full production",
         "Export observer failure never fails or repeats an export; the workflow imports no monitoring implementation",
         "an explicitly requested work-model export realizes no seat: its retained receipt is skipped when looking for a prior export to reuse or patch",
-        "adding a registered CAD backend does not add runner dispatch branches; cached receipts and patch sources pass exact P036 binding and artifact integrity checks"
+        "adding a registered CAD backend does not add runner dispatch branches; cached receipts and patch sources pass exact P036 binding and artifact integrity checks",
+        "materials reach an export only from the record's facets, keyed by the component ids the program binds; nothing is read from a component's id, name or shape"
       ],
       "status": "canonical",
       "tests": [
         "tests/integration/test_project_runner.py",
         "packages/monkeyarch/tests/test_state_record.py",
         "tests/integration/test_cad_backend_contract.py",
-        "tests/integration/test_blender_projection_runner.py"
+        "tests/integration/test_blender_projection_runner.py",
+        "tests/integration/test_declared_materials.py"
       ],
       "notes": "packages/archflow/src/archflow/state/state_record.py imports SchematicPack/bootstrap_developed_state from here - the state to runtime inversion ADR-001's record (section 2.2) folds away."
     },
@@ -2974,9 +2979,11 @@
     {
       "module_id": "archflow.semantics.facets",
       "owner_path": "packages/archflow/src/archflow/semantics/facets.py",
-      "purpose": "The registered L3 facets a component may carry once its meaning is established: namespaced key/value pairs, each key either a closed set of values or free text.",
+      "purpose": "The registered L3 facets a component may carry once its meaning is established: namespaced key/value pairs, each key a closed set of values, free text, or text in one written form.",
       "owns": [
-        "the facet vocabulary (architectural.role, architectural.enclosure, structural.role, material.name, fabrication.method), which keys are free text, and the free-text length bounds"
+        "the facet vocabulary (architectural.role, architectural.enclosure, structural.role, material.name, material.color, fabrication.method), which keys are free text, and the free-text length bounds",
+        "the one written form of a formatted key (material.color: an sRGB hex colour #RRGGBB, kept in upper case), its canonical spelling and its sRGB channels",
+        "the written reason of each key added after the construction spec's table (FACET_REASONS, ADR-006)"
       ],
       "does_not_own": [
         "roles - archflow.semantics.roles",
@@ -2988,18 +2995,27 @@
       "public_api": [
         "FACETS",
         "FACET_KEYS",
+        "FACET_FORMATS",
+        "FACET_REASONS",
+        "FacetFormat",
         "FREE_TEXT_MIN",
         "FREE_TEXT_MAX",
         "allowed_facet_values",
+        "facet_format",
+        "canonical_facet_value",
+        "material_color_rgb",
         "suggest_facet_key"
       ],
       "depends_on": [],
       "invariants": [
-        "a facet is not an entity type and not a role or a condition (ADR-006); an enumerated key accepts only its closed set of values, a free-text key accepts 1-120 characters"
+        "a facet is not an entity type and not a role or a condition (ADR-006); an enumerated key accepts only its closed set of values, a free-text key accepts 1-120 characters",
+        "a formatted key accepts only text in its form; canonical_facet_value changes only the case of an otherwise well-formed colour and guesses no colour from any other text",
+        "a key added after the spec table carries its written reason why the registered keys cannot be composed to say it"
       ],
       "status": "canonical",
       "tests": [
-        "packages/monkeyarch/tests/test_facets.py"
+        "packages/monkeyarch/tests/test_facets.py",
+        "packages/archflow/tests/test_material_facets.py"
       ],
       "notes": "Facets live on Component@1.fields.facets (spec docs/design/construction-api.md §3.4); GH-419 Task C2."
     },
@@ -3763,6 +3779,7 @@
         "design_components_of",
         "component_semantics",
         "component_facets",
+        "declared_materials",
         "developed_design_view",
         "RecordBinding",
         "legacy_state_digest",
@@ -3819,7 +3836,8 @@
         "Lock changes alter only existing Parameter.lock_authority; exact bases and ordinary value/dependency protections remain enforced, new downstream bindings are allowed, and only an explicit unlock permits detaching existing locked bindings",
         "a record is a value: its readings (digest, state_digest, dependency_edges, resolve_element_bindings, per-entity parameter bindings, design_components_of per source and developed_design_view per argument tuple) are taken once per instance and kept on it; dataclasses.replace starts a new instance with nothing kept, and resolve_element_bindings hands each caller rows of its own",
         "an element named in another element's references.voids is upstream of it: changing the void invalidates the host",
-        "facets on a component are its only L3 meaning a capability may read; changing them changes no element, object, datum or dependency"
+        "facets on a component are its only L3 meaning a capability may read; changing them changes no element, object, datum or dependency",
+        "a material.color is stated with the material.name it colours, and every component sharing a material.name carries the same material.color or none; anything else is refused naming the components, while records without colours or facets stay valid"
       ],
       "status": "canonical",
       "tests": [
@@ -3829,7 +3847,8 @@
         "packages/monkeyarch/tests/test_massing_metrics.py",
         "packages/monkeyarch/tests/test_lintel_bearing.py",
         "tests/integration/test_window_relational_update.py",
-        "services/project-runtime/tests/test_derivation_memo.py"
+        "services/project-runtime/tests/test_derivation_memo.py",
+        "packages/archflow/tests/test_material_facets.py"
       ],
       "notes": "The projection is built here; state no longer imports runtime."
     },
@@ -5794,7 +5813,7 @@
       "purpose": "Read governance registries through bounded module, capability and live-work lookups, and render the generated system and semantic maps.",
       "owns": [
         "loading the live work registry (ArchFlowDevelopmentRegistry@3, GitHub Issue claims only) for the work lookup",
-        "rendering docs/architecture/system-map.md and docs/architecture/semantic-registry.md, including the stage-ladder table generated from PHASE_LADDER",
+        "rendering docs/architecture/system-map.md and docs/architecture/semantic-registry.md, including the stage-ladder table generated from PHASE_LADDER and the facets table with each added key's reason",
         "Exact-id or ranked keyword module lookup with paged contract sections, dependencies, registered source paths and tests; ambiguous queries return bounded candidates",
         "Capability lookup over the same registry: exact id or goal words in either language, paged entry sections, and the sentence a no-hit answers with",
         "Read-only work lookup by exact claim, GH-<issue> or GH-<issue>/<lane>, showing the Issue link, branch/worktree/base/contributor/modules/paths/dependencies/handoff/blocked reason and findings from tools.governance.archcheck"
@@ -5828,6 +5847,7 @@
       ],
       "depends_on": [
         "archflow.semantics.conditions",
+        "archflow.semantics.facets",
         "archflow.semantics.registry",
         "archflow.semantics.roles",
         "archflow.state.stage_workflow",
@@ -6428,7 +6448,7 @@
         "POST /api/proposals/construction, POST /api/proposals/facets, POST /api/proposals/hosted-opening, GET /api/construction and GET /api/construction/model",
         "the modelling root new script geometry goes under: model when a seat builds it, else the first component a seat builds that is not itself script-made geometry",
         "a refused script as 422 CONSTRUCTION_INVALID with line, column and source line, including the record's refusal of the rows a script produced, answered at the script line that made the shape it names and in construction words",
-        "facet upserts on Component@1 through the component edit path, with stripped non-blank text and unknown or non-component targets refused",
+        "facet upserts on Component@1 through the component edit path, with stripped non-blank text (a material.color kept in upper case) and unknown or non-component targets refused",
         "the construction model view: geometry rows with facets and the capabilities facets unlock (hosted-opening for architectural.role = wall)",
         "the hosted-opening capability (Stage C): a door or window on a component of one element whose facets unlock it (architectural.role = wall), else 409 ENRICHMENT_REQUIRED naming the facet to add; a block realised as a wall in place first, else 422 HOST_NOT_WALL_SHAPED with the reason; ids opening-<n> skipping opening and type ids in use; a family as the type <opening>-type, checked by constructing it (FAMILY_INVALID); an optional interfaceRef that must be a relationship ref the record's connections declare (INTERFACE_UNKNOWN names them); the record's refusal as OPENING_INVALID in construction words",
         "the model view's openings per component of one element and its alongLine, where a door's or window's along is measured",

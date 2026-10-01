@@ -34,7 +34,7 @@ import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monke
 import { createDocumentAnnotationsController } from "../../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { ModelAnnotationsHandle } from "../../workspaces/monkeyarch/useModelAnnotations";
 import { distanceBetween, type SnapConstraint } from "../../workspaces/monkeyarch/viewer/featureEdges";
-import { DEFAULT_MODEL_DISPLAY_STYLE, type ModelDisplayStyle } from "../../workspaces/monkeyarch/viewer/modelDisplay";
+import { MODEL_DISPLAY_STYLES, rememberDisplayStyle, rememberedDisplayStyle, type ModelDisplayStyle } from "../../workspaces/monkeyarch/viewer/modelDisplay";
 import { cancelInteractionFrame, createInteractionSession, scheduleInteractionFrame } from "../../workspaces/monkeyarch/interactionSession";
 import type { PushPullTarget, ScaleMode } from "../../workspaces/monkeyarch/interactionSession";
 import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "./ModelEditPanel";
@@ -481,9 +481,11 @@ export function Stage({
   const [annotationToolsOpen, setAnnotationToolsOpen] = useState(false);
   // #352: Export and More in the bar hold what the view tools' panel held; one opens at a time.
   const [barMenu, setBarMenu] = useState<"export" | "more" | null>(null);
-  // A viewing preference of this Stage only. The viewport takes it as a prop, so
-  // it keeps the choice across model loads and a remounted canvas opens in it.
-  const [displayStyle, setDisplayStyle] = useState<ModelDisplayStyle>(DEFAULT_MODEL_DISPLAY_STYLE);
+  // How this browser shows models: view state, like a pinned panel, not a Hub setting. The
+  // viewport takes it as a prop, so it keeps the choice across model loads and a remounted
+  // canvas opens in it; a refreshed page opens in the style chosen last (#562).
+  const [displayStyle, setDisplayStyle] = useState<ModelDisplayStyle>(() => rememberedDisplayStyle());
+  const chooseDisplayStyle = (style: ModelDisplayStyle) => { setDisplayStyle(style); rememberDisplayStyle(style); };
   const [parameterLocksOpen, setParameterLocksOpen] = useState(false);
   // #352: the palette's own More: the less frequent drawing tools, tracing paper and the drawing plane.
   const [moreToolsOpen, setMoreToolsOpen] = useState(false);
@@ -1465,12 +1467,13 @@ export function Stage({
       </div>
       <button type="button" disabled={!model?.hasSelection} onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>
       {/* How the model is painted: one choice, carried to the viewport as a prop so a
-          remounted canvas opens in it too. */}
+          remounted canvas opens in it too. The title says what the chosen look shows. */}
       <label className="stage-menu__field" title={t(`stage.display.${displayStyle}Title`)}>
         <span>{t("stage.display.label")}</span>
         <select data-display-style value={displayStyle}
-          onChange={(event) => setDisplayStyle(event.target.value as ModelDisplayStyle)}>
-          {(["modeling", "original"] as const).map((style) => <option key={style} value={style}>{t(`stage.display.${style}`)}</option>)}
+          onChange={(event) => chooseDisplayStyle(event.target.value as ModelDisplayStyle)}>
+          {MODEL_DISPLAY_STYLES.map((style) => <option key={style} value={style} title={t(`stage.display.${style}Title`)}>
+            {t(`stage.display.${style}`)}</option>)}
         </select>
       </label>
       <span className="stage-menu__sep" aria-hidden="true" />

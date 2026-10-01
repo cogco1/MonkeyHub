@@ -41,7 +41,16 @@ from archflow.state.dependencies import DependencyEdge, DependencyEffect, downst
 from archflow.state.operational_state import DesignObligation
 from archflow.semantics.relation_kinds import ArchitecturalRelationKind
 from archflow.semantics.conditions import CONDITION_IDS
-from archflow.semantics.facets import FACET_KEYS, FREE_TEXT_MAX, FREE_TEXT_MIN, allowed_facet_values, suggest_facet_key
+from archflow.semantics.facets import (
+    FACET_KEYS,
+    FREE_TEXT_MAX,
+    FREE_TEXT_MIN,
+    allowed_facet_values,
+    canonical_facet_value,
+    facet_format,
+    material_color_rgb,
+    suggest_facet_key,
+)
 from archflow.semantics.registry import resolve_semantic_kind, suggest_semantic, suggest_semantic_kind
 from archflow.semantics.roles import ROLE_IDS
 from archflow.state.design_portfolio import BranchRevisionRef
@@ -517,9 +526,17 @@ class StateRecord:
                         if not (FREE_TEXT_MIN <= len(facet_value) <= FREE_TEXT_MAX):
                             raise StateRecordError(
                                 f"component {component.entity_id}: facet {facet_key} must be {FREE_TEXT_MIN}-{FREE_TEXT_MAX} characters, got {len(facet_value)}")
+                        form = facet_format(facet_key)
+                        if form is not None and not form.holds(facet_value):
+                            # The record keeps one spelling; a well-formed value in another case is named in it.
+                            written = canonical_facet_value(facet_key, facet_value)
+                            raise StateRecordError(
+                                f"component {component.entity_id}: facet {facet_key} must be {form.words}, got {facet_value!r}"
+                                + (f"; write it {written}" if form.holds(written) else ""))
                     elif facet_value not in allowed_values:
                         raise StateRecordError(
                             f"component {component.entity_id}: facet {facet_key} names {facet_value!r}, which is not registered; allowed: {', '.join(allowed_values)}")
+        _require_one_color_per_material(self.entities_of("Component@1"))
 
     # ---- views
     def entity(self, entity_id: str) -> Entity:
@@ -753,6 +770,63 @@ def component_facets(entity: Entity) -> dict[str, str]:
 
     facets = entity.fields.get("facets")
     return dict(facets) if isinstance(facets, Mapping) else {}
+
+
+def declared_materials(record: StateRecord) -> tuple[dict[str, str], dict[str, tuple[int, int, int]]]:
+    """The materials the record's components declare: ``({component id: name}, {name: (r, g, b)})``.
+
+    The first map holds every ``Component@1`` that states ``material.name``,
+    by its entity id - the component a compiled program binds its objects
+    to. The second holds the sRGB channels of each material whose colour
+    some component of it states (``material.color``; the record keeps one
+    per material). Both are read from facets alone: a component that states
+    no material is absent from them, never named after its id or its shape,
+    and a material without a stated colour has no entry.
+    """
+
+    by_component: dict[str, str] = {}
+    colors: dict[str, tuple[int, int, int]] = {}
+    for component in record.entities_of("Component@1"):
+        facets = component_facets(component)
+        material = facets.get("material.name")
+        if material is None:
+            continue
+        by_component[component.entity_id] = material
+        color = facets.get("material.color")
+        if color is not None:
+            colors[material] = material_color_rgb(color)
+    return by_component, colors
+
+
+def _require_one_color_per_material(components: tuple[Entity, ...]) -> None:
+    """A material has one base colour: a colour names its material, and one material is never two colours.
+
+    ``material.color`` is the appearance of the material ``material.name``
+    names on the same component, so a colour without a name says nothing
+    and is refused. Every component of one material carries the same colour
+    or none; two colours for one material are refused with the components
+    that state each. A record without colours, or without facets, is as
+    valid as before.
+    """
+
+    stated: dict[str, dict[str, list[str]]] = {}
+    for component in components:
+        facets = component_facets(component)
+        color = facets.get("material.color")
+        if color is None:
+            continue
+        material = facets.get("material.name")
+        if material is None:
+            raise StateRecordError(
+                f"component {component.entity_id}: facet material.color {color} names no material; "
+                "declare material.name with it")
+        stated.setdefault(material, {}).setdefault(color, []).append(component.entity_id)
+    for material, colors in sorted(stated.items()):
+        if len(colors) > 1:
+            said = "; ".join(f"{color} on {', '.join(sorted(ids))}" for color, ids in sorted(colors.items()))
+            raise StateRecordError(
+                f"material {material!r} is given more than one material.color ({said}); "
+                "one material has one colour: give these components the same colour or another material.name")
 
 
 def design_components_of(record: StateRecord, *, source_ref: str | None = None) -> tuple:

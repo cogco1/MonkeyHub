@@ -688,6 +688,8 @@ class SemanticEmissionTest(unittest.TestCase):
                 "archflow:operation_ref": "cad-operation:ring",
                 "archflow:bindings": "ring-binding",
                 "archflow:component": "colonnade",
+                # the colonnade declares no material, and the object says so
+                "archflow:material_status": "undeclared",
                 "archflow:commitments": "commitment:preserve-envelope",
                 "archflow:evidence": "brief-claim:claim.occupancy",
             },
@@ -828,14 +830,24 @@ class SemanticEmissionTest(unittest.TestCase):
         self.assertEqual(saved["plain-object"].MaterialIndex, -1)
 
     def test_layer_color_contract_has_deterministic_fallback(self):
-        default = translate_to_rhino_python(semantic_build())
-        missing_material_color = translate_to_rhino_python(
+        """#560: a material without a colour wears its name's identity colour, not its component path's."""
+
+        default = dict(translate_to_rhino_python(semantic_build()).layer_colors)
+        missing_material_color = dict(translate_to_rhino_python(
             semantic_build(),
             material_by_component={"colonnade": "limestone"},
             material_colors={},
-        )
-        self.assertEqual(default.layer_colors, missing_material_color.layer_colors)
-        self.assertIn("archflow", dict(default.layer_colors))
+        ).layer_colors)
+        no_table = dict(translate_to_rhino_python(
+            semantic_build(), material_by_component={"colonnade": "limestone"},
+        ).layer_colors)
+        self.assertIn("archflow", default)
+        # the root names no material and keeps its path-derived colour
+        self.assertEqual(default["archflow"], missing_material_color["archflow"])
+        # the colonnade wears limestone's colour: deterministic, with or without an empty table,
+        # and no longer the colour its own layer path would give it
+        self.assertEqual(missing_material_color["archflow::colonnade"], no_table["archflow::colonnade"])
+        self.assertNotEqual(missing_material_color["archflow::colonnade"], default["archflow::colonnade"])
 
 
 
@@ -988,6 +1000,7 @@ class ProducerStatementUserTextTests(unittest.TestCase):
                 "archflow:operation_ref": "cad-operation:abutment-north",
                 "archflow:bindings": "binding-roof-abutments",
                 "archflow:component": "roof-abutments",
+                "archflow:material_status": "undeclared",
                 "archflow:wedge_low": "0.5",
                 "archflow:wedge_high": "2.5",
                 "archflow:wedge_axis": "along",
@@ -1025,6 +1038,7 @@ class ProducerStatementUserTextTests(unittest.TestCase):
                 "archflow:operation_ref": "cad-operation:rotunda-shell",
                 "archflow:bindings": "binding-rotunda-wall",
                 "archflow:component": "rotunda-wall",
+                "archflow:material_status": "undeclared",
                 "archflow:shell_thickness": "0.6",
                 "archflow:shell_kind": "cylinder",
             },
@@ -1040,6 +1054,7 @@ class ProducerStatementUserTextTests(unittest.TestCase):
             [
                 "archflow:bindings",
                 "archflow:component",
+                "archflow:material_status",
                 "archflow:object_ref",
                 "archflow:operation_ref",
                 "archflow:producer_op",

@@ -18,9 +18,18 @@ so no geometry is measured or recomputed to produce a string, and an
 object whose operation states nothing carries nothing extra. What it does
 own is the identity namespace: a statement may not take a key the export
 already writes (``producer_op``, ``object_ref``, ``operation_ref``,
-``bindings``, ``component``, ``material``, ``commitments``, ``evidence``,
-``inspection_witness``), and one that tries fails ``CadTranslationError``
-rather than overwriting an object's identity.
+``bindings``, ``component``, ``material``, ``material_status``,
+``commitments``, ``evidence``, ``inspection_witness``), and one that tries
+fails ``CadTranslationError`` rather than overwriting an object's identity.
+
+Materials come only from the caller's ``material_by_component`` - the
+``material.name`` its components declare - and never from a name or a
+shape. An object of a declaring component carries ``archflow:material``;
+one whose components declare none carries ``archflow:material_status`` =
+``undeclared`` and keeps its layer's distinction colour. A declared
+material wears one colour wherever it is used: the caller's
+``material_colors`` entry for it, else an identity colour derived from the
+material's name (``_material_color``), which claims no appearance.
 
 The producers on the spine state these today — keys and formats exactly:
 
@@ -68,11 +77,17 @@ _RESERVED_USER_TEXT: frozenset[str] = frozenset(
         "evidence",
         "inspection_witness",
         "material",
+        "material_status",
         "object_ref",
         "operation_ref",
         "producer_op",
     }
 )
+
+# ``archflow:material_status`` on an object whose components declare no
+# material: it wears no native material and keeps its layer's distinction
+# colour, and this says so rather than leaving the reader to infer it.
+UNDECLARED_MATERIAL = "undeclared"
 
 
 class CadTranslationError(ValueError):
@@ -126,6 +141,28 @@ def _layer_color(component_key: str) -> tuple[int, int, int]:
     )
 
 
+def _material_identity_color(material: str) -> tuple[int, int, int]:
+    """The colour that tells one declared material from another until its own colour is declared.
+
+    Derived from the material's name alone, never from a component or layer
+    path, so every component of one material shares it wherever it sits. It
+    is an identity, like the per-component distinction colour, and claims
+    nothing about how the material looks.
+    """
+
+    return _layer_color(f"material:{material}")
+
+
+def _material_color(
+    material: str,
+    material_colors: Mapping[str, tuple[int, int, int]] | None,
+) -> tuple[int, int, int]:
+    """The one colour a declared material wears: its declared colour, else its identity colour."""
+
+    declared = (material_colors or {}).get(material)
+    return declared if declared is not None else _material_identity_color(material)
+
+
 def _rgb(value: object, field: str) -> tuple[int, int, int]:
     if not isinstance(value, tuple) or len(value) != 3:
         raise CadTranslationError(f"{field} must be a three-channel tuple")
@@ -149,18 +186,22 @@ def _resolved_layer_colors(
 ) -> tuple[tuple[str, tuple[int, int, int]], ...]:
     """Resolve the one color table used by both the script and its contract.
 
-    The root layer has no component or material assignment, so it always uses
-    the same deterministic path-derived fallback as an explicit contract.
+    A component layer whose components all declare one material wears that
+    material's colour (``_material_color``: declared, else the identity of
+    its name), so components of one material share a colour. Any other layer
+    - a component with no declared material, components declaring different
+    materials, the root - keeps the deterministic path-derived distinction
+    colour, which names no material.
     """
 
     rows: list[tuple[str, tuple[int, int, int]]] = []
     for layer_path in sorted({_ROOT_LAYER, *layer_paths}):
         color = _layer_color(layer_path)
         if layer_path != _ROOT_LAYER:
-            component = layer_path.split("::", 1)[1]
-            material = (material_by_component or {}).get(component)
-            if material is not None and material_colors is not None:
-                color = material_colors.get(material, color)
+            components = layer_path.split("::", 1)[1].split("+")
+            materials = {(material_by_component or {}).get(component) for component in components}
+            if len(materials) == 1 and None not in materials:
+                color = _material_color(materials.pop(), material_colors)
         rows.append(
             (
                 layer_path,
@@ -184,8 +225,11 @@ def expected_object_semantics(
     cannot show about itself — written through verbatim as
     ``archflow:<key>``. A statement that names a reserved identity key
     fails ``CadTranslationError``. Objects the program leaves unbound stay
-    on the root layer with no invented component. Families report the block
-    definitions arrays must create with their instance multiplicities.
+    on the root layer with no invented component. A bound object names the
+    material its components declare in ``material_by_component``, or says
+    ``archflow:material_status`` = ``undeclared`` when none of them declares
+    one. Families report the block definitions arrays must create with their
+    instance multiplicities.
     """
 
     proposal = program.proposal
@@ -244,6 +288,10 @@ def expected_object_semantics(
                 )
                 if materials:
                     user_text["archflow:material"] = ",".join(materials)
+                else:
+                    # A component that declares no material is said to, and
+                    # never given one: no native material, no guessed name.
+                    user_text["archflow:material_status"] = UNDECLARED_MATERIAL
             if commitments:
                 user_text["archflow:commitments"] = ",".join(commitments)
             if evidence:

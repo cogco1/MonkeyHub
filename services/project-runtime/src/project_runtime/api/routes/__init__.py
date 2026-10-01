@@ -1,4 +1,4 @@
-"""Every HTTP route the Studio API serves, mounted under ``/api``."""
+"""Every HTTP route the Studio API serves; ``create_app`` mounts them under ``/api``."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from . import (
     working_draft,
 )
 
-router = APIRouter(prefix="/api")
+router = APIRouter()
 router.include_router(health.router)
 router.include_router(protocol.router)
 router.include_router(projects.router)
