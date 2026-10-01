@@ -274,6 +274,7 @@
         "CadExecutionError",
         "CadCapabilityError",
         "expected_object_semantics",
+        "declared_material",
         "ROOT_LAYER",
         "CadTranslationError",
         "select_patch_operations",
@@ -593,11 +594,11 @@
         "per-object encoded-geometry digests and morphology analysis (planarity, curve sampling and exact native polyline vertices/length)",
         "the typed, fail-closed inspection error codes",
         "reading original 3dm container bytes, geometry encodings, user strings, block definitions/references and material tables without claiming geometric validity or bounds; invalid geometry object ids remain explicit",
-        "lightweight native identity, layer, block/reference and raw user-string indexing from exact 3dm bytes, without per-object geometry encoding or validation",
+        "lightweight native identity, layer, block/reference and raw user-string indexing from exact 3dm bytes, without per-object geometry encoding or validation; each indexed object's worn material resolved from the file's own table (its own, or its layer's render material: name, diffuse #RRGGBB) and whether its archflow:material label declares it (declared, file or undeclared)",
         "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified conversion-provider selection; provider execution remains separate from the standalone SKP reader, with no project writes.",
         "independent local SketchUp C API reading of visible face geometry into meters/Z-up meshes; nested instances, transformations, holes and visibility, without launching a desktop host",
         "patching caller-supplied composed 3dm bytes from exact prior/current compiled programs and a native replacement preview, preserving unchanged objects and shared block/material tables with explicit unit conversion",
-        "composed replacements without explicit donor materials inherit the same source object material or a unique source component material, preserving native PBR and textures"
+        "rewriting a composed model's material table, object bindings and material labels from the run's declared materials on every compose, and reading the final composed bytes back against their base, the native exports and those declarations"
       ],
       "does_not_own": [
         "producing the file - monkeycad.occt and monkeycad.rhino",
@@ -608,13 +609,13 @@
       "inputs": [
         ".3dm file path or bytes",
         "model bytes with their source and target format; SKP bytes and an optional local SketchUp SDK path",
-        "caller-supplied composed 3dm bytes, the exact prior and current compiled programs and a native replacement preview"
+        "caller-supplied composed 3dm bytes, the exact prior and current compiled programs and a native replacement preview; the run's declared materials (material.name by component id, material.color by material)"
       ],
       "outputs": [
         "ThreeDmInspection (ThreeDmInspection@N)",
         "Plain native source index value; no persisted record or semantic classification",
         "Mesh and Scene values, encoded 3DM/GLB bytes and their conversion readback",
-        "patched composed 3dm bytes"
+        "patched composed 3dm bytes, rewritten to wear the run's declared materials; a composed readback that raises CadPatchError naming each mismatch"
       ],
       "public_api": [
         "inspect_three_dm",
@@ -627,13 +628,17 @@
         "inspect_three_dm_index",
         "monkeycad.formats.meshes.convert",
         "read_skp",
-        "patch_composed_three_dm"
+        "patch_composed_three_dm",
+        "rewrite_composed_materials",
+        "verify_composed_three_dm",
+        "ComposedPatch"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
         "archflow.state.geometry_program",
         "monkeycad.execution",
-        "monkeycad.integrations"
+        "monkeycad.integrations",
+        "monkeycad.occt"
       ],
       "invariants": [
         "read-only: rhino3dm is imported lazily, one immutable byte snapshot is read, and no Rhino process is started",
@@ -644,7 +649,8 @@
         "inspect_three_dm keeps strict geometry and visible-bounds checks; inspect_three_dm_contents preserves imported invalid geometry as data and never substitutes a geometric-validation result",
         "Imported meshes and saved render meshes retain their faceted/approximation quality; no native reader creates a STEP or an OCCT execution receipt. SKP originals remain with the application owner; the reader does not write project data.",
         "SKP-derived mesh object IDs follow persistent instance paths and tag IDs within the same model; names and geometry changes do not mint new object identities. Unsupported or missing persistent IDs are refused.",
-        "composed-model replacement retains the source GUID for each rebuilt logical object; newly added objects cannot reuse any source GUID, including retired ones; saved readback verifies the expected identity"
+        "composed-model replacement retains the source GUID for each rebuilt logical object; newly added objects cannot reuse any source GUID, including retired ones; saved readback verifies the expected identity",
+        "a composed model wears what its run declares, whatever its geometry did: on every compose, an empty patch selection included, an object a program delivers wears what that run's preview gives it, any other object the material its archflow:component's components declare, and every object without one wears none and carries archflow:material_status = undeclared; materials the base brought (object, layer and block-member bindings) are cleared, GUIDs, geometry and every other user string stay, and a table entry no object wears any more is left unreferenced"
       ],
       "status": "canonical",
       "tests": [
@@ -653,7 +659,8 @@
         "packages/monkeycad/tests/model_export_glb_reader.mjs",
         "packages/monkeycad/tests/test_model_providers.py",
         "packages/monkeycad/tests/test_model_conversion_regressions.py",
-        "packages/monkeycad/tests/test_sketchup_reader.py"
+        "packages/monkeycad/tests/test_sketchup_reader.py",
+        "packages/monkeycad/tests/test_three_dm_compose.py"
       ],
       "notes": "The single source of the inspection key sets that viewers and readback both check against. formats/ also holds the bounded 3DM/GLB mesh codecs (meshes.py) and their conversion providers (conversion.py), SketchUp reading (sketchup_reader.py) and the composition of a patched .3dm (three_dm_compose.py).",
       "files": [
@@ -779,11 +786,11 @@
     {
       "module_id": "monkeydiagram.projection.mesh_views",
       "owner_path": "packages/monkeydiagram/src/monkeydiagram/projection/mesh_views.py",
-      "purpose": "Draw a fast look-only line view of named shapes from their triangles against a depth buffer: the model view's axonometric and the projection cache's thumbnails. Created because the exact hidden-line solve (monkeycad.occt through monkeydiagram.drawing_runs) grows too fast with object count for a view nobody retains, and no drawing owner rasterises meshes.",
+      "purpose": "Draw a fast look-only line view of named shapes from their triangles against a depth buffer: the model view's axonometric and the projection cache's thumbnails, and, given each object's colour, the same view with each visible surface filled (the model view's material display, #580). Created because the exact hidden-line solve (monkeycad.occt through monkeydiagram.drawing_runs) grows too fast with object count for a view nobody retains, and no drawing owner rasterises meshes.",
       "owns": [
         "triangulating the named shapes at a caller-chosen chord error, after forgetting any mesh a shape already holds so a model read once draws every size as a fresh read would, and naming the curve-only objects left out (triangulate)",
         "feature edges of each object's welded mesh: creases over CREASE_DEGREES, open boundaries, non-manifold edges and view silhouettes",
-        "the scanline depth buffer at twice the output resolution and the edge visibility test against it, reduced to an anti-aliased greyscale PNG whose longer side is the requested size (mesh_line_view)",
+        "the scanline depth buffer at twice the output resolution and the edge visibility test against it, reduced to an anti-aliased greyscale PNG whose longer side is the requested size (mesh_line_view); given fills, the object in front under each pixel (the lowest label among coplanar ones), each visible surface filled flat without light in its own sRGB colour, an object without one grey under a hatch, the edges over them, as an RGB PNG naming the objects that show",
         "RENDERER_VERSION, derived from the source of this module's drawing functions, tessellate_shape and the model reader (read_elevation_source), so it changes whenever the same input would draw different pixels without a hand bump; and mesh_pipeline: every setting and library version (OCP, numpy, Pillow) that changes the pixels",
         "working memory bounded by pixel count: triangles are rasterised and edges sampled in chunks of at most a million candidate pixels, splitting a large triangle into row bands; the output side is at most MAX_SIZE_PX",
         "the caller-named PNG text chunks; no time or random id in the bytes"
@@ -801,7 +808,7 @@
       ],
       "outputs": [
         "ObjectMesh tuple and skipped object ids",
-        "MeshLineView (PNG bytes, size, triangle and edge counts)"
+        "MeshLineView (PNG bytes, size, triangle and edge counts, and the objects a filled view shows)"
       ],
       "public_api": [
         "triangulate",
@@ -4139,6 +4146,7 @@
         "WORK_COPY_WORKSPACE",
         "GET /api/drawings/model-view",
         "model_view",
+        "material_view",
         "POST /api/drawings/plans",
         "POST /api/drawings/plans/status",
         "GET /api/drawings/plans/dimensions",
@@ -4230,7 +4238,7 @@
         "a work copy names one exact registration - run, asset sha256 and revisionRef together, where a null revisionRef selects the registration that carries none and never the newest different one; its own identity is the origin document, so the same registration resolves to the same file across restarts, and it holds the origin's own media type because that is the kind of file it contains; a document whose pages are answered for by different documents, whose page has become another page of one document, whose current replacement has a different page count or is a different kind of file, or whose registered media type has no editable copy at all, has no one file that can stand for it: the row carries that reason and the request is refused as not editable, naming any copy already made; the row names the whole registration it answers for and no page number, because one file answers for the whole document",
         "registered source bytes stay immutable: edited work-copy bytes become a new registered document through the existing save_document replacement path, declaring the whole document they replace, with no modelSource, drawingId, sourceStageRef or revisionRef inherited and no change to canonical HEAD",
         "an upload names either the pages it replaces or the one document it replaces whole, never both; a declared whole-document replacement must be the same kind of file with the same page count as the document it replaces, so a file that gained or lost a page is refused visibly instead of registering pages that are placed on no board; a page-by-page upload may still take any page of a longer file, and no two old pages may be answered for by one uploaded page",
-        "model-view is a transient orthographic PNG from a complete retained STEP bound to exact run/stateDigest/model asset; it creates no drawing or project record and refuses unsupported sources. Its views are the five model-axis directions and the isometric axon; every read verifies the source again, and the projection is reused in process memory by the exact source that run/stateDigest/asset resolve to and the view name.",
+        "model-view is a transient orthographic PNG from a complete retained STEP bound to exact run/stateDigest/model asset; it creates no drawing or project record and refuses unsupported sources. Its views are the five model-axis directions and the isometric axon; every read verifies the source again, and the projection is reused in process memory by the exact source that run/stateDigest/asset resolve to and the view name. display=material draws the same source and frame with each object filled flat in the diffuse colour of the material the exact model asset's own table binds to it (inspect_three_dm_index), an object wearing none grey under a hatch, and answers a legend of the materials drawn (declared or file) and the undeclared count; a drawn object the asset does not name exactly once is refused (MODEL_MATERIALS_UNAVAILABLE) rather than given a guessed colour, and its reuse key adds the display and the asset.",
         "Uploaded model registrations protect their source run permanently; generated compositions retain generated provenance, and their runs, like every run, are never removed automatically. Legacy registrations are conservatively protected.",
         "Cut-plan freshness is derived from exact source object inputs intersecting the view slab, including entering and occluding objects, and resolved dimension anchors; unknown targets and broken anchors are explicit. Rebuild preserves the recipe and immutable prior revision; no nearest-object rebinding is allowed.",
         "A rebuilt cut plan replaces its previous revision whole unless the page's visible aspect ratio changed. A competing rebuild of an already replaced revision is refused before projection; an identical predecessor retry or an unchanged revision returns its retained result. Restoring an older recipe creates a new revision and replacement with the exact before/after and actor, even when the pixels match history. Why a page was replaced - representation, source or upload - is derived from the two registrations and never stored; Render counts only a source or upload replacement as a newer input.",
@@ -4263,6 +4271,7 @@
         "services/project-runtime/tests/test_drawing_dimensions.py",
         "services/project-runtime/tests/test_model_exports.py",
         "services/project-runtime/tests/test_model_source_index.py",
+        "services/project-runtime/tests/test_material_view.py",
         "services/project-runtime/tests/test_model_load_monitoring.py",
         "apps/monkeyhub/web/test/externalModelImport.browser.mjs",
         "services/project-runtime/tests/test_section_perspective.py",
@@ -4649,7 +4658,7 @@
         "executing a semantic component proposal through the same run_operator path as scalar and massing proposals",
         "retaining the exact document comment referenced by a proposal in the candidate run without substituting newer ink or source file versions",
         "rechecking a proposal model source and its exact pinned document association before candidate execution, including original saved page and calibration references on traced elements",
-        "arranging composed-model continuation after native candidate execution: matching retained seat programs and CAD exports, calling the existing CAD composition adapter, and registering the complete result through project_runtime.documents",
+        "arranging composed-model continuation after native candidate execution: matching retained seat programs and CAD exports, calling the existing CAD composition adapter, rewriting the result's materials from the run's own retained declaration (declared_materials) and reading its final bytes back before registering the complete result through project_runtime.documents",
         "retaining each candidate typed operator, exact immediate source and committed base Stage; replaying its chain against the saved materialized result",
         "retaining combined candidate source ids with one normalized operator against their common Stage; replaying all sources before acceptance",
         "Read-only runtime inspection of live jobs, exact retained candidates and branch-reachable committed Stages; managed candidate admission may accept a preallocated run id without weakening exact-base checks or re-executing an existing run",
@@ -4787,7 +4796,8 @@
         "the Worktree Graph never merges, starts, replays or writes; conflicts are compared from the nearest shared source, never from a common Stage that both lines already changed",
         "a superseded draft is read from retained facts only (its lineage, the combine dry run, design.continued events and admissions) and stays listed with its comparison; the Worktree Graph itself moves, deletes and rewrites nothing",
         "a Worktree Graph drawing row is the representation-status projection of the drawing's latest page, so a change outside the plan's read set leaves it current; the graph says stale for outdated and keeps its other words",
-        "cleaning never moves the Working Head, a design branch, HEAD, a line step, a Stage or an admitted result; an unreadable working position, admission or design branch cleans nothing; a run some kept run names stays, and a run that names another moves before it; each sweep that moved runs retains one design.cleaned AuditEvent@1 and each restore one design.restored in the fixed studio-retention run, and a run those events name is never cleaned again; a restore brings back every trashed run the restored run names"
+        "cleaning never moves the Working Head, a design branch, HEAD, a line step, a Stage or an admitted result; an unreadable working position, admission or design branch cleans nothing; a run some kept run names stays, and a run that names another moves before it; each sweep that moved runs retains one design.cleaned AuditEvent@1 and each restore one design.restored in the fixed studio-retention run, and a run those events name is never cleaned again; a restore brings back every trashed run the restored run names",
+        "every composed candidate wears what its run's exact retained record declares, whether or not geometry changed, and its final bytes are read back (GUIDs, encoded geometry, non-material user strings and materials) before registration; a model that does not read back fails the candidate and registers nothing, and retained composed models are never rewritten"
       ],
       "status": "canonical",
       "tests": [
@@ -4874,7 +4884,7 @@
         "the project recipe as a scoped decision (correction capture, option A): a person's confirmed require decision in the drawing domain whose typedBinding kind recipe holds closed paper-space graphics values, and project_recipe, the one per-key read of it a new drawing takes between its own previous revision and the code default",
         "a recipe travelling between projects (#252): recipe_export, the one DrawingRecipeExport@1 form of an active recipe decision (values, target, hold, decision id, revision sha256 and its own canonical sha256; nothing else of the project), read_recipe_export, its closed and digest-checked reading, and import_recipe, which retains one as a person's soft_preference for the whole project citing the export's sha256; tools/project/export_drawing_recipe.py is its command line; the Runtime exports a selected revision, inspects a file without writes and imports on explicit confirmation through the same functions",
         "Composing explicitly selected exact Study evidence revisions into ContextPack separately from design facts and applicable decisions; no implicit Study scan, acceptance or project write.",
-        "the source-bound, read-only visual observation channel (GH-303): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners, the strict VisualObservation answer and provider seam, and the Harness allowance; POST /api/visual-reviews defaults to structured observation and also delivers exact rendered frames to the caller without another provider or fabricated findings; different documents may share a page index while exact sources and generated frame names stay distinct",
+        "the source-bound, read-only visual observation channel (GH-303): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners, the strict VisualObservation answer and provider seam, and the Harness allowance; POST /api/visual-reviews defaults to structured observation and also delivers exact rendered frames to the caller without another provider or fabricated findings; different documents may share a page index while exact sources and generated frame names stay distinct; a modeling view named <view>-material is the model view's material display of the same exact model",
         "candidate admission: one CandidateAdmission@1 per closed loop (a task, one worktree of it, or one person's act) in the fixed explicit studio-admissions P036 run, written only through the completion gate Stage acceptance shares, with the boundary's actor, the stated task, Study and bound message, each result's outcome, pinned model, receipt and superseded attempts",
         "the Candidate Pool read for the Design Tree: admitted Candidates and their Studies from admission records and from legacy facts that already prove admission (a committed Stage's run, a retained Exploration's non-base option, an accepted episode's produced run), with lineage-derived continuedFrom and acceptedStageRef and Working Head membership",
         "the attributable, revisioned rejection, archival/restoration and endorsement of an exact retained Candidate or Stage; this changes no design position"

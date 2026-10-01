@@ -9,6 +9,12 @@ pixel, the triangles fill a depth buffer at twice the output resolution, and
 the mesh's feature edges (creases, open boundaries and silhouettes) are drawn
 where the buffer does not hide them.
 
+Given a colour for each object, the same buffer also says which object is
+nearest under each pixel, and that object's visible surface is filled flat
+with its colour, without light, under the same edges: the model view's
+material display (#580). An object without a colour is drawn plainly as
+unknown, grey under a hatch, never in a colour it was not given.
+
 Everything is deterministic: the same shapes, frame and size give the same
 bytes. The PNG carries only the text chunks the caller names (no time, no
 random id). Nothing is written; retained drawings stay with
@@ -42,12 +48,26 @@ _SUPERSAMPLE = 2
 _WELD = 1e-9
 # An edge sample is hidden only behind a surface nearer by more than this many fine pixels.
 _DEPTH_TOLERANCE = 1.5
+# Surfaces of two objects nearer than this share of the frame's longer side
+# are at one depth: a filled view gives the pixel to the lower label, so
+# coplanar faces of two objects never speckle. Real layers lie far apart.
+_TIE = 1e-6
 _PNG_COMPRESS_LEVEL = 6
 # Candidate pixels (and edge samples) handled at once. Each takes about ten
 # eight-byte temporaries, so a chunk stays near 100 MB however large the
 # triangles are: a triangle whose rows would exceed it is split into bands.
 _CHUNK_PIXELS = 1_000_000
 _LIBRARIES = ("cadquery-ocp", "numpy", "pillow")
+#: A filled view's paper and lines, as sRGB triples.
+FILL_BACKGROUND = (255, 255, 255)
+FILL_EDGE = (38, 38, 38)
+#: An object given no colour: a neutral grey under 45-degree hatch lines,
+#: HATCH_WIDTH of every HATCH_SPACING output pixels, so it never reads as a
+#: material colour.
+UNKNOWN_FILL = (200, 200, 200)
+UNKNOWN_HATCH = (120, 120, 120)
+HATCH_SPACING = 8
+HATCH_WIDTH = 2
 
 
 class MeshViewError(ValueError):
@@ -56,13 +76,18 @@ class MeshViewError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class MeshLineView:
-    """One drawn view: the PNG, its size and what was drawn."""
+    """One drawn view: the PNG, its size and what was drawn.
+
+    ``seen`` names, in a filled view, each object whose surface shows in at
+    least one pixel; a line view leaves it empty.
+    """
 
     png: bytes
     width: int
     height: int
     triangles: int
     edges_drawn: int
+    seen: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,7 +110,8 @@ def _renderer_version() -> str:
     from monkeydiagram import sources
 
     functions = (tessellate_shape, sources.read_elevation_source, sources._read_native_source,
-                 triangulate, _clean, _welded, _feature_edges, _expand, _depth_buffer, mesh_line_view)
+                 triangulate, _clean, _welded, _feature_edges, _expand, _coverage, _depth_buffer, _front_objects,
+                 mesh_line_view)
     digest = hashlib.sha256()
     for function in functions:
         digest.update(inspect.getsource(function).encode("utf-8"))
@@ -106,8 +132,10 @@ def mesh_pipeline() -> dict[str, Any]:
             return "absent"
 
     return {"renderer": RENDERER_VERSION, "creaseDegrees": CREASE_DEGREES, "angularDeflection": ANGULAR_DEFLECTION,
-            "supersample": _SUPERSAMPLE, "weld": _WELD, "depthTolerance": _DEPTH_TOLERANCE,
-            "pngCompressLevel": _PNG_COMPRESS_LEVEL, "libraries": {name: version(name) for name in _LIBRARIES}}
+            "supersample": _SUPERSAMPLE, "weld": _WELD, "depthTolerance": _DEPTH_TOLERANCE, "tie": _TIE,
+            "pngCompressLevel": _PNG_COMPRESS_LEVEL, "libraries": {name: version(name) for name in _LIBRARIES},
+            "fill": {"background": list(FILL_BACKGROUND), "edge": list(FILL_EDGE), "unknown": list(UNKNOWN_FILL),
+                     "hatch": list(UNKNOWN_HATCH), "hatchSpacing": HATCH_SPACING, "hatchWidth": HATCH_WIDTH}}
 
 
 def pixel_size(crop_uv: Sequence[float], size_px: int) -> float:
@@ -175,13 +203,18 @@ def _expand(np, counts):
     return owner, np.arange(int(counts.sum())) - np.repeat(np.cumsum(counts) - counts, counts)
 
 
-def _depth_buffer(np, x, y, z, triangles, width, height):
-    """The nearest depth under each pixel centre, scanline by scanline; ``inf`` where nothing is."""
+def _coverage(np, x, y, z, triangles, width, height):
+    """Every pixel centre each triangle covers, scanline by scanline, one bounded chunk at a time.
 
-    depth = np.full(width * height, np.inf)
+    Yields ``(pixel, triangle, depth)`` arrays: the flat pixel index, the row
+    of ``triangles`` covering it and that triangle's depth there. The same
+    input yields the same chunks with the same depths, so a second pass can
+    find the triangles a first pass found nearest.
+    """
+
     tx, ty, tz = x[triangles], y[triangles], z[triangles]
     area = (tx[:, 1] - tx[:, 0]) * (ty[:, 2] - ty[:, 0]) - (tx[:, 2] - tx[:, 0]) * (ty[:, 1] - ty[:, 0])
-    usable = np.abs(area) > 1e-12
+    usable = np.flatnonzero(np.abs(area) > 1e-12)
     tx, ty, tz, area = tx[usable], ty[usable], tz[usable], area[usable]
     # Depth is a plane over each triangle: z = gx * x + gy * y + z0.
     dx1, dx2 = tx[:, 1] - tx[:, 0], tx[:, 2] - tx[:, 0]
@@ -230,13 +263,52 @@ def _depth_buffer(np, x, y, z, triangles, width, height):
         py = (cy[span] - 0.5).astype(np.int64)
         which = tri[span]
         values = gx[which] * (px + 0.5) + gy[which] * cy[span] + z0[which]
-        np.minimum.at(depth, py * width + px, values)
+        yield py * width + px, usable[which], values
+
+
+def _depth_buffer(np, x, y, z, triangles, width, height):
+    """The nearest depth under each pixel centre, scanline by scanline; ``inf`` where nothing is."""
+
+    depth = np.full(width * height, np.inf)
+    for pixels, _, values in _coverage(np, x, y, z, triangles, width, height):
+        np.minimum.at(depth, pixels, values)
     return depth.reshape(height, width)
+
+
+def _front_objects(np, x, y, z, triangles, labels, depth, nothing, tie):
+    """The object nearest the eye under each pixel centre, ``nothing`` where no surface is.
+
+    A second pass over the same coverage: a triangle is in front where its
+    depth is within ``tie`` of the buffer's nearest, and of the objects
+    meeting there (coplanar faces) the lowest label wins, so the answer never
+    depends on the order of the pass or on rounding.
+    """
+
+    height, width = depth.shape
+    nearest = depth.reshape(-1)
+    front = np.full(width * height, nothing, dtype=np.int32)
+    for pixels, which, values in _coverage(np, x, y, z, triangles, width, height):
+        shown = values <= nearest[pixels] + tie
+        np.minimum.at(front, pixels[shown], labels[which[shown]])
+    return front.reshape(height, width)
+
+
+def _fill_colour(object_id: str, colour) -> tuple[int, int, int] | None:
+    if colour is None:
+        return None
+    try:
+        channels = tuple(colour)
+    except TypeError:
+        channels = ()
+    if len(channels) != 3 or not all(type(value) is int and 0 <= value <= 255 for value in channels):
+        raise MeshViewError(f"the fill of {object_id} must be three whole sRGB channels from 0 to 255, or None")
+    return channels
 
 
 def mesh_line_view(
     meshes: Sequence[ObjectMesh], *, right: Sequence[float], up: Sequence[float],
     crop_uv: Sequence[float], size_px: int, text: Mapping[str, str] | None = None,
+    fills: Mapping[str, Sequence[int] | None] | None = None,
 ) -> MeshLineView:
     """Draw the visible feature edges of ``meshes`` in the orthographic frame ``right``/``up``.
 
@@ -244,6 +316,13 @@ def mesh_line_view(
     ``u = dot(p, right)``, ``v = dot(p, up)``; its longer side spans
     ``size_px`` pixels. The look direction is ``-(right x up)``. The PNG is
     greyscale, black lines on white, with ``text`` as its tEXt chunks.
+
+    With ``fills`` (object id to an sRGB triple, or None) the PNG is RGB:
+    each object's visible surface is filled flat with its triple, with no
+    light, so a pixel inside one of its faces is exactly that colour; an
+    object whose fill is None or absent is UNKNOWN_FILL under the
+    UNKNOWN_HATCH lines. The edges are drawn over the fills in FILL_EDGE,
+    on FILL_BACKGROUND, and ``seen`` names the objects that show.
     """
 
     import numpy as np
@@ -251,6 +330,7 @@ def mesh_line_view(
 
     if isinstance(size_px, bool) or not isinstance(size_px, int) or not 16 <= size_px <= MAX_SIZE_PX:
         raise MeshViewError(f"size_px must be a whole number of pixels from 16 to {MAX_SIZE_PX}")
+    colours = None if fills is None else [_fill_colour(mesh.object_id, fills.get(mesh.object_id)) for mesh in meshes]
     u0, v0, u1, v1 = (float(value) for value in crop_uv)
     if not all(math.isfinite(value) for value in (u0, v0, u1, v1)) or not (u0 < u1 and v0 < v1):
         raise MeshViewError("crop_uv must be finite with u_min < u_max and v_min < v_max")
@@ -263,9 +343,9 @@ def mesh_line_view(
     big_w, big_h = width * _SUPERSAMPLE, height * _SUPERSAMPLE
     crease_cos = math.cos(math.radians(CREASE_DEGREES))
 
-    xs, ys, zs, tris, edges = [], [], [], [], []
+    xs, ys, zs, tris, edges, labels = [], [], [], [], [], []
     base = 0
-    for mesh in meshes:
+    for label, mesh in enumerate(meshes):
         vertices = np.asarray(mesh.vertices, dtype=float).reshape(-1, 3)
         triangles = np.asarray(mesh.triangles, dtype=np.int64).reshape(-1, 3)
         if not len(vertices) or not len(triangles):
@@ -277,13 +357,34 @@ def mesh_line_view(
         ys.append((v1 - vertices @ up_v) / fine)
         zs.append(vertices @ look)
         tris.append(triangles + base)
+        labels.append(np.full(len(triangles), label, dtype=np.int32))
         base += len(vertices)
-    image = np.full((big_h, big_w), 255, dtype=np.uint8)
+    if colours is None:
+        image, ink = np.full((big_h, big_w), 255, dtype=np.uint8), 0
+    else:
+        # Index len(meshes) is no surface: the paper.
+        palette = np.array([UNKNOWN_FILL if colour is None else colour for colour in colours] + [FILL_BACKGROUND],
+                           dtype=np.uint8)
+        image, ink = np.empty((big_h, big_w, 3), dtype=np.uint8), np.array(FILL_EDGE, dtype=np.uint8)
+        image[:] = FILL_BACKGROUND
+    showing: tuple[str, ...] = ()
     drawn = 0
     triangle_count = sum(len(item) for item in tris)
     if base:
         x, y, z = np.concatenate(xs), np.concatenate(ys), np.concatenate(zs)
         depth = _depth_buffer(np, x, y, z, np.concatenate(tris), big_w, big_h)
+        if colours is not None:
+            front = _front_objects(np, x, y, z, np.concatenate(tris), np.concatenate(labels), depth, len(meshes),
+                                   _TIE * max(u1 - u0, v1 - v0))
+            image = palette[front]
+            # The hatch is laid in output pixels, so it reads the same on a small part and a large one.
+            period, width_fine = HATCH_SPACING * _SUPERSAMPLE, HATCH_WIDTH * _SUPERSAMPLE
+            stripes = (np.arange(big_h, dtype=np.int32)[:, None] + np.arange(big_w, dtype=np.int32)[None, :]) % period
+            unknown = np.array([colour is None for colour in colours] + [False])
+            image[unknown[front] & (stripes < width_fine)] = UNKNOWN_HATCH
+            shown = np.bincount(front.reshape(-1), minlength=len(meshes) + 1)[:len(meshes)]
+            showing = tuple(sorted(meshes[label].object_id for label in np.flatnonzero(shown)))
+            del front, stripes
         # The farthest depth around each pixel: an edge lies on the border of
         # the faces it bounds, so its own pixel may sample the face beside it.
         padded = np.pad(depth, 1, mode="edge")
@@ -317,16 +418,16 @@ def mesh_line_view(
             seen = sz <= farthest[py, px] + _DEPTH_TOLERANCE * fine
             px, py = px[seen], py[seen]
             # Two fine pixels wide, so the reduced line is one full pixel.
-            image[py, px] = 0
-            image[py, np.minimum(px + 1, big_w - 1)] = 0
-            image[np.minimum(py + 1, big_h - 1), px] = 0
+            image[py, px] = ink
+            image[py, np.minimum(px + 1, big_w - 1)] = ink
+            image[np.minimum(py + 1, big_h - 1), px] = ink
     picture = Image.fromarray(image).reduce(_SUPERSAMPLE)
     info = PngImagePlugin.PngInfo()
     for key, value in sorted((text or {}).items()):
         info.add_text(key, value)
     buffer = BytesIO()
     picture.save(buffer, format="PNG", pnginfo=info, compress_level=_PNG_COMPRESS_LEVEL)
-    return MeshLineView(buffer.getvalue(), width, height, triangle_count, drawn)
+    return MeshLineView(buffer.getvalue(), width, height, triangle_count, drawn, showing)
 
 
 #: Changes whenever the pixels this module draws for the same input change: derived from the source.

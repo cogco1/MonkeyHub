@@ -56,7 +56,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Mapping
+from typing import Iterable, Mapping
 
 from archflow.state.geometry_program import delivered_object_ids, operation_parameters
 
@@ -161,6 +161,24 @@ def _material_color(
 
     declared = (material_colors or {}).get(material)
     return declared if declared is not None else _material_identity_color(material)
+
+
+def declared_material(
+    components: Iterable[str],
+    material_by_component: Mapping[str, str] | None,
+) -> str | None:
+    """The material an object of these components declares, or None when none of them declares one.
+
+    The ``material.name`` values its components declare in
+    ``material_by_component``, each once, sorted and joined with ``,``: the
+    ``archflow:material`` text an export writes on the object and the name of
+    the one native material it wears. A component that declares nothing adds
+    nothing, so an object is undeclared only when none of its components
+    declares a material.
+    """
+
+    materials = sorted({(material_by_component or {}).get(component) for component in components} - {None})
+    return ",".join(materials) if materials else None
 
 
 def _rgb(value: object, field: str) -> tuple[int, int, int]:
@@ -279,15 +297,9 @@ def expected_object_semantics(
                 user_text["archflow:bindings"] = ",".join(binding_ids)
             if components:
                 user_text["archflow:component"] = "+".join(components)
-                materials = sorted(
-                    {
-                        (material_by_component or {}).get(component)
-                        for component in components
-                    }
-                    - {None}
-                )
-                if materials:
-                    user_text["archflow:material"] = ",".join(materials)
+                material = declared_material(components, material_by_component)
+                if material:
+                    user_text["archflow:material"] = material
                 else:
                     # A component that declares no material is said to, and
                     # never given one: no native material, no guessed name.

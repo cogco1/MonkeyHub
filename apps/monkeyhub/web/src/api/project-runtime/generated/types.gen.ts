@@ -6953,6 +6953,8 @@ export type ModelSourceIndexDto = {
     matchedCount: number;
     /**
      * Objects
+     *
+     * Native object rows as saved. Each row's material is the one resolved value: {name, color (#RRGGBB, the material table's diffuse colour), source}, the material the object wears (its own, or its layer's render material); source is declared when its archflow:material label names that material, file when no declaration names it, undeclared (name and color null) when it wears none.
      */
     objects: Array<{
         [key: string]: unknown;
@@ -7012,7 +7014,7 @@ export type ModelUpload = {
 /**
  * ModelViewDto
  *
- * Transient pixels from a verified model, not a material render or saved drawing.
+ * Transient pixels from a verified model, not a lit render or saved drawing.
  */
 export type ModelViewDto = {
     source: ModelSourceDto;
@@ -7021,13 +7023,17 @@ export type ModelViewDto = {
      */
     view: 'front' | 'back' | 'left' | 'right' | 'top' | 'axon';
     /**
+     * Display
+     */
+    display?: 'line' | 'material';
+    /**
      * Mimetype
      */
     mimeType?: 'image/png';
     /**
      * Data
      *
-     * Base64 PNG bytes from the exact source model's orthographic line projection.
+     * Base64 PNG bytes from the exact source model: its orthographic line projection, or with display material each object filled flat, without light, in the diffuse colour of the material it wears.
      */
     data: string;
     /**
@@ -7041,7 +7047,71 @@ export type ModelViewDto = {
     /**
      * Representation
      */
-    representation?: 'orthographic-line-projection';
+    representation?: 'orthographic-line-projection' | 'orthographic-material-projection';
+    /**
+     * display material only: the materials drawn, read from the exact model asset's own table, and the undeclared count.
+     */
+    legend?: ModelViewLegendDto | null;
+};
+
+/**
+ * ModelViewLegendDto
+ *
+ * What a material view drew: each material its drawn objects wear, and how many wear none.
+ */
+export type ModelViewLegendDto = {
+    /**
+     * Materials
+     */
+    materials: Array<ModelViewMaterialDto>;
+    /**
+     * Undeclared
+     *
+     * Drawn objects that wear no material: grey (#C8C8C8) under darker 45-degree hatch lines, never a guessed colour.
+     */
+    undeclared: number;
+    /**
+     * Undeclaredvisible
+     *
+     * Of those, the objects that show in this view.
+     */
+    undeclaredVisible: number;
+};
+
+/**
+ * ModelViewMaterialDto
+ *
+ * One material the drawn objects wear, as the exact model asset's own material table holds it.
+ */
+export type ModelViewMaterialDto = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Color
+     *
+     * The material's diffuse colour, #RRGGBB; a pixel inside a face of an object wearing it is exactly this colour.
+     */
+    color: string;
+    /**
+     * Source
+     *
+     * declared: the object's archflow:material label names this material; file: the file binds it but no declaration names it (an imported base's material, a role's fallback such as glazing).
+     */
+    source: 'declared' | 'file';
+    /**
+     * Objects
+     *
+     * Drawn objects wearing it.
+     */
+    objects: number;
+    /**
+     * Visible
+     *
+     * Of those, the objects that show in this view; one hidden behind or inside another still counts in objects.
+     */
+    visible: number;
 };
 
 /**
@@ -13051,7 +13121,7 @@ export type VisualReviewRequestDto = {
     /**
      * Viewrecipe
      *
-     * For a model, the model-view directions to render (front, back, left, right, top); for pages, the distinct page-<pageIndex> values of the named pages. The runtime gives repeated page numbers unique source-<source ordinal>-page-<pageIndex> frame names automatically.
+     * For a model, the model-view directions to render (front, back, left, right, top, axon), each a line view, or with -material (axon-material) in the colours of the materials its objects wear; for pages, the distinct page-<pageIndex> values of the named pages. The runtime gives repeated page numbers unique source-<source ordinal>-page-<pageIndex> frame names automatically.
      */
     viewRecipe: Array<string>;
     /**
@@ -16108,6 +16178,10 @@ export type ReadModelViewApiDrawingsModelViewGetData = {
          * View
          */
         view?: 'front' | 'back' | 'left' | 'right' | 'top' | 'axon';
+        /**
+         * Display
+         */
+        display?: 'line' | 'material';
     };
     url: '/api/drawings/model-view';
 };

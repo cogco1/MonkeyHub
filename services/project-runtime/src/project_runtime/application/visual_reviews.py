@@ -2,8 +2,9 @@
 
 The caller names exact sources and carries its loop's Harness allowance; it
 never sends pixels. Each source is rendered here, in process, by its projection
-owner: ``model_view`` draws each requested view of one retained model, and
-``export_board_pages`` rasterizes one registered page. The owner's own answer
+owner: ``model_view`` draws each requested view of one retained model
+(``material_view`` its ``<view>-material`` frames, in the materials its objects
+wear), and ``export_board_pages`` rasterizes one registered page. The owner's own answer
 becomes the frame, so a frame can only show the source it was asked for. The
 configured structured provider returns findings, or the channel delivers the
 same bounded evidence to the caller's existing visual model without claiming
@@ -24,7 +25,7 @@ from ..errors import StudioError
 from .artifacts import ModelSource
 from ..binding import ProjectBinding
 from .boards import BoardExportPage, export_board_pages
-from .drawings import model_view
+from .drawings import LINE_DISPLAY, MATERIAL_DISPLAY, MODEL_VIEW_REPRESENTATIONS, material_view, model_view
 from ..monitoring import StudioMonitor
 from .visual_observation import (
     MODEL_VIEWS, EvidenceFrame, ObservationUsage, ReviewReason, SourceRef, StudioModelVisualProvider,
@@ -33,7 +34,9 @@ from .visual_observation import (
 )
 
 MODELING = "modeling"
-MODEL_REPRESENTATION = "orthographic-line-projection"
+# A model frame named <view>-material (axon-material) is that view in the
+# colours of the materials its objects wear; <view> alone is its line view.
+MATERIAL_FRAME = "-material"
 # The edge Study and the V0 Board check already read pages at: legible at sheet
 # scale, about 3 k input tokens, and inside the channel's 2048 px bound.
 PAGE_MAX_EDGE = 1600
@@ -90,8 +93,9 @@ def visual_provider(compiler: object) -> VisualObservationProvider:
 def planned_frames(request: VisualReviewRequest) -> tuple[tuple[SourceRef, str], ...]:
     """The owner view each frame will be, decided from the request alone before anything renders.
 
-    A modeling review looks at one exact model in every view of its recipe. The
-    other domains look at registered pages (drawing revisions, render results,
+    A modeling review looks at one exact model in every view of its recipe, a
+    line view by its name or its material view by its name and ``-material``.
+    The other domains look at registered pages (drawing revisions, render results,
     Board pages), one frame each. Page numbers belong to a document: repeated
     page numbers get a source ordinal in their frame name, never another page
     number or a weaker source identity. The old page recipe remains accepted;
@@ -102,9 +106,10 @@ def planned_frames(request: VisualReviewRequest) -> tuple[tuple[SourceRef, str],
     if request.domain == MODELING:
         if kinds != {"model"} or len(request.source_refs) != 1:
             raise VisualReviewInvalid("a modeling review looks at exactly one model source; review another separately")
-        unknown = [view for view in request.view_recipe if view not in MODEL_VIEWS]
+        unknown = [view for view in request.view_recipe if _model_frame(view)[0] not in MODEL_VIEWS]
         if unknown:
-            raise VisualReviewInvalid(f"{', '.join(unknown)} is not a model view; use {', '.join(MODEL_VIEWS)}")
+            raise VisualReviewInvalid(f"{', '.join(unknown)} is not a model view; use {', '.join(MODEL_VIEWS)}, "
+                                      f"or one of them with {MATERIAL_FRAME} (e.g. axon{MATERIAL_FRAME}) for its materials")
         return tuple((request.source_refs[0], view) for view in request.view_recipe)
     if kinds != {"page"}:
         raise VisualReviewInvalid(f"a {request.domain} review looks at registered pages, not models")
@@ -117,6 +122,13 @@ def planned_frames(request: VisualReviewRequest) -> tuple[tuple[SourceRef, str],
     return frames
 
 
+def _model_frame(view_ref: str) -> tuple[str, str]:
+    """The model view and display a modeling frame name asks for: ``axon`` lines, ``axon-material`` materials."""
+
+    view = view_ref.removesuffix(MATERIAL_FRAME)
+    return view, LINE_DISPLAY if view == view_ref else MATERIAL_DISPLAY
+
+
 def render_frames(binding: ProjectBinding, planned: Sequence[tuple[SourceRef, str]]) -> tuple[EvidenceFrame, ...]:
     """Ask each source's owner for its frame; the owner verifies the exact source before it draws."""
 
@@ -124,10 +136,14 @@ def render_frames(binding: ProjectBinding, planned: Sequence[tuple[SourceRef, st
     for source, view in planned:
         try:
             if source.kind == "model":
-                png, width, height = model_view(
-                    binding, model_source=ModelSource(source.run_id, source.state_digest, source.asset_sha256),
-                    view=view)
-                frames.append(EvidenceFrame(source, view, MODEL_REPRESENTATION, png, width, height))
+                model = ModelSource(source.run_id, source.state_digest, source.asset_sha256)
+                direction, display = _model_frame(view)
+                if display == MATERIAL_DISPLAY:
+                    drawn = material_view(binding, model_source=model, view=direction)
+                    png, width, height = drawn.png, drawn.width, drawn.height
+                else:
+                    png, width, height = model_view(binding, model_source=model, view=direction)
+                frames.append(EvidenceFrame(source, view, MODEL_VIEW_REPRESENTATIONS[display], png, width, height))
             else:
                 page = export_board_pages(
                     binding, [BoardExportPage(source.run_id, source.asset_sha256, source.revision_ref, source.page_index)],

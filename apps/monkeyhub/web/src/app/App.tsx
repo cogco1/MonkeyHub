@@ -126,6 +126,9 @@ import {
   type PickedFacts,
 } from "../features/stage/Stage";
 import type { VersionExport, VersionGroup } from "../features/stage/VersionsStrip";
+import { MenuCommand, SurfaceMenus } from "../features/chrome/SurfaceChrome";
+import type { ContinueUndo } from "../features/designTree/continueUndo";
+import type { MessageKey } from "../i18n/messages.en";
 import { useT } from "../i18n/useT";
 import type { SceneInspection } from "../workspaces/monkeyarch/viewer/sceneInspection";
 import {
@@ -145,7 +148,7 @@ import { failed, idle, loading, ready, type Loadable } from "./loadable";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { editingDigestForView, useSession, type StaleBase } from "./useSession";
 import { EMPTY_MODEL_HISTORY, recordEditingBase, redoTarget, undoTarget, type ModelHistory } from "./modelHistory";
-import { followStep, headOf, pinStep, viewerFollows } from "./workingHead";
+import { followStep, followUndo, headOf, pinStep, undoFollow, viewerFollows, type FollowUndoOutcome } from "./workingHead";
 import { useTranscript, type SystemTextPart } from "./transcript";
 import { useCandidateRuns } from "./useCandidateRuns";
 import { finishEditTiming, startClientTiming, type ClientTimingSpan, type EditTimingTicket } from "./clientTiming";
@@ -254,6 +257,23 @@ export type WorkspaceDesignContext = {
 
 /** Where the Working Head is read from in the project index: the working position, the branches, HEAD (#366). */
 const headShows = (id: string) => id === "working" || id === "tree" || id === "area:head";
+
+/**
+ * What the project bar says once this tab followed the Working Head (#575): `moved`, with 撤销 while the
+ * base it left can be put back exactly; `undoing` while 撤销 runs; `undone` once the base is back; else
+ * why 撤销 put nothing back, the detail kept for its title. It speaks while `head` is still this tab's base.
+ */
+interface FollowNotice {
+  readonly id: number;
+  readonly state: "moved" | "undoing" | "undone" | "failed" | Exclude<FollowUndoOutcome, "undone">;
+  readonly head: string;
+  readonly undo: ContinueUndo | null;
+  readonly reason?: string;
+}
+const FOLLOW_WORDS: Readonly<Record<FollowNotice["state"], MessageKey>> = {
+  moved: "stage.follow.moved", undoing: "stage.follow.moved", undone: "stage.follow.undone",
+  "moved-on": "stage.follow.undoMoved", unsynced: "stage.follow.undoUnsynced", failed: "stage.follow.undoFailed",
+};
 
 export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraRequest = null, onView, onRecorder, onOpenTree }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
@@ -1631,8 +1651,17 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const openingModel = active && !initialRunId && session.status === "ready" && sourceLabel === null &&
     loadedArtifacts.length === 0 && (artifactLoadingSha !== null || artifacts.status === "idle" ||
       artifacts.status === "loading" || (homeArtifacts !== null && !autoLoadedRef.current));
+  // #575: the last head this tab followed, said at the project bar's right end, with the 撤销 that
+  // continues back onto the base it followed from while the position named that base exactly.
+  const [followNotice, setFollowNotice] = useState<FollowNotice | null>(null);
+  const followNoticeRef = useRef(followNotice);
+  followNoticeRef.current = followNotice;
+  const followNoticeIds = useRef(0);
+  // 撤销's write is in flight; once it lands the head is read again at once (followNudge) and followed back.
+  const [followUndoing, setFollowUndoing] = useState(false);
+  const [followNudge, setFollowNudge] = useState(0);
   const followBusy = changingBase || proposalBusy || candidateBusy || modelSyncBusy || selectingWorkingCopy ||
-    historyBusy || refiningEntryId !== null || documentIntentStatus !== "done" || openingModel;
+    historyBusy || refiningEntryId !== null || documentIntentStatus !== "done" || openingModel || followUndoing;
   // Read when a follow is decided, which may be after an awaited read.
   const followGate = useRef<{ baseRunId: string | null; busy: boolean; localEdits(): boolean; viewed(): string | null }>(
     { baseRunId: editingRunId, busy: followBusy, localEdits: () => false, viewed: () => null });
@@ -1648,29 +1677,55 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const followReadAt = useRef<string | null>(null);
   useEffect(() => {
     if (!followsHead || !active || session.status !== "ready" || followBusy) return;
-    const at = JSON.stringify([storeRevision, editingRunId, versionRefreshRequest, refreshKey]);
+    const at = JSON.stringify([storeRevision, editingRunId, versionRefreshRequest, refreshKey, followNudge]);
     if (storeRevision !== null && followReadAt.current === at) return;
     const read = ++followRead.current;
     const controller = new AbortController();
     const projectId = session.value.project.projectId;
+    const base = editingRunId;
+    // The working position as this tab last read it: what a move of the head replaced (#575).
+    const replaced = session.value.workingDraft ?? null;
     const localEdits = localEditingRef.current || Boolean(session.value.workingDraft?.localDraft) ||
       [...localModels.current.values()].some(unsynced);
     void studio.workingSource("modeling", controller.signal).then(async (source) => {
       if (read !== followRead.current || source.projectId !== projectId) return;
       const head = headOf(source);
-      const step = source.head ? followStep({ baseRunId: editingRunId, head, busy: autoShowRef.current !== null, localEdits }) : "stay";
+      const step = source.head ? followStep({ baseRunId: base, head, busy: autoShowRef.current !== null, localEdits }) : "stay";
       // A deferred follow is not done: the next run of this effect reads the head again.
       if (step !== "defer") followReadAt.current = at;
       if (step !== "follow" || head === null || !source.head) return;
       const viewed = sourceLabel === LOCAL_SOURCE_LABEL ? LOCAL_SOURCE_LABEL : loadedArtifactsRef.current[0]?.runId ?? null;
+      // A model the person opens while the base moves keeps the viewer: the view follows only what was on screen now.
+      const viewRequest = modelLoadRequest.current;
+      // A move back onto the base the last follow came from undoes that follow, whoever made it: it offers no 撤销 of its own.
+      const last = followNoticeRef.current;
+      const undone = last !== null && last.head === base && last.undo?.runId === head.runId;
       const next = await reload(head.runId, source.head.accepted ? source.head.sourceStageRef ?? undefined : undefined,
         source.head.branchId ?? undefined, true, undefined, false);
-      if (next === null || read !== followRead.current) return;
-      pushNotice(t("stage.follow.moved"));
-      if (viewerFollows(viewed, editingRunId)) setHeadFollow({ runId: head.runId, viewRequest: modelLoadRequest.current });
+      // Null when the session refused it or a newer reload replaced it. Not `read`: the base this reload just
+      // published re-runs the effect before this line, and the follow still has to say so and move the view.
+      if (next === null) return;
+      setFollowNotice({ id: ++followNoticeIds.current, state: undone ? "undone" : "moved", head: head.runId,
+        undo: undone ? null : followUndo(replaced, base, head.runId) });
+      pushNotice(t(undone ? "stage.follow.undone" : "stage.follow.moved"));
+      if (viewerFollows(viewed, base)) setHeadFollow({ runId: head.runId, viewRequest });
     }).catch(() => { /* The current base stays usable; the next event reads the head again. */ });
     return () => controller.abort();
-  }, [followsHead, active, session.status, followBusy, editingRunId, versionRefreshRequest, refreshKey, studio, reload, pushNotice, t, sourceLabel, storeRevision]);
+  }, [followsHead, active, session.status, followBusy, editingRunId, versionRefreshRequest, refreshKey, followNudge, studio, reload, pushNotice, t, sourceLabel, storeRevision]);
+  /** 撤销 (#575): the Design Tree's Undo write onto the base the last follow came from; the follow then moves this tab back. */
+  const undoFollowed = useCallback(() => {
+    const notice = followNoticeRef.current, projectId = project?.projectId;
+    if (!notice?.undo || notice.state !== "moved" || !projectId) return;
+    const undo = notice.undo;
+    setFollowNotice({ ...notice, state: "undoing" });
+    setFollowUndoing(true);
+    void undoFollow(studio, projectId, undo).then((outcome) => {
+      if (outcome === "undone") setFollowNudge((value) => value + 1);
+      else setFollowNotice({ ...notice, id: ++followNoticeIds.current, state: outcome, undo: null });
+    }, (cause) => {
+      setFollowNotice({ ...notice, id: ++followNoticeIds.current, state: "failed", undo: null, reason: asStudioApiError(cause).detail });
+    }).finally(() => setFollowUndoing(false));
+  }, [project?.projectId, studio]);
   useEffect(() => {
     // Show the head once the base and its listed model describe it, unless the
     // person loaded or started editing something since the follow was decided.
@@ -3152,6 +3207,12 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   }, []);
   recordEditsRef.current = recordEdits;
   const hasUnrecordedEdits = [...localModels.current.values()].some(unsynced);
+  // #575: a follow's notice speaks until this tab moves on: its base leaves the followed head, or editing starts.
+  // It is spent then, even if the base later comes back to that run.
+  const spentFollowNotices = useRef(new Set<number>());
+  if (followNotice !== null && (followNotice.head !== editingRunId || localEditingRef.current || Boolean(workingDraft?.localDraft) ||
+      hasUnrecordedEdits)) spentFollowNotices.current.add(followNotice.id);
+  const followNoticeShown = followNotice !== null && !spentFollowNotices.current.has(followNotice.id);
   /** The editing-base row's Record edits and continue: record, then the refused switch again. */
   const recordAndRetry = useCallback(async (retry: () => Promise<unknown>) => {
     setRecordingEdits(true); setBaseNotice(null);
@@ -3958,7 +4019,16 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         }
         pinnedDrawer={developerMode && evidencePinned ? drawer : null}
       />
-
+      {/* #575: a followed head says so at the project bar's right end, beside the Stage chip, until this tab moves
+          on; 撤销 is there while the base it left can be put back. */}
+      <SurfaceMenus label={t("stage.ariaLabel")} active={active}
+        end={followNoticeShown && followNotice !== null ? <>
+          <span key={followNotice.id} role="status" data-follow-notice={followNotice.state} title={followNotice.reason ?? t(FOLLOW_WORDS[followNotice.state])}
+            style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{t(FOLLOW_WORDS[followNotice.state])}</span>
+          {followNotice.undo && (followNotice.state === "moved" || followNotice.state === "undoing") &&
+            <MenuCommand data-action="follow-undo" disabled={followNotice.state === "undoing"} title={t("stage.follow.undoTitle")}
+              onClick={undoFollowed}>{t(followNotice.state === "undoing" ? "stage.follow.undoing" : "stage.follow.undo")}</MenuCommand>}
+        </> : null} />
     </>
   );
 }

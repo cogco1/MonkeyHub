@@ -384,22 +384,59 @@ class DrawingCorrectionsDto(BaseModel):
 DrawingStyleId = Literal["arch400-white", "arch364-technical"]
 
 # The five model-axis directions and one isometric axonometric: the view from
-# the -X, -Y, +Z side, Z up on the sheet. All are orthographic line projections.
+# the -X, -Y, +Z side, Z up on the sheet. All are orthographic projections.
 ModelViewName = Literal["front", "back", "left", "right", "top", "axon"]
+# line draws the visible lines; material fills each object with the material it wears (#580).
+ModelViewDisplay = Literal["line", "material"]
+
+
+class ModelViewMaterialDto(BaseModel):
+    """One material the drawn objects wear, as the exact model asset's own material table holds it."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    name: str
+    color: str = Field(pattern=r"^#[0-9A-F]{6}$", description=(
+        "The material's diffuse colour, #RRGGBB; a pixel inside a face of an object wearing it is exactly this colour."))
+    source: Literal["declared", "file"] = Field(description=(
+        "declared: the object's archflow:material label names this material; file: the file binds it but no "
+        "declaration names it (an imported base's material, a role's fallback such as glazing)."))
+    objects: int = Field(ge=1, description="Drawn objects wearing it.")
+    visible: int = Field(ge=0, description=(
+        "Of those, the objects that show in this view; one hidden behind or inside another still counts in objects."))
+
+
+class ModelViewLegendDto(BaseModel):
+    """What a material view drew: each material its drawn objects wear, and how many wear none."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    materials: list[ModelViewMaterialDto]
+    undeclared: int = Field(ge=0, description=(
+        "Drawn objects that wear no material: grey (#C8C8C8) under darker 45-degree hatch lines, never a guessed colour."))
+    undeclared_visible: int = Field(alias="undeclaredVisible", ge=0,
+                                    description="Of those, the objects that show in this view.")
 
 
 class ModelViewDto(BaseModel):
-    """Transient pixels from a verified model, not a material render or saved drawing."""
+    """Transient pixels from a verified model, not a lit render or saved drawing."""
 
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
 
     source: ModelSourceDto
     view: ModelViewName
+    display: ModelViewDisplay = "line"
     mime_type: Literal["image/png"] = Field(alias="mimeType", default="image/png")
-    data: str = Field(description="Base64 PNG bytes from the exact source model's orthographic line projection.")
+    data: str = Field(description=(
+        "Base64 PNG bytes from the exact source model: its orthographic line projection, or with display material "
+        "each object filled flat, without light, in the diffuse colour of the material it wears."))
     width: int = Field(ge=1, le=1024)
     height: int = Field(ge=1, le=1024)
-    representation: Literal["orthographic-line-projection"] = "orthographic-line-projection"
+    representation: Literal["orthographic-line-projection", "orthographic-material-projection"] = (
+        "orthographic-line-projection")
+    legend: ModelViewLegendDto | None = Field(default=None, description=(
+        "display material only: the materials drawn, read from the exact model asset's own table, and the "
+        "undeclared count."))
 
 
 class ElevationDrawingDto(BaseModel):

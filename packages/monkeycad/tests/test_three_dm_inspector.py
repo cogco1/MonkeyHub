@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -142,6 +143,52 @@ class ThreeDmInspectorTests(unittest.TestCase):
         self.assertEqual(result["units"], {"name": "Meters", "code": 4})
 
     @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
+    def test_native_index_resolves_each_objects_worn_material_and_its_source(self) -> None:
+        model = rhino3dm.File3dm()
+        timber, glass, old = rhino3dm.Material(), rhino3dm.Material(), rhino3dm.Material()
+        timber.Name, timber.DiffuseColor = "timber", (160, 82, 45, 255)
+        timber.SetUserString("archflow:material_id", "timber")
+        glass.Name, glass.DiffuseColor = "glazing", (150, 200, 225, 255)
+        old.Name, old.DiffuseColor = "Imported paint", (10, 20, 30, 255)
+        indices = [model.Materials.Add(material) for material in (timber, glass, old)]
+        painted = rhino3dm.Layer()
+        painted.Name = "Painted"
+        painted.RenderMaterialIndex = indices[2]
+        painted_index = model.Layers.Add(painted)
+        plain = rhino3dm.Layer()
+        plain.Name = "Plain"
+        plain_index = model.Layers.Add(plain)
+        for name, layer, source, index, label in (
+            ("frame", plain_index, "object", indices[0], {"archflow:material": "timber"}),
+            ("pane", plain_index, "object", indices[1], {"archflow:material_status": "undeclared"}),
+            ("relabelled", plain_index, "object", indices[2], {"archflow:material": "timber"}),
+            ("by-layer", painted_index, "layer", -1, {}),
+            ("bare", plain_index, "layer", -1, {"archflow:material_status": "undeclared"}),
+            ("parent", painted_index, "parent", indices[0], {"archflow:material": "timber"}),
+        ):
+            attributes = rhino3dm.ObjectAttributes()
+            attributes.Name, attributes.LayerIndex, attributes.MaterialIndex = name, layer, index
+            attributes.MaterialSource = {"object": rhino3dm.ObjectMaterialSource.MaterialFromObject,
+                                         "layer": rhino3dm.ObjectMaterialSource.MaterialFromLayer,
+                                         "parent": rhino3dm.ObjectMaterialSource.MaterialFromParent}[source]
+            for key, value in label.items():
+                attributes.SetUserString(key, value)
+            model.Objects.Add(rhino3dm.Point(rhino3dm.Point3d(0, 0, 0)), attributes)
+        data = base64.b64decode(model.Encode())
+        index = {row["name"]: row["material"] for row in inspect_three_dm_index(data)["objects"]}
+        self.assertEqual(index, {
+            # the export declared the material the object wears
+            "frame": {"name": "timber", "color": "#A0522D", "source": "declared"},
+            # a material nobody declared: a role's fallback, or a base's own
+            "pane": {"name": "glazing", "color": "#96C8E1", "source": "file"},
+            "relabelled": {"name": "Imported paint", "color": "#0A141E", "source": "file"},
+            # from layer is the layer's render material, the way monkeycad resolves it
+            "by-layer": {"name": "Imported paint", "color": "#0A141E", "source": "file"},
+            "bare": {"name": None, "color": None, "source": "undeclared"},
+            "parent": {"name": None, "color": None, "source": "undeclared"},
+        })
+
+    @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
     def test_native_index_does_not_read_geometry_validity(self) -> None:
         class MetadataOnlyGeometry:
             ObjectType = rhino3dm.ObjectType.Brep
@@ -157,6 +204,7 @@ class ThreeDmInspectorTests(unittest.TestCase):
         model = SimpleNamespace(
             Objects=[SimpleNamespace(Attributes=attributes, Geometry=MetadataOnlyGeometry())],
             Layers=[],
+            Materials=[],
             InstanceDefinitions=[],
             Settings=SimpleNamespace(ModelUnitSystem=rhino3dm.UnitSystem.Meters),
             ArchiveVersion=80,
