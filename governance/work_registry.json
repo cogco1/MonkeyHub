@@ -1,35 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-575",
-      "lanes": [
-        {
-          "id": "inherit",
-          "status": "active",
-          "branch": "codex/575-inherit",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-575-inherit",
-          "base_ref": "e82516cd89d30128092ff5fc0b372d2adafd9cc1",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/features/componentInfo/ComponentInfoCard.css",
-            "apps/monkeyhub/web/src/features/componentInfo/ComponentInfoCard.tsx",
-            "apps/monkeyhub/web/src/features/componentInfo/componentInfo.ts",
-            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/test/componentInfo.test.ts",
-            "apps/monkeyhub/web/test/componentInfoCard.test.ts",
-            "docs/protocols/component-info.md"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
