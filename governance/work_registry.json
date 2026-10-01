@@ -1,4 +1,23 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-553",
+      "status": "active",
+      "branch": "codex/553-placement",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-553-placement",
+      "base_ref": "d54dcea30b4e7c0b4f3c201165e7ac91b37a77df",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "tools.governance.archcheck"
+      ],
+      "write_scope": [
+        "docs/architecture/repository-layout.md",
+        "tools/governance/archcheck.py"
+      ],
+      "depends_on": []
+    }
+  ]
 }
