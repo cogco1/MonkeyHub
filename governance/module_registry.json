@@ -7491,10 +7491,12 @@
       "module_id": "tools.benchmarks.daily_benchmark",
       "owner_path": "tools/benchmarks/daily_benchmark.py",
       "status": "canonical",
-      "purpose": "Measure MonkeyHub from a checkout the same way every day - Hub start, project open, opening Modeling, the projection check's routes and the idle cost - and keep the results, their trend and their budgets on the benchmark-data branch.",
+      "purpose": "Measure MonkeyHub the same way every day - from a checkout in CI, and the installed app on the owner's Windows machine - Hub start, project open, opening Modeling, the projection check's routes and the idle cost, and keep the results, their trend and their budgets on the benchmark-data branch.",
       "owns": [
         "The daily benchmark's scenarios: Hub start as a first launch (an empty bytecode prefix) and warm, project open as the web client's ensureProject sends it, opening Modeling as the Modeling workspace sends it, the projection check's six routes cold and warm, and 60 s of idle CPU seconds and bytes read for the Hub and the worker",
         "Starting Hubs from a checkout apart from any installed MonkeyHub: their own ports, runtime root, APPDATA, LOCALAPPDATA and bytecode prefix, and an account credential store that holds nothing",
+        "The installed-version mode: the same scenarios on copies of an installed version directory, each Hub started with the copy's own interpreter and run.py as the desktop host starts it, without PYTHON*, ARCHFLOW_* or MONKEYHUB_* variables; a first launch on a new copy as shipped, warm Hubs on that copy once launched; with Options.keep_in, one copy kept per version, so a version is launched first once; results under the windows-local runner key",
+        "The local runner (daily_benchmark.py local) and its one scheduled task (tools/benchmarks/register_local_benchmark.ps1, \\MonkeyHub\\DailyLocalBenchmark: an idle trigger, mains power only, stopped when the computer is used again): the version the desktop shortcut opens and the one copy kept of it under <development root>/temp/benchmark-local/installed (its first launch measured on the first run that sees it, recorded once published), the skip checks (another local run, today's result already published, battery, 15 idle minutes, processors over 30% over 60 s), what MonkeyHub ran beside the run (settings.local.monkeyhub: an open desktop app does not stop it), the synthetic projects built with the checkout's generator in a process of their own, the log, lock and run directories, and publishing each result from a new repository of its own",
         "The MonkeyHubBenchmark@1 result: commit, date, runner, and each metric's samples, median and p90",
         "The budgets (tools/benchmarks/budgets.json) and the flag rule: over budget, or a median both more than 20% and more than a floor (200 ms for a time, 1 MiB for bytes) above the trailing 7-day median of the same runner",
         "The orphan benchmark-data branch: results/<runner>/<YYYY-MM-DD>-<sha12>.json, trend.md and latest.json, and one issue title and body per flagged metric"
@@ -7503,19 +7505,25 @@
         "the synthetic project and its generator - services/project-runtime/tests/synthetic_project.py, built before a run because a repository tool takes nothing from a test suite",
         "the projection check's parity gate between a base and a candidate - tools/benchmarks/projection_check.py (GH-376), whose route list and settle step this reuses",
         "the timings a running product records about itself - monkeymonitor",
-        "pushing, and opening or updating GitHub issues - .github/workflows/benchmark.yml",
-        "the Hub and the Project Runtime it measures - hub.shell and the project_runtime modules"
+        "pushing from CI, and opening or updating GitHub issues - .github/workflows/benchmark.yml; a local run opens no issue",
+        "the Hub and the Project Runtime it measures - hub.shell and the project_runtime modules",
+        "the installed MonkeyHub, its update transaction and its desktop shortcut - hub.shell and tools.release.package_monkeyapps; the local runner only reads the shortcut and copies the version",
+        "registering the scheduled task on a machine - a person runs register_local_benchmark.ps1 -Register after review",
+        "the development root and its trash convention - tools.dev.workspace"
       ],
       "inputs": [
         "built synthetic projects by size (SIZE=DIR), each copied before it is opened",
         "the checkout's apps/monkeyhub/run.py and its Python source roots",
+        "an installed version directory (--installed, or for local runs the one the desktop shortcut opens), only ever read and copied",
+        "for local runs, what Windows reports: processes with their executables and command lines, processor times, power status and the time since the last input",
         "MonkeyHubBenchmark@1 results, tools/benchmarks/budgets.json and optional budget overrides for one run",
-        "a checkout whose remote has, or is to get, the benchmark-data branch"
+        "a checkout whose remote has, or is to get, the benchmark-data branch, and for local runs its Git author"
       ],
       "outputs": [
         "one MonkeyHubBenchmark@1 JSON file and its Markdown summary per run",
         "commits on the benchmark-data branch: results, trend.md, latest.json and README.md",
-        "the flagged metrics, and one issue title and body per flagged metric (JSON)"
+        "the flagged metrics, and one issue title and body per flagged metric (JSON)",
+        "for local runs, results/windows-local/ on benchmark-data and one line per start, skip, result and failure in <development root>/temp/benchmark-local/logs/local.log"
       ],
       "public_api": [
         "main",
@@ -7527,6 +7535,10 @@
         "read_routes",
         "measure_idle",
         "count_rounds",
+        "read_installed",
+        "copy_version",
+        "run_local",
+        "monkeyhub_processes",
         "metric_entry",
         "evaluate",
         "summary_markdown",
@@ -7534,11 +7546,15 @@
         "latest_document",
         "issue_plan",
         "prepare_checkout",
+        "publisher_repository",
         "publish"
       ],
       "depends_on": [],
       "invariants": [
         "A measured Hub reads and writes only under --work: never an installed MonkeyHub's settings, data, ports or saved keys",
+        "An installed version is measured only through copies (under --work, or kept per version in keep_in), never right under a versions directory, so no measured Hub checks for or applies an update or points the desktop shortcut anywhere; the installed directory itself is only read",
+        "A local run stops only the Hubs it started and never stops or touches another process; it runs beside an open MonkeyHub and records whether the desktop app was open, and a forced run records why it would have skipped",
+        "Nothing a local run writes is deleted: earlier run directories and the kept copies of earlier versions are renamed into the development root's _TRASH_<YYYYMMDD>",
         "A project given is never opened: every Hub reads a settled copy, and no scenario writes to it",
         "Evaluation is a pure function of a result, the history and the budgets; only the same runner's runs of the 7 days before count",
         "benchmark-data stays an orphan: its first commit has no parent, and nothing on it is merged into main",
@@ -7548,11 +7564,12 @@
         "tools/tests/test_daily_benchmark.py",
         "tools/tests/test_benchmark_data.py"
       ],
-      "notes": "CREATE (GH-547): no owner measured MonkeyHub over time. tools/benchmarks/projection_check.py compares one base with one candidate for parity and gates timings only at twice and 200 ms; monkeymonitor reads the timings a running product records; the other drivers in tools/benchmarks measure model turns.",
+      "notes": "CREATE (GH-547): no owner measured MonkeyHub over time. tools/benchmarks/projection_check.py compares one base with one candidate for parity and gates timings only at twice and 200 ms; monkeymonitor reads the timings a running product records; the other drivers in tools/benchmarks measure model turns. EXTEND (GH-547/local-runner): the installed mode and the local runner reuse every scenario, the result and the data branch of this owner; the scheduled task only starts the local runner.",
       "files": [
         "tools/benchmarks/daily_benchmark.py",
         "tools/benchmarks/benchmark_data.py",
-        "tools/benchmarks/budgets.json"
+        "tools/benchmarks/budgets.json",
+        "tools/benchmarks/register_local_benchmark.ps1"
       ]
     },
     {
