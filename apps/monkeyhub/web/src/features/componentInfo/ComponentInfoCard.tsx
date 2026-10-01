@@ -7,7 +7,7 @@
  * picked component up in what was read. Nothing here writes, asks a model or leaves the machine.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { useProjectRevision, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
 import type { BoardDto } from "../../api/project-runtime/generated";
@@ -86,22 +86,57 @@ function CopyButton({ text, label, done, className = "btn btn--small" }: { text:
     {copied ? done : label}</button>;
 }
 
+/** One fold: shut until asked, named for the toggle that opens it. */
+function useFold() {
+  const [open, setOpen] = useState(false);
+  return { open, id: useId(), toggle: () => setOpen((shown) => !shown) };
+}
+
+/**
+ * The small arrow that opens what explains an item (Kaiwen, 2026-10-01: each item shows its key
+ * information, its notes fold away). Folded text is still the card's: Copy copies it.
+ */
+function FoldToggle({ fold, label, t }: { fold: ReturnType<typeof useFold>; label?: string; t: CardWords }) {
+  const name = t(fold.open ? "componentInfo.lessDetail" : "componentInfo.moreDetail");
+  return <button type="button" className="component-info__fold" aria-expanded={fold.open} aria-controls={fold.id}
+    aria-label={label ? undefined : name} title={name} onClick={fold.toggle}>
+    {label}
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+  </button>;
+}
+
+/** Notes that fold under a heading's arrow, a paragraph each. */
+function FoldedNotes({ fold, notes }: { fold: ReturnType<typeof useFold>; notes: readonly string[] }) {
+  if (notes.length === 0) return null;
+  return <div id={fold.id} className="component-info__notes" hidden={!fold.open}>
+    {notes.map((note, index) => <p key={index} className="component-info__block-note">{note}</p>)}
+  </div>;
+}
+
 function Field({ field, t }: { field: CardField; t: CardWords }) {
+  const fold = useFold();
   const source = fieldSource(field);
   const badge = statusBadge(field);
+  const detail = Boolean(field.note || field.url || source);
   return <div className="component-info__field" data-status={field.status}>
     <dt>{field.label}</dt>
     <dd>
-      <span className="component-info__value">{fieldValue(field)}</span>
-      {badge && <span className="component-info__status" data-status={field.status}>{badge}</span>}
-      {field.note && <span className="component-info__note">{field.note}</span>}
-      {/* The desktop shell opens no address outside the Hub: a link is text to copy. */}
-      {field.url && <span className="component-info__url">
-        <span className="component-info__link">{field.url}</span>
-        <CopyButton text={() => field.url!} label={t("componentInfo.copyLink")} done={t("componentInfo.copied")}
-          className="btn btn--small component-info__link-copy" />
+      <span className="component-info__line">
+        <span className="component-info__value">{fieldValue(field)}</span>
+        {badge && <span className="component-info__status" data-status={field.status}>{badge}</span>}
+        {detail && <FoldToggle fold={fold} t={t} />}
+      </span>
+      {detail && <span id={fold.id} className="component-info__detail" hidden={!fold.open}>
+        {field.note && <span className="component-info__note">{field.note}</span>}
+        {/* The desktop shell opens no address outside the Hub: a link is text to copy. */}
+        {field.url && <span className="component-info__url">
+          <span className="component-info__link">{field.url}</span>
+          <CopyButton text={() => field.url!} label={t("componentInfo.copyLink")} done={t("componentInfo.copied")}
+            className="btn btn--small component-info__link-copy" />
+        </span>}
+        {source && <span className="component-info__source">{t("componentInfo.source", { source })}</span>}
       </span>}
-      {source && <span className="component-info__source">{t("componentInfo.source", { source })}</span>}
     </dd>
   </div>;
 }
@@ -111,28 +146,35 @@ function Fields({ fields, t }: { fields: readonly CardField[]; t: CardWords }) {
   return <dl className="component-info__fields">{fields.map((field, index) => <Field key={index} field={field} t={t} />)}</dl>;
 }
 
+function Group({ group, t }: { group: NonNullable<CardBlock["group"]>; t: CardWords }) {
+  const fold = useFold();
+  const notes = [group.allocation && t("componentInfo.allocation", { basis: group.allocation.basis }), group.note]
+    .filter((note): note is string => Boolean(note));
+  return <div className="component-info__group" data-group={group.id} data-shared={group.shared || undefined}>
+    <div className="component-info__group-head">
+      <span className="component-info__group-title"><strong>{group.title}</strong>
+        {notes.length > 0 && <FoldToggle fold={fold} t={t} />}</span>
+      {group.shared && <span className="component-info__shared">{group.sharedBy !== null
+        ? t("componentInfo.sharedBy", { count: group.sharedBy }) : t("componentInfo.shared")}</span>}
+    </div>
+    <FoldedNotes fold={fold} notes={notes} />
+    <Fields fields={group.fields} t={t} />
+    {group.allocation && <Fields fields={group.allocation.fields} t={t} />}
+  </div>;
+}
+
 function Block({ block, heading, t }: { block: CardBlock; heading: boolean; t: CardWords }) {
   const Tag = block.role === "section" ? "section" : "div";
+  const fold = useFold();
+  const notes = [block.note, block.entry?.notes].filter((note): note is string => Boolean(note));
+  // A block without a heading names its fold, so the arrow does not stand alone.
+  const toggle = notes.length > 0 && <FoldToggle fold={fold} label={heading ? undefined : t("componentInfo.notes")} t={t} />;
   return <Tag className="component-info__block" data-dataset={block.datasetId} data-role={block.role}>
-    {heading && <h3 className="component-info__block-title">{block.title}</h3>}
-    {block.note && <p className="component-info__block-note">{block.note}</p>}
-    {block.entry ? <>
-      <Fields fields={block.entry.fields} t={t} />
-      {block.entry.notes && <p className="component-info__note-line">{block.entry.notes}</p>}
-    </> : <p className="component-info__missing" data-missing>{block.missing || t("componentInfo.missing", { title: block.title })}</p>}
-    {block.group && <div className="component-info__group" data-group={block.group.id} data-shared={block.group.shared || undefined}>
-      <div className="component-info__group-head">
-        <strong>{block.group.title}</strong>
-        {block.group.shared && <span className="component-info__shared">{block.group.sharedBy !== null
-          ? t("componentInfo.sharedBy", { count: block.group.sharedBy }) : t("componentInfo.shared")}</span>}
-      </div>
-      <Fields fields={block.group.fields} t={t} />
-      {block.group.allocation && <>
-        <p className="component-info__note-line">{t("componentInfo.allocation", { basis: block.group.allocation.basis })}</p>
-        <Fields fields={block.group.allocation.fields} t={t} />
-      </>}
-      {block.group.note && <p className="component-info__note-line" data-group-note>{block.group.note}</p>}
-    </div>}
+    {heading ? <h3 className="component-info__block-title">{block.title}{toggle}</h3> : toggle}
+    <FoldedNotes fold={fold} notes={notes} />
+    {block.entry ? <Fields fields={block.entry.fields} t={t} />
+      : <p className="component-info__missing" data-missing>{block.missing || t("componentInfo.missing", { title: block.title })}</p>}
+    {block.group && <Group group={block.group} t={t} />}
   </Tag>;
 }
 
@@ -200,9 +242,11 @@ export function ComponentInfoPanel({ subject, onClose }: { subject: ComponentInf
       {subject.kind === "pending" && <p className="component-info__state" role="status">{t("componentInfo.state.pending")}</p>}
       {subject.kind === "unresolved" && <p className="component-info__state" role="status">{t("componentInfo.state.unresolved")}</p>}
       {card && sentence && <p className="component-info__state" role="status" data-card-state={card.state}>{sentence}</p>}
+      {/* Keyed by component too: another pick opens with every fold shut. */}
       {card?.state === "ready" && <>
-        {card.summary.map((block) => <Block key={block.datasetId} block={block} heading={card.summary.length > 1} t={t} />)}
-        {card.sections.map((block) => <Block key={block.datasetId} block={block} heading t={t} />)}
+        {card.summary.map((block) => <Block key={`${card.componentId}\u0000${block.datasetId}`} block={block}
+          heading={card.summary.length > 1} t={t} />)}
+        {card.sections.map((block) => <Block key={`${card.componentId}\u0000${block.datasetId}`} block={block} heading t={t} />)}
       </>}
       {card && <Technical card={card} t={t} />}
     </div>
