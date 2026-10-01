@@ -290,17 +290,17 @@ class BoardTests(unittest.TestCase):
         manifest = self.repository.layout.run(BOARD_RUN_ID).manifest
         manifest_pending, finish_write = Event(), Event()
         read_started, read_finished = Event(), Event()
-        link = project_repository.os.link
+        rename = project_repository.os.rename
         read_board = boards.read_board
 
         def pause_manifest_install(source, destination, *args, **kwargs):
-            if Path(destination) == manifest:
-                # Pause the real P036 write after mkdir and temp-file fsync,
-                # but before run.json becomes visible to load_run.
+            if Path(destination) == manifest.parent:
+                # Pause the real P036 publication of the first save: its
+                # run.json and areas are staged, and none of it is visible.
                 manifest_pending.set()
                 if not finish_write.wait(15):
                     raise TimeoutError("The test did not release the first Board save")
-            return link(source, destination, *args, **kwargs)
+            return rename(source, destination, *args, **kwargs)
 
         def observe_read(binding):
             read_started.set()
@@ -311,14 +311,13 @@ class BoardTests(unittest.TestCase):
 
         writer_client, reader_client = self.new_client(), self.new_client()
         scene = [{"id": "note", "type": "text", "text": "首个画板保存"}]
-        with mock.patch.object(project_repository.os, "link", side_effect=pause_manifest_install), \
+        with mock.patch.object(project_repository.os, "rename", side_effect=pause_manifest_install), \
                 mock.patch.object(boards, "read_board", side_effect=observe_read):
             with ThreadPoolExecutor(max_workers=2) as executor:
                 try:
                     writer = executor.submit(writer_client.put, "/api/board", json=body(scene))
                     self.assertTrue(manifest_pending.wait(5), "First save did not reach manifest installation")
-                    self.assertTrue(manifest.parent.is_dir())
-                    self.assertFalse(manifest.exists())
+                    self.assertFalse(manifest.parent.exists(), "a run is never visible before it is whole")
                     reader = executor.submit(reader_client.get, "/api/board")
                     self.assertTrue(read_started.wait(5), "GET did not enter read_board")
                     if read_finished.wait(0.5):

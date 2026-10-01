@@ -154,12 +154,13 @@
       "operations": [
         "mkdir",
         "open_write",
+        "rename",
         "replace",
         "unlink"
       ],
       "kind": "project_repository",
       "owner": "P036",
-      "reason": "The durable project repository is the sole project-document filesystem writer."
+      "reason": "The durable project repository is the sole project-document filesystem writer. It renames a directory only to publish a run it staged beside the runs whole, or to take back a run its failed batch had just published (#327)."
     },
     {
       "path": "packages/monkeycad/src/monkeycad/backends/rhino/export.py",

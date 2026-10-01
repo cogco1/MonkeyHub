@@ -228,6 +228,49 @@ class BoundProjectTests(unittest.TestCase):
             binding.run_ids(), (REFERENCE_RUN_ID, HARNESS_RUN_ID)
         )
 
+    def test_a_run_being_published_is_listed_whole_or_not_at_all(self) -> None:
+        """Discovery during run publication (#327; Panny found the race in #483).
+
+        After every write that creates a run, the binding lists and loads
+        every run, lists the project's documents from the runs themselves
+        (the listing an index falls back to) and surveys the runs, and none of
+        it fails or names the new run as unreadable.
+        """
+
+        from archflow.project.repository import add_write_observer
+        from project_runtime.application.artifacts import list_documents
+
+        binding = ProjectBinding.open(self.settings)
+        self.addCleanup(binding.close)
+        before = binding.run_ids()
+        problems: list[str] = []
+        steps = 0
+
+        def read(path: Path) -> None:
+            nonlocal steps
+            steps += 1
+            try:
+                listed = binding.run_ids()
+                for run_id in listed:
+                    binding.load_run(run_id)
+                list_documents(binding)
+                skipped = binding.reference_run().skipped_runs
+            except Exception as exc:  # noqa: BLE001 - every refusal is the finding
+                problems.append(f"{path.name}: {exc!r}")
+                return
+            if set(listed) - set(before) - {"published-run"} or skipped:
+                problems.append(f"{path.name}: listed {listed}, skipped {skipped}")
+
+        remove = add_write_observer(self.repository.layout.root, read)
+        self.addCleanup(remove)
+        self.repository.create_run("published-run")
+        remove()
+
+        self.assertEqual(problems, [])
+        self.assertGreater(steps, 0)
+        self.assertEqual(binding.run_ids(), tuple(sorted((*before, "published-run"))))
+        self.assertEqual(binding.load_run("published-run").run_id, "published-run")
+
 
 class ReadApiTests(unittest.TestCase):
     """The binding is the Runtime's public read API: MonkeyHub opens it in process (#519)."""

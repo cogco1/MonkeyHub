@@ -547,12 +547,14 @@ class ProjectBinding:
         return payload
 
     def run_ids(self) -> tuple[str, ...]:
-        """Every run directory in the project, in name order."""
+        """Every run directory in the project, in name order.
 
-        runs = self.repository.layout.runs
-        if not runs.is_dir():
-            return ()
-        return tuple(sorted(item.name for item in runs.iterdir() if item.is_dir()))
+        The repository's listing (``FilesystemProjectRepository.run_ids``): a
+        run appears in it only once it is published whole, so a run still
+        being created is not here yet rather than here without its manifest.
+        """
+
+        return self.repository.run_ids()
 
     def load_run(self, run_id: str) -> RunRef:
         """The named run, or a 404 that repeats the name it was given.
