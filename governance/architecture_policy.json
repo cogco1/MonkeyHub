@@ -74,6 +74,118 @@
     "conftest.py",
     "pyproject.toml"
   ],
+  "directory_entries": {
+    "apps/monkeyhub/web/src": {
+      "files": [
+        "ChatCard.css",
+        "ChatCard.tsx",
+        "ChatMessageContent.css",
+        "ChatMessageContent.tsx",
+        "ChatShell.css",
+        "ChatShell.tsx",
+        "ChatSuggestionCard.css",
+        "ChatSuggestionCard.tsx",
+        "FabPage.tsx",
+        "HubMenu.tsx",
+        "MonitorPage.css",
+        "MonitorPage.tsx",
+        "SoftwareUpdateSettings.tsx",
+        "chatError.ts",
+        "chatProcess.ts",
+        "main.tsx",
+        "monitorData.ts",
+        "sidebarTasks.ts",
+        "styles.css",
+        "surfaceBarRows.ts",
+        "worktreeGraph.ts"
+      ],
+      "directories": [
+        "app",
+        "features",
+        "workspaces",
+        "i18n",
+        "notifications",
+        "api"
+      ],
+      "reason": "Hub web code lives by role: app/ is the shell and the project workspace, features/ one directory per feature, workspaces/ the design workspaces, i18n/ the language catalogs, notifications/ attention, api/ the Project Runtime clients."
+    },
+    "docs": {
+      "directories": [
+        "architecture",
+        "product",
+        "protocols",
+        "development",
+        "design",
+        "research",
+        "audits",
+        "decisions",
+        "prototypes"
+      ],
+      "reason": "docs/README.md says what each category holds; README.md alone stays at the docs root (DOCS_ROOT)."
+    }
+  },
+  "test_file_patterns": [
+    "test_*.py",
+    "*_test.py",
+    "*.test.ts",
+    "*.test.tsx",
+    "*.browser.mjs"
+  ],
+  "test_roots": [
+    "tests/integration",
+    "tests/packaging",
+    "tools/tests",
+    "packages/archflow/tests",
+    "packages/monkeyarch/tests",
+    "packages/monkeycad/tests",
+    "packages/monkeycontrol/tests",
+    "packages/monkeydiagram/tests",
+    "packages/monkeyfab/tests",
+    "packages/monkeymonitor/tests",
+    "services/project-runtime/tests",
+    "apps/monkeyhub/api/tests",
+    "apps/monkeyhub/desktop/tests",
+    "apps/monkeyhub/web/test",
+    "labs"
+  ],
+  "subpackages": {
+    "packages/archflow/src/archflow": [
+      "contracts",
+      "ports",
+      "project",
+      "semantics",
+      "state",
+      "submission",
+      "validation"
+    ],
+    "packages/monkeyarch/src/monkeyarch": [
+      "application",
+      "authoring",
+      "compilation",
+      "domain"
+    ],
+    "packages/monkeycad/src/monkeycad": [
+      "backends",
+      "formats"
+    ],
+    "packages/monkeycontrol/src/monkeycontrol": [
+      "demos",
+      "hosts",
+      "providers"
+    ],
+    "packages/monkeydiagram/src/monkeydiagram": [
+      "documentation",
+      "projection",
+      "rendering"
+    ],
+    "packages/monkeyfab/src/monkeyfab": [],
+    "packages/monkeymonitor/src/monkeymonitor": [],
+    "services/project-runtime/src/project_runtime": [
+      "api",
+      "application",
+      "render_adapters"
+    ]
+  },
   "shared_write_scope": [
     "governance/module_registry.json",
     "governance/work_registry.json",

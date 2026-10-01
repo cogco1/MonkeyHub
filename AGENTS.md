@@ -154,9 +154,13 @@ consolidation decision, not a migration to rerun. Before writing code:
 4. Decide EXTEND (default), REFACTOR, or CREATE. CREATE needs a written reason why no owner
    fits; a second implementation of an owned capability is allowed only behind an interface
    declared in the registry with its implementations listed.
-5. Update the registry in the same change only when ownership, the public contract or
+5. Before claiming, post a placement table on the Issue: new files and directories, files
+   changed only for wiring, the registry entry that changes, the docs category, where tests
+   and fixtures go, and what is not touched. Check it against
+   `docs/architecture/repository-layout.md`; the claim's `write_scope` comes from it.
+6. Update the registry in the same change only when ownership, the public contract or
    its listed tests actually change. An internal fix needs no ceremonial registry edit.
-6. Implement and run the affected behavior tests and `python tools/governance/archcheck.py`.
+7. Implement and run the affected behavior tests and `python tools/governance/archcheck.py`.
    For documentation-only changes, check links, generated maps and the scoped diff;
    do not run the application suite. Broader checks need an affected boundary or failure.
 

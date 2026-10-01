@@ -261,6 +261,21 @@ MonkeyCAD 与 Hub 的 id 按能力命名。
 
 docs 树自 R1-8 起按 `git ls-files` 检查，被 git 忽略的本地笔记不算：根目录只有 `README.md`（`DOCS_ROOT`）；文档名是小写 kebab-case 的 Markdown，决定记录是 `NNN-kebab.md`，目录名是 kebab-case，文件名不以日期开头（kebab 正则本身接受 `2026-09-28-x.md`，所以日期另有一条规则），非 Markdown 文件只在 `docs/prototypes/`（`DOC_NAME`）。
 
+### 6.4 放置规则
+
+新文件放在哪里，开工前就定下：Issue 上的放置表对照本文（[AGENTS](../../AGENTS.md)），claim 的 `write_scope` 由它而来，
+PR 的“位置”一节列出新增与搬动的路径及各自依据的规则。archcheck 再按 policy 里紧接 `repository_root_entries` 的几个键检查
+Git 跟踪的路径，不论谁写的文件，放错就失败（#553）：
+
+| 键 | 检查什么 |
+| --- | --- |
+| `directory_entries` | 一个目录下直接放什么。`apps/monkeyhub/web/src` 列出根目录现有的文件与 `app/`、`features/`、`workspaces/`、`i18n/`、`notifications/`、`api/` 六个目录，新文件或新目录放进这六个目录之一；`docs` 只列九个类别目录，根目录的文件仍归 `DOCS_ROOT`（只有 `README.md`）。清单外的条目报 `PLACEMENT_ENTRY` |
+| `test_file_patterns`、`test_roots` | 名字符合 `test_*.py`、`*_test.py`、`*.test.ts`、`*.test.tsx`、`*.browser.mjs` 的文件只在测试根下：`tests/integration`、`tests/packaging`、`tools/tests`、各包与 Runtime 的 `tests`、Hub 的 `api/tests`、`desktop/tests`、`web/test`，以及 `labs`（实验的测试与代码同目录）。别处的报 `PLACEMENT_TEST` 并指出旁边的测试根；`third-party/`、`node_modules/` 这类第三方与安装目录里的不算 |
+| `subpackages` | `packages/<名>/src/<包>/` 与 `services/<名>/src/<包>/` 下每个 Python 包的第一层目录：现有子包，以及 monkeycontrol 的 `demos/`、`hosts/` 这类数据目录。未列出的报 `PLACEMENT_SUBPACKAGE`；表里没有的新包，它的子包同样失败 |
+
+清单记录现状，新增一项是经过 review 的 policy 修改，不为新东西另开例外；清单里已不存在的项报 `POLICY_PATH_MISSING`，
+搬走或删除文件的 PR 同时删掉它。缺了某个键，对应规则就不运行，所以 `tools/tests/test_archcheck_placement.py` 要求本仓 policy 保留全部键。
+
 ## 7. 第一轮记录：只搬迁
 
 第一轮（#484–#496）已全部落地。每条 lane 都遵守了：
