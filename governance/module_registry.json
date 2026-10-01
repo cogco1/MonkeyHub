@@ -7946,23 +7946,29 @@
       "module_id": "tools.dev.workspace",
       "owner_path": "tools/dev/workspace.py",
       "status": "canonical",
-      "purpose": "Reuse one personal development root for task Git worktrees and packaging directories; create or reopen a source checkout through Git without moving existing work.",
+      "purpose": "Reuse one personal development root for task Git worktrees and packaging directories; create or reopen a source checkout through Git without moving existing work, and retire merged, clean task checkouts into the root's trash.",
       "owns": [
         "The existing archflow.package.workspace-root Git setting, portable task names and source/build/cache path resolution shared with the packaging CLI",
-        "Configured-root worktree creation and reuse after inspecting Git registration, branch identity and destination conflicts"
+        "Configured-root worktree creation and reuse after inspecting Git registration, branch identity and destination conflicts",
+        "Retiring merged, clean task worktrees under the root's workspace/worktrees: moving each into the root's _TRASH_<YYYYMMDD>, pruning its Git registration and deleting its merged branch with git branch -d",
+        "Deleting merged local branches that no worktree holds, except main, release-candidate and the source checkout's current branch"
       ],
       "does_not_own": [
         "Design project paths, project initialization or P036 persistence",
         "Distribution building, application lifecycle or source integration",
-        "Moving or deleting existing worktrees, resetting branches or intercepting arbitrary shell writes"
+        "Deleting files, resetting branches or intercepting arbitrary shell writes",
+        "Unmerged, dirty or detached worktrees, worktrees outside the root, remote branches and stashes"
       ],
       "inputs": [
         "Source checkout and one configured absolute development root",
-        "Task branch, optional task directory name and explicit new-branch base"
+        "Task branch, optional task directory name and explicit new-branch base",
+        "For retire: a base ref (origin/main, fetched with --prune unless --no-fetch), the branches to keep and --apply"
       ],
       "outputs": [
         "Resolved source-worktree, staging, output and cache paths as JSON",
-        "A Git-registered task checkout or reuse of the same existing checkout"
+        "A Git-registered task checkout or reuse of the same existing checkout",
+        "A retire report as JSON: each task worktree's branch, state and planned or applied action, and the merged branches no worktree holds",
+        "With --apply, retired worktree directories under <root>/_TRASH_<YYYYMMDD>, their registrations pruned and their merged branches deleted"
       ],
       "public_api": [
         "configured_root",
@@ -7971,6 +7977,7 @@
         "task_name",
         "task_paths",
         "create_worktree",
+        "retire_worktrees",
         "main"
       ],
       "depends_on": [],
@@ -7981,12 +7988,15 @@
         "The CLI resolves task paths below the saved root, outside the source checkout; no drive-root default or per-invocation dated root is invented",
         "paths creates nothing; configure updates only the existing personal Git setting",
         "Repeated create at the same branch and destination retains all WIP; conflicting or missing registered worktrees are reported without relocation or reset",
-        "New worktrees contain the selected committed base, not uncommitted files or design project data"
+        "New worktrees contain the selected committed base, not uncommitted files or design project data",
+        "retire is a dry run unless --apply; a failed fetch is reported and stops --apply",
+        "retire moves and never deletes: a retired worktree is renamed into <root>/_TRASH_<YYYYMMDD> on the root's volume, Git prunes its registration and git branch -d deletes only branches it accepts as merged",
+        "retire moves only qualifying worktrees under <root>/workspace/worktrees: on a branch, nothing in git status apart from ignored files, and the branch head an ancestor of the base but not a commit of its first-parent line, so a task with no commits of its own stays. Its git worktree prune clears only registrations whose directory is already gone, which the dry run lists; the source and main checkouts, other worktrees, kept branches, remote branches, stashes and design projects are never touched"
       ],
       "tests": [
         "tools/tests/test_workspace.py"
       ],
-      "notes": "CREATE: no existing owner creates source worktrees. tools.governance.devctl owns read-only development lookup; tools.release.package_monkeyapps owns distribution building. Their two real path consumers share this configuration implementation."
+      "notes": "CREATE: no existing owner creates source worktrees. tools.governance.devctl owns read-only development lookup; tools.release.package_monkeyapps owns distribution building. Their two real path consumers share this configuration implementation. EXTEND (#538): retiring merged task worktrees joins their creation here, because this module already resolves the root and reads Git's worktree registration."
     },
     {
       "module_id": "tools.dev.source_roots",

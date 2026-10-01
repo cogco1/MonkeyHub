@@ -564,6 +564,17 @@
       "reason": "Prepares the configured task worktree parent after checking Git branch registration and destination conflicts; Git creates the checkout. No project data or existing worktree is moved, reset or deleted."
     },
     {
+      "path": "tools/dev/workspace.py",
+      "function": "_move_into_trash",
+      "operations": [
+        "mkdir",
+        "rename"
+      ],
+      "kind": "development_worktree",
+      "owner": "tools.dev.workspace",
+      "reason": "Retires a merged, clean task worktree (#538): creates the configured root's _TRASH_<YYYYMMDD> folder and renames the worktree into it on the root's volume; Git then prunes the registration. Nothing is copied or deleted, and no project data or unmerged, dirty, detached or outside worktree is moved."
+    },
+    {
       "path": "tools/release/package_monkeyapps.py",
       "function": "fetch_runtime",
       "operations": [
