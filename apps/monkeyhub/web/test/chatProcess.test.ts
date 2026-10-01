@@ -19,6 +19,13 @@ test("the calls the Agent makes read as plain actions in both languages", () => 
     ["studio_request · PUT /api/board · completed", "更新画板", "Update the board"],
     ["studio_request · POST /api/intents/context · completed", "读取设计上下文", "Read the design context"],
     ["studio_request · POST /api/proposals/prop-7/candidate · completed", "生成方案", "Generate a scheme"],
+    // The routes an agent authors a proposal with since #419 draft a change; none updates project data.
+    ["studio_request · POST /api/proposals/construction · completed", "起草修改", "Draft a model change"],
+    ["studio_request · POST /api/proposals/facets · completed", "起草修改", "Draft a model change"],
+    ["studio_request · POST /api/proposals/hosted-opening · failed", "起草修改", "Draft a model change"],
+    ["studio_schema · POST /api/proposals/construction · completed", "准备起草修改", "Prepare to draft a model change"],
+    // Transcripts retained from before #419 name the producer routes it replaced.
+    ["studio_request · POST /api/proposals/push-pull · completed", "起草修改", "Draft a model change"],
     ["studio_request · GET /api/drawings/model-view?runId=r&view=front · completed", "查看模型视图", "View the model"],
     ["studio_request · POST /api/drawings/sheets · completed", "出图", "Make a drawing sheet"],
     ["studio_request · POST /api/board/export · completed", "导出画板", "Export board pages"],
