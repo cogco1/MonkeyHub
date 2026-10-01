@@ -158,6 +158,11 @@
 .design-tree-list__mark[data-kind="current"] { border-color: var(--accent); color: var(--accent); }
 .design-tree-list__mark[data-kind="pending"] { border-style: dashed; }
 .design-tree-list li[data-group="trunk"] .design-tree-list__mark[data-kind="candidate"] { border-color: var(--accent); color: var(--accent); }
+/* #575: Current's steps sit on its line; its folds open on Enter; superseded drafts stay quiet. */
+.design-tree-list__mark[data-kind="step"] { border-color: var(--accent); color: var(--accent); }
+.design-tree-list__mark[data-kind="fold"] { border-style: dashed; border-color: var(--accent); color: var(--accent); }
+.design-tree-list__mark[data-kind="drafts"], .design-tree-list__mark[data-kind="draft"] { border-style: dashed; color: var(--faint); }
+.design-tree-list li:is([data-kind="drafts"], [data-kind="draft"]) { opacity: .62; }
 .design-tree-list__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .design-tree-list__status { margin-left: auto; padding-left: 12px; color: var(--muted); font-size: var(--text-caption, 12px); white-space: nowrap; }
 @media (max-width: 640px) { .design-tree-list__status { display: none; } }

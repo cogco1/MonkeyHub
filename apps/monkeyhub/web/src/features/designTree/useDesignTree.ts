@@ -26,7 +26,7 @@ import type { DesignHistoryDto, WorkingDraftDto, WorkingDraftSelectionDto, Workt
 import type { DesignTreeSource } from "./contract";
 import { continueRequest, continueUndo, DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED, undoRequest, type ContinueUndo,
   type HeadTarget } from "./continueUndo";
-import { buildGrowthTree, type GrowthTree, type TreeNode } from "./model";
+import { buildGrowthTree, continuable, type GrowthTree, type TreeFolds, type TreeNode } from "./model";
 
 export { DESIGN_TREE_UNDO_MOVED, DESIGN_TREE_UNSYNCED } from "./continueUndo";
 
@@ -79,6 +79,9 @@ export interface DesignTreeData {
   readonly tree: GrowthTree | null;
   readonly showProcessed: boolean;
   setShowProcessed(value: boolean): void;
+  /** Which folds the viewer opened (#575): Current's earlier steps, the drafts its line superseded. A view choice only. */
+  readonly folds: TreeFolds;
+  setFolds(value: TreeFolds): void;
   readonly error: StudioApiError | null;
   /** The runtime can move the Working Head. */
   readonly canContinue: boolean;
@@ -217,6 +220,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   const [toast, setToast] = useState<DesignTreeToast | null>(null);
   const [nudge, setNudge] = useState(0);
   const [showProcessed, setShowProcessed] = useState(false);
+  const [folds, setFolds] = useState<TreeFolds>({});
   const reads = useRef(0);
   const sourceRef = useRef<DesignTreeSource | null>(null);
   sourceRef.current = source;
@@ -328,7 +332,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
     };
   }, [available, active, load, revision]);
 
-  const tree = useMemo(() => source ? buildGrowthTree(source, showProcessed) : null, [source, showProcessed]);
+  const tree = useMemo(() => source ? buildGrowthTree(source, showProcessed, folds) : null, [source, showProcessed, folds]);
 
   const run = useCallback(async (action: DesignTreeAction,
     write: () => Promise<{ outcome: DesignTreeOutcome | null; toast: ToastBody; undo: ContinueUndo | null }>) => {
@@ -363,7 +367,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
 
   const continueFrom = useCallback((nodeId: string) => {
     const node = tree?.nodes.get(nodeId);
-    if (!canContinue || !projectId || !node?.runId || (node.kind !== "candidate" && node.kind !== "stage")) return Promise.resolve(false);
+    if (!canContinue || !projectId || !node?.runId || !continuable(node)) return Promise.resolve(false);
     const target: HeadTarget = { runId: node.runId, branchId: node.kind === "stage" ? node.stage!.branchId : null };
     return run({ kind: "continue", node: nodeId }, async () => {
       const replaced = await moveHead(studio, projectId, (position) => continueRequest(projectId, target, position));
@@ -423,7 +427,7 @@ export function useDesignTree({ studio, capabilities, projectId, active, refresh
   }, []);
 
   return {
-    available, admissions, status: available ? status : "loading", source, tree, showProcessed, setShowProcessed,
+    available, admissions, status: available ? status : "loading", source, tree, showProcessed, setShowProcessed, folds, setFolds,
     error, canContinue, canReview, busy, outcome, toast,
     reload: () => setNudge((value) => value + 1),
     continueFrom, acceptCurrent, review, undo,

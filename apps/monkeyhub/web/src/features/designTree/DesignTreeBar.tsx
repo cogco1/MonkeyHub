@@ -16,7 +16,7 @@ import { usePreferences } from "../settings/preferences";
 import { useT } from "../../i18n/useT";
 import { DESIGN_TREE_UNSYNCED } from "./continueUndo";
 import { DesignTreeToast } from "./DesignTreeToast";
-import { CURRENT, type GrowthTree, type TreeNode } from "./model";
+import { continuable, CURRENT, type GrowthTree, type TreeNode } from "./model";
 import { useRecordAndContinue, type DesignTreeData } from "./useDesignTree";
 import { refusalWords, treeWords } from "./words";
 import "./designTree.css";
@@ -41,20 +41,21 @@ export function currentView(data: DesignTreeData): DesignTreeView | null {
 /**
  * The node a view stands for, so the chip can continue from it: the node it
  * was opened from, else the one node of its run (a Stage before the option it
- * was accepted from, as the tree draws it). A run the tree has no node for,
- * such as an export, has no Continue here.
+ * was accepted from, as the tree draws it; then an option, a step of Current's
+ * line, a draft it superseded or the project start, #575). A run the tree has
+ * no node for, such as an export, has no Continue here.
  */
 export function viewedNode(tree: GrowthTree | null, view: DesignTreeView): TreeNode | null {
   if (!tree) return null;
   const named = view.node ? tree.nodes.get(view.node) : undefined;
-  if (named && named.runId === view.runId && (named.kind === "candidate" || named.kind === "stage")) return named;
-  let option: TreeNode | null = null;
+  if (named && named.runId === view.runId && continuable(named)) return named;
+  let other: TreeNode | null = null;
   for (const node of tree.nodes.values()) {
     if (node.runId !== view.runId) continue;
     if (node.kind === "stage") return node;
-    if (node.kind === "candidate") option ??= node;
+    if (continuable(node)) other ??= node;
   }
-  return option;
+  return other;
 }
 
 export function TreeIcon() {

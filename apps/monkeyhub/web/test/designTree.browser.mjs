@@ -390,8 +390,11 @@ try {
       data: element.customData?.tree ?? null })), zoom: state.zoom.value, scrollX: state.scrollX, scrollY: state.scrollY,
       offsetLeft: state.offsetLeft, offsetTop: state.offsetTop };
   });
-  /** A real click on a node's card, where the canvas draws it now; with `reveal: false` the node must already be in view. */
-  const clickCanvasNode = async (target, host, id, { reveal = true } = {}) => {
+  /**
+   * A real click on a node's card, where the canvas draws it now; with `reveal: false` the node must already be in view.
+   * A fold (#575) opens rather than selects: with `inspect: false` nothing waits for an inspector.
+   */
+  const clickCanvasNode = async (target, host, id, { reveal = true, inspect = true } = {}) => {
     // #353: the inspector docks at the right and the canvas gives it room; close it so the canvas has its whole width.
     if (await host.locator(".design-tree-inspector").count()) {
       await target.keyboard.press("Escape");
@@ -422,6 +425,7 @@ try {
       [x, y] = at(current);
     }
     await target.mouse.click(x + current.offsetLeft, y + current.offsetTop);
+    if (!inspect) return null;
     const opened = host.locator(`.design-tree-inspector[data-node="${id}"]`);
     await opened.waitFor();
     return opened;
@@ -1216,10 +1220,109 @@ try {
   console.log(JSON.stringify({ jobQueued: 1, fiveJobEventsAtOnce: burst }));
   await hubContext.close();
 
+  // ------------------------------------------------------------------ Part C: one line plus nodes (#575).
+  // A project that admitted and staged nothing, shaped like the owner's: Current's line of continued runs and two
+  // earlier attempts at V3 that the line superseded. The tree draws the line as one chain whose earlier steps fold
+  // behind one control, the drafts fold where the line moved on, and returning to a step is the existing Continue.
+  fixture = fixtureModule.createDesignTreeFixture(fixtureModule.unadmittedLineFacts());
+  const lineContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en-US" });
+  await lineContext.route((url) => ["http:", "https:"].includes(url.protocol) && url.origin !== origin, (route) => {
+    external.push(route.request().url()); return route.abort("blockedbyclient");
+  });
+  const linePage = await lineContext.newPage();
+  linePage.setDefaultTimeout(20_000);
+  linePage.on("pageerror", (error) => errors.push(`line: ${error.message}`));
+  linePage.on("console", (message) => { if (message.type() === "error") errors.push(`line: ${message.text()}`); });
+  await linePage.goto(`${origin}/tree-workspace?lang=en&theme=light&view=tree`, { waitUntil: "domcontentloaded", timeout: 240_000 });
+  const lineSurface = linePage.locator('[data-project-surface="tree"]');
+  const lineBar = linePage.locator(".project-bar");
+  await lineSurface.locator(".design-tree__canvas canvas").first().waitFor({ timeout: 120_000 });
+  const trunkPoints = (count) => linePage.waitForFunction((wanted) => window.__treeApi?.getSceneElements()
+    .find((element) => element.customData?.tree?.role === "trunk")?.points.length === wanted, count);
+  await trunkPoints(3);
+  const texts = (view, node) => view.elements.filter((element) => element.type === "text" && element.data?.node === node).map((element) => element.text);
+  let lineView = await scene(linePage);
+  checkTree(lineView, ["origin", "fold", "current"], {});
+  assert.deepEqual(texts(lineView, "fold"), ["4 earlier steps", "2 superseded drafts inside"], "the earlier steps fold behind one control");
+  assert.ok(!lineView.elements.some((element) => /run-|studio-projection|conflict|diverged|[0-9a-f]{16}/i.test(element.text ?? "")),
+    "no ids, conflicts or diverged lines on the canvas");
+  assert.match(texts(lineView, "current").join(" ").replace(/\s+/g, " "), /1 edit after V3 - ribbed roof, open side triangles/);
+  assert.deepEqual(await lineBar.getByRole("button", { name: /earlier steps|superseded drafts/ }).allInnerTexts(),
+    ["Unfold 4 earlier steps", "Show superseded drafts (2)"]);
+  await shoot(linePage, "13-line-folded");
+  if (shots) {
+    await linePage.evaluate(() => window.__workspaceFixture.setLanguage("zh-CN"));
+    await linePage.waitForFunction(() => window.__treeApi.getSceneElements().some((element) => element.text === "之前 4 步"));
+    await shoot(linePage, "13a-line-folded-zh");
+    await linePage.evaluate(() => window.__workspaceFixture.setLanguage("en"));
+    await linePage.waitForFunction(() => window.__treeApi.getSceneElements().some((element) => element.text === "4 earlier steps"));
+  }
+  // A click on the fold opens the steps, oldest first; the drafts fold where the line moved on through V3.
+  await clickCanvasNode(linePage, lineSurface, "fold", { inspect: false });
+  await trunkPoints(6);
+  lineView = await scene(linePage);
+  const lineSteps = ["run-site-massing", "run-v1", "run-v2", "run-v3"].map((run) => `step:${run}`);
+  checkTree(lineView, ["origin", ...lineSteps, "current"], {});
+  assert.deepEqual(lineSteps.map((id) => texts(lineView, id).join(" ")),
+    ["Step 1", "V1 - timber frame and hemp walls", "V2 - pitched roof, open gable ends", "V3 - ribbed roof, open side triangles"]);
+  const draftsGroup = lineView.elements.find((element) => element.id === "drafts:step:run-v2:card");
+  assert.ok(draftsGroup && draftsGroup.opacity < 100 && draftsGroup.strokeStyle === "dashed", "the drafts fold quietly under V2");
+  assert.deepEqual(texts(lineView, "drafts:step:run-v2"), ["Superseded drafts · 2", "Click to show them"]);
+  await shoot(linePage, "14-line-open");
+  await clickCanvasNode(linePage, lineSurface, "drafts:step:run-v2", { inspect: false });
+  await linePage.waitForFunction(() => window.__treeApi.getSceneElements().some((element) => element.id === "draft:run-v3-closed:card"));
+  lineView = await scene(linePage);
+  for (const id of ["draft:run-v3-closed", "draft:run-v3-glazed"]) {
+    assert.ok(lineView.elements.find((element) => element.id === `${id}:card`).opacity < 100, `${id} is drawn quietly`);
+  }
+  checkTree(lineView, ["origin", ...lineSteps, "current"], {});
+  await shoot(linePage, "15-drafts-open");
+  let lineCard = await clickCanvasNode(linePage, lineSurface, "draft:run-v3-closed");
+  assert.match(await lineCard.innerText(), /Superseded draft · kept for now/);
+  assert.match(await lineCard.innerText(), /Superseded by\s*V3 - ribbed roof, open side triangles/);
+  assert.match(await lineCard.innerText(), /Nothing is deleted/);
+  assert.equal(await lineCard.locator('[data-action="continue"]').isEnabled(), true, "a draft is kept and can be returned to");
+  await lineBar.getByRole("button", { name: "Hide superseded drafts", exact: true }).click();
+  await lineCard.waitFor({ state: "detached" });
+  // Returning to V2 is the existing Continue (PUT /api/working-draft), and its Undo puts Current back.
+  lineCard = await clickCanvasNode(linePage, lineSurface, "step:run-v2");
+  assert.match(await lineCard.innerText(), /Step · on the current line/);
+  assert.match(await lineCard.innerText(), /Grew from\s*V1 - timber frame and hemp walls/);
+  assert.deepEqual(await lineCard.locator(".design-tree-inspector__actions").first().getByRole("button").allInnerTexts(), ["View", "Continue from here"]);
+  assert.equal(await lineCard.getByRole("button", { name: "Endorse direction" }).count(), 0, "a step is no admitted option to review");
+  const lineRevision = fixture.state.revision;
+  await lineCard.getByRole("button", { name: "Continue from here", exact: true }).click();
+  const lineToast = linePage.locator(".design-tree-toast");
+  await lineToast.filter({ hasText: "Current is now “V2 - pitched roof, open gable ends”" }).waitFor();
+  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
+    body: { projectId: PROJECT, runId: "run-v2", baseRevisionSha256: rev(lineRevision), branchId: null } });
+  await trunkPoints(4);
+  checkTree(await scene(linePage), ["origin", "step:run-site-massing", "step:run-v1", "current"], {});
+  assert.equal((await scene(linePage)).elements.some((element) => element.id.startsWith("drafts:") || element.id.startsWith("draft:")), false,
+    "built on V2, the drafts continue Current now: nothing is superseded");
+  await shoot(linePage, "16-returned-to-v2");
+  await lineToast.getByRole("button", { name: "Undo", exact: true }).click();
+  await lineToast.filter({ hasText: "Undone" }).waitFor();
+  assert.deepEqual(writes.at(-1).body, { projectId: PROJECT, runId: "run-v3-materials", baseRevisionSha256: rev(lineRevision + 1), branchId: null });
+  await trunkPoints(6);
+  // Folded again from the menu; in the list the fold is a row that Enter opens.
+  await lineBar.getByRole("button", { name: "Fold earlier steps", exact: true }).click();
+  await trunkPoints(3);
+  await lineBar.getByRole("button", { name: "List", exact: true }).click();
+  const foldRow = lineSurface.locator('[role="treeitem"][data-node="fold"]');
+  await foldRow.focus();
+  assert.match(await foldRow.innerText(), /4 earlier steps/);
+  await linePage.keyboard.press("Enter");
+  await lineSurface.locator('[role="treeitem"][data-node="step:run-v2"]').waitFor();
+  assert.deepEqual(await lineSurface.getByRole("treeitem").evaluateAll((rows) => rows.map((row) => row.dataset.node)),
+    ["origin", ...lineSteps.slice(0, 3), "drafts:step:run-v2", lineSteps[3], "current"]);
+  await shoot(linePage, "17-line-list");
+  await lineContext.close();
+
   assert.deepEqual(unexpected, [], "the tree reads only what it declares");
   assert.deepEqual(external, [], "no external request");
   assert.deepEqual(errors.filter((message) => !/Failed to load resource: the server responded with a status of 404/.test(message)), []);
-  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, three zoom levels with close-card server thumbnails read on demand and arriving through the index, inspector, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
+  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, Current's line as one chain with its earlier steps folded and opened, superseded drafts folded where the line moved on, return to a step via Continue and Undo, three zoom levels with close-card server thumbnails read on demand and arriving through the index, inspector, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
     writes: writes.map((row) => `${row.method} ${row.name}`) }));
 } catch (error) {
   console.error("FAILED:", error);
