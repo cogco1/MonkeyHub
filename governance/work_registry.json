@@ -1,4 +1,22 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-562",
+      "status": "active",
+      "branch": "codex/562-presentation",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-562-presentation",
+      "base_ref": "2461e7243f9b919d8ca6f4ef1b952f2fd08e0d46",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "hub.shell"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/web/test/modelDisplayStyle.test.ts"
+      ],
+      "depends_on": []
+    }
+  ]
 }
