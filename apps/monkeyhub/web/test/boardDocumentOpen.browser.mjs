@@ -126,7 +126,11 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
         entry.status = answer.statusCode;
         response.writeHead(answer.statusCode, answer.headers); answer.pipe(response);
       });
+      // A closed tab must also release its upstream event stream, otherwise
+      // the standalone Runtime waits forever for that reader during shutdown.
+      response.once("close", () => proxied.destroy());
       proxied.on("error", (error) => {
+        if (response.destroyed) return;
         if (!closing) errors.push(error.message);
         if (!response.headersSent) response.writeHead(502);
         response.end();
@@ -529,11 +533,14 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   const beforeUnavailable = requests.length;
   const retainedPages = [await pageAnnotations(0), await pageAnnotations(1)];
   await page.locator(".monkeyboard-source-link").click();
-  await page.locator('.document-empty [role="alert"]').filter({ hasText: /^Link unavailable$/ }).waitFor();
+  const unavailableMessage = "The linked document page is unavailable. Select a source or page.";
+  const unavailableAlert = page.locator('.document-empty [role="alert"]');
+  await unavailableAlert.waitFor();
+  assert.equal(await unavailableAlert.innerText(), unavailableMessage);
   assert.ok(unavailableReads > 0, "The editor must read the descriptor that makes its exact requested page unavailable");
   assert.equal(await page.getByLabel("Source document", { exact: true }).inputValue(), secondPage.revisionRef ?? secondPage.assetSha256);
   assert.equal(await page.getByLabel("Page", { exact: true }).inputValue(), "1", "An out-of-range page keeps the requested index");
-  assert.equal(await page.getByLabel("Page", { exact: true }).locator("option:checked").innerText(), "Link unavailable");
+  assert.equal(await page.getByLabel("Page", { exact: true }).locator("option:checked").innerText(), unavailableMessage);
   assert.equal(await page.locator(".document-viewport, .document-page__raster").count(), 0, "No other page substitutes for the unavailable one");
   assert.deepEqual(requests.slice(beforeUnavailable).filter((entry) => entry.path === "/api/document-annotations"), [],
     "An unavailable page neither loads another page's annotations nor writes a substitute");
