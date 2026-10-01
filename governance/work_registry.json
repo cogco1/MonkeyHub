@@ -1,4 +1,28 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-287",
+      "lanes": [
+        {
+          "id": "drawing-acceptance",
+          "status": "active",
+          "branch": "codex/287-drawing-acceptance",
+          "worktree": "/workspace/shared/monkeyhub-dev/workspace/worktrees/codex-287-drawing-acceptance",
+          "base_ref": "1b2ce1b037be5d32349b90de990de0c27edfddb0",
+          "contributor": "Acacia",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "hub.shell",
+            "project_runtime.documents"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/test/drawingCanvas.browser.mjs"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
