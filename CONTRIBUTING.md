@@ -36,6 +36,11 @@ MonkeyHub 的第一方代码以 **AGPL-3.0-only** 发布，同时保留未来提
 6. **共享接口先落主线。** 已有契约足够时各任务独立实现；不足时由现有 owner 的小型上游 PR 补齐，合入 `main` 后相关分支更新基线，不在后端分支复制接口。软件归口、公开契约或列出的测试改变时同步 module registry；内部修复不用改表。DTO 改动后运行 `api:generate` 和 `api:check`，实际对外协议变化同步 [`docs/protocols/project-runtime-api.md`](docs/protocols/project-runtime-api.md)。前端文案沿用中英文同键表。
 7. **按影响验证。** 选择受影响的行为测试、类型检查或构建；纯文档检查命令、链接、生成地图和 scoped diff。`archcheck` 检查当前静态边界，`--changed` 检查已提交范围；重复能力检查只覆盖相同声明和部分代码复制，行为正确性与语义重复仍需测试和 review。
 8. **一个 reviewable slice 一个 PR。** 一般一个 Issue 对应一个 PR；只有 Issue 明确拆成多个独立切片时才开多个 PR。只 `git add -- <明确文件>`，核对 staged diff，通过相关 CI 并交独立 reviewer 后集成。PR 写清 Issue、行为、base、交接、重叠、实际检查和剩余验收。不直接 push `main`，不重写已推送历史；只在已落地的相关依赖或集成需要时同步，不做每日机械 rebase。
+9. **合并后当场收尾。** PR 合并后，在同一会话里退役它的 worktree 和本地分支：在主检出先运行 `python tools/dev/workspace.py retire` 预览，再加 `--apply`。它只把已并入 `origin/main` 且没有本地改动的任务 worktree 移入开发根的 `_TRASH_<日期>`（只改名，不删除文件），再删除已合并的本地分支。
+   - 任务 worktree 只用 `workspace.py create` 创建；Codex 或 Claude 桌面应用建的 worktree 由各自应用清理（Claude：Settings › Storage）。
+   - 工作不放在 stash 里：提交到分支并推送。
+   - lane 分支只在有自己的 PR 时推送；集成 PR 合并后，删除它带入的 lane 分支。
+   - 未合并就关闭的 PR 删除其分支；PR 合并时 GitHub 已自动删除它的 head 分支。
 
 ## 登记与查看并行任务
 

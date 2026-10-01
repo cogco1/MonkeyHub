@@ -1,4 +1,4 @@
-import type { RenderView } from "../workspaces/monkeyarch/viewer/renderView";
+import { savedViewCamera, type RenderView } from "../workspaces/monkeyarch/viewer/renderView";
 /**
  * The studio shell: one conversation beside one model, and everything the
  * server said one click behind.
@@ -51,6 +51,7 @@ import type {
   PendingIntentDto,
   ProjectArtifactDto,
   ProposalDto,
+  RenderCameraDto,
   StateProjectionDto,
   FrameLevelDto,
   DocumentTracingSourceDto,
@@ -131,6 +132,7 @@ import {
   LOCAL_SOURCE_LABEL,
   type GhostSpec,
   type GhostTarget,
+  type Vec3,
   type ViewportController,
   type ViewportPick,
   type ViewportStatus,
@@ -253,8 +255,14 @@ export type WorkspaceDesignContext = {
 /** Where the Working Head is read from in the project index: the working position, the branches, HEAD (#366). */
 const headShows = (id: string) => id === "working" || id === "tree" || id === "area:head";
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, onView, onRecorder, onOpenTree }: {
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, initialRunAsset = null, initialRunRequest = 0, initialRunFollowsHead = false, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onRenderReader, cameraRequest = null, onView, onRecorder, onOpenTree }: {
   onRenderReader?: (reader: (() => RenderView | null) | null) => void;
+  /**
+   * A saved Render view for this viewport's camera to stand in (#218), once per request id, when
+   * Modeling is on screen with its model shown. It moves the view only: the model, its edits and
+   * the project stay as they are.
+   */
+  cameraRequest?: { camera: RenderCameraDto; requestId: number } | null;
   /**
    * Open one retained run read-only through the project's View path, the one
    * the Design Tree uses. Viewing never moves the editing base (#302).
@@ -797,6 +805,18 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     });
     return () => onRenderReader?.(null);
   }, [onRenderReader, loadedModelSource, modelLoading, localModel, localRevision, blendState, sourceLabel, designHistory, loadedArtifact]);
+  // A capture retained without its orbit target turns about the point of its view line nearest the model shown.
+  const appliedCameraRequest = useRef<number | null>(null);
+  useEffect(() => {
+    if (!cameraRequest || appliedCameraRequest.current === cameraRequest.requestId || !active || viewerStatus !== "ready" || modelLoading) return;
+    const viewport = viewportRef.current, current = viewport?.camera();
+    if (!viewport || !current) return;
+    appliedCameraRequest.current = cameraRequest.requestId;
+    const bounds = viewport.bounds();
+    const focus: Vec3 = bounds ? [(bounds.min[0] + bounds.max[0]) / 2, (bounds.min[1] + bounds.max[1]) / 2, (bounds.min[2] + bounds.max[2]) / 2]
+      : current.target;
+    viewport.applyCamera(savedViewCamera(cameraRequest.camera, focus, current.fov));
+  }, [cameraRequest, active, viewerStatus, modelLoading]);
   // Record edits and continue, callable from here on; its body is defined with Sync below.
   const recordEditsRef = useRef<() => Promise<void>>(async () => undefined);
   const recordStable = useCallback(() => recordEditsRef.current(), []);

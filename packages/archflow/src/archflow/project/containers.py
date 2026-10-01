@@ -42,7 +42,6 @@ from urllib.parse import quote
 from archflow.project.layout import (
     AUTHORED_RECORD_PATH,
     SEAT_PACK_PATH,
-    ProjectLayout,
 )
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, STAGE_CLOSURE
@@ -191,16 +190,15 @@ def shared(
     honest and empty rather than wrong: a run that cannot say which branch it
     ran on is not evidence that it ran on this one.
 
-    Records are read through the repository, which verifies every digest. The
-    only thing read by path is the list of run directories, which is the
-    layout's own name for them.
+    Records are read through the repository, which verifies every digest, and
+    so is the list of run directories: a run still being published is not
+    one yet.
     """
 
-    layout = repository.layout
     if branch_id is not None:
         require_identifier(branch_id, "branch_id")
     containers: list[Container] = []
-    for run_id in _run_ids(layout):
+    for run_id in _run_ids(repository):
         containers.extend(_shared_run(repository, run_id, branch_id))
     return tuple(containers)
 
@@ -396,18 +394,14 @@ def _record_kind(ref: ProjectRecordRef) -> str | None:
         return None
 
 
-def _run_ids(layout: ProjectLayout) -> tuple[str, ...]:
-    """The run directories the layout owns, in run-id order."""
+def _run_ids(repository: FilesystemProjectRepository) -> tuple[str, ...]:
+    """The run directories the repository lists, in run-id order."""
 
     try:
-        if not layout.runs.is_dir():
-            return ()
-        return tuple(
-            sorted(item.name for item in layout.runs.iterdir() if item.is_dir())
-        )
+        return repository.run_ids()
     except OSError as exc:
         raise ContainerError(
-            f"{layout.project_id}: cannot list runs: {exc}"
+            f"{repository.layout.project_id}: cannot list runs: {exc}"
         ) from exc
 
 

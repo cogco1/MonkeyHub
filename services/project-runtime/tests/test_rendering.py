@@ -1,7 +1,10 @@
 """Real P036 and HTTP control flow with injected image transport, not a live call."""
 import base64
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from io import BytesIO
+import json
+from pathlib import Path
 import threading
 import time
 from uuid import uuid4
@@ -10,16 +13,19 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
+from project_runtime.api.dto.rendering import RenderCameraDto
 from project_runtime.binding import bound_project
 from project_runtime.application.render_contract import RenderCapability, RenderOutput, RenderProviderError
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings, SettingsError
-from project_runtime.application.artifacts import ModelSource, save_document
+from project_runtime.application.artifacts import ModelSource, list_documents, save_document
+from archflow.contracts.canonical import canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_RENDER_JOB
 
-from .support import make_project, PROJECT_ID
+from .support import make_project, PROJECT_ID, REFERENCE_RUN_ID
 from .test_design_history import DesignHistoryFixture
+from .test_working_copies import register_model
 from .test_working_source import adopt
 
 
@@ -84,12 +90,70 @@ class RenderViewTests(DesignHistoryFixture):
             self.assertEqual(job["document"]["modelSource"], self.model)
         self.assertEqual(self.repository.read_head(), self.initial_head)
 
+    def test_saved_camera_keeps_its_orbit_and_is_captured_again_on_another_model(self):
+        stage = self.initialize()
+        payload = self.view_request(sourceStageRef=stage["stageRef"])
+        payload["camera"] |= {"target": [5, 6, 2], "up": [0, 1, 0]}
+        saved = self.client.post("/api/render/views", json=payload)
+        self.assertEqual(saved.status_code, 201, saved.text)
+        saved = saved.json()
+        self.assertEqual(saved["viewRecipe"]["camera"], payload["camera"])
+        turned = deepcopy(payload)
+        turned["camera"]["target"] = [5, 6, 0]
+        self.assertNotEqual(self.client.post("/api/render/views", json=turned).json()["assetSha256"], saved["assetSha256"],
+                            "the orbit is part of the captured view")
+        # The same camera and size on another model is a new source; the first one stays as it was.
+        other_model = register_model(self.client, REFERENCE_RUN_ID, self.state_digest,
+                                     (Path(__file__).parent / "fixtures/model-source-b.3dm").read_bytes())["modelSource"]
+        again = self.client.post("/api/render/views", json={**payload, "modelSource": other_model, "sourceStageRef": None})
+        self.assertEqual(again.status_code, 201, again.text)
+        again = again.json()
+        self.assertNotEqual(again["assetSha256"], saved["assetSha256"])
+        self.assertEqual(again["modelSource"], other_model)
+        self.assertEqual(again["viewRecipe"], saved["viewRecipe"])
+        documents = self.client.get("/api/documents").json()["documents"]
+        self.assertIn(saved, documents)
+        self.assertIn(again, documents)
+        self.assertEqual(self.repository.read_head(), self.initial_head)
+
+    def test_older_capture_without_target_or_up_still_reads(self):
+        stage = self.initialize()
+        older = self.view_request(sourceStageRef=stage["stageRef"])
+        # What a runtime before target and up retained for this capture.
+        camera = {"projection": "orthographic", "exposure": 1.0, "worldMatrix": [float(v) for v in older["camera"]["worldMatrix"]],
+                  "projectionMatrix": [float(v) for v in older["camera"]["projectionMatrix"]]}
+        recipe = {"kind": "model-view", "camera": camera, "screenSize": [24, 16]}
+        identity = canonical_digest({"modelSource": self.model, "sourceStageRef": stage["stageRef"], "viewRecipe": recipe})
+        retained = save_document(bound_project(self.app.state), self.model["runId"], f"Model view - {identity[:8]}.png", "image/png",
+                                 older["pngBase64"], ModelSource.from_dict(self.model), source_stage_ref=stage["stageRef"],
+                                 view_recipe=recipe, generated_at="2026-09-30T00:00:00+00:00", content_identity=identity)
+        before = self.client.get("/api/documents").json()["documents"]
+        listed = next(row for row in before if row["assetSha256"] == retained.asset_sha256)
+        self.assertEqual(listed["viewRecipe"], recipe)
+        read = RenderCameraDto.model_validate(listed["viewRecipe"]["camera"])
+        self.assertEqual((read.target, read.up), (None, None))
+        # An older client sending that capture again finds the same source; nothing gains a target or up.
+        response = self.client.post("/api/render/views", json=older)
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["assetSha256"], retained.asset_sha256)
+        self.assertEqual(response.json()["viewRecipe"], recipe)
+        self.assertEqual(self.client.get("/api/documents").json()["documents"], before)
+        page = {"runId": retained.run_id, "assetSha256": retained.asset_sha256, "revisionRef": None, "pageIndex": 0}
+        with TestClient(create_app(self.settings, render_adapter=Adapter())) as client:
+            job = finished(client, submit(client, request(page)))
+        self.assertEqual(job["status"], "succeeded")
+        self.assertEqual(job["document"]["modelSource"], self.model)
+
     def test_invalid_view_never_registers_a_source(self):
         before = self.client.get("/api/documents").json()
         cases = [(self.view_request(projectId="another-project"), 403),
                  (self.view_request(screenSize=[25, 16]), 422),
                  (self.view_request(pngBase64="not png"), 422),
                  (self.view_request(modelSource={**self.model, "assetSha256": "f" * 64}), 409)]
+        for camera in ({"target": [5, 6, 2]}, {"target": [5, 6, 2], "up": [0, 0, 0]}, {"up": [0, 1, 0]}):
+            payload = self.view_request()
+            payload["camera"] |= camera
+            cases.append((payload, 422))
         for payload, status in cases:
             with self.subTest(status=status, payload=payload.keys()):
                 response = self.client.post("/api/render/views", json=payload)
@@ -174,8 +238,8 @@ def test_history_read_waits_for_a_concurrent_attempt_registration(setup, monkeyp
     write_immutable = project_repository._write_immutable
 
     def pause_manifest(path, data):
-        if path.name == "run.json" and path.parent.name == job_id:
-            path.parent.mkdir(parents=True, exist_ok=True)
+        # The job's run manifest, while its run is staged and not yet visible.
+        if path.name == "run.json" and json.loads(data)["run_id"] == job_id:
             entered.set()
             assert release.wait(5), "test did not release run registration"
         return write_immutable(path, data)
@@ -373,6 +437,37 @@ def test_result_survives_a_lost_completion_transition(setup, monkeypatch):
     monkeypatch.setattr(app.state.render_jobs, "_transition", interrupted)
     result = finished(client, submit(client, request(upload(client))))
     assert result["status"] == "succeeded" and result["resultAvailable"]
+
+
+def test_a_live_attempt_reads_as_running_until_its_outcome_is_retained(setup, monkeypatch):
+    # The executor registers the image, then retains the outcome with its usage.
+    # A read in between reported succeeded without finishedAt or usage, and a
+    # client that stops at succeeded never saw them (#540).
+    client, app, _, adapter = setup
+    records = app.state.render_jobs
+    transition = records._transition
+    registered, release = threading.Event(), threading.Event()
+
+    def held(binding, row, **values):
+        if values.get("status") == "succeeded":
+            registered.set()
+            assert release.wait(5), "test did not release the completion"
+        return transition(binding, row, **values)
+
+    monkeypatch.setattr(records, "_transition", held)
+    job = submit(client, request(upload(client)))
+    try:
+        assert registered.wait(5)
+        assert [doc.view_recipe["jobId"] for doc in list_documents(bound_project(app.state), job["jobId"])] == [job["jobId"]]
+        early = client.get("/api/render/jobs/" + job["jobId"]).json()
+        assert (early["status"], early["document"], early["finishedAt"], early["inputTokens"]) == ("running", None, None, None)
+        assert [row["status"] for row in client.get("/api/render/jobs").json()["jobs"]] == ["running"]
+    finally:
+        release.set()
+    result = finished(client, job)
+    assert result["status"] == "succeeded" and result["resultAvailable"] and result["document"]
+    assert result["finishedAt"] and result["inputTokens"] == 17
+    assert len(adapter.calls) == 1
 
 
 def test_provider_preflight_rejection_does_not_count_as_a_model_call(setup):

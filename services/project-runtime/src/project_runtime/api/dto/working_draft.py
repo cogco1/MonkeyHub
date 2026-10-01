@@ -90,6 +90,21 @@ class WorkingSourceDto(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class RepresentationStatusDto(BaseModel):
+    """One exact registered page's representation status (#223), in the projection's own words.
+
+    Derived on every read by asking the page's owner, as the Worktree Graph and
+    Publish read it; nothing is stored.
+    """
+
+    projectId: str
+    state: Literal["current", "outdated", "frozen", "unavailable"] = Field(
+        description="current: the page shows what its inputs say now; outdated: a newer registered page "
+        "replaces it, or an input it read changed; frozen: a person keeps it on a chosen version; "
+        "unavailable: the page, or an exact input it was made from, can no longer be read or verified.")
+    reason: str | None = Field(default=None, description="The answering owner's own detail, for display on request.")
+
+
 def working_head_dto(head) -> WorkingHeadDto | None:
     return None if head is None else WorkingHeadDto(
         runId=head.run_id, stateDigest=head.state_digest, recordDigest=head.record_digest,

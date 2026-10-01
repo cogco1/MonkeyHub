@@ -9735,6 +9735,14 @@ export type RelationChecksDto = {
 
 /**
  * RenderCameraDto
+ *
+ * The camera one Modeling view was drawn through.
+ *
+ * ``worldMatrix`` and ``projectionMatrix`` (column-major, as Three.js keeps
+ * them) fix the picture. ``target`` and ``up`` say how the view was orbited,
+ * so a saved view can be stood in again: they come together or not at all.
+ * A capture retained before them has neither and still reads; a client
+ * restoring it infers a target on its view line.
  */
 export type RenderCameraDto = {
     /**
@@ -9787,6 +9795,26 @@ export type RenderCameraDto = {
      * Exposure
      */
     exposure: number;
+    /**
+     * Target
+     *
+     * The world point the view orbits about, on its view line.
+     */
+    target?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Up
+     *
+     * The world direction the view keeps upright while it orbits; not the zero vector.
+     */
+    up?: [
+        number,
+        number,
+        number
+    ] | null;
 };
 
 /**
@@ -10056,6 +10084,33 @@ export type RepresentationStateDto = {
      * Detail
      */
     detail: string | null;
+};
+
+/**
+ * RepresentationStatusDto
+ *
+ * One exact registered page's representation status (#223), in the projection's own words.
+ *
+ * Derived on every read by asking the page's owner, as the Worktree Graph and
+ * Publish read it; nothing is stored.
+ */
+export type RepresentationStatusDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * State
+     *
+     * current: the page shows what its inputs say now; outdated: a newer registered page replaces it, or an input it read changed; frozen: a person keeps it on a chosen version; unavailable: the page, or an exact input it was made from, can no longer be read or verified.
+     */
+    state: 'current' | 'outdated' | 'frozen' | 'unavailable';
+    /**
+     * Reason
+     *
+     * The answering owner's own detail, for display on request.
+     */
+    reason?: string | null;
 };
 
 /**
@@ -18664,6 +18719,66 @@ export type ReadWorkingSourceApiWorkingSourceGetResponses = {
 };
 
 export type ReadWorkingSourceApiWorkingSourceGetResponse = ReadWorkingSourceApiWorkingSourceGetResponses[keyof ReadWorkingSourceApiWorkingSourceGetResponses];
+
+export type ReadRepresentationStatusApiRepresentationStatusGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Runid
+         *
+         * The page's storage run.
+         */
+        runId: string;
+        /**
+         * Assetsha256
+         *
+         * The registered document's digest.
+         */
+        assetSha256: string;
+        /**
+         * Revisionref
+         *
+         * The drawing revision; omit for a page without one.
+         */
+        revisionRef?: string | null;
+        /**
+         * Pageindex
+         *
+         * Zero-based page index.
+         */
+        pageIndex?: number;
+    };
+    url: '/api/representation-status';
+};
+
+export type ReadRepresentationStatusApiRepresentationStatusGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadRepresentationStatusApiRepresentationStatusGetError = ReadRepresentationStatusApiRepresentationStatusGetErrors[keyof ReadRepresentationStatusApiRepresentationStatusGetErrors];
+
+export type ReadRepresentationStatusApiRepresentationStatusGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RepresentationStatusDto;
+};
+
+export type ReadRepresentationStatusApiRepresentationStatusGetResponse = ReadRepresentationStatusApiRepresentationStatusGetResponses[keyof ReadRepresentationStatusApiRepresentationStatusGetResponses];
 
 export type ReadMemoryApiMemoryGetData = {
     body?: never;

@@ -122,6 +122,7 @@ tolerate it.
 | GET | `/api/working-source?workspace=` | the Working Head (§4.1) and the exact source one workspace (`modeling`, `drawing`, `render`, `board`) follows: `head{runId, stateDigest, sourceStageRef, branchId, accepted, origin, lineage}`, `compatible`, `source`, `stageRef` (only for an exact accepted Stage model), `reason`, `warnings`. `policy=frozen` with `runId`/`stateDigest`/`assetSha256` keeps that pin and says whether the head moved past it | reads the working position + shared + design refs | provisional |
 | GET | `/api/working-draft/revision` | `{projectId, revisionSha256}` of the working position alone, for polling whether the head may have moved; no local draft and no project guard | reads the working position | provisional |
 | PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words | **writes the working position + that run's review** | provisional |
+| GET | `/api/representation-status?runId=&assetSha256=&revisionRef=&pageIndex=` | one exact registered page's representation status (§4.1) in the projection's own words: `{projectId, state, reason}`, `state` one of `current`, `outdated`, `frozen`, `unavailable`. A page that cannot be read, or whose replacements loop, is `unavailable`; nothing is stored | reads the working position + shared + design refs | provisional |
 | GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged or started | reads the working position + shared + design refs + the admissions review + server memory | provisional |
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
 | POST | `/api/drawings/section-perspectives` → 201 | exact-model section perspective document: `section` (`{line, keep}` or `{origin, normal}`) cuts the retained STEP, the kept side is drawn in perspective with the section plane as picture plane (true to scale at `scaleDenominator`), the cut in poché; optional `camera` (`{eye, target, up?, fovDeg?}` or the default one-point `{eyeHeight?, fovDeg?}`), `depth`, `hiddenObjectIds`; `cutLineMm`, `visibleLineMm`, `hatchSpacingMm` and, validated and stored as a cut plan's, `hatch.byMaterial.<material>` (`{spacingMm 0.5–20, angleDeg 0–<180, poche}`, stored complete: spacing defaults to this request's `hatchSpacingMm`, angle 45, poché false) and `beyond.fade` (0–1), so the cut takes the material hatch/poché and the fade greys what lies beyond it; an empty `byMaterial` or a zero fade is the request without them; the view recipe records the request, plane and resolved camera; refusals are named (`SECTION_PLANE_MISSES_MODEL`, `SECTION_EYE_ON_KEPT_SIDE`, …) | writes shared drawing artifacts and document registration | provisional |
@@ -1426,6 +1427,8 @@ page bound to nothing by its replacements alone. Its words are `current`, `outda
 and Publish keeps its own words (Publication pages). A Worktree Graph drawing row is this
 projection of the drawing's latest page, so it agrees with the Drawing tool: a change outside
 the plan's read set leaves it current. A render row is the render owner's `sourceState`.
+`GET /api/representation-status` answers the projection for any one exact page in its own words;
+MonkeyBoard shows it for the selected page (#288), with that page's Stage and generation time.
 
 Continue is an attributed act, whoever makes it (#294 S4). Each move onto a run retains one
 `AuditEvent@1` with `action: design.continued` in that run's review area. It names ids only:
@@ -1784,6 +1787,17 @@ ref is the exact existing `runId`, `assetSha256`, nullable `revisionRef` and zer
 adapter input accepts PNG/JPEG pages; unsupported or unresolved pages are refused.
 Model correspondence and camera/view data are retained only from the registered
 source document when present. A standalone upload is a valid source.
+
+`POST /api/render/views` makes a Modeling view such a source: `projectId`, the exact
+`modelSource` shown, optional `sourceStageRef`, `screenSize`, a PNG of exactly that
+size, and `camera`: `projection`, column-major `worldMatrix` and `projectionMatrix`,
+`exposure`, and the orbit the view was turned with, `target` (a point on its view
+line) and a non-zero `up`, given together or not at all. Camera and size are retained
+as the document's `viewRecipe` (`kind: model-view`) and are part of its identity; no
+provider is called and no design changes. A capture retained before `target` and `up`
+keeps its recipe and identity; a client standing in it infers a target on its view
+line. Sending a retained camera again with the current `modelSource` captures the same
+view on the current model as a new source; the earlier source and its results stay.
 
 Each request creates its own `render-<UUID hex>` P036 run. Repeating identical
 parameters with that UUID returns the same job; different parameters return 409.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -10,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from archflow.project.repository import FilesystemProjectRepository, ProjectAlreadyExists, ProjectHeadLocked, ProjectIntegrityError, PromotionAuthorityError, StaleDesignBranch, StaleProjectHead
+from archflow.project.repository import FilesystemProjectRepository, ProjectAlreadyExists, ProjectHeadLocked, ProjectIntegrityError, PromotionAuthorityError, StaleDesignBranch, StaleProjectHead, add_write_observer
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, PROMOTION_DECISION, STATE_RECORD
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, ProjectVersionRef, RunRef
@@ -506,7 +507,8 @@ class ProjectRepositoryTests(unittest.TestCase):
         original = repository_module._write_immutable
 
         def fail_second_manifest(path: Path, data: bytes) -> None:
-            if path == self.repository.layout.run("run-b").manifest:
+            # The second sibling's manifest, wherever it is staged.
+            if path.name == "run.json" and json.loads(data)["run_id"] == "run-b":
                 raise OSError("second manifest probe")
             original(path, data)
 
@@ -523,6 +525,27 @@ class ProjectRepositoryTests(unittest.TestCase):
 
         self.assertFalse(self.repository.layout.run("run-a").root.exists())
         self.assertFalse(self.repository.layout.run("run-b").root.exists())
+        self.assertEqual(list(self.repository.layout.runs.iterdir()), [], "nothing staged is left behind")
+
+    def test_fixed_run_batch_takes_back_a_published_sibling_when_the_next_cannot_be_published(self) -> None:
+        rename = os.rename
+        second = self.repository.layout.run("run-b").root.resolve()
+
+        def refuse_second(source, target, *args, **kwargs):
+            if Path(target) == second:
+                raise OSError(5, "second publication probe")
+            return rename(source, target, *args, **kwargs)
+
+        with patch("archflow.project.repository.os.rename", side_effect=refuse_second):
+            with self.assertRaisesRegex(OSError, "second publication probe"):
+                self.repository.create_run_batch(
+                    ("run-a", "run-b"),
+                    base=self.repository.read_head(),
+                    require_current_base=True,
+                )
+
+        self.assertEqual(self.repository.run_ids(), ())
+        self.assertEqual(list(self.repository.layout.runs.iterdir()), [], "nothing staged is left behind")
 
     def test_cross_project_absolute_and_escape_references_fail(self) -> None:
         run = self.repository.create_run("run-001")
@@ -741,6 +764,141 @@ class ProjectRepositoryTests(unittest.TestCase):
             reopened.load_current_state(),
             {"phase": "request", "commitments": []},
         )
+
+
+class RunPublicationTests(unittest.TestCase):
+    """A reader sees a new run whole or not at all (#327; Panny found the race in #483)."""
+
+    PARTS = ("run.json", "records", "branches", "candidates", "reviews", "workspaces", "recovery")
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name) / "project-a"
+        self.repository = FilesystemProjectRepository.initialize(
+            self.root,
+            project_id="project-a",
+            initial_state={"phase": "request", "commitments": []},
+        )
+        # Another repository on the same root, as a second binding holds one.
+        self.reader = FilesystemProjectRepository.open(self.root)
+
+    def partial_runs(self, seen: set[str] | None = None) -> list[str]:
+        """Each run the reader lists now that lacks a part or does not load."""
+
+        problems = []
+        for run_id in self.reader.run_ids():
+            root = self.reader.layout.run(run_id).root
+            missing = [part for part in self.PARTS if not (root / part).exists()]
+            if missing:
+                problems.append(f"{run_id} listed without {', '.join(missing)}")
+            try:
+                self.assertEqual(self.reader.load_run(run_id).run_id, run_id)
+            except Exception as exc:  # noqa: BLE001 - every refusal is the finding
+                problems.append(f"{run_id} listed but not loadable: {exc!r}")
+            if seen is not None:
+                seen.add(run_id)
+        return problems
+
+    def test_a_reader_racing_the_writer_lists_and_loads_only_whole_runs(self) -> None:
+        problems: list[str] = []
+        errors: list[BaseException] = []
+        seen: set[str] = set()
+        passes = 0
+        writing = threading.Event()
+        writing.set()
+
+        def read() -> None:
+            nonlocal passes
+            try:
+                while True:
+                    # The pass that starts after the writer finished is the last.
+                    last = not writing.is_set()
+                    problems.extend(self.partial_runs(seen))
+                    passes += 1
+                    if last:
+                        return
+            except BaseException as exc:  # noqa: BLE001 - asserted below
+                errors.append(exc)
+
+        reader = threading.Thread(target=read, name="run-reader")
+        reader.start()
+        created: list[str] = []
+        try:
+            for index in range(48):
+                created.append(self.repository.create_run(f"race-{index:03d}").run_id)
+            created.extend(run.run_id for run in self.repository.create_run_batch(
+                tuple(f"batch-{index}" for index in range(4)), base=self.repository.read_head(),
+            ))
+        finally:
+            writing.clear()
+            reader.join(timeout=60)
+
+        self.assertFalse(reader.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(problems, [])
+        self.assertEqual(seen, set(created))
+        self.assertGreater(passes, 1)
+        self.assertEqual(self.reader.run_ids(), tuple(sorted(created)))
+
+    def test_no_step_of_creating_runs_shows_a_reader_a_partial_run(self) -> None:
+        problems: list[str] = []
+        steps: list[Path] = []
+
+        def look(path: Path) -> None:
+            # Called after every write lands, while the writer holds its locks.
+            steps.append(path)
+            problems.extend(self.partial_runs())
+
+        remove = add_write_observer(self.root, look)
+        self.addCleanup(remove)
+        self.repository.create_run("single")
+        self.repository.create_run_batch(("pair-a", "pair-b"), base=self.repository.read_head())
+        # Asking again for a run that exists completes it in place, as before.
+        self.repository.create_run("single")
+        remove()
+
+        self.assertEqual(problems, [])
+        self.assertGreaterEqual(len(steps), 3)
+        self.assertEqual(self.reader.run_ids(), ("pair-a", "pair-b", "single"))
+
+    def test_a_staging_directory_is_never_listed_loaded_or_carried(self) -> None:
+        self.repository.create_run("kept")
+        # What an interrupted publication leaves: a dot-named, staged copy.
+        leftover = self.repository.layout.runs / f".{'0' * 32}.tmp"
+        (leftover / "records").mkdir(parents=True)
+        (leftover / "run.json").write_bytes(self.repository.layout.run("kept").manifest.read_bytes())
+
+        self.assertEqual(self.reader.run_ids(), ("kept",))
+        archive = self.repository.export_transfer(include_all_runs=True, include_contents=False)
+        self.assertEqual(archive["run_ids"], ["kept"])
+        self.assertFalse([row["path"] for row in archive["files"] if "/." in row["path"]])
+        self.assertEqual(self.repository.create_run("next").run_id, "next")
+        self.assertEqual(self.reader.run_ids(), ("kept", "next"))
+        self.assertTrue(leftover.is_dir(), "a staging directory is never taken for a run, nor removed as one")
+
+    @unittest.skipUnless(os.name == "nt", "only a Windows sharing refusal is retried")
+    def test_a_staging_directory_held_busy_is_completed_in_place_instead_of_refused(self) -> None:
+        rename = os.rename
+
+        def held_open(source, target, *args, **kwargs):
+            # A scanner that never lets go of what was staged for these two.
+            if Path(source).name.startswith(".") and Path(target).name in {"busy-run", "busy-b"}:
+                raise PermissionError(13, "held open by a scanner")
+            return rename(source, target, *args, **kwargs)
+
+        with patch("archflow.project.repository._PUBLISH_RETRY_ATTEMPTS", 3), \
+                patch("archflow.project.repository.os.rename", side_effect=held_open), \
+                self.assertLogs("archflow.project.repository", level="WARNING") as logged:
+            run = self.repository.create_run("busy-run")
+            batch = self.repository.create_run_batch(("busy-a", "busy-b"), base=self.repository.read_head())
+
+        self.assertEqual(self.reader.load_run("busy-run"), run)
+        self.assertEqual(tuple(self.reader.load_run(item.run_id) for item in batch), batch)
+        self.assertEqual(self.reader.run_ids(), ("busy-a", "busy-b", "busy-run"))
+        self.assertEqual(self.partial_runs(), [])
+        self.assertEqual(len([line for line in logged.output if "completed in place" in line]), 2)
+        self.assertEqual([item.name for item in self.repository.layout.runs.iterdir() if item.name.startswith(".")], [])
 
 
 if __name__ == "__main__":

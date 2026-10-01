@@ -71,7 +71,7 @@ def inspect_runtime(
 
     Recent runs use the binding's stable name ordering, newest names first.
     Offset pages that window without changing candidate classification. Explicit candidate ids
-    and active jobs remain visible even when they precede that window. Jobs
+    and active candidate jobs remain visible even when they precede that window. Jobs
     describe process execution; only retained candidate and committed branch
     readers establish the durable result.
     """
@@ -81,7 +81,12 @@ def inspect_runtime(
     for candidate_id in candidate_ids:
         require_identifier(candidate_id, "candidate_id")
     live = () if jobs is None else jobs.list()
-    by_candidate = {job.candidate_id: job for job in live}
+    # A model export runs on this queue under its export id but is not a
+    # candidate: its own retained report says how it ended, and it never has a
+    # candidate delta or runner receipt. It is listed among the jobs only; read
+    # as a candidate, a finished export would look like a run needing recovery.
+    candidate_jobs = tuple(job for job in live if job.kind == "candidate")
+    by_candidate = {job.candidate_id: job for job in candidate_jobs}
     # Only this snapshot shares artifact reads. Byte availability still uses
     # the artifact owner's file-identity checks on every later snapshot.
     artifacts = {}
@@ -128,7 +133,7 @@ def inspect_runtime(
         except (StudioError, ProjectRepositoryError, OSError, ValueError) as exc:
             errors.append(f"Branch {branch_id}: {exc}")
     run_ids = binding.run_ids()
-    active_ids = tuple(job.candidate_id for job in live if job.status in (QUEUED, RUNNING))
+    active_ids = tuple(job.candidate_id for job in candidate_jobs if job.status in (QUEUED, RUNNING))
     recent = tuple(reversed(run_ids))[offset:offset + limit]
     selected = tuple(dict.fromkeys((*candidate_ids, *active_ids, *recent)))
     tracked = set(candidate_ids) | set(by_candidate)

@@ -1064,6 +1064,11 @@ export const messagesZhCN = {
   "designTree.list.trunk": "当前线",
   "designTree.list.earlier": "旧线",
   "designTree.list.twig": "未选",
+  "render.savedView.show": "在建模中查看此视角",
+  "render.savedView.recapture": "在当前模型上重新截取",
+  "render.savedView.recaptured": "已按此视角在当前模型上重新截取，并设为底图。点击“生成”即可渲染；原有结果保留。",
+  "render.savedView.noModel": "请先在建模中打开一个已保留的模型版本，再按此视角截取。",
+  "render.savedView.outdated": "项目模型已更新。请按原视角在当前模型上重新截取，或选择更新的图片后再渲染。",
 } satisfies MessageCatalog;
 
 export const hubCopy = {

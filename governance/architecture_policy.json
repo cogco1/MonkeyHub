@@ -154,12 +154,13 @@
       "operations": [
         "mkdir",
         "open_write",
+        "rename",
         "replace",
         "unlink"
       ],
       "kind": "project_repository",
       "owner": "P036",
-      "reason": "The durable project repository is the sole project-document filesystem writer."
+      "reason": "The durable project repository is the sole project-document filesystem writer. It renames a directory only to publish a run it staged beside the runs whole, or to take back a run its failed batch had just published (#327)."
     },
     {
       "path": "packages/monkeycad/src/monkeycad/backends/rhino/export.py",
@@ -562,6 +563,17 @@
       "kind": "development_worktree",
       "owner": "tools.dev.workspace",
       "reason": "Prepares the configured task worktree parent after checking Git branch registration and destination conflicts; Git creates the checkout. No project data or existing worktree is moved, reset or deleted."
+    },
+    {
+      "path": "tools/dev/workspace.py",
+      "function": "_move_into_trash",
+      "operations": [
+        "mkdir",
+        "rename"
+      ],
+      "kind": "development_worktree",
+      "owner": "tools.dev.workspace",
+      "reason": "Retires a merged, clean task worktree (#538): creates the configured root's _TRASH_<YYYYMMDD> folder and renames the worktree into it on the root's volume; Git then prunes the registration. Nothing is copied or deleted, and no project data or unmerged, dirty, detached or outside worktree is moved."
     },
     {
       "path": "tools/release/package_monkeyapps.py",

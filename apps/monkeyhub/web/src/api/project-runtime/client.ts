@@ -41,6 +41,7 @@ import {
   readCurrentWorkingDraftApiWorkingDraftGet,
   readWorkingRevisionApiWorkingDraftRevisionGet,
   readWorkingSourceApiWorkingSourceGet,
+  readRepresentationStatusApiRepresentationStatusGet,
   readWorktreesApiWorktreesGet,
   selectCurrentWorkingDraftApiWorkingDraftPut,
   saveCurrentWorkingDraftApiWorkingDraftSavePost,
@@ -104,6 +105,7 @@ import {
 } from "./generated";
 import type {
   WorkingDraftDto, WorkingRevisionDto, WorkingSourceDto, WorktreeGraphDto, WorkingDraftSelectionDto, WorkingDraftSaveDto, LocalDraftRequestDto,
+  RepresentationStatusDto,
   BoardDto, BoardExportRequestDto, BoardRequestDto,
   DesignHistoryDto, DesignStageDto, DesignBranchDto,
   ElevationRequestDto, CombineCandidatesRequestDto,
@@ -294,6 +296,16 @@ export const createStudioClient = (connection: ServerConnection) => ({
   workingSource(workspace: WorkingSourceDto["workspace"] = "modeling", signal?: AbortSignal): Promise<WorkingSourceDto> {
     return conditional(connection)("GET /api/working-source", { workspace }, (headers) =>
       readWorkingSourceApiWorkingSourceGet({ client: connection.client, query: { workspace }, headers }), signal);
+  },
+  /**
+   * Whether one exact registered page still shows what its inputs say now, against the Working Head:
+   * the Runtime's one representation status (#223), derived on every read and never stored.
+   */
+  representationStatus(page: { runId: string; assetSha256: string; revisionRef?: string | null; pageIndex: number },
+    signal?: AbortSignal): Promise<RepresentationStatusDto> {
+    const { runId, assetSha256, revisionRef, pageIndex } = page;
+    return call("GET /api/representation-status", readRepresentationStatusApiRepresentationStatusGet({ client: connection.client,
+      query: { runId, assetSha256, pageIndex, ...(revisionRef ? { revisionRef } : {}) }, signal }));
   },
   /** Read-only: the Working Head, running work, other lines and whether they reconcile. */
   worktrees(signal?: AbortSignal): Promise<WorktreeGraphDto> {
