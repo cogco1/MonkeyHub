@@ -928,6 +928,12 @@ test("opened, the steps stand on the trunk oldest first, and the superseded draf
   // Opening the drafts alone leaves the steps folded: the drafts stay inside the fold that holds where they started.
   const draftsOnly = api.buildGrowthTree(sourceOf(fixture), false, { drafts: true });
   assert.deepEqual([draftsOnly.trunk, draftsOnly.nodes.get("fold")!.fold!.drafts], [["origin", "fold", "current"], 2]);
+  // Work still running from V2 waits at V2 while the steps are drawn, and beside Current while they are folded.
+  fixture.state.running.push({ lineId: "running:job-roof", base: "run-v2", label: "Roof study", status: "running", detail: null });
+  const working = api.buildGrowthTree(sourceOf(fixture), false, { steps: true, drafts: true });
+  assert.equal(working.nodes.get("pending:running:job-roof")!.parent, "step:run-v2");
+  assert.deepEqual(planarProblems(working, api.layoutGrowthTree(working)), []);
+  assert.equal(api.buildGrowthTree(sourceOf(fixture)).nodes.get("pending:running:job-roof")!.parent, "current");
 });
 
 test("returning to an earlier step is the existing Continue, and its Undo puts the line back", async (t) => {

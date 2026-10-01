@@ -361,7 +361,8 @@ export function buildGrowthTree(source: DesignTreeSource, includeProcessed = fal
   for (const [at, rows] of draftsAt) {
     if (at === FOLD) continue;
     if (!open.drafts) {
-      const id = draftsNodeId(at ?? ORIGIN);
+      // Drafts no node of the line stands for hang from the root.
+      const id = draftsNodeId(at ?? "root");
       nodes.set(id, { id, kind: "drafts", parent: null, runId: null, label: null, summary: null, letter: null, studyId: null,
         drafts: { runs: rows.map((row) => row.runId) } });
       parents.set(id, at);
@@ -385,16 +386,16 @@ export function buildGrowthTree(source: DesignTreeSource, includeProcessed = fal
     parents.set(CURRENT, last);
   }
 
-  // Running and queued work waits where it started.
-  const runningLines = (worktrees?.lines ?? []).filter((line): line is WorktreeLineDto & { status: PendingStatus } =>
-    line.kind === "running" && PENDING.has(line.status));
+  // Running and queued work waits where it started: at a step drawn on Current's line too, but never on its fold.
+  const runningLines = (worktrees?.lines ?? []).filter((row): row is WorktreeLineDto & { status: PendingStatus } =>
+    row.kind === "running" && PENDING.has(row.status));
   for (const line of runningLines) {
     const id = pendingNodeId(line.lineId);
     const base = line.baseRunId;
     let parent: string | null;
     if (head && base === head.runId) parent = anchor !== null && nodes.get(anchor)?.runId === head.runId ? anchor : CURRENT;
-    else parent = nodeOfRun(base) ?? (head && base && lineage.includes(base) ? CURRENT : null) ??
-      stageLabel(line.baseStageRef) ?? (head ? CURRENT : null);
+    else parent = nodeOfRun(base) ?? (base && !folded && stepRuns.includes(base) ? stepNodeId(base) : null) ??
+      (head && base && lineage.includes(base) ? CURRENT : null) ?? stageLabel(line.baseStageRef) ?? (head ? CURRENT : null);
     nodes.set(id, { id, kind: "pending", parent: null, runId: line.runId, label: line.label?.trim() || null, summary: line.detail?.trim() || null,
       letter: null, studyId: line.studyId ?? null,
       pending: { lineId: line.lineId, status: line.status, detail: line.detail ?? null, updatedAt: line.updatedAt ?? null } });
