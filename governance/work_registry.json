@@ -1,4 +1,26 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-577",
+      "status": "active",
+      "branch": "codex/577-clear-annotations",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-577-clear-annotations",
+      "base_ref": "64fff11bbeafbb90fa49489b2975ae8d4fbe29ec",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "hub.shell"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/web/src/features/stage/ModelToolButton.tsx",
+        "apps/monkeyhub/web/src/features/stage/Stage.tsx",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/test/intentViewSource.browser.mjs"
+      ],
+      "depends_on": []
+    }
+  ]
 }
