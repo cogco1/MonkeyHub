@@ -1,4 +1,33 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-535",
+      "lanes": [
+        {
+          "id": "public-helpers",
+          "status": "active",
+          "branch": "codex/535-public-helpers",
+          "worktree": "/workspace/shared/monkeyhub-dev/workspace/worktrees/codex-535-public-helpers",
+          "base_ref": "51d600cd4498b0ec173b3571c5cc58a62fe409ad",
+          "contributor": "Acacia (dot cloud workspace)",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "monkeydiagram.drawing_runs",
+            "monkeydiagram.projection.mesh_views",
+            "monkeycad.occt"
+          ],
+          "write_scope": [
+            "packages/monkeydiagram/src/monkeydiagram/sources.py",
+            "packages/monkeydiagram/src/monkeydiagram/projection/views.py",
+            "packages/monkeydiagram/src/monkeydiagram/drawing_runs.py",
+            "packages/monkeydiagram/src/monkeydiagram/projection/mesh_views.py",
+            "packages/monkeycad/src/monkeycad/backends/occt/preview.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
