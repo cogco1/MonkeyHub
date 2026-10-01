@@ -39,6 +39,7 @@
             "apps/monkeyhub/web/test/designTree.test.ts",
             "apps/monkeyhub/web/test/designTree.browser.mjs",
             "apps/monkeyhub/web/test/workingHead.test.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "docs/protocols/project-runtime-api.md",
             "governance/module_registry.json",
             "docs/architecture/system-map.md"
