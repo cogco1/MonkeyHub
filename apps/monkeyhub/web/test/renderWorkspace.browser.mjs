@@ -1,6 +1,7 @@
 /** Real project Runtime/P036/SDK/UI; the injected image adapter is offline.
- * Camera capture uses the registered 3DM fixture in a real WebGL scene with a
- * fixture-supplied view reader. It does not test App's dirty-state detection.
+ * Camera capture uses the registered 3DM fixtures in a real WebGL scene with a
+ * fixture-supplied view reader. It does not test App's dirty-state detection or
+ * its applyCamera: Show this view in Modeling is checked where Render hands it over.
  * Never a live provider or architectural-project acceptance test.
  */
 import assert from "node:assert/strict";
@@ -89,10 +90,14 @@ if capture_fixture:
     stage = client.post('/api/design-stages/initialize',json={'projectId':project_id,'modelSource':model['modelSource']})
     if stage.status_code != 201: raise RuntimeError(stage.text)
     model_fixture = {'projectId':project_id,'modelSource':model['modelSource'],'sourceStageRef':stage.json()['stageRef']}
+    # Another retained model, for the model Modeling shows after a change (#218).
+    other_bytes = (Path.cwd()/'tests/fixtures/model-source-b.3dm').read_bytes()
+    other = register_model(client, reference_run, runner_state_digest(repo, reference_run), other_bytes)
+    other_fixture = {'projectId':project_id,'modelSource':other['modelSource'],'sourceStageRef':None}
     @app.get('/fixture/model')
-    def source_model(): return model_fixture
+    def source_model(which: str='a'): return other_fixture if which == 'b' else model_fixture
     @app.get('/fixture/model-bytes')
-    def source_model_bytes(): return Response(model_bytes,media_type='application/octet-stream')
+    def source_model_bytes(which: str='a'): return Response(other_bytes if which == 'b' else model_bytes,media_type='application/octet-stream')
 @app.get('/fixture/image')
 def source_image(color: str='white'): return Response(image(color), media_type='image/png')
 @app.get('/fixture/plan-model')
@@ -197,9 +202,10 @@ import {captureRenderView} from '/src/workspaces/monkeyarch/viewer/renderView';
 import {UserPreferencesProvider} from '/test/TestProviders';
 import '/src/app/styles.css';
 import '/@fs/${path.resolve(repoRoot, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
-const source=await fetch('/capture/fixture/model').then(response=>response.json());
-const loader=new Rhino3dmLoader(); loader.setLibraryPath('/rhino3dm/');
-const object=await loader.loadAsync('/capture/fixture/model-bytes'); loader.dispose();
+let source=await fetch('/capture/fixture/model').then(response=>response.json());
+async function loadModel(which){const loader=new Rhino3dmLoader(); loader.setLibraryPath('/rhino3dm/');
+ try{return await loader.loadAsync('/capture/fixture/model-bytes?which='+which);}finally{loader.dispose();}}
+let object=await loadModel('a');
 const scene=new Scene(); scene.background=new Color('#d9e0e4'); scene.add(object,new AmbientLight(0xffffff,2));
 const light=new DirectionalLight(0xffffff,3); light.position.set(3,8,5); scene.add(light);
 const box=new Box3().setFromObject(object),center=box.getCenter(new Vector3()),size=box.getSize(new Vector3()).length();
@@ -211,10 +217,14 @@ function setProjection(kind){
  camera.position.copy(center).add(new Vector3(size*.8,size*.6,size)); camera.lookAt(center); camera.updateProjectionMatrix(); camera.updateMatrixWorld(true); visible=true;
 }
 function readView(){return visible?{...captureRenderView(scene,camera,center,43,1),modelSource:source.modelSource,sourceStageRef:source.sourceStageRef,sourceIssue}:null;}
-window.captureFixture={source,setProjection,setIssue:value=>{sourceIssue=value;},setVisible:value=>{visible=value;},
+window.captureFixture={source,shown:[],setProjection,setIssue:value=>{sourceIssue=value;},setVisible:value=>{visible=value;},
  moveCamera:()=>{camera.position.x+=size*.35;camera.lookAt(center);camera.updateMatrixWorld(true);},
- snapshot:()=>{const view=readView();return view?{modelSource:view.modelSource,sourceStageRef:view.sourceStageRef,aspect:view.aspect,worldMatrix:view.camera.matrixWorld.toArray(),projectionMatrix:view.camera.projectionMatrix.toArray()}:null;}};
-createRoot(document.getElementById('root')).render(<UserPreferencesProvider baseUrl={location.origin+'/capture'}><RenderWorkspace projectId={source.projectId} active={true} refreshKey={0} onBoard={()=>{}} readModelView={readView} onModeling={()=>{}}/></UserPreferencesProvider>);
+ useModel:async which=>{const next=await loadModel(which);scene.remove(object);object=next;scene.add(next);
+  source=await fetch('/capture/fixture/model?which='+which).then(response=>response.json());visible=true;return source;},
+ snapshot:()=>{const view=readView();return view?{modelSource:view.modelSource,sourceStageRef:view.sourceStageRef,aspect:view.aspect,worldMatrix:view.camera.matrixWorld.toArray(),
+  projectionMatrix:view.camera.projectionMatrix.toArray(),target:[...view.target],up:view.camera.up.toArray()}:null;}};
+createRoot(document.getElementById('root')).render(<UserPreferencesProvider baseUrl={location.origin+'/capture'}><RenderWorkspace projectId={source.projectId} active={true} refreshKey={0} onBoard={()=>{}} readModelView={readView} onModeling={()=>{}}
+ onShowInModeling={camera=>{window.captureFixture.shown.push(camera);}}/></UserPreferencesProvider>);
 `;
 try {
   for (const id of ["project-a", "project-b", "capture"]) {
@@ -286,6 +296,7 @@ try {
     await workspace().getByRole("button", { name: "Fit", exact: true }).click();
     assert.match(await workspace().locator('.render-metadata').innerText(), /source.png/);
     assert.match(await workspace().locator('.render-metadata').innerText(), /No model association/);
+    assert.equal(await workspace().getByRole("button", { name: "Show this view in Modeling", exact: true }).count(), 0, "an uploaded source has no saved camera");
     const download = page.waitForEvent("download"); await workspace().getByRole("link", { name: "Download", exact: true }).click();
     assert.equal((await download).suggestedFilename(), first.document.fileName);
     await page.screenshot({ path: path.join(temporary, "render-wide.png"), fullPage: true });
@@ -566,7 +577,8 @@ try {
       assert.ok(document, "captured source is retained in the real Runtime");
       assert.deepEqual(document.modelSource, view.modelSource);
       assert.equal(document.sourceStageRef, view.sourceStageRef);
-      assert.deepEqual(document.viewRecipe.camera, { projection, worldMatrix: view.worldMatrix, projectionMatrix: view.projectionMatrix, exposure: 1 });
+      assert.deepEqual(document.viewRecipe.camera, { projection, worldMatrix: view.worldMatrix, projectionMatrix: view.projectionMatrix, exposure: 1,
+        target: view.target, up: view.up });
       const [width, height] = document.viewRecipe.screenSize;
       assert.equal(Math.max(width, height), 2048);
       assert.ok(Math.abs(width / height - view.aspect) <= 1 / height, "capture preserves the original aspect within pixel rounding");
@@ -626,6 +638,58 @@ try {
     await until(() => capture().isDisabled(), Boolean, "removing the model view disables capture again");
     assert.equal(captureRequests.length, 2);
     assert.equal((await api("capture", "/fixture/metrics")).head, initial.head, "view capture and rendering leave model HEAD unchanged");
+
+    // #218: the perspective result's saved camera, shown in Modeling and captured again on the model shown now.
+    const [saved] = retained;
+    const renderJobs = () => api("capture", "/api/render/jobs");
+    const earlier = (await renderJobs()).jobs.find(job => job.request?.direction === "Captured perspective view");
+    await capturePage.locator(".render-list button").filter({ hasText: "Captured perspective view" }).click();
+    const recapture = () => capturePage.getByRole("button", { name: "Re-capture on current model", exact: true });
+    await capturePage.getByRole("button", { name: "Show this view in Modeling", exact: true }).click();
+    assert.deepEqual(await capturePage.evaluate(() => window.captureFixture.shown), [saved.viewRecipe.camera], "Modeling is handed the saved camera");
+    assert.equal(await recapture().isDisabled(), true, "no model on screen to capture the view on");
+    const current = await capturePage.evaluate(() => window.captureFixture.useModel("b"));
+    await capturePage.evaluate(() => window.captureFixture.moveCamera());
+    await capturePage.evaluate(() => window.captureFixture.setIssue("unsaved"));
+    await until(() => capture().isDisabled(), Boolean, "an unsaved model view is shown");
+    assert.equal(await recapture().isDisabled(), true, "unsaved edits cannot take the saved view");
+    await capturePage.evaluate(() => window.captureFixture.setIssue(null));
+    await until(() => recapture().isEnabled(), Boolean, "the retained model shown now can take the saved view");
+    await recapture().click();
+    await until(selectedSource, value => value && JSON.parse(value)[1] !== retained[1].assetSha256 && JSON.parse(value)[1] !== saved.assetSha256,
+      "the view captured again is the source");
+    assert.equal(captureRequests.length, 3);
+    assert.deepEqual(captureRequests[2].camera, saved.viewRecipe.camera, "the saved camera is sent unchanged, not the moved live one");
+    assert.deepEqual(captureRequests[2].screenSize, saved.viewRecipe.screenSize);
+    assert.deepEqual(captureRequests[2].modelSource, current.modelSource);
+    const [, againSha] = JSON.parse(await selectedSource());
+    const again = (await api("capture", "/api/documents")).documents.find(row => row.assetSha256 === againSha);
+    assert.deepEqual(again.modelSource, current.modelSource);
+    assert.notDeepEqual(again.modelSource, saved.modelSource);
+    assert.deepEqual(again.viewRecipe, saved.viewRecipe, "the same camera and pixel size on the current model");
+    const againBytes = Buffer.from(await (await fetch(origins.capture + `/api/documents/${againSha}/bytes?runId=${encodeURIComponent(again.runId)}`)).arrayBuffer());
+    assert.deepEqual([againBytes.readUInt32BE(16), againBytes.readUInt32BE(20)], saved.viewRecipe.screenSize);
+    assert.equal(await capturePage.getByRole("textbox", { name: "Visual direction", exact: true }).inputValue(), "Captured perspective view",
+      "the result's inputs come with the new source");
+    await capturePage.getByText("This view was captured again on the current model and is now the source. Generate to render it; the earlier result is kept.", { exact: true }).waitFor();
+    assert.equal((await api("capture", "/fixture/metrics")).calls.length, 2, "capturing a view again never calls the provider");
+    await capturePage.getByRole("button", { name: "Generate", exact: true }).click();
+    const next = (await until(renderJobs, value => value.jobs.length === 3 && value.jobs[0].status === "succeeded", "a new attempt from the view captured again")).jobs[0];
+    assert.equal(next.request.source.assetSha256, againSha);
+    assert.deepEqual(next.document.modelSource, current.modelSource);
+    assert.equal((await api("capture", "/fixture/metrics")).calls[2].source, againSha, "Generate sends the view captured again");
+    const kept = (await renderJobs()).jobs.find(job => job.jobId === earlier.jobId);
+    assert.deepEqual([kept.status, kept.request, kept.document], [earlier.status, earlier.request, earlier.document], "the earlier result keeps its own source");
+    const after = (await api("capture", "/api/documents")).documents;
+    for (const document of retained) assert.deepEqual(after.find(row => row.assetSha256 === document.assetSha256), document, "earlier captures are unchanged");
+    await capturePage.getByRole("button", { name: "Refresh status", exact: true }).click();
+    const history = capturePage.locator(".render-list button");
+    await until(() => history.allInnerTexts(), texts => texts.length === 3 && texts.every(text => text.includes("Complete")), "the new attempt is listed beside the earlier ones");
+    await history.first().click();
+    await capturePage.getByRole("button", { name: "Compare", exact: true }).click();
+    await until(() => capturePage.locator(".render-image img").count(), count => count === 2, "the view captured again and its result");
+    await capturePage.screenshot({ path: path.join(temporary, "render-capture-again.png"), fullPage: true });
+    assert.equal((await api("capture", "/fixture/metrics")).head, initial.head, "a saved camera moves no model HEAD");
     assert.deepEqual(errors, []);
     await capturePage.close();
   });

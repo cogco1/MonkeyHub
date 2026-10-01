@@ -12,11 +12,32 @@ from .artifacts import SourceDocumentDto, ModelSourceDto, document_dto
 
 
 class RenderCameraDto(BaseModel):
+    """The camera one Modeling view was drawn through.
+
+    ``worldMatrix`` and ``projectionMatrix`` (column-major, as Three.js keeps
+    them) fix the picture. ``target`` and ``up`` say how the view was orbited,
+    so a saved view can be stood in again: they come together or not at all.
+    A capture retained before them has neither and still reads; a client
+    restoring it infers a target on its view line.
+    """
+
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid", allow_inf_nan=False)
     projection: Literal["perspective", "orthographic"]
     world_matrix: list[float] = Field(alias="worldMatrix", min_length=16, max_length=16)
     projection_matrix: list[float] = Field(alias="projectionMatrix", min_length=16, max_length=16)
     exposure: float = Field(gt=0)
+    target: tuple[float, float, float] | None = Field(
+        default=None, description="The world point the view orbits about, on its view line.")
+    up: tuple[float, float, float] | None = Field(
+        default=None, description="The world direction the view keeps upright while it orbits; not the zero vector.")
+
+    @model_validator(mode="after")
+    def _orbit(self):
+        if (self.target is None) != (self.up is None):
+            raise ValueError("Give the camera's target and up together, or neither.")
+        if self.up is not None and not any(self.up):
+            raise ValueError("The camera's up must not be the zero vector.")
+        return self
 
 
 class RenderViewSourceRequestDto(BaseModel):

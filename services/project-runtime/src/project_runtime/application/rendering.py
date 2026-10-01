@@ -113,7 +113,9 @@ def save_render_view(binding, request):
             image.verify()
     except (ValueError, OSError) as exc:
         raise StudioError(422, "RENDER_VIEW_INVALID", "Provide the PNG matching this captured view.") from exc
-    recipe = {"kind": "model-view", "camera": request.camera.model_dump(by_alias=True),
+    # A camera without target and up keeps the recipe, and so the identity,
+    # that earlier runtimes retained for it.
+    recipe = {"kind": "model-view", "camera": request.camera.model_dump(by_alias=True, exclude_none=True, mode="json"),
               "screenSize": list(request.screen_size)}
     identity = canonical_digest({"modelSource": source.to_dict(), "sourceStageRef": request.source_stage_ref,
                                  "viewRecipe": recipe})

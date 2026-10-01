@@ -1785,6 +1785,17 @@ adapter input accepts PNG/JPEG pages; unsupported or unresolved pages are refuse
 Model correspondence and camera/view data are retained only from the registered
 source document when present. A standalone upload is a valid source.
 
+`POST /api/render/views` makes a Modeling view such a source: `projectId`, the exact
+`modelSource` shown, optional `sourceStageRef`, `screenSize`, a PNG of exactly that
+size, and `camera`: `projection`, column-major `worldMatrix` and `projectionMatrix`,
+`exposure`, and the orbit the view was turned with, `target` (a point on its view
+line) and a non-zero `up`, given together or not at all. Camera and size are retained
+as the document's `viewRecipe` (`kind: model-view`) and are part of its identity; no
+provider is called and no design changes. A capture retained before `target` and `up`
+keeps its recipe and identity; a client standing in it infers a target on its view
+line. Sending a retained camera again with the current `modelSource` captures the same
+view on the current model as a new source; the earlier source and its results stay.
+
 Each request creates its own `render-<UUID hex>` P036 run. Repeating identical
 parameters with that UUID returns the same job; different parameters return 409.
 Different UUIDs keep distinct attempts even when their pixels are identical.

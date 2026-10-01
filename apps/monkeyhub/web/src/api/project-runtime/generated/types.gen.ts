@@ -9735,6 +9735,14 @@ export type RelationChecksDto = {
 
 /**
  * RenderCameraDto
+ *
+ * The camera one Modeling view was drawn through.
+ *
+ * ``worldMatrix`` and ``projectionMatrix`` (column-major, as Three.js keeps
+ * them) fix the picture. ``target`` and ``up`` say how the view was orbited,
+ * so a saved view can be stood in again: they come together or not at all.
+ * A capture retained before them has neither and still reads; a client
+ * restoring it infers a target on its view line.
  */
 export type RenderCameraDto = {
     /**
@@ -9787,6 +9795,26 @@ export type RenderCameraDto = {
      * Exposure
      */
     exposure: number;
+    /**
+     * Target
+     *
+     * The world point the view orbits about, on its view line.
+     */
+    target?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Up
+     *
+     * The world direction the view keeps upright while it orbits; not the zero vector.
+     */
+    up?: [
+        number,
+        number,
+        number
+    ] | null;
 };
 
 /**
