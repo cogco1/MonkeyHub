@@ -1,4 +1,48 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-580",
+      "lanes": [
+        {
+          "id": "verify",
+          "status": "active",
+          "branch": "codex/580-verify",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-580-verify",
+          "base_ref": "64fff11bbeafbb90fa49489b2975ae8d4fbe29ec",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "project_runtime.documents",
+            "project_runtime.intent",
+            "monkeydiagram.projection.mesh_views",
+            "monkeycad.formats",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "services/project-runtime/src/project_runtime/application/drawings.py",
+            "services/project-runtime/src/project_runtime/application/visual_reviews.py",
+            "services/project-runtime/src/project_runtime/api/routes/drawings.py",
+            "services/project-runtime/src/project_runtime/api/dto/drawings.py",
+            "services/project-runtime/src/project_runtime/api/dto/artifacts.py",
+            "services/project-runtime/src/project_runtime/api/dto/intent.py",
+            "packages/monkeydiagram/src/monkeydiagram/projection/mesh_views.py",
+            "packages/monkeycad/src/monkeycad/formats/three_dm_inspector.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
+            "apps/monkeyhub/web/src/api/project-runtime/generated",
+            "services/project-runtime/tests/test_material_view.py",
+            "services/project-runtime/tests/test_visual_reviews.py",
+            "services/project-runtime/tests/test_model_source_index.py",
+            "packages/monkeydiagram/tests/test_mesh_views.py",
+            "packages/monkeycad/tests/test_three_dm_inspector.py",
+            "docs/protocols/project-runtime-api.md",
+            "governance/module_registry.json",
+            "docs/architecture/system-map.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
