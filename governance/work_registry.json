@@ -1,36 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-562",
-      "status": "active",
-      "branch": "codex/562-presentation",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-562-presentation",
-      "base_ref": "2461e7243f9b919d8ca6f4ef1b952f2fd08e0d46",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/web/src/features/stage/Stage.tsx",
-        "apps/monkeyhub/web/src/i18n/messages.en.ts",
-        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
-        "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/modelDisplay.ts",
-        "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/renderView.ts",
-        "apps/monkeyhub/web/src/workspaces/render/ModelPreview.tsx",
-        "apps/monkeyhub/web/src/workspaces/render/README.md",
-        "apps/monkeyhub/web/test/loaderColours.test.ts",
-        "apps/monkeyhub/web/test/modelDisplayStyle.test.ts",
-        "apps/monkeyhub/web/test/presentationStyle.browser.mjs",
-        "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
-        "apps/monkeyhub/web/test/renderView.test.ts",
-        "apps/monkeyhub/web/test/rhino3dmLoaderWorker.ts",
-        "apps/monkeyhub/web/test/rhino3dmMaterials.test.ts"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
