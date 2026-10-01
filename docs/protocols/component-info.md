@@ -42,8 +42,12 @@ words. A new topic therefore needs a new dataset, not new code.
   version, or opening Versions closes it. The card shows the name, the summary datasets' fields,
   then each section dataset in `order`, then an expandable *技术信息与来源* with the component and
   element ids, the version shown, the Board revision, the datasets used, every source with its date
-  and the datasets written for another version. *Copy* copies exactly what the card shows as plain
-  text. Addresses are selectable text with their own copy button: the desktop shell opens no
+  and the datasets written for another version. Each field shows its key information: label, value
+  and status. What explains it (its `note`, its `url` and its source) folds under a small arrow
+  after the value. A section's `note` and the entry's `notes` fold under an arrow beside the section
+  heading, and a group's allocation basis and `note` under one beside the group title. Every arrow
+  starts shut, also after another click. *Copy* copies the whole card as plain text, folded notes
+  included. Addresses are selectable text with their own copy button: the desktop shell opens no
   address outside the Hub.
 
 ## Format: `MonkeyHubComponentInfo@1`
@@ -62,7 +66,7 @@ silently ignored data.
 | `appliesTo` | yes | `{ projectId, runId, stateDigest, versionLabel? }`: the exact version the data describes. `stateDigest` is the 64-hex design state digest of that run (the `stateDigest` of the model source Modeling shows). `versionLabel` is the human name used in the mismatch sentence. |
 | `statusLabels` | no | The dataset's own words for statuses, e.g. `{ "verified": "已查价格", "estimate": "预算估计", "to-ask": "待询价", "to-confirm": "待确认" }`. Unworded statuses use the interface's (已核实 / 估计 / 待询 / 待确认 / 未知). |
 | `missing` | no | What the card says for a component this dataset has no entry for, e.g. `采购信息未录入`. |
-| `note` | no | One paragraph shown under the section heading for every component (scope, caveats, totals). |
+| `note` | no | One paragraph for every component (scope, caveats, totals), folded under the section heading's arrow. |
 | `sources` | no | `[{ id, label, date?, kind? }]`; ids are unique. `kind` is free text (`budget-estimate`, `quote`, `catalog`, `measurement`, `model-data`, …). |
 | `groups` | no | `{ <groupId>: Group }`: something several components share, described once. |
 | `components` | yes | `{ <componentId>: Entry }`, keyed by the model's own component ids. |
