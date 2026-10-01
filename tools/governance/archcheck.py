@@ -3,8 +3,9 @@
 Two modes. Without arguments it checks the tree: layer imports, filesystem
 write ownership, state authorities, the probe boundary, the entries Git tracks
 at the repository root and under docs/, the module registry, every path it
-names and the namespace each module id begins with, and the live work registry
--- GitHub Issue claims only, no two of them holding the same path or checkout.
+names, the namespace each module id begins with and the module ids each entry
+depends on, and the live work registry -- GitHub Issue claims only, no two of
+them holding the same path or checkout.
 A path the policy configures must exist: a rule whose path is gone is
 reported, never skipped. So is a layer rule's target that names no module,
 since nothing can import it.
@@ -195,6 +196,15 @@ def validate_policy(policy: dict[str, Any], root: Path | None = None) -> None:
         if not isinstance(namespace, str) or not MODULE_ID_NAMESPACE.fullmatch(namespace):
             raise ArchitecturePolicyError(
                 f"module_id_namespaces[{unit!r}] must be one lowercase id segment, not {namespace!r}"
+            )
+    declared = _require_string_list(policy, "declared_dependency_namespaces")
+    if len(declared) != len(set(declared)):
+        raise ArchitecturePolicyError("declared_dependency_namespaces must not contain duplicates")
+    for namespace in declared:
+        if namespace not in namespaces.values():
+            raise ArchitecturePolicyError(
+                f"declared_dependency_namespaces entry {namespace!r} is no namespace that module_id_namespaces "
+                "gives a unit, so it holds no import to depends_on"
             )
 
     write_sites = policy.get("allowed_write_sites")
@@ -1035,18 +1045,15 @@ def _module_name(relative: str, python_source_roots: Iterable[str]) -> str | Non
 def _registry_path_fields(data: dict[str, Any]) -> Iterator[tuple[str, object, str]]:
     """Every path the module registry names, besides owner_path and a module's tests.
 
-    Yields ``(where, value, kind)``: a ``file`` must be a file, a ``path`` a
-    file or a directory, and a ``reference`` a path or a registered module id.
-    ``owner_path`` and module tests keep their own findings in
-    ``check_registry``; prose fields are not read for paths.
+    Yields ``(where, value, kind)``: a ``file`` must be a file and a ``path``
+    a file or a directory. ``owner_path`` and module tests keep their own
+    findings in ``check_registry``; prose fields are not read for paths.
     """
 
     for entry in data.get("modules", ()):
         module_id = entry.get("module_id", "?")
         for value in entry.get("files") or ():
             yield f"{module_id} files", value, "path"
-        for value in entry.get("used_by") or ():
-            yield f"{module_id} used_by", value, "reference"
     spine = data.get("spine") or {}
     if "spec" in spine:
         yield "spine.spec", spine["spec"], "file"
@@ -1065,9 +1072,137 @@ def _registry_path_fields(data: dict[str, Any]) -> Iterator[tuple[str, object, s
             yield f"capability {capability.get('capability_id', '?')} tests", value, "file"
 
 
-# The packages whose imports a registry entry's depends_on must declare: the kernel, the
-# CAD package that left it (#514) and both workflows.
-DEPENDENCY_PACKAGES = ("archflow.", "monkeycad.", "monkeyarch.", "monkeydiagram.")
+def _registry_span(entry: dict[str, Any]) -> list[str]:
+    """The paths a registry entry holds: its files, or its owner_path alone.
+
+    A value that is not text names no file; the path check reports it.
+    """
+
+    return [path for path in entry.get("files") or [entry.get("owner_path", "")] if isinstance(path, str)]
+
+
+def _held_python_files(root: Path, entry: dict[str, Any]) -> list[str]:
+    """The Python files a registry entry holds, as repository paths.
+
+    A listed ``.py`` file is held as written, and a listed directory holds
+    the Python source below it, without the trees ``NOT_SOURCE_DIRECTORIES``
+    names. A path that does not exist, or is not a literal repository path,
+    holds nothing; the path check reports it.
+    """
+
+    held: dict[str, None] = {}
+    for relative in _registry_span(entry):
+        if not _repository_path(relative):
+            continue
+        if (root / relative).is_dir():
+            held.update(dict.fromkeys(path.relative_to(root).as_posix() for path in _python_files(root, relative)))
+        elif relative.endswith(".py"):
+            held["/".join(_scope_parts(relative))] = None
+    return list(held)
+
+
+def _registry_holders(
+    held: Iterable[tuple[dict[str, Any], list[str]]], python_source_roots: Iterable[str],
+) -> dict[str, tuple[str, str]]:
+    """Each registered Python file's import name, mapped to the module id that holds it and the file.
+
+    ``held`` pairs each entry with its ``_held_python_files``. A module is
+    known by the name it is imported with, not by its path, and every file an
+    entry holds is its own: ``monkeycad.backends.occt.step`` is held by
+    ``monkeycad.occt``, whose files list it. A file two entries list stays
+    with the first.
+    """
+
+    roots = tuple(python_source_roots)
+    holders: dict[str, tuple[str, str]] = {}
+    for entry, files in held:
+        module_id = entry.get("module_id")
+        if not isinstance(module_id, str):
+            continue
+        for path in files:
+            name = _module_name(path, roots)
+            if name is not None:
+                holders.setdefault(name, (module_id, path))
+    return holders
+
+
+def _taken_modules(names: tuple[str, ...], modules: frozenset[str]) -> Iterator[str]:
+    """The modules one import statement takes, given what ``_import_targets`` names.
+
+    ``import a.b`` takes ``a.b``. ``from a import b`` takes ``a.b`` when that is
+    a module, and ``a`` itself for any member that is not one: a name a
+    package's ``__init__.py`` defines or re-exports is taken from the package.
+    """
+
+    module, members = names[0], names[1:]
+    submodules = [member for member in members if member in modules]
+    if len(submodules) < len(members) or not members:
+        yield module
+    yield from submodules
+
+
+def _dependency_findings(
+    rel_registry: str,
+    entry: dict[str, Any],
+    imported: dict[str, str],
+    required: dict[str, str],
+    complete: bool,
+    known: frozenset[str],
+    holders: dict[str, tuple[str, str]],
+) -> Iterator[PolicyFinding]:
+    """depends_on names registered modules that a module's files import, and every one of them it must.
+
+    ``imported`` maps each other registered module the files import to the
+    first import name that reached it, and ``required`` those of them that
+    must be declared, because a file they were reached through lies in a unit
+    whose namespace the policy's ``declared_dependency_namespaces`` lists.
+    ``complete`` is False when the files hold no Python source that parses,
+    so what they import is unknown and no declaration is called stale. An
+    entry that is no registered module id is unknown: an import name is
+    answered with the module that holds it (``holders``).
+    """
+
+    module_id = entry.get("module_id", "?")
+    dependencies = entry.get("depends_on", [])
+    if not isinstance(dependencies, list):
+        yield PolicyFinding(
+            rel_registry, 1, "REGISTRY_DEPENDS_ON_UNKNOWN",
+            f"{module_id} depends_on must be a list of module ids, not {dependencies!r}",
+        )
+        dependencies = []
+    declared = [value for value in dependencies if isinstance(value, str)]
+    for dependency in dependencies:
+        if not isinstance(dependency, str) or dependency not in known:
+            holder = holders.get(dependency, (None, None))[0] if isinstance(dependency, str) else None
+            if holder is None:
+                detail = "; depends_on lists module ids, and no entry's files hold a module of that name"
+            elif holder == module_id:
+                detail = " but the import name of one of its own files; drop it"
+            elif holder in declared:
+                detail = f" but an import name; {holder} holds that module and is named already, so drop it"
+            elif complete and holder not in imported:
+                detail = f" but an import name; {holder} holds that module, which none of its files imports, so drop it"
+            else:
+                detail = f" but an import name; {holder} holds that module, so name {holder}"
+            yield PolicyFinding(
+                rel_registry, 1, "REGISTRY_DEPENDS_ON_UNKNOWN",
+                f"{module_id} depends_on {dependency!r} is not a registered module id{detail}",
+            )
+        elif dependency == module_id:
+            yield PolicyFinding(rel_registry, 1, "REGISTRY_DEPENDS_ON_STALE", f"{module_id} names itself in depends_on")
+        elif complete and dependency not in imported:
+            yield PolicyFinding(
+                rel_registry, 1, "REGISTRY_DEPENDS_ON_STALE",
+                f"{module_id} declares {dependency} in depends_on, but none of its files imports a module "
+                f"{dependency} holds; drop it",
+            )
+    undeclared = sorted((holder, name) for holder, name in required.items() if holder not in declared)
+    if undeclared:
+        taken = ", ".join(holder if name == holder else f"{name} (held by {holder})" for holder, name in undeclared)
+        yield PolicyFinding(
+            rel_registry, 1, "REGISTRY_DEPENDS_ON_DRIFT",
+            f"{module_id} imports {taken} but depends_on does not name {', '.join(holder for holder, _ in undeclared)}",
+        )
 
 
 def _id_namespace(path: str, namespaces: dict[str, str]) -> tuple[str, str] | None:
@@ -1116,9 +1251,20 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
     tests exist; every other path the registry names exists; every string in
     ``owns`` appears in exactly one entry; and no spine module outside an owner
     defines a function whose normalised body equals one of the owner's
-    functions (a copied helper is a duplicate owner). A module's imports are
-    matched to owners by import name, which begins at the policy's
-    ``python_source_roots``.
+    functions (a copied helper is a duplicate owner).
+
+    ``depends_on`` lists registered module ids (#537). A module's imports are
+    resolved the way ``_import_targets`` names them, relative imports
+    included, and matched to the entry whose files hold the imported module,
+    by import names that begin at the policy's ``python_source_roots``. An
+    entry that is no module id is ``REGISTRY_DEPENDS_ON_UNKNOWN``; one whose
+    module the files no longer import is ``REGISTRY_DEPENDS_ON_STALE``; an
+    import of a file in a unit whose namespace the policy's
+    ``declared_dependency_namespaces`` lists (the kernel, the CAD package and
+    both workflows), when depends_on does not name the module holding it, is
+    ``REGISTRY_DEPENDS_ON_DRIFT``. An import of a module no entry holds is
+    matched to nothing. Who uses a module is read from the same imports: the
+    hand-kept ``used_by`` field is retired (``REGISTRY_RETIRED_FIELD``).
 
     A module id's first segment is the namespace of the distribution unit
     holding its ``owner_path``, as the policy's ``module_id_namespaces`` maps
@@ -1137,16 +1283,16 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
     entries = data.get("modules", [])
     rel_registry = registry_path.relative_to(root).as_posix()
     namespaces = policy["module_id_namespaces"]
+    python_roots = policy["python_source_roots"]
     owners: dict[str, str] = {}
     ids: set[str] = set()
     owner_bodies: dict[str, tuple[str, str]] = {}
-    # An owner is known by the name it is imported with, not by its path.
-    owner_by_module: dict[str, str] = {}
-    for other in entries:
-        name = _module_name(other.get("owner_path", ""), policy["python_source_roots"])
-        if name is not None:
-            owner_by_module[name] = other.get("module_id", "?")
-    for entry in entries:
+    known = frozenset(entry.get("module_id", "?") for entry in entries)
+    held = [_held_python_files(root, entry) for entry in entries]
+    holders = _registry_holders(zip(entries, held), python_roots)
+    modules = _module_names(root, python_roots)
+    declared_namespaces = frozenset(policy["declared_dependency_namespaces"])
+    for entry, files in zip(entries, held):
         module_id = entry.get("module_id", "?")
         if module_id in ids:
             yield PolicyFinding(rel_registry, 1, "REGISTRY_DUPLICATE_MODULE", f"module_id {module_id} listed twice")
@@ -1154,6 +1300,11 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
         problem = _id_namespace_problem(module_id, entry.get("owner_path", ""), namespaces)
         if problem is not None:
             yield PolicyFinding(rel_registry, 1, "REGISTRY_ID_NAMESPACE", problem)
+        if "used_by" in entry:
+            yield PolicyFinding(
+                rel_registry, 1, "REGISTRY_RETIRED_FIELD",
+                f"{module_id}: used_by is retired (#537); the modules that use it are read from their imports",
+            )
         owner = root / entry.get("owner_path", "")
         if not owner.is_file():
             yield PolicyFinding(rel_registry, 1, "REGISTRY_OWNER_MISSING", f"{module_id}: owner_path {entry.get('owner_path')} does not exist")
@@ -1166,56 +1317,54 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
         for test in entry.get("tests", ()):
             if not (root / test).is_file():
                 yield PolicyFinding(rel_registry, 1, "REGISTRY_TEST_MISSING", f"{module_id}: test {test} does not exist")
-        span = [root / f for f in (entry.get("files") or [entry["owner_path"]])]
         defined: set[str] = set()
-        for path in span:
-            if path.suffix != ".py" or not path.is_file():
+        # Symbols and bodies come from the listed files; imports from every Python file the entry holds.
+        listed = {"/".join(_scope_parts(path)) for path in _registry_span(entry)}
+        own = {_module_name(relative, python_roots) for relative in files}
+        # Each other registered module the files import, with the first import name that reached
+        # it, and those of them reached through a file in a declared namespace's unit.
+        imported: dict[str, str] = {}
+        required: dict[str, str] = {}
+        parsed = unparsed = 0
+        for relative in files:
+            path = root / relative
+            if not path.is_file():
                 continue
             src = path.read_text(encoding="utf-8")
             try:
                 tree = ast.parse(src)
             except SyntaxError:
+                unparsed += 1
                 continue
-            defined |= {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
-            defined |= {t.id for n in tree.body if isinstance(n, ast.Assign) for t in n.targets if isinstance(t, ast.Name)}
-            defined |= {n.target.id for n in tree.body if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name)}
-            for node in tree.body:
-                if isinstance(node, ast.FunctionDef) and not node.name.startswith("__"):
-                    body = _normalized_body(src, node)
-                    if len(body) > 80:
-                        owner_bodies.setdefault(body, (module_id, node.name))
+            parsed += 1
+            if relative in listed:
+                defined |= {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+                defined |= {t.id for n in tree.body if isinstance(n, ast.Assign) for t in n.targets if isinstance(t, ast.Name)}
+                defined |= {n.target.id for n in tree.body if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name)}
+                for node in tree.body:
+                    if isinstance(node, ast.FunctionDef) and not node.name.startswith("__"):
+                        body = _normalized_body(src, node)
+                        if len(body) > 80:
+                            owner_bodies.setdefault(body, (module_id, node.name))
+            name = _module_name(relative, python_roots)
+            for targets, _ in _import_targets(ast.walk(tree), name, path.name == "__init__.py"):
+                for taken in _taken_modules(targets, modules):
+                    holder, defined_in = holders.get(taken, (None, ""))
+                    if holder is None or holder == module_id or taken in own:
+                        continue
+                    imported.setdefault(holder, taken)
+                    unit = _id_namespace(defined_in, namespaces)
+                    if unit is not None and unit[1] in declared_namespaces:
+                        required.setdefault(holder, taken)
         for symbol in entry.get("public_api", ()):
             if symbol.isidentifier() and symbol not in defined:
                 yield PolicyFinding(rel_registry, 1, "REGISTRY_SYMBOL_MISSING", f"{module_id}: public_api symbol {symbol} is not defined in {entry['owner_path']} or its files")
-        # Dependencies cover the shared core, the CAD package and both workflow packages.
-        actual: set[str] = set()
-        for path in span:
-            if path.suffix != ".py" or not path.is_file():
-                continue
-            try:
-                tree2 = ast.parse(path.read_text(encoding="utf-8"))
-            except SyntaxError:
-                continue
-            for node in ast.walk(tree2):
-                if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(DEPENDENCY_PACKAGES):
-                    actual.add(owner_by_module.get(node.module, node.module))
-                elif isinstance(node, ast.Import):
-                    actual.update(owner_by_module.get(a.name, a.name) for a in node.names if a.name.startswith(DEPENDENCY_PACKAGES))
-        declared = set()
-        for dep in entry.get("depends_on", ()):
-            declared.add(owner_by_module.get(dep, dep))
-            declared.add(dep)
-        actual.discard(module_id)
-        undeclared = sorted(a for a in actual if a not in declared and not any(a.endswith("." + d.split(".")[-1]) for d in declared))
-        if undeclared:
-            yield PolicyFinding(rel_registry, 1, "REGISTRY_DEPENDS_ON_DRIFT", f"{module_id} imports {', '.join(undeclared)} but depends_on does not say so")
+        yield from _dependency_findings(
+            rel_registry, entry, imported, required, bool(parsed) and not unparsed, known, holders,
+        )
         if not entry.get("tests") and not entry.get("untested_reason"):
             yield PolicyFinding(rel_registry, 1, "REGISTRY_UNTESTED_OWNER", f"{module_id} lists no test and gives no untested_reason")
     for where, value, kind in _registry_path_fields(data):
-        if kind == "reference" and isinstance(value, str) and "/" not in value:
-            if value not in ids:
-                yield PolicyFinding(rel_registry, 1, "REGISTRY_PATH_MISSING", f"{where}: {value!r} is neither a repository path nor a module id")
-            continue
         if not isinstance(value, str) or not _repository_path(value):
             yield PolicyFinding(rel_registry, 1, "REGISTRY_PATH_MISSING", f"{where}: {value!r} is not a literal repository-relative path")
         elif not (root / value).exists():
@@ -1225,7 +1374,7 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
     owner_paths = {
         "/".join(_scope_parts(f))
         for e in entries
-        for f in (e.get("files") or [e.get("owner_path", "")])
+        for f in _registry_span(e)
     }
     for path in _checked_python_files(root, policy):
         relative_path = path.relative_to(root).as_posix()

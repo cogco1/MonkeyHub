@@ -25,7 +25,7 @@ from .application.design_history import (
     admission_index,
     read_acceptance,
 )
-from .jobs import FAILED, QUEUED, RUNNING, Job, JobRegistry
+from .jobs import FAILED, QUEUED, RUNNING, RUN, Job, JobRegistry
 from .application.representation_dependencies import (
     CURRENT, FROZEN, OUTDATED, UNAVAILABLE, ReplacementCycle, RepresentationReads, representation_status,
 )
@@ -34,8 +34,14 @@ from .errors import StudioError
 
 
 @dataclass(frozen=True, slots=True)
-class RuntimeCandidate:
-    candidate_id: str
+class RuntimeRun:
+    """One Studio run's execution status: a run, never a Candidate (#294).
+
+    The wire still names it ``candidates[].candidateId``, which the Hub's
+    recovery and the web client read.
+    """
+
+    run_id: str
     status: str
     job_id: str | None = None
     proposal_id: str | None = None
@@ -55,7 +61,7 @@ class RuntimeSnapshot:
     project_dir: str
     published: ProjectVersionRef
     jobs: tuple[Job, ...]
-    candidates: tuple[RuntimeCandidate, ...]
+    runs: tuple[RuntimeRun, ...]
     branches: tuple[DesignBranch, ...]
     stages: tuple[StageView, ...]
     errors: tuple[str, ...]
@@ -65,28 +71,28 @@ class RuntimeSnapshot:
 
 def inspect_runtime(
     binding: ProjectBinding, *, jobs: JobRegistry | None = None,
-    limit: int = 50, offset: int = 0, candidate_ids: tuple[str, ...] = (),
+    limit: int = 50, offset: int = 0, run_ids: tuple[str, ...] = (),
 ) -> RuntimeSnapshot:
     """Inspect bounded recent runs and explicitly tracked operations without writes.
 
     Recent runs use the binding's stable name ordering, newest names first.
-    Offset pages that window without changing candidate classification. Explicit candidate ids
-    and active candidate jobs remain visible even when they precede that window. Jobs
-    describe process execution; only retained candidate and committed branch
+    Offset pages that window without changing run classification. Explicit run ids
+    and active run jobs remain visible even when they precede that window. Jobs
+    describe process execution; only retained run and committed branch
     readers establish the durable result.
     """
 
-    if not 1 <= limit <= 200 or offset < 0 or len(candidate_ids) > 200:
-        raise ValueError("Runtime inspection accepts 1..200 recent runs, a nonnegative offset and at most 200 explicit candidates.")
-    for candidate_id in candidate_ids:
-        require_identifier(candidate_id, "candidate_id")
+    if not 1 <= limit <= 200 or offset < 0 or len(run_ids) > 200:
+        raise ValueError("Runtime inspection accepts 1..200 recent runs, a nonnegative offset and at most 200 explicit runs.")
+    for run_id in run_ids:
+        require_identifier(run_id, "run_id")
     live = () if jobs is None else jobs.list()
     # A model export runs on this queue under its export id but is not a
-    # candidate: its own retained report says how it ended, and it never has a
-    # candidate delta or runner receipt. It is listed among the jobs only; read
-    # as a candidate, a finished export would look like a run needing recovery.
-    candidate_jobs = tuple(job for job in live if job.kind == "candidate")
-    by_candidate = {job.candidate_id: job for job in candidate_jobs}
+    # design run: its own retained report says how it ended, and it never has
+    # a candidate delta or runner receipt. It is listed among the jobs only;
+    # read as a run, a finished export would look like one needing recovery.
+    run_jobs = tuple(job for job in live if job.kind == RUN)
+    by_run = {job.candidate_id: job for job in run_jobs}
     # Only this snapshot shares artifact reads. Byte availability still uses
     # the artifact owner's file-identity checks on every later snapshot.
     artifacts = {}
@@ -132,24 +138,24 @@ def inspect_runtime(
             branches.append(DesignBranch.from_dict(branch_payload))
         except (StudioError, ProjectRepositoryError, OSError, ValueError) as exc:
             errors.append(f"Branch {branch_id}: {exc}")
-    run_ids = binding.run_ids()
-    active_ids = tuple(job.candidate_id for job in candidate_jobs if job.status in (QUEUED, RUNNING))
-    recent = tuple(reversed(run_ids))[offset:offset + limit]
-    selected = tuple(dict.fromkeys((*candidate_ids, *active_ids, *recent)))
-    tracked = set(candidate_ids) | set(by_candidate)
-    candidates: list[RuntimeCandidate] = []
-    for candidate_id in selected:
-        job = by_candidate.get(candidate_id)
-        row = RuntimeCandidate(candidate_id, "needs_recovery", job_id=job.job_id if job else None,
-                               proposal_id=job.proposal_id if job else None)
+    retained = binding.run_ids()
+    active_ids = tuple(job.candidate_id for job in run_jobs if job.status in (QUEUED, RUNNING))
+    recent = tuple(reversed(retained))[offset:offset + limit]
+    selected = tuple(dict.fromkeys((*run_ids, *active_ids, *recent)))
+    tracked = set(run_ids) | set(by_run)
+    runs: list[RuntimeRun] = []
+    for run_id in selected:
+        job = by_run.get(run_id)
+        row = RuntimeRun(run_id, "needs_recovery", job_id=job.job_id if job else None,
+                         proposal_id=job.proposal_id if job else None)
         try:
-            delta = binding.candidate_delta(candidate_id)
-            if candidate_id not in tracked and delta is None:
-                # A normal project run is not a Studio candidate. The retained
-                # harness, not an id prefix, identifies older candidate runs.
-                if not binding.record_refs(candidate_id, kind=STUDIO_CANDIDATE_WORKFLOW):
+            delta = binding.candidate_delta(run_id)
+            if run_id not in tracked and delta is None:
+                # A normal project run is not a Studio run. The retained
+                # harness, not an id prefix, identifies older Studio runs.
+                if not binding.record_refs(run_id, kind=STUDIO_CANDIDATE_WORKFLOW):
                     continue
-            row = replace(row, base=binding.load_run(candidate_id).base)
+            row = replace(row, base=binding.load_run(run_id).base)
             if delta is not None:
                 operator = delta["operator"]
                 row = replace(row, base_record_digest=operator["base_record_digest"],
@@ -157,14 +163,14 @@ def inspect_runtime(
             if job is not None and job.status in (QUEUED, RUNNING):
                 row = replace(row, status=job.status, error=job.error)
             else:
-                receipt_ref, receipt = _receipt(binding, candidate_id)
+                receipt_ref, receipt = _receipt(binding, run_id)
                 row = replace(row, result_record_digest=receipt.get("state_record_digest"),
                               result_state_digest=receipt.get("design_state_digest"), receipt_ref=receipt_ref.uri)
                 if not receipt.get("seat_execution_complete"):
                     row = replace(row, status="failed", error="The retained runner receipt reports incomplete seat execution.")
                 else:
                     _, record = binding.exact_state_record(ReferenceRun(
-                        binding.load_run(candidate_id), "runtime", receipt,
+                        binding.load_run(run_id), "runtime", receipt,
                     ))
                     if delta is not None and delta["result_record_digest"] != record.digest:
                         raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The retained candidate change and runner result disagree.")
@@ -174,12 +180,12 @@ def inspect_runtime(
                         composed_source = any(record_kind(record_ref_from_uri(ref, binding.project_id)) == STUDIO_MODEL_ASSET
                                               for ref in workflow.get("basis_refs", ()) if ref.startswith("project://"))
                         if composed_source and not any(
-                            model.run_id == candidate_id and model.design_state_digest == row.result_state_digest
+                            model.run_id == run_id and model.design_state_digest == row.result_state_digest
                             and model.representation == "composed" and model.available
-                            for model in artifacts_of(candidate_id)
+                            for model in artifacts_of(run_id)
                         ):
                             raise StudioError(404, "CANDIDATE_NOT_FOUND",
-                                              f"Candidate {candidate_id} has native results but no completed composed model for its retained source.")
+                                              f"Candidate {run_id} has native results but no completed composed model for its retained source.")
                     row = replace(row, status="completed")
         except (StudioError, ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:
             if job is not None and job.status in (QUEUED, RUNNING, FAILED):
@@ -187,13 +193,13 @@ def inspect_runtime(
             else:
                 row = replace(row, error=str(exc))
         row = replace(row, commit_stage_refs=tuple(ref for ref, view in stages.items()
-                                                  if view.stage.candidate_id == candidate_id))
-        candidates.append(row)
+                                                  if view.stage.candidate_id == run_id))
+        runs.append(row)
     if binding.repository.read_design_branches() != branch_rows:
         raise StudioError(409, "RUNTIME_CHANGED", "Design branches changed during runtime inspection; read the next snapshot.")
     return RuntimeSnapshot(binding.project_id, str(binding.project_dir), binding.head(), live,
-                           tuple(candidates), tuple(branches), tuple(stages.values()), tuple(errors),
-                           len(selected), len(run_ids) > offset + limit)
+                           tuple(runs), tuple(branches), tuple(stages.values()), tuple(errors),
+                           len(selected), len(retained) > offset + limit)
 
 
 # ---- Worktree Graph V0 (#271) ------------------------------------------------
@@ -327,7 +333,7 @@ def _running_lines(binding: ProjectBinding, active: dict, jobs: JobRegistry | No
             relation = "behind"
         else:
             relation = "diverged"
-        export = job is not None and job.kind != "candidate"
+        export = job is not None and job.kind != RUN
         lines.append(WorktreeLine(
             line_id=f"running:{run_id}", kind="running", run_id=run_id, job_id=None if job is None else job.job_id,
             label="Model export" if export else "Design change", base_run_id=base, base_stage_ref=None,

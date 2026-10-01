@@ -250,7 +250,7 @@ Project Runtime 自 #491 起按仓库路径 `services/project-runtime/src/projec
 | `forbidden_layer_imports` 的 `targets` | 写导入名，不写路径。目标是 `python_source_roots` 下的模块或它上面的包，例如 `monkeyarch.application`、`archflow`；以本仓顶层包开头的名字只能这样解析，残留的 import 不能让已经删掉的模块继续算数。其他名字是第三方库，要有受检文件实际导入它，例如 `shapely`、`OCP`。另一类是 Git 忽略的目录，例如 `archive/`：退役 lane 只留在部分检出里，规则防止已提交的代码导入它。解析不了的目标报 `POLICY_TARGET_MISSING`（#511）；模块搬走或删除时，同一个 PR 把目标改到新位置或删掉。`allowed` 的每项同样要解析到一个模块或某个模块顶层定义的名字，否则也报 `POLICY_TARGET_MISSING` |
 
 module registry 里的路径同样必须存在：`owner_path`（`REGISTRY_OWNER_MISSING`）、`tests`（`REGISTRY_TEST_MISSING`），
-以及 `files`、`used_by`（路径或模块 id）、`spine`、interface 实现文件和 capability 测试（`REGISTRY_PATH_MISSING`）。
+以及 `files`、`spine`、interface 实现文件和 capability 测试（`REGISTRY_PATH_MISSING`）。
 registry 路径不写通配符。
 
 模块 id 的首段是 `owner_path` 所在分发单元的命名空间（#523）。policy 的 `module_id_namespaces` 把单元目录映射到命名空间：
