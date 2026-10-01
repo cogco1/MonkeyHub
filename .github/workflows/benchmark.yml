@@ -4,9 +4,10 @@ name: Daily benchmark
 # keeps the results on the orphan branch benchmark-data, never on main:
 #   - every day at 20:30 UTC (after the 19:00 UTC nightly promotion) and on
 #     manual dispatch, on Ubuntu and Windows; on main the results are
-#     published and each flagged metric opens or updates one type:perf issue;
-#   - a pull request that touches the harness or this workflow measures once
-#     and shows the table, and publishes nothing.
+#     published and judged, and once SCHEDULED_ISSUES is on, each flagged
+#     metric opens or updates one type:perf issue;
+#   - a pull request that touches the benchmark's own files measures once and
+#     shows the table, and publishes nothing.
 # It is not a required check. See docs/development/benchmarks.md.
 
 on:
@@ -19,23 +20,30 @@ on:
         type: string
         default: "5"
       budget_override:
-        description: "METRIC=VALUE replaces one budget for this run only (hub_start.warm=1 tests the perf issue path)"
+        description: "METRIC=VALUE replaces one budget for this run only (with issues on, hub_start.warm=1 tests the perf issue path)"
         type: string
         default: ""
       issues:
-        description: Open or update a type:perf issue for each flagged metric (off while budgets are being set)
+        description: Open or update a type:perf issue for each flagged metric
         type: boolean
-        default: true
+        default: false
   pull_request:
     paths:
       - tools/benchmarks/daily_benchmark.py
       - tools/benchmarks/benchmark_data.py
       - tools/benchmarks/budgets.json
-      - tools/benchmarks/projection_check.py
+      - tools/tests/test_daily_benchmark.py
+      - tools/tests/test_benchmark_data.py
       - .github/workflows/benchmark.yml
 
 permissions:
   contents: read
+
+env:
+  # Whether a scheduled run opens and updates perf issues. Off until the budgets
+  # come from CI: after about 7 days of results, re-seed budgets.json from the
+  # CI medians per runner and turn this on (docs/development/benchmarks.md).
+  SCHEDULED_ISSUES: "false"
 
 # A pull request supersedes its own earlier run; runs on main queue behind each
 # other and are never cancelled halfway.
@@ -199,17 +207,25 @@ jobs:
 
       # One open type:perf issue per metric, found by its exact title: a metric
       # flagged again gets a comment on its open issue, never a second issue.
+      # A scheduled run does so only with SCHEDULED_ISSUES on, a dispatch only
+      # with its issues input; otherwise the flags stay in the summary above.
       - name: Open or update perf issues
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.issues }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          OPEN_ISSUES: >-
+            ${{ (github.event_name == 'schedule' && env.SCHEDULED_ISSUES == 'true')
+            || (github.event_name == 'workflow_dispatch' && inputs.issues) }}
         run: |
           plan="$RUNNER_TEMP/issues.json"
           count=$(jq length "$plan")
           if [ "$count" -eq 0 ]; then
             echo "No metric is flagged." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$OPEN_ISSUES" != "true" ]; then
+            echo "Perf issues are off for this run: $count flagged metrics are listed above and no issue is opened or updated." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           gh issue list --state open --label type:perf --limit 500 --json number,title > "$RUNNER_TEMP/open-issues.json"

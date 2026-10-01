@@ -10,8 +10,8 @@ run. This module reads such files and owns everything after the measurement:
 
 - the median and p90 of a metric's samples;
 - whether a metric is flagged: over its budget, or its median both more than
-  20% and more than 200 ms slower than the trailing 7-day median of the same
-  runner (a metric that is not a time is judged on the 20% alone);
+  20% and more than a floor above the trailing 7-day median of the same runner
+  (200 ms for a time, CPU seconds included; 1 MiB for bytes);
 - the job summary table, ``trend.md`` (the last 30 runs per metric and runner)
   and ``latest.json``;
 - the orphan branch ``benchmark-data``: ``publish`` checks it out as a worktree
@@ -40,11 +40,13 @@ RESULT_SCHEMA = "MonkeyHubBenchmark@1"
 BUDGETS_SCHEMA = "MonkeyHubBenchmarkBudgets@1"
 LATEST_SCHEMA = "MonkeyHubBenchmarkLatest@1"
 DATA_BRANCH = "benchmark-data"
-# Units whose values are times, in milliseconds per unit; the 200 ms floor of
-# the regression rule applies to these only.
+# Units whose values are times, in milliseconds per unit: CPU seconds count as one.
 TIME_UNITS = {"ms": 1.0, "s": 1000.0}
+# A regression is more than 20% above the trailing median and more than a floor:
+# 200 ms for a time, 1 MiB for bytes; a unit with no floor is judged on the 20%.
 REGRESSION_RATIO = 0.20
 REGRESSION_FLOOR_MS = 200.0
+REGRESSION_FLOOR_BYTES = float(1 << 20)
 REGRESSION_DAYS = 7
 TREND_RUNS = 30
 SPARKS = "▁▂▃▄▅▆▇█"
@@ -191,18 +193,24 @@ def trailing_median(history: Iterable[Mapping[str, Any]], metric: str, runner: s
 
 
 def regressed(median: float, baseline: float, unit: str, *, ratio: float = REGRESSION_RATIO,
-              floor_ms: float = REGRESSION_FLOOR_MS) -> bool:
-    """Both more than ``ratio`` and, for a time, more than ``floor_ms`` above the baseline."""
+              floor_ms: float = REGRESSION_FLOOR_MS, floor_bytes: float = REGRESSION_FLOOR_BYTES) -> bool:
+    """Both more than ``ratio`` and more than the unit's floor above the baseline.
+
+    The floor is ``floor_ms`` for a time and ``floor_bytes`` for bytes.
+    """
 
     if median <= baseline * (1.0 + ratio):
         return False
-    scale = TIME_UNITS.get(unit)
-    return scale is None or (median - baseline) * scale > floor_ms
+    if unit in TIME_UNITS:
+        return (median - baseline) * TIME_UNITS[unit] > floor_ms
+    if unit == "bytes":
+        return median - baseline > floor_bytes
+    return True
 
 
 def evaluate(result: Mapping[str, Any], history: Iterable[Mapping[str, Any]], budgets: Mapping[str, Any], *,
              days: int = REGRESSION_DAYS, ratio: float = REGRESSION_RATIO,
-             floor_ms: float = REGRESSION_FLOOR_MS) -> list[dict[str, Any]]:
+             floor_ms: float = REGRESSION_FLOOR_MS, floor_bytes: float = REGRESSION_FLOOR_BYTES) -> list[dict[str, Any]]:
     """Every metric of ``result`` that is over its budget or slower than its runner's trailing median.
 
     ``history`` may include ``result`` itself and other runners' results: only
@@ -223,7 +231,8 @@ def evaluate(result: Mapping[str, Any], history: Iterable[Mapping[str, Any]], bu
         if budget is not None and median > budget:
             reasons.append("over_budget")
         baseline, runs = trailing_median(history, metric, runner, at, days)
-        if baseline is not None and regressed(float(median), baseline, unit, ratio=ratio, floor_ms=floor_ms):
+        if baseline is not None and regressed(float(median), baseline, unit, ratio=ratio, floor_ms=floor_ms,
+                                              floor_bytes=floor_bytes):
             reasons.append("regression")
         if reasons:
             flags.append({

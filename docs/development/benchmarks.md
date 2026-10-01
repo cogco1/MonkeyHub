@@ -6,9 +6,9 @@ the orphan branch `benchmark-data` (issue #547). Both run in `.github/workflows/
 
 | When | Runs on | Writes |
 |---|---|---|
-| Every day at 20:30 UTC, after the 19:00 UTC [nightly promotion](nightly-release.md) | `ubuntu-latest` and `windows-latest` | results to `benchmark-data`; one `type:perf` issue per flagged metric |
+| Every day at 20:30 UTC, after the 19:00 UTC [nightly promotion](nightly-release.md) | `ubuntu-latest` and `windows-latest` | results to `benchmark-data`; one `type:perf` issue per flagged metric once issues are on ([below](#budgets-and-flags)) |
 | **Run workflow** (`workflow_dispatch`) on `main` | both | the same; `samples`, `budget_override` and `issues` change one run |
-| A pull request that changes the harness, its budgets, `projection_check.py` or the workflow | both | nothing: the table goes to the job summary |
+| A pull request that changes the benchmark's own files: the harness, its budgets, its tests or the workflow | both | nothing: the table goes to the job summary |
 
 The workflow is not a required check. Its numbers are a trend, not a gate on any change.
 
@@ -88,23 +88,29 @@ merged into `main`. A daily commit to `main` would leave every open pull request
 for every runner, or `{"linux": …, "windows": …, "default": …}`. A metric is **flagged** when:
 
 - its median is over its budget, or
-- its median is both more than 20% and more than 200 ms slower than the median of the same runner's medians over the
-  7 days before the run. CPU seconds count as a time. Bytes are judged on the 20% alone.
+- its median is more than 20% above the median of the same runner's medians over the 7 days before the run, and
+  more than a floor above it as well: 200 ms for a time, CPU seconds included, and 1 MiB for bytes.
 
-The publish job opens one `type:perf` issue per flagged metric, titled `perf: <metric> flagged by the daily benchmark`.
-The issue's table holds every runner that flagged the metric. If an issue with that exact title is open, the job
-comments on it instead. A pull request run only marks a metric over its budget in its table.
+With issues on, the publish job opens one `type:perf` issue per flagged metric, titled
+`perf: <metric> flagged by the daily benchmark`. The issue's table holds every runner that flagged the metric. If an
+issue with that exact title is open, the job comments on it instead. Every run lists its flagged metrics in its
+summary, issues on or off. A pull request run only marks a metric over its budget in its table.
 
-To check the issue path without changing a file, dispatch the workflow with `budget_override` set to `METRIC=VALUE`,
-such as `hub_start.warm=1`. That budget applies to that run's flags only; `trend.md` keeps showing the file's budget.
-A dispatch with `issues` off publishes and judges as usual but opens and updates no issue.
+**Issues are off for now.** The first budgets come from two short local runs on Windows on 2026-10-01 (an i9-13980HX
+laptop that was running other work): 3 samples at 30 runs and 1 sample at 150 runs. Each budget is the larger of three
+times the median and the median plus 200 ms, 0.5 CPU s or 4 MiB, rounded up to two significant figures. A metric that
+both runs measured pools their samples. A GitHub runner is slower than that laptop in some ways and faster in others,
+so these budgets say little about CI. Until they come from CI, `SCHEDULED_ISSUES` at the top of the workflow is
+`"false"` and a dispatch's `issues` input defaults to false: runs publish and judge, and open or update no issue.
+To turn issues on:
 
-The first budgets come from two short local runs on Windows on 2026-10-01 (an i9-13980HX laptop that was running
-other work): 3 samples at 30 runs and 1 sample at 150 runs. Each budget is the larger of three times the median and
-the median plus 200 ms, 0.5 CPU s or 4 MiB, rounded up to two significant figures. A metric that both runs measured
-pools their samples. The budgets are generous because a GitHub runner is slower than that laptop in some ways and
-faster in others. Dispatch the first runs with `issues` off, then replace the budgets from the first week of CI
-medians.
+1. Let the workflow run for about 7 days.
+2. Re-seed `budgets.json` from the CI medians, per runner (`{"linux": …, "windows": …}`), with the same headroom.
+3. Set `SCHEDULED_ISSUES` to `"true"` in the same change.
+
+To check the issue path without changing a file, dispatch the workflow with `issues` on and `budget_override` set to
+`METRIC=VALUE`, such as `hub_start.warm=1`. That budget applies to that run's flags only; `trend.md` keeps showing the
+file's budget.
 
 ## Run it locally
 

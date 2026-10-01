@@ -86,11 +86,22 @@ class EvaluationTests(unittest.TestCase):
                     self.assertEqual(flags[0]["baseline"], history[0]["metrics"][metric]["median"])
                     self.assertEqual(flags[0]["baselineRuns"], 7)
 
-    def test_cpu_seconds_are_a_time_and_bytes_are_judged_on_the_ratio_alone(self):
-        history = self.history(idle__hub__cpu=0.5, idle__hub__read=1000.0)
-        flags = data.evaluate(result("2026-10-01T20:30:00Z", idle__hub__cpu=0.65, idle__hub__read=1300.0), history, {})
-        # 0.15 s more CPU is 30% but under the 200 ms floor; 300 more bytes is 30%.
-        self.assertEqual([flag["metric"] for flag in flags], ["idle.hub.read"])
+    def test_cpu_seconds_are_a_time_and_bytes_regress_by_20_percent_and_1_mib(self):
+        history = self.history(idle__hub__cpu=0.5, idle__worker__cpu=0.5, idle__hub__read=1000.0,
+                               idle__worker__read=4.0 * 2**20)
+        today = result("2026-10-01T20:30:00Z", idle__hub__cpu=0.65, idle__worker__cpu=0.75,
+                       idle__hub__read=1300.0, idle__worker__read=5.5 * 2**20)
+        # CPU: 0.15 s more is 30% but under the 200 ms floor; 0.25 s more is over both.
+        # Bytes: 300 more is 30% but under the 1 MiB floor; 1.5 MiB more is 37.5% and over it.
+        self.assertEqual([flag["metric"] for flag in data.evaluate(today, history, {})],
+                         ["idle.worker.cpu", "idle.worker.read"])
+        cases = {(2**20, 2 * 2**20): False,  # 100% but exactly 1 MiB more: not more than the floor
+                 (2**20, 2 * 2**20 + 1): True,
+                 (10 * 2**20, 11.5 * 2**20): False,  # 1.5 MiB more but only 15%
+                 (0.0, 1.5 * 2**20): True}
+        for (baseline, median), flagged in cases.items():
+            with self.subTest(baseline=baseline, median=median):
+                self.assertEqual(data.regressed(median, baseline, "bytes"), flagged)
 
     def test_only_the_same_runners_runs_of_the_seven_days_before_count(self):
         history = [

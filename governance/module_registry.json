@@ -8123,7 +8123,7 @@
         "The daily benchmark's scenarios: Hub start as a first launch (an empty bytecode prefix) and warm, project open as the web client's ensureProject sends it, opening Modeling as the Modeling workspace sends it, the projection check's six routes cold and warm, and 60 s of idle CPU seconds and bytes read for the Hub and the worker",
         "Starting Hubs from a checkout apart from any installed MonkeyHub: their own ports, runtime root, APPDATA, LOCALAPPDATA and bytecode prefix, and an account credential store that holds nothing",
         "The MonkeyHubBenchmark@1 result: commit, date, runner, and each metric's samples, median and p90",
-        "The budgets (tools/benchmarks/budgets.json) and the flag rule: over budget, or a median both more than 20% and, for a time, more than 200 ms slower than the trailing 7-day median of the same runner",
+        "The budgets (tools/benchmarks/budgets.json) and the flag rule: over budget, or a median both more than 20% and more than a floor (200 ms for a time, 1 MiB for bytes) above the trailing 7-day median of the same runner",
         "The orphan benchmark-data branch: results/<runner>/<YYYY-MM-DD>-<sha12>.json, trend.md and latest.json, and one issue title and body per flagged metric"
       ],
       "does_not_own": [
