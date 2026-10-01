@@ -6957,7 +6957,8 @@
         "Binding a chat message's selected images (ChatPostRequest.renderContext, #253) to exact registered PNG/JPEG pages of the conversation's own project before anything is kept or a CLI starts, keeping them on the user message with the roles the user chose and handing roles and exact pages to the native turn, whose Agent reads each page through the registered-page export and reaches the existing project_runtime.render routes through the operation admission",
         "Render provider/model/timeout preferences remain in UserSettingsDto; explicit launch environment supplies the secret only to the configured Runtime adapter, with no project or HTTP key field",
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement (monkeyhub_api/settings); the resolved values reach a Project Runtime only through its launch environment",
-        "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences"
+        "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
+        "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7238,7 +7239,8 @@
         "apps/monkeyhub/web/src/features/designTree/designTree.css",
         "apps/monkeyhub/web/src/features/designTree/fixture.ts",
         "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
-        "apps/monkeyhub/web/src/ChatSuggestionCard.css"
+        "apps/monkeyhub/web/src/ChatSuggestionCard.css",
+        "apps/monkeyhub/web/src/features/componentInfo/"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -7295,7 +7297,8 @@
         "apps/monkeyhub/api/tests/test_chat_suggestions.py",
         "apps/monkeyhub/web/test/projectStore.test.ts",
         "apps/monkeyhub/api/tests/test_chat_render.py",
-        "apps/monkeyhub/api/tests/test_chat_progress.py"
+        "apps/monkeyhub/api/tests/test_chat_progress.py",
+        "apps/monkeyhub/web/test/componentInfo.test.ts"
       ],
       "depends_on": [
         "archflow.contracts.canonical",

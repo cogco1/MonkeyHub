@@ -146,6 +146,8 @@ try {
           if (url.pathname === "/api/artifacts") return await json({ projectId, artifacts });
           // #326: a retained model's preview; this fixture retains none, and a runtime without one answers null.
           if (/^\/api\/model-assets\/[0-9a-f]{64}\/preview$/.test(url.pathname)) return await json(null);
+          // #549: Modeling reads the Board for component information cards; this board has none.
+          if (url.pathname === "/api/board") return await json({ projectId, title: "MonkeyBoard", elements: [], seenDocuments: [], revisionSha256: null });
           const model = artifacts.find((row) => url.pathname === `/api/artifacts/${row.sha256}/bytes`);
           if (model) {
             modelReads.push(model.sha256);

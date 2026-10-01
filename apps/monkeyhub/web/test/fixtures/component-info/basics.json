@@ -1,0 +1,43 @@
+{
+  "schema": "MonkeyHubComponentInfo@1",
+  "id": "basics-fixture",
+  "title": "Basics",
+  "role": "summary",
+  "order": 10,
+  "preparedAt": "2026-10-01",
+  "appliesTo": {
+    "projectId": "fixture-project",
+    "runId": "run-b",
+    "stateDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "versionLabel": "version B"
+  },
+  "missing": "No basics recorded",
+  "sources": [
+    { "id": "parts", "label": "parts list (model inches)", "date": "2026-10-01", "kind": "model-data" }
+  ],
+  "components": {
+    "post-1": {
+      "name": "Post 1 (front left)",
+      "fields": [
+        { "label": "Material", "value": "timber" },
+        { "label": "Scale", "value": "1:4", "note": "building part" },
+        { "label": "Made size", "value": "24 × 7/8 × 7/8", "unit": "in", "source": "parts" },
+        { "label": "Same kind", "value": 3, "unit": "pieces" }
+      ]
+    },
+    "brace-1": {
+      "name": "Brace 1",
+      "fields": [
+        { "label": "Material", "value": "timber" },
+        { "label": "Cut length", "value": "4.705", "unit": "in", "note": "longest edge of the side profile; its box is not its cut length" }
+      ]
+    },
+    "stand-leg-1": {
+      "name": "Stand leg 1",
+      "fields": [
+        { "label": "Scale", "value": "1:1", "note": "display stand, full size" },
+        { "label": "Made size", "value": "18 × 1-1/2 × 1-1/2", "unit": "in" }
+      ]
+    }
+  }
+}

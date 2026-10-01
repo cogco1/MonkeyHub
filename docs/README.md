@@ -38,6 +38,7 @@ are [GitHub Issues](https://github.com/cogco1/MonkeyHub/issues); who owns which 
 - [computer-use.md](protocols/computer-use.md) — MonkeyControl's action and receipt contract, refusals and policy file.
 - [integration-packs.md](protocols/integration-packs.md) — the integration pack manifest: detection, qualification and availability.
 - [model-conversion.md](protocols/model-conversion.md) — conversational model conversion: formats, providers and the chat contract.
+- [component-info.md](protocols/component-info.md) — component information datasets (`MonkeyHubComponentInfo@1`): the format, their Board cards, how Modeling shows them, and how to author a new topic.
 
 **development/** — how to work on MonkeyHub.
 

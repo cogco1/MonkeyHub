@@ -1,0 +1,234 @@
+/* #549: the component information card, in the stage-inspector slot Versions uses
+   (styles.css): docked at the canvas's right edge, the canvas giving it the room. */
+
+.stage-inspector.component-info {
+  grid-template-rows: auto minmax(0, 1fr);
+  color: var(--ink);
+}
+
+.component-info__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.component-info__heading {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.component-info__kicker {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+
+.component-info__name {
+  font-size: calc(15px * var(--font-scale, 1));
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.component-info__actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.component-info__body {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  font-size: var(--text-ui);
+  user-select: text;
+}
+
+.component-info__state {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  overflow-wrap: anywhere;
+}
+
+.component-info[data-state="mismatch"] .component-info__state,
+.component-info__state[data-card-state="mismatch"],
+.component-info__state[data-card-state="error"] {
+  border-color: var(--unchecked);
+}
+
+.component-info__block {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+section.component-info__block {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.component-info__block-title {
+  margin: 0;
+  font-size: calc(13px * var(--font-scale, 1));
+  font-weight: 600;
+}
+
+.component-info__block-note,
+.component-info__note-line,
+.component-info__missing {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  overflow-wrap: anywhere;
+}
+
+.component-info__missing {
+  color: var(--ink-2);
+}
+
+.component-info__fields {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.component-info__field {
+  display: grid;
+  grid-template-columns: minmax(64px, 30%) minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.component-info__field dt {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+
+.component-info__field dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.component-info__value {
+  font-variant-numeric: tabular-nums;
+}
+
+.component-info__status {
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-xs);
+  color: var(--unchecked);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.component-info__status[data-status="verified"] {
+  color: var(--held);
+}
+
+.component-info__status[data-status="unknown"] {
+  color: var(--faint);
+}
+
+.component-info__note,
+.component-info__source {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+
+.component-info__url {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+.component-info__link {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.component-info__group {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--overlay);
+}
+
+.component-info__group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 8px;
+}
+
+.component-info__shared {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+
+.component-info__technical {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: var(--text-caption);
+}
+
+.component-info__technical > summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.component-info__technical[open] > summary {
+  margin-bottom: 8px;
+}
+
+.component-info__technical h4 {
+  margin: 10px 0 4px;
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+.component-info__fields--technical dd {
+  font-size: var(--text-caption);
+}
+
+.component-info__list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 16px;
+  overflow-wrap: anywhere;
+}
+
+/* A value still to be confirmed, asked for or unknown reads as such without its badge. */
+.component-info__field:is([data-status="to-confirm"], [data-status="to-ask"]) > dd > .component-info__value {
+  color: var(--unchecked);
+}
+
+.component-info__field[data-status="unknown"] > dd > .component-info__value {
+  color: var(--faint);
+}
