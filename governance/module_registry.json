@@ -4633,7 +4633,7 @@
         "executing a semantic component proposal through the same run_operator path as scalar and massing proposals",
         "retaining the exact document comment referenced by a proposal in the candidate run without substituting newer ink or source file versions",
         "rechecking a proposal model source and its exact pinned document association before candidate execution, including original saved page and calibration references on traced elements",
-        "arranging composed-model continuation after native candidate execution: matching retained seat programs and CAD exports, calling the existing CAD composition adapter, and registering the complete result through project_runtime.documents",
+        "arranging composed-model continuation after native candidate execution: matching retained seat programs and CAD exports, calling the existing CAD composition adapter, rewriting the result's materials from the run's own retained declaration (declared_materials) and reading its final bytes back before registering the complete result through project_runtime.documents",
         "retaining each candidate typed operator, exact immediate source and committed base Stage; replaying its chain against the saved materialized result",
         "retaining combined candidate source ids with one normalized operator against their common Stage; replaying all sources before acceptance",
         "Read-only runtime inspection of live jobs, exact retained candidates and branch-reachable committed Stages; managed candidate admission may accept a preallocated run id without weakening exact-base checks or re-executing an existing run",
@@ -4752,7 +4752,8 @@
         "candidate ownership continues the selected source run through its retained seat round and discipline-seat refs; only explicitly deleted Component roots retire, legacy sources without a seat schedule keep authored-pack behavior, and missing or ambiguous retained ownership is refused",
         "changed-component coverage is checked before composed-model registration and on cold candidate reads from the existing retained operator and runner receipt; a run that did not build its own changed components is not recovered as a succeeded candidate",
         "the Worktree Graph never merges, starts, replays or writes; conflicts are compared from the nearest shared source, never from a common Stage that both lines already changed",
-        "a Worktree Graph drawing row is the representation-status projection of the drawing's latest page, so a change outside the plan's read set leaves it current; the graph says stale for outdated and keeps its other words"
+        "a Worktree Graph drawing row is the representation-status projection of the drawing's latest page, so a change outside the plan's read set leaves it current; the graph says stale for outdated and keeps its other words",
+        "every composed candidate wears what its run's exact retained record declares, whether or not geometry changed, and its final bytes are read back (GUIDs, encoded geometry, non-material user strings and materials) before registration; a model that does not read back fails the candidate and registers nothing, and retained composed models are never rewritten"
       ],
       "status": "canonical",
       "tests": [

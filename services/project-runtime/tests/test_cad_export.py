@@ -46,6 +46,7 @@ from monkeycad.backends.occt.kernel import occt_available
 from monkeycad.backends.occt.measure import ShapeMeasure, classify_program_point, measure_shape
 from monkeycad.backends.occt.step import StepEntry, read_step
 from monkeycad.execution import CadCapabilityError
+from monkeycad.formats.three_dm_compose import rewrite_composed_materials
 from monkeycad.formats.three_dm_inspector import inspect_three_dm
 from archflow.state.geometry_program import load_compiled_geometry_program
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -69,6 +70,8 @@ NEEDS_OCCT = unittest.skipUnless(
 )
 JOB_DEADLINE = 180.0
 TERMINAL = ("succeeded", "failed")
+# The two labels an export writes about an object's material.
+MATERIAL_LABELS = ("archflow:material", "archflow:material_status")
 OCCT_RECEIPT = "seat-occt-execution"
 RHINO_RECEIPT = "seat-rhino-execution"
 INSPECTION = "seat-3dm-inspection"
@@ -373,17 +376,20 @@ class ComposedCandidateExportTests(OcctCandidateTestCase):
         path.write_bytes(data)
         return inspect_three_dm(path)
 
-    def composed_source(self) -> tuple[dict, object]:
-        with no_process():
-            accepted, job = self.run_candidate(self.client, "set height to 2.2", elementId="portico-base")
-        self.assertEqual(job["status"], "succeeded", job)
-        run_id = accepted["candidateId"]
+    def composed_source(self, run_id: str | None = None, *, worn: dict[str, str] | None = None) -> tuple[dict, object]:
+        if run_id is None:
+            with no_process():
+                accepted, job = self.run_candidate(self.client, "set height to 2.2", elementId="portico-base")
+            self.assertEqual(job["status"], "succeeded", job)
+            run_id = accepted["candidateId"]
         _, preview = self.split(self.candidate(self.client, run_id)["artifacts"])
         native = self.inspect_model(self.bytes_of(self.client, preview))
         # This fixed synthetic model adds a line and a block to the same OCCT
         # fixture. Its native geometry must match this run before registration;
         # independent exports may assign different object UUIDs.
         data = (Path(__file__).parent / "fixtures/model-source-composed.3dm").read_bytes()
+        if worn is not None:
+            data = self.worn_under(data, run_id, worn)
         composed = self.inspect_model(data)
         expected = {row["name"]: row["geometry_sha256"] for row in native.object_geometry_sha256}
         actual = {row["name"]: row["geometry_sha256"] for row in composed.object_geometry_sha256
@@ -398,6 +404,46 @@ class ComposedCandidateExportTests(OcctCandidateTestCase):
         })
         self.assertEqual(registered.status_code, 201, registered.text)
         return registered.json(), composed
+
+    def worn_under(self, data: bytes, run_id: str, declared: dict[str, str]) -> bytes:
+        """The fixture as a compose under an earlier declaration left it: the portico wears that material.
+
+        This is the state a material-only change left a line in before #580: the
+        run's record has moved on, its composed model still wears the old material.
+        Only attributes and tables differ, so every geometry digest stays the fixture's.
+        """
+
+        program = load_compiled_geometry_program(self.load_kind(run_id, "seat-geometry-program"))
+        return rewrite_composed_materials(data, programs=(program,), material_by_component=declared, material_colors={})
+
+    def declare_travertine(self, run_id: str) -> object:
+        """A facets proposal on the run: the portico is travertine, in its stated colour; nothing else changes."""
+
+        state = self.client.get("/api/state", params={"run": run_id}).json()["stateDigest"]
+        response = self.client.post("/api/proposals/facets", json={
+            "stateDigest": state, "sourceRunId": run_id,
+            "targets": [{"id": "portico", "set": {"material.name": "travertine", "material.color": "#D8CBB0"}}],
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        return self.client.app.state.proposals.get(response.json()["proposalId"])
+
+    def assert_travertine(self, inspection) -> None:
+        """Both portico objects are bound to the one travertine, in its declared colour, and say so."""
+
+        labels = {row["object_id"]: {pair["key"]: pair["value"] for pair in row["attributes"]}
+                  for row in inspection.object_user_strings}
+        rows = {row["name"]: row for row in inspection.object_material_bindings if row["name"].startswith("obj-")}
+        self.assertEqual(set(rows), {"obj-portico-base", "obj-portico-cornice"})
+        self.assertEqual(len({row["material_index"] for row in rows.values()}), 1)
+        for name, row in rows.items():
+            self.assertEqual((row["material_source"], row["material_name"], row["archflow_material_id"],
+                              row["material_diffuse_color_rgba"]),
+                             ("MaterialFromObject", "travertine", "travertine", [216, 203, 176, 255]), name)
+            self.assertEqual(labels[row["object_id"]].get("archflow:material"), "travertine", name)
+            self.assertNotIn("archflow:material_status", labels[row["object_id"]], name)
+        worn = {row["material_name"] for row in inspection.object_material_bindings if row["material_index"] >= 0
+                and row["material_source"] != "MaterialFromLayer"}
+        self.assertEqual(worn, {"travertine"})
 
     def edit_model(self, client: TestClient, source: dict, utterance: str, *, element_id: str = "portico-base") -> tuple[dict, dict]:
         intent = client.post("/api/intents", json={
@@ -436,14 +482,40 @@ class ComposedCandidateExportTests(OcctCandidateTestCase):
         def imported(rows):
             return tuple(row for row in rows if row["name"].startswith("imported-"))
 
+        def strings(inspection):
+            # Every compose labels each object's material (#580); whatever else an imported object carries stays.
+            rows = {}
+            for row in imported(inspection.object_user_strings):
+                kept = [pair for pair in row["attributes"] if pair["key"] not in MATERIAL_LABELS]
+                if kept or row["geometry"]:
+                    rows[row["object_id"]] = {**row, "attributes": kept}
+            return rows
+
         self.assertTrue(imported(before.object_geometry_sha256))
         self.assertEqual(imported(before.object_geometry_sha256), imported(after.object_geometry_sha256))
-        self.assertEqual(imported(before.object_user_strings), imported(after.object_user_strings))
+        self.assertEqual(strings(before), strings(after))
         self.assertTrue(before.instance_definitions)
         self.assertTrue(before.instance_references)
         self.assertEqual(before.instance_definitions, after.instance_definitions)
         self.assertEqual(before.instance_references, after.instance_references)
         self.assertEqual(before.units, after.units)
+        self.assert_imported_undeclared(after)
+
+    def assert_imported_undeclared(self, inspection) -> None:
+        """An imported object no component declares a material for wears none, and says so; a block member wears its instance's."""
+
+        labels = {row["object_id"]: {pair["key"]: pair["value"] for pair in row["attributes"]}
+                  for row in inspection.object_user_strings}
+        rows = [row for row in inspection.object_material_bindings if row["name"].startswith("imported-")]
+        self.assertTrue(rows)
+        for row in rows:
+            if row["is_instance_definition_object"]:
+                self.assertEqual((row["material_source"], row["material_index"]), ("MaterialFromParent", -1), row)
+                continue
+            self.assertEqual((row["material_source"], row["material_index"], row["material_name"]),
+                             ("MaterialFromLayer", -1, None), row)
+            self.assertEqual(labels[row["object_id"]].get("archflow:material_status"), "undeclared", row)
+            self.assertNotIn("archflow:material", labels[row["object_id"]], row)
 
     def assert_model_height(self, inspection, element_id: str, height: float) -> None:
         matching = [row for row in inspection.named_object_bboxes if element_id in row["name"]]
@@ -512,6 +584,73 @@ class ComposedCandidateExportTests(OcctCandidateTestCase):
         self.assertEqual(self.repository.read_head(), before_head)
         for path, content in authored.items():
             self.assertEqual(self.repository.layout.resolve_relative(path).read_bytes(), content)
+
+    def test_a_material_only_change_reaches_the_composed_model(self) -> None:
+        """No geometry changes, so the patch keeps every object; the composed model still takes the new material (#580)."""
+
+        from dataclasses import replace
+
+        from project_runtime.application.artifacts import ModelSource
+        from project_runtime.binding import bound_project
+
+        # The line's composed model still wears the old stone an earlier declaration gave the portico.
+        original, before = self.composed_source(worn={"portico": "old stone"})
+        proposal = replace(self.declare_travertine(original["modelSource"]["runId"]),
+                           model_source=ModelSource.from_dict(original["modelSource"]))
+        state = self.client.app.state
+        with no_process():
+            candidate_module.execute_candidate(bound_project(state), state.settings, proposal, "material-only-composed")
+        composed, after = self.composed_result(self.client, "material-only-composed")
+        # The run no longer retains the source model's bytes as its own.
+        self.assertNotEqual(composed["sha256"], original["sha256"])
+        self.assert_travertine(after)
+        self.assert_imported_unchanged(before, after)
+        # Every object keeps its GUID and its geometry, compared by content, and its logical reference.
+        self.assertEqual({row["object_id"]: row["geometry_sha256"] for row in after.object_geometry_sha256},
+                         {row["object_id"]: row["geometry_sha256"] for row in before.object_geometry_sha256})
+
+        def refs(inspection):
+            return {row["object_id"]: [pair["value"] for pair in row["attributes"] if pair["key"] == "archflow:object_ref"]
+                    for row in inspection.object_user_strings if row["name"].startswith("obj-")}
+
+        self.assertEqual(refs(after), refs(before))
+
+    def test_a_geometry_change_also_dresses_the_objects_it_kept(self) -> None:
+        with no_process():
+            first, job = self.run_candidate(self.client, "set height to 2.2", elementId="portico-base")
+            self.assertEqual(job["status"], "succeeded", job)
+            declared = self.declare_travertine(first["candidateId"])
+            started = self.client.post(f"/api/proposals/{declared.proposal_id}/candidate")
+            self.assertEqual(started.status_code, 202, started.text)
+            job = self.finished(self.client, started.json()["jobId"])
+            self.assertEqual(job["status"], "succeeded", job)
+            # The declaring run's composed model still wears the old stone, as a material-only change left it.
+            original, before = self.composed_source(started.json()["candidateId"], worn={"portico": "old stone"})
+            # The cornice rests on the base, so only a cornice change leaves the base as it is.
+            accepted, job = self.edit_model(self.client, original["modelSource"], "set height to 0.6",
+                                            element_id="portico-cornice")
+        self.assertEqual(job["status"], "succeeded", job)
+        composed, after = self.composed_result(self.client, accepted["candidateId"])
+        self.assert_model_height(after, "portico-cornice", 0.6)
+        self.assert_travertine(after)
+        self.assert_imported_unchanged(before, after)
+        old = {row["name"]: row for row in before.object_geometry_sha256}
+        new = {row["name"]: row for row in after.object_geometry_sha256}
+        # The base was kept, GUID and geometry, and still changed from old stone to travertine.
+        self.assertEqual(new["obj-portico-base"], old["obj-portico-base"])
+        self.assertEqual(new["obj-portico-cornice"]["object_id"], old["obj-portico-cornice"]["object_id"])
+        self.assertNotEqual(new["obj-portico-cornice"]["geometry_sha256"], old["obj-portico-cornice"]["geometry_sha256"])
+
+    def test_a_composed_model_that_does_not_read_back_is_not_retained(self) -> None:
+        original, _ = self.composed_source(worn={"portico": "old stone"})
+        # A compose that skipped the rewrite: the kept base would go on wearing stone nobody declares.
+        with no_process(), mock.patch.object(candidate_module, "rewrite_composed_materials",
+                                             side_effect=lambda composed, **_: composed):
+            accepted, job = self.edit_model(self.client, original["modelSource"], "set height to 0.6",
+                                            element_id="portico-cornice")
+        self.assertIn("The composed candidate model was not retained", job["error"])
+        self.assertIn("declares no material but wears one", job["error"])
+        self.assert_failed_without_composed(accepted, job)
 
     def test_a_core_patch_failure_never_becomes_a_complete_candidate(self) -> None:
         original, _ = self.composed_source()

@@ -615,6 +615,23 @@ The export reads its preview back and fails on a material whose name, colour or 
 differs. Nothing is inferred from names or shapes; retained candidates and their files are
 never rewritten, so only runs made after a declaration carry its material.
 
+**The composed model wears the same declarations (#580).** A candidate that continues a
+complete composed model (an imported model with native objects patched in) rewrites that
+model's material table, object bindings and material labels from its run's declared materials
+on every compose, whether or not any geometry changed, so a material-only change gives the run
+composed bytes of its own. An object a seat's program delivers wears what that run's preview
+gives it; any other object wears the material the components its `archflow:component` names
+declare, as one native material named by it in its declared colour. Every other object, an
+imported object with no component included, wears none and carries
+`archflow:material_status: undeclared`. Materials the imported model or an earlier step brought
+are cleared, not kept: object bindings, layer render materials and block members' own materials
+(members wear their instance's). A table entry no object wears any more stays in the table,
+unreferenced. Object GUIDs, geometry, names, layers and every other user string are untouched.
+Before registering, the runtime reads the final bytes back against the input model and the
+native exports (each object's GUID, its user strings other than the two material labels, and
+its encoded geometry, compared by content rather than by bounds) and against the declarations;
+a mismatch fails the candidate and registers no composed model.
+
 ### 5.2 The judgement is retained
 
 Running a candidate makes a reversible result, not a design decision. It does not mark that
