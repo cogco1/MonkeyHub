@@ -53,7 +53,7 @@ let imported = false, failRead = false, holdInspection = false, project = "secon
 const upload = () => page.getByLabel("Choose a recipe file").setInputFiles({ name: "recipe.json", mimeType: "application/json", buffer: Buffer.from(content) });
 try {
   await server.listen();
-  browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}) });
+  browser = await chromium.launch({ headless: true, channel: "chrome" });
   page = await browser.newPage({ viewport: { width: 1100, height: 820 } });
   page.on("pageerror", error => errors.push(error.message));
   await page.route(url => url.pathname.startsWith("/api/"), async route => {
