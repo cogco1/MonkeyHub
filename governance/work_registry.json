@@ -1,35 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-283",
-      "lanes": [
-        {
-          "id": "workspace-width",
-          "status": "active",
-          "branch": "codex/283-workspace-width",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-283-workspace-width",
-          "base_ref": "2461e7243f9b919d8ca6f4ef1b952f2fd08e0d46",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/settings/models.py",
-            "apps/monkeyhub/api/tests/test_settings.py",
-            "apps/monkeyhub/web/src/ChatShell.css",
-            "apps/monkeyhub/web/src/ChatShell.tsx",
-            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs",
-            "apps/monkeyhub/web/test/workspaceWidth.test.ts"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
