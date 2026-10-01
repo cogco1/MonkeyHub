@@ -61,6 +61,7 @@
 
 .component-info[data-state="mismatch"] .component-info__state,
 .component-info__state[data-card-state="mismatch"],
+.component-info__state[data-card-state="reshaped"],
 .component-info__state[data-card-state="error"] {
   border-color: var(--unchecked);
 }

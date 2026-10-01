@@ -687,6 +687,24 @@ try {
     await undo.click(); assert.deepEqual(await currentInk(), []);
     await redo.click(); assert.deepEqual(await currentInk(), [second], "Redo restores only the current file's full stroke snapshot");
     assert.equal((await currentInk()).some((ink) => ink.id === first.id), false);
+    // #577: 清空批注 takes every mark at once, and one Undo brings them all back.
+    const clearAll = page.locator("#annotation-tools").getByRole("button", { name: "Clear annotations", exact: true });
+    if (await page.locator('canvas.annotate[data-armed="true"]').count() === 0) {
+      await page.locator("#annotation-tools").getByRole("button", { name: "╱ Line", exact: true }).click();
+    }
+    const paper = await page.locator('canvas.annotate[data-armed="true"]').boundingBox(); assert.ok(paper);
+    await page.mouse.move(paper.x + paper.width * 0.4, paper.y + paper.height * 0.3);
+    await page.mouse.down();
+    await page.mouse.move(paper.x + paper.width * 0.6, paper.y + paper.height * 0.3, { steps: 8 });
+    await page.mouse.up();
+    await until(currentInk, (ink) => ink.length === 2, "The second mark was not recorded");
+    const both = await currentInk();
+    assert.equal(await clearAll.isEnabled(), true);
+    await clearAll.click();
+    assert.deepEqual(await currentInk(), [], "Clear removes every mark");
+    assert.equal(await clearAll.isEnabled(), false, "Nothing is left to clear");
+    await undo.click(); assert.deepEqual(await currentInk(), both, "One Undo brings every cleared mark back");
+    await clearAll.click(); assert.deepEqual(await currentInk(), []);
     await loadLocal("local-first.3dm", bytesA);
     assert.deepEqual(await currentInk(), []);
     assert.equal(await undo.isEnabled(), false); assert.equal(await redo.isEnabled(), false);
