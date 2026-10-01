@@ -1,4 +1,7 @@
-"""The Agent's bounded look through the bound Studio (#303): one allowance per answered user message."""
+"""The Agent's bounded look through the bound Studio (#303): one allowance per answered user message.
+
+A loop that declares a look closes with its admission only after one (#294).
+"""
 
 from __future__ import annotations
 
@@ -32,10 +35,67 @@ _KEEP_REFINING = re.compile(
 # Up to four owner-rendered views and one provider look, which is bounded itself.
 _VISUAL_REVIEW_WAIT_S = 300
 _visual_allowances: dict[str, tuple[str, dict]] = {}
+# The classes whose allowance includes a look. A loop declared as one of them
+# is complete only once it has looked (#294, owner decision 2026-10-01).
+_LOOKING_CLASSES = frozenset({"spatial_formal", "polish"})
+_TASK_CLASSES = frozenset({*_VISUAL_ALLOWED, "polish"})
+# The exact models this chat's answered reviews put in front of the Agent or
+# its observer, by run. A refused or unanswered review adds nothing. Like the
+# allowance it is this adapter's memory of the conversation, never a project
+# record: a look admits, continues and accepts nothing.
+_looked_at: dict[str, set[str]] = {}
 
 
 def _allowance_note(held: dict) -> str:
     return f"This message's {held['taskClass']} allowance: {held['used']} of {held['allowed']} reviews used."
+
+
+def _saw(chat_id: str, sources) -> None:
+    """Remember the models one answered review showed, by their exact runs."""
+    _looked_at.setdefault(chat_id, set()).update(
+        source["runId"] for source in sources
+        if isinstance(source, dict) and source.get("kind") == "model" and isinstance(source.get("runId"), str))
+
+
+def _require_look(chat_id: str, bound: dict, declared) -> None:
+    """Refuse an Agent's admission of a loop that has not finished, before the Runtime is asked.
+
+    An admission is the Agent's completed and self-inspected result (#294,
+    owner decision 2026-10-01): the end of a run alone never closes a loop.
+    The loop names its class beside the admission, or keeps the one a spent
+    review of the same message fixed; a deterministic edit is complete once
+    the Runtime's gate reads its result back. A spatial_formal or polish loop
+    is complete only after one of this chat's reviews looked at a result it
+    admits (it stopped there) or at an attempt one of them superseded (it
+    repaired). A rejection or a withdrawal puts nothing in the pool and needs
+    no look.
+    """
+    if declared is not None and declared not in _TASK_CLASSES:
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "taskClass is spatial_formal, polish or deterministic_edit.")
+    admitted = [row for row in bound.get("results") or () if isinstance(row, dict) and row.get("outcome") == "admitted"]
+    if not admitted:
+        return
+    turn, held = _visual_allowances.get(chat_id, (None, None))
+    held = held if turn == bound["messageSource"]["messageId"] else None
+    if held is not None and held["used"] and declared not in (None, held["taskClass"]):
+        raise HubFailure(409, "VISUAL_TASK_CLASS_FIXED",
+                         f"A review of this message was spent as {held['taskClass']}, so that is the class of the loop "
+                         f"this admission closes. {_allowance_note(held)} Nothing was admitted.")
+    task_class = declared or (held or {}).get("taskClass")
+    if task_class is None:
+        raise HubFailure(422, "CHAT_ADMISSION_INVALID",
+                         "Name the loop's taskClass beside the admission: deterministic_edit when its readback checks "
+                         "it, spatial_formal or polish when the result needs a look. Nothing was admitted.")
+    if task_class not in _LOOKING_CLASSES:
+        return
+    loop = {row.get("runId") for row in admitted} | {
+        attempt for row in admitted for attempt in row.get("supersedes") or () if isinstance(attempt, str)}
+    if not loop & _looked_at.get(chat_id, set()):
+        results = ", ".join(sorted(str(row.get("runId")) for row in admitted))
+        raise HubFailure(409, "ADMISSION_NOT_INSPECTED",
+                         f"This {task_class} loop has not looked at {results} or at an attempt it superseded. Show "
+                         "the result's modelSource to visual_review, then repair (admit the repair with the attempt "
+                         "in supersedes) or stop and admit it. Nothing was admitted.")
 
 
 def _visual_allowance(chat_id: str, message: dict, declared, rounds) -> dict:
@@ -80,7 +140,9 @@ def _visual_review(hub: str, chat_id: str, arguments: dict) -> dict:
     and the allowance and keeps what the answer says of it: a refusal spends
     nothing, and a call the provider may have answered is spent. A finding
     that touches a preserve condition is marked escalate: it is a question for
-    the architect, which another review cannot settle.
+    the architect, which another review cannot settle. An answered review is
+    remembered by the exact models it showed, which is all a looking loop's
+    admission asks of it; the look itself writes, admits and adopts nothing.
     """
     if not isinstance(arguments, dict) or set(arguments) - _VISUAL_REVIEW_FIELDS - {"taskClass", "polishRounds"}:
         raise HubFailure(422, "CHAT_TOOL_INVALID", "visual_review takes taskClass, polishRounds for a polish task "
@@ -143,6 +205,7 @@ def _visual_review(hub: str, chat_id: str, arguments: dict) -> dict:
         except (ValueError, TypeError, KeyError, HubFailure) as invalid:
             raise HubFailure(502, "CHAT_TOOL_FAILED", spent("The Studio answered invalid review frames.")) from invalid
         held.update(used=state["used"], lastFindingIds=[])
+        _saw(chat_id, body["sourceRefs"])
         return {"delivery": "frames", "frames": frames, "observation": None, "usage": None,
                 "note": "Inspect the images against the requested criteria. Delivery alone is not an observation or acceptance. "
                         "No structured finding ids exist for an after_repair review.",
@@ -150,6 +213,7 @@ def _visual_review(hub: str, chat_id: str, arguments: dict) -> dict:
     if not isinstance(observation, dict):
         raise HubFailure(502, "CHAT_TOOL_FAILED", spent("The Studio answered this review outside its contract."))
     held.update(used=state["used"], lastFindingIds=list(state.get("lastFindingIds") or ()))
+    _saw(chat_id, body["sourceRefs"])
     findings = [{**row, "escalate": any(str(ref).startswith("preserve:") for ref in row.get("targetRefs") or ())}
                 for row in observation.get("observations") or () if isinstance(row, dict)]
     return {"observation": {**observation, "observations": findings}, "usage": answer.get("usage"),

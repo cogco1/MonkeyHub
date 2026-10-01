@@ -52,9 +52,13 @@ class AgentAdmissionTests(unittest.TestCase):
         self.session = {"id": str(uuid4()), "projectId": self.project_id, "projectDir": str(self.project.resolve()),
                         "status": "running", "messages": []}
         self.writes = []
+        self.models, self.drawn = {}, []
         self.addCleanup(patch.stopall)
         patch.object(preparation, "_bound_studio", side_effect=lambda *a, **k: (self.base, deepcopy(self.session))).start()
         patch.object(transport, "_request_json", side_effect=self.request).start()
+        # The model-view owner's drawing is the one stand-in on the look's path:
+        # it answers only the exact models this test registered.
+        patch("project_runtime.application.visual_reviews.model_view", side_effect=self.model_view).start()
 
     def studio(self) -> TestClient:
         """The project's Runtime as the Hub starts it: with the Hub's instance id."""
@@ -119,7 +123,29 @@ class AgentAdmissionTests(unittest.TestCase):
             "projectId": self.project_id, "runId": run_id, "stateDigest": digest, "fileName": "complete.3dm",
             "contentBase64": base64.b64encode(self.model).decode("ascii")})
         self.assertEqual(registered.status_code, 201, registered.text)
+        self.models[run_id] = registered.json()["modelSource"]
         return run_id
+
+    def model_view(self, binding, *, model_source, view):
+        """One drawn view of an exact registered model; any other source is not retained."""
+        import io
+        from PIL import Image
+        from project_runtime.errors import StudioError
+
+        if model_source.to_dict() not in self.models.values():
+            raise StudioError(409, "MODEL_SOURCE_MISMATCH", "Not a retained model of this project.")
+        self.drawn.append((model_source.run_id, view))
+        picture = io.BytesIO()
+        Image.new("RGB", (64, 48), "white").save(picture, format="PNG")
+        return picture.getvalue(), 64, 48
+
+    def look(self, run_id, **changes):
+        """The Agent's visual_review of one result's model, as it would call it."""
+        return tool_calls.call_tool(self.hub, self.session["id"], "visual_review", {
+            "taskClass": "spatial_formal", "reason": "first_bundle", "domain": "modeling",
+            "sourceRefs": [{"kind": "model", **self.models[run_id]}], "viewRecipe": ["axon"],
+            "task": "Check that the portico reads lighter than the base.",
+            "criteria": [{"criterionId": "proportion", "text": "The portico reads lighter than the base."}], **changes})
 
     def head(self, client=None):
         return (client or self.client).get("/api/working-source").json()["head"]["runId"]
@@ -154,11 +180,16 @@ class AgentAdmissionTests(unittest.TestCase):
         tools = {tool["name"]: tool for tool in _tools_of(mcp_server)}
         described = tools["studio_request"]["description"]
         for words in ("POST /api/admissions", "supersedes", "study: {id, label, baseRunId}", "id an ASCII slug",
-                      "PUT /api/working-draft", "only when the user's words ask to continue"):
+                      "PUT /api/working-draft", "only when the user's words ask to continue", "taskClass",
+                      "only after visual_review looked at that result or an attempt it supersedes"):
             self.assertIn(words, described)
         quote = tools["studio_request"]["inputSchema"]["properties"]["feedbackQuote"]["description"]
         self.assertIn("/api/admissions", quote)
         self.assertIn("PUT /api/working-draft", quote)
+        declared = tools["studio_request"]["inputSchema"]["properties"]["taskClass"]
+        self.assertEqual(declared["enum"], ["spatial_formal", "polish", "deterministic_edit"])
+        self.assertIn("Only for POST /api/admissions", declared["description"])
+        self.assertIn("A look admits, continues and accepts nothing", tools["visual_review"]["description"])
 
         # The Agent reads the contracts without the fields Hub binds for it.
         self.user("看看这个方案")
@@ -219,9 +250,15 @@ class AgentAdmissionTests(unittest.TestCase):
             with self.subTest(change=change):
                 self.refused("CHAT_ADMISSION_INVALID", "/api/admissions",
                              {"results": [{"runId": kept, "outcome": "admitted"}], **change})
+        # A loop that admits a result says what kind of loop it was; a look belongs to no other path.
+        self.refused("CHAT_ADMISSION_INVALID", "/api/admissions", {"results": [{"runId": kept, "outcome": "admitted"}]})
+        self.refused("CHAT_TOOL_INVALID", "/api/admissions", {"results": [{"runId": kept, "outcome": "admitted"}]},
+                     taskClass="deterministic")
+        self.refused("CHAT_TOOL_INVALID", "/api/proposals", {"stateDigest": "0" * 64}, taskClass="deterministic_edit")
         self.assertEqual(self.writes, [])
 
-        record = self.tool("/api/admissions", {"results": [{"runId": kept, "outcome": "admitted", "label": "A"}]})
+        record = self.tool("/api/admissions", {"results": [{"runId": kept, "outcome": "admitted", "label": "A"}]},
+                           taskClass="deterministic_edit")
         self.assertEqual(record["messageSource"], {"sessionId": self.session["id"], "messageId": current["id"]})
         self.assertIsNone(record["rawLanguage"], "a policy admission claims no words of the user's")
         self.assertEqual((record["task"]["kind"], record["actor"]["origin"]), ("hub-chat", "hub-agent"))
@@ -263,7 +300,12 @@ class AgentAdmissionTests(unittest.TestCase):
                    for label, run_id, attempt in zip("ABCDE", tries[:2] + list(redone.values()),
                                                      [None, None, *redone])]
         study = {"id": "furniture-house", "label": "五个家具之家方案", "baseRunId": c3}
-        record = self.tool("/api/admissions", {"task": {"kind": "hub-chat"}, "study": study, "results": results})
+        admission = {"task": {"kind": "hub-chat"}, "study": study, "results": results}
+        # Five schemes are a spatial loop: it closes only after one look at what it made.
+        self.refused("ADMISSION_NOT_INSPECTED", "/api/admissions", admission, taskClass="spatial_formal")
+        self.assertEqual(len(self.admissions()), 1, "a loop that has not looked admits nothing")
+        self.look(redone[tries[3]])
+        record = self.tool("/api/admissions", admission)
 
         admitted = [row["runId"] for row in record["results"]]
         self.assertEqual(len(admitted), 5)
@@ -302,6 +344,71 @@ class AgentAdmissionTests(unittest.TestCase):
         self.assertEqual((event["origin"], event["previousHeadRunId"], event["messageSource"]),
                          ("hub-agent", self.reference, {"sessionId": self.session["id"], "messageId": choice["id"]}))
         self.assertEqual(len(self.admissions()), 2, "Continue admits nothing")
+
+    # ---- a loop is admitted once it has finished (owner decision, 2026-10-01)
+
+    def test_a_spatial_loop_is_admitted_once_after_its_look_and_its_repair_never_shows(self):
+        asked = self.user("门廊太笨重了，让它的比例轻一些。")
+        attempt = self.generate(height=2.4)
+        # The end of a run is not the end of the loop: this one declared a look and has not looked.
+        closing = {"results": [{"runId": attempt, "outcome": "admitted", "label": "轻门廊"}]}
+        refusal = self.refused("ADMISSION_NOT_INSPECTED", "/api/admissions", closing, taskClass="spatial_formal")
+        self.assertIn("visual_review", refusal.error.detail)
+        self.assertEqual((self.writes, self.admissions()), ([], []))
+
+        # One look at the exact result, through the Runtime's own review route. It sees and
+        # decides nothing for the project: no admission, no Continue, no Candidate.
+        looked = self.look(attempt)
+        self.assertEqual((looked["delivery"], looked["allowance"]),
+                         ("frames", {"taskClass": "spatial_formal", "allowed": 2, "used": 1}))
+        self.assertEqual([frame["sourceRef"] for frame in looked["frames"]], [{"kind": "model", **self.models[attempt]}])
+        self.assertEqual(self.drawn, [(attempt, "axon")])
+        self.assertEqual((self.writes, self.admissions(), self.head()), ([], [], self.reference))
+        self.assertEqual(self.client.get("/api/design-history").json()["candidates"], [])
+
+        # What it saw needs a repair: the loop's result supersedes the attempt it looked at.
+        repaired = self.generate(source=attempt, height=2.6)
+        closing = {"results": [{"runId": repaired, "outcome": "admitted", "supersedes": [attempt], "label": "轻门廊"}]}
+        record = self.tool("/api/admissions", closing, taskClass="spatial_formal")
+        self.assertEqual([(row["runId"], row["supersedes"]) for row in record["results"]], [(repaired, [attempt])])
+        self.assertEqual((record["task"]["kind"], record["actor"]["origin"], record["rawLanguage"]),
+                         ("hub-chat", "hub-agent", None))
+        self.assertEqual(record["messageSource"], {"sessionId": self.session["id"], "messageId": asked["id"]})
+        # Admitted once: a retry repeats the record, and the attempt can no longer close a loop.
+        self.assertEqual(self.tool("/api/admissions", closing)["admissionId"], record["admissionId"])
+        self.refused("ADMISSION_CONFLICT", "/api/admissions",
+                     {"results": [{"runId": attempt, "outcome": "admitted"}]}, taskClass="spatial_formal")
+        self.assertEqual([row["admissionId"] for row in self.admissions()], [record["admissionId"]])
+
+        # The repair never shows in the design tree; the attempt it replaced stays readable as one.
+        for client in (self.client, self.studio()):
+            history = client.get("/api/design-history", params={"include": "rejected"}).json()
+            self.assertEqual([(row["candidateId"], row["supersedes"], row["admittedBy"]["origin"])
+                              for row in history["candidates"]], [(repaired, [attempt], "hub-agent")])
+            lines = {line["runId"]: line["admission"] for line in client.get("/api/worktrees").json()["lines"]
+                     if line["kind"] == "result"}
+            self.assertEqual((lines.get(attempt), lines.get(repaired)), ("superseded", "admitted"))
+        self.assertEqual(self.head(), self.reference, "admission never moves the Working Head")
+
+    def test_a_look_fixes_the_loops_class_and_has_to_see_the_loop_it_closes(self):
+        self.user("比较一下两种门廊比例。")
+        seen, unseen = self.generate(height=2.4), self.generate(height=2.8)
+        self.look(seen)
+        # The review fixed this message's class: the loop cannot now call itself deterministic.
+        self.refused("VISUAL_TASK_CLASS_FIXED", "/api/admissions",
+                     {"results": [{"runId": seen, "outcome": "admitted"}]}, taskClass="deterministic_edit")
+        # A look at another result is not a look at this loop.
+        self.refused("ADMISSION_NOT_INSPECTED", "/api/admissions", {"results": [{"runId": unseen, "outcome": "admitted"}]})
+        self.assertEqual((self.writes, self.admissions()), ([], []))
+        # A rejection on the user's words admits nothing, so it needs no look.
+        self.user("第二个不要。")
+        rejected = self.tool("/api/admissions", {"results": [{"runId": unseen, "outcome": "rejected"}]})
+        self.assertEqual([row["outcome"] for row in rejected["results"]], ["rejected"])
+        # The class a spent review fixed belongs to its message; a new message declares again.
+        self.refused("CHAT_ADMISSION_INVALID", "/api/admissions", {"results": [{"runId": seen, "outcome": "admitted"}]})
+        record = self.tool("/api/admissions", {"results": [{"runId": seen, "outcome": "admitted"}]},
+                           taskClass="spatial_formal")
+        self.assertEqual([row["runId"] for row in record["results"]], [seen])
 
     # ---- the Hub turn that gives the provider its instructions
 
@@ -401,7 +508,8 @@ class FirstModelRecipeTests(unittest.TestCase):
     def test_a_first_model_and_its_follow_up_need_only_the_calls_the_guide_states(self):
         guide = next(tool for tool in _tools_of(mcp_server) if tool["name"] == "studio_request")["description"]
         for stated in ("POST /api/project/modeling with body {}", "POST /api/proposals/construction", "at=top(",
-                       "awaitSeconds: 60", "candidate.stateDigest", "supersedes may be []", "POST /api/proposals/facets"):
+                       "awaitSeconds: 60", "candidate.stateDigest", "supersedes may be []", "POST /api/proposals/facets",
+                       "taskClass: deterministic_edit when readback checks it"):
             self.assertIn(stated, guide)
 
         # The evidence turn (#404 F7): two stacked masses on an empty project, as one script (#419).
@@ -424,7 +532,7 @@ class FirstModelRecipeTests(unittest.TestCase):
                          self.client.get("/api/state", params={"run": first}).json()["stateDigest"])
         self.exported(first, made["candidate"]["stateDigest"])
         admitted = self.call("POST", "/api/admissions", {"results": [
-            {"runId": first, "outcome": "admitted", "supersedes": [], "label": "叠加体块"}]})
+            {"runId": first, "outcome": "admitted", "supersedes": [], "label": "叠加体块"}]}, taskClass="deterministic_edit")
         self.assertEqual([row["outcome"] for row in admitted["results"]], ["admitted"])
         self.assertEqual(len(self.calls), 4)
         self.assert_no_extra_round_trips(5)
@@ -442,7 +550,7 @@ class FirstModelRecipeTests(unittest.TestCase):
         second = remade["candidateId"]
         self.exported(second, remade["candidate"]["stateDigest"])
         readmitted = self.call("POST", "/api/admissions", {"results": [
-            {"runId": second, "outcome": "admitted", "supersedes": [], "label": "上部 4 米"}]})
+            {"runId": second, "outcome": "admitted", "supersedes": [], "label": "上部 4 米"}]}, taskClass="deterministic_edit")
         self.assertEqual([row["outcome"] for row in readmitted["results"]], ["admitted"])
         self.assert_no_extra_round_trips(3)
         self.assertEqual(self.extents(second), {"mass-body": ("prism", {"base": 0.0, "top": 3.5}),

@@ -1564,6 +1564,16 @@ without a run (`422`). The schema tool hides the bound fields, and the Continue 
 `projectId`, `revisionSha256` and `current`. The Hub prompt asks for one admission per completed
 loop: a declared Study for several alternatives, each result's superseded attempts, no
 intermediate runs, and a rejection or Continue only on the user's own words.
+An admission that admits a result is sent only once its loop has finished (#294, owner decision
+2026-10-01). Beside it the tool argument `taskClass` names the loop's class, as `visual_review`
+names them, unless a review spent for the same user message already fixed it: `422
+CHAT_ADMISSION_INVALID` when neither names one, `409 VISUAL_TASK_CLASS_FIXED` when they differ.
+A `deterministic_edit` loop needs no look; the Runtime's gate reads every admitted result back.
+A `spatial_formal` or `polish` loop goes on only after an answered `visual_review` in the chat
+showed the model of a result it admits or of an attempt that result supersedes; otherwise `409
+ADMISSION_NOT_INSPECTED` and nothing reaches the Runtime. A rejection or withdrawal admits nothing
+and needs neither. A look itself admits, continues and accepts nothing, and the retained
+`CandidateAdmission@1` is unchanged.
 The prepared default reads design and drawing decisions together, so the Agent is
 handed the same project recipe a new drawing starts from: a drawing decision
 whose `typedBinding` is `{"kind": "recipe", "graphics": {…}}` over the closed
