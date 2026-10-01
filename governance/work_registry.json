@@ -43,7 +43,8 @@
         "tests/integration/test_version_refs.py",
         "governance/architecture_policy.json",
         "governance/module_registry.json",
-        "docs/architecture/repository-layout.md"
+        "docs/architecture/repository-layout.md",
+        "tools/tests/test_archcheck_scopes.py"
       ],
       "depends_on": []
     }
