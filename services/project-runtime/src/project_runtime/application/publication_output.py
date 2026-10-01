@@ -6,12 +6,8 @@ from pathlib import Path
 import re
 
 from PIL import Image
-# pypdf, PyMuPDF and python-pptx load where a document is read or exported: about 0.2 s of a worker's start otherwise (#449).
+# pypdf, PyMuPDF, python-pptx and reportlab load where a document is read or exported: about 0.25 s of a worker's start otherwise (#449).
 # PyMuPDF as ``pymupdf``: importing it as ``fitz`` prints a deprecation line on stdout, which an agent's output stream carries.
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfgen.canvas import Canvas
-from reportlab.lib.utils import ImageReader
 
 from ..errors import StudioError
 from .artifacts import document_bytes
@@ -25,6 +21,8 @@ def _font():
     # CJK face on every platform so the result does not depend on whether the
     # first text encountered happens to be Latin. Linux CI/runtime images
     # install fonts-wqy-microhei; Windows packages use Microsoft YaHei.
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
     from .drawings import _sheet_fonts
     candidates = (
         Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/msyh.ttc",
@@ -39,6 +37,7 @@ def _font():
 
 
 def _lines(text, width, size):
+    from reportlab.pdfbase import pdfmetrics
     font, _ = _font()
     if any(ord(character) not in font.face.charToGlyph for character in text if character != "\n"):
         raise StudioError(422, "PUBLICATION_FONT_GLYPH", "The publication font cannot display this text. Use supported characters or install a compatible font.")
@@ -136,6 +135,8 @@ def _ppt_text(shapes, name, lines, x, y, w, h, size, family, color=(.08, .08, .0
 @lru_cache(maxsize=32)
 def _source_font(name):
     """Only known installed normal faces can safely become native source text."""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
     from .drawings import _sheet_fonts
     font, family = _font()
     drawing = TTFont("AF_Publication_Source", str(_sheet_fonts()["normal"]))
@@ -163,6 +164,7 @@ def _ppt_pdf(slide, data, item):
     from pptx.dml.color import RGBColor
     from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE, MSO_CONNECTOR
     from pptx.util import Pt
+    from reportlab.pdfbase import pdfmetrics
     with fitz.open(stream=data, filetype="pdf") as document:
         page = document[item["source"]["pageIndex"]]
         if page.rotation or document.get_ocgs():
@@ -287,6 +289,9 @@ def export_publication(binding, revision, format, projections=None):
     from pptx import Presentation
     from pptx.util import Pt
     from pypdf import PdfReader, PdfWriter
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfgen.canvas import Canvas
     publication = read_publication(binding, revision)
     if not publication["pages"]:
         raise StudioError(422, "PUBLICATION_EMPTY", "Add a page before exporting.")

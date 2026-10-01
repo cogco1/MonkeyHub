@@ -346,6 +346,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         initialize_drawing_runtime()
         app.state.stop_projection_commits = _project_commits(app.state.settings, app.state)
     if getattr(app.state, "prepare_first_reads", False) and app.state.settings.service_role != SHARED_PROJECT_ROLE:
+        _derive_routes(app)
         app.state.first_reads = {path: threading.Event() for path in CONDITIONAL_READS}
         threading.Thread(target=_prepare_first_reads, args=(app,), name="studio-first-reads", daemon=True).start()
 
@@ -481,7 +482,10 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
     app.add_exception_handler(Exception, _handle_unexpected_error)
-    app.include_router(routes.router)
+    # With its prefix given here, as for the routers below: FastAPI checks an
+    # include without one by deriving every route's request state, which the
+    # first request routed through them derives again (#449).
+    app.include_router(routes.router, prefix=_API_PREFIX)
     # Project memory is its own owner (project_runtime.memory, ADR-009), beside decisions.
     app.include_router(memory_routes.router, prefix=_API_PREFIX)
     if not shared_project:
@@ -586,18 +590,40 @@ def _stop_streams_on_signal(server: uvicorn.Server, state) -> None:
     server.handle_exit = stop
 
 
+def _derive_routes(app: FastAPI) -> None:
+    """Derive every router's route state before the server listens (#449).
+
+    FastAPI derives an included router's route state on the first request
+    routed through it; a path no route has walks every router. Left to the
+    first requests, that work - about a tenth of a second - runs on the
+    server's own thread: the owner's event stream, asked for right after the
+    first health answer, is routed through nearly every router while every
+    other request waits. On a thread beside the server it would hold the
+    interpreter while the health answer waits instead. A router this could
+    not derive is derived by its first request, as before.
+    """
+
+    unmatched = {"type": "http", "method": "GET", "path": "/api/\0", "raw_path": b"/api/%00",
+                 "root_path": "", "query_string": b"", "headers": [], "app": app}
+    try:
+        for route in app.router.routes:
+            route.matches(dict(unmatched))
+    except Exception:  # noqa: BLE001 - a route that will not derive refuses its own request
+        logging.getLogger(__name__).debug("route state was not derived ahead", exc_info=True)
+
+
 def _prepare_first_reads(app: FastAPI) -> None:
     """What every first request would otherwise build for itself, built once while the process is idle (#449).
 
-    FastAPI builds each included router's route state on the first request
-    routed through it, and the workspace's first reads each list every run's
-    records (``prepare_bound_project``), with or without a project index: the
-    design history and the worktrees read the runs themselves. Both are done
-    here, on a thread of their own, once the process serves; a path no route
-    has walks every router. Then the first views (``_FIRST_READS``) are derived
-    through the application, so the conditional memo keeps each one under the
-    project's read token: only a stable token keeps an answer, and a token the
-    project moved past never answers it again. With an index, the worktrees
+    The workspace's first reads each list every run's records
+    (``prepare_bound_project``), with or without a project index: the design
+    history and the worktrees read the runs themselves. That is done here, on
+    a thread of its own, once the process serves; the routers were derived
+    before it listened (``_derive_routes``). Then the first views
+    (``_FIRST_READS``) are derived through the application, so the
+    conditional memo keeps each one under the project's read token: only a
+    stable token keeps an answer, and a token the project moved past never
+    answers it again. With an index, the worktrees
     are derived again after its first load, whose commit is one of the events
     their tag names; nobody waits for that load. A first request arriving
     meanwhile waits for the one build instead of walking the runs beside it
@@ -606,14 +632,10 @@ def _prepare_first_reads(app: FastAPI) -> None:
     """
 
     settings = app.state.settings
-    unmatched = {"type": "http", "method": "GET", "path": "/api/\0", "raw_path": b"/api/%00",
-                 "root_path": "", "query_string": b"", "headers": [], "app": app}
     try:
         from .binding import prepare_bound_project
 
         binding = prepare_bound_project(app.state)
-        for route in app.router.routes:
-            route.matches(dict(unmatched))
         prepared = dict(_FIRST_READS) if settings.mode != REMOTE_MODE else {}
         # A remote process answers only a caller with its token; it derives its views when asked.
         for path, done in app.state.first_reads.items():
