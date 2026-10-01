@@ -47,7 +47,7 @@ ArchFlow 源码接入默认从 GitHub `main` 开始，记录实际提交和对�
 以下命令面向 Windows / PowerShell，需要 Git、Python 3.12；ArchFlow Web 使用 Node.js 24。示例路径可更换，但两个源码目录和两个 venv 分开；较短路径可避免旧文件树触发 Windows 长路径问题。
 
 ```powershell
-$ArchSource = 'D:\code\ARCHFLOW_V4'
+$ArchSource = 'D:\code\MonkeyHub'
 $ToolboxSource = 'D:\code\huaguoshan-digital-infrastructure'
 $ArchRuntime = 'D:\runtime\archflow-first-trial'
 $ToolboxRuntime = 'D:\runtime\toolbox-first-trial'
@@ -151,7 +151,7 @@ $env:ARCHFLOW_STUDIO_CAD_EXPORT = 'off'
 终端 B 重新填写自己的源码路径：
 
 ```powershell
-$ArchSource = 'D:\code\ARCHFLOW_V4'
+$ArchSource = 'D:\code\MonkeyHub'
 Set-Location "$ArchSource\apps\monkeyhub\web"
 $env:ARCHFLOW_STUDIO_API_URL = 'http://127.0.0.1:18080'
 npx.cmd vite --config test/vite.config.ts --port 15174
@@ -197,7 +197,7 @@ $result = Invoke-RestMethod "$api/state?run=$($accepted.candidateId)"
 在非服务终端中重新设置自己的路径与 venv，运行：
 
 ```powershell
-$ArchSource = 'D:\code\ARCHFLOW_V4'
+$ArchSource = 'D:\code\MonkeyHub'
 $ArchRuntime = 'D:\runtime\archflow-first-trial'
 $ArchPython = "$ArchRuntime\venv\Scripts\python.exe"
 $env:PATH = "$ArchRuntime\venv\Scripts;" + $env:PATH

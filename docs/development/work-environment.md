@@ -660,11 +660,11 @@ npm run api:check
 | GitHub 仓库 | 任务归属 | 检查入口 |
 |---|---|---|
 | [共享工具箱](https://github.com/cogco1/huaguoshan-digital-infrastructure) | 可复用 CLI、Skills、实验记录工具与图表/报告生成工具 | [工具箱 Actions](https://github.com/cogco1/huaguoshan-digital-infrastructure/actions)，沿用该仓库 README 和 CONTRIBUTING |
-| [ArchFlow](https://github.com/cogco1/ARCHFLOW_V4) | 建模机制、MonkeyArch、候选执行和项目存储 | [ArchFlow Actions](https://github.com/cogco1/ARCHFLOW_V4/actions)，本节说明首次运行 |
+| [MonkeyHub](https://github.com/cogco1/MonkeyHub) | 建模机制、MonkeyArch、候选执行和项目存储 | [MonkeyHub Actions](https://github.com/cogco1/MonkeyHub/actions)，本节说明首次运行 |
 
-两个仓库当前均为私有，默认分支都是 `main`；成员先确认能打开它们。负责人提供首个具体任务和一位
+工具箱仓库是私有的，MonkeyHub 是公开仓库，默认分支都是 `main`；成员先确认能打开工具箱。负责人提供首个具体任务和一位
 审查人。任务放在对应仓库的已有 Issue 或 PR，写清输入、预期结果、修改文件和检查方式。
-改共用工具到工具箱，改建模或应用到 ArchFlow；确实涉及两边时，两个 PR 互相链接并标明依赖版本。
+改共用工具到工具箱，改建模或应用到 MonkeyHub；确实涉及两边时，两个 PR 互相链接并标明依赖版本。
 不在其中一个仓库复制另一个仓库的实现。
 
 每个任务使用短分支，例如 `codex/first-setup-fix`；完成后发 PR 到 `main`，在 PR 的 Checks 看 Actions，
@@ -677,15 +677,15 @@ npm run api:check
 针对维护者的主检出目录，不要求队员共用它。以下两处路径由成员自己选择，Runtime 必须在源码仓外：
 
 ```powershell
-$SourceRoot = 'D:\code\ARCHFLOW_V4'
-$RuntimeRoot = 'D:\ArchFlowRuntime\first-trial'
-git clone --branch main https://github.com/cogco1/ARCHFLOW_V4.git $SourceRoot
+$SourceRoot = 'D:\code\MonkeyHub'
+$RuntimeRoot = 'D:\MonkeyHubRuntime\first-trial'
+git clone --branch main https://github.com/cogco1/MonkeyHub.git $SourceRoot
 Set-Location $SourceRoot
 git rev-parse HEAD
 git status --short
 ```
 
-共享工具箱同样独立 clone 到另一个源码目录，再按它的 README 安装；不嵌入 ArchFlow，也不共用 Python venv。
+共享工具箱同样独立 clone 到另一个源码目录，再按它的 README 安装；不嵌入 MonkeyHub，也不共用 Python venv。
 
 上述命令取得远端当前 `main`。如果维护者明确提供了其他分支、tag 或提交，使用那份已发布的源码：
 
@@ -819,7 +819,7 @@ $env:ARCHFLOW_STUDIO_RHINO_EXPORT = '0'
 终端 B，重新设置自己选择的 `$SourceRoot`：
 
 ```powershell
-$SourceRoot = 'D:\code\ARCHFLOW_V4'
+$SourceRoot = 'D:\code\MonkeyHub'
 Set-Location "$SourceRoot\apps\monkeyhub\web"
 $env:ARCHFLOW_STUDIO_API_URL = 'http://127.0.0.1:18080'
 npx.cmd vite --config test/vite.config.ts --port 15174

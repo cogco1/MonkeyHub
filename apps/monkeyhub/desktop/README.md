@@ -52,7 +52,7 @@ For explicit source development (the MonkeyHub frontend build
 
 ```powershell
 & ./target/release/MonkeyHub.exe `
-  --source-root C:/absolute/ARCHFLOW_V4 `
+  --source-root C:/absolute/MonkeyHub `
   --python C:/absolute/python.exe `
   --runtime-root C:/absolute/isolated-monkeyhub-runtime
 ```

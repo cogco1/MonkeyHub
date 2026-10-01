@@ -11,15 +11,15 @@
  * edge crossings and no overlapping nodes. It writes 09-12 each run. 01-08
  * record the reviewed list view (PR #298) and are rewritten only with
  * --states. Any console error, page error, failed load or non-file request
- * fails the run. PLAYWRIGHT_MODULE may point at another playwright/index.mjs.
+ * fails the run. Playwright is found as in the Hub's browser tests: the
+ * playwright package, or the playwright/index.mjs that PLAYWRIGHT_MODULE names.
  */
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const modulePath = process.env.PLAYWRIGHT_MODULE || "D:/MONKEYHUB_DEV/cache/headless-tests/node_modules/playwright/index.mjs";
-const { chromium } = await import(pathToFileURL(modulePath).href);
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const pageUrl = pathToFileURL(path.join(here, "index.html")).href;
 const outDir = path.join(here, "screenshots");
 await mkdir(outDir, { recursive: true });

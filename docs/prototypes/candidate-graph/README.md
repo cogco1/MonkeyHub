@@ -214,8 +214,8 @@ node docs/prototypes/candidate-graph/capture.mjs            # writes 09–12, ru
 node docs/prototypes/candidate-graph/capture.mjs --states   # also rewrites 01–08
 ```
 
-The script uses Playwright from `PLAYWRIGHT_MODULE`, which defaults to
-`D:/MONKEYHUB_DEV/cache/headless-tests/node_modules/playwright/index.mjs`, and
+The script finds Playwright as the Hub's browser tests do: the `playwright`
+package, or the `playwright/index.mjs` that `PLAYWRIGHT_MODULE` names. It uses
 installed Chrome (`channel: "chrome"`). It opens `index.html` through `file://`,
 checks each state's defining elements, runs all six states again in the dark
 theme and walks the states through the UI. For the growth tree it checks that
