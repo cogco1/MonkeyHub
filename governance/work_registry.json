@@ -17,13 +17,12 @@
       "write_scope": [
         "apps/monkeyhub/web/src/features/componentInfo/",
         "apps/monkeyhub/web/src/features/stage/Stage.tsx",
-        "apps/monkeyhub/web/src/app/App.tsx",
         "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
         "apps/monkeyhub/web/src/i18n/messages.en.ts",
         "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
         "apps/monkeyhub/web/test/componentInfo.test.ts",
-        "apps/monkeyhub/web/test/componentInfoCard.test.ts",
         "apps/monkeyhub/web/test/fixtures/component-info/",
+        "apps/monkeyhub/web/test/boardIntentHandoff.browser.mjs",
         "docs/protocols/component-info.md",
         "docs/README.md"
       ],
