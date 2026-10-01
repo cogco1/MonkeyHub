@@ -1,30 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-449",
-      "lanes": [
-        {
-          "id": "worker-start",
-          "status": "active",
-          "branch": "codex/449-hub-stream-test",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-449-hub-stream-test",
-          "base_ref": "51d600cd4498b0ec173b3571c5cc58a62fe409ad",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "hub.shell",
-            "project_runtime.shell",
-            "project_runtime.intent",
-            "project_runtime.publication"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/tests/test_runtime_sse.py"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
