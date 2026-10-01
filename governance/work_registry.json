@@ -1,4 +1,24 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-559",
+      "status": "active",
+      "branch": "codex/559-ownership",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-559-ownership",
+      "base_ref": "2461e7243f9b919d8ca6f4ef1b952f2fd08e0d46",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "tools.governance.archcheck",
+        "project_runtime.board"
+      ],
+      "write_scope": [
+        "docs/architecture/repository-layout.md",
+        "tools/governance/archcheck.py"
+      ],
+      "depends_on": []
+    }
+  ]
 }
