@@ -1365,7 +1365,7 @@
         "packages/monkeyarch/tests/test_wall_solver_contact.py",
         "tests/integration/test_prism_cutouts.py"
       ],
-      "notes": "P092 host side: the wall grants the aperture, the opening type never moves it. The spine suite drives it through the authored record's south wall (packages/monkeyarch/tests/spine_fixture.py)."
+      "notes": "P092 host side: the wall grants the aperture, the opening type never moves it. The spine suite drives it through the authored record's south wall (tests/support/spine_fixture.py)."
     },
     {
       "module_id": "monkeyarch.compilation.geometry",
@@ -1625,7 +1625,7 @@
       "tests": [
         "packages/monkeyarch/tests/test_production_policy.py"
       ],
-      "notes": "ModelPhase.INTENT_COMPILATION is the Studio's phase; nothing retained carries it yet. The archived P053 control plane held the only other instantiation of these contracts. The spine suite drives the Protocol and the receipt round trip through packages/monkeyarch/tests/spine_fixture.py ScriptedProvider."
+      "notes": "ModelPhase.INTENT_COMPILATION is the Studio's phase; nothing retained carries it yet. The archived P053 control plane held the only other instantiation of these contracts. The spine suite drives the Protocol and the receipt round trip through tests/support/spine_fixture.py ScriptedProvider."
     },
     {
       "module_id": "archflow.project.archive",
