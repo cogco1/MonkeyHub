@@ -422,6 +422,8 @@ class CadExecutionRequest:
     material_by_component: Mapping[str, str] | None = None
     material_colors: Mapping[str, tuple[int, int, int]] | None = None
     layer_by_component: Mapping[str, str] | None = None
+    # What each part wears where a part of a component declares its own (``declared_materials``, #580).
+    material_by_part: Mapping[str, Mapping[str, str | None]] | None = None
     backend_options: Mapping[str, object] = field(default_factory=dict)
     source: CadExecutionSource | None = None
     operation_observer: Callable | None = None
@@ -509,6 +511,7 @@ class CadBackend(Protocol):
 
 def _semantics(request):
     return expected_object_semantics(request.program, material_by_component=request.material_by_component,
+                                    material_by_part=request.material_by_part,
                                     layer_by_component=request.layer_by_component)
 
 
@@ -530,7 +533,7 @@ def _native_inputs(request):
     return dict(binding=request.binding, speculative_workspace=request.speculative_workspace,
                 readback_tolerance=request.readback_tolerance, provenance=request.provenance,
                 material_by_component=request.material_by_component, material_colors=request.material_colors,
-                layer_by_component=request.layer_by_component)
+                layer_by_component=request.layer_by_component, material_by_part=request.material_by_part)
 
 
 def _options(options, allowed, backend_id):

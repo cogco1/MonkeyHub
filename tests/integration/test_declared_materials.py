@@ -112,6 +112,40 @@ class DeclaredMaterialsTests(routes.ConstructionTestCase):
                                 sourceRunId=first, expect=422)
         self.assertIn("#RRGGBB", malformed["detail"])
 
+    def test_each_part_of_a_geometry_id_wears_its_own_material(self) -> None:
+        """#580: the portico's two parts in two materials, then one part declared and the other left undeclared."""
+
+        import rhino3dm
+
+        for targets, expected in (
+            ([{"id": "portico", "part": "portico-base", "set": {"material.name": "travertine", "material.color": "#d8cbb0"}},
+              {"id": "portico", "part": "portico-cornice", "set": {"material.name": "limestone"}}],
+             {"obj-portico-base": "travertine", "obj-portico-cornice": "limestone"}),
+            ([{"id": "portico", "part": "portico-cornice", "set": {"material.name": "limestone"}}],
+             {"obj-portico-base": None, "obj-portico-cornice": "limestone"}),
+        ):
+            with self.subTest(targets=targets):
+                run = self.run_candidate(self.facets(targets)["proposalId"])
+                [portico] = [row for row in self.model(run)["entities"] if row["id"] == "portico"]
+                self.assertEqual(portico["partFacets"], {target["part"]: {key: value.upper() if key == "material.color"
+                                                                         else value for key, value in target["set"].items()}
+                                                         for target in targets})
+                (preview,) = [self.project / path for path in _previews(self.project, run) if path.endswith(".preview.3dm")]
+                model = rhino3dm.File3dm.Read(str(preview))
+                objects = {obj.Attributes.Name: obj.Attributes for obj in model.Objects}
+                for name, material in expected.items():
+                    attributes = objects[name]
+                    if material is None:
+                        self.assertEqual((attributes.MaterialSource, attributes.MaterialIndex),
+                                         (rhino3dm.ObjectMaterialSource.MaterialFromLayer, -1), name)
+                        self.assertEqual(attributes.GetUserString("archflow:material_status"), "undeclared", name)
+                    else:
+                        self.assertEqual(attributes.MaterialSource, rhino3dm.ObjectMaterialSource.MaterialFromObject, name)
+                        self.assertEqual(model.Materials[attributes.MaterialIndex].Name, material, name)
+                        self.assertEqual(attributes.GetUserString("archflow:material"), material, name)
+                # the parts stay on their component's one layer
+                self.assertEqual(objects["obj-portico-base"].LayerIndex, objects["obj-portico-cornice"].LayerIndex)
+
 
 if __name__ == "__main__":
     unittest.main()

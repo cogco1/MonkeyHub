@@ -615,6 +615,65 @@ class ComposedCandidateExportTests(OcctCandidateTestCase):
 
         self.assertEqual(refs(after), refs(before))
 
+    def test_each_part_wears_its_own_material_in_the_preview_and_the_composed_model(self) -> None:
+        """#580 gap 2: one component's parts bound separately, a part with none of its own undeclared, by one rule."""
+
+        from dataclasses import replace
+
+        from project_runtime.application.artifacts import ModelSource
+        from project_runtime.binding import bound_project
+
+        original, before = self.composed_source(worn={"portico": "old stone"})
+        state = self.client.app.state
+        for run_id, targets, expected in (
+            # the plinth case: both parts, two materials
+            ("parts-both", [{"id": "portico", "part": "portico-base",
+                             "set": {"material.name": "travertine", "material.color": "#D8CBB0"}},
+                            {"id": "portico", "part": "portico-cornice",
+                             "set": {"material.name": "limestone", "material.color": "#C9C2B0"}}],
+             {"obj-portico-base": ("travertine", [216, 203, 176, 255]),
+              "obj-portico-cornice": ("limestone", [201, 194, 176, 255])}),
+            # the floor_finish case: one part declared, the other left undeclared
+            ("parts-one", [{"id": "portico", "part": "portico-cornice",
+                            "set": {"material.name": "limestone", "material.color": "#C9C2B0"}}],
+             {"obj-portico-base": None, "obj-portico-cornice": ("limestone", [201, 194, 176, 255])}),
+        ):
+            with self.subTest(run=run_id):
+                response = self.client.post("/api/proposals/facets", json={
+                    "stateDigest": original["modelSource"]["stateDigest"], "sourceRunId": original["runId"],
+                    "targets": targets})
+                self.assertEqual(response.status_code, 201, response.text)
+                proposal = replace(state.proposals.get(response.json()["proposalId"]),
+                                   model_source=ModelSource.from_dict(original["modelSource"]))
+                with no_process():
+                    candidate_module.execute_candidate(bound_project(state), state.settings, proposal, run_id)
+                _, preview = self.split(self.candidate(self.client, run_id)["artifacts"])
+                composed, after = self.composed_result(self.client, run_id)
+                self.assertNotEqual(composed["sha256"], original["sha256"])
+                for label, inspection in (("preview", self.inspect_model(self.bytes_of(self.client, preview))),
+                                          ("composed", after)):
+                    labels = {row["object_id"]: {pair["key"]: pair["value"] for pair in row["attributes"]}
+                              for row in inspection.object_user_strings}
+                    rows = {row["name"]: row for row in inspection.object_material_bindings if row["name"].startswith("obj-")}
+                    self.assertEqual(set(rows), set(expected), label)
+                    for name, wears in expected.items():
+                        row, said = rows[name], labels[rows[name]["object_id"]]
+                        if wears is None:
+                            self.assertEqual((row["material_source"], row["material_index"], row["material_name"]),
+                                             ("MaterialFromLayer", -1, None), (label, name))
+                            self.assertEqual(said.get("archflow:material_status"), "undeclared", (label, name))
+                            self.assertNotIn("archflow:material", said, (label, name))
+                        else:
+                            self.assertEqual((row["material_source"], row["material_name"],
+                                              row["material_diffuse_color_rgba"]), ("MaterialFromObject", *wears),
+                                             (label, name))
+                            self.assertEqual(said.get("archflow:material"), wears[0], (label, name))
+                            self.assertNotIn("archflow:material_status", said, (label, name))
+                # no geometry was rebuilt and nothing imported moved
+                self.assertEqual({row["object_id"]: row["geometry_sha256"] for row in after.object_geometry_sha256},
+                                 {row["object_id"]: row["geometry_sha256"] for row in before.object_geometry_sha256})
+                self.assert_imported_unchanged(before, after)
+
     def test_a_geometry_change_also_dresses_the_objects_it_kept(self) -> None:
         with no_process():
             first, job = self.run_candidate(self.client, "set height to 2.2", elementId="portico-base")

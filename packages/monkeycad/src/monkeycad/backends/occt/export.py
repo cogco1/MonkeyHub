@@ -102,11 +102,13 @@ def _preview_materials(
 ) -> dict[str, PreviewMaterial]:
     """The declared native material each delivered object wears, keyed by object id.
 
-    Every declared component material is carried into the preview as one
-    native material named by it, in its one colour (``_material_color``: the
-    declared colour, else the identity of its name), so the objects of one
-    material share one table entry. An object whose components declare none
-    wears no material and keeps its layer's distinction colour. Roles come
+    Every declared component or part material (the object's
+    ``archflow:material``, by part first, #580) is carried into the preview
+    as one native material named by it, in its one colour
+    (``_material_color``: the declared colour, else the identity of its
+    name), so the objects of one material share one table entry. An object
+    whose components and part declare none wears no material and keeps its
+    layer's distinction colour. Roles come
     from ``program.proposal.assemblies`` alone, never from an object's name:
     GLAZING keeps its glass fallback and an undeclared FRAME is shaded.
     """
@@ -345,6 +347,7 @@ def execute_occt_export(
     material_by_component: Mapping[str, str] | None = None,
     material_colors: Mapping[str, tuple[int, int, int]] | None = None,
     layer_by_component: Mapping[str, str] | None = None,
+    material_by_part: Mapping[str, Mapping[str, str | None]] | None = None,
     preview: bool = True,
     prior_program: CompiledGeometryProgram | None = None,
     prior_step: Path | None = None,
@@ -431,6 +434,7 @@ def execute_occt_export(
             expected_object_semantics(
                 program,
                 material_by_component=material_by_component,
+                material_by_part=material_by_part,
                 layer_by_component=layer_by_component,
             )
         )
