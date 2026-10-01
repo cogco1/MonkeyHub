@@ -269,6 +269,9 @@ python tools/dev/workspace.py create --branch codex/window-edit
 旧检出尚不包含该工具时，可调用已有工具的绝对路径，并用前置 `--source-root <源码检出>`
 指定操作对象，不复制工具到每个任务。新 worktree 只含选定提交，尚未提交的工具改动不会随之出现。
 
+PR 合并后在主检出运行 `python tools/dev/workspace.py retire` 预览，再加 `--apply`：已并入 `origin/main` 且无本地改动的任务 worktree 移入 `<root>/_TRASH_<YYYYMMDD>`（只改名，不删除），Git 清除其登记并用 `git branch -d` 删除已合并分支；
+未合并、有改动、分离 HEAD 或开发根外的 worktree 不动。`git branch -d` 只删主检出 `HEAD` 或其上游已包含的分支，`main` 落后于 `origin/main` 时报告会提示先快进。
+
 默认任务名来自分支名，例如 `codex/window-edit` 对应 `codex-window-edit`：
 
 | 用途 | 固定位置 |
