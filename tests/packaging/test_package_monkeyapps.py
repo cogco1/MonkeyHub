@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import io
 import json
+import marshal
 import os
 from pathlib import Path
 import shutil
@@ -307,6 +309,90 @@ class PackageAdapterTests(unittest.TestCase):
         for path in notices.glob("*.txt"):
             self.assertIn(path.name, index)
         self.assertEqual((notices / "web-agentclientprotocol-codex-acp-1.11.0-1-LICENSE.txt").read_bytes(), b"adapter license\n")
+
+
+class BundledBytecodeTests(unittest.TestCase):
+    """The bytecode step, run by this interpreter in place of the bundled one."""
+
+    SOURCES = {
+        "monkeybench/__init__.py": "from .core import Shape\n",
+        # A set constant and a nested class: marshal output that once varied between runs.
+        "monkeybench/core.py": ("KINDS = {'wall', 'slab', 'roof'}\n\nclass Shape:\n    def kind(self):\n"
+                                "        class Local:\n            pass\n        return 'wall' in KINDS\n"),
+        f"{builder.PYTHON_SITE}/dependency/__init__.py": "VALUE = 1\n",
+        f"{builder.PYTHON_SITE}/dependency/tests/test_value.py": "def test_value():\n    pass\n",
+        f"{builder.PYTHON_SITE}/dependency/legacy.py": "print 'never importable'\n",
+        # A Node package's helper script is not one of the application's Python modules.
+        "apps/monkeyhub/node_modules/gyp/gyp_main.py": "print 'not ours to compile'\n",
+        # Its .pyc would be the longest path in the bundle; the installer keeps that within legacy limits.
+        "monkeybench/deep/module_whose_cache_would_lengthen_the_longest_bundle_path.py": "DEEP = True\n",
+        "data/the-longest-file-the-bundle-ships-without-bytecode-sets-the-limit-for-cache-paths.json": "{}\n",
+    }
+    COMPILED = ("monkeybench/__init__.py", "monkeybench/core.py", f"{builder.PYTHON_SITE}/dependency/__init__.py")
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="Hub 字节码 ")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.bundle = self.bundle_with(self.SOURCES, "bundle")
+        self.python = Path(sys.executable)
+
+    def bundle_with(self, sources: dict[str, str], name: str) -> Path:
+        bundle = self.root / name
+        for relative, text in sources.items():
+            (bundle / relative).parent.mkdir(parents=True, exist_ok=True)
+            (bundle / relative).write_text(text, encoding="utf-8")
+        return bundle
+
+    def cache(self, bundle: Path, relative: str) -> Path:
+        source = bundle / relative
+        return source.parent / "__pycache__" / f"{source.stem}.{sys.implementation.cache_tag}.pyc"
+
+    def compiled(self, bundle: Path) -> dict[str, bytes]:
+        return {path.relative_to(bundle).as_posix(): path.read_bytes() for path in bundle.rglob("*.pyc")}
+
+    def test_each_importable_source_gets_unchecked_hash_bytecode_with_its_bundle_path(self) -> None:
+        with contextlib.redirect_stdout(io.StringIO()) as printed:
+            facts = builder.compile_bytecode(self.bundle, self.python)
+        self.assertEqual(facts, {"cacheTag": sys.implementation.cache_tag, "invalidation": "unchecked-hash",
+                                 "files": len(self.COMPILED)})
+        self.assertEqual(set(self.compiled(self.bundle)),
+                         {self.cache(self.bundle, relative).relative_to(self.bundle).as_posix()
+                          for relative in self.COMPILED})
+        for relative in self.COMPILED:
+            data = self.cache(self.bundle, relative).read_bytes()
+            source = (self.bundle / relative).read_bytes()
+            # No timestamp: the hash of the source, and flags that tell Python not to check it.
+            self.assertEqual(data[:4], importlib.util.MAGIC_NUMBER)
+            self.assertEqual(int.from_bytes(data[4:8], "little"), 0b01)
+            self.assertEqual(data[8:16], importlib.util.source_hash(source))
+            # Named by its bundle path, never the build machine's directory.
+            self.assertEqual(marshal.loads(data[16:]).co_filename, relative)
+        # The uncompilable third-party file and the over-long cache path are reported, not shipped.
+        self.assertIn("legacy.py", printed.getvalue())
+        self.assertIn("module_whose_cache_would_lengthen", printed.getvalue())
+
+    def test_the_same_sources_give_the_same_bytes(self) -> None:
+        other = self.bundle_with(self.SOURCES, "again")
+        with contextlib.redirect_stdout(io.StringIO()):
+            builder.compile_bytecode(self.bundle, self.python)
+            builder.compile_bytecode(other, self.python)
+        self.assertEqual(self.compiled(self.bundle), self.compiled(other))
+
+    def test_a_first_party_source_that_does_not_compile_stops_the_build(self) -> None:
+        broken = self.bundle_with({**self.SOURCES, "monkeybench/broken.py": "def (\n"}, "broken")
+        with self.assertRaisesRegex(ValueError, "monkeybench/broken.py"):
+            builder.compile_bytecode(broken, self.python)
+
+    def test_startup_imports_load_shipped_bytecode_and_never_compile_a_bundled_source(self) -> None:
+        imports = f"import sys; sys.path.insert(0, {str(self.bundle)!r}); import monkeybench"
+        with contextlib.redirect_stdout(io.StringIO()):
+            builder.compile_bytecode(self.bundle, self.python)
+            self.assertEqual(builder.check_bytecode_loaded(self.bundle, self.python, imports), 2)
+        self.cache(self.bundle, "monkeybench/core.py").unlink()
+        with self.assertRaisesRegex(ValueError, "core.py"):
+            builder.check_bytecode_loaded(self.bundle, self.python, imports)
+        self.assertFalse(self.cache(self.bundle, "monkeybench/core.py").exists(), "the check writes no bytecode")
 
 
 class DesktopPackageTests(unittest.TestCase):

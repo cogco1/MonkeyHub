@@ -3,6 +3,15 @@
 This module only builds, checks and stages immutable version directories. Hub
 owns selection, task draining, activation and rollback. Checksums establish
 consistency, not publisher identity; no network release is trusted here.
+
+Python bytecode caches are runtime state, with one exception: the hash-based
+bytecode a build ships (build-info.json ``pythonBytecode``). That is listed in
+a target's file table and always carried in the payload, because a base never
+lists bytecode: an installed base may hold caches Python wrote at runtime, or
+none, if an updater older than shipped bytecode staged it. Such an updater
+refuses any .pyc in a patch, so only a base that declares shipped bytecode is
+given a patch that carries it. Verification checks exactly the bytecode a table
+lists and ignores every other cache.
 """
 from __future__ import annotations
 
@@ -63,6 +72,30 @@ def _path_name(value: object) -> str:
 
 def _cache_file(name: str) -> bool:
     return "__pycache__" in name.casefold().split("/") or name.casefold().endswith(".pyc")
+
+
+def _bytecode_name(name: str) -> bool:
+    """Where a build ships bytecode: <directory>/__pycache__/<module>.<tag>.pyc."""
+    parts = name.split("/")
+    return (len(parts) >= 2 and parts[-2] == "__pycache__" and parts[-1].endswith(".pyc")
+            and not any(_cache_file(part) for part in parts[:-2]))
+
+
+def _shipped_bytecode(name: str, path: Path) -> bool:
+    """A build compiled this bytecode ahead of time: it is hash-based.
+
+    The import system writes timestamp-based caches for what it compiles and
+    never rewrites a hash-based one whose source is unchanged.
+    """
+    if not _bytecode_name(name):
+        return False
+    with path.open("rb") as source:
+        header = source.read(16)
+    return len(header) == 16 and int.from_bytes(header[4:8], "little") & 1 == 1
+
+
+def _listed(table: dict[str, dict]) -> Callable[[str, Path], bool]:
+    return lambda name, path: name in table
 
 
 def _check_names(names: list[str]) -> None:
@@ -128,8 +161,12 @@ def _file_fact(path: Path) -> dict:
     return {"size": size, "sha256": digest}
 
 
-def _files(root: Path, cancelled: Callable[[], bool] | None = None) -> Iterator[tuple[str, Path, os.stat_result]]:
-    """Every distributed file under root; links and reparse points are refused."""
+def _files(root: Path, cancelled: Callable[[], bool] | None = None,
+           keep: Callable[[str, Path], bool] | None = None) -> Iterator[tuple[str, Path, os.stat_result]]:
+    """Every distributed file under root; links and reparse points are refused.
+
+    A bytecode cache is left out unless ``keep`` claims it for the version.
+    """
     def inaccessible(error: OSError) -> None:
         raise error
     for directory, children, filenames in os.walk(root, followlinks=False, onerror=inaccessible):
@@ -140,18 +177,19 @@ def _files(root: Path, cancelled: Callable[[], bool] | None = None) -> Iterator[
             path = Path(directory) / name
             info = _check_plain(path)
             relative = path.relative_to(root).as_posix()
-            if not _cache_file(relative):
+            if not _cache_file(relative) or (keep is not None and keep(relative, path)):
                 yield relative, path, info
 
 
-def _inventory(root: Path, cancelled: Callable[[], bool] | None = None) -> dict[str, dict]:
-    files = {relative: _file_fact(path) for relative, path, _ in _files(root, cancelled)}
+def _inventory(root: Path, cancelled: Callable[[], bool] | None = None,
+               keep: Callable[[str, Path], bool] | None = None) -> dict[str, dict]:
+    files = {relative: _file_fact(path) for relative, path, _ in _files(root, cancelled, keep)}
     _check_names(list(files))
     return dict(sorted(files.items()))
 
 
-def _layout(root: Path) -> dict[str, int]:
-    sizes = {relative: info.st_size for relative, _, info in _files(root)}
+def _layout(root: Path, keep: Callable[[str, Path], bool] | None = None) -> dict[str, int]:
+    sizes = {relative: info.st_size for relative, _, info in _files(root, keep=keep)}
     _check_names(list(sizes))
     return dict(sorted(sizes.items()))
 
@@ -203,13 +241,22 @@ def _root_identity(root: Path, files: dict[str, dict]) -> str:
         raise PatchError(f"Incomplete bundle: {error}") from error
 
 
-def _table(value: object) -> dict[str, dict]:
+def _ships_bytecode(root: Path) -> bool:
+    """The version's build-info.json declares the bytecode it ships (pythonBytecode).
+
+    A build that ships bytecode also carries this module's reading of it.
+    Call only after _root_identity has checked the metadata.
+    """
+    return isinstance(_json((root / "build-info.json").read_bytes()).get("pythonBytecode"), dict)
+
+
+def _table(value: object, *, target: bool = False) -> dict[str, dict]:
     if not isinstance(value, dict) or not value:
         raise PatchError("Patch file table must be a non-empty object.")
     _check_names(list(value))
     for name, fact in value.items():
-        if _cache_file(name):
-            raise PatchError("Python bytecode caches are not distributed in patches.")
+        if _cache_file(name) and not (target and _bytecode_name(name)):
+            raise PatchError(f"Only a target's shipped bytecode is distributed in patches: {name}")
         if (not isinstance(fact, dict) or set(fact) != {"size", "sha256"}
                 or type(fact["size"]) is not int or fact["size"] < 0
                 or not isinstance(fact["sha256"], str) or not re.fullmatch("[0-9a-f]{64}", fact["sha256"])):
@@ -243,7 +290,8 @@ def _manifest(archive: zipfile.ZipFile) -> dict:
     if (document["targetVersion"] != document["targetCommit"][:12] + "-desktop"
             or document["baseCommit"][:12] == document["targetCommit"][:12]):
         raise PatchError("Patch target must name a different desktop version.")
-    base, target = _table(document["baseFiles"]), _table(document["targetFiles"])
+    # A base never lists bytecode, so every listed .pyc is a changed file and travels in the payload.
+    base, target = _table(document["baseFiles"]), _table(document["targetFiles"], target=True)
     changed = sorted(name for name, fact in target.items() if base.get(name) != fact)
     removed = sorted(base.keys() - target.keys())
     if document["changed"] != changed or document["removed"] != removed:
@@ -318,7 +366,7 @@ def inspect_patch(path: Path, base_root: Path) -> dict:
 def _verify_target_files(document: dict, target_root: Path,
                          cancelled: Callable[[], bool] | None = None) -> None:
     target = _plain_path(target_root, directory=True)
-    actual = _inventory(target, cancelled)
+    actual = _inventory(target, cancelled, keep=_listed(document["targetFiles"]))
     if actual != document["targetFiles"]:
         raise PatchError("Prepared version files changed; refusing reuse or activation.")
     if _root_identity(target, actual) != document["targetCommit"]:
@@ -349,7 +397,7 @@ def verify_target_layout(path: Path, target_root: Path, *, exact: tuple[str, ...
             document = _manifest(archive)
         target = _plain_path(target_root, directory=True)
         expected = document["targetFiles"]
-        if _layout(target) != {name: fact["size"] for name, fact in expected.items()}:
+        if _layout(target, keep=_listed(expected)) != {name: fact["size"] for name, fact in expected.items()}:
             raise PatchError("Prepared version files changed; refusing activation.")
         for name in ("source-version.txt", "build-info.json", "MonkeyHub.exe", *exact):
             if name not in expected or _file_fact(target / name) != expected[name]:
@@ -403,7 +451,7 @@ def stage_patch(path: Path, base_root: Path, destination_parent: Path, *,
                 else:
                     _plain_path(base / name, directory=False)
                     shutil.copyfile(base / name, destination)
-            target_files = _inventory(temporary, cancelled)
+            target_files = _inventory(temporary, cancelled, keep=_listed(document["targetFiles"]))
             if target_files != document["targetFiles"] or _root_identity(temporary, target_files) != document["targetCommit"]:
                 raise PatchError("Reconstructed version did not pass full file verification.")
             _plain_path(final)
@@ -446,10 +494,14 @@ def create_patch(base_root: Path, target_root: Path, output_zip: Path) -> dict:
             raise PatchError("Patch output must be outside both input versions.")
         if output.exists():
             raise PatchError(f"Patch output already exists: {output}")
-        base_files, target_files = _inventory(base), _inventory(target)
+        base_files, target_files = _inventory(base), _inventory(target, keep=_shipped_bytecode)
         base_commit, target_commit = _root_identity(base, base_files), _root_identity(target, target_files)
         if base_commit[:12] == target_commit[:12]:
             raise PatchError("Patch target must name a different source version.")
+        if not (_ships_bytecode(base) and _ships_bytecode(target)):
+            # The base's updater refuses any .pyc in a patch: the new version is
+            # staged without its bytecode and compiles on its first start, as before.
+            target_files = {name: fact for name, fact in target_files.items() if not _cache_file(name)}
         document = {
             "schema": PATCH_SCHEMA, "trust": PATCH_TRUST,
             "baseCommit": base_commit, "targetCommit": target_commit,
