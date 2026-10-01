@@ -33,6 +33,7 @@
             "apps/monkeyhub/web/src/api/project-runtime/generated",
             "services/project-runtime/tests/test_material_view.py",
             "services/project-runtime/tests/fixtures/model-materials.3dm",
+            "tests/integration/test_material_view.py",
             "services/project-runtime/tests/test_visual_reviews.py",
             "services/project-runtime/tests/test_model_source_index.py",
             "packages/monkeydiagram/tests/test_mesh_views.py",
