@@ -1,4 +1,33 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-547",
+      "lanes": [
+        {
+          "id": "harness",
+          "status": "active",
+          "branch": "codex/547-benchmark",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-547-benchmark",
+          "base_ref": "c35a66f8771425262d7244aae08413133ed66855",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "tools.benchmarks.daily_benchmark"
+          ],
+          "write_scope": [
+            ".github/workflows/benchmark.yml",
+            "docs/README.md",
+            "docs/development/benchmarks.md",
+            "docs/development/projection-check.md",
+            "tools/benchmarks/benchmark_data.py",
+            "tools/benchmarks/budgets.json",
+            "tools/benchmarks/daily_benchmark.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
