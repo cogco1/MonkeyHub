@@ -5,6 +5,7 @@ from __future__ import annotations
 from io import BytesIO
 from math import sqrt
 import unittest
+from unittest.mock import patch
 
 from monkeycad.backends.occt.kernel import occt_available
 from monkeycad.backends.occt.step import StepEntry
@@ -89,6 +90,21 @@ class MeshLineViewTests(unittest.TestCase):
         self.assertTrue(self.dark(image, 1.0, middle, crop, 300))
         self.assertFalse(self.dark(image, 0.0, middle, crop, 300))
 
+    def test_a_coarse_view_after_a_fine_view_matches_a_cold_shape(self):
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+
+        def column():
+            return (StepEntry("column", (), None, BRepPrimAPI_MakeCylinder(1.0, 6.0).Shape()),)
+
+        entries = column()
+        crop = (-1.5, -0.5, 1.5, 6.5)
+        fine = self.draw(entries, crop=crop, size=1024)
+        coarse = self.draw(entries, crop=crop, size=64)
+        cold_coarse = self.draw(column(), crop=crop, size=64)
+        self.assertGreater(fine.triangles, coarse.triangles, "the coarse view discarded the finer cached mesh")
+        self.assertEqual(coarse, cold_coarse, "a prior size cannot change the thumbnail's triangles or pixels")
+        self.assertEqual(self.draw(entries, crop=crop, size=1024), fine)
+
     def test_a_curve_without_faces_is_skipped_and_named(self):
         from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
         from OCP.gp import gp_Pnt
@@ -99,6 +115,25 @@ class MeshLineViewTests(unittest.TestCase):
         meshes, skipped = triangulate((curve, *self.entries(("wall", (0, 0, 0), (1, 1, 1)))), ["rail", "wall"],
                                       linear_deflection=0.01)
         self.assertEqual(([mesh.object_id for mesh in meshes], skipped), (["wall"], ("rail",)))
+
+
+class MeshRendererVersionTests(unittest.TestCase):
+    def test_public_geometry_and_source_helpers_remain_part_of_the_renderer_version(self):
+        from monkeycad.backends.occt.preview import clear_shape_triangulation
+        from monkeydiagram import sources
+        from monkeydiagram.projection import mesh_views
+
+        original_source = mesh_views.inspect.getsource
+        self.assertEqual(mesh_views._renderer_version(), mesh_views.RENDERER_VERSION)
+        for helper in (clear_shape_triangulation, sources.read_native_source):
+            with self.subTest(helper=helper.__name__):
+                def changed_source(function):
+                    source = original_source(function)
+                    return source + "\n# Changed helper implementation\n" if function is helper else source
+
+                with patch.object(mesh_views.inspect, "getsource", side_effect=changed_source):
+                    self.assertNotEqual(mesh_views._renderer_version(), mesh_views.RENDERER_VERSION,
+                                        "changing a helper must invalidate cached thumbnails")
 
 
 class MeshLineViewMemoryTests(unittest.TestCase):

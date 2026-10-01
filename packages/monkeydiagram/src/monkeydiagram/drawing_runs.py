@@ -46,10 +46,10 @@ from monkeydiagram.projection.views import (
     ElevationProjection,
     ElevationView,
     SectionPerspectiveView,
-    _cleaned,
-    _finite,
-    _observed_stage,
-    _refuse,
+    clean_view_lines,
+    finite_number,
+    observed_stage,
+    refuse_section,
     project_model_axis_elevation,
     project_section_perspective,
     section_perspective_objects,
@@ -67,8 +67,8 @@ from monkeydiagram.sources import (
     ElevationSource,
     NativeModelSource,
     VerifiedElevationSource,
-    _artifact_bytes,
-    _require,
+    read_artifact_bytes,
+    require_drawing,
     current_object_id,
     inspection_witness_ids,
     object_semantics,
@@ -132,11 +132,11 @@ def _drawing_run(repository: FilesystemProjectRepository, drawing_run_id: str, s
         require_identifier(drawing_run_id, "drawing_run_id")
     except ValueError as exc:
         raise DrawingElevationError(str(exc)) from exc
-    _require(drawing_run_id != source_run.run_id, "the drawing run must not be the source run")
+    require_drawing(drawing_run_id != source_run.run_id, "the drawing run must not be the source run")
     try:
         if repository.layout.run(drawing_run_id).manifest.exists():
             run = repository.load_run(drawing_run_id)
-            _require(run.base == source_run.base,
+            require_drawing(run.base == source_run.base,
                      f"drawing run {drawing_run_id} exists with another base; choose another run id")
             return run
         return repository.create_run(drawing_run_id, base=source_run.base)
@@ -300,9 +300,9 @@ def _retain_projection(repository, *, source, verified, drawn: DrawnView, name, 
     except ProjectRepositoryError as exc:
         raise DrawingElevationError(f"the drawing could not be retained in run {run.run_id}: {exc}") from exc
     drawing = read_model_axis_elevation(repository, receipt_ref)
-    _require(drawing.svg == drawn.svg and drawing.png == drawn.png,
+    require_drawing(drawing.svg == drawn.svg and drawing.png == drawn.png,
              "the retained drawing files read back differently from what was written")
-    _require(repository.read_head() == head_before, "the project's published version changed while drawing")
+    require_drawing(repository.read_head() == head_before, "the project's published version changed while drawing")
     return drawing
 
 
@@ -324,13 +324,13 @@ def resolve_plan_dressing(recipe: Mapping, receipt: Mapping) -> list[dict]:
     for item in recipe.get("dressing", []):
         name = item["id"]
         require_identifier(name, "dressing id")
-        _require(name not in seen and item["assetId"] in assets, "dressing needs unique ids and a supported SVG asset")
+        require_drawing(name not in seen and item["assetId"] in assets, "dressing needs unique ids and a supported SVG asset")
         seen.add(name)
         position = item["positionUv"]
-        _require(len(position) == 2, "dressing positionUv needs two view coordinates")
-        u, v = (_finite(value, "dressing coordinate") for value in position)
-        size = _finite(item["size"], "dressing size")
-        _require(0 < size <= 100000 and isinstance(item.get("flipped", False), bool), "invalid dressing size or flip")
+        require_drawing(len(position) == 2, "dressing positionUv needs two view coordinates")
+        u, v = (finite_number(value, "dressing coordinate") for value in position)
+        size = finite_number(item["size"], "dressing size")
+        require_drawing(0 < size <= 100000 and isinstance(item.get("flipped", False), bool), "invalid dressing size or flip")
         anchor = item.get("anchorObjectId")
         if anchor is not None:
             anchor = current_object_id(anchor, anchors)
@@ -365,11 +365,11 @@ def freeze_cut_plan(
     provenance = _revision_provenance(attribution, reason, source_kind)
     try:
         recipe = deepcopy(dict(recipe))
-        _require(recipe.get("kind") == CUT_PLAN_KIND, "the view recipe must be a cut-plan")
+        require_drawing(recipe.get("kind") == CUT_PLAN_KIND, "the view recipe must be a cut-plan")
         require_identifier(recipe["name"], "cut-plan name")
         frame = recipe["frame"]
         scale = frame["scale"]
-        _require(isinstance(scale, str) and re.fullmatch(r"1:[1-9][0-9]*", scale) is not None,
+        require_drawing(isinstance(scale, str) and re.fullmatch(r"1:[1-9][0-9]*", scale) is not None,
                  "the cut-plan scale must be 1:N")
         view = ElevationView(
             name=recipe["name"], origin=frame["origin"], look=frame["look"], right=frame["right"], up=frame["up"],
@@ -380,16 +380,16 @@ def freeze_cut_plan(
         horizontal = view.right == (1, 0, 0) and view.up == (0, 1, 0) and view.look == (0, 0, -1)
         # A vertical section is the same composition on a plane containing CAD +Z, seen along a plan axis.
         vertical = view.up == (0, 0, 1) and view.look in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0))
-        _require((horizontal or vertical) and view.near_depth == 0,
+        require_drawing((horizontal or vertical) and view.near_depth == 0,
                  "a cut-plan must look down CAD -Z from its horizontal cut plane, "
                  "or along a plan axis from a vertical cut plane with CAD +Z up")
         graphics = recipe["graphics"]
-        _require(isinstance(graphics, Mapping), "cut-plan graphics must be a mapping")
+        require_drawing(isinstance(graphics, Mapping), "cut-plan graphics must be a mapping")
         resolved = deepcopy(list(dimensions))
         ids = [row["id"] for row in resolved]
-        _require(all(isinstance(name, str) and name for name in ids) and len(ids) == len(set(ids)),
+        require_drawing(all(isinstance(name, str) and name for name in ids) and len(ids) == len(set(ids)),
                  "cut-plan dimensions must have unique ids")
-        _require(all(row["status"] in {"resolved", "missing", "ambiguous", "outside-view", "unverified"} for row in resolved),
+        require_drawing(all(row["status"] in {"resolved", "missing", "ambiguous", "outside-view", "unverified"} for row in resolved),
                  "cut-plan dimensions need explicit resolution statuses")
     except (KeyError, TypeError, ValueError) as exc:
         raise DrawingElevationError(f"the cut-plan recipe is invalid: {exc}") from exc
@@ -408,19 +408,19 @@ def freeze_cut_plan(
     # They are source evidence, not cut material or occluders in the drawing.
     excluded = set(hidden) | source_hidden
     selected = tuple(name for name in verified.physical_object_ids if name not in excluded)
-    _require(bool(selected), "a cut-plan must retain at least one physical object")
+    require_drawing(bool(selected), "a cut-plan must retain at least one physical object")
     try:
         common = dict(object_ids=selected, origin=view.origin, right=view.right, up=view.up,
                       linear_deflection=view.linear_deflection)
         sections = section_occt_lines(verified.entries, **common)
         if not horizontal and not sections:
-            _refuse("SECTION_PLANE_MISSES_MODEL", "the vertical section plane meets none of the drawn objects; "
+            refuse_section("SECTION_PLANE_MISSES_MODEL", "the vertical section plane meets none of the drawn objects; "
                                                   "move it through the model, or draw an elevation")
         regions = section_occt_regions(verified.entries, **common)
         background = project_occt_lines(verified.entries, **common, depth_range=(0, view.far_depth))
         lines = background + sections
         # The clipped slab's top edges lie on the cut; the cleanup leaves them to the section.
-        cleaned, cleanup = _cleaned(lines, regions, crop_uv=view.crop_uv, hidden_lines=view.hidden_lines,
+        cleaned, cleanup = clean_view_lines(lines, regions, crop_uv=view.crop_uv, hidden_lines=view.hidden_lines,
                                     unit=verified.length_unit, scale_denominator=view.scale_denominator)
         svg = drawing_svg(cleaned, crop_uv=view.crop_uv, unit=verified.length_unit,
                           scale_denominator=view.scale_denominator, hidden_lines=view.hidden_lines,
@@ -474,7 +474,7 @@ def freeze_model_axis_elevation(
         operation_observer({**event, "details": {"input_identity": dict(identity), **event.get("details", {})}})
 
     observer = observe if operation_observer is not None else None
-    with _observed_stage(observer, "drawing.load", parent_event_id=parent_event_id) as observation:
+    with observed_stage(observer, "drawing.load", parent_event_id=parent_event_id) as observation:
         head_before = repository.read_head()
         verified = read_elevation_source(repository, source)
         backend = backend_identity()
@@ -489,7 +489,7 @@ def freeze_model_axis_elevation(
         ), backend)
 
     drawn = draw() if cache is None else cache(verified, draw)
-    with _observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
+    with observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
         drawing = _retain_projection(
             repository, source=source, verified=verified, drawn=drawn, name=view.name,
             drawing_run_id=drawing_run_id, head_before=head_before, provenance=provenance,
@@ -530,7 +530,7 @@ def freeze_section_perspective(
         operation_observer({**event, "details": {"input_identity": dict(identity), **event.get("details", {})}})
 
     observer = observe if operation_observer is not None else None
-    with _observed_stage(observer, "drawing.load", parent_event_id=parent_event_id) as observation:
+    with observed_stage(observer, "drawing.load", parent_event_id=parent_event_id) as observation:
         head_before = repository.read_head()
         verified = read_elevation_source(repository, source)
         backend = backend_identity()
@@ -545,7 +545,7 @@ def freeze_section_perspective(
         return _drawn(dict(projection.view), projection, backend, projection.details(selected))
 
     drawn = draw() if cache is None else cache(verified, draw)
-    with _observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
+    with observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
         drawing = _retain_projection(
             repository, source=source, verified=verified, drawn=drawn, name=view.name,
             drawing_run_id=drawing_run_id, head_before=head_before, provenance=provenance,
@@ -562,18 +562,18 @@ def read_model_axis_elevation(repository: FilesystemProjectRepository, receipt_r
     if not isinstance(receipt_ref, ProjectRecordRef):
         raise TypeError("receipt_ref must be ProjectRecordRef")
     try:
-        _require(receipt_ref.record_kind == DRAWING_PROJECTION_RECEIPT, "the record is not a drawing-projection-receipt")
+        require_drawing(receipt_ref.record_kind == DRAWING_PROJECTION_RECEIPT, "the record is not a drawing-projection-receipt")
         receipt = repository.load_json(receipt_ref)
-        _require(receipt.get("schema") == DRAWING_PROJECTION_RECEIPT_SCHEMA, "the record is not a DrawingProjectionReceipt@1")
-        _require(isinstance(receipt.get("view"), Mapping) and receipt["view"].get("kind") in DRAWING_VIEW_KINDS,
+        require_drawing(receipt.get("schema") == DRAWING_PROJECTION_RECEIPT_SCHEMA, "the record is not a DrawingProjectionReceipt@1")
+        require_drawing(isinstance(receipt.get("view"), Mapping) and receipt["view"].get("kind") in DRAWING_VIEW_KINDS,
                  f"the drawing receipt's view is none of {', '.join(DRAWING_VIEW_KINDS)}")
         run = repository.load_run(receipt["run_id"])
-        _require(run.base.to_dict() == receipt["base"] == receipt["source"]["base"],
+        require_drawing(run.base.to_dict() == receipt["base"] == receipt["source"]["base"],
                  "the drawing run, its receipt and the source disagree on the base")
         svg_ref = _artifact_ref(run.project_id, receipt["artifacts"]["svg"])
         png_ref = _artifact_ref(run.project_id, receipt["artifacts"]["png"])
         for ref in (svg_ref, png_ref):
-            _require(PurePosixPath(ref.relative_path).parts[:4] == ("runs", run.run_id, "workspaces", DOCUMENTATION_WORKSPACE),
+            require_drawing(PurePosixPath(ref.relative_path).parts[:4] == ("runs", run.run_id, "workspaces", DOCUMENTATION_WORKSPACE),
                      f"{ref.relative_path} is not in the drawing run's documentation workspace")
     except (ProjectRepositoryError, KeyError, TypeError, ValueError) as exc:
         if isinstance(exc, DrawingElevationError):
@@ -581,7 +581,7 @@ def read_model_axis_elevation(repository: FilesystemProjectRepository, receipt_r
         raise DrawingElevationError(f"the drawing receipt cannot be read: {exc!r}") from exc
     return ElevationDrawing(
         run=run, receipt_ref=receipt_ref, receipt=receipt, svg_ref=svg_ref, png_ref=png_ref,
-        svg=_artifact_bytes(repository, svg_ref), png=_artifact_bytes(repository, png_ref),
+        svg=read_artifact_bytes(repository, svg_ref), png=read_artifact_bytes(repository, png_ref),
     )
 
 

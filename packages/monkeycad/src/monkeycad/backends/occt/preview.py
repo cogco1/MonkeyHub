@@ -67,7 +67,7 @@ def tessellate_shape(
     return vertices, triangles
 
 
-def _clean(shape) -> None:
+def clear_shape_triangulation(shape) -> None:
     """Forget a triangulation the shape already holds.
 
     OCCT keeps a finer mesh when asked for a coarser one, so a model loaded
@@ -325,6 +325,7 @@ def write_preview_three_dm(
 __all__ = [
     "PreviewMaterial",
     "PreviewObject",
+    "clear_shape_triangulation",
     "tessellate_shape",
     "write_preview_three_dm",
 ]

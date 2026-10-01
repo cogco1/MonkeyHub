@@ -27,7 +27,7 @@ from typing import Any, Mapping, Sequence
 
 from monkeycad.backends.occt.step import StepEntry
 from monkeycad.backends.occt.errors import OcctBackendError
-from monkeycad.backends.occt.preview import _clean, tessellate_shape
+from monkeycad.backends.occt.preview import clear_shape_triangulation, tessellate_shape
 
 RENDERER_NAME = "mesh-lines"
 #: Adjacent triangles meeting at more than this angle draw their shared edge.
@@ -84,8 +84,8 @@ def _renderer_version() -> str:
 
     from monkeydiagram import sources
 
-    functions = (tessellate_shape, sources.read_elevation_source, sources._read_native_source,
-                 triangulate, _clean, _welded, _feature_edges, _expand, _depth_buffer, mesh_line_view)
+    functions = (tessellate_shape, sources.read_elevation_source, sources.read_native_source,
+                 triangulate, clear_shape_triangulation, _welded, _feature_edges, _expand, _depth_buffer, mesh_line_view)
     digest = hashlib.sha256()
     for function in functions:
         digest.update(inspect.getsource(function).encode("utf-8"))
@@ -125,7 +125,7 @@ def triangulate(entries: Sequence[StepEntry], object_ids: Sequence[str], *, line
     meshes, skipped = [], []
     for entry in sorted((entry for entry in entries if entry.name in wanted), key=lambda entry: entry.name):
         try:
-            _clean(entry.shape)
+            clear_shape_triangulation(entry.shape)
             vertices, triangles = tessellate_shape(entry.shape, linear_deflection=linear_deflection,
                                                    angular_deflection=ANGULAR_DEFLECTION)
         except OcctBackendError:
