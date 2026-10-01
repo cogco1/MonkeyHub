@@ -206,6 +206,27 @@ class WorkflowBoundaryTests(unittest.TestCase):
         )), self.policy))
         self.assertEqual((), findings)
 
+    def test_shipped_code_imports_no_test_suite(self) -> None:
+        """The shared test support is for tests (#534): no package, the Runtime, the Hub or a tool imports it.
+
+        Every package under a Python source root is held to the rule; one added without it fails here.
+        """
+
+        root = Path(__file__).resolve().parents[2]
+        packages = sorted(
+            init.parent.relative_to(root).as_posix()
+            for python_root in self.policy["python_source_roots"] if python_root != "."
+            for init in (root / python_root).glob("*/__init__.py")
+        )
+        self.assertLessEqual({"packages/archflow/src/archflow", "services/project-runtime/src/project_runtime",
+                              "apps/monkeyhub/api/monkeyhub_api"}, set(packages))
+        for source in (*(f"{package}/example.py" for package in packages), "apps/monkeyhub/run.py", "tools/example.py"):
+            with self.subTest(source=source):
+                findings = tuple(check_imports(source, _index_tree(ast.parse(
+                    "from tests.support.spine_fixture import authored_record"
+                )), self.policy))
+                self.assertTrue(any(f.code == "LAYER_AUTHORITY_VIOLATION" for f in findings))
+
     def test_every_test_root_refuses_a_lab_and_retired_lane_code(self) -> None:
         """Each test root on disk is held to the rule, function-local imports included.
 

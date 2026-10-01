@@ -1041,9 +1041,10 @@
     {
       "source": "apps",
       "targets": [
-        "labs"
+        "labs",
+        "tests"
       ],
-      "reason": "MonkeyHub ships to users; a lab is not shipped."
+      "reason": "MonkeyHub ships to users; neither a lab nor the test suite is shipped."
     },
     {
       "source": "tests",
@@ -1348,6 +1349,7 @@
         "monkeyarch",
         "monkeydiagram",
         "project_runtime",
+        "tests",
         "archive",
         "monkeyfab",
         "monkeycontrol"
@@ -1365,6 +1367,7 @@
         "project_runtime",
         "monkeyhub_api",
         "labs",
+        "tests",
         "archive",
         "monkeycontrol"
       ],
