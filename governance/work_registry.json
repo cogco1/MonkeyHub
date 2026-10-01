@@ -15,12 +15,18 @@
           "handoff": null,
           "modules": [
             "project_runtime.candidate",
+            "project_runtime.intent",
+            "project_runtime.construction",
             "hub.shell"
           ],
           "write_scope": [
             "services/project-runtime/src/project_runtime/status.py",
             "services/project-runtime/src/project_runtime/api/dto/runtime.py",
             "services/project-runtime/src/project_runtime/application/candidate.py",
+            "services/project-runtime/src/project_runtime/application/proposals.py",
+            "services/project-runtime/src/project_runtime/api/routes/proposals.py",
+            "services/project-runtime/src/project_runtime/api/routes/construction.py",
+            "services/project-runtime/src/project_runtime/api/routes/intents.py",
             "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
             "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
             "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
