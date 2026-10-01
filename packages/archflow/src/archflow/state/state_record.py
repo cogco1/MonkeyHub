@@ -497,7 +497,7 @@ class StateRecord:
             for ref in connection.fields.get("relationship_refs", ()):
                 if ref not in declared_relations:
                     raise StateRecordError(f"connection {connection.entity_id}: relationship_ref {ref!r} names no declared relation")
-        parts: dict[str, tuple[str, ...]] | None = None   # each component's parts, read once a component states one's facets
+        parts: dict[str, tuple[str, ...]] | None = None   # each component's parts, read when the first part_facets appear
         for component in self.entities_of("Component@1"):
             kind = component.fields.get("semantic_kind")
             # A component may exist before its meaning is known: no semantic_kind

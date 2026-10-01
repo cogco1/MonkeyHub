@@ -108,9 +108,9 @@ def _preview_materials(
     (``_material_color``: the declared colour, else the identity of its
     name), so the objects of one material share one table entry. An object
     whose components and part declare none wears no material and keeps its
-    layer's distinction colour. Roles come
-    from ``program.proposal.assemblies`` alone, never from an object's name:
-    GLAZING keeps its glass fallback and an undeclared FRAME is shaded.
+    layer's distinction colour. Roles come from ``program.proposal.assemblies``
+    alone, never from an object's name: GLAZING keeps its glass fallback and
+    an undeclared FRAME is shaded.
     """
 
     objects = semantics["objects"]

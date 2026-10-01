@@ -5,8 +5,9 @@ A composed model is an imported model with a run's native objects patched in.
 ``rewrite_composed_materials`` then gives the whole model the materials the
 run declares, whatever its geometry did: every material the model carried is
 cleared and each object wears what its part or else its component declares,
-or nothing (#580). ``verify_composed_three_dm`` reads the final bytes back against the
-model they were composed from, the native exports and those declarations.
+or nothing (#580). ``verify_composed_three_dm`` reads the final bytes back
+against the model they were composed from, the native exports and those
+declarations.
 """
 
 from __future__ import annotations
@@ -292,9 +293,9 @@ def rewrite_composed_materials(
     part its name says delivered it first (``material_by_part``), else the
     component's own; one that names no component is undeclared. A part's
     material binds its objects alone: no group is split, no layer changed
-    and no geometry rebuilt. Nothing is inherited from the
-    materials the model carried: layer render materials are cleared and
-    block definition members wear their instance's material (from parent).
+    and no geometry rebuilt. Nothing is inherited from the materials the
+    model carried: layer render materials are cleared and block definition
+    members wear their instance's material (from parent).
 
     GUIDs, geometry, names, layers and every other user string are left as
     they are. A declared material reuses a table entry that is exactly the
@@ -378,10 +379,10 @@ def verify_composed_three_dm(
     are the base's. Geometry is compared by content, a digest of each
     object's encoded geometry, never by bounds. Materials are what
     ``rewrite_composed_materials`` states for these declarations, part first
-    by the same rule: a declared
-    object is bound to a table entry that is exactly its native material,
-    an undeclared one wears none, its labels say which, no layer carries a
-    render material and block members wear their instance's material.
+    by the same rule: a declared object is bound to a table entry that is
+    exactly its native material, an undeclared one wears none, its labels
+    say which, no layer carries a render material and block members wear
+    their instance's material.
     """
 
     import rhino3dm
@@ -552,7 +553,8 @@ def _declared_wears(
     """What an object no program delivers wears: what the components it names declare, its part's first, or none."""
 
     components = tuple(component for component in (component_text or "").split("+") if component)
-    declared = declared_material(components, material_by_component, object_name=name, material_by_part=material_by_part)
+    declared = declared_material(components, material_by_component, object_name=name,
+                                 material_by_part=material_by_part)
     if declared is None:
         return _Wears(None, None)
     color = _material_color(declared, material_colors)

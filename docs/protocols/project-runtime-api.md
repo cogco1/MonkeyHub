@@ -630,10 +630,10 @@ brick and block, a floor finish inside with paving outside) takes one facets tar
 `{id, part, set | remove}`, where `part` is one of the ids `GET /api/construction/model` lists as
 that entity's `parts`. A part states `material.name` and `material.color` and nothing else; they
 are kept under the component (`Component@1.fields.part_facets`) and read back as the entity's
-`partFacets`. The record refuses a part its component does not have (`422
-FACETS_TARGET_INVALID`, naming its parts), any other key on a part, and a colour that would give
-one material two colours across components and parts (`422 FACETS_INVALID`); a part that is to
-be removed or moved to another component loses its own material first. Each object wears, by
+`partFacets`. The record refuses a part its component does not have
+(`422 FACETS_TARGET_INVALID`, naming its parts), any other key on a part, and a colour that
+would give one material two colours across components and parts (`422 FACETS_INVALID`); a part
+that is to be removed or moved to another component loses its own material first. Each object wears, by
 precedence, its part's own material, else its component's, else none
 (`archflow:material_status: undeclared`). An object belongs to the part it is named after
 (`obj-<part>`, or `obj-<part>-<suffix>` for one of several; the longest such part wins, the rule
@@ -648,9 +648,8 @@ on every compose, whether or not any geometry changed, so a material-only change
 composed bytes of its own. An object a seat's program delivers wears what that run's preview
 gives it; any other object wears the material its part, else the components its
 `archflow:component` names, declare, as one native material named by it in its declared
-colour. Every other object, an
-imported object with no component included, wears none and carries
-`archflow:material_status: undeclared`. Materials the imported model or an earlier step brought
+colour. Every other object, an imported object with no component included, wears none and
+carries `archflow:material_status: undeclared`. Materials the imported model or an earlier step brought
 are cleared, not kept: object bindings, layer render materials and block members' own materials
 (members wear their instance's). A table entry no object wears any more stays in the table,
 unreferenced. Object GUIDs, geometry, names, layers and every other user string are untouched.
