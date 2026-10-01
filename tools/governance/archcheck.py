@@ -1144,6 +1144,8 @@ def _dependency_findings(
                 detail = "; depends_on lists module ids, and no entry's files hold a module of that name"
             elif holder == module_id:
                 detail = " but the import name of one of its own files; drop it"
+            elif holder in declared:
+                detail = f" but an import name; {holder} holds that module and is named already, so drop it"
             else:
                 detail = f" but an import name; {holder} holds that module, so name {holder}"
             yield PolicyFinding(

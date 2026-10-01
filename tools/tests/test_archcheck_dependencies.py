@@ -148,6 +148,12 @@ class RegistryDependencyTests(unittest.TestCase):
             "name; archflow.project.repository holds that module, so name archflow.project.repository",
             findings[0][1],
         )
+        self.assertEqual(
+            [("REGISTRY_DEPENDS_ON_UNKNOWN",
+              "tools.consumer depends_on 'archflow.project.digests' is not a registered module id but an import "
+              "name; archflow.project.repository holds that module and is named already, so drop it")],
+            self.findings(source, ["archflow.project.digests", "archflow.project.repository"]),
+        )
         self.assertEqual([], self.findings(source, ["archflow.project.repository"]))
 
     def test_an_import_name_of_an_entrys_own_file_is_dropped(self) -> None:
