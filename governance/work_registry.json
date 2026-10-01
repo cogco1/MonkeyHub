@@ -1,4 +1,30 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-547",
+      "lanes": [
+        {
+          "id": "local-runner",
+          "status": "active",
+          "branch": "codex/547-local-runner",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-547-local-runner",
+          "base_ref": "2461e7243f9b919d8ca6f4ef1b952f2fd08e0d46",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "tools.benchmarks.daily_benchmark"
+          ],
+          "write_scope": [
+            "docs/development/benchmarks.md",
+            "tools/benchmarks/benchmark_data.py",
+            "tools/benchmarks/daily_benchmark.py",
+            "tools/benchmarks/register_local_benchmark.ps1"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
