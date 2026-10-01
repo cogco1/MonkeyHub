@@ -9,11 +9,21 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // synthetic local Hub; no provider, project or runtime is involved.
 const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new URL("../dist/", import.meta.url)));
 const screenshots = process.env.SETTINGS_AUTOSAVE_SCREENSHOTS ?? await mkdtemp(path.join(tmpdir(), "monkeyhub-settings-autosave-"));
+// The Hub's runtime stream. A settled app list is read again only each minute and on return (#383), so the
+// page hears that a project runtime started or stopped as the Hub says it: a `worker/<state>` event here.
+const streams = new Set();
+let runtimeSequence = 1;
+const announce = (kind) => {
+  assert.ok(streams.size > 0, "the page follows the Hub's runtime stream");
+  const frame = `event: runtime\ndata: ${JSON.stringify({ serverId: "fixture-hub", sequence: ++runtimeSequence, kind, runtimeId: "fixture-runtime" })}\n\n`;
+  for (const stream of streams) stream.write(frame);
+};
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
   if (pathname === "/api/runtime/events") {
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-    res.write(`retry: 250\nevent: runtime\ndata: ${JSON.stringify({ serverId: "fixture-hub", sequence: 1, kind: "snapshot", snapshot: runtimeSnapshot() })}\n\n`);
+    streams.add(res); req.on("close", () => streams.delete(res));
+    res.write(`retry: 250\nevent: runtime\ndata: ${JSON.stringify({ serverId: "fixture-hub", sequence: runtimeSequence, kind: "runtime/snapshot", snapshot: runtimeSnapshot() })}\n\n`);
     return;
   }
   const filename = path.resolve(root, `.${pathname === "/" ? "/index.html" : pathname}`);
@@ -278,14 +288,15 @@ try {
   });
 
   await step("a change refused while the runtime runs stays in its field and saves once it stops", async () => {
-    studioProcess = 4321;
+    // The runtime starts behind this window: the Hub announces it on its stream, and the app list is read again.
+    studioProcess = 4321; announce("worker/ready");
     await dialog.getByText("Project Runtime · Running").waitFor();
     await page.locator("#studio-port").fill("18791");
     await dialog.getByRole("alert").filter({ hasText: "Stop the applications before changing their launch configuration." }).waitFor();
     await status.filter({ hasText: /^Unsaved changes$/ }).waitFor();
     assert.equal(await page.locator("#studio-port").inputValue(), "18791", "the refused value is kept");
     assert.equal(launch.studioPort, 18790);
-    studioProcess = null;
+    studioProcess = null; announce("worker/stopped");
     await status.filter({ hasText: /^Saved$/ }).waitFor();
     assert.equal(launch.studioPort, 18791);
   });
