@@ -567,6 +567,8 @@ const hubApi = async (route) => {
       session.status = "failed";
       session.error = data().kind === "model"
         ? { code: "CHAT_PROVIDER_FAILED", detail: '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'not-a-real-model-xyz\' model is not supported when using Codex with a ChatGPT account."}}' }
+        : data().kind === "limit"
+          ? { code: "CHAT_RATE_LIMITED", detail: "You've hit your limit · resets 7pm (UTC)." }
         : { code: "CHAT_SOMETHING_NEW", detail: '{"trace":"unrecognised","status":523}' };
       // A message whose text happens to be JSON is still a message.
       session.messages.push({ id: `a-${session.messages.length}`, role: "assistant", status: "complete",
@@ -3353,9 +3355,18 @@ try {
   assert.equal(await page.evaluate(() => document.activeElement?.id), "chat-model");
   assert.equal(sessions.find((row) => row.id === failed).model, modelBefore, "nothing is switched for the person");
 
+  const writesBeforeLimit = writes.length;
+  await post("limit");
+  await banner.locator("p").first().filter({ hasText: "usage and limits page" }).waitFor();
+  assert.match(await banner.locator("p").first().innerText(), /resets 7pm \(UTC\)/);
+  assert.equal(await banner.getByRole("button", { name: "Change the model" }).count(), 0,
+    "a limit is not blamed on the chosen model");
+  assert.equal(sessions.find((row) => row.id === failed).model, modelBefore);
+  assert.deepEqual(writes.slice(writesBeforeLimit), [["POST", `/api/chat/sessions/${failed}/fail`, { kind: "limit" }, null]],
+    "apart from the fixture's refusal, showing the limit does not retry or write anything");
+
   await post("unknown");
-  await page.waitForFunction(() => document.querySelector(".chat-error pre") === null
-    || !document.querySelector(".chat-error pre").textContent.includes("invalid_request_error"));
+  await banner.locator("p").first().filter({ hasText: "This step did not finish" }).waitFor();
   const unknownSummary = await banner.locator("p").first().innerText();
   assert.match(unknownSummary, /This step did not finish/, unknownSummary);
   assert.equal(await banner.getByRole("button", { name: "Change the model" }).count(), 0,

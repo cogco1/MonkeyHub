@@ -31,6 +31,7 @@ export interface PresentedFailure {
 /** Hub codes that already describe themselves; the detail stays available. */
 const summaries: Record<Language, Record<string, string>> = {
   "zh-CN": {
+    CHAT_RATE_LIMITED: "服务商的速率或用量已达上限。请查看该服务商的用量与额度页面，额度可用后再试。",
     CHAT_TIMEOUT: "回复超时，CLI 未完成当前任务。",
     CHAT_INCOMPLETE: "CLI 中途退出，当前任务未完成。",
     CHAT_STOPPED: "回复已按你的要求停止。",
@@ -63,6 +64,7 @@ const summaries: Record<Language, Record<string, string>> = {
     WORKSPACE_INVALID: "先在 Hub 设置里选一个工作区。",
   },
   en: {
+    CHAT_RATE_LIMITED: "The provider's rate or usage limit was reached. Check its usage and limits page, then retry when available.",
     CHAT_TIMEOUT: "The CLI did not complete this turn within the time limit.",
     CHAT_INCOMPLETE: "The CLI exited before this turn finished.",
     CHAT_STOPPED: "The reply stopped because you asked it to.",
@@ -174,8 +176,12 @@ export function presentFailure(
   // A provider's own sentence about this turn says more than "the provider
   // failed"; the Hub's own codes already speak for themselves, and a CLI's
   // stderr tail is diagnostics rather than a sentence to lead with.
-  const rejected = namesTheModel(`${inner ?? ""}\n${detail}`);
-  const summary = rejected ? modelRefused[language](provider?.trim() || null)
+  const limited = code === "CHAT_RATE_LIMITED";
+  const rejected = !limited && namesTheModel(`${inner ?? ""}\n${detail}`);
+  // Keep the provider's own reset time/reason visible when supplied. Never
+  // invent a reset time, offer to switch models, or retry on the person's behalf.
+  const summary = limited ? `${known}${inner ? ` ${inner.trim().replace(/\s+/g, " ").slice(0, 300)}` : ""}`
+    : rejected ? modelRefused[language](provider?.trim() || null)
     : code === "CHAT_PROVIDER_FAILED" && inner ? line(inner)
       : known ? known
         : inner ? line(inner)

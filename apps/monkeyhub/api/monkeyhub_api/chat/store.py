@@ -50,6 +50,49 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _cli_failure(event: Mapping, environment) -> HubError:
+    """Read an explicit provider failure, never ordinary assistant/tool prose."""
+    def limited(value, depth=0):
+        if depth > 4:
+            return False
+        if isinstance(value, Mapping):
+            return (value.get("api_error_status") == 429 or value.get("status") == 429
+                    or any(limited(value.get(key), depth + 1)
+                           for key in ("type", "code", "error", "message", "result", "errors")))
+        if isinstance(value, list):
+            return any(limited(item, depth + 1) for item in value)
+        if not isinstance(value, str):
+            return False
+        text = value.strip()
+        if text.lower() in {"rate_limit", "rate_limit_error", "usage_limit_reached", "quota_exceeded", "insufficient_quota"}:
+            return True
+        # Older failed result events give only a sentence. This is reached only
+        # for a failure envelope, not a rate_limit_event or a text/tool message.
+        if re.match(r"^(you['’]ve hit your limit\b|(?:rate|usage) limit (?:reached|exceeded)\b|quota exceeded\b)", text, re.I):
+            return True
+        if text.startswith(("{", "[")):
+            try:
+                return limited(json.loads(text), depth + 1)
+            except ValueError:
+                pass
+        return False
+
+    if event.get("type") == "assistant":
+        message = event.get("message")
+        blocks = message.get("content", []) if isinstance(message, Mapping) else []
+        detail = "\n".join(row["text"] for row in blocks if isinstance(row, Mapping)
+                           and row.get("type") == "text" and isinstance(row.get("text"), str))
+        detail = detail or event.get("error")
+    else:
+        detail = event.get("message") or event.get("error") or event.get("result") or event.get("errors")
+    if isinstance(detail, Mapping):
+        detail = detail.get("message") or json.dumps(detail, ensure_ascii=False, default=str)
+    if isinstance(detail, list):
+        detail = "\n".join(item if isinstance(item, str) else json.dumps(item, ensure_ascii=False, default=str) for item in detail)
+    return HubError(code="CHAT_RATE_LIMITED" if limited(event) else "CHAT_PROVIDER_FAILED",
+                    detail=providers._redact(str(detail or "The provider reported a failed turn."), environment)[:1000])
+
+
 class _SavedChat(ChatDetail):
     nativeSessionId: str | None = None
     cliStartId: str | None = None
@@ -1712,26 +1755,63 @@ class ChatStore:
                     while channel is not None and (line := channel.get()) is not None:
                         process.stdin.write(line)
                         process.stdin.flush()
-                    process.stdin.close()
                 except (OSError, ValueError):
                     pass
+                finally:
+                    with suppress(OSError, ValueError):
+                        process.stdin.close()
+
+            output = queue.Queue(maxsize=64)
+            reading_done = threading.Event()
+
+            def enqueue(line):
+                while not reading_done.is_set():
+                    try:
+                        output.put(line, timeout=0.1)
+                        return
+                    except queue.Full:
+                        pass
+
+            def read_output():
+                try:
+                    for line in process.stdout:
+                        if reading_done.is_set():
+                            break
+                        enqueue(line)
+                finally:
+                    process.stdout.close()
+                    enqueue(None)
 
             def read_errors():
-                for line in process.stderr:
-                    stderr.append(providers._redact(line, environment)[-2000:])
-                    del stderr[:-8]
+                try:
+                    for line in process.stderr:
+                        stderr.append(providers._redact(line, environment)[-2000:])
+                        del stderr[:-8]
+                finally:
+                    # This reader owns its pipe. Closing it from the main
+                    # thread can block behind a read if a CLI child inherited it.
+                    process.stderr.close()
 
             feeder = threading.Thread(target=feed, daemon=True)
+            reader = threading.Thread(target=read_output, daemon=True)
             errors = threading.Thread(target=read_errors, daemon=True)
             feeder.start()
+            reader.start()
             errors.start()
             timer = threading.Timer(max(0.0, deadline - time.monotonic()),
                                     lambda: providers._stop_process(process) if process.poll() is None else None)
             timer.daemon = True
             timer.start()
             last_save = 0.0
+            failure_deadline = None
             try:
-                for line in process.stdout:
+                while time.monotonic() < (failure_deadline or deadline):
+                    try:
+                        line = output.get(timeout=max(0.0, (failure_deadline or deadline) - time.monotonic()))
+                    except queue.Empty:
+                        break
+                    if line is None:
+                        break
                     try:
                         event = json.loads(line)
                     except ValueError:
@@ -1742,16 +1822,30 @@ class ChatStore:
                         event_error, finished = self._event(session, event, environment)
                         completed_turn = completed_turn or finished
                         if event_error:
-                            error = event_error
+                            if failure_deadline is None or error is None:
+                                error = event_error
+                            elif (event_error.detail not in error.detail
+                                  and event_error.detail != "The provider reported a failed turn."):
+                                # A final result can add reset wording absent
+                                # from the earlier assistant refusal. Keep both
+                                # reasons without replacing the specific code.
+                                error = error.model_copy(update={"detail": (error.detail + "\n" + event_error.detail)[:1000]})
                         if finished:
                             # After its result Claude answers what it has already
                             # read and exits once stdin closes; anything sent
                             # from here on is the next prompt.
                             self._close_input(running)
+                            if event_error and failure_deadline is None:
+                                # Bounded drain: keep a following failed result,
+                                # but never wait indefinitely for inherited pipes.
+                                failure_deadline = min(deadline, time.monotonic() + 2.0)
                         if time.monotonic() - last_save >= 0.3:
                             self._save(session)
                             last_save = time.monotonic()
-                process.wait()
+                try:
+                    process.wait(timeout=max(0.0, (failure_deadline or deadline) - time.monotonic()))
+                except subprocess.TimeoutExpired:
+                    providers._stop_process(process)
             finally:
                 with self._lock:
                     self._close_input(running)
@@ -1759,12 +1853,14 @@ class ChatStore:
                 if process.poll() is None:
                     providers._stop_process(process)
                 process.wait(timeout=10)
-                feeder.join(timeout=1)
-                errors.join(timeout=1)
-                for stream in (process.stdin, process.stdout, process.stderr):
-                    stream.close()
+                reading_done.set()
+                joined_until = time.monotonic() + 1.0
+                for thread in (feeder, reader, errors):
+                    thread.join(timeout=max(0.0, joined_until - time.monotonic()))
+                # Each daemon owns/closes its pipe. A descendant retaining a
+                # pipe can outlive the CLI, but cannot hold this turn's outcome.
             if not (running.stop.is_set() or running.redirected):
-                if time.monotonic() >= deadline:
+                if time.monotonic() >= deadline and error is None:
                     error = HubError(code="CHAT_TIMEOUT", detail="The CLI did not finish within this turn's time limit.")
                 elif process.returncode and error is None:
                     detail = "".join(stderr).strip()[-1000:] or f"The CLI exited with code {process.returncode}."
@@ -1889,13 +1985,13 @@ class ChatStore:
             trace.claude_stream(event.get("event"))
         if kind == "system" and event.get("subtype") == "init" and active and active.library_skills:
             skill_plugins.learn(self.runtime_root, event)
-        if kind in {"error", "turn.failed"} or (kind == "result" and event.get("is_error")):
-            detail = event.get("message") or event.get("error") or event.get("result") or "The provider reported a failed turn."
-            if isinstance(detail, Mapping):
-                # The CLI wraps its own sentence; carry that, not this process's
-                # rendering of a dict, so the reader gets the provider's words.
-                detail = detail.get("message") or json.dumps(detail, ensure_ascii=False, default=str)
-            return HubError(code="CHAT_PROVIDER_FAILED", detail=providers._redact(str(detail), environment)[:1000]), False
+        # Claude marks a terminal limit on the assistant envelope; its text is
+        # still the provider's reason. A child agent's error is not this turn's
+        # end, and rate_limit_event is only status (possibly warning/retry).
+        assistant_limit = (kind == "assistant" and event.get("error") == "rate_limit"
+                           and event.get("parent_tool_use_id") is None)
+        if assistant_limit or kind in {"error", "turn.failed"} or (kind == "result" and event.get("is_error")):
+            return _cli_failure(event, environment), assistant_limit or kind in {"turn.failed", "result"}
         text, message_id, append = None, None, False
         if kind in {"item.started", "item.completed", "item.updated"}:
             item = event.get("item") if isinstance(event.get("item"), dict) else {}

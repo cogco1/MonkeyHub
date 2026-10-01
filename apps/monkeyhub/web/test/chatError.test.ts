@@ -67,3 +67,23 @@ test("both languages answer, and nothing is dropped in either", () => {
   }
   assert.equal(presentFailure(null, "en"), null);
 });
+
+test("a terminal provider limit keeps its reset wording and offers a next step in both languages", () => {
+  const detail = "Rate limit exceeded.\nYou've hit your limit · resets 7pm (UTC).";
+  for (const language of ["en", "zh-CN"] as const) {
+    const shown = presentFailure({ code: "CHAT_RATE_LIMITED", detail }, language, "Claude Code")!;
+    assert.ok(shown.summary.includes(detail.replace(/\s+/g, " ")));
+    assert.match(shown.summary, language === "en" ? /usage and limits page/ : /用量与额度页面/);
+    assert.equal(shown.modelRejected, false);
+    assert.equal(shown.technical, `CHAT_RATE_LIMITED: ${detail}`);
+    const noTime = presentFailure({ code: "CHAT_RATE_LIMITED", detail: "rate_limit" }, language)!;
+    assert.ok(!/7pm|UTC|\d/.test(noTime.summary), "no reset time is guessed");
+  }
+});
+
+test("quota-looking prose inside an unrelated failure is not reclassified as a limit", () => {
+  const detail = "An example discusses the words rate_limit and quota exceeded.";
+  const shown = presentFailure({ code: "CHAT_PROVIDER_FAILED", detail }, "en")!;
+  assert.equal(shown.summary, detail);
+  assert.equal(shown.modelRejected, false);
+});
