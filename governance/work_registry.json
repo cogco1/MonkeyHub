@@ -49,10 +49,10 @@
             "packages/monkeycad/tests/test_three_dm_compose.py",
             "services/project-runtime/tests/test_construction_routes.py",
             "services/project-runtime/tests/test_cad_export.py",
-            "tests/integration/test_project_runner.py",
             "docs/protocols/project-runtime-api.md",
             "governance/module_registry.json",
-            "docs/architecture/system-map.md"
+            "docs/architecture/system-map.md",
+            "tests/integration/test_declared_materials.py"
           ],
           "depends_on": []
         }
