@@ -1,31 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-327",
-      "lanes": [
-        {
-          "id": "run-read-guard",
-          "status": "active",
-          "branch": "codex/327-run-read-guard",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-327-run-read-guard",
-          "base_ref": "105b410a9be2345807e562fa986ab12354a7fdae",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "archflow.project.repository",
-            "archflow.project.containers",
-            "project_runtime.binding"
-          ],
-          "write_scope": [
-            "packages/archflow/src/archflow/project/repository.py",
-            "packages/archflow/src/archflow/project/containers.py",
-            "services/project-runtime/src/project_runtime/binding.py"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
