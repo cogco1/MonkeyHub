@@ -142,6 +142,16 @@ class ReadingTests(unittest.TestCase):
         self.assertIn("2500", row)
         self.assertIn("over budget", row)
         self.assertNotIn("over budget", next(line for line in text.splitlines() if "project_open" in line))
+        self.assertNotIn("Installed MonkeyHub", text)
+
+    def test_the_summary_names_the_installed_version_a_local_run_measured(self):
+        local = result("2026-10-01T14:00:00Z", runner="windows-local", hub_start__warm=1200.0)
+        local["settings"].update({"installed": {"version": "046fdbdafe70-desktop", "release": "0.1.980",
+                                                "channel": "candidate", "python": "3.13.15", "bytecodeFiles": 2986},
+                                  "harnessCommit": "f" * 40})
+        text = data.summary_markdown(local)
+        self.assertIn("Installed MonkeyHub 0.1.980 (`046fdbdafe70-desktop`, candidate), measured on fresh copies · "
+                      "harness `ffffffffffff`", text)
 
     def test_the_trend_shows_the_last_30_runs_per_runner_oldest_first(self):
         runs = [result(f"2026-09-{day:02d}T20:30:00Z", commit=f"{day:02d}" * 20, hub_start__warm=float(day))
@@ -294,6 +304,28 @@ class DataBranchTests(unittest.TestCase):
         (self.root / "taken").mkdir()
         with self.assertRaises(data.BenchmarkDataError):
             data.publish(self.repo, self.root / "taken", [result("2026-10-01T20:30:00Z")], {})
+
+    def test_each_local_run_publishes_from_a_repository_of_its_own(self):
+        data.publish(self.repo, self.root / "data-ci", [result("2026-10-01T20:30:00Z", hub_start__warm=1.0)], {},
+                     push=True, author=self.author)
+        local = result("2026-10-01T14:00:00Z", commit="4" * 40, runner="windows-local", hub_start__warm=2.0)
+        first = data.publisher_repository(self.root / "publisher-1", str(self.remote))
+        data.publish(first, self.root / "data-local-1", [local], {}, push=True, author=self.author)
+        with self.assertRaises(data.BenchmarkDataError):
+            data.publisher_repository(self.root / "publisher-1", str(self.remote))
+        # The next day's run checks the branch out again from a new repository.
+        second = data.publisher_repository(self.root / "publisher-2", str(self.remote))
+        outcome = data.publish(second, self.root / "data-local-2", [{**local, "date": "2026-10-02T14:00:00Z"}], {},
+                               push=True, author=self.author)
+        self.assertFalse(outcome["created"])
+        files = self.remote_files()
+        self.assertIn("results/linux/2026-10-01-aaaaaaaaaaaa.json", files)
+        self.assertIn("results/windows-local/2026-10-01-444444444444.json", files)
+        self.assertIn("results/windows-local/2026-10-02-444444444444.json", files)
+        latest = json.loads(_git(self.remote, "show", f"{data.DATA_BRANCH}:latest.json"))
+        self.assertEqual(sorted(latest["runners"]), ["linux", "windows-local"])
+        # Nothing is registered in the checkout that published for CI.
+        self.assertNotIn("data-local", _git(self.repo, "worktree", "list"))
 
 
 if __name__ == "__main__":

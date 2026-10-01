@@ -1,8 +1,11 @@
-"""Measure MonkeyHub from a checkout the same way every day (GH-547).
+"""Measure MonkeyHub the same way every day (GH-547): a checkout in CI, the installed app on a person's machine.
 
     python tools/benchmarks/daily_benchmark.py run --project 30=<dir> --project 150=<dir> \\
         --out <result.json> [--summary <summary.md>] [--work <dir>] [--samples 5] \\
-        [--first-launch-samples 5] [--idle-seconds 60] [--budget-override METRIC=VALUE]
+        [--first-launch-samples 5] [--idle-seconds 60] [--budget-override METRIC=VALUE] \\
+        [--installed <version dir>] [--runner-key KEY]
+    python tools/benchmarks/daily_benchmark.py local [--version-dir <version dir>] [--dev-root <dir>] \\
+        [--sizes 30,150] [--samples 3] [--first-launch-samples 2] [--remote-url URL] [--no-publish] [--force]
 
 Every Hub this starts runs this checkout's ``apps/monkeyhub/run.py`` on its own
 port, with its own runtime root, ``APPDATA``, ``LOCALAPPDATA`` and bytecode
@@ -14,14 +17,35 @@ are never opened. A project comes from
 (``docs/development/benchmarks.md``): a repository tool takes nothing from a
 test suite.
 
+With ``--installed`` the Hubs run an installed version instead: its own
+interpreter (``_runtime/python``) and ``run.py``, from fresh copies of the
+version directory under ``--work``, never from the directory given, with every
+``PYTHON*`` variable dropped as the package's updater drops them. A copy never
+sits directly under a ``versions`` directory, so the Hub's update transaction
+stays off: it neither checks for an update nor points the desktop shortcut
+anywhere. Each first launch starts a new copy, as shipped; the first copy, once
+launched, is the warm version every later Hub of the run starts from.
+
+``local`` is the scheduled entry on a person's Windows machine: it measures the
+version the desktop shortcut opens in installed mode under
+``<development root>/temp/benchmark-local``. It skips when any MonkeyHub runs,
+when the processors are busy, on battery, when nobody has left the computer
+idle long enough or when today's result is already published; it builds the
+projects with this checkout's generator in a process of their own, and pushes
+the result to ``results/windows-local/`` on the data branch. It never stops a
+process it did not start and deletes nothing: earlier runs are renamed into
+the development root's ``_TRASH_<YYYYMMDD>``. ``register_local_benchmark.ps1``
+registers it.
+
 Scenarios, every sample in a Hub of its own: ``hub_start.first_launch``
 ``--first-launch-samples`` times, idle once per project size, and the rest
 ``--samples`` times at each size:
 
 - ``hub_start``: process start to the first ``/api/health`` that answers, as a
-  first launch (an empty ``PYTHONPYCACHEPREFIX``: every module is compiled, as
-  after an update, whose package ships no bytecode) and warm (a prefix kept
-  from earlier launches).
+  first launch and warm. From a checkout, a first launch has an empty
+  ``PYTHONPYCACHEPREFIX``, so every module is compiled, and warm keeps a prefix
+  from earlier launches. An installed first launch starts a fresh copy with the
+  bytecode the package ships (#548); warm starts the copy launched before.
 - ``project_open``: the requests the web client's ``ensureProject`` sends, from
   opening the project's runtime until its worker is ready and answers the
   project binding. The Hub is asked every 25 ms, where the page waits 400 ms.
@@ -40,9 +64,9 @@ Scenarios, every sample in a Hub of its own: ``hub_start.first_launch``
 
 Before they read anything, workers wait until the Hub has projected the project
 and ``--settle-seconds`` more, the delay a person takes to click. Per project
-size one unmeasured Hub first opens everything once, so the warm bytecode
-prefix and the project's index in its runtime root exist; every measured Hub of
-that size reuses both, as a returning user does.
+size one unmeasured Hub first opens everything once, so the warm bytecode (the
+prefix, or the installed copy) and the project's index in its runtime root
+exist; every measured Hub of that size reuses both, as a returning user does.
 
 The result is one ``MonkeyHubBenchmark@1`` file; ``benchmark_data.py`` judges,
 summarises and publishes it.
@@ -52,28 +76,34 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import http.client
 import json
+import ntpath
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import site
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
 import threading
 import time
-from typing import Any, Callable, Mapping, Sequence
+import traceback
+from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence
 from urllib.parse import urlencode
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.benchmarks import benchmark_data
 from tools.benchmarks.projection_check import ROUTES, settle
+from tools.dev import source_roots, workspace
 
 SCHEMA = benchmark_data.RESULT_SCHEMA
 CODE_ROOT = Path(__file__).resolve().parents[2]
@@ -113,6 +143,40 @@ credentials.account_store = credentials.UnavailableSecretStore
 sys.argv = [str(root / "apps" / "monkeyhub" / "run.py"), *sys.argv[2:]]
 runpy.run_path(sys.argv[0], run_name="__main__")
 """
+# An installed version: its own interpreter, whose python313._pth lists the
+# source roots, runs its run.py the way the desktop host does (-u, from the
+# version directory), with an account credential store that holds nothing. A
+# version that opens the account's store some other way is never started.
+INSTALLED_PYTHON = Path("_runtime") / "python" / "python.exe"
+INSTALLED_ENTRY = Path("apps") / "monkeyhub" / "run.py"
+INSTALLED_LAUNCHER = """\
+import runpy, sys
+from monkeyhub_api.settings import credentials
+if not callable(getattr(credentials, "account_store", None)):
+    raise SystemExit("this version opens the account's credential store another way; the benchmark does not start it")
+credentials.account_store = credentials.UnavailableSecretStore
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+# Where an installed version's results go on the data branch.
+LOCAL_RUNNER_KEY = "windows-local"
+# The local runner's directory under the development root (tools/dev/workspace.py).
+LOCAL_DIRECTORY = Path("temp") / "benchmark-local"
+# The desktop shortcut the installer writes (apps/monkeyhub/installer/install.ps1).
+SHORTCUT_NAME = "MonkeyHub.lnk"
+# The desktop host's executable, now and before the rename.
+DESKTOP_HOSTS = ("monkeyhub.exe", "monkeyarch.exe")
+# A command line that runs a Hub, one of its services or a Project Runtime process, from any checkout or version.
+HUB_COMMANDS = ("apps\\monkeyhub\\run.py", "apps/monkeyhub/run.py", "-m project_runtime")
+# The workflow's generator step, run from services/project-runtime in a process of its own.
+BUILD_PROJECT = """\
+import pathlib, sys
+from tests.synthetic_project import build_synthetic_project
+print(build_synthetic_project(pathlib.Path(sys.argv[1]), project_id=sys.argv[2], runs=int(sys.argv[3])))
+"""
+# Input this recent while the runner waits for an idle computer means somebody is back.
+IDLE_TOLERANCE_S = 2.0
+IDLE_POLL_S = 30.0
 
 
 class HarnessError(RuntimeError):
@@ -233,9 +297,18 @@ class _WindowsProcesses:
         self._next = kernel32.Process32NextW
         for function in (self._first, self._next):
             function.argtypes, function.restype = [wintypes.HANDLE, ctypes.POINTER(ProcessEntry)], wintypes.BOOL
+        self._image = kernel32.QueryFullProcessImageNameW
+        self._image.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+        self._image.restype = wintypes.BOOL
+        self._query = ctypes.WinDLL("ntdll").NtQueryInformationProcess
+        self._query.argtypes = [wintypes.HANDLE, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_ulong,
+                                ctypes.POINTER(ctypes.c_ulong)]
+        self._query.restype = ctypes.c_long
         self._handles: dict[int, Any] = {}
 
-    def parents(self) -> dict[int, int]:
+    def _entries(self) -> list[tuple[int, int, str]]:
+        """Every process in one snapshot: its id, its parent's id and its executable's name."""
+
         ctypes = self._ctypes
         snapshot = self._snapshot(0x2, 0)  # TH32CS_SNAPPROCESS
         if snapshot in (None, ctypes.c_void_p(-1).value):
@@ -243,14 +316,58 @@ class _WindowsProcesses:
         try:
             entry = self._ProcessEntry()
             entry.dwSize = ctypes.sizeof(entry)
-            found = {}
+            found = []
             more = self._first(snapshot, ctypes.byref(entry))
             while more:
-                found[entry.th32ProcessID] = entry.th32ParentProcessID
+                found.append((entry.th32ProcessID, entry.th32ParentProcessID, entry.szExeFile))
                 more = self._next(snapshot, ctypes.byref(entry))
             return found
         finally:
             self._close(snapshot)
+
+    def parents(self) -> dict[int, int]:
+        return {pid: parent for pid, parent, _ in self._entries()}
+
+    def images(self) -> list[dict[str, Any]]:
+        """Every process with its executable's path and command line, where this account may read them."""
+
+        rows = []
+        for pid, _, name in self._entries():
+            path = command = None
+            handle = self._open(0x1000, False, pid) if pid else None  # PROCESS_QUERY_LIMITED_INFORMATION
+            if handle:
+                try:
+                    path, command = self._path_of(handle), self._command_of(handle)
+                finally:
+                    self._close(handle)
+            rows.append({"pid": pid, "name": name, "path": path, "commandLine": command})
+        return rows
+
+    def _path_of(self, handle: Any) -> str | None:
+        from ctypes import wintypes
+
+        ctypes = self._ctypes
+        size = wintypes.DWORD(32768)
+        buffer = ctypes.create_unicode_buffer(size.value)
+        return buffer.value if self._image(handle, 0, buffer, ctypes.byref(size)) else None
+
+    def _command_of(self, handle: Any) -> str | None:
+        """The command line through ProcessCommandLineInformation (60): a UNICODE_STRING and its text."""
+
+        ctypes = self._ctypes
+        size = ctypes.c_ulong(0)
+        self._query(handle, 60, None, 0, ctypes.byref(size))
+        if not size.value:
+            return None
+        buffer = ctypes.create_string_buffer(size.value)
+        if self._query(handle, 60, buffer, size.value, ctypes.byref(size)) != 0:
+            return None
+
+        class UnicodeString(ctypes.Structure):
+            _fields_ = [("Length", ctypes.c_ushort), ("MaximumLength", ctypes.c_ushort), ("Buffer", ctypes.c_void_p)]
+
+        text = UnicodeString.from_buffer(buffer)
+        return ctypes.wstring_at(text.Buffer, text.Length // 2) if text.Buffer else ""
 
     def read(self, pid: int) -> Counters | None:
         ctypes = self._ctypes
@@ -356,11 +473,39 @@ def hub_environment(base: Mapping[str, str], env_root: Path, pycache: Path) -> d
     return environment
 
 
-class Hub:
-    """One Hub process from the checkout, on its own ports, stopped the way the desktop host stops it."""
+def installed_environment(base: Mapping[str, str], env_root: Path) -> dict[str, str]:
+    """An installed Hub's variables: this run's app data, and nothing that steers Python or MonkeyHub.
 
-    def __init__(self, code_root: Path, runtime_root: Path, environment: Mapping[str, str], log: Path) -> None:
+    Every ``PYTHON*`` variable goes, as the package's updater drops them before
+    it runs a version: the bundled interpreter still honours them, and a
+    bytecode prefix would pass over the bytecode the version ships.
+    """
+
+    environment = {key: value for key, value in base.items()
+                   if not key.upper().startswith(("PYTHON", *DROPPED_PREFIXES))}
+    environment.update({"APPDATA": str(env_root / "appdata"), "LOCALAPPDATA": str(env_root / "localappdata")})
+    return environment
+
+
+def hub_command(code_root: Path, installed: bool = False) -> list[str]:
+    """The interpreter and launcher a Hub starts with, before run.py's options.
+
+    From a checkout this interpreter runs ``LAUNCHER``; an installed version's
+    own interpreter runs its ``run.py`` through ``INSTALLED_LAUNCHER``.
+    """
+
+    if installed:
+        return [str(code_root / INSTALLED_PYTHON), "-u", "-c", INSTALLED_LAUNCHER, str(code_root / INSTALLED_ENTRY)]
+    return [sys.executable, "-c", LAUNCHER, str(code_root)]
+
+
+class Hub:
+    """One Hub process from the checkout or an installed copy, on its own ports, stopped as the desktop host stops it."""
+
+    def __init__(self, code_root: Path, runtime_root: Path, environment: Mapping[str, str], log: Path, *,
+                 installed: bool = False) -> None:
         self.code_root, self.runtime_root, self.environment, self.log = code_root, runtime_root, dict(environment), log
+        self.installed = installed
         self.port = 0
         self.pid: int | None = None
         self.process: subprocess.Popen | None = None
@@ -373,11 +518,12 @@ class Hub:
         benchmark_data.write_file(self.runtime_root / "config" / "applications.json", json.dumps(
             {"workspaceDir": str(self.runtime_root / "workspace"), "studioPort": studio, "monitorPort": monitor}))
         instance = str(uuid.uuid4())
-        command = [sys.executable, "-c", LAUNCHER, str(self.code_root), "--runtime-root", str(self.runtime_root),
+        command = [*hub_command(self.code_root, self.installed), "--runtime-root", str(self.runtime_root),
                    "--port", str(self.port), "--no-browser", "--managed-stdin", "--managed-instance-id", instance]
         self.log.parent.mkdir(parents=True, exist_ok=True)
-        options: dict[str, Any] = ({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt"
-                                   else {"start_new_session": True})
+        # Normal priority whatever starts the harness: a scheduled task starts it below normal.
+        options: dict[str, Any] = ({"creationflags": subprocess.CREATE_NO_WINDOW | subprocess.NORMAL_PRIORITY_CLASS}
+                                   if os.name == "nt" else {"start_new_session": True})
         with open(self.log, "ab") as output:
             started = time.perf_counter()
             self.process = subprocess.Popen(command, cwd=str(self.code_root), env=self.environment,
@@ -415,7 +561,9 @@ class Hub:
             process.wait(STOP_TIMEOUT_S)
         except subprocess.TimeoutExpired:
             if os.name == "nt":
-                subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True, check=False)
+                # This Hub's own tree only: the process this harness started and its children.
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True, check=False,
+                               **benchmark_data.NO_WINDOW)
             else:
                 import signal
 
@@ -465,6 +613,68 @@ def copy_project(source: Path, destination: Path, size: int) -> Project:
     settle(target)
     project_id = json.loads((target / "project.json").read_text(encoding="utf-8"))["project_id"]
     return Project(size, target, project_id)
+
+
+@dataclass(frozen=True)
+class InstalledVersion:
+    """An installed version directory as its build describes it."""
+
+    directory: Path
+    commit: str
+    release: str | None
+    channel: str | None
+    python: str | None
+    bytecode_files: int | None
+
+    @property
+    def name(self) -> str:
+        return self.directory.name
+
+    def describe(self) -> dict[str, Any]:
+        return {"version": self.name, "release": self.release, "channel": self.channel, "python": self.python,
+                "bytecodeFiles": self.bytecode_files}
+
+
+def read_installed(directory: Path) -> InstalledVersion:
+    """The version directory's interpreter, entry, commit and build facts; refuse anything else."""
+
+    directory = Path(directory).resolve()
+    for relative in (INSTALLED_PYTHON, INSTALLED_ENTRY):
+        if not (directory / relative).is_file():
+            raise HarnessError(f"{directory} is not an installed MonkeyHub version: {relative.as_posix()} is missing")
+    try:
+        commit = (directory / "source-version.txt").read_text(encoding="utf-8-sig").strip()
+        build = json.loads((directory / "build-info.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise HarnessError(f"{directory} has no readable source-version.txt and build-info.json: {error}") from error
+    if not re.fullmatch(r"[0-9a-f]{40}", commit) or not isinstance(build, dict) or build.get("sourceCommit") != commit:
+        raise HarnessError(f"{directory} names no source commit, or its build-info.json names another")
+    desktop = build.get("desktop") if isinstance(build.get("desktop"), dict) else {}
+    bytecode = build.get("pythonBytecode") if isinstance(build.get("pythonBytecode"), dict) else {}
+    return InstalledVersion(directory, commit, build.get("releaseVersion") or desktop.get("version"),
+                            build.get("channel"), build.get("pythonVersion"), bytecode.get("files"))
+
+
+def copy_version(version: InstalledVersion, parent: Path) -> Path:
+    """A fresh copy of the version as shipped, at ``parent/<version name>``; the directory given is only read.
+
+    The Hub runs its update transaction only from a directory right under one
+    named ``versions`` (``DesktopUpdates.supported``): a copy anywhere else
+    never checks for an update, downloads one or points the desktop shortcut at
+    itself.
+    """
+
+    if parent.name.casefold() == "versions":
+        raise HarnessError("a measured copy may not sit right under a versions directory: its Hub would update")
+    target = parent / version.name
+    shutil.copytree(version.directory, target)
+    return target
+
+
+def installation_root(version: Path) -> Path:
+    """The installation a version directory belongs to: the folder holding its versions directory."""
+
+    return version.parent.parent if version.parent.name.casefold() == "versions" else version
 
 
 def _studio_worker(snapshot: Mapping[str, Any], runtime_id: str) -> Mapping[str, Any] | None:
@@ -897,7 +1107,7 @@ def measure_idle(hub: Hub, runtime_id: str, seconds: float) -> dict[str, Any]:
 
 def _revision(root: Path) -> str:
     completed = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True,
-                               check=False, stdin=subprocess.DEVNULL)
+                               check=False, stdin=subprocess.DEVNULL, **benchmark_data.NO_WINDOW)
     value = completed.stdout.strip()
     if completed.returncode != 0 or len(value) != 40:
         raise HarnessError(f"{root} is not a Git checkout with a commit")
@@ -923,10 +1133,12 @@ def _cpu_name() -> str | None:
     return platform.processor() or None
 
 
-def runner_description(key: str | None = None) -> dict[str, Any]:
+def runner_description(key: str | None = None, python: str | None = None) -> dict[str, Any]:
+    """The machine a result comes from; ``python`` is the Hub's interpreter when it is not this one."""
+
     system = platform.system().lower()
     return {"key": key or system, "os": system, "osVersion": platform.release(), "platform": platform.platform(),
-            "python": platform.python_version(), "implementation": platform.python_implementation(),
+            "python": python or platform.python_version(), "implementation": platform.python_implementation(),
             "cpu": _cpu_name(), "cpuCount": os.cpu_count(), "machine": platform.machine()}
 
 
@@ -940,6 +1152,8 @@ class Options:
     idle_seconds: float = 60.0
     settle_seconds: float = 2.0
     runner_key: str | None = None
+    # An installed version directory to measure instead of the checkout; only ever copied.
+    installed: Path | None = None
 
 
 class _Collector:
@@ -968,19 +1182,25 @@ def run(options: Options, say: Callable[[str], None] = print) -> dict[str, Any]:
     clock = time.perf_counter()
     work = options.work
     code_root = options.code_root.resolve()
+    installed = read_installed(options.installed) if options.installed is not None else None
+    # Measuring an installed version, the checkout is only the harness: its commit is a detail.
+    harness = _checkout_value(code_root, "rev-parse", "HEAD") if installed is not None else None
     environment = os.environ.copy()
-    warm_prefix = work / "pycache" / "warm"
     collect = _Collector()
     sessions = iter(range(1, 10_000))
 
-    def hub_for(runtime_root: Path, prefix: Path, label: str) -> Hub:
-        number = next(sessions)
-        return Hub(code_root, runtime_root, hub_environment(environment, work / "env", prefix),
-                   work / "logs" / f"{number:03d}-{label}.log")
+    def hub_for(runtime_root: Path, launch: Path, label: str) -> Hub:
+        """``launch`` is a checkout Hub's bytecode prefix, or the copy an installed Hub runs from."""
 
-    def session(scenario: str, size: int | None, runtime_root: Path, prefix: Path,
+        number = next(sessions)
+        log = work / "logs" / f"{number:03d}-{label}.log"
+        if installed is not None:
+            return Hub(launch, runtime_root, installed_environment(environment, work / "env"), log, installed=True)
+        return Hub(code_root, runtime_root, hub_environment(environment, work / "env", launch), log)
+
+    def session(scenario: str, size: int | None, runtime_root: Path, launch: Path,
                 body: Callable[[Hub], None]) -> bool:
-        hub = hub_for(runtime_root, prefix, f"{scenario}-{size or 'hub'}")
+        hub = hub_for(runtime_root, launch, f"{scenario}-{size or 'hub'}")
         try:
             body(hub)
             return True
@@ -1007,30 +1227,49 @@ def run(options: Options, say: Callable[[str], None] = print) -> dict[str, Any]:
         time.sleep(options.settle_seconds)
         return opening["runtimeId"]
 
-    # Each size once, unmeasured: the warm bytecode prefix and every project's index.
-    for size, project in projects.items():
-        say(f"priming {size} runs")
+    def prime_all(warm: Path) -> None:
+        """Each size once, unmeasured: the warm bytecode and every project's index."""
 
-        def prime(hub: Hub, project: Project = project) -> None:
-            runtime_id = opened(hub, project, measured=False)
-            if not await_index(hub, runtime_id):
-                say("  the project index did not answer; workers will build it again")
-            ModelingOpening(hub, runtime_id).run()
-            read_routes(hub, runtime_id)
+        for size, project in projects.items():
+            say(f"priming {size} runs")
 
-        # Compiling everything can outlast a slow runner's worker start; the second try starts
-        # warmer, and only its failure is the run's.
-        if not session("prime", size, work / "runtime" / str(size), warm_prefix, prime):
-            collect.details.setdefault("primeRetried", []).append(collect.failures.pop())
-            session("prime", size, work / "runtime" / str(size), warm_prefix, prime)
+            def prime(hub: Hub, project: Project = project) -> None:
+                runtime_id = opened(hub, project, measured=False)
+                if not await_index(hub, runtime_id):
+                    say("  the project index did not answer; workers will build it again")
+                ModelingOpening(hub, runtime_id).run()
+                read_routes(hub, runtime_id)
 
-    say(f"hub start, first launch x{options.first_launch_samples}")
-    for sample in range(options.first_launch_samples):
-        def first_launch(hub: Hub) -> None:
-            collect.add("hub_start.first_launch", "ms", hub.start())
+            # Compiling everything can outlast a slow runner's worker start; the second try starts
+            # warmer, and only its failure is the run's.
+            if not session("prime", size, work / "runtime" / str(size), warm, prime):
+                collect.details.setdefault("primeRetried", []).append(collect.failures.pop())
+                session("prime", size, work / "runtime" / str(size), warm, prime)
 
-        session("hub_start", None, work / "runtime" / "first-launch", work / "pycache" / f"first-{sample + 1}",
-                first_launch)
+    def first_launches(launch: Callable[[int], Path]) -> None:
+        say(f"hub start, first launch x{options.first_launch_samples}")
+        for sample in range(1, options.first_launch_samples + 1):
+            def first_launch(hub: Hub) -> None:
+                collect.add("hub_start.first_launch", "ms", hub.start())
+
+            session("hub_start", None, work / "runtime" / "first-launch", launch(sample), first_launch)
+
+    if installed is None:
+        warm = work / "pycache" / "warm"
+        prime_all(warm)
+        first_launches(lambda sample: work / "pycache" / f"first-{sample}")
+    else:
+        def fresh_copy(label: str) -> Path:
+            say(f"copying {installed.name} for {label}")
+            return copy_version(installed, work / "hubs" / label)
+
+        # Every first launch starts a copy as shipped. The first copy, once launched,
+        # is warm, as an installed version is after its first launch: every later Hub
+        # of the run starts from it.
+        first_launches(lambda sample: fresh_copy(f"first-{sample}"))
+        warm = (work / "hubs" / "first-1" / installed.name if options.first_launch_samples > 0
+                else fresh_copy("warm"))
+        prime_all(warm)
 
     for size, project in projects.items():
         runtime_root = work / "runtime" / str(size)
@@ -1051,8 +1290,8 @@ def run(options: Options, say: Callable[[str], None] = print) -> dict[str, Any]:
                     collect.add(f"open_modeling.model.{phase}.{size}runs", "ms", opening["modelMs"])
                     collect.details["openModeling"].setdefault(f"{phase}, {size} runs", opening)
 
-            session("route", size, runtime_root, warm_prefix, routes)
-            session("open_modeling", size, runtime_root, warm_prefix, modeling)
+            session("route", size, runtime_root, warm, routes)
+            session("open_modeling", size, runtime_root, warm, modeling)
 
         say(f"{size} runs, idle {options.idle_seconds:.0f} s")
 
@@ -1065,16 +1304,19 @@ def run(options: Options, say: Callable[[str], None] = print) -> dict[str, Any]:
                 collect.add(f"idle.{name}.read.{size}runs", "bytes", measured[name]["readBytes"])
             collect.details["idle"][f"{size}runs"] = measured
 
-        session("idle", size, runtime_root, warm_prefix, idle)
+        session("idle", size, runtime_root, warm, idle)
 
+    settings: dict[str, Any] = {"samples": options.samples, "firstLaunchSamples": options.first_launch_samples,
+                                "idleSeconds": options.idle_seconds, "settleSeconds": options.settle_seconds,
+                                "sizes": sorted(projects)}
+    if installed is not None:
+        settings.update({"installed": installed.describe(), "harnessCommit": harness})
     return {
         "schema": SCHEMA,
-        "commit": _revision(code_root),
+        "commit": installed.commit if installed is not None else _revision(code_root),
         "date": started_at.isoformat(timespec="seconds").replace("+00:00", "Z"),
-        "runner": runner_description(options.runner_key),
-        "settings": {"samples": options.samples, "firstLaunchSamples": options.first_launch_samples,
-                     "idleSeconds": options.idle_seconds, "settleSeconds": options.settle_seconds,
-                     "sizes": sorted(projects)},
+        "runner": runner_description(options.runner_key, installed.python if installed is not None else None),
+        "settings": settings,
         "projects": {f"{size}runs": {"runs": sum(1 for path in (project.directory / "runs").iterdir() if path.is_dir()),
                                      "jsonFiles": sum(1 for _ in project.directory.rglob("*.json"))}
                      for size, project in projects.items()},
@@ -1085,6 +1327,525 @@ def run(options: Options, say: Callable[[str], None] = print) -> dict[str, Any]:
     }
 
 
+# ---- the local runner ---------------------------------------------------------------
+#
+# Every check below is a pure function of what Windows reports, so it is tested
+# without a scheduled task, an installed app or a busy machine; the readers
+# beside them only ask Windows.
+
+
+def _windows_path(value: str) -> str:
+    """A Windows path as Windows compares it: no \\\\?\\ prefix, one case, backslashes."""
+
+    text = value[4:] if value.startswith("\\\\?\\") else value
+    return ntpath.normcase(ntpath.normpath(text))
+
+
+def blocking_processes(processes: Iterable[Mapping[str, Any]], roots: Iterable[Path | str],
+                       own: int | None = None) -> list[str]:
+    """Why running processes stop a local run, one line per kind.
+
+    A desktop host (MonkeyHub.exe, or MonkeyArch.exe before the rename), any
+    process whose executable lies under one of ``roots`` (an installation, or
+    this runner's own copies), and any Python whose command line runs a Hub, a
+    Hub service or a Project Runtime process, from any checkout or version.
+    """
+
+    places = [(_windows_path(str(root)).rstrip("\\") + "\\", str(root)) for root in roots]
+    hosts: list[str] = []
+    located: dict[str, list[str]] = {}
+    elsewhere: list[str] = []
+    for row in processes:
+        pid = row.get("pid")
+        if own is not None and pid == own:
+            continue
+        name, path = str(row.get("name") or ""), str(row.get("path") or "")
+        command = str(row.get("commandLine") or "").casefold()
+        where = _windows_path(path) if path else ""
+        place = next((shown for folded, shown in places if where and where.startswith(folded)), None)
+        if name.casefold() in DESKTOP_HOSTS:
+            hosts.append(f"{name} (pid {pid}) is running")
+        elif place is not None:
+            located.setdefault(place, []).append(f"{name} {pid}")
+        elif name.casefold().startswith("python") and any(marker in command for marker in HUB_COMMANDS):
+            elsewhere.append(f"{name} {pid}")
+    def count(rows: list[str]) -> str:
+        return f"{len(rows)} process{'es run' if len(rows) > 1 else ' runs'}"
+
+    found = hosts + [f"{count(rows)} from {place} ({', '.join(rows)})" for place, rows in located.items()]
+    if elsewhere:
+        found.append(f"{count(elsewhere)} a Hub or the Project Runtime from elsewhere ({', '.join(elsewhere)})")
+    return found
+
+
+def cpu_busy_percent(first: Sequence[int], second: Sequence[int]) -> float:
+    """How busy the processors were between two ``system_times`` readings, in percent.
+
+    Each reading is (idle, kernel, user) time of every processor; kernel time
+    includes idle time.
+    """
+
+    idle, kernel, user = (after - before for before, after in zip(first, second))
+    total = kernel + user
+    if total <= 0:
+        return 0.0
+    return max(0.0, min(100.0, 100.0 * (total - idle) / total))
+
+
+def power_reason(ac_line: int, battery_flag: int) -> str | None:
+    """Why the power source stops a run (GetSystemPowerStatus's fields), or None on mains power."""
+
+    if ac_line == 1:
+        return None
+    if ac_line == 0:
+        return "the computer runs on battery"
+    # 255: unknown. A machine with no system battery (128) is a desktop on mains power.
+    return None if battery_flag & 128 else "the power source is unknown"
+
+
+def idle_seconds(now_tick: int, last_input_tick: int) -> float:
+    """Seconds since the last input, from two millisecond tick counts that wrap every 49.7 days."""
+
+    return ((now_tick - last_input_tick) & 0xFFFFFFFF) / 1000.0
+
+
+def idle_wait(idle_s: float, expected_s: float | None, waited_s: float, minimum_s: float,
+              longest_s: float) -> tuple[bool, str | None]:
+    """(ready, why not): ready once nobody has used the computer for ``minimum_s``.
+
+    ``expected_s`` is the idle time the last reading and the pause since then
+    add up to; less means somebody used the computer, which ends the wait, as
+    does waiting ``longest_s``. (False, None) means wait on.
+    """
+
+    if idle_s >= minimum_s:
+        return True, None
+    if expected_s is not None and idle_s + IDLE_TOLERANCE_S < expected_s:
+        return False, "somebody used the computer while the runner waited for it to stay idle"
+    if waited_s >= longest_s:
+        return False, f"the computer was not left idle for {minimum_s / 60:g} min within {longest_s / 60:g} min"
+    return False, None
+
+
+def published_today(runs: Path, today: date) -> str | None:
+    """Today's run that published its result, if any: one a day is enough.
+
+    A run that failed, stopped early, was not published (``--no-publish``) or
+    could not push leaves no ``published.json``, so a later idle period tries again.
+    """
+
+    for directory in sorted(runs.glob(f"{today:%Y%m%d}-*"), reverse=True):
+        if (directory / "published.json").is_file():
+            return directory.name
+    return None
+
+
+def shortcut_target(data: bytes) -> tuple[str | None, str | None]:
+    """A Windows shell link's target path and working directory ([MS-SHLLINK]); None for what it lacks."""
+
+    if len(data) < 0x4C or struct.unpack_from("<I", data, 0)[0] != 0x4C:
+        raise ValueError("not a Windows shell link")
+    flags = struct.unpack_from("<I", data, 0x14)[0]
+    offset = 0x4C
+    if flags & 0x1:  # HasLinkTargetIDList
+        offset += 2 + struct.unpack_from("<H", data, offset)[0]
+    target = None
+    if flags & 0x2:  # HasLinkInfo
+        size, header, info_flags, _, base, _, _ = struct.unpack_from("<7I", data, offset)
+        if info_flags & 0x1:  # VolumeIDAndLocalBasePath
+            if header >= 0x24:
+                start = offset + struct.unpack_from("<I", data, offset + 28)[0]
+                end = start
+                while data[end:end + 2] != b"\0\0":
+                    if end + 2 > len(data):
+                        raise ValueError("the link's base path has no end")
+                    end += 2
+                target = data[start:end].decode("utf-16-le")
+            else:
+                start = offset + base
+                target = data[start:data.index(b"\0", start)].decode("mbcs" if os.name == "nt" else "latin-1")
+        offset += size
+    unicode = bool(flags & 0x80)
+    directory = None
+    # NAME, RELATIVE_PATH, WORKING_DIR, COMMAND_LINE_ARGUMENTS and ICON_LOCATION, in that order.
+    for bit in (0x4, 0x8, 0x10, 0x20, 0x40):
+        if flags & bit:
+            count = struct.unpack_from("<H", data, offset)[0]
+            width = 2 if unicode else 1
+            text = data[offset + 2:offset + 2 + count * width]
+            offset += 2 + count * width
+            if bit == 0x10:
+                directory = text.decode("utf-16-le" if unicode else ("mbcs" if os.name == "nt" else "latin-1"))
+    return target, directory
+
+
+def version_of_shortcut(target: str | None, directory: str | None) -> Path | None:
+    """The version directory a MonkeyHub shortcut opens: its MonkeyHub.exe's folder, else its working directory."""
+
+    if target and ntpath.basename(target).casefold() == "monkeyhub.exe":
+        return Path(ntpath.dirname(target))
+    return Path(directory) if directory else None
+
+
+def desktop_directory() -> Path:
+    """The account's Desktop folder, where the installer puts the shortcut (FOLDERID_Desktop)."""
+
+    import ctypes
+    from ctypes import wintypes
+
+    class Guid(ctypes.Structure):
+        _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD), ("Data3", wintypes.WORD),
+                    ("Data4", ctypes.c_ubyte * 8)]
+
+    folder = Guid(0xB4BFCC3A, 0xDB2C, 0x424C, (ctypes.c_ubyte * 8)(0xB0, 0x29, 0x7F, 0xE9, 0x9A, 0x87, 0xC6, 0x41))
+    found = ctypes.c_wchar_p()
+    shell32, ole32 = ctypes.WinDLL("shell32"), ctypes.WinDLL("ole32")
+    shell32.SHGetKnownFolderPath.argtypes = [ctypes.POINTER(Guid), wintypes.DWORD, wintypes.HANDLE,
+                                             ctypes.POINTER(ctypes.c_wchar_p)]
+    shell32.SHGetKnownFolderPath.restype = ctypes.c_long
+    try:
+        if shell32.SHGetKnownFolderPath(ctypes.byref(folder), 0, None, ctypes.byref(found)) != 0:
+            raise OSError("SHGetKnownFolderPath(FOLDERID_Desktop) failed")
+        return Path(found.value)
+    finally:
+        ole32.CoTaskMemFree(found)
+
+
+def shortcut_version(desktop: Path | None = None) -> Path | None:
+    """The version directory the desktop shortcut opens, or None without a readable MonkeyHub shortcut."""
+
+    try:
+        target, directory = shortcut_target(((desktop or desktop_directory()) / SHORTCUT_NAME).read_bytes())
+    except (OSError, ValueError, struct.error):
+        return None
+    return version_of_shortcut(target, directory)
+
+
+def running_processes() -> list[dict[str, Any]]:
+    counters = _WindowsProcesses()
+    try:
+        return counters.images()
+    finally:
+        counters.close()
+
+
+def system_times() -> tuple[int, int, int]:
+    """Idle, kernel and user time of every processor so far, in 100 ns."""
+
+    import ctypes
+    from ctypes import wintypes
+
+    times = [wintypes.FILETIME() for _ in range(3)]
+    if not ctypes.WinDLL("kernel32").GetSystemTimes(*(ctypes.byref(value) for value in times)):
+        raise OSError("GetSystemTimes failed")
+    idle, kernel, user = ((value.dwHighDateTime << 32) | value.dwLowDateTime for value in times)
+    return idle, kernel, user
+
+
+def power_status() -> tuple[int, int]:
+    """GetSystemPowerStatus's ACLineStatus and BatteryFlag."""
+
+    import ctypes
+    from ctypes import wintypes
+
+    class Status(ctypes.Structure):
+        _fields_ = [("ACLineStatus", ctypes.c_ubyte), ("BatteryFlag", ctypes.c_ubyte),
+                    ("BatteryLifePercent", ctypes.c_ubyte), ("SystemStatusFlag", ctypes.c_ubyte),
+                    ("BatteryLifeTime", wintypes.DWORD), ("BatteryFullLifeTime", wintypes.DWORD)]
+
+    status = Status()
+    if not ctypes.WinDLL("kernel32").GetSystemPowerStatus(ctypes.byref(status)):
+        raise OSError("GetSystemPowerStatus failed")
+    return status.ACLineStatus, status.BatteryFlag
+
+
+def user_idle_seconds() -> float:
+    """Seconds since anybody used this session's keyboard or mouse."""
+
+    import ctypes
+    from ctypes import wintypes
+
+    class LastInput(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+    info = LastInput()
+    info.cbSize = ctypes.sizeof(info)
+    kernel32 = ctypes.WinDLL("kernel32")
+    kernel32.GetTickCount.restype = wintypes.DWORD
+    if not ctypes.WinDLL("user32").GetLastInputInfo(ctypes.byref(info)):
+        raise OSError("GetLastInputInfo failed")
+    return idle_seconds(kernel32.GetTickCount(), info.dwTime)
+
+
+def wait_until_idle(minimum_s: float, longest_s: float, *, read: Callable[[], float] = user_idle_seconds,
+                    sleep: Callable[[float], None] = time.sleep, step: float = IDLE_POLL_S) -> str | None:
+    """Wait until nobody has used the computer for ``minimum_s``; answer why that did not happen, or None."""
+
+    waited, expected = 0.0, None
+    while True:
+        idle = read()
+        ready, reason = idle_wait(idle, expected, waited, minimum_s, longest_s)
+        if ready:
+            return None
+        if reason:
+            return reason
+        pause = min(step, max(1.0, minimum_s - idle))
+        sleep(pause)
+        waited += pause
+        expected = idle + pause
+
+
+def log_event(path: Path, line: str) -> None:
+    """Append one event to the local log, each line with the local time; echo it to a console if there is one."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().astimezone().isoformat(timespec="seconds")
+    with open(path, "a", encoding="utf-8", newline="\n") as stream:
+        for text in line.splitlines() or [""]:
+            stream.write(f"{stamp} {text}\n")
+    # A scheduled run under pythonw has no console.
+    if sys.stdout is not None:
+        try:
+            print(line, flush=True)
+        except (OSError, ValueError):
+            pass
+
+
+@contextmanager
+def hold_lock(path: Path) -> Iterator[bool]:
+    """Hold the local runner's lock while one run lasts; yield False when another run holds it.
+
+    The lock is one byte range of a file that stays where it is; it is let go
+    when this process ends, however it ends.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a+b") as handle:
+        handle.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def retire_runs(runs: Path, trash: Path, say: Callable[[str], None]) -> list[Path]:
+    """Rename every earlier run directory into ``trash``; nothing is deleted. Answer where each went.
+
+    A run holds copies of a whole version (about 1 GB each). The development
+    root's ``_TRASH_<YYYYMMDD>`` is where a person empties them from; a rename
+    keeps them on the same volume and never copies.
+    """
+
+    moved = []
+    for directory in sorted(runs.iterdir()) if runs.is_dir() else ():
+        if not directory.is_dir():
+            continue
+        target, number = trash / directory.name, 2
+        while os.path.lexists(target):
+            target, number = trash / f"{directory.name}-{number}", number + 1
+        try:
+            trash.mkdir(parents=True, exist_ok=True)
+            directory.rename(target)
+        except OSError as error:
+            say(f"could not move {directory} to {target}: {error}")
+            continue
+        moved.append(target)
+    return moved
+
+
+def console_python() -> str:
+    """This interpreter, as the console python.exe beside it when a scheduled run uses pythonw.exe."""
+
+    executable = Path(sys.executable)
+    console = executable.with_name("python.exe")
+    return str(console) if executable.name.casefold() == "pythonw.exe" and console.is_file() else str(executable)
+
+
+def build_projects(code_root: Path, parent: Path, sizes: Sequence[int], say: Callable[[str], None]) -> dict[int, Path]:
+    """Build each synthetic project with this checkout's generator, as the workflow does.
+
+    The generator runs in a process of its own, from the Runtime's directory
+    and with this checkout's source roots: nothing here imports a test suite.
+    """
+
+    environment = {key: value for key, value in os.environ.items()
+                   if key.upper() not in DROPPED_VARIABLES and not key.upper().startswith(DROPPED_PREFIXES)}
+    environment.update({"PYTHONPATH": os.pathsep.join(source_roots.roots(code_root)), "PYTHONUTF8": "1"})
+    built = {}
+    for size in sizes:
+        project_id, started = f"synthetic-bench-{size}", time.perf_counter()
+        completed = subprocess.run([console_python(), "-c", BUILD_PROJECT, str(parent / str(size)), project_id, str(size)],
+                                   cwd=code_root / "services" / "project-runtime", env=environment,
+                                   capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                   stdin=subprocess.DEVNULL, **benchmark_data.NO_WINDOW)
+        if completed.returncode != 0:
+            raise HarnessError(f"building {project_id} failed:\n{(completed.stderr or completed.stdout)[-3000:]}")
+        built[size] = parent / str(size) / project_id
+        say(f"built {project_id} in {time.perf_counter() - started:.0f} s")
+    return built
+
+
+def _checkout_value(code_root: Path, *args: str) -> str | None:
+    """One value Git reports for the checkout, or None."""
+
+    completed = subprocess.run(["git", "-C", str(code_root), *args], capture_output=True, text=True, check=False,
+                               encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, **benchmark_data.NO_WINDOW)
+    value = completed.stdout.strip()
+    return value if completed.returncode == 0 and value else None
+
+
+def publishing_identity(code_root: Path, url: str | None = None) -> tuple[str, tuple[str, str]]:
+    """Where and as whom the checkout publishes: ``url`` or its origin's, and the author its Git configuration names.
+
+    A new publisher repository has no configuration of its own; pushing uses
+    the account's existing credentials for that URL.
+    """
+
+    url = url or _checkout_value(code_root, "remote", "get-url", "origin")
+    name, email = (_checkout_value(code_root, "config", "--get", key) for key in ("user.name", "user.email"))
+    if not name or not email:
+        raise HarnessError(f"{code_root} names no Git author (user.name and user.email) to publish as")
+    if not url:
+        raise HarnessError(f"{code_root} has no origin remote to publish to; pass --remote-url")
+    return url, (name, email)
+
+
+def _instances_and_power(roots: Iterable[Path]) -> list[str]:
+    reasons = blocking_processes(running_processes(), roots, own=os.getpid())
+    power = power_reason(*power_status())
+    return reasons + ([power] if power else [])
+
+
+def run_local(arguments: argparse.Namespace) -> int:
+    """The local runner: check, measure, write, publish and log one run; answer the exit status."""
+
+    if os.name != "nt":
+        raise SystemExit("the local runner measures the installed MonkeyHub on Windows")
+    dev_root = arguments.dev_root or workspace.configured_root(CODE_ROOT)
+    if dev_root is None:
+        raise SystemExit("no development root: pass --dev-root, or configure one with tools/dev/workspace.py")
+    dev_root = Path(dev_root).resolve()
+    root = dev_root / LOCAL_DIRECTORY
+
+    def log(line: str) -> None:
+        log_event(root / "logs" / "local.log", line)
+
+    try:
+        with hold_lock(root / "local.lock") as held:
+            if not held:
+                log("skipped: another local run is in progress")
+                return 0
+            return _measure_locally(arguments, dev_root, root, log)
+    except Exception:  # noqa: BLE001 - a scheduled run has no console: its log is where a failure is read
+        log("failed:\n" + traceback.format_exc().rstrip())
+        return 1
+
+
+def _measure_locally(arguments: argparse.Namespace, dev_root: Path, root: Path, log: Callable[[str], None]) -> int:
+    runs = root / "runs"
+    if not arguments.force:
+        done = published_today(runs, date.today())
+        if done:
+            log(f"skipped: today's result is published ({done})")
+            return 0
+    shortcut = shortcut_version()
+    version = arguments.version_dir or shortcut
+    if version is None:
+        log("failed: no desktop shortcut opens an installed MonkeyHub; pass --version-dir")
+        return 1
+    installed = read_installed(version)
+    roots = sorted({installation_root(installed.directory), root, *([installation_root(shortcut)] if shortcut else [])},
+                   key=str)
+    budgets = benchmark_data.load_budgets(arguments.budgets)
+    # Known before anything is measured: a run that could not be published would be lost.
+    url, author = (None, None) if arguments.no_publish else publishing_identity(CODE_ROOT, arguments.remote_url)
+
+    def skip(reasons: list[str]) -> int:
+        log("skipped: " + "; ".join(reasons))
+        return 0
+
+    reasons = _instances_and_power(roots)
+    if reasons and not arguments.force:
+        return skip(reasons)
+    if arguments.min_idle_minutes > 0 and not arguments.force:
+        reason = wait_until_idle(arguments.min_idle_minutes * 60, arguments.idle_wait_minutes * 60)
+        if reason:
+            return skip([reason])
+    first = system_times()
+    time.sleep(arguments.cpu_seconds)
+    busy = cpu_busy_percent(first, system_times())
+    if busy > arguments.max_cpu:
+        reasons.append(f"the processors were {busy:.0f}% busy over {arguments.cpu_seconds:g} s "
+                       f"(the limit is {arguments.max_cpu:g}%)")
+    reasons += [reason for reason in _instances_and_power(roots) if reason not in reasons]
+    if reasons and not arguments.force:
+        return skip(reasons)
+    if reasons:
+        log("forced past: " + "; ".join(reasons))
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    for moved in retire_runs(runs, dev_root / f"_TRASH_{date.today():%Y%m%d}" / "benchmark-local", log):
+        # A run Task Scheduler stopped, or one that failed, leaves no result.
+        ended = "" if (moved / "result.json").is_file() else " (it ended without a result)"
+        log(f"moved an earlier run to {moved}{ended}")
+    run_dir = runs / stamp
+    log(f"started: {installed.name} ({installed.release or 'no release'}) at {run_dir}; sizes "
+        f"{', '.join(map(str, arguments.sizes))}; {arguments.samples} samples, {arguments.first_launch_samples} "
+        f"first launches; processors {busy:.0f}% busy")
+    projects = build_projects(CODE_ROOT, run_dir / "projects", arguments.sizes, log)
+    result = run(Options(CODE_ROOT, projects, run_dir / "work", samples=arguments.samples,
+                         first_launch_samples=arguments.first_launch_samples, idle_seconds=arguments.idle_seconds,
+                         settle_seconds=arguments.settle_seconds, runner_key=LOCAL_RUNNER_KEY,
+                         installed=installed.directory),
+                 say=log)
+    result["settings"]["local"] = {"cpuPercent": round(busy, 1), "cpuSeconds": arguments.cpu_seconds,
+                                   "forcedPast": reasons}
+    benchmark_data.write_file(run_dir / "result.json", json.dumps(result, indent=2, ensure_ascii=False) + "\n")
+    benchmark_data.write_file(run_dir / "summary.md", benchmark_data.summary_markdown(result, budgets))
+    failures = result["failures"]
+    log(f"measured in {result['durationSeconds']:.0f} s: {len(result['metrics'])} metrics, {len(failures)} failures; "
+        f"{run_dir / 'result.json'}")
+    for failure in failures:
+        log(f"  {failure['scenario']} {failure.get('size') or ''}: {failure['error']}")
+    if url is None or author is None:
+        log("not published (--no-publish)")
+        return 1 if failures else 0
+    # Unattended: a credential prompt would wait for nobody until the task's time limit.
+    os.environ.update({"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"})
+    repository = benchmark_data.publisher_repository(run_dir / "data-repo", url)
+    outcome = benchmark_data.publish(repository, run_dir / "data", [result], budgets, push=True, author=author)
+    benchmark_data.write_file(run_dir / "published.json", json.dumps(
+        {"url": url, "branch": benchmark_data.DATA_BRANCH, "commit": outcome["commit"], "file": outcome["written"][0],
+         "flags": [flag["metric"] for flag in outcome["flags"]]}, indent=2) + "\n")
+    log(f"published {outcome['written'][0]} to {benchmark_data.DATA_BRANCH} at {outcome['commit'][:12]} ({url})")
+    for flag in outcome["flags"]:
+        log(f"  flagged {flag['metric']}: {', '.join(flag['reasons'])} (median {flag['median']} {flag['unit']})")
+    return 1 if failures else 0
+
+
+# ---- command line -------------------------------------------------------------------
+
+
 def _project_option(value: str) -> tuple[int, Path]:
     size, separator, path = value.partition("=")
     if not separator or not size.isdigit():
@@ -1092,7 +1853,20 @@ def _project_option(value: str) -> tuple[int, Path]:
     return int(size), Path(path)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def runner_key(given: str | None, installed: bool) -> str | None:
+    """The results directory a run publishes to: as given, else the installed app's, else the OS (None)."""
+
+    return given or (LOCAL_RUNNER_KEY if installed else None)
+
+
+def _sizes_option(value: str) -> tuple[int, ...]:
+    parts = [part.strip() for part in value.split(",")]
+    if not all(part.isdigit() and int(part) > 0 for part in parts):
+        raise argparse.ArgumentTypeError("--sizes takes run counts separated by commas, such as 30,150")
+    return tuple(sorted({int(part) for part in parts}))
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
     command = commands.add_parser("run", help="measure every scenario and write one result")
@@ -1105,13 +1879,48 @@ def main(argv: Sequence[str] | None = None) -> int:
     command.add_argument("--first-launch-samples", type=int)
     command.add_argument("--idle-seconds", type=float, default=60.0)
     command.add_argument("--settle-seconds", type=float, default=2.0)
-    command.add_argument("--runner-key", help="the results directory on the data branch (default: the OS)")
+    command.add_argument("--installed", type=Path, metavar="VERSION_DIR",
+                         help="measure fresh copies of this installed version directory instead of the checkout")
+    command.add_argument("--runner-key", help=f"the results directory on the data branch (default: the OS, "
+                                              f"{LOCAL_RUNNER_KEY} with --installed)")
     command.add_argument("--budgets", type=Path, default=benchmark_data.DEFAULT_BUDGETS)
     command.add_argument("--budget-override", action="append", default=[], metavar="METRIC=VALUE")
+
+    local = commands.add_parser("local", help="the scheduled run on a person's machine: check, measure the installed "
+                                              "MonkeyHub, publish to results/windows-local/")
+    local.add_argument("--version-dir", type=Path, help="the installed version to measure (default: the version the "
+                                                       "desktop shortcut opens); only ever copied")
+    local.add_argument("--dev-root", type=Path, help="the development root (default: the one tools/dev/workspace.py "
+                                                    "configured); the runner works in <dev root>/temp/benchmark-local")
+    local.add_argument("--sizes", type=_sizes_option, default=(30, 150), help="project sizes in runs (default: 30,150)")
+    local.add_argument("--samples", type=int, default=3)
+    local.add_argument("--first-launch-samples", type=int, default=2,
+                       help="first launches, each on a fresh copy of the version (about 1 GB each)")
+    local.add_argument("--idle-seconds", type=float, default=60.0)
+    local.add_argument("--settle-seconds", type=float, default=2.0)
+    local.add_argument("--min-idle-minutes", type=float, default=15.0,
+                       help="how long nobody may have used the computer before measuring; 0 does not wait")
+    local.add_argument("--idle-wait-minutes", type=float, default=30.0,
+                       help="how long to wait for that before skipping")
+    local.add_argument("--max-cpu", type=float, default=30.0, help="skip above this processor use, in percent")
+    local.add_argument("--cpu-seconds", type=float, default=60.0, help="how long processor use is averaged over")
+    local.add_argument("--remote-url", help="where results are pushed (default: the checkout's origin)")
+    local.add_argument("--no-publish", action="store_true", help="measure and write the result, push nothing")
+    local.add_argument("--force", action="store_true",
+                       help="measure even when a check would skip, without waiting for an idle computer; the "
+                            "reasons are logged and kept in the result")
+    local.add_argument("--budgets", type=Path, default=benchmark_data.DEFAULT_BUDGETS)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
     options = parser.parse_args(argv)
     # A console that cannot show a sign gets a placeholder, not a traceback at the end of a run.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
+    if options.command == "local":
+        return run_local(options)
 
     work = (options.work or Path(tempfile.mkdtemp(prefix="monkeyhub-benchmark-"))).resolve()
     if work.exists() and any(work.iterdir()):
@@ -1122,7 +1931,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                          first_launch_samples=options.samples if options.first_launch_samples is None
                          else options.first_launch_samples,
                          idle_seconds=options.idle_seconds, settle_seconds=options.settle_seconds,
-                         runner_key=options.runner_key),
+                         runner_key=runner_key(options.runner_key, options.installed is not None),
+                         installed=options.installed),
                  say=lambda line: print(line, flush=True))
     benchmark_data.write_file(options.out, json.dumps(result, indent=2, ensure_ascii=False) + "\n")
     text = benchmark_data.summary_markdown(result, budgets)
