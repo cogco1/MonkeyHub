@@ -1,4 +1,25 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-531",
+      "status": "active",
+      "branch": "codex/531-repo-name-docs",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-531-repo-name-docs",
+      "base_ref": "6ce1654e74e87b6b23a0de49aa84b2cef5196ffa",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "hub.shell"
+      ],
+      "write_scope": [
+        "docs/development/work-environment.md",
+        "docs/development/team-onboarding.md",
+        "apps/monkeyhub/desktop/README.md",
+        "docs/prototypes/candidate-graph/capture.mjs"
+      ],
+      "depends_on": []
+    }
+  ]
 }
