@@ -145,7 +145,7 @@ class FacetTargetDto(BaseModel):
     set: dict[str, str] | None = Field(
         default=None,
         description="facet keys and values to add or change: architectural.role, architectural.enclosure, "
-                    "structural.role, material.name, fabrication.method",
+                    "structural.role, material.name, material.color (#RRGGBB, with material.name), fabrication.method",
     )
     remove: list[str] | None = Field(default=None, description="facet keys to take off")
 

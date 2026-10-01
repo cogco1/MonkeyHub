@@ -87,3 +87,16 @@
 | `stair-to-floor-interface` | role.load_transfer | condition.interface |
 | `landing-load-path-and-undercroft` | role.load_transfer, role.undercroft |  |
 | `roof-to-main-block-interface` | role.load_transfer | condition.interface |
+
+## Facets
+
+A component's L3 meaning (`Component@1.fields.facets`). A key added after the construction spec's table says why the registered keys could not say it.
+
+| key | accepts | added because |
+| --- | --- | --- |
+| `architectural.role` | wall, slab, floor, roof, column, beam, stair, ramp, door, window, opening, railing, ceiling, partition, canopy, screen, foundation, space, furniture, site | the construction spec, section 3.4 |
+| `architectural.enclosure` | exterior, interior | the construction spec, section 3.4 |
+| `structural.role` | load_bearing, non_load_bearing, bracing | the construction spec, section 3.4 |
+| `material.name` | free text, 1-120 characters | the construction spec, section 3.4 |
+| `material.color` | an sRGB hex colour #RRGGBB | material.name names what a material is, not how it looks, and no composition of the registered keys states a colour; a material's base appearance belongs to the design state (owner decision on #560, 2026-10-01) |
+| `fabrication.method` | free text, 1-120 characters | the construction spec, section 3.4 |
