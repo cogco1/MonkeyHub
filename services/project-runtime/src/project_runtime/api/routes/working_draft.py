@@ -38,9 +38,14 @@ def select_current_working_draft(request: Request, payload: WorkingDraftSelectio
     binding = bound_project(request.app.state)
     _require_bound_project(binding, payload.projectId)
     message = None if payload.messageSource is None else payload.messageSource.model_dump(by_alias=True)
-    return select_working_draft(binding, payload.runId, payload.baseRevisionSha256, payload.branchId,
-                                attribution=request_attribution(request), message_source=message,
-                                raw_language=payload.rawLanguage)
+    answer = select_working_draft(binding, payload.runId, payload.baseRevisionSha256, payload.branchId,
+                                  attribution=request_attribution(request), message_source=message,
+                                  raw_language=payload.rawLanguage)
+    # #575: what the line now moves past goes to the project trash, on the cleaning's own thread.
+    retention = getattr(request.app.state, "retention", None)
+    if retention is not None and payload.runId is not None:
+        retention.after_continue()
+    return answer
 
 
 @router.post("/working-draft/save", response_model=WorkingDraftDto)

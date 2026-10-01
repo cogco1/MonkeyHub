@@ -1072,9 +1072,13 @@ _PURGING = ".purge"
 _IDENTIFIER_BYTES = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
 
 
-def _names_identifier(data: bytes, needle: bytes) -> bool:
-    """Whether ``needle`` stands whole in ``data``: no identifier character right before it or right after it."""
+def names_run(data: bytes, run_id: str) -> bool:
+    """Whether ``data`` names ``run_id`` whole: no identifier character right before it or right after it.
 
+    ``"<id>"`` and ``runs/<id>/`` name it; ``<id>-2`` and ``cand-<id>`` do not.
+    """
+
+    needle = run_id.encode("ascii")
     start = data.find(needle)
     while start >= 0:
         end = start + len(needle)
@@ -2864,7 +2868,7 @@ class FilesystemProjectRepository:
         lock: a caller checks again as it acts.
         """
 
-        wanted = {require_identifier(run_id, "run_id"): run_id.encode("ascii") for run_id in dict.fromkeys(run_ids)}
+        wanted = {require_identifier(run_id, "run_id"): None for run_id in dict.fromkeys(run_ids)}
         if not wanted:
             return {}
         found: dict[str, set[str]] = {run_id: set() for run_id in wanted}
@@ -2886,8 +2890,8 @@ class FilesystemProjectRepository:
                         data = handle.read()
                 except OSError:
                     continue
-                for run_id, needle in wanted.items():
-                    if run_id == owner or not _names_identifier(data, needle):
+                for run_id in wanted:
+                    if run_id == owner or not names_run(data, run_id):
                         continue
                     found[run_id].add(f"run:{owner}" if owner is not None else "/".join((*parts, name)))
         return {run_id: frozenset(places) for run_id, places in found.items()}
