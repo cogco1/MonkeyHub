@@ -142,6 +142,32 @@ class MeshLineViewTests(unittest.TestCase):
         self.assertEqual(([mesh.object_id for mesh in meshes], skipped), (["wall"], ("rail",)))
 
 
+class MeshFillTieTests(unittest.TestCase):
+    """Needs no OCP: two objects' faces in one plane, triangulated differently."""
+
+    def test_coplanar_faces_of_two_objects_fill_cleanly_and_a_nearer_one_still_wins(self):
+        from PIL import Image
+
+        from monkeydiagram.projection.mesh_views import ObjectMesh, mesh_line_view
+
+        red, blue = (200, 30, 30), (30, 30, 200)
+
+        def overlap(offset):
+            # Looking along +Y: the second square is ``offset`` nearer the eye, over the first's corner.
+            first = ObjectMesh("first", ((0, 0, 0), (6, 0, 0), (6, 0, 6), (0, 0, 6)), ((0, 1, 2), (0, 2, 3)))
+            second = ObjectMesh("second", ((3, -offset, 3), (9, -offset, 3), (9, -offset, 9), (3, -offset, 9)),
+                                ((0, 1, 3), (1, 2, 3)))
+            view = mesh_line_view([first, second], right=(1, 0, 0), up=(0, 0, 1), crop_uv=(0, 0, 9, 9), size_px=180,
+                                  fills={"first": red, "second": blue})
+            with Image.open(BytesIO(view.png)) as image:
+                # The overlap is u, v in 3..6: pixels 60..120 across and down, inside its edges.
+                return {image.getpixel((x, y)) for x in range(64, 117) for y in range(64, 117)}
+
+        self.assertEqual(overlap(0.0), {red}, "one plane: the lower label, no speckle")
+        self.assertEqual(overlap(1e-9), {red}, "rounding apart is still one plane")
+        self.assertEqual(overlap(0.01), {blue}, "a face a centimetre nearer is in front")
+
+
 class MeshLineViewMemoryTests(unittest.TestCase):
     """Needs no OCP: the depth buffer works on triangles the caller supplies."""
 

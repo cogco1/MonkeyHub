@@ -48,6 +48,10 @@ _SUPERSAMPLE = 2
 _WELD = 1e-9
 # An edge sample is hidden only behind a surface nearer by more than this many fine pixels.
 _DEPTH_TOLERANCE = 1.5
+# Surfaces of two objects nearer than this share of the frame's longer side
+# are at one depth: a filled view gives the pixel to the lower label, so
+# coplanar faces of two objects never speckle. Real layers lie far apart.
+_TIE = 1e-6
 _PNG_COMPRESS_LEVEL = 6
 # Candidate pixels (and edge samples) handled at once. Each takes about ten
 # eight-byte temporaries, so a chunk stays near 100 MB however large the
@@ -128,7 +132,7 @@ def mesh_pipeline() -> dict[str, Any]:
             return "absent"
 
     return {"renderer": RENDERER_VERSION, "creaseDegrees": CREASE_DEGREES, "angularDeflection": ANGULAR_DEFLECTION,
-            "supersample": _SUPERSAMPLE, "weld": _WELD, "depthTolerance": _DEPTH_TOLERANCE,
+            "supersample": _SUPERSAMPLE, "weld": _WELD, "depthTolerance": _DEPTH_TOLERANCE, "tie": _TIE,
             "pngCompressLevel": _PNG_COMPRESS_LEVEL, "libraries": {name: version(name) for name in _LIBRARIES},
             "fill": {"background": list(FILL_BACKGROUND), "edge": list(FILL_EDGE), "unknown": list(UNKNOWN_FILL),
                      "hatch": list(UNKNOWN_HATCH), "hatchSpacing": HATCH_SPACING, "hatchWidth": HATCH_WIDTH}}
@@ -271,19 +275,20 @@ def _depth_buffer(np, x, y, z, triangles, width, height):
     return depth.reshape(height, width)
 
 
-def _front_objects(np, x, y, z, triangles, labels, depth, nothing):
+def _front_objects(np, x, y, z, triangles, labels, depth, nothing, tie):
     """The object nearest the eye under each pixel centre, ``nothing`` where no surface is.
 
     A second pass over the same coverage: a triangle is in front where its
-    depth is the buffer's nearest, and of coplanar objects meeting there the
-    lowest label wins, so the answer never depends on the order of the pass.
+    depth is within ``tie`` of the buffer's nearest, and of the objects
+    meeting there (coplanar faces) the lowest label wins, so the answer never
+    depends on the order of the pass or on rounding.
     """
 
     height, width = depth.shape
     nearest = depth.reshape(-1)
     front = np.full(width * height, nothing, dtype=np.int32)
     for pixels, which, values in _coverage(np, x, y, z, triangles, width, height):
-        shown = values <= nearest[pixels]
+        shown = values <= nearest[pixels] + tie
         np.minimum.at(front, pixels[shown], labels[which[shown]])
     return front.reshape(height, width)
 
@@ -369,7 +374,8 @@ def mesh_line_view(
         x, y, z = np.concatenate(xs), np.concatenate(ys), np.concatenate(zs)
         depth = _depth_buffer(np, x, y, z, np.concatenate(tris), big_w, big_h)
         if colours is not None:
-            front = _front_objects(np, x, y, z, np.concatenate(tris), np.concatenate(labels), depth, len(meshes))
+            front = _front_objects(np, x, y, z, np.concatenate(tris), np.concatenate(labels), depth, len(meshes),
+                                   _TIE * max(u1 - u0, v1 - v0))
             image = palette[front]
             # The hatch is laid in output pixels, so it reads the same on a small part and a large one.
             period, width_fine = HATCH_SPACING * _SUPERSAMPLE, HATCH_WIDTH * _SUPERSAMPLE
