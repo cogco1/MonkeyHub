@@ -5,7 +5,8 @@
  * page, real saved annotations, and the same board afterwards. Refused board and
  * page writes, doubled returns, a second task and a real local drawing cover
  * what the return must not take away. No scene injection, no second editor, no
- * model or agent request.
+ * model or agent mutation. Failed/pending 3D recovery and unavailable page links
+ * keep that same exact-page boundary.
  */
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -29,6 +30,8 @@ const projectDir = path.join(root, "demo-project");
 const errors = [], requests = [];
 /** Writes this run refuses, by route, so a refusal boundary can be exercised. */
 const faults = { "/api/board": false, "/api/document-annotations": false };
+// Only the 3D state read is refused or held; project and document reads stay real.
+let stateRead = null;
 const http = createHttpServer();
 let api, vite, browser, page, closing = false, apiLog = "";
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -114,20 +117,36 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
       response.end(JSON.stringify({ code: "TRANSPORT_ERROR", detail: "Injected write failure." }));
       return;
     }
-    const chunks = [];
-    request.on("data", (chunk) => chunks.push(chunk));
-    request.on("end", () => { if (chunks.length) try { entry.body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { /* bytes */ } });
-    const proxied = httpRequest({ hostname: "127.0.0.1", port: apiPort, path: request.url,
-      method: request.method, headers: { ...request.headers, host: `127.0.0.1:${apiPort}` } }, (answer) => {
-      entry.status = answer.statusCode;
-      response.writeHead(answer.statusCode, answer.headers); answer.pipe(response);
-    });
-    proxied.on("error", (error) => {
-      if (!closing) errors.push(error.message);
-      if (!response.headersSent) response.writeHead(502);
-      response.end();
-    });
-    request.pipe(proxied);
+    const forward = () => {
+      const chunks = [];
+      request.on("data", (chunk) => chunks.push(chunk));
+      request.on("end", () => { if (chunks.length) try { entry.body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { /* bytes */ } });
+      const proxied = httpRequest({ hostname: "127.0.0.1", port: apiPort, path: request.url,
+        method: request.method, headers: { ...request.headers, host: `127.0.0.1:${apiPort}` } }, (answer) => {
+        entry.status = answer.statusCode;
+        response.writeHead(answer.statusCode, answer.headers); answer.pipe(response);
+      });
+      proxied.on("error", (error) => {
+        if (!closing) errors.push(error.message);
+        if (!response.headersSent) response.writeHead(502);
+        response.end();
+      });
+      request.pipe(proxied);
+    };
+    if (request.method === "GET" && entry.path === "/api/state" && stateRead) {
+      stateRead.requests.push(entry);
+      if (stateRead.mode === "failed") {
+        request.resume();
+        entry.status = 409;
+        response.writeHead(409, { "content-type": "application/json" });
+        response.end(JSON.stringify({ code: "EDITING_BASE_UNAVAILABLE", detail: "Injected 3D editing-base recovery failure." }));
+      } else {
+        // A latch proves the page can be used before this read answers, without a timing race.
+        void stateRead.gate.then(() => { if (!response.destroyed) forward(); });
+      }
+      return;
+    }
+    forward();
   });
   await new Promise((resolve) => http.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${http.address().port}`;
@@ -414,10 +433,120 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   assert.equal(await page.getByLabel("Page", { exact: true }).inputValue(), "1");
   assert.equal(await page.locator(".document-page__ink [data-stroke-id]").count(), previousPage.annotations.length + 1);
 
+  // GH-355: registered pages are independent of 3D recovery, including before
+  // the first state response. Each cold workspace still uses the real project,
+  // Board, document bytes and annotation persistence from the same Runtime.
+  async function freshBoard() {
+    await page.close();
+    page = await context.newPage(); page.setDefaultTimeout(30_000);
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(`${origin}/?view=board&embedded=tool&lang=en`, { waitUntil: "domcontentloaded" });
+    await page.locator(".monkeyboard-canvas canvas").first().waitFor();
+    await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
+    await page.evaluate(() => { window.__boardCanvas = document.querySelector(".monkeyboard-canvas canvas"); });
+    await page.getByRole("button", { name: "Project documents", exact: true }).click();
+    await page.getByLabel("board-pages.pdf Page", { exact: true }).selectOption({ label: "Page 2 / 2" });
+  }
+  const assertExactPage = async () => {
+    await page.locator('.document-viewport[aria-label="Annotation canvas, page 2"][data-ready=true]').waitFor();
+    assert.equal(await page.getByLabel("Source document", { exact: true }).inputValue(), secondPage.revisionRef ?? secondPage.assetSha256);
+    assert.equal(await page.getByLabel("Page", { exact: true }).inputValue(), "1");
+    assert.equal(await page.locator(".boot").isVisible(), false, "3D initialization must not cover a usable registered page");
+  };
+  for (const mode of ["failed", "pending"]) {
+    let release;
+    stateRead = { mode, requests: [], gate: new Promise((resolve) => { release = resolve; }), release: () => release() };
+    try {
+      await freshBoard();
+      for (let attempt = 0; attempt < 100 && stateRead.requests.length === 0; attempt++) await delay(100);
+      assert.ok(stateRead.requests.length > 0, `${mode}: the 3D state read must actually begin`);
+      const assertStateBlocked = () => assert.ok(stateRead.requests.every((entry) => entry.status === (mode === "failed" ? 409 : undefined)),
+        `${mode}: the 3D state cannot have succeeded before the document operation`);
+      assertStateBlocked();
+      const firstBefore = await pageAnnotations(0), secondBefore = await pageAnnotations(1);
+      const boardBefore = await board(), beforeOpen = requests.length;
+      const boardZoom = await zoomText();
+      const boardUrl = page.url();
+      await page.locator(".monkeyboard-source-link").click();
+      await assertExactPage();
+      assertStateBlocked();
+      const comment = `Page two remains editable while 3D recovery is ${mode}.`;
+      await page.getByLabel("Comment on this page", { exact: true }).fill(comment);
+      await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+      await page.locator(".monkeyboard-canvas canvas").first().waitFor();
+      assertStateBlocked();
+      const secondAfter = await pageAnnotations(1);
+      assert.equal(secondAfter.comment, comment, `${mode}: returning saves the exact page's comment`);
+      assert.deepEqual(secondAfter.annotations, secondBefore.annotations, `${mode}: retained ink is not replaced`);
+      assert.deepEqual(await pageAnnotations(0), firstBefore, `${mode}: the other page is untouched`);
+      const pageWrites = requests.slice(beforeOpen).filter((entry) => entry.method === "PUT" && entry.path === "/api/document-annotations");
+      assert.equal(pageWrites.length, 1, `${mode}: leaving saves once`);
+      assert.deepEqual({ runId: pageWrites[0].body.runId, assetSha256: pageWrites[0].body.assetSha256,
+        revisionRef: pageWrites[0].body.drawingRevisionRef ?? null, pageIndex: pageWrites[0].body.pageIndex }, secondPage);
+      assert.equal(page.url(), boardUrl);
+      assert.equal(await zoomText(), boardZoom);
+      assert.equal(await page.evaluate(() => window.__boardCanvas === document.querySelector(".monkeyboard-canvas canvas")), true,
+        `${mode}: returning reveals the same mounted Board`);
+      assert.deepEqual(active(await board(), "image").map((element) => element.customData.sourceDocument),
+        active(boardBefore, "image").map((element) => element.customData.sourceDocument));
+      // Reveal the 3D workspace only after the round trip: its refusal/loading
+      // surface proves the page editor never repaired or replaced that session.
+      await page.getByTestId("workspace-arch").click();
+      if (mode === "failed") {
+        await page.getByRole("heading", { name: "Could not reopen the selected editing version", exact: true }).waitFor();
+      } else {
+        await page.locator('.boot[data-mode="boot"]').waitFor();
+        assertStateBlocked();
+        const resumed = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/state" && response.status() === 200);
+        stateRead.release();
+        await resumed;
+        await page.locator('.boot[data-mode="boot"]').waitFor({ state: "hidden" });
+        await page.locator(".viewport-canvas").waitFor();
+      }
+      console.log(`PASS: exact Board page opens, saves and returns while 3D recovery is ${mode}`);
+    } finally {
+      stateRead.release();
+      stateRead = null;
+    }
+  }
+
+  // The Board named page two when it resolved the link, but the editor's fresh
+  // exact-run descriptor no longer contains it. Keep the real two-page PDF and
+  // the retained Board unchanged; alter only this read boundary, as for a stale
+  // link. The editor must refuse, even though page one could otherwise render.
+  await freshBoard();
+  let unavailableReads = 0;
+  await page.route((url) => url.pathname === "/api/documents" && url.searchParams.get("runId") === secondPage.runId, async (route) => {
+    const response = await route.fetch();
+    assert.equal(response.status(), 200);
+    const result = await response.json();
+    const exact = result.documents.find((item) => item.assetSha256 === secondPage.assetSha256 && (item.revisionRef ?? null) === secondPage.revisionRef);
+    assert.equal(exact.pageCount, 2);
+    unavailableReads += 1;
+    await route.fulfill({ response, json: { ...result, documents: result.documents.map((item) => item === exact
+      ? { ...item, pageCount: 1, pages: item.pages.filter((item) => item.pageIndex === 0) } : item) } });
+  });
+  const beforeUnavailable = requests.length;
+  const retainedPages = [await pageAnnotations(0), await pageAnnotations(1)];
+  await page.locator(".monkeyboard-source-link").click();
+  await page.locator('.document-empty [role="alert"]').filter({ hasText: /^Link unavailable$/ }).waitFor();
+  assert.ok(unavailableReads > 0, "The editor must read the descriptor that makes its exact requested page unavailable");
+  assert.equal(await page.getByLabel("Source document", { exact: true }).inputValue(), secondPage.revisionRef ?? secondPage.assetSha256);
+  assert.equal(await page.getByLabel("Page", { exact: true }).inputValue(), "1", "An out-of-range page keeps the requested index");
+  assert.equal(await page.getByLabel("Page", { exact: true }).locator("option:checked").innerText(), "Link unavailable");
+  assert.equal(await page.locator(".document-viewport, .document-page__raster").count(), 0, "No other page substitutes for the unavailable one");
+  assert.deepEqual(requests.slice(beforeUnavailable).filter((entry) => entry.path === "/api/document-annotations"), [],
+    "An unavailable page neither loads another page's annotations nor writes a substitute");
+  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await page.locator(".monkeyboard-canvas canvas").first().waitFor();
+  assert.equal(await page.evaluate(() => window.__boardCanvas === document.querySelector(".monkeyboard-canvas canvas")), true);
+  assert.deepEqual([await pageAnnotations(0), await pageAnnotations(1)], retainedPages);
+  console.log("PASS: an out-of-range Board page says Link unavailable without substituting another page");
+
   assert.deepEqual(requests.filter((request) => /\/api\/(intents|proposals|jobs|model-annotations|candidates)/.test(request.path)), [],
     "Opening and leaving a page must never enter a model or agent path");
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: "board double click opens the exact registered page in the existing document editor, keeps its saved marks and source binding, and returns to the same board viewport and selection without reloading the tab, inside a mounted project workspace; refused board and page writes retain unsaved edits; a doubled return writes once; Arch local geometry and the original Board canvas remain mounted across workspace switches",
+  console.log(JSON.stringify({ passed: "board double click opens the exact registered page in the existing document editor, keeps its saved marks and source binding, and returns to the same board viewport and selection without reloading the tab, inside a mounted project workspace; refused board and page writes retain unsaved edits; a doubled return writes once; Arch local geometry and the original Board canvas remain mounted across workspace switches; registered pages remain editable during failed or pending 3D recovery; unavailable page links never substitute another page",
     requests: requests.length }));
 } catch (error) {
   console.error(`FAILED: ${error?.stack ?? error}`);
@@ -429,6 +558,7 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   throw error;
 } finally {
   closing = true;
+  stateRead?.release();
   await browser?.close(); await vite?.close();
   if (http.listening) await new Promise((resolve) => http.close(resolve));
   if (api && api.exitCode === null) {

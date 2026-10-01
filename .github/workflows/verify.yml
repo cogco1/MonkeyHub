@@ -213,6 +213,11 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node test/drawingCanvas.browser.mjs
 
+      - name: Board document page browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/boardDocumentOpen.browser.mjs
+
       # In-memory API fixtures, no project runtime (#355).
       - name: Board note handoff browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
