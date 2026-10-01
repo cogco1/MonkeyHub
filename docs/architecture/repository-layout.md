@@ -276,6 +276,11 @@ Git 跟踪的路径，不论谁写的文件，放错就失败（#553）：
 清单记录现状，新增一项是经过 review 的 policy 修改，不为新东西另开例外；清单里已不存在的项报 `POLICY_PATH_MISSING`，
 搬走或删除文件的 PR 同时删掉它。缺了某个键，对应规则就不运行，所以 `tools/tests/test_archcheck_placement.py` 要求本仓 policy 保留全部键。
 
+放下的 Python 文件还要有唯一的 owner（#559）：`checked_source_roots` 下 Git 跟踪的 Python 文件，除测试套件与 `import_only_source_roots`
+（`labs`）外，都要被 module registry 中恰好一个模块的 `files` 持有，直接列出或列出它上层的目录都算（与 `depends_on` 的解析相同，#537），
+没有模块持有报 `REGISTRY_FILE_UNOWNED` 并指出最可能的 owner，两个模块同时持有报 `REGISTRY_FILE_OWNED_TWICE`，包的 `__init__.py`
+可以无人持有；Web 源码（`.ts`／`.tsx`）在 registry 里只登记了一部分，不在这条规则内，另行决定。
+
 ## 7. 第一轮记录：只搬迁
 
 第一轮（#484–#496）已全部落地。每条 lane 都遵守了：

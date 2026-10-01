@@ -4350,7 +4350,12 @@
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
         "apps/monkeyhub/web/test/boardSourceStatus.test.ts"
       ],
-      "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
+      "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs.",
+      "files": [
+        "services/project-runtime/src/project_runtime/application/boards.py",
+        "services/project-runtime/src/project_runtime/api/routes/boards.py",
+        "services/project-runtime/src/project_runtime/api/dto/boards.py"
+      ]
     },
     {
       "module_id": "project_runtime.binding",
@@ -5721,6 +5726,7 @@
         "the checks: forbidden imports including archive reverse imports, instance-answer literals, filesystem writes outside allowed functions, forbidden framework identifiers, probe-boundary executables, configured policy paths that do not exist and src directories missing from python_source_roots, forbidden-import targets that name no module, the top-level entries Git tracks against the root allowlist, the docs tree Git tracks (README.md alone at the docs root; lowercase kebab-case document and directory names, NNN-kebab-case decisions, no date-prefixed names, non-Markdown files only in docs/prototypes/), registry owner/test/public-symbol truth, every other path the registry names, registry depends_on as registered module ids that the module's files import, with every import of a file in a unit whose namespace the policy's declared_dependency_namespaces lists declared, and duplicate owned function bodies",
         "the Finding shape and the JSON/text report and exit code",
         "the placement checks over the paths Git tracks (#553): the entries directly under each directory directory_entries lists (the Hub web source root, the docs categories), test files that test_file_patterns names only under test_roots, and the first-level directories of each Python package under packages/<name>/src/ and services/<name>/src/ against subpackages",
+        "the file-ownership check over the paths Git tracks (#559): every Python file under checked_source_roots, outside the test suites and import_only_source_roots, held by exactly one module's files, listed directly or through a listed directory; a file no module holds is reported with its nearest plausible owner and a file two modules hold with both, while a package's __init__.py may go unheld",
         "Validating the live work registry (ArchFlowDevelopmentRegistry@3): GitHub Issue claims only, claimed directly or through lanes, with checkout, base, contributor, paths and dependencies; reporting competing live path and checkout claims; checking each commit against the claim it names in its own registry, and reading commits made before #358 by their card-era rules"
       ],
       "does_not_own": [
@@ -5768,7 +5774,8 @@
         "a commit on the pre-#358 registry keeps its card-era reading, where a subject ending in a single (#n) with no other Issue reference or GH- marker names GH-n; once a parent is on the current registry a commit cannot return to the old one, so that reading cannot authorize card work again",
         "a current commit whose subject opens with a P###, M###, R### or P000-governance id is reported as a retired claim",
         "a layer rule may list allowed exceptions under its targets: a module, or a member a module defines at its top level; an import is let through only when its module is allowed, or, for from x import y, every x.y it takes is; an exception that names neither a module nor a defined member is reported like a dead target (#519)",
-        "depends_on lists module ids only (#537): an import is held by the entry whose files list the imported module (a listed directory holds the Python below it), named from the policy's python_source_roots, and an import of a module no entry holds is matched to nothing; an entry that is no module id, the module itself or a module the files no longer import is reported; what must be declared is decided by the unit the imported file lies in, not by the id that holds it; who uses a module is read from the imports, so the hand-kept used_by field is reported as retired"
+        "depends_on lists module ids only (#537): an import is held by the entry whose files list the imported module (a listed directory holds the Python below it), named from the policy's python_source_roots, and an import of a module no entry holds is matched to nothing; an entry that is no module id, the module itself or a module the files no longer import is reported; what must be declared is decided by the unit the imported file lies in, not by the id that holds it; who uses a module is read from the imports, so the hand-kept used_by field is reported as retired",
+        "file ownership uses the held-file mapping that depends_on uses (#537) and takes the files to check from Git's index, so an untracked local file decides nothing; the test suites, labs, a package's __init__.py and web sources (.ts/.tsx) are outside it, and the rule configures no exemption list"
       ],
       "status": "canonical",
       "tests": [
@@ -5776,7 +5783,8 @@
         "tools/tests/test_archcheck_placement.py",
         "tools/tests/test_archcheck_github_claims.py",
         "tools/tests/test_archcheck_paths.py",
-        "tools/tests/test_archcheck_dependencies.py"
+        "tools/tests/test_archcheck_dependencies.py",
+        "tools/tests/test_archcheck_ownership.py"
       ],
       "notes": "Architecture checks parse source without importing application code; scope behavior is verified with disposable Git repositories."
     },
@@ -7545,6 +7553,147 @@
         "tools/benchmarks/daily_benchmark.py",
         "tools/benchmarks/benchmark_data.py",
         "tools/benchmarks/budgets.json"
+      ]
+    },
+    {
+      "module_id": "tools.benchmarks.projection_check",
+      "owner_path": "tools/benchmarks/projection_check.py",
+      "status": "canonical",
+      "purpose": "Check that a candidate code root answers the projected read routes exactly as a base code root does on one project (ADR-008, GH-376): the projection job of verify.yml on every pull request and every push to main.",
+      "owns": [
+        "The projection parity gate (GH-376): one settled scratch copy of a project; the base reads every route in a fresh process, the candidate reads them cold, retains one candidate review and reads them again in one process, and the base reads them once more; the candidate's bodies must equal the base's byte for byte before and after the write",
+        "The six projected routes the gate reads (ROUTES) and the settle step that moves a copy's file times back so the project counts as settled; the daily benchmark reuses both",
+        "The conditional-read promises asked of a candidate that tags its answers: an ETag on every route, 304 for If-None-Match, a new design-history tag that shows its own review at once, and artifact bytes served immutable that hash to their sha",
+        "The coarse timing gate: a route fails only when the candidate's cold read is both more than twice the base's and more than 200 ms slower",
+        "The projection check's JSON result, its Markdown summary with the first differing bytes of a failed route, and the opt-in --index-dir run that reports how the candidate's project index loaded"
+      ],
+      "does_not_own": [
+        "the synthetic project and its generator - services/project-runtime/tests/synthetic_project.py, built by the base checkout before the check",
+        "the projections, conditional reads and project index it compares - the Project Runtime modules that serve the routes, and archflow.project.index",
+        "measuring MonkeyHub over time against budgets - tools.benchmarks.daily_benchmark",
+        "whether a projection is architecturally right: a route both sides answer wrongly in the same way passes"
+      ],
+      "inputs": [
+        "a base and a candidate code root, each with packages/archflow/src and services/project-runtime/src",
+        "a built project directory, copied once and never written",
+        "--out, optional --summary and --work, and an opt-in --index-dir outside the project copy"
+      ],
+      "outputs": [
+        "one JSON result: each side's reads, the review write, the verdict per route and the conditional-read checks",
+        "a Markdown summary for the job's summary page",
+        "exit code 0 when every check passes, 1 otherwise"
+      ],
+      "public_api": [
+        "main",
+        "check",
+        "evaluate",
+        "slower",
+        "settle",
+        "scratch_copy",
+        "summary_markdown",
+        "first_difference",
+        "ROUTES",
+        "DESIGN_HISTORY"
+      ],
+      "depends_on": [
+        "project_runtime.binding",
+        "project_runtime.shell"
+      ],
+      "invariants": [
+        "The project given is only copied: every read and the one review write go to a scratch copy under its own folder name, and the tool writes only under --work, --out and --summary",
+        "Each side runs in its own interpreter with its own kernel and runtime source first on sys.path and stops if archflow or project_runtime loads from anywhere else; the tool imports neither at module level",
+        "What is judged does not change with --index-dir, and a base that predates conditional reads is not asked for them"
+      ],
+      "tests": [
+        "services/project-runtime/tests/test_projection_check.py"
+      ],
+      "notes": "CREATE (GH-559): tools.benchmarks.daily_benchmark reuses its routes and settle step but names the parity gate in its does_not_own, and no Project Runtime owner compares one code revision's answers with another's across routes that several modules serve. verify.yml runs it on every pull request, so it is maintained tooling, not a lab. The policy's write site still names its owner tools.projection_check, its import path before #495 grouped the tools."
+    },
+    {
+      "module_id": "tools.benchmarks.run_turn_benchmark",
+      "owner_path": "tools/benchmarks/run_turn_benchmark.py",
+      "status": "canonical",
+      "purpose": "Explicitly requested, paid measurements of MonkeyHub model turns with the installed provider in disposable Hub and Project Runtime services: the turn benchmark and its paired sessions, the design-loop, feedback-loop and accepted-Stage runs built on its harness, and the stage-a-massing comparison with a native modeller (#32, #185, #419).",
+      "owns": [
+        "The turn benchmark harness: disposable Hub and Project Runtime services on free ports with their own APPDATA and LOCALAPPDATA, the installed provider's authentication, and the scenarios in tools/benchmarks/benchmarks.json (simple-create, incremental-edit, assembly-edit, stage-a-massing) run on a copy of the Project Runtime's P036 test fixture",
+        "Paired session measurements (--session-pair): two retained copies of one fixture project comparing an old-session continuation with a project-state session, prepared without a model call (--prepare-only) and re-extracted from retained traces (--summarize)",
+        "The turn metrics projected from the Monitor trace: wall and first-candidate time, token counters, model, tool and CAD rounds, failed tools, retries and model-view calls",
+        "The real-provider runs that reuse the harness: the courtyard design loop with retained intent and same-source spatial read-back (run_design_loop), the feedback loop through the Hub's chat tool and an observed sheet (run_feedback_loop), and the accepted-Stage comparison of continue and stage orders with an upstream-impact probe (run_stage_handoff_benchmark, #185)",
+        "The stage-a-massing comparison (#419): the native-modeller baseline through Codex's own MCP and its event stream (run_native_baseline), and the name-agnostic STEP check of total material, overall extent and the four recesses that judges every path (massing_check)"
+      ],
+      "does_not_own": [
+        "the P036 fixture project a run copies - services/project-runtime/tests/support.py",
+        "the Monitor traces and their views - monkeymonitor",
+        "the Hub, the Project Runtime and the provider conversations they hold - hub.shell and the project_runtime modules",
+        "the context-size and visual-observation benchmarks of the Studio's own requests - project_runtime.intent",
+        "the daily benchmark and the CI projection check - tools.benchmarks.daily_benchmark and tools.benchmarks.projection_check"
+      ],
+      "inputs": [
+        "a scenario or comparison a person requests, a pinned model and an explicit output directory outside the repository and every user project",
+        "the installed provider CLI and its authentication",
+        "tools/benchmarks/benchmarks.json and the Project Runtime's P036 test fixture (services/project-runtime/tests/support.py)",
+        "a stage-a-massing STEP file (massing_check)"
+      ],
+      "outputs": [
+        "requests, chats, Monitor traces, read-back candidates, reports and failed attempts under the output directory",
+        "paired and Stage comparison summaries, and the native baseline's event stream and report",
+        "the massing check's verdict: material volume, extent and sample-point findings"
+      ],
+      "public_api": [
+        "main",
+        "paired_benchmark",
+        "summarize_pair",
+        "measured_metrics",
+        "source_identity",
+        "monitor_snapshot",
+        "isolated_services",
+        "retained_record",
+        "check_turn",
+        "prepare",
+        "impact_probe",
+        "run_arm",
+        "native_codex",
+        "summarize",
+        "check_massing",
+        "EXPECTED_VOLUME"
+      ],
+      "depends_on": [
+        "archflow.project.archive",
+        "archflow.project.record_kinds",
+        "archflow.project.refs",
+        "archflow.project.repository",
+        "archflow.state.state_record",
+        "hub.shell",
+        "monkeycad.occt",
+        "monkeydiagram.drawing_runs",
+        "monkeymonitor",
+        "project_runtime.binding",
+        "project_runtime.documents",
+        "project_runtime.shell"
+      ],
+      "invariants": [
+        "A measuring run is started by a person, never by CI, and spends provider calls; provider response time is measured, never gated. Preparing (--prepare-only) and re-extracting (--summarize) call no model",
+        "The services, settings and projects a run drives are disposable copies under its output or a temporary directory; no user project, service or configuration is changed",
+        "Evidence - requests, chats, traces, read-backs, reports and failed attempts - is written only under the explicit output directory a person names",
+        "A Monitor counter the trace lacks stays unknown, never zero, and missing evidence is never promoted to success",
+        "The massing check reads the exact STEP file cold and asks only for what the task asked: total material, overall extent and whether sample points fall in material or in the four recesses; object names, counts and how the solids were made do not matter"
+      ],
+      "tests": [
+        "tools/tests/test_turn_benchmark.py",
+        "tools/tests/test_design_loop.py",
+        "tools/tests/test_stage_handoff_benchmark.py",
+        "tools/tests/test_native_baseline.py",
+        "tools/tests/test_massing_check.py"
+      ],
+      "notes": "CREATE (GH-559): these drivers share one harness - run_design_loop, run_feedback_loop and run_stage_handoff_benchmark import run_turn_benchmark, and it and run_native_baseline judge stage-a-massing with massing_check - so they have one owner. tools.benchmarks.daily_benchmark measures MonkeyHub's own timings every day and leaves model turns out (its notes); monkeymonitor owns the traces they read but not geometry or candidate execution (its does_not_own), and a package the host composes does not hold drivers that start the Hub; project_runtime.intent holds only the benchmarks of its own request preparation. CI runs their tests in tools/tests and the policy registers their write sites, so they are not labs. The policy's write sites still name their owners tools.run_<name>, before #495 grouped the tools.",
+      "files": [
+        "tools/benchmarks/run_turn_benchmark.py",
+        "tools/benchmarks/run_design_loop.py",
+        "tools/benchmarks/run_feedback_loop.py",
+        "tools/benchmarks/run_stage_handoff_benchmark.py",
+        "tools/benchmarks/run_native_baseline.py",
+        "tools/benchmarks/massing_check.py",
+        "tools/benchmarks/benchmarks.json"
       ]
     },
     {

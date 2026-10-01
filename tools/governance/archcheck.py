@@ -3,9 +3,10 @@
 Two modes. Without arguments it checks the tree: layer imports, filesystem
 write ownership, state authorities, the probe boundary, the entries Git tracks
 at the repository root and under docs/, the module registry, every path it
-names, the namespace each module id begins with and the module ids each entry
-depends on, and the live work registry -- GitHub Issue claims only, no two of
-them holding the same path or checkout.
+names, the namespace each module id begins with, the module ids each entry
+depends on and the one module that holds each checked source file Git tracks,
+and the live work registry -- GitHub Issue claims only, no two of them holding
+the same path or checkout.
 A path the policy configures must exist: a rule whose path is gone is
 reported, never skipped. So is a layer rule's target that names no module,
 since nothing can import it.
@@ -31,6 +32,7 @@ import re
 import subprocess
 import sys
 import time
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Iterator
@@ -1436,6 +1438,104 @@ def _dependency_findings(
         )
 
 
+def _holding(entry: dict[str, Any], path: str) -> str:
+    """How a registry entry holds one of its Python files: as its owner_path, listed, or through a listed directory."""
+
+    if not entry.get("files"):
+        return "its owner_path"
+    listed = ["/".join(_scope_parts(value)) for value in _registry_span(entry)]
+    if path in listed:
+        return "lists it"
+    return f"through {max((value for value in listed if _scope_covers(value, path)), key=len, default='')}/"
+
+
+def _nearest_owner(
+    path: str, held: dict[str, dict[str, dict[str, Any]]], area: tuple[str, ...], namespace: str | None,
+) -> tuple[str, str] | None:
+    """The module most likely to own a file no entry holds, and the held file that suggests it.
+
+    The candidates are the files entries hold under ``area``, the checked
+    source root holding the file. A module holding a file of the same name
+    comes first, since one feature keeps its name across a package's layers
+    (application/boards.py, api/routes/boards.py, api/dto/boards.py); then the
+    deepest directory shared with the file, a held file nearest below that
+    directory, a module of the file's own namespace, and the most files held
+    there; the module id breaks a tie. None when nothing under ``area`` is
+    held.
+    """
+
+    parts = _scope_parts(path)
+    ranks: list[tuple[bool, int, int, bool, str, str]] = []
+    for other, owners in held.items():
+        other_parts = _scope_parts(other)
+        if other_parts[: len(area)] != area:
+            continue
+        shared = 0
+        while shared < min(len(parts), len(other_parts)) - 1 and parts[shared] == other_parts[shared]:
+            shared += 1
+        below = len(other_parts) - 1 - shared
+        # Each field sorts the nearer candidate first: a namesake, a deeper shared directory,
+        # fewer directories below it, the file's own namespace.
+        for module_id in owners:
+            ranks.append((
+                other_parts[-1] != parts[-1], -shared, below, module_id.partition(".")[0] != namespace, module_id, other,
+            ))
+    there = Counter((rank[1], rank[2], rank[4]) for rank in ranks)
+    best = min(ranks, key=lambda rank: (*rank[:4], -there[rank[1], rank[2], rank[4]], *rank[4:]), default=None)
+    return None if best is None else (best[4], best[5])
+
+
+def check_file_owners(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding]:
+    """Every checked source file is held by exactly one module of the registry (#559).
+
+    An entry holds a file as ``depends_on`` resolves imports (#537,
+    ``_held_python_files``): its ``files`` list the file or a directory above
+    it, or, without ``files``, it is the owner_path. The files checked are the
+    checked-file set that Git also tracks, without the test suites (a module
+    names its tests under ``tests``) and the ``import_only_source_roots`` (a lab
+    has no owner); untracked files decide nothing. A file no entry holds is
+    ``REGISTRY_FILE_UNOWNED``, which names the nearest plausible owner
+    (``_nearest_owner``); a file that entries of two module ids hold is
+    ``REGISTRY_FILE_OWNED_TWICE``, which names each and how it holds the file.
+    A package's ``__init__.py`` is the package itself and may go unheld, but not
+    held twice. Web sources (``.ts``/``.tsx``) are outside this rule.
+    """
+
+    registry_path = root / "governance" / "module_registry.json"
+    if not registry_path.is_file():
+        return
+    held: dict[str, dict[str, dict[str, Any]]] = {}
+    for entry in json.loads(registry_path.read_text(encoding="utf-8")).get("modules", []):
+        if isinstance(entry, dict) and isinstance(entry.get("module_id"), str):
+            for path in _held_python_files(root, entry):
+                held.setdefault(path, {}).setdefault(entry["module_id"], entry)
+    roots = policy["checked_source_roots"]
+    tracked = frozenset(_git(root, "ls-files", "-z").split("\0"))
+    for file in _checked_python_files(root, policy):
+        path = file.relative_to(root).as_posix()
+        if path not in tracked or _in_tests(path) or _is_import_only(path, policy):
+            continue
+        owners = held.get(path, {})
+        if len(owners) > 1:
+            named = [f"{module_id} ({_holding(entry, path)})" for module_id, entry in owners.items()]
+            yield PolicyFinding(
+                path, 1, "REGISTRY_FILE_OWNED_TWICE",
+                f"{path} is held by {', '.join(named[:-1])} and {named[-1]}; a file has one owner, so keep it "
+                "in the files of one module",
+            )
+        elif not owners and file.name != "__init__.py":
+            area = max((_scope_parts(source) for source in roots if _source_matches(path, source)), key=len, default=())
+            unit = _id_namespace(path, policy["module_id_namespaces"])
+            nearest = _nearest_owner(path, held, area, unit[1] if unit else None)
+            unheld = f"no module in governance/module_registry.json holds {path}"
+            yield PolicyFinding(path, 1, "REGISTRY_FILE_UNOWNED", (
+                f"{unheld}; list it in the files of the module that owns it, most likely {nearest[0]}, "
+                f"which holds {nearest[1]}"
+            ) if nearest is not None else (
+                f"{unheld}, nor anything under {'/'.join(area)}/; register the module that owns it there"
+            ))
+
+
 def _id_namespace(path: str, namespaces: dict[str, str]) -> tuple[str, str] | None:
     """The distribution unit holding a repository path, and its module-id namespace.
 
@@ -2193,9 +2293,10 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
 
     The root entries, the docs tree and the placement rules are read from
     Git's index (``check_repository_root``, ``check_docs_layout``,
-    ``check_placement``), and a layer-rule target that no module or import
-    accounts for is looked up in Git's ignore rules (``check_layer_targets``);
-    everything else is read from the files on disk.
+    ``check_placement``), and so is which checked source files must have an
+    owner (``check_file_owners``); a layer-rule target that no module or
+    import accounts for is looked up in Git's ignore rules
+    (``check_layer_targets``); everything else is read from the files on disk.
     """
 
     validate_policy(policy, root)
@@ -2205,6 +2306,7 @@ def run_checks(root: Path, policy: dict[str, Any]) -> tuple[PolicyFinding, ...]:
     findings.extend(check_docs_layout(root))
     findings.extend(check_placement(root, policy))
     findings.extend(check_registry(root, policy))
+    findings.extend(check_file_owners(root, policy))
     findings.extend(check_scopes(root, policy, load_work_registry(root)))
     imported: set[str] = set()
     for path in _checked_python_files(root, policy):
