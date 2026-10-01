@@ -177,13 +177,51 @@ test("no data is shown for another version, an unconfirmed view, an unread board
     assert.match(text, /构件 ID: post-1/);
   }
   const mismatch = info.buildComponentCard({ ...input, shown: other }, (status) => status);
-  assert.equal(info.stateSentence(mismatch, zh as never), "构件资料与当前显示的版本不符（资料对应：version B）");
-  assert.equal(info.stateSentence(mismatch, en as never), "The component information does not match the version shown (it was written for: version B).");
+  assert.equal(info.stateSentence(mismatch, zh as never), "构件资料写于 version B，不在当前显示版本的这条设计线上。");
+  assert.equal(info.stateSentence(mismatch, en as never), "The component information was written for version B, which is not on the line of the version shown.");
   assert.equal(info.stateSentence(info.buildComponentCard({ ...input, board: { ...ready, datasets: [] } }, (status) => status), zh as never),
     "构件资料未导入。可在画板中“导入构件资料”。");
   const broken = { ...ready, datasets: [], invalid: [{ elementId: "card", datasetId: "x", problems: [{ code: "required" as const, path: "$.id" }] }] };
   assert.equal(info.stateSentence(info.buildComponentCard({ ...input, board: broken }, (status) => status), zh as never),
     "画板上有 1 张构件资料卡无法读取。", "a card that cannot be read is not reported as nothing imported");
+});
+
+test("data written for a version the shown one continued from is inherited, flagged where the component's shape changed since", async (t) => {
+  const { info, board, zh, en } = await harness(t);
+  const ready = await boardOf(info, board, ["basics", "supply"]);
+  const next = { projectId: "fixture-project", runId: "run-c", stateDigest: "c".repeat(64) };
+  const line = { runId: "run-c", ancestors: ["run-b", "run-a"], states: new Map([["run-b", B]]) };
+  const input = { componentId: "post-1", elementId: "post-1-body", modelLabel: "Post 1", shown: next, pickMatchesShown: true, board: ready };
+
+  // The next version on B's line (materials declared, say) shows B's data as its own.
+  const inherited = info.buildComponentCard({ ...input, lineage: line }, (status) => status);
+  assert.equal(inherited.state, "ready");
+  assert.equal(inherited.name, "Post 1 (front left)");
+  assert.deepEqual(inherited.used.map((item) => [item.id, item.inherited]), [["basics-fixture", true], ["supply-fixture", true]]);
+  assert.deepEqual(inherited.reshapedSince, []);
+  assert.match(info.componentCardText(inherited, zh as never), /资料: Basics \(basics-fixture\) · 2026-10-01 · 沿用自 version B/);
+
+  // Its shape changed since B: one line says so, and the data still shows.
+  const changedSinceB = (changed: boolean | "unknown") => new Map([["run-b", changed === "unknown" ? "unknown" as const : new Map([["post-1", changed]])]]);
+  const reshaped = info.buildComponentCard({ ...input, lineage: line, changes: changedSinceB(true) }, (status) => status);
+  assert.equal(reshaped.state, "ready");
+  assert.deepEqual(reshaped.reshapedSince, ["version B"]);
+  assert.equal(info.reshapedSentence(reshaped, zh as never), "资料写于 version B；此构件之后改过形状，尺寸以模型为准。");
+  assert.equal(info.reshapedSentence(reshaped, en as never),
+    "Written for version B; this component's shape has changed since, so take its sizes from the model.");
+  assert.match(info.componentCardText(reshaped, zh as never), /^Post 1 \(front left\)\n资料写于 version B；此构件之后改过形状/);
+  for (const changed of [false, "unknown"] as const) {
+    assert.deepEqual(info.buildComponentCard({ ...input, lineage: line, changes: changedSinceB(changed) }, (status) => status).reshapedSince, [],
+      `no flag for ${changed}`);
+  }
+
+  // Off the line, for another shown run, or for a state that run never had: not this version's data.
+  for (const lineage of [null, { ...line, ancestors: ["run-a"] }, { ...line, runId: "run-d" }, { ...line, states: new Map([["run-b", "f".repeat(64)]]) }]) {
+    assert.equal(info.buildComponentCard({ ...input, lineage }, (status) => status).state, "mismatch", JSON.stringify(lineage?.ancestors));
+  }
+  // Data written for the shown version itself needs no line; while the line is read, other data waits instead of being refused.
+  assert.equal(info.buildComponentCard({ ...input, shown: SHOWN_B, lineage: null }, (status) => status).state, "ready");
+  assert.equal(info.buildComponentCard({ ...input, lineagePending: true }, (status) => status).state, "loading");
 });
 
 test("cards on the Board are found by their marker, never by position or words", async (t) => {
