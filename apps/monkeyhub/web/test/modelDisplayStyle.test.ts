@@ -256,7 +256,9 @@ test("the chosen display style survives a refresh in this browser, and an unread
 
 /** Production module-level functions of the viewer, run on their own: the fakes are the runtime's fields only. */
 function viewerFunctions(from: string, to: string, scope: Record<string, unknown>, names: readonly string[]) {
-  const viewer = readFileSync(new URL("../src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx", import.meta.url), "utf8");
+  // A Windows checkout may carry CRLF line ends; the markers are written with \n.
+  const viewer = readFileSync(new URL("../src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx", import.meta.url), "utf8")
+    .replace(/\r\n/g, "\n");
   const start = viewer.indexOf(from), end = viewer.indexOf(to, start);
   assert.ok(start >= 0 && end > start, `${from} … ${to}`);
   return new Function(...Object.keys(scope), `${stripTypeScriptTypes(viewer.slice(start, end))}; return { ${names.join(", ")} };`)(...Object.values(scope));
