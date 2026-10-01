@@ -24,7 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any, Mapping, cast
+from typing import Any, Iterable, Mapping, NamedTuple, cast
 
 from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.project.refs import ProjectVersionRef, RunRef, require_identifier
@@ -95,6 +95,11 @@ _ENTITY_SCHEMAS = frozenset({"Level@1", "GridAxis@1", "Type@1", "Element@1", "As
                              "MassingLevel@1", "Volume@1", "Connection@1"})   # Space@1 = a zone of the spatial option
 _EPISTEMIC = frozenset({"observed", "declared", "derived", "hypothesis", "disputed", "unknown"})
 _MAX_ITEMS = 50_000
+
+# What a part states under its component (``Component@1.fields.part_facets``, #580): its own material, nothing else.
+PART_FACET_KEYS: tuple[str, ...] = ("material.name", "material.color")
+# How an exported object's name is built from an ``Element@1`` id (``part_of_object``).
+OBJECT_NAME_PREFIX = "obj-"
 
 CHECK_KINDS: Mapping[str, str] = MappingProxyType({
     "support_contact": "the subject supports the object: contact within tolerance",
@@ -492,6 +497,7 @@ class StateRecord:
             for ref in connection.fields.get("relationship_refs", ()):
                 if ref not in declared_relations:
                     raise StateRecordError(f"connection {connection.entity_id}: relationship_ref {ref!r} names no declared relation")
+        parts: dict[str, tuple[str, ...]] | None = None   # each component's parts, read once a component states one's facets
         for component in self.entities_of("Component@1"):
             kind = component.fields.get("semantic_kind")
             # A component may exist before its meaning is known: no semantic_kind
@@ -513,29 +519,12 @@ class StateRecord:
             # Absence is "no facets yet", not invalid, same as semantic_kind (#400).
             facets = component.fields.get("facets")
             if facets is not None:
-                if not isinstance(facets, Mapping):
-                    raise StateRecordError(f"component {component.entity_id}: facets must be a mapping of string keys to string values")
-                for facet_key, facet_value in facets.items():
-                    if not isinstance(facet_key, str) or not isinstance(facet_value, str):
-                        raise StateRecordError(f"component {component.entity_id}: facets must be a mapping of string keys to string values")
-                    if facet_key not in FACET_KEYS:
-                        near = ", ".join(suggest_facet_key(facet_key)) or "none close"
-                        raise StateRecordError(f"component {component.entity_id}: facet {facet_key!r} is not registered; nearest: {near}")
-                    allowed_values = allowed_facet_values(facet_key)
-                    if allowed_values is None:
-                        if not (FREE_TEXT_MIN <= len(facet_value) <= FREE_TEXT_MAX):
-                            raise StateRecordError(
-                                f"component {component.entity_id}: facet {facet_key} must be {FREE_TEXT_MIN}-{FREE_TEXT_MAX} characters, got {len(facet_value)}")
-                        form = facet_format(facet_key)
-                        if form is not None and not form.holds(facet_value):
-                            # The record keeps one spelling; a well-formed value in another case is named in it.
-                            written = canonical_facet_value(facet_key, facet_value)
-                            raise StateRecordError(
-                                f"component {component.entity_id}: facet {facet_key} must be {form.words}, got {facet_value!r}"
-                                + (f"; write it {written}" if form.holds(written) else ""))
-                    elif facet_value not in allowed_values:
-                        raise StateRecordError(
-                            f"component {component.entity_id}: facet {facet_key} names {facet_value!r}, which is not registered; allowed: {', '.join(allowed_values)}")
+                _require_facets(f"component {component.entity_id}", facets)
+            # A part's own material, under its component (#580): only parts it has, only material facets.
+            part_facets = component.fields.get("part_facets")
+            if part_facets is not None:
+                parts = _parts_of(self) if parts is None else parts
+                _require_part_facets(component.entity_id, part_facets, parts)
         _require_one_color_per_material(self.entities_of("Component@1"))
 
     # ---- views
@@ -772,55 +761,186 @@ def component_facets(entity: Entity) -> dict[str, str]:
     return dict(facets) if isinstance(facets, Mapping) else {}
 
 
-def declared_materials(record: StateRecord) -> tuple[dict[str, str], dict[str, tuple[int, int, int]]]:
-    """The materials the record's components declare: ``({component id: name}, {name: (r, g, b)})``.
+def component_part_facets(entity: Entity) -> dict[str, dict[str, str]]:
+    """The facets a ``Component@1`` states for one part rather than for itself: ``{part id: facets}`` (#580).
 
-    The first map holds every ``Component@1`` that states ``material.name``,
-    by its entity id - the component a compiled program binds its objects
-    to. The second holds the sRGB channels of each material whose colour
-    some component of it states (``material.color``; the record keeps one
-    per material). Both are read from facets alone: a component that states
-    no material is absent from them, never named after its id or its shape,
-    and a material without a stated colour has no entry.
+    A part is one of the component's ``Element@1`` rows, the ids the
+    construction model lists as its ``parts``; it states only
+    ``PART_FACET_KEYS``, its own material. Empty when no part states any.
+    Like the component's own facets they change no element, object, datum or
+    dependency edge.
+    """
+
+    part_facets = entity.fields.get("part_facets")
+    if not isinstance(part_facets, Mapping):
+        return {}
+    return {part: dict(facets) for part, facets in part_facets.items() if isinstance(facets, Mapping)}
+
+
+def part_of_object(object_name: str | None, parts: Iterable[str]) -> str | None:
+    """The part among ``parts`` (one component's ``Element@1`` ids) that delivered an object of this name, or None.
+
+    The one naming rule: an element's objects are named ``obj-<id>``, and
+    ``obj-<id>-<suffix>`` when it delivers several. An exact name beats a
+    prefix and the longest prefix wins, so with parts ``portico`` and
+    ``portico-base`` declared, ``obj-portico-base-0`` belongs to the second.
+    Any other name (an imported object's, one produced by an operation no
+    element row names) belongs to no part.
+    """
+
+    if not isinstance(object_name, str) or not object_name.startswith(OBJECT_NAME_PREFIX):
+        return None
+    stem = object_name[len(OBJECT_NAME_PREFIX):]
+    prefixed: list[str] = []
+    for part in parts:
+        if stem == part:
+            return part
+        if stem.startswith(f"{part}-"):
+            prefixed.append(part)
+    return max(prefixed, key=len) if prefixed else None
+
+
+class DeclaredMaterials(NamedTuple):
+    """What the record's facets declare about materials, as an export reads them (``declared_materials``)."""
+
+    by_component: dict[str, str]
+    """``material.name`` by the id of each ``Component@1`` that states one."""
+
+    by_part: dict[str, dict[str, str | None]]
+    """For each component one of whose parts states its own material: every one of its parts, in record order,
+    with the material it wears: its own ``material.name``, else its component's, else None."""
+
+    colors: dict[str, tuple[int, int, int]]
+    """The sRGB channels of each material some component or part states a ``material.color`` for."""
+
+
+def declared_materials(record: StateRecord) -> DeclaredMaterials:
+    """The materials the record's components and their parts declare: ``(by_component, by_part, colors)``.
+
+    ``by_component`` holds every ``Component@1`` that states
+    ``material.name``, by its entity id - the component a compiled program
+    binds its objects to. ``by_part`` resolves each part by precedence (#580):
+    a part's own ``material.name`` (``part_facets``), else its component's,
+    else none; it lists a component only when one of its parts states its
+    own, and then all of its parts, so an object is matched to its part
+    among all of them (``part_of_object``). ``colors`` holds the sRGB
+    channels of each material whose colour some component or part of it
+    states (``material.color``; the record keeps one per material). All of
+    it is read from facets alone: a component or part that states no
+    material is never named after its id or its shape, and a material
+    without a stated colour has no entry.
     """
 
     by_component: dict[str, str] = {}
+    by_part: dict[str, dict[str, str | None]] = {}
     colors: dict[str, tuple[int, int, int]] = {}
+    parts = _parts_of(record)
     for component in record.entities_of("Component@1"):
         facets = component_facets(component)
         material = facets.get("material.name")
-        if material is None:
+        if material is not None:
+            by_component[component.entity_id] = material
+            color = facets.get("material.color")
+            if color is not None:
+                colors[material] = material_color_rgb(color)
+        stated = component_part_facets(component)
+        if not stated:
             continue
-        by_component[component.entity_id] = material
-        color = facets.get("material.color")
-        if color is not None:
-            colors[material] = material_color_rgb(color)
-    return by_component, colors
+        by_part[component.entity_id] = {part: stated.get(part, {}).get("material.name", material)
+                                        for part in parts.get(component.entity_id, ())}
+        for own in stated.values():
+            if own.get("material.color") is not None:
+                colors[own["material.name"]] = material_color_rgb(own["material.color"])
+    return DeclaredMaterials(by_component, by_part, colors)
+
+
+def _parts_of(record: StateRecord) -> dict[str, tuple[str, ...]]:
+    """Each component's parts: its ``Element@1`` ids in record order, those naming it as their component, else as their parent."""
+
+    parts: dict[str, list[str]] = {}
+    for element in record.entities_of("Element@1"):
+        parts.setdefault(str(element.fields.get("component_id") or element.parent_id), []).append(element.entity_id)
+    return {component: tuple(owned) for component, owned in parts.items()}
+
+
+def _require_facets(where: str, facets: object) -> None:
+    """Stated facets: registered keys with values of their kind, refused in the words of ``where``."""
+
+    if not isinstance(facets, Mapping):
+        raise StateRecordError(f"{where}: facets must be a mapping of string keys to string values")
+    for facet_key, facet_value in facets.items():
+        if not isinstance(facet_key, str) or not isinstance(facet_value, str):
+            raise StateRecordError(f"{where}: facets must be a mapping of string keys to string values")
+        if facet_key not in FACET_KEYS:
+            near = ", ".join(suggest_facet_key(facet_key)) or "none close"
+            raise StateRecordError(f"{where}: facet {facet_key!r} is not registered; nearest: {near}")
+        allowed_values = allowed_facet_values(facet_key)
+        if allowed_values is None:
+            if not (FREE_TEXT_MIN <= len(facet_value) <= FREE_TEXT_MAX):
+                raise StateRecordError(
+                    f"{where}: facet {facet_key} must be {FREE_TEXT_MIN}-{FREE_TEXT_MAX} characters, got {len(facet_value)}")
+            form = facet_format(facet_key)
+            if form is not None and not form.holds(facet_value):
+                # The record keeps one spelling; a well-formed value in another case is named in it.
+                written = canonical_facet_value(facet_key, facet_value)
+                raise StateRecordError(
+                    f"{where}: facet {facet_key} must be {form.words}, got {facet_value!r}"
+                    + (f"; write it {written}" if form.holds(written) else ""))
+        elif facet_value not in allowed_values:
+            raise StateRecordError(
+                f"{where}: facet {facet_key} names {facet_value!r}, which is not registered; allowed: {', '.join(allowed_values)}")
+
+
+def _require_part_facets(component_id: str, part_facets: object, parts: Mapping[str, tuple[str, ...]]) -> None:
+    """``part_facets``: parts this component has, each stating material facets and nothing else (#580)."""
+
+    where = f"component {component_id}"
+    own = parts.get(component_id, ())
+    if not isinstance(part_facets, Mapping):
+        raise StateRecordError(f"{where}: part_facets must map each of its part ids to that part's facets")
+    for part, facets in part_facets.items():
+        if part not in own:
+            other = next((owner for owner, owned in parts.items() if part in owned), None)
+            raise StateRecordError(
+                f"{where}: part_facets names {part!r}, which is not one of its parts ({', '.join(own) or 'it has none'})"
+                + (f"; {part} is a part of {other}" if other is not None else ""))
+        if not isinstance(facets, Mapping):
+            raise StateRecordError(f"{where}: part_facets must map each of its part ids to that part's facets")
+        if not facets:
+            raise StateRecordError(f"{where}, part {part} states no facet; leave it out of part_facets")
+        for key in facets:
+            if key not in PART_FACET_KEYS:
+                raise StateRecordError(
+                    f"{where}, part {part}: facet {key!r} is not one a part states; a part takes "
+                    f"{' and '.join(PART_FACET_KEYS)}, and the rest of its meaning is its component's")
+        _require_facets(f"{where}, part {part}", facets)
 
 
 def _require_one_color_per_material(components: tuple[Entity, ...]) -> None:
     """A material has one base colour: a colour names its material, and one material is never two colours.
 
     ``material.color`` is the appearance of the material ``material.name``
-    names on the same component, so a colour without a name says nothing
-    and is refused. Every component of one material carries the same colour
-    or none; two colours for one material are refused with the components
-    that state each. A record without colours, or without facets, is as
-    valid as before.
+    names on the same component, or the same part (#580), so a colour
+    without a name says nothing and is refused. Every component and part of
+    one material carries the same colour or none; two colours for one
+    material are refused with the components and parts that state each. A
+    record without colours, or without facets, is as valid as before.
     """
 
     stated: dict[str, dict[str, list[str]]] = {}
     for component in components:
-        facets = component_facets(component)
-        color = facets.get("material.color")
-        if color is None:
-            continue
-        material = facets.get("material.name")
-        if material is None:
-            raise StateRecordError(
-                f"component {component.entity_id}: facet material.color {color} names no material; "
-                "declare material.name with it")
-        stated.setdefault(material, {}).setdefault(color, []).append(component.entity_id)
+        sources = [(f"component {component.entity_id}", component.entity_id, component_facets(component))]
+        sources += [(f"component {component.entity_id}, part {part}", f"part {part} of {component.entity_id}", facets)
+                    for part, facets in component_part_facets(component).items()]
+        for where, label, facets in sources:
+            color = facets.get("material.color")
+            if color is None:
+                continue
+            material = facets.get("material.name")
+            if material is None:
+                raise StateRecordError(
+                    f"{where}: facet material.color {color} names no material; declare material.name with it")
+            stated.setdefault(material, {}).setdefault(color, []).append(label)
     for material, colors in sorted(stated.items()):
         if len(colors) > 1:
             said = "; ".join(f"{color} on {', '.join(sorted(ids))}" for color, ids in sorted(colors.items()))
