@@ -21,10 +21,12 @@
         "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/modelDisplay.ts",
         "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/renderView.ts",
         "apps/monkeyhub/web/src/workspaces/render/ModelPreview.tsx",
+        "apps/monkeyhub/web/test/loaderColours.test.ts",
         "apps/monkeyhub/web/test/modelDisplayStyle.test.ts",
         "apps/monkeyhub/web/test/presentationStyle.browser.mjs",
         "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
         "apps/monkeyhub/web/test/renderView.test.ts",
+        "apps/monkeyhub/web/test/rhino3dmLoaderWorker.ts",
         "apps/monkeyhub/web/test/rhino3dmMaterials.test.ts"
       ],
       "depends_on": []
