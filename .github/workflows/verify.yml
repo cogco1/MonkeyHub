@@ -255,6 +255,11 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node test/viewportSelection.browser.mjs
 
+      - name: Document canvas browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/documentCanvas.browser.mjs
+
   hub-first-run:
     name: Hub first-run (${{ matrix.os }})
     strategy:
