@@ -215,6 +215,29 @@ another design, but is not a universal dependency direction. A changed design ma
 require revising relationships as well as values. Keep fixed conditions fixed unless
 the architect changes that decision; ask about a real conflict, not an internal id.
 
+## A requested change lands on the working design
+
+**Decision (Kaiwen, 2026-10-01, #575):** this revises GH-234 Q2, "only an explicit Continue
+moves the head". The person's request is the explicit Continue.
+
+- When an agent's result for a change the person asked for passes the agent's own checks and is
+  admitted ([ADR-010](../decisions/010-admission-is-the-agents-registration.md)), the agent continues
+  to it in the same turn. This is `PUT /api/working-draft`, which the Hub binds to the message that
+  asked for the change (#294 Q3).
+- Results stay side by side as candidates only when the person asked for options or alternatives
+  (a Study), or when the agent's checks did not pass. Continuing to any other result still needs the
+  person's words.
+- The view follows the head, and its notice offers 撤销: the same Continue back onto the previous
+  position, compare-and-swapped as the Design Tree's Undo is. It is offered only where the working
+  position named that position. A head that a line's Stage or the reference run answered for is not
+  guessed back.
+
+The Runtime does not change. Generating a result never moves the head by itself; only that explicit
+write does. Stage acceptance and formal issue stay the architect's acts. Kaiwen's reason:
+"这个工具就是智能化帮人管理模型和设计状态的，每次把一堆状态丢给人，就违背了初衷."
+On the class project, a requested materials change became a candidate that the architect had to find
+and continue by hand.
+
 ## Development order
 
 1. **One stair revision.** Use the existing project's stair, landing, side supports
