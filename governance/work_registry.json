@@ -1,4 +1,45 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-575",
+      "lanes": [
+        {
+          "id": "tree2",
+          "status": "active",
+          "branch": "codex/575-tree2",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-575-tree2",
+          "base_ref": "2343593c69b10d4e3664361625eded0f6f7fd3be",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "project_runtime.candidate",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "services/project-runtime/src/project_runtime/status.py",
+            "services/project-runtime/src/project_runtime/api/dto/runtime.py",
+            "services/project-runtime/src/project_runtime/application/candidate.py",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/features/designTree/",
+            "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx",
+            "apps/monkeyhub/web/src/app/App.tsx",
+            "apps/monkeyhub/web/src/app/workingHead.ts",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/designTree.test.ts",
+            "apps/monkeyhub/web/test/designTree.browser.mjs",
+            "apps/monkeyhub/web/test/workingHead.test.ts",
+            "docs/protocols/project-runtime-api.md",
+            "governance/module_registry.json",
+            "docs/architecture/system-map.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
