@@ -1,4 +1,39 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-294",
+      "status": "active",
+      "branch": "codex/294-admission",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-294-admission",
+      "base_ref": "57619e60b7d4546eb3f18d2df55f38db03e0a31d",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "hub.shell",
+        "project_runtime.candidate",
+        "project_runtime.intent"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/judgments.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/mcp_server.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/tool_calls.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/visual_review.py",
+        "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/monkeyhub/api/tests/test_chat_admission.py",
+        "apps/monkeyhub/api/tests/test_runtime_operations.py",
+        "docs/architecture/project-runtime.md",
+        "services/project-runtime/src/project_runtime/api/dto/runtime.py",
+        "services/project-runtime/src/project_runtime/api/routes/runtime.py",
+        "services/project-runtime/src/project_runtime/application/candidate.py",
+        "services/project-runtime/src/project_runtime/application/design_history.py",
+        "services/project-runtime/src/project_runtime/jobs.py",
+        "services/project-runtime/src/project_runtime/status.py"
+      ],
+      "depends_on": []
+    }
+  ]
 }
