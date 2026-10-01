@@ -1,8 +1,10 @@
-"""A read-only Worktree Graph: current head, running work, other lines and conflicts."""
+"""A read-only Worktree Graph: current head, its line, running work, other lines and conflicts."""
 
 import base64
 from unittest import mock
 
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import INTENT_COMPILATION
 from archflow.project.refs import record_ref_from_uri
 from archflow.state.state_record import StateRecordEditKind, StateRecordOperator
 
@@ -11,10 +13,12 @@ from project_runtime.binding import ProjectBinding, bound_project
 from project_runtime.application.candidate import run_operator
 from project_runtime.jobs import Job
 from project_runtime.application.projection import project_state
+from project_runtime import status
 from project_runtime.status import worktree_graph
 from project_runtime.application.working_draft import lineage_of
 
-from .support import PROJECT_ID
+from .support import PROJECT_ID, REFERENCE_RUN_ID
+from .test_candidate_admission import AdmissionFixture
 from .test_rendering import Adapter, finished, png, request, submit
 from .test_working_source import WorkingSourceFixture
 
@@ -101,6 +105,8 @@ class WorktreeGraphTests(WorkingSourceFixture):
         [result] = self.lines(graph, "result")
         self.assertEqual((result["runId"], result["reconcile"]), (second, "conflict"))
         self.assertIn("entity:portico-base", result["conflicts"])
+        # Another attempt at what the head's line changed from the same Stage, never taken further (#575).
+        self.assertEqual((result["relation"], result["supersededBy"]), ("superseded", first))
         self.assertEqual((self.repository.read_working_draft(), self.repository.read_design_branches(),
                           self.repository.read_head()), before)
 
@@ -238,3 +244,116 @@ class WorktreeGraphTests(WorkingSourceFixture):
         self.assertEqual((len(lineage), lineage[0], lineage[-1]), (5, run, stage["candidateId"]))
         # Retained changes never change: only the root without one is read again.
         self.assertEqual(reads, [stage["candidateId"]])
+
+
+class HeadLineTests(AdmissionFixture):
+    """The Working Head's line and the drafts it superseded (#575), shaped like thi-hemp-study-01.
+
+    Nothing is admitted and nothing is staged: outside agents made each run through the runtime API and
+    the person continued them one after another, while two earlier attempts at the third step stayed
+    retained beside the line.
+    """
+
+    def graph(self) -> dict:
+        response = self.client.get("/api/worktrees")
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def results(self, graph: dict) -> dict[str, dict]:
+        return {line["runId"]: line for line in graph["lines"] if line["kind"] == "result"}
+
+    def save(self, run_id: str, label: str) -> None:
+        position = self.client.get("/api/working-draft").json()
+        response = self.client.post("/api/working-draft/save", json={
+            "projectId": PROJECT_ID, "runId": run_id, "baseRevisionSha256": position["revisionSha256"], "label": label})
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def line_with_two_drafts(self) -> tuple[str, str, str, str, tuple[str, str]]:
+        """A → B → C → D: two drafts were built on B before C, also built on B, was continued."""
+
+        a = REFERENCE_RUN_ID
+        b = self.result(height=2.2)
+        self.adopt(b)
+        drafts = (self.result(source=b, height=2.6), self.result(source=b, height=2.65))
+        c = self.result(source=b, height=2.7)
+        self.adopt(c)
+        d = self.result(source=c, height=2.8)
+        self.adopt(d)
+        return a, b, c, d, drafts
+
+    def test_drafts_the_line_moved_past_are_superseded_and_the_line_is_named(self):
+        a, b, c, d, drafts = self.line_with_two_drafts()
+        self.save(b, "V2")
+        self.save(drafts[0], "V3 - closed wall and simple mono-pitch roof")
+        # The words that asked for D, as an intent model compiled them into its run.
+        self.repository.put_json(run=self.repository.load_run(d), record_kind=INTENT_COMPILATION,
+                                 destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=d),
+                                 payload={"schema": "IntentCompilation@1", "proposal_id": "proposal-d",
+                                          "utterance": "Give the ribs their materials", "base_state_digest": "0" * 64,
+                                          "receipt": {}})
+        # C's agent admitted it with its own words; a saved name would still come first.
+        self.admit({"runId": c, "outcome": "admitted", "label": "V3 - ribbed roof", "summary": "Ribs at 1.2 m"},
+                   rawLanguage="Make the roof ribbed")
+        before = (self.repository.read_working_draft(), self.repository.read_design_branches(), self.repository.read_head())
+        with mock.patch.object(status, "_reconcile", wraps=status._reconcile) as compared:
+            graph = self.graph()
+        self.assertEqual(graph["head"]["runId"], d)
+        line = graph["line"]
+        self.assertEqual([step["runId"] for step in line], [a, b, c, d], "the line is A..D, oldest first")
+        self.assertEqual([step["baseRunId"] for step in line], [None, a, b, c])
+        self.assertEqual([step["label"] for step in line], [None, "V2", "V3 - ribbed roof", None])
+        self.assertEqual([step["request"] for step in line], [None, None, "Make the roof ribbed", "Give the ribs their materials"])
+        self.assertEqual([step["summary"] for step in line], [None, None, "Ribs at 1.2 m", None])
+        self.assertEqual([step["stageRef"] for step in line], [None] * 4)
+        self.assertTrue(all(step["updatedAt"] for step in line[1:]), line)
+        results = self.results(graph)
+        self.assertEqual(set(results), set(drafts), "the drafts are listed, never dropped")
+        for draft in drafts:
+            row = results[draft]
+            self.assertEqual((row["relation"], row["supersededBy"], row["baseRunId"], row["admission"]),
+                             ("superseded", c, b, "none"))
+            # The comparison that says so stays, for whoever asks; it is not the line's state.
+            self.assertEqual(row["reconcile"], "conflict")
+            self.assertIn("entity:portico-base", row["conflicts"])
+        self.assertEqual(results[drafts[0]]["label"], "V3 - closed wall and simple mono-pitch roof")
+        self.assertEqual(compared.call_count, 2)
+        [head] = [row for row in graph["lines"] if row["kind"] == "head"]
+        self.assertEqual((head["relation"], head["supersededBy"]), ("head", None))
+        # Reading writes, moves and deletes nothing.
+        self.assertEqual((self.repository.read_working_draft(), self.repository.read_design_branches(),
+                          self.repository.read_head()), before)
+        self.assertTrue(set(drafts) <= set(self.repository.run_ids()))
+
+    def test_a_draft_somebody_took_further_stays_a_diverged_line(self):
+        _a, b, _c, d, (continued, admitted) = self.line_with_two_drafts()
+        built_on = self.result(source=b, height=2.55)
+        further = self.result(source=built_on, height=2.58)
+        # The person stood on one draft once, and on a result built on another, before returning to D.
+        self.adopt(continued)
+        self.adopt(further)
+        self.adopt(d)
+        self.admit({"runId": admitted, "outcome": "admitted", "label": "B"})
+        results = self.results(self.graph())
+        for run in (continued, admitted, built_on, further):
+            self.assertEqual((results[run]["relation"], results[run]["supersededBy"], results[run]["reconcile"]),
+                             ("diverged", None, "conflict"), run)
+
+    def test_returning_to_an_earlier_step_shortens_the_line_and_supersedes_nothing(self):
+        _a, b, c, d, drafts = self.line_with_two_drafts()
+        self.adopt(b)
+        graph = self.graph()
+        self.assertEqual([step["runId"] for step in graph["line"]], [REFERENCE_RUN_ID, b])
+        results = self.results(graph)
+        # Everything built on B now continues the head; nothing is superseded, and the later steps stay retained.
+        self.assertEqual({run: results[run]["relation"] for run in (*drafts, c, d)}, dict.fromkeys((*drafts, c, d), "ahead"))
+        self.adopt(d)
+        self.assertEqual({row["relation"] for row in self.results(self.graph()).values()}, {"superseded"})
+
+    def test_a_stage_on_the_line_is_named_by_its_label(self):
+        stage = self.stage("S0")
+        first = self.result(stage, 2.2)
+        self.adopt(first)
+        line = self.graph()["line"]
+        self.assertEqual([step["runId"] for step in line], [stage["candidateId"], first])
+        self.assertEqual((line[0]["label"], line[0]["stageRef"]), ("S0", stage["stageRef"]))
+        self.assertEqual((line[1]["label"], line[1]["stageRef"], line[1]["baseRunId"]), (None, None, stage["candidateId"]))
