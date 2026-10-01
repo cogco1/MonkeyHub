@@ -7,9 +7,9 @@ declaration that no file imported any more or that named nothing at all.
 
 Now an import is held by the entry whose files list the imported module, and
 depends_on lists module ids only. An entry that is not one is unknown; one whose
-module the files no longer import is stale; an imported module whose id begins
-with one of the policy's declared_dependency_namespaces must be declared. The
-hand-kept used_by list is retired.
+module the files no longer import is stale; an import of a file in a unit whose
+namespace the policy's declared_dependency_namespaces lists must be declared by
+the id that holds it. The hand-kept used_by list is retired.
 
 The cases build small trees in a temporary directory; nothing here reads or
 writes this repository.
@@ -107,14 +107,19 @@ class RegistryDependencyTests(unittest.TestCase):
             _write(self.root, relative, text)
 
     def findings(
-        self, source: str, depends_on: list[str], *, consumer: str = "tools/consumer.py",
-        consumer_id: str = "tools.consumer", policy: dict[str, object] | None = None, **changes: object,
+        self, source: str, depends_on: object, *, consumer: str = "tools/consumer.py",
+        consumer_id: str = "tools.consumer", files: list[str] | None = None,
+        extra: tuple[dict[str, object], ...] = (), policy: dict[str, object] | None = None, **changes: object,
     ) -> list[tuple[str, str]]:
-        """The dependency findings for one consumer whose file, its owner_path, is ``source``."""
+        """The dependency findings for one consumer whose file, its owner_path, is ``source``.
+
+        ``files`` lists the consumer's files when it holds more than its owner_path,
+        and ``extra`` registers further entries ahead of the fixture owners.
+        """
 
         _write(self.root, consumer, source)
-        modules = [_entry(module_id, files, []) for module_id, files in OWNERS.items() if module_id != consumer_id]
-        modules.append(_entry(consumer_id, OWNERS.get(consumer_id, [consumer]), depends_on, **changes))
+        modules = [*extra, *(_entry(module_id, held, []) for module_id, held in OWNERS.items() if module_id != consumer_id)]
+        modules.append(_entry(consumer_id, files or OWNERS.get(consumer_id, [consumer]), depends_on, **changes))
         _write(self.root, REGISTRY_PATH, json.dumps({"modules": modules}))
         return [
             (item.code, item.message)
@@ -154,6 +159,13 @@ class RegistryDependencyTests(unittest.TestCase):
               "name; archflow.project.repository holds that module and is named already, so drop it")],
             self.findings(source, ["archflow.project.digests", "archflow.project.repository"]),
         )
+        # Naming a holder the files do not import would only be stale next.
+        self.assertEqual(
+            [("REGISTRY_DEPENDS_ON_UNKNOWN",
+              "tools.consumer depends_on 'archflow.project.digests' is not a registered module id but an import "
+              "name; archflow.project.repository holds that module, which none of its files imports, so drop it")],
+            self.findings("VALUE = 1\n", ["archflow.project.digests"]),
+        )
         self.assertEqual([], self.findings(source, ["archflow.project.repository"]))
 
     def test_an_import_name_of_an_entrys_own_file_is_dropped(self) -> None:
@@ -192,6 +204,18 @@ class RegistryDependencyTests(unittest.TestCase):
         )
         # With no declared namespace nothing has to be declared, and declarations are still checked.
         self.assertEqual([], self.findings(source, [], policy=_policy(declared_dependency_namespaces=[])))
+
+    def test_what_must_be_declared_is_decided_by_where_the_imported_file_lies(self) -> None:
+        # A tools entry may list a file of the kernel; importing it is still an import of the kernel.
+        _write(self.root, "tools/study.py", "STUDY = 1\n")
+        holder = _entry("tools.study", ["tools/study.py", "packages/archflow/src/archflow/state/loose.py"], [])
+        source = "from archflow.state.loose import LOOSE\nfrom tools.study import STUDY\n"
+        self.assertEqual(
+            [("REGISTRY_DEPENDS_ON_DRIFT",
+              "tools.consumer imports archflow.state.loose (held by tools.study) but depends_on does not name tools.study")],
+            self.findings(source, [], extra=(holder,)),
+        )
+        self.assertEqual([], self.findings("from tools.study import STUDY\n", [], extra=(holder,)))
 
     def test_each_import_form_reaches_the_module_that_holds_what_it_takes(self) -> None:
         for source, holder in (
@@ -239,8 +263,39 @@ class RegistryDependencyTests(unittest.TestCase):
             [("REGISTRY_DEPENDS_ON_UNKNOWN",
               "tools.consumer depends_on None is not a registered module id; depends_on lists module ids, and no "
               "entry's files hold a module of that name")],
-            self.findings("VALUE = 1\n", [None]),  # type: ignore[list-item]
+            self.findings("VALUE = 1\n", [None]),
         )
+        self.assertEqual(
+            [("REGISTRY_DEPENDS_ON_UNKNOWN", "tools.consumer depends_on must be a list of module ids, not 'archflow.state'")],
+            self.findings("from archflow.state import KINDS\n", "archflow.state",
+                          policy=_policy(declared_dependency_namespaces=[])),
+        )
+
+    def test_a_listed_directory_holds_the_python_below_it(self) -> None:
+        _write(self.root, "tools/pkg/mod.py", "from archflow.contracts.canonical import canonical_json\n")
+        package = {"consumer": "tools/pkg/__init__.py", "consumer_id": "tools.pkg",
+                   "files": ["tools/pkg/__init__.py", "tools/pkg/"]}
+        # What the directory's files import counts, for a declaration and for drift alike.
+        self.assertEqual([], self.findings("", ["archflow.contracts.canonical"], **package))
+        self.assertEqual(["REGISTRY_DEPENDS_ON_DRIFT"], [code for code, _ in self.findings("", [], **package)])
+        # And a module below it is the entry's own.
+        holder = _entry("tools.pkg", ["tools/pkg/__init__.py", "tools/pkg/"], ["archflow.contracts.canonical"])
+        findings = self.findings("from tools.pkg.mod import canonical_json\n", [], extra=(holder,),
+                                 policy=_policy(declared_dependency_namespaces=["archflow", "tools"]))
+        self.assertEqual(
+            [("REGISTRY_DEPENDS_ON_DRIFT",
+              "tools.consumer imports tools.pkg.mod (held by tools.pkg) but depends_on does not name tools.pkg")],
+            findings,
+        )
+
+    def test_a_module_an_entry_lists_is_its_own_even_when_another_lists_it_first(self) -> None:
+        _write(self.root, "tools/first.py", "FIRST = 1\n")
+        _write(self.root, "tools/shared.py", "SHARED = 1\n")
+        first = _entry("tools.first", ["tools/first.py", "tools/shared.py"], [])
+        self.assertEqual([], self.findings(
+            "from tools.shared import SHARED\n", [], files=["tools/consumer.py", "tools/shared.py"], extra=(first,),
+            policy=_policy(declared_dependency_namespaces=["archflow", "tools"]),
+        ))
 
     def test_used_by_is_retired(self) -> None:
         findings = self.findings("VALUE = 1\n", [], used_by=["tools/report.py"])
