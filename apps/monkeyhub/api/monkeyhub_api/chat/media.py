@@ -68,7 +68,7 @@ def _registered_page(binding, ref: ChatDocumentRef):
 
 
 # What an image discussion can hand to the existing Render: its registered
-# PNG and JPEG pages (studio.render resolves no other kind).
+# PNG and JPEG pages (project_runtime.render resolves no other kind).
 _RENDER_IMAGE_MIMES = frozenset({"image/png", "image/jpeg"})
 
 

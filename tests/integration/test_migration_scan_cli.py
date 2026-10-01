@@ -9,7 +9,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STATE_RECORD
 from archflow.project.refs import record_file_name
 from archflow.project.repository import _json_bytes, _sha256, _write_immutable
-from tests.integration import test_project_format_migration as format_tests
+from tests.integration.support import ProjectFormatFixture
 from tools.project.create_project import (
     RetainedVersionReference,
     UnreadableVersionReference,
@@ -24,7 +24,7 @@ class MigrationScanCliTests(unittest.TestCase):
         # second, weaker definition of a migratable retained project here.
         # "runTest" is the sentinel name unittest does not resolve, so this does
         # not depend on an unrelated test method keeping its name.
-        self.fixture = format_tests.ProjectFormatPlannerTests(methodName="runTest")
+        self.fixture = ProjectFormatFixture(methodName="runTest")
         self.fixture.setUp()
         # The fixture's own doCleanups() swallows a failing cleanup when the
         # fixture was never run(), so register the temporary directory directly.
@@ -124,7 +124,7 @@ class MigrationScanCliTests(unittest.TestCase):
     def test_collector_names_the_two_key_and_flat_digest_shapes(self) -> None:
         """The shapes real writers retain besides the exact three-key mapping.
 
-        ``state.spatial`` keeps a branch base as ``{version, state_sha256}``
+        ``archflow.state.spatial`` keeps a branch base as ``{version, state_sha256}``
         and a CAD receipt keeps one as ``base_version``/``base_state_sha256``.
         A scan that knew only the exact mapping would call a project surveyed
         while those sat unlisted.

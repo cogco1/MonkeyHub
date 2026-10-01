@@ -58,7 +58,7 @@ from monkeycad.formats.three_dm_inspector import inspect_three_dm
 from monkeycad.program import CadTranslationError
 from monkeyarch.authoring.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
 from monkeyarch.domain.reference_resolver import ReferenceContext
-from archflow.state.geometry_program import CompiledGeometryObject, CompiledGeometryProgram
+from archflow.state.geometry_program import CompiledGeometryProgram
 from monkeyarch.compilation.geometry import compile_geometry_program
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import stage_geometry_program
@@ -72,9 +72,25 @@ from archflow.state.geometry_program import (
     LengthUnit,
 )
 from archflow.state.state_record import StateRecord, project_grids_of, project_levels_of
-from tests.integration.support import EVIDENCE, RECORD_PAYLOAD, authored_record, shared_bound_state
-from tests.integration.test_cad_execution import _binding as _synthetic_binding, _program as _synthetic_program
-from tests.integration.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
+from tests.integration.support import (
+    COMMITMENT,
+    EVIDENCE,
+    RECORD_PAYLOAD,
+    _array,
+    _binding as _synthetic_binding,
+    _box,
+    _loft,
+    _no_process,
+    _only,
+    _program as _synthetic_program,
+    _program_of,
+    _proposal,
+    _radial_array,
+    _single_operation_program,
+    _state,
+    authored_record,
+    shared_bound_state,
+)
 from tools.dev import source_roots
 
 OCCT_AVAILABLE = occt_available()
@@ -685,16 +701,6 @@ def _persisted_binding(program: CompiledGeometryProgram, stage_id: str) -> Rhino
         design_state_digest=program.proposal.design_state_digest,
         predecessor_program_digest=None,
     )
-
-
-def _no_process():
-    """Any attempt to start a process (Rhino, PowerShell) fails the test."""
-
-    return patch.multiple(subprocess, Popen=_refuse_process, run=_refuse_process)
-
-
-def _refuse_process(*args, **kwargs):
-    raise AssertionError(f"the OCCT executor must not start a process: {args[:1]}")
 
 
 def _execute(program, binding, workspace: Path, stem: str, **options) -> tuple[OcctExecutionReceipt, float]:
@@ -1484,55 +1490,6 @@ class SolidBoxRoundTripTests(unittest.TestCase):
 # ---------------------------------------------------------------- capability boundary
 
 
-def _single_operation_program(operation: GeometryOperation) -> CompiledGeometryProgram:
-    """The synthetic fixture program with its one operation replaced."""
-
-    program = _synthetic_program()
-    output = operation.output_object_ids[0]
-    binding = replace(program.proposal.semantic_bindings[0], object_ids=(output,))
-    proposal = replace(program.proposal, operations=(operation,), semantic_bindings=(binding,))
-    return replace(
-        program,
-        proposal=proposal,
-        operation_order=(operation.op_id,),
-        objects=(CompiledGeometryObject(object_id=output, producer_op_id=operation.op_id, object_digest="3" * 64),),
-    )
-
-
-def _loft(op_id: str, *, profile_basis: str = "polyline", cap_ends: bool = True) -> GeometryOperation:
-    square = lambda y: [[0.0, y, 0.0], [1.0, y, 0.0], [1.0, y, 1.0], [0.0, y, 1.0]]
-    return GeometryOperation(
-        op_id=op_id,
-        kind=GeometryOperationKind.LOFT,
-        output_object_ids=(f"{op_id}-object",),
-        input_object_ids=(),
-        frame_id="world",
-        parameters=(
-            GeometryParameter.create(name="cap_ends", kind=GeometryParameterKind.BOOLEAN, value=cap_ends),
-            GeometryParameter.create(name="loft_type", kind=GeometryParameterKind.TEXT, value="straight"),
-            GeometryParameter.create(name="profile_basis", kind=GeometryParameterKind.TEXT, value=profile_basis),
-            GeometryParameter.create(name="profile_size", kind=GeometryParameterKind.INTEGER, value=4),
-            GeometryParameter.create(name="profiles", kind=GeometryParameterKind.POINTS3, value=square(0.0) + square(2.0), unit=LengthUnit.METER),
-        ),
-        semantic_binding_ids=("body-binding",),
-    )
-
-
-def _box(op_id: str, origin: list[float], size: list[float]) -> GeometryOperation:
-    return GeometryOperation(
-        op_id=op_id,
-        kind=GeometryOperationKind.SOLID,
-        output_object_ids=(f"{op_id}-object",),
-        input_object_ids=(),
-        frame_id="world",
-        parameters=(
-            GeometryParameter.create(name="origin", kind=GeometryParameterKind.VECTOR3, value=origin, unit=LengthUnit.METER),
-            GeometryParameter.create(name="size", kind=GeometryParameterKind.VECTOR3, value=size, unit=LengthUnit.METER),
-        ),
-        semantic_binding_ids=("body-binding",),
-    )
-
-
 def _intersection_program(*boxes: GeometryOperation) -> CompiledGeometryProgram:
     """The synthetic fixture with the given boxes met by one ``boolean_intersection``; only the meet is physical."""
 
@@ -1546,57 +1503,6 @@ def _intersection_program(*boxes: GeometryOperation) -> CompiledGeometryProgram:
         semantic_binding_ids=("body-binding",),
     )
     return _program_of(*boxes, meet)
-
-
-def _array(op_id: str, source: GeometryOperation, *, count: int, step: list[float]) -> GeometryOperation:
-    return GeometryOperation(
-        op_id=op_id,
-        kind=GeometryOperationKind.ARRAY,
-        output_object_ids=(f"{op_id}-object",),
-        input_object_ids=(source.output_object_ids[0],),
-        frame_id="world",
-        parameters=(
-            GeometryParameter.create(name="count", kind=GeometryParameterKind.INTEGER, value=count),
-            GeometryParameter.create(name="step", kind=GeometryParameterKind.VECTOR3, value=step, unit=LengthUnit.METER),
-        ),
-        semantic_binding_ids=("body-binding",),
-    )
-
-
-def _radial_array(op_id: str, source: GeometryOperation) -> GeometryOperation:
-    return GeometryOperation(
-        op_id=op_id,
-        kind=GeometryOperationKind.RADIAL_ARRAY,
-        output_object_ids=(f"{op_id}-object",),
-        input_object_ids=(source.output_object_ids[0],),
-        frame_id="world",
-        parameters=(
-            GeometryParameter.create(name="angle_step_degrees", kind=GeometryParameterKind.NUMBER, value=90.0),
-            GeometryParameter.create(name="center", kind=GeometryParameterKind.VECTOR3, value=[0.0, 0.0, 0.0], unit=LengthUnit.METER),
-            GeometryParameter.create(name="count", kind=GeometryParameterKind.INTEGER, value=4),
-        ),
-        semantic_binding_ids=("body-binding",),
-    )
-
-
-def _program_of(*operations: GeometryOperation) -> CompiledGeometryProgram:
-    """The synthetic fixture carrying exactly these operations, executed in the given order."""
-
-    program = _synthetic_program()
-    binding = replace(program.proposal.semantic_bindings[0], object_ids=tuple(sorted(op.output_object_ids[0] for op in operations)))
-    proposal = replace(
-        program.proposal, operations=tuple(sorted(operations, key=lambda op: op.op_id)), semantic_bindings=(binding,)
-    )
-    objects = tuple(
-        sorted(
-            (
-                CompiledGeometryObject(object_id=op.output_object_ids[0], producer_op_id=op.op_id, object_digest=f"{index}" * 64)
-                for index, op in enumerate(operations, start=1)
-            ),
-            key=lambda item: item.object_id,
-        )
-    )
-    return replace(program, proposal=proposal, operation_order=tuple(op.op_id for op in operations), objects=objects)
 
 
 L_SLAB = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 0.0, 4.0], [4.0, 0.0, 4.0], [4.0, 0.0, 8.0], [0.0, 0.0, 8.0]]

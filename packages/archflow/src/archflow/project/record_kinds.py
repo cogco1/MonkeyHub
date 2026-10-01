@@ -517,15 +517,16 @@ _TABLE: tuple[RecordKind, ...] = (
         COMPONENT_TEMPLATE,
         "ComponentTemplate@1",
         _RUN_RECORD,
-        "read by capabilities.geometry_proposal through template_refs; the "
+        "read by monkeyarch.application.geometry_proposal through template_refs; the "
         "library that harvests one was archived, so no spine module writes one",
     ),
     RecordKind(
         CATALOG_CONFRONTATION,
         "CatalogConfrontationReceipt@1",
         _RUN_RECORD,
-        "which templates a catalog confrontation selected; capabilities."
-        "geometry_proposal checks this schema by name, and writes none",
+        "which templates a catalog confrontation selected; "
+        "monkeyarch.application.geometry_proposal checks this schema by name, "
+        "and writes none",
     ),
     RecordKind(
         COMPONENT_CATALOG,
@@ -565,7 +566,7 @@ _TABLE: tuple[RecordKind, ...] = (
         # the payload's key set literally and retained receipts bind it
         # (ADR-004). The act it gates is an issue (ADR-007).
         "the accepted exact-base decision prepare_transition demands before a "
-        "run is issued as the published design; project.issue mints one",
+        "run is issued as the published design; archflow.project.issue mints one",
     ),
     RecordKind(
         RESEARCH_EVIDENCE_LEDGER,

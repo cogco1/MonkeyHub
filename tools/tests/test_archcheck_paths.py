@@ -5,7 +5,9 @@ exists is walked as an empty set, a layer rule whose source matches nothing
 never fires, a layer rule's target that names a module nobody can import
 forbids nothing, and a registry that names a moved file keeps describing the
 old tree. Moving the repository's packages (#484 and the topology lanes after
-it) would otherwise leave each of these guards silently switched off.
+it) would otherwise leave each of these guards silently switched off. A
+registered module id, in turn, begins with the namespace of the package or
+service that holds its owner (#523).
 
 The cases build small trees in a temporary directory; the root-entry and docs
 cases make it a Git repository, because both are read from the index, and so
@@ -65,6 +67,7 @@ def _policy(**changes: object) -> dict[str, object]:
         ],
         "authority_symbol_patterns": [],
         "allowed_authority_symbols": [],
+        "module_id_namespaces": {"tools": "tools"},
     }
     policy.update(changes)
     validate_policy(policy)
@@ -603,6 +606,139 @@ class RegistryPathTests(unittest.TestCase):
         self.assertEqual([("REGISTRY_PATH_MISSING", "spine.spec: docs/ is not a file")], findings)
 
 
+# The distribution units of the topology and the namespace each gives its module ids (#523).
+NAMESPACES = {
+    "packages/archflow/src/archflow": "archflow",
+    "packages/monkeyarch/src/monkeyarch": "monkeyarch",
+    "packages/monkeydiagram/src/monkeydiagram": "monkeydiagram",
+    "packages/monkeymonitor/src/monkeymonitor": "monkeymonitor",
+    "services/project-runtime/src/project_runtime": "project_runtime",
+    "apps/monkeyhub/api/monkeyhub_api": "hub",
+    "tools": "tools",
+}
+
+
+class RegistryIdNamespaceTests(unittest.TestCase):
+    """A module id begins with the namespace of the unit that holds its owner (#523).
+
+    Before the rule, ids named the kernel's subpackage but not the package
+    (``state.*`` ids lived in archflow and in monkeyarch), a retired product
+    (``studio.*`` for the Project Runtime) or a namespace the service shares
+    with a workflow (``runtime.*``): an id alone could not say where its owner
+    was.
+    """
+
+    OWNERS = (
+        "packages/archflow/src/archflow/project/repository.py",
+        "packages/archflow/src/archflow/project/index/__init__.py",
+        "packages/monkeyarch/src/monkeyarch/application/project_runner.py",
+        "packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py",
+        "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py",
+        "packages/monkeymonitor/src/monkeymonitor/usage.py",
+        "services/project-runtime/src/project_runtime/binding.py",
+        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "tools/governance/archcheck.py",
+        "scripts/dev/start.py",
+        "toolsets/check.py",
+    )
+
+    def setUp(self) -> None:
+        self.root = _temporary_root(self)
+        for relative in self.OWNERS:
+            _write(self.root, relative)
+
+    def findings(self, *modules: tuple[str, str], namespaces: dict[str, str] = NAMESPACES) -> list[tuple[str, str]]:
+        _write(self.root, REGISTRY_PATH, {"modules": [
+            {"module_id": module_id, "owner_path": owner, "depends_on": [], "untested_reason": "synthetic owner"}
+            for module_id, owner in modules
+        ]})
+        return [(item.code, item.message) for item in check_registry(self.root, _policy(module_id_namespaces=namespaces))]
+
+    def test_ids_that_begin_with_their_units_namespace_pass(self) -> None:
+        self.assertEqual([], self.findings(
+            ("archflow.project.repository", "packages/archflow/src/archflow/project/repository.py"),
+            ("archflow.project.index", "packages/archflow/src/archflow/project/index/__init__.py"),
+            ("monkeyarch.application.project_runner", "packages/monkeyarch/src/monkeyarch/application/project_runner.py"),
+            # A package-level id is the namespace alone; the Hub names its owner by capability.
+            ("monkeymonitor", "packages/monkeymonitor/src/monkeymonitor/usage.py"),
+            ("project_runtime.binding", "services/project-runtime/src/project_runtime/binding.py"),
+            ("hub.shell", "apps/monkeyhub/api/monkeyhub_api/main.py"),
+            ("tools.governance.archcheck", "tools/governance/archcheck.py"),
+        ))
+
+    def test_an_id_that_names_another_namespace_is_a_finding(self) -> None:
+        findings = self.findings(
+            ("project.repository", "packages/archflow/src/archflow/project/repository.py"),
+            ("state.massing_metrics", "packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py"),
+            ("runtime.project_runner", "packages/monkeyarch/src/monkeyarch/application/project_runner.py"),
+            ("adapters.drawing_svg", "packages/monkeydiagram/src/monkeydiagram/rendering/svg.py"),
+            ("studio.binding", "services/project-runtime/src/project_runtime/binding.py"),
+            ("monkeyhub.shell", "apps/monkeyhub/api/monkeyhub_api/main.py"),
+        )
+        self.assertEqual(["REGISTRY_ID_NAMESPACE"] * 6, [code for code, _ in findings])
+        messages = "\n".join(message for _, message in findings)
+        for text in (
+            "project.repository: owner_path packages/archflow/src/archflow/project/repository.py is in "
+            "packages/archflow/src/archflow, whose module ids begin with 'archflow', but this id begins with 'project'",
+            "state.massing_metrics: owner_path packages/monkeyarch/src/monkeyarch/domain/massing_metrics.py "
+            "is in packages/monkeyarch/src/monkeyarch, whose module ids begin with 'monkeyarch', but this id begins with 'state'",
+            "whose module ids begin with 'monkeyarch', but this id begins with 'runtime'",
+            "whose module ids begin with 'monkeydiagram', but this id begins with 'adapters'",
+            "studio.binding: owner_path services/project-runtime/src/project_runtime/binding.py is in "
+            "services/project-runtime/src/project_runtime, whose module ids begin with 'project_runtime', "
+            "but this id begins with 'studio'",
+            "whose module ids begin with 'hub', but this id begins with 'monkeyhub'",
+        ):
+            self.assertIn(text, messages)
+
+    def test_an_owner_outside_every_unit_is_a_finding(self) -> None:
+        # Units are matched on whole path segments: toolsets/ is not tools/.
+        findings = self.findings(("scripts.start", "scripts/dev/start.py"), ("tools.check", "toolsets/check.py"))
+        self.assertEqual(["REGISTRY_ID_NAMESPACE"] * 2, [code for code, _ in findings])
+        self.assertIn(
+            "scripts.start: owner_path scripts/dev/start.py is in no distribution unit that module_id_namespaces names",
+            findings[0][1],
+        )
+        self.assertIn("tools.check: owner_path toolsets/check.py is in no distribution unit", findings[1][1])
+
+    def test_the_longest_unit_holding_the_owner_names_the_namespace(self) -> None:
+        nested = {**NAMESPACES, "tools/governance": "governance"}
+        self.assertEqual([], self.findings(("governance.archcheck", "tools/governance/archcheck.py"), namespaces=nested))
+        findings = self.findings(("tools.governance.archcheck", "tools/governance/archcheck.py"), namespaces=nested)
+        self.assertEqual(["REGISTRY_ID_NAMESPACE"], [code for code, _ in findings])
+        self.assertIn("is in tools/governance, whose module ids begin with 'governance'", findings[0][1])
+
+    def test_the_policy_must_name_the_units(self) -> None:
+        # A policy without the table would hold no id to anything.
+        without = _policy()
+        del without["module_id_namespaces"]
+        with self.assertRaisesRegex(ArchitecturePolicyError, "module_id_namespaces"):
+            validate_policy(without)
+
+    def test_a_unit_that_is_gone_is_a_finding(self) -> None:
+        moved = {**NAMESPACES, "packages/monkeycad/src/monkeycad": "monkeycad", "scripts/dev/start.py": "scripts"}
+        findings = [
+            (item.code, item.message)
+            for item in check_policy_paths(self.root, _policy(module_id_namespaces=moved))
+            if "module_id_namespaces" in item.message
+        ]
+        self.assertEqual(["POLICY_PATH_MISSING"] * 2, [code for code, _ in findings])
+        self.assertIn(
+            "module_id_namespaces entry 'packages/monkeycad/src/monkeycad' does not exist; no module id is checked against it",
+            findings[0][1],
+        )
+        self.assertIn("module_id_namespaces entry 'scripts/dev/start.py' is not a directory", findings[1][1])
+
+    def test_the_table_maps_repository_directories_to_one_id_segment(self) -> None:
+        for namespaces in (
+            ["tools"], {}, {"/tools": "tools"}, {"tools/*": "tools"}, {"..": "tools"}, {"apps\\monkeyhub": "hub"},
+            {"tools": "Tools"}, {"tools": "tools.governance"}, {"tools": ""}, {"tools": None},
+            {"tools": "tools", "tools/": "tools"},
+        ):
+            with self.subTest(namespaces=namespaces), self.assertRaisesRegex(ArchitecturePolicyError, "module_id_namespaces"):
+                _policy(module_id_namespaces=namespaces)
+
+
 class ImportNameTests(unittest.TestCase):
     """A registered owner is matched by the name it is imported with."""
 
@@ -620,6 +756,10 @@ class ImportNameTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(name, _module_name(path, roots))
 
+    # The owners' ids begin with their namespace but are not their import names,
+    # so a match can only come from the owner's path.
+    NAMESPACES = {"packages/archflow/src/archflow": "archflow", "monkeyarch": "monkeyarch", "tools": "tools"}
+
     def registry_findings(self, python_source_roots: list[str], owner: str, owner_id: str, imported: str) -> list[str]:
         root = _temporary_root(self)
         _write(root, owner)
@@ -629,19 +769,20 @@ class ImportNameTests(unittest.TestCase):
             {"module_id": "tools.consumer", "owner_path": "tools/consumer.py", "depends_on": [owner_id],
              "untested_reason": "synthetic consumer"},
         ]})
-        return [item.code for item in check_registry(root, _policy(python_source_roots=python_source_roots))]
+        policy = _policy(python_source_roots=python_source_roots, module_id_namespaces=self.NAMESPACES)
+        return [item.code for item in check_registry(root, policy)]
 
     def test_an_owner_under_a_src_layout_is_matched_through_its_source_root(self) -> None:
         owner = "packages/archflow/src/archflow/state/record.py"
-        self.assertEqual([], self.registry_findings([".", "packages/archflow/src"], owner, "state.ledger", "archflow.state.record"))
+        self.assertEqual([], self.registry_findings([".", "packages/archflow/src"], owner, "archflow.ledger", "archflow.state.record"))
         self.assertEqual(
             ["REGISTRY_DEPENDS_ON_DRIFT"],
-            self.registry_findings(["."], owner, "state.ledger", "archflow.state.record"),
+            self.registry_findings(["."], owner, "archflow.ledger", "archflow.state.record"),
         )
 
     def test_a_package_owner_is_the_package(self) -> None:
         self.assertEqual([], self.registry_findings(
-            ["."], "monkeyarch/authoring/construction/__init__.py", "construction.script", "monkeyarch.authoring.construction",
+            ["."], "monkeyarch/authoring/construction/__init__.py", "monkeyarch.script", "monkeyarch.authoring.construction",
         ))
 
 

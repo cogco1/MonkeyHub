@@ -5,7 +5,7 @@ words; a later turn that asks for it in other words finds it, and the target
 is read again every time. A source policy says where to look first for a
 research topic; a turn whose words are about that topic is handed it, and a
 new project can hold one from the user's words alone. Both are memory items
-(``studio.memory``) in their own ``studio-memory`` run under their own record
+(``project_runtime.memory``) in their own ``studio-memory`` run under their own record
 kind, never decisions: a build that predates them never reads one.
 """
 

@@ -12,7 +12,7 @@ from monkeyarch.compilation.geometry import (
 from archflow.state.spatial import NEUTRAL_SEMANTIC_KIND, ComponentMaturity, DesignComponent, SpatialProposalError, compile_component_transition
 from archflow.state.spatial import ConstraintResponseStatus, MassingVolume, SchematicOption, SiteBounds, SpatialConstraintResponse, SpatialGridBasis, SpatialLevel, SpatialOptionProposal, SpatialZone
 from archflow.state.geometry_program import SemanticBinding
-from tests.integration.test_geometry_compiler import COMMITMENT, _proposal, _state
+from spine_fixture import COMMITMENT, _proposal, _state
 
 
 # The option these tests deepen, as ArchFlow's own suite builds it
@@ -189,7 +189,7 @@ class SemanticGeometryTreeTests(unittest.TestCase):
     def test_removed_projection_and_p026_bypass_have_no_production_route(
         self,
     ) -> None:
-        packages = Path(__file__).resolve().parents[2] / "packages"
+        packages = Path(__file__).resolve().parents[3] / "packages"
         root = packages / "archflow" / "src" / "archflow"
         # The CAD package left the kernel (#514) and stays inside the scan.
         cad = packages / "monkeycad" / "src" / "monkeycad"

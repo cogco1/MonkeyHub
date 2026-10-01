@@ -1,6 +1,6 @@
 # Conversational model conversion (#256)
 
-Implementation plan: extend `studio.artifacts` with a conversion coordinator and
+Implementation plan: extend `project_runtime.documents` with a conversion coordinator and
 format adapters; use the existing `JobRegistry` and P036 object/run-record ports.
 Extend Hub's bound `studio_request` flow for model attachments and downloads.
 Never change HEAD or treat an uploaded file as the current project state.

@@ -111,8 +111,8 @@ def run_capability(
     """Perform one capability: propose it, then queue the candidate.
 
     Both halves are the existing routes, called as they are: the proposal is
-    parsed, targeted and impact-checked by ``studio.intent``, and the run is
-    arranged by ``studio.candidate`` against the same exact base. A conflict
+    parsed, targeted and impact-checked by ``project_runtime.intent``, and the run is
+    arranged by ``project_runtime.candidate`` against the same exact base. A conflict
     with a kept ref raises out of the second call, so a refused change leaves
     a proposal and no run — never a candidate nobody asked for.
 

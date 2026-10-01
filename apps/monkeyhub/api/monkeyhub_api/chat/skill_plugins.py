@@ -1,7 +1,7 @@
 """The library project's skills, handed to Claude as a plugin of its own (#252).
 
 A library is an ordinary complete project named in the application settings.
-Its skills are retained there by ``studio.skills``; the Hub reads them through
+Its skills are retained there by ``project_runtime.skills``; the Hub reads them through
 the library's own Project Runtime, the way it reads any project, and never
 opens the project's files itself. What it writes is a plugin directory in its
 own non-canonical cache::
@@ -68,7 +68,7 @@ _log = logging.getLogger(__name__)
 _leftover_lock = threading.Lock()
 # How long preparing the library's Runtime may take before the turn says so.
 LIBRARY_BUDGET_S = 60.0
-# The spelling studio.skills accepts when a skill is saved. A name read back is
+# The spelling project_runtime.skills accepts when a skill is saved. A name read back is
 # a folder name here, so one that is not this spelling (a hand-edited record)
 # is refused rather than written as a path.
 SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")

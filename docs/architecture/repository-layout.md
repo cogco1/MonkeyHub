@@ -91,7 +91,7 @@ MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一�
 
 API 中的装配用例仍保留一位 owner；拆出混合文件中的具体方法，应随下一项真实用例进行，
 不能为目录对称复制 DTO、来源校验或保存流程。HTTP 接口及客户端契约保持不变。
-模块 ID 不因产品名而改名；每次搬迁把 `owner_path`、调用方和公开类型的路径同步到注册表。
+模块 ID 的首段是 `owner_path` 所在分发单元的命名空间（6.3），产品改名不改 ID；每次搬迁把 `owner_path`、调用方和公开类型的路径同步到注册表。
 CAD 离开 ArchFlow 时（#514）按能力新建了六个 owner：`monkeycad.execution`、`monkeycad.occt`、`monkeycad.rhino`、`monkeycad.blender`、`monkeycad.formats`、`monkeycad.integrations`，取代原来四个 `adapters.*` CAD id。
 
 ## 4. 依赖方向与交接
@@ -178,13 +178,34 @@ GitHub Issue 跟踪任务，work registry 只登记正在改源码的 claim，�
   Runtime 包在能导入任何东西之前自己读同一张表；Runtime 的测试包先把服务的 `src` 放上 `sys.path`，再导入 Runtime 包。不在共享解释器上做
   editable install，否则几十个 worktree 会互相串用代码。安装包不带 policy，生产入口在那里不改 `sys.path`，只由 `._pth` 决定。
 - 根 `tests/` 只保留跨 owner 的测试；只属于一个包或服务的测试在它自己的 `tests/`，测 tools 的在 `tools/tests/`，
-  基准驱动在 `tools/benchmarks/`。
+  基准驱动在 `tools/benchmarks/`。一个测试离开 `tests/integration/`，要同时满足两条（#522）：它导入的只有某个 owner 和这个 owner
+  自己可以导入的（MonkeyArch 的测试可以经内核和 MonkeyCAD 执行几何，MonkeyDiagram 的测试可以用 MonkeyCAD 取截面），而且这个 owner
+  自己的测试夹具就能满足它，需要复制的单份不超过约 100 行。否则它的夹具跨 owner，它留在 `tests/integration/`，用那里共用的 support。
+- 测试模块不兼当夹具库。包的测试根里共用的夹具放在按内容命名的 `*_fixture.py`（如 `packages/monkeyarch/tests/spine_fixture.py`），
+  名字在共用一个 pytest 进程的测试根（根 `pyproject.toml` 的 `testpaths`）之间不重复；`tests/integration/` 共用的放在 `support.py`、
+  `runner_support.py` 与 `window_support.py`。一个测试根不能导入另一个根的测试，复制的夹具在文首写明出处。现有的复制：MonkeyArch
+  `spine_fixture.py` 的内核部分（作者记录、绑定状态与编译器的夹具提案）在 `tests/integration/support.py` 另有一份，因为留在那里的
+  OCCT 执行、版本引用与格式迁移测试要用它；另有几份不超过约 35 行的小复制（portico 网格、villa 记录、CAD 绑定、runner 的证据与构件行、
+  OCCT 测试的 `_compile`）。
+- `tests/integration/` 是跨包测试和它们共用的 support：MonkeyArch 的 runner 加 `tools.project` 的阶段命令与 MonkeyMonitor 的用量行
+  （`test_project_runner`），经 runner 运行 `tools/project/verify_state_record`（`test_verify_state_record`）；MonkeyCAD 的后端经
+  MonkeyArch 的 runner 验收，并与之共用受控 Rhino 宿主和 Blender 请求（`test_cad_backend_contract`、`test_blender_cad`、
+  `test_blender_projection`、`test_blender_projection_runner`、`test_cad_execution`、`test_integration_packs`、`test_software_discovery`）；
+  runner 驱动的修改（`test_prism_cutouts`、`test_window_relational_update`，以及经 Runtime API 的 `test_nonadjacent_stage_context`）；
+  OCCT 执行 MonkeyArch 编出的程序，另有 MonkeyDiagram 出图和 Hub web 读取预览（`test_occt_execution`）；内核的版本引用声明对照 CAD 与图纸
+  记录的写入者（`test_version_refs`），内核的格式迁移经 `create_project` 命令行覆盖 CAD 与图纸记录（`test_project_format_migration`、
+  `test_migration_scan_cli`）。
 - `docs/` 根目录只有 `README.md` 索引；其余文档在类别子目录里，决定记录是 `docs/decisions/NNN-*.md`。
 
-第二轮做内部拆分，每项另开 Issue、单独 PR，范围在开工前确认。CAD 已从
+第二轮做内部拆分，每项另开 Issue、单独 PR，范围在开工前确认。已落地：CAD 从
 `packages/archflow/src/archflow/adapters/` 抽成 `packages/monkeycad/`（#514；第一轮的 Step 0，#485，先把 CAD 的版本声明移进了内核），并按后端与格式拆开（#515）；
-MonkeyArch 已按层整理（#516，第 4 节），Runtime 已把确认的值逻辑按函数归还 owner（#519，见 [Project Runtime](project-runtime.md)）；其余候选项有 Runtime 内部分层、`hub.shell` 分组、模块 ID 规范化。
-第一轮不改模块 ID：R1-9（#495）分组后 `tools.*` 仍是原 ID（如 `tools.archcheck`），只更新 `owner_path` 等路径，随 ID 规范化一起调整。
+MonkeyArch 按层整理（#516，第 4 节）；MonkeyDiagram 按来源、投影、表达与图纸 run 拆开（#517，第 3 节）；Runtime 内部分层（#518），
+确认的值逻辑按函数归还 owner（#519，见 [Project Runtime](project-runtime.md)）；Hub 后端分组并拆开大文件（#520、#521）；
+模块 ID 按 owner 所在分发单元的命名空间规范化（#523，6.3）；测试随 owner 归位（#522）：只依赖一个包的测试进入该包的测试根，`tests/integration` 只留真正跨包的测试。
+第一轮不改模块 ID：R1-9（#495）分组后 `tools.*` 只更新了 `owner_path` 等路径。#523 起 `studio.*` 换成 `project_runtime.*`
+（文档登记 `studio.artifacts` 是 `project_runtime.documents`），archflow、monkeyarch、monkeydiagram 与 tools 的 id 取 owner 的导入路径
+（如 `tools.archcheck` → `tools.governance.archcheck`、`capabilities.wall_solver` → `monkeyarch.domain.wall_solver`），`monkeycad.*`、
+`hub.shell` 与三个包级 id 不变；`GET /api/capabilities` 的 `owner` 随之改名。决定记录、审计、研究与注明日期的设计笔记保留当时的 id。
 
 ### 6.1 命名规则
 
@@ -231,6 +252,12 @@ Project Runtime 自 #491 起按仓库路径 `services/project-runtime/src/projec
 module registry 里的路径同样必须存在：`owner_path`（`REGISTRY_OWNER_MISSING`）、`tests`（`REGISTRY_TEST_MISSING`），
 以及 `files`、`used_by`（路径或模块 id）、`spine`、interface 实现文件和 capability 测试（`REGISTRY_PATH_MISSING`）。
 registry 路径不写通配符。
+
+模块 id 的首段是 `owner_path` 所在分发单元的命名空间（#523）。policy 的 `module_id_namespaces` 把单元目录映射到命名空间：
+`packages/<包名>/src/<包名>` 是包名，`services/project-runtime/src/project_runtime` 是 `project_runtime`，
+`apps/monkeyhub/api/monkeyhub_api` 是 `hub`，`tools` 是 `tools`，包含 `owner_path` 的最长单元为准。首段不符、owner 不在任何单元里
+都报 `REGISTRY_ID_NAMESPACE`，表里的单元目录不存在报 `POLICY_PATH_MISSING`；新增包或服务时在表里加一项。只查首段：
+MonkeyCAD 与 Hub 的 id 按能力命名。
 
 docs 树自 R1-8 起按 `git ls-files` 检查，被 git 忽略的本地笔记不算：根目录只有 `README.md`（`DOCS_ROOT`）；文档名是小写 kebab-case 的 Markdown，决定记录是 `NNN-kebab.md`，目录名是 kebab-case，文件名不以日期开头（kebab 正则本身接受 `2026-09-28-x.md`，所以日期另有一条规则），非 Markdown 文件只在 `docs/prototypes/`（`DOC_NAME`）。
 

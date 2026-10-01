@@ -1,6 +1,6 @@
 """The program sheet as the studio serves it: read it, and apply it.
 
-Two directions, and the kernel owns both of them. ``state.program_sheet``
+Two directions, and the kernel owns both of them. ``archflow.state.program_sheet``
 derives a sheet from a record and applies a sheet to one; nothing here reads a
 zone, measures a footprint or resolves a semantic id. What this module owns is
 the arrangement: *which* sheet a reader gets, whether the sheet the architect

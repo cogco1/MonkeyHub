@@ -4,4 +4,4 @@ Validation: the validator protocol, the finding model and the engine that runs r
 
 Modules and owners: `docs/architecture/system-map.md` (rendered from `governance/module_registry.json`; one owner per capability). This README says what the package is for; it does not repeat the map.
 
-Current owners: validation.engine, validation.model.
+Current owners: archflow.validation.engine, archflow.validation.model.

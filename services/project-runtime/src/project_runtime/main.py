@@ -482,7 +482,7 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
     app.add_exception_handler(Exception, _handle_unexpected_error)
     app.include_router(routes.router)
-    # Project memory is its own owner (studio.memory, ADR-009), beside decisions.
+    # Project memory is its own owner (project_runtime.memory, ADR-009), beside decisions.
     app.include_router(memory_routes.router, prefix=_API_PREFIX)
     if not shared_project:
         app.include_router(projection_routes.router, prefix=_API_PREFIX)

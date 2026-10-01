@@ -48,11 +48,12 @@ From the repository root, with Python 3.12 and no additional dependencies for
 the original massing/synthetic benchmark:
 
 ```sh
-python -m unittest labs.candidate_evaluation.test_evaluator tests.integration.test_massing_metrics
+python -m unittest labs.candidate_evaluation.test_evaluator
+python -m pytest packages/monkeyarch/tests/test_massing_metrics.py -q
 python -m labs.candidate_evaluation.benchmark
 ```
 
-The second command prints JSON to stdout, including fixed inputs, all failures,
+The last command prints JSON to stdout, including fixed inputs, all failures,
 raw synthetic samples, exact content/run/base refs, evaluator configuration,
 code revision, dirty-lab flag, Python version, UTC interval and measured costs.
 It writes no files. A caller retaining this output chooses an explicit external
@@ -81,14 +82,14 @@ There is no filesystem lookup, automatic acceptance, or new persistence owner.
 
 ## Owners and limits
 
-- **Reused:** `state.record` owns `StateRecord`, binding/content identities and
-  `volume_boxes_of`; `state.massing_metrics` owns all four measurements and the
+- **Reused:** `archflow.state.state_record` owns `StateRecord`, binding/content identities and
+  `volume_boxes_of`; `monkeyarch.domain.massing_metrics` owns all four measurements and the
   existing `envelope_check` arithmetic. No formulas are copied into a second
   geometry implementation. The adapter checks input availability and finiteness
   before calling them, and never rounds an unsupported plan coordinate.
-- **Existing consumer:** `studio.options` already calls these owners to measure
+- **Existing consumer:** `project_runtime.options` already calls these owners to measure
   candidate options. This lab does not change that application path.
-- **Existing hard validation:** `validation.engine` validates a different input
+- **Existing hard validation:** `archflow.validation.engine` validates a different input
   (`CanonicalState` plus `CandidateSubmission`) and remains the production gate.
   This lab does not construct or claim its receipts, Stage checks or acceptance.
 - **New research code:** no registered owner provides generic sample statistics,
@@ -273,7 +274,8 @@ an experiment preference, not a replacement for the objective vector or a
 daylight/structure/composition evaluator.
 
 ```sh
-python -m unittest labs.candidate_evaluation.test_evaluator labs.candidate_evaluation.test_retained labs.candidate_evaluation.test_allocation labs.candidate_evaluation.test_sampling tests.integration.test_massing_metrics
+python -m unittest labs.candidate_evaluation.test_evaluator labs.candidate_evaluation.test_retained labs.candidate_evaluation.test_allocation labs.candidate_evaluation.test_sampling
+python -m pytest packages/monkeyarch/tests/test_massing_metrics.py -q
 python -m labs.candidate_evaluation.allocation_benchmark --output <new-external-directory> --repetitions 200 --budgets 100 300 900 --workers 4
 python -m labs.candidate_evaluation.plot_benchmark <same-external-directory>
 ```

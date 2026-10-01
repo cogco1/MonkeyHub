@@ -484,7 +484,7 @@ class StairTests(unittest.TestCase):
 
     def test_a_whole_stepped_solid_is_not_drafted_as_a_flight_from_its_box(self) -> None:
         # the stair producer emits one closed stepped solid per flight (obj-<id>, 2 + 2·count + 2 faces:
-        # tests/integration/test_whole_stair.py); its bounding box holds the same hull for any count and any rise,
+        # test_whole_stair.py); its bounding box holds the same hull for any count and any rise,
         # so the re-index names the boundary instead of claiming a step count it cannot read
         def whole(steps: int, faces: int):
             return box("obj-stair-east", "main-block", "stair-east", (STAIR_X0, -TREAD_WIDTH / 2, 0.0), (STAIR_X0 + steps * GOING, TREAD_WIDTH / 2, steps * RISE), faces=faces)

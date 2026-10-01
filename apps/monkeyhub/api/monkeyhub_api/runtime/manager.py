@@ -57,7 +57,7 @@ _WORK_COPY_SETTLED_NS = 2_000_000_000
 # Unchanged stat metadata is only a fast path, not proof of unchanged content.
 # Recheck occasionally for in-place saves that preserve both size and mtime.
 _WORK_COPY_CONTENT_REFRESH_NS = _IDLE_RETAINED_REFRESH_S * 1_000_000_000
-# The record kinds that decide which documents exist (studio.artifacts
+# The record kinds that decide which documents exist (project_runtime.documents
 # list_documents; a drawing's receipt only adds who made it and why). If
 # another kind ever decides that, the work-copy key below has to name it too.
 _DOCUMENT_RECORD_KINDS = (STUDIO_SOURCE_DOCUMENT, STUDIO_DOCUMENT_MODEL_SOURCE)

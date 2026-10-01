@@ -285,7 +285,7 @@ def _note(value: Mapping[str, Any]) -> str | None:
     return None if note is None else note.strip() or None
 
 
-# One exact library skill version: studio.skills' name spelling, then its version.
+# One exact library skill version: project_runtime.skills' name spelling, then its version.
 _SKILL_REF = re.compile(r"skill:(?P<name>[^@]+)@(?P<version>[1-9][0-9]{0,8})")
 
 

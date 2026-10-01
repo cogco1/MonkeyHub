@@ -4,4 +4,4 @@ State: the record and its projections. `StateRecord@1` (content identity), the d
 
 Modules and owners: `docs/architecture/system-map.md` (rendered from `governance/module_registry.json`; one owner per capability). This README says what the package is for; it does not repeat the map.
 
-Current owners: state.commitments, state.decision_operator, state.dependencies, state.derivation, state.design_portfolio, state.developed_design, state.geometry_program, state.operational_state, state.program_sheet, state.record, state.spatial, state.stage_workflow.
+Current owners: archflow.state.commitments, archflow.state.decision_operator, archflow.state.dependencies, archflow.state.derivation, archflow.state.design_portfolio, archflow.state.developed_design, archflow.state.geometry_program, archflow.state.operational_state, archflow.state.program_sheet, archflow.state.state_record, archflow.state.spatial, archflow.state.stage_workflow.

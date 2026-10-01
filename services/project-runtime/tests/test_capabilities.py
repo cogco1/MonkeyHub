@@ -50,7 +50,7 @@ class CapabilityIndexTestCase(unittest.TestCase):
             self.assertEqual([row["capabilityId"] for row in body["capabilities"]], [CAPABILITY], goal)
             self.assertIsNone(body["note"], "a match needs no explanation")
             entry = body["capabilities"][0]
-            self.assertEqual(entry["owner"], "studio.intent")
+            self.assertEqual(entry["owner"], "project_runtime.intent")
             self.assertIn("POST /api/capabilities/{capability_id}/run", entry["entrypoints"])
 
     def test_the_whole_index_is_one_read(self) -> None:

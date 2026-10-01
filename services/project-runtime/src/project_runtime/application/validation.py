@@ -33,7 +33,7 @@ two normative gates, and their empty input is not a successful check.
 
 Nothing here writes. A validation is a reading of records the run already
 retained; the published position, ``canonical/`` and ``input/`` are untouched,
-and nothing is issued by being ready for review. Only ``project.issue`` can
+and nothing is issued by being ready for review. Only ``archflow.project.issue`` can
 issue a run or advance a formal workflow stage.
 """
 

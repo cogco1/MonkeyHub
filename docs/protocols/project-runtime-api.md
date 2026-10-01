@@ -595,7 +595,7 @@ neighbouring element whose field shares a name is named there only to be refused
    clauses with `blockedBy[]` naming every clause that refused. Three-state law, verbatim:
    *held / violated / unchecked are distinct; unchecked is never green; the server reports
    candidate review readiness.* A client renders the server's boolean and computes no readiness
-   result of its own. `reviewReady` grants no issue authority: only `project.issue` can issue a run
+   result of its own. `reviewReady` grants no issue authority: only `archflow.project.issue` can issue a run
    or advance a stage.
 
 Review readiness is memoised per (candidate, published version): reading it twice is one result.

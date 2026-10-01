@@ -31,7 +31,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.stage_workflow import DesignPhase
 from archflow.project.inputs import load_authored_record
 from archflow.state.state_record import legacy_state_digest
-from tests.integration.test_project_runner import DECLARED_LIVE_IDENTITY, _geometry_only, _ladder_project, _options, _record, _run_opened_stage, _seats
+from tests.integration.runner_support import DECLARED_LIVE_IDENTITY, _geometry_only, _ladder_project, _options, _record, _run_opened_stage, _seats
 from tools.project import verify_state_record
 from tools.project.open_stage_run import open_stage_run
 

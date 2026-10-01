@@ -14,7 +14,7 @@ come from the server; the browser is never given the five clauses to combine on 
 merely red.
 
 Review readiness is not issue authority. This route writes nothing and cannot
-advance a stage; only ``project.issue`` can issue a run.
+advance a stage; only ``archflow.project.issue`` can issue a run.
 
 And it cannot lose a state: ``relationChecks`` is the candidate's own
 three-state block, the same object the candidate readout serves, so nothing

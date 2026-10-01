@@ -72,10 +72,10 @@ Conversation 挂载
 
 | 对象 | 最小必要信息 | 复用对象或位置 |
 | --- | --- | --- |
-| Stage | 唯一引用、父 Stage 引用、显示名称、完整 StateRecord 引用、完整模型来源、接受的 Candidate 与决定来源 | `state.design_portfolio` 的历史规则；P036 的不可变记录与 artifact refs |
+| Stage | 唯一引用、父 Stage 引用、显示名称、完整 StateRecord 引用、完整模型来源、接受的 Candidate 与决定来源 | `archflow.state.design_portfolio` 的历史规则；P036 的不可变记录与 artifact refs |
 | Branch | branch ID、可选来源 branch、fork Stage、head Stage | 重构 portfolio 的 lineage 规则；P036 内补项目级引用 |
-| Exploration | ID、base Stage、已有 scope、候选引用、当前比较选择、决定记录 | `studio.intent` 的 WorkingCopy / episodes |
-| Candidate | ID、base Stage、proposal 来源、已有 typed operator、影响与依赖、验证和预览产物引用 | `studio.candidate`、`StateRecordOperator`、现有 candidate run |
+| Exploration | ID、base Stage、已有 scope、候选引用、当前比较选择、决定记录 | `project_runtime.intent` 的 WorkingCopy / episodes |
+| Candidate | ID、base Stage、proposal 来源、已有 typed operator、影响与依赖、验证和预览产物引用 | `project_runtime.candidate`、`StateRecordOperator`、现有 candidate run |
 
 `operations[]` 复用 typed operator 的表达能力，不另造操作语言。影响范围与依赖由现有状态和 operator 推导；执行记录可保留当次结果，但不让 Agent 填的 `affected_entities` 成为唯一裁剪依据。验证保留可读结果引用，不把未检查简化成通过。
 
@@ -105,7 +105,7 @@ Candidate 的权威含义是 `base + delta`，但可在接受前物化完整 Sta
 本次采用的具体扩展：
 
 - Stage 的不可变接受记录，通过已有 `put_json` 写到被接受 Candidate 的 `runs/<run>/reviews/`；初始 S0 使用真实导入或初始建模 run。注册必要 record kind，引用已保存的模型与状态。
-- 由 `project.layout` 定义项目内 `design/branches.json`，保存各设计 branch 的 fork/head 引用；只有 P036 repository 可写。它是设计工作引用，canonical `HEAD` 继续只表示正式发布位置。
+- 由 `archflow.project.layout` 定义项目内 `design/branches.json`，保存各设计 branch 的 fork/head 引用；只有 P036 repository 可写。它是设计工作引用，canonical `HEAD` 继续只表示正式发布位置。
 - 在既有项目端口补设计引用的 read/list/CAS。fork 以“目标 branch 不存在”为前提插入指向历史 Stage 的条目；接受比较目标 branch 的预期 head。复用原子替换和跨进程锁的实现，不另建通用 refs 框架，也不为每个 branch 创建隐藏 run。
 - 新增路径、端口及 record kind 在实现时同步到 registry、layout 文档和恢复检查；现有 `project.json` 的身份保持不可变。这里是明确的方案路径，本轮不创建或迁移真实项目数据。
 
@@ -158,12 +158,12 @@ Checkout 旧 Stage 只读。若从当前 head 做局部墙体修改，保留完�
 
 | 当前 owner / 路径 | 决定 | 具体收敛与退出条件 |
 | --- | --- | --- |
-| `state.design_portfolio` | **重构现有 owner** | 保留 lineage 职责，改为完整 Stage 引用、持续 Branch 与 fork/advance 纯规则。旧 revision 固定 SchematicOption、只允许从 head fork、selected 后禁止续改，不能原样套用 |
+| `archflow.state.design_portfolio` | **重构现有 owner** | 保留 lineage 职责，改为完整 Stage 引用、持续 Branch 与 fork/advance 纯规则。旧 revision 固定 SchematicOption、只允许从 head fork、selected 后禁止续改，不能原样套用 |
 | portfolio 的旧 SchematicOption 专用生命周期 | **退役旧写入 API，保留必要兼容** | 当前生命周期调用只见于专门测试，生产还使用 BranchRevisionRef/SelectedBranchHandoff 等类型。迁移新消费者时删除无真实用途的旧生命周期和包装测试；留下仍被编译链或保留数据消费的类型/reader，不恢复 votes/handoff 仪式 |
-| `studio.intent` / WorkingCopy / episodes | **扩展为 Exploration，保留 owner** | 复用 common base、scope、A/B、选择及理由；引用 Stage/Candidate。选择条目不独立决定当前版本，接受委托统一提交入口。不能把 WorkingCopy 改名成 Branch |
-| `studio.candidate` / StateRecordOperator | **扩展，保留唯一生成链** | 留存 base+delta，接完成即预览、受影响执行与确切来源；接受不再调用 runner/CAD |
-| `state.record` / `state.developed_design` | **保留事实与当前编译投影** | compiler/seat 仍消费 developed_design_view。本方案不删除整个 developed_design；只有真实消费者迁走后才单独退役兼容投影 |
-| `state.stage_workflow` / freeze、open CLI / Studio harness | **保留执行与正式流程用途，收紧命名边界** | 现有 stage 是预声明阶段/phase/LOD guard，freeze CLI 冻结的是 workflow 定义，并非用户模型快照。用户 Stage 不接到此 CLI。harness 退出须先有保全 exact-base、closure 与读回的实际替代调用；不列为本轮前置重写 |
+| `project_runtime.intent` / WorkingCopy / episodes | **扩展为 Exploration，保留 owner** | 复用 common base、scope、A/B、选择及理由；引用 Stage/Candidate。选择条目不独立决定当前版本，接受委托统一提交入口。不能把 WorkingCopy 改名成 Branch |
+| `project_runtime.candidate` / StateRecordOperator | **扩展，保留唯一生成链** | 留存 base+delta，接完成即预览、受影响执行与确切来源；接受不再调用 runner/CAD |
+| `archflow.state.state_record` / `archflow.state.developed_design` | **保留事实与当前编译投影** | compiler/seat 仍消费 developed_design_view。本方案不删除整个 developed_design；只有真实消费者迁走后才单独退役兼容投影 |
+| `archflow.state.stage_workflow` / freeze、open CLI / Studio harness | **保留执行与正式流程用途，收紧命名边界** | 现有 stage 是预声明阶段/phase/LOD guard，freeze CLI 冻结的是 workflow 定义，并非用户模型快照。用户 Stage 不接到此 CLI。harness 退出须先有保全 exact-base、closure 与读回的实际替代调用；不列为本轮前置重写 |
 | `project.refs.BranchRef` / RUN_BRANCH | **保留执行绑定** | 不用 run 内 epoch 充当用户历史；设计 Branch 的持久指针由 P036 项目级端口提供 |
 | P036 repository / issue / artifact refs | **保留并作最小扩展** | 一个持久化 authority；新增设计引用 CAS，正式 canonical HEAD 与 issue 验证保持独立 |
 | jobs / runner / monkeycad.patch / monkeycad.execution | **局部替换旧行为** | 退掉 shared protected 一律互斥、所有 successor 必跑全量、只有当前 run 才可复用、每个 seat 必须新 donor 的限制；保留首次全量生成、必要依赖生产、有效验证和旧数据读取 |

@@ -30,6 +30,18 @@
     "packages/monkeycontrol/src",
     "packages/monkeycad/src"
   ],
+  "module_id_namespaces": {
+    "packages/archflow/src/archflow": "archflow",
+    "packages/monkeyarch/src/monkeyarch": "monkeyarch",
+    "packages/monkeycad/src/monkeycad": "monkeycad",
+    "packages/monkeycontrol/src/monkeycontrol": "monkeycontrol",
+    "packages/monkeydiagram/src/monkeydiagram": "monkeydiagram",
+    "packages/monkeyfab/src/monkeyfab": "monkeyfab",
+    "packages/monkeymonitor/src/monkeymonitor": "monkeymonitor",
+    "services/project-runtime/src/project_runtime": "project_runtime",
+    "apps/monkeyhub/api/monkeyhub_api": "hub",
+    "tools": "tools"
+  },
   "repository_root_entries": [
     "apps",
     "services",
@@ -176,7 +188,7 @@
         "write_text"
       ],
       "kind": "rendered_docs",
-      "owner": "tools.devctl",
+      "owner": "tools.governance.devctl",
       "reason": "Renders docs/architecture/system-map.md and semantic-registry.md from the module registry and the semantic tables; the files are committed."
     },
     {
@@ -186,7 +198,7 @@
         "mkdir"
       ],
       "kind": "cli_workspace",
-      "owner": "tools.run_project",
+      "owner": "tools.project.run_project",
       "reason": "Creates the run's speculative workspace directory under the layout's run root before handing it to the runner."
     },
     {
@@ -196,7 +208,7 @@
         "write_text"
       ],
       "kind": "rehearsal_evidence",
-      "owner": "tools.rehearse_project_archive",
+      "owner": "tools.project.rehearse_project_archive",
       "reason": "Hands the content-free source-side identities of one archive rehearsal to its later verify phase, beside the restored project and never inside a project the repository owns."
     },
     {
@@ -206,7 +218,7 @@
         "mkdir"
       ],
       "kind": "cli_workspace",
-      "owner": "tools.verify_state_record",
+      "owner": "tools.project.verify_state_record",
       "reason": "Creates the output directory the verification writes its receipts into."
     },
     {
@@ -372,7 +384,7 @@
         "open_write"
       ],
       "kind": "recipe_export",
-      "owner": "studio.intent",
+      "owner": "project_runtime.intent",
       "reason": "Exclusively creates the one new DrawingRecipeExport@1 file a person names with --out: a project recipe's values, target and hold, its decision id and revision sha256, and its own sha256, nothing else of the project. It never replaces a file and never writes into a project; an import is retained by the decisions application under the project's lock."
     },
     {
@@ -382,7 +394,7 @@
         "mkdir"
       ],
       "kind": "cli_workspace",
-      "owner": "studio.candidate",
+      "owner": "project_runtime.candidate",
       "reason": "Creates the per-seat export workspace under the layout's run root, the same way tools/project/run_project.py does. It is one function so that a proposal's candidate and a selected massing option's run under the same harness; execute_candidate and execute_option_candidate both reach the workspace through it."
     },
     {
@@ -393,7 +405,7 @@
         "write_bytes"
       ],
       "kind": "provider_tempdir",
-      "owner": "studio.intent",
+      "owner": "project_runtime.intent",
       "reason": "Writes the response schema and transient document PNGs into the same TemporaryDirectory handed to codex exec; the directory is cleaned after the call and nothing under the project is touched."
     },
     {
@@ -404,7 +416,7 @@
         "write_bytes"
       ],
       "kind": "wip_input",
-      "owner": "project.inputs",
+      "owner": "archflow.project.inputs",
       "reason": "writes input/runner/program-sheet.json only when POST /api/program carries saveInput=true in local mode; never writes state-record.json"
     },
     {
@@ -415,8 +427,8 @@
         "write_bytes"
       ],
       "kind": "wip_input",
-      "owner": "project.inputs",
-      "reason": "writes only input/runner/seats.json when the caller explicitly saves the authored seat pack; retaining replaced bytes belongs to the caller through project.repository"
+      "owner": "archflow.project.inputs",
+      "reason": "writes only input/runner/seats.json when the caller explicitly saves the authored seat pack; retaining replaced bytes belongs to the caller through archflow.project.repository"
     },
     {
       "path": "packages/monkeymonitor/src/monkeymonitor/store.py",
@@ -548,7 +560,7 @@
         "mkdir"
       ],
       "kind": "development_worktree",
-      "owner": "tools.workspace",
+      "owner": "tools.dev.workspace",
       "reason": "Prepares the configured task worktree parent after checking Git branch registration and destination conflicts; Git creates the checkout. No project data or existing worktree is moved, reset or deleted."
     },
     {
@@ -559,7 +571,7 @@
         "open_write"
       ],
       "kind": "distribution_build",
-      "owner": "tools.package_monkeyapps",
+      "owner": "tools.release.package_monkeyapps",
       "reason": "Downloads and verifies the fixed embedded runtime only in the caller-selected external cache; an incomplete download is atomically replaced after its checksum matches."
     },
     {
@@ -570,7 +582,7 @@
         "write_text"
       ],
       "kind": "distribution_build",
-      "owner": "tools.package_monkeyapps",
+      "owner": "tools.release.package_monkeyapps",
       "reason": "Prepares the embedded interpreter, its import paths and dependency lock only inside the external candidate bundle and cache selected by package()."
     },
     {
@@ -582,7 +594,7 @@
         "open_write"
       ],
       "kind": "distribution_build",
-      "owner": "tools.package_monkeyapps",
+      "owner": "tools.release.package_monkeyapps",
       "reason": "Assembles the committed application snapshot, locked ACP adapter, selected Node runtime and its upstream license only in the external candidate bundle supplied by package()."
     },
     {
@@ -593,7 +605,7 @@
         "write_text"
       ],
       "kind": "distribution_build",
-      "owner": "tools.package_monkeyapps",
+      "owner": "tools.release.package_monkeyapps",
       "reason": "Creates explicit external staging/output paths, build metadata and the finalized archive checksum after external() rejects paths inside the selected source checkout."
     },
     {
@@ -603,7 +615,7 @@
         "open_write"
       ],
       "kind": "distribution_build",
-      "owner": "tools.package_monkeyapps",
+      "owner": "tools.release.package_monkeyapps",
       "reason": "Retains the locked ACP dependency release notices only under the external candidate bundle third-party directory."
     },
     {
@@ -613,7 +625,7 @@
         "mkdir"
       ],
       "kind": "distribution_build",
-      "owner": "tools.package_monkeyapps",
+      "owner": "tools.release.package_monkeyapps",
       "reason": "Extracts one verified published candidate archive only into its own new subdirectory of the external work directory update_index() created; it is removed after its patch is written."
     },
     {
@@ -624,7 +636,7 @@
         "write_text"
       ],
       "kind": "distribution_build",
-      "owner": "tools.package_monkeyapps",
+      "owner": "tools.release.package_monkeyapps",
       "reason": "Creates the external --update-output and --update-work directories main() validated outside the source checkout, and writes one new MonkeyHub-<version>-update-index.json beside the patches create_patch wrote there."
     },
     {
@@ -742,7 +754,7 @@
         "rename"
       ],
       "kind": "distribution_install",
-      "owner": "tools.package_monkeyapps",
+      "owner": "tools.release.package_monkeyapps",
       "reason": "Reconstructs and verifies a fresh version under the explicitly supplied sibling parent, rejects existing targets and linked paths, then renames its own verified staging directory; never overwrites the running application or project data."
     },
     {
@@ -754,7 +766,7 @@
         "unlink"
       ],
       "kind": "distribution_build",
-      "owner": "tools.package_monkeyapps",
+      "owner": "tools.release.package_monkeyapps",
       "reason": "Writes a developer delta ZIP only to the explicit output outside both input bundles; inputs are read-only and only the bounded temporary ZIP is cleaned on failure."
     },
     {
@@ -765,7 +777,7 @@
         "open_write"
       ],
       "kind": "derived_cache",
-      "owner": "project.index",
+      "owner": "archflow.project.index",
       "reason": "Creates the index directory and opens index.lock, the single-writer lease, inside the caller-supplied nonproject index directory (the index subdirectory of the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
     },
     {
@@ -776,7 +788,7 @@
         "replace"
       ],
       "kind": "derived_cache",
-      "owner": "project.index",
+      "owner": "archflow.project.index",
       "reason": "Moves an index file SQLite cannot read, with its journal, aside before it is rebuilt once, removing the copy an earlier failure left, inside the caller-supplied nonproject index directory (the index subdirectory of the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
     },
     {
@@ -786,7 +798,7 @@
         "unlink"
       ],
       "kind": "derived_cache",
-      "owner": "project.index",
+      "owner": "archflow.project.index",
       "reason": "Removes a stale partial build before the index is projected into a new file, inside the caller-supplied nonproject index directory (the index subdirectory of the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
     },
     {
@@ -797,7 +809,7 @@
         "replace"
       ],
       "kind": "derived_cache",
-      "owner": "project.index",
+      "owner": "archflow.project.index",
       "reason": "Removes the old file's journal and renames the newly built index into place once no reader has the old file open, inside the caller-supplied nonproject index directory (the index subdirectory of the Hub's cache/projects/<runtimeId>); the index is derived from P036, never inside the project folder, and can be deleted at any time."
     },
     {
@@ -809,7 +821,7 @@
         "unlink"
       ],
       "kind": "projection_cache",
-      "owner": "studio.artifacts",
+      "owner": "project_runtime.documents",
       "reason": "The projection cache (ADR-008, #367): PNG blobs named by their own sha256 under the project's Hub cache directory, never the project folder; written to a temp file then renamed, and removed by the reachability collector after a grace window. Derived, deletable and never cited as evidence."
     },
     {
@@ -819,7 +831,7 @@
         "unlink"
       ],
       "kind": "projection_cache",
-      "owner": "studio.artifacts",
+      "owner": "project_runtime.documents",
       "reason": "The projection cache (ADR-008, #367): PNG blobs named by their own sha256 under the project's Hub cache directory, never the project folder; written to a temp file then renamed, and removed by the reachability collector after a grace window. Derived, deletable and never cited as evidence."
     }
   ],

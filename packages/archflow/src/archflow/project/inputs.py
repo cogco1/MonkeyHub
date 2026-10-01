@@ -112,7 +112,7 @@ class ProgramSheetFile:
 
     Nothing here reads a department or an adjacency. The schema literal is
     checked because it is the one claim the file makes about what it is;
-    everything past it is ``state.program_sheet``'s to validate.
+    everything past it is ``archflow.state.program_sheet``'s to validate.
     """
 
     path: Path
@@ -194,7 +194,7 @@ def write_program_sheet_file(
     A work-in-progress write and nothing more: one file inside ``input/``,
     created with its directory, replacing whatever was there. It writes no
     record, retains nothing, touches no run, and does not move ``HEAD`` — the
-    project's shared and published areas are ``project.repository``'s alone.
+    project's shared and published areas are ``archflow.project.repository``'s alone.
 
     The bytes are UTF-8 with LF endings and sorted keys, so authoring the same
     sheet twice leaves the same file and its ``sha256`` means something.
@@ -230,7 +230,7 @@ def write_seat_pack_file(
     ``input/``, created with its directory, replacing whatever was there. It
     writes no record, retains nothing, touches no run, and does not move
     ``HEAD``. Whoever needs the replaced bytes kept retains them through
-    ``project.repository`` before calling this; nothing here keeps a copy.
+    ``archflow.project.repository`` before calling this; nothing here keeps a copy.
 
     The payload is checked exactly as far as the reader checks what it reads:
     a JSON object, and one that serialises. No seat is parsed — ``SeatPack@1``

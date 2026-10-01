@@ -1154,7 +1154,7 @@ class ChatStore:
             environment.update(plan)
         environment["MONKEYHUB_PRESENTATION_TOKEN"] = self.presentation_token(session.id)
         if kind == "claude":
-            # Project memory has one owner, studio.memory (#252). Claude Code's
+            # Project memory has one owner, project_runtime.memory (#252). Claude Code's
             # own auto-memory would keep agent-written notes of its own under
             # ~/.claude/projects/<folder>/memory/ and, in a source checkout,
             # hand the chat the developer's MEMORY.md; a Hub chat has neither.

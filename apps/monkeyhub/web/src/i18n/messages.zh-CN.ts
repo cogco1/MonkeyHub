@@ -482,7 +482,7 @@ export const messagesZhCN = {
   "verdict.nothingUnresolved": "无 — 没有条款拒绝、没有发现，也没有额外说明",
   "verdict.refused": "已拒绝",
   "verdict.serverSource":
-    "复核条件由服务器给出；每个候选方案和版本只读取一次，只有 project.issue 可以签发运行",
+    "复核条件由服务器给出；每个候选方案和版本只读取一次，只有 archflow.project.issue 可以签发运行",
   "verdict.readReceipt": "读取回执",
   "verdict.held": "成立",
 

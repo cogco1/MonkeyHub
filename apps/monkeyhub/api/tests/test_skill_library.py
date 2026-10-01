@@ -120,7 +120,7 @@ class SkillLibraryTest(unittest.TestCase):
         # A library with no skills has nothing to load.
         self.assertIsNone(skill_plugins.materialize(cache, {"projectId": LIBRARY_ID, "skills": []}, self.fetch))
 
-        # A name read back is a folder name: one studio.skills would not accept is refused, not written.
+        # A name read back is a folder name: one project_runtime.skills would not accept is refused, not written.
         before = snapshot(cache)
         forged = {"id": "skill:../escape", "version": 1, "name": "../escape", "description": "x"}
         with self.assertRaises(chat.HubFailure) as refused:
@@ -218,7 +218,7 @@ class SkillLibraryTest(unittest.TestCase):
                     "env": {"HTTPS_PROXY": "http://proxy.example.invalid:8080"}, "apiKeyHelper": "fixture-helper"})
 
     def test_a_hub_chat_keeps_no_claude_auto_memory(self):
-        """#252: studio.memory is the one project memory; Claude Code's own auto-memory is off, Codex untouched."""
+        """#252: project_runtime.memory is the one project memory; Claude Code's own auto-memory is off, Codex untouched."""
         commands = {name: (sys.executable, "-c", "pass") for name in ("codex", "claude")}
         store = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=commands)
         self.addCleanup(store.shutdown)

@@ -974,7 +974,7 @@ _HEX_DIGITS = frozenset("0123456789abcdef")
 
 # The three shapes a retained payload uses to name a published project version.
 # ``version_ref`` is the exact ``ProjectVersionRef`` mapping; ``version_digest``
-# is the two-field form a design branch retains (state.spatial); ``digest_field``
+# is the two-field form a design branch retains (archflow.state.spatial); ``digest_field``
 # is a flat string field such as a CAD receipt's ``base_state_sha256``. Every
 # reader of retained payloads uses this one walker, so the dry run and the
 # migration receipt cannot disagree about what a project still embeds.

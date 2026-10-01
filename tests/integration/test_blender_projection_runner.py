@@ -14,7 +14,7 @@ BLENDER = os.environ.get("ARCHFLOW_BLENDER_EXECUTABLE")
 @unittest.skipUnless(BLENDER, "set ARCHFLOW_BLENDER_EXECUTABLE for runner/render acceptance")
 class ProjectionRunnerTests(unittest.TestCase):
     def test_architectural_model_revision_rebuild_and_reopen(self):
-        from tests.integration.test_project_runner import _record, _options, _stage_guard, _seats
+        from tests.integration.runner_support import _record, _options, _stage_guard, _seats
         from archflow.project.repository import FilesystemProjectRepository
         from archflow.project.refs import record_ref_from_uri
         from archflow.state.stage_workflow import DesignPhase
