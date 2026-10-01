@@ -164,7 +164,7 @@ jobs:
           python -m pip install -e packages/archflow -e packages/monkeycad -e packages/monkeyarch -e packages/monkeydiagram
           -e packages/monkeymonitor -e packages/monkeycontrol
           -r services/project-runtime/requirements.txt
-          -r apps/monkeyhub/api/requirements.txt
+          -r apps/monkeyhub/api/requirements.txt httpx2
 
       - name: Install web dependencies
         working-directory: apps/monkeyhub/web
