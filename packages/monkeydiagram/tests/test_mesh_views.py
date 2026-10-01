@@ -89,6 +89,47 @@ class MeshLineViewTests(unittest.TestCase):
         self.assertTrue(self.dark(image, 1.0, middle, crop, 300))
         self.assertFalse(self.dark(image, 0.0, middle, crop, 300))
 
+    def test_fills_paint_each_visible_surface_its_own_colour_and_mark_an_object_without_one(self):
+        from PIL import Image
+
+        from monkeydiagram.projection.mesh_views import (
+            FILL_BACKGROUND, MeshViewError, UNKNOWN_FILL, UNKNOWN_HATCH, mesh_line_view, pixel_size, triangulate,
+        )
+
+        entries = self.entries(("wall", (0, 0, 0), (10, 1, 10)), ("front", (4, -4, 1), (2, 1, 2)),
+                               ("behind", (4, 3, 4), (2, 1, 2)), ("bare", (11, 0, 0), (3, 1, 6)))
+        crop, size = (-1, -1, 15, 11), 320
+        meshes, _ = triangulate(entries, [entry.name for entry in entries], linear_deflection=pixel_size(crop, size) / 2)
+        fills = {"wall": (200, 185, 143), "front": (160, 82, 45), "behind": (20, 90, 200), "bare": None}
+
+        def draw():
+            return mesh_line_view(meshes, **self.FRONT, crop_uv=crop, size_px=size, fills=fills)
+
+        view = draw()
+        self.assertEqual(view.png, draw().png, "the same input gives the same bytes")
+        self.assertEqual(view.seen, ("bare", "front", "wall"), "the box behind the wall does not show")
+        with Image.open(BytesIO(view.png)) as image:
+            self.assertEqual((image.mode, image.size), ("RGB", (view.width, view.height)))
+            image = image.copy()
+        scale = size / max(crop[2] - crop[0], crop[3] - crop[1])
+
+        def at(u, v):
+            return image.getpixel((round((u - crop[0]) * scale), round((crop[3] - v) * scale)))
+
+        # Inside a face a pixel is the object's own colour exactly: no light, no blend.
+        self.assertEqual(at(2, 8), fills["wall"])
+        self.assertEqual(at(5, 2), fills["front"], "the box in front of the wall is filled over it")
+        self.assertEqual(at(4.5, 4.5), fills["wall"], "the box behind the wall is hidden")
+        self.assertNotIn(fills["behind"], {colour for _, colour in image.getcolors(maxcolors=1 << 16)})
+        self.assertEqual(at(-0.5, -0.5), FILL_BACKGROUND)
+        # An object given no colour reads as unknown: grey under hatch lines, never a material colour.
+        bare = {image.getpixel((x, y)) for x in range(round(11.5 * scale) + 20, round(11.5 * scale) + 40)
+                for y in range(round(6 * scale), round(6 * scale) + 20)}
+        self.assertTrue({UNKNOWN_FILL, UNKNOWN_HATCH} <= bare, bare)
+        self.assertTrue(all(len(set(colour)) == 1 for colour in bare), "the unknown marking is neutral grey")
+        with self.assertRaises(MeshViewError):
+            mesh_line_view(meshes, **self.FRONT, crop_uv=crop, size_px=size, fills={"wall": (300, 0, 0)})
+
     def test_a_curve_without_faces_is_skipped_and_named(self):
         from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
         from OCP.gp import gp_Pnt
