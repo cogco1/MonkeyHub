@@ -14,7 +14,7 @@ from project_runtime.binding import bound_project
 from project_runtime.application.render_contract import RenderCapability, RenderOutput, RenderProviderError
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings, SettingsError
-from project_runtime.application.artifacts import ModelSource, save_document
+from project_runtime.application.artifacts import ModelSource, list_documents, save_document
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_RENDER_JOB
 
@@ -373,6 +373,37 @@ def test_result_survives_a_lost_completion_transition(setup, monkeypatch):
     monkeypatch.setattr(app.state.render_jobs, "_transition", interrupted)
     result = finished(client, submit(client, request(upload(client))))
     assert result["status"] == "succeeded" and result["resultAvailable"]
+
+
+def test_a_live_attempt_reads_as_running_until_its_outcome_is_retained(setup, monkeypatch):
+    # The executor registers the image, then retains the outcome with its usage.
+    # A read in between reported succeeded without finishedAt or usage, and a
+    # client that stops at succeeded never saw them (#540).
+    client, app, _, adapter = setup
+    records = app.state.render_jobs
+    transition = records._transition
+    registered, release = threading.Event(), threading.Event()
+
+    def held(binding, row, **values):
+        if values.get("status") == "succeeded":
+            registered.set()
+            assert release.wait(5), "test did not release the completion"
+        return transition(binding, row, **values)
+
+    monkeypatch.setattr(records, "_transition", held)
+    job = submit(client, request(upload(client)))
+    try:
+        assert registered.wait(5)
+        assert [doc.view_recipe["jobId"] for doc in list_documents(bound_project(app.state), job["jobId"])] == [job["jobId"]]
+        early = client.get("/api/render/jobs/" + job["jobId"]).json()
+        assert (early["status"], early["document"], early["finishedAt"], early["inputTokens"]) == ("running", None, None, None)
+        assert [row["status"] for row in client.get("/api/render/jobs").json()["jobs"]] == ["running"]
+    finally:
+        release.set()
+    result = finished(client, job)
+    assert result["status"] == "succeeded" and result["resultAvailable"] and result["document"]
+    assert result["finishedAt"] and result["inputTokens"] == 17
+    assert len(adapter.calls) == 1
 
 
 def test_provider_preflight_rejection_does_not_count_as_a_model_call(setup):

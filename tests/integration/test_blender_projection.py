@@ -1,7 +1,10 @@
 """Real OCCT -> saved/reopened Blender -> PNG, with source-bound failures."""
+import json
 import os
 import subprocess
+import sys
 import tempfile
+import threading
 import unittest
 from copy import deepcopy
 from dataclasses import replace
@@ -15,6 +18,25 @@ from monkeycad.backends.occt.kernel import occt_available
 from tests.integration.support import _binding, _box, _program_of
 
 BLENDER = os.environ.get("ARCHFLOW_BLENDER_EXECUTABLE")
+RESULT_PREFIX = "PROJECTION-RESULT "
+
+
+def _project_while_owner_input_waits(blender):
+    """One projection in a process whose stdin is waited on, as a managed Runtime's is.
+
+    The Runtime keeps a thread reading its Hub's control pipe for "stop"
+    (project_runtime.main); the source is built while that read is pending.
+    """
+    threading.Thread(target=sys.stdin.readline, name="owner-input", daemon=True).start()
+    with tempfile.TemporaryDirectory() as temporary:
+        program = _program_of(_box("floor", [0, 0, 0], [6, 0.2, 4]))
+        request = CadExecutionRequest(program, _binding(program), Path(temporary), "owner-input",
+                                      backend_options={"preview": False})
+        source = OcctBackend().execute(request)
+        receipt = projection.execute_blender_projection(
+            request, source, blender_executable=blender,
+            presentation=projection.BlenderPresentation(resolution=64, samples=1), timeout_seconds=60)
+    print(RESULT_PREFIX + json.dumps({"status": receipt["status"], "failures": receipt["failures"]}), flush=True)
 
 
 @unittest.skipUnless(occt_available(), "cadquery-ocp is optional")
@@ -89,6 +111,34 @@ class ProjectionTests(unittest.TestCase):
         image.write_bytes(b"tampered PNG")
         with self.assertRaises(CadExecutionError):
             projection.verify_projection_artifacts(self.request, self.source, results[0])
+
+    @unittest.skipUnless(BLENDER, "set ARCHFLOW_BLENDER_EXECUTABLE for real Blender")
+    def test_projection_finishes_while_the_runtime_waits_on_its_owner_pipe(self):
+        # The Hub holds the Runtime's stdin open as its control pipe. A Blender
+        # worker sharing that pipe blocked at startup on Windows until the Hub
+        # wrote to it, so each step ran into its timeout (#540).
+        script = ("import sys; from tests.integration.test_blender_projection import "
+                  "_project_while_owner_input_waits as run; run(sys.argv[1])")
+        log = self.workspace / "owner-input.log"
+        with log.open("wb") as output:
+            child = subprocess.Popen(
+                [sys.executable, "-c", script, BLENDER], cwd=Path(__file__).resolve().parents[2],
+                stdin=subprocess.PIPE, stdout=output, stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+            try:
+                # Nothing is written to or closed on the pipe until the child has finished.
+                child.wait(timeout=300)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
+            finally:
+                child.stdin.close()
+        text = log.read_text(encoding="utf-8", errors="replace")
+        self.assertEqual(child.returncode, 0, text)
+        rows = [line[len(RESULT_PREFIX):] for line in text.splitlines() if line.startswith(RESULT_PREFIX)]
+        self.assertEqual(len(rows), 1, text)
+        result = json.loads(rows[0])
+        self.assertEqual(result["status"], "succeeded", result["failures"])
 
     @unittest.skipUnless(BLENDER, "set ARCHFLOW_BLENDER_EXECUTABLE for real Blender")
     def test_blender_geometry_edit_is_rejected_without_changing_source(self):

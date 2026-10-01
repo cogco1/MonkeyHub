@@ -1,10 +1,12 @@
 """Recovery reads distinguish retained results, live jobs and prepared commits."""
 
+import base64
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 import threading
 from unittest.mock import patch
 
+from monkeycad.formats.meshes import GLB, Mesh, Scene, convert
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, STUDIO_CANDIDATE_WORKFLOW
 from archflow.project.refs import record_ref_from_uri
@@ -85,6 +87,38 @@ class RuntimeTests(CandidateTestCase):
         finally:
             release.set()
             self.app.state.jobs.shutdown()
+
+    def test_a_model_export_is_listed_as_a_job_and_never_as_a_candidate(self) -> None:
+        # An export runs on this queue under its export id but retains an export
+        # report, never a runner receipt. A finished one was listed as a candidate
+        # needing recovery, which the Hub showed as a broken run (#540).
+        entered, release = threading.Event(), threading.Event()
+
+        def held_conversion(*arguments):
+            entered.set()
+            release.wait(10)
+            return convert(*arguments)
+
+        source = GLB().write(Scene([Mesh("Triangle", [(0, 0, 0), (1, 0, 0), (0, 1, 0)], [(0, 1, 2)], "Structure")], "Meters", []))
+        upload = {"fileName": "source.glb", "contentBase64": base64.b64encode(source).decode()}
+        with patch("project_runtime.application.model_exports.convert", side_effect=held_conversion):
+            response = self.client.post("/api/exports", json={"targetFormat": "3dm", "upload": upload})
+            self.assertEqual(response.status_code, 202, response.text)
+            export = response.json()
+            try:
+                self.assertTrue(entered.wait(10))
+                running = self.client.get("/api/runtime").json()
+            finally:
+                release.set()
+            self.assertEqual(self.finished(export["jobId"])["status"], "succeeded")
+        finished = self.client.get("/api/runtime").json()
+        for snapshot, status in ((running, "running"), (finished, "succeeded")):
+            with self.subTest(status=status):
+                self.assertEqual([(job["jobId"], job["candidateId"], job["status"]) for job in snapshot["jobs"]],
+                                 [(export["jobId"], export["exportId"], status)])
+                self.assertNotIn(export["exportId"], [row["candidateId"] for row in snapshot["candidates"]])
+        self.assertEqual(self.client.get(export["statusPath"]).json()["status"], "succeeded")
+        self.assertNotIn(export["exportId"], [row["candidateId"] for row in self.cold()["candidates"]])
 
     def test_failure_after_retained_candidate_keeps_result_and_failed_job_distinct(self) -> None:
         with patch.object(self.app.state.episodes, "flush", side_effect=RuntimeError("after retained candidate")):
