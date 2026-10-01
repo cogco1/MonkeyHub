@@ -1,6 +1,6 @@
 Closes #___ <!-- Issue 仍开着时写 Refs #___ -->
 
-<!-- 一段话写行为：谁现在能做什么、不再需要做什么；仍剩的验收或限制也写在这里。 -->
+<!-- 一段话写行为：谁现在能做什么、不再需要做什么。 -->
 
 ## 工作归属
 
@@ -26,6 +26,11 @@ Closes #___ <!-- Issue 仍开着时写 Refs #___ -->
 - `python tools/governance/archcheck.py`：<结果>
 - `python tools/governance/archcheck.py --changed <PR-base>`：<结果>
 - 受影响的行为测试、`api:check`、typecheck／build：<命令与结果>
+
+## 请 reviewer 重点看
+
+- <最值得质疑的文件或判断>
+- <仍影响使用的限制，以及需要继续的具体任务>
 
 ## 贡献许可
 
