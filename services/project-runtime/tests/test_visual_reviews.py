@@ -501,6 +501,27 @@ class ModelReviewTests(CandidateTestCase):
         self.assertIsNone(result["observation"])
         self.assertEqual(files(self.repository.layout.root), before)
 
+    def test_a_material_frame_is_the_model_views_own_material_drawing_of_the_same_exact_model(self):
+        response = self.client.get("/api/drawings/model-view", params={**self.model, "view": "axon", "display": "material"})
+        self.assertEqual(response.status_code, 200, response.text)
+        material = response.json()
+        # The candidate declares no material: every object it draws wears none and is counted as undeclared.
+        self.assertEqual((material["legend"]["materials"], material["representation"]),
+                         ([], "orthographic-material-projection"))
+        self.assertGreater(material["legend"]["undeclared"], 0)
+        views = ["axon-material", "front"]
+        frames = self.review(self.model, views, delivery="frames")
+        self.assertEqual(frames.status_code, 200, frames.text)
+        delivered = frames.json()["frames"]
+        self.assertEqual([(frame["viewRef"], frame["representation"]) for frame in delivered],
+                         [("axon-material", "orthographic-material-projection"), ("front", "orthographic-line-projection")])
+        self.assertEqual([base64.b64decode(frame["data"], validate=True) for frame in delivered],
+                         [base64.b64decode(material["data"]), self.owner_view("front")])
+        for unknown in (["axon-materials"], ["perspective-material"]):
+            refused = self.review(self.model, unknown, delivery="frames")
+            self.assertEqual(refused.status_code, 422, refused.text)
+            self.assertIn(f"{unknown[0]} is not a model view", refused.json()["detail"])
+
     def test_a_stale_state_digest_is_refused_before_projection_and_provider(self):
         stale = {
             "another run's state": {**self.model, "stateDigest": self.state_digest},

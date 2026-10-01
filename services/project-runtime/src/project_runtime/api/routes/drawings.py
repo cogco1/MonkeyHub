@@ -9,13 +9,16 @@ from starlette.requests import Request
 
 from ...authentication import request_attribution
 from ...binding import bound_project
-from ...application.drawings import drawing_file, generate_elevation, generate_section_perspective, generate_sheet, model_view
+from ...application.drawings import (
+    MATERIAL_DISPLAY, MODEL_VIEW_REPRESENTATIONS, drawing_file, generate_elevation, generate_section_perspective,
+    generate_sheet, material_view, model_view,
+)
 from ...application.drawing_corrections import drawing_corrections
 from ...application.drawing_plans import generate_plan, plan_status, plan_dimension_choices, dimension_proposal, plan_vector
 from ..dto.artifacts import ModelSourceDto, SourceDocumentDto, document_dto, model_source_from
 from ..dto.drawings import (
-    DrawingCorrectionsDto, DrawingFileFormat, DrawingStylesDto, ElevationDrawingDto, ElevationRequestDto, ModelViewDto,
-    ModelViewName, SheetRequestDto, SheetViewDto,
+    DrawingCorrectionsDto, DrawingFileFormat, DrawingStylesDto, ElevationDrawingDto, ElevationRequestDto, ModelViewDisplay,
+    ModelViewDto, ModelViewLegendDto, ModelViewName, SheetRequestDto, SheetViewDto,
     PlanDrawingDto, PlanRequestDto, PlanStatusRequestDto, PlanStatusDto,
     PlanDimensionChoicesDto, PlanDimensionProposalRequestDto, PlanVectorDto, SectionPerspectiveDrawingDto,
     SectionPerspectiveRequestDto,
@@ -169,18 +172,28 @@ def read_model_view(
     state_digest: str = Query(alias="stateDigest", pattern=r"^[0-9a-f]{64}$"),
     asset_sha256: str = Query(alias="assetSha256", pattern=r"^[0-9a-f]{64}$"),
     view: ModelViewName = Query(default="front"),
+    display: ModelViewDisplay = Query(default="line"),
 ) -> ModelViewDto:
     """Observe an exact complete model without creating a run, drawing or project record.
 
-    The image is a visible-line orthographic projection, not a material render;
-    top is an uncut projection, not a floor plan, and axon is the isometric
-    view from the -X, -Y, +Z side with Z up. Its longest edge is at most 1024
-    pixels. A repeated view of the same exact source is reused from process
-    memory after the source verifies again.
+    The default image is a visible-line orthographic projection; top is an
+    uncut projection, not a floor plan, and axon is the isometric view from
+    the -X, -Y, +Z side with Z up. ``display=material`` draws the same view
+    with each object filled flat, without light, in the diffuse colour of the
+    material the exact model asset's own table binds to it, an object wearing
+    none grey under a hatch, and answers the legend of what it drew. Its
+    longest edge is at most 1024 pixels. A repeated view of the same exact
+    source is reused from process memory after the source verifies again.
     """
 
     source = ModelSourceDto(run_id=run_id, state_digest=state_digest, asset_sha256=asset_sha256)
-    png, width, height = model_view(bound_project(request.app.state), model_source=model_source_from(source), view=view)
+    binding = bound_project(request.app.state)
+    if display == MATERIAL_DISPLAY:
+        drawn = material_view(binding, model_source=model_source_from(source), view=view)
+        return ModelViewDto(source=source, view=view, display=display, data=base64.b64encode(drawn.png).decode("ascii"),
+                            width=drawn.width, height=drawn.height, representation=MODEL_VIEW_REPRESENTATIONS[display],
+                            legend=ModelViewLegendDto.model_validate(drawn.legend))
+    png, width, height = model_view(binding, model_source=model_source_from(source), view=view)
     return ModelViewDto(source=source, view=view, data=base64.b64encode(png).decode("ascii"), width=width, height=height)
 
 

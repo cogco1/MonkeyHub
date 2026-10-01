@@ -1047,7 +1047,8 @@ class VisualReviewRequestDto(BaseModel):
     )
     view_recipe: list[VisualView] = Field(
         alias="viewRecipe", min_length=1, max_length=MAX_FRAMES,
-        description="For a model, the model-view directions to render (front, back, left, right, top); for "
+        description="For a model, the model-view directions to render (front, back, left, right, top, axon), each "
+        "a line view, or with -material (axon-material) in the colours of the materials its objects wear; for "
         "pages, the distinct page-<pageIndex> values of the named pages. The runtime gives repeated page numbers "
         "unique source-<source ordinal>-page-<pageIndex> frame names automatically.",
     )
