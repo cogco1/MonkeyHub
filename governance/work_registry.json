@@ -1,38 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-218",
-      "lanes": [
-        {
-          "id": "saved-camera",
-          "status": "active",
-          "branch": "codex/218-saved-camera",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-218-saved-camera",
-          "base_ref": "105b410a9be2345807e562fa986ab12354a7fdae",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "project_runtime.render",
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
-            "apps/monkeyhub/web/src/app/App.tsx",
-            "apps/monkeyhub/web/src/app/ProjectWorkspace.tsx",
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/src/workspaces/monkeyarch/viewer/renderView.ts",
-            "apps/monkeyhub/web/src/workspaces/render/",
-            "apps/monkeyhub/web/test/renderView.test.ts",
-            "apps/monkeyhub/web/test/renderWorkspace.browser.mjs",
-            "services/project-runtime/src/project_runtime/api/dto/rendering.py",
-            "services/project-runtime/src/project_runtime/application/rendering.py"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
