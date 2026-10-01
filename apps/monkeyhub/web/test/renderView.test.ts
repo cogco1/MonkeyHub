@@ -44,6 +44,12 @@ for (const projection of ["perspective", "orthographic"]) {
   });
 }
 
+test("a borrowed view says whether Modeling draws shadows, so a preview and a still draw them too (#562)", () => {
+  const camera = new PerspectiveCamera(38, 1.5, 0.01, 100);
+  assert.equal(captureRenderView(new Scene(), camera, new Vector3(), 38, 1.05).shadows, false, "the other looks draw none");
+  assert.equal(captureRenderView(new Scene(), camera, new Vector3(), 38, 1.05, true).shadows, true, "Presentation's sun does");
+});
+
 test("preview letterboxes wide and narrow hosts without changing source aspect", () => {
   assert.deepEqual(previewSize(1000, 300, 2), [600, 300]);
   assert.deepEqual(previewSize(200, 300, 2), [200, 100]);
