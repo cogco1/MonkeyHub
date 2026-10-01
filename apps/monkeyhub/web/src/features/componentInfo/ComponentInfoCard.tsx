@@ -7,14 +7,15 @@
  * picked component up in what was read. Nothing here writes, asks a model or leaves the machine.
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { useProjectRevision, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
 import type { BoardDto } from "../../api/project-runtime/generated";
 import { useT } from "../../i18n/useT";
 import { readBoardDatasets } from "./boardDatasets";
-import { componentCardText, fieldSource, fieldValue, stateSentence, statusBadge, type BoardInfo, type CardBlock, type CardField,
-  type CardWords, type ComponentCard } from "./componentInfo";
+import { componentCardText, fieldSource, fieldValue, reshapedSentence, stateSentence, statusBadge, versionLabel, type BoardInfo,
+  type CardBlock, type CardField, type CardWords, type ChangesSince, type ComponentCard, type ShownLineage,
+  type ShownModel } from "./componentInfo";
 import "./ComponentInfoCard.css";
 
 /**
@@ -56,6 +57,71 @@ export function useComponentInfoBoard(projectId: string | null, active: boolean)
   if (!projectId) return { status: "idle" };
   // What was read for another project is not this one's, even for the render before the read.
   return info.status === "ready" && info.projectId !== projectId ? { status: "loading" } : info;
+}
+
+/**
+ * The shown version's line (#575), read whenever the project moves: the Working Head names the runs
+ * it continued, so the head and every run on its line know theirs. A version shown off that line (a
+ * result opened only to look at) has none, and only data written for it applies. `undefined` while
+ * the first read is out, so a card is not called mismatched before its line is known.
+ */
+export function useShownLineage(shown: ShownModel | null, active: boolean): ShownLineage | null | undefined {
+  const studio = useStudio();
+  const revision = useProjectRevision();
+  const projectId = shown?.projectId ?? null;
+  const [line, setLine] = useState<{ projectId: string; lineage: readonly string[]; states: ReadonlyMap<string, string> } | null>(null);
+  useEffect(() => {
+    if (!active || projectId === null) return;
+    const controller = new AbortController();
+    void Promise.all([studio.workingSource("modeling", controller.signal), studio.artifacts(controller.signal)])
+      .then(([source, listing]) => {
+        if (controller.signal.aborted || source.projectId !== projectId) return;
+        const states = new Map<string, string>();
+        for (const artifact of listing.artifacts) if (artifact.modelSource) states.set(artifact.runId, artifact.modelSource.stateDigest);
+        setLine({ projectId, lineage: source.head?.lineage ?? [], states });
+      })
+      .catch(() => { if (!controller.signal.aborted) setLine({ projectId, lineage: [], states: new Map() }); });
+    return () => controller.abort();
+  }, [studio, projectId, active, revision]);
+  return useMemo(() => {
+    if (shown === null) return null;
+    if (line === null || line.projectId !== shown.projectId) return undefined;
+    const at = line.lineage.indexOf(shown.runId);
+    return at < 0 ? null : { runId: shown.runId, ancestors: line.lineage.slice(at + 1), states: line.states };
+  }, [shown, line]);
+}
+
+/**
+ * What changed in the shown version since each version inherited data was written for (#575): one
+ * comparison of the two versions' exports each, kept for as long as this panel lives. A comparison
+ * still out leaves its version unlisted; one the runtime cannot make says unknown.
+ */
+export function useChangesSince(shownRunId: string | null, ancestors: readonly string[], active: boolean): ChangesSince {
+  const studio = useStudio();
+  const known = useRef(new Map<string, ReadonlyMap<string, boolean> | "unknown" | "pending">());
+  const mounted = useRef(true);
+  const [answered, setAnswered] = useState(0);
+  useEffect(() => () => { mounted.current = false; }, []);
+  const key = ancestors.join("\u0000");
+  useEffect(() => {
+    if (!active || shownRunId === null || key === "") return;
+    for (const ancestor of key.split("\u0000")) {
+      const id = `${shownRunId}\u0000${ancestor}`;
+      if (known.current.has(id)) continue;
+      known.current.set(id, "pending");
+      studio.compare(shownRunId, ancestor).then((compare) => {
+        known.current.set(id, new Map(compare.components.map((row) => [row.componentId, row.changed + row.added + row.removed > 0])));
+      }, () => { known.current.set(id, "unknown"); }).finally(() => { if (mounted.current) setAnswered((count) => count + 1); });
+    }
+  }, [studio, shownRunId, key, active]);
+  return useMemo(() => {
+    const changes = new Map<string, ReadonlyMap<string, boolean> | "unknown">();
+    for (const ancestor of key === "" || shownRunId === null ? [] : key.split("\u0000")) {
+      const value = known.current.get(`${shownRunId}\u0000${ancestor}`);
+      if (value !== undefined && value !== "pending") changes.set(ancestor, value);
+    }
+    return changes;
+  }, [shownRunId, key, answered]); // `answered` says another comparison came back.
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -190,9 +256,10 @@ function Technical({ card, t }: { card: ComponentCard; t: CardWords }) {
     </dl>
     {card.used.length > 0 && <>
       <h4>{t("componentInfo.datasets")}</h4>
-      <ul className="component-info__list">{card.used.map((item) => <li key={item.id}>
+      <ul className="component-info__list">{card.used.map((item) => <li key={item.id} data-inherited={item.inherited || undefined}>
         <strong>{item.title}</strong> <span className="mono">{item.id}</span> · {item.preparedAt}
-        {item.appliesTo.versionLabel && <> · {item.appliesTo.versionLabel}</>}
+        {item.inherited ? <> · {t("componentInfo.inheritedFrom", { label: versionLabel(item.appliesTo) })}</>
+          : item.appliesTo.versionLabel && <> · {item.appliesTo.versionLabel}</>}
       </li>)}</ul>
     </>}
     {card.sources.length > 0 && <>
@@ -242,6 +309,8 @@ export function ComponentInfoPanel({ subject, onClose }: { subject: ComponentInf
       {subject.kind === "pending" && <p className="component-info__state" role="status">{t("componentInfo.state.pending")}</p>}
       {subject.kind === "unresolved" && <p className="component-info__state" role="status">{t("componentInfo.state.unresolved")}</p>}
       {card && sentence && <p className="component-info__state" role="status" data-card-state={card.state}>{sentence}</p>}
+      {card?.state === "ready" && card.reshapedSince.length > 0 && <p className="component-info__state" role="status"
+        data-card-state="reshaped">{reshapedSentence(card, t)}</p>}
       {/* Keyed by component too: another pick opens with every fold shut. */}
       {card?.state === "ready" && <>
         {card.summary.map((block) => <Block key={`${card.componentId}\u0000${block.datasetId}`} block={block}

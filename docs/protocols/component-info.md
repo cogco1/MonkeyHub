@@ -30,11 +30,25 @@ words. A new topic therefore needs a new dataset, not new code.
 - **Guard.** Data is shown only when all of these hold: the Board has been read; the model on screen
   is exactly one retained version (not a local file, several exports or unrecorded edits); the
   click was resolved against that version (the loaded run's own catalog, or the runtime answering
-  `current`); and the dataset's `appliesTo` names the same project, run and state digest. A dataset
-  written for another version is listed under *技术信息与来源* as not matching and is never shown as
-  data; when no dataset matches, the card says `构件资料与当前显示的版本不符（资料对应：<versionLabel>）` and
-  shows only the model's own label and ids. `appliesTo` is compared with what Modeling shows; it
-  never claims or declares a model source.
+  `current`); and the dataset's `appliesTo` names that same version, or a version it continued from
+  on its line.
+- **Inheritance (#575).** The person and the agents change one design along one line, and each step
+  keeps what was said about the steps before it. So data written for a version also applies to every
+  version that continued from it. The line is the Working Head's `lineage` (the head, then each run it
+  continued). For the head, or any run on its line, the runs before it on that line are its ancestors.
+  An inherited dataset must name the state its run has, where an export of that run says it.
+  - Inherited data shows as the version's own. *技术信息与来源* names each such dataset as `沿用自
+    <versionLabel>`.
+  - When the version shown is a candidate, the card asks the runtime once to compare its exports with
+    the ancestor's (`GET /api/candidates/{id}/compare`). If the picked component's objects changed, were
+    added or were removed since then, one line above the data says `资料写于 <versionLabel>；此构件之后改过形状，尺寸以模型为准。`
+    A comparison still running, or one the runtime cannot make, adds nothing.
+  - A dataset written on another line, or for a state its run never had, is listed under *技术信息与来源*
+    as written on another line and is never shown as data. When no dataset applies, the card says
+    `构件资料写于 <versionLabel>，不在当前显示版本的这条设计线上。` and shows only the model's own label and ids.
+    While the line is still being read, the card waits instead of saying so.
+  - `appliesTo` is compared with what Modeling shows and with that version's line. It never claims or
+    declares a model source.
 - **The card.** Once the Board carries any component information, a click on a component opens the
   card in the inspector slot Versions uses, docked beside the canvas. Without any, a click behaves
   as before and the bar's *构件信息* command opens the card on request (it then says
@@ -63,7 +77,7 @@ silently ignored data.
 | `role` | yes | `summary` (the card's first screen: what the component is) or `section` (a topic shown below it). |
 | `order` | no | Number; summaries and sections each sort by it, then by id. |
 | `preparedAt` | yes | `YYYY-MM-DD`, when the dataset was written. |
-| `appliesTo` | yes | `{ projectId, runId, stateDigest, versionLabel? }`: the exact version the data describes. `stateDigest` is the 64-hex design state digest of that run (the `stateDigest` of the model source Modeling shows). `versionLabel` is the human name used in the mismatch sentence. |
+| `appliesTo` | yes | `{ projectId, runId, stateDigest, versionLabel? }`: the exact version the data describes. `stateDigest` is the 64-hex design state digest of that run (the `stateDigest` of the model source Modeling shows). `versionLabel` is the human name used when the data is inherited or written on another line. The data also applies to every version that continued from this one (see *Inheritance*). |
 | `statusLabels` | no | The dataset's own words for statuses, e.g. `{ "verified": "已查价格", "estimate": "预算估计", "to-ask": "待询价", "to-confirm": "待确认" }`. Unworded statuses use the interface's (已核实 / 估计 / 待询 / 待确认 / 未知). |
 | `missing` | no | What the card says for a component this dataset has no entry for, e.g. `采购信息未录入`. |
 | `note` | no | One paragraph for every component (scope, caveats, totals), folded under the section heading's arrow. |
