@@ -312,6 +312,7 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
     await readAgain({ state: "outdated", reason: "The project model has changed since this was made." }, "Out of date with the editing base");
     assert.equal(await sourceStatus.getAttribute("title"), "The project model has changed since this was made.");
     assert.equal(await feedback().isEnabled(), true, "An outdated page is flagged; sending it still asks first in Modeling (#302)");
+    await screenshot("source-status-outdated");
     await readAgain({ state: "frozen" }, "Kept on its chosen version");
     await readAgain({ state: "unavailable", reason: "The exact inputs of this page can no longer be verified." }, "Cannot be checked against the editing base");
     await readAgain({ state: "current" }, "Up to date with the editing base");
@@ -540,6 +541,8 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   assert.deepEqual(placement(active(undone, "image")[0]), placement(originalImage));
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
+  // Fit board answers only once the board is ready, and so listening for the focus that reads again.
+  await fit();
   await Promise.all([
     page.waitForResponse((response) => new URL(response.url()).pathname === "/api/documents"),
     page.evaluate(() => window.dispatchEvent(new Event("focus"))),
@@ -551,6 +554,7 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
   assert.deepEqual((await board()).elements, beforeReload.elements, "Reload must retain scene and source identities");
+  await fit();
   // Receive a genuinely new registered file while the documents panel is hidden.
   const extra = await call("POST", "/api/documents", { projectId: project.projectId, runId: modelSource.runId,
     fileName: "自动到达.png", mimeType: "image/png", contentBase64: png, modelSource });
