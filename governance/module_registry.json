@@ -5107,7 +5107,7 @@
     {
       "module_id": "project_runtime.candidate",
       "owner_path": "services/project-runtime/src/project_runtime/application/candidate.py",
-      "purpose": "Execute a proposal as a detached candidate through the kernel's own runner, and read the finished run back out of the records it retained.",
+      "purpose": "Execute a proposal as a detached run through the kernel's own runner, and read the finished run back out of the records it retained; a run is never a Candidate by itself.",
       "owns": [
         "arranging the run - new run id, harness stage guard, seat pack, RunOptions - and calling run_project",
         "retaining the intent compilation receipt in the candidate run as intent-compilation",

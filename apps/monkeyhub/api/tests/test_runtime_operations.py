@@ -76,7 +76,7 @@ class OperationRecoveryTests(unittest.TestCase):
     def snapshot(self, *, live=False):
         binding = bound_project(self.app.state) if live else ProjectBinding.open(self.settings)
         return runtime_dto(inspect_runtime(binding,
-            jobs=self.app.state.jobs if live else None, candidate_ids=self.manager.candidate_ids())).model_dump(by_alias=True)
+            jobs=self.app.state.jobs if live else None, run_ids=self.manager.candidate_ids())).model_dump(by_alias=True)
 
     def test_recipe_inspection_does_not_journal_notify_or_wake_but_import_does(self):
         from archflow.contracts.canonical import canonical_digest
