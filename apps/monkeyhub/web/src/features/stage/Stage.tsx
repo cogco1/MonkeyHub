@@ -4,10 +4,11 @@ import { useConnection } from "../../api/project-runtime/ProjectRuntimeContext";
  *
  * The viewport is the moved viewer, untouched. Around it: the camera tools, the last resolved pick, the
  * versions strip and the evidence tab. Everything here was handed in; the
- * stage decides nothing.
+ * stage decides nothing. The one exception is the component information card (#549), which reads
+ * the project's Board for itself, once per Board revision, and only looks the pick up in it.
  */
 
-import { createRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent } from "react";
+import { createRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent } from "react";
 
 import type { StudioApiError } from "../../api/project-runtime/client";
 import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/project-runtime/generated";
@@ -42,6 +43,8 @@ import { ElevationPanel, type ElevationControls } from "./ElevationPanel";
 import { ModelToolButton } from "./ModelToolButton";
 import { MenuCommand, MenuSeparator, StatusLine, SurfaceMenus } from "../chrome/SurfaceChrome";
 import { preparePushPull } from "./pushPull";
+import { ComponentInfoPanel, useComponentInfoBoard, type ComponentInfoSubject } from "../componentInfo/ComponentInfoCard";
+import { buildComponentCard, pickMatchesShown, type FieldStatus, type ShownModel } from "../componentInfo/componentInfo";
 import "./stageNotices.css";
 import type { NormalDragController } from "../../workspaces/monkeyarch/viewer/normalDrag";
 import { constrainedTranslation, type TranslationConstraint } from "../../workspaces/monkeyarch/viewer/translationGizmo";
@@ -485,6 +488,10 @@ export function Stage({
   // #352: the palette's own More: the less frequent drawing tools, tracing paper and the drawing plane.
   const [moreToolsOpen, setMoreToolsOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  // #549: the component information card shares the inspector slot with Versions, one at a time.
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [infoPending, setInfoPending] = useState(false);
+  const infoPendingRef = useRef(false);
   const toolsElement = useRef<HTMLDivElement>(null);
   const workspaceElement = useRef<HTMLDivElement>(null);
   const exportMenuElement = useRef<HTMLSpanElement>(null);
@@ -1322,6 +1329,52 @@ export function Stage({
   ) : null;
   const quietBase = !baseQuestion && editingBaseRunId !== null &&
     <span className="editing-base" data-source-match={sameSource ? "same" : "different"}>{baseWords}</span>;
+  // #549: once the project's Board carries component information, a click on the model opens the card;
+  // without any, a click behaves as it always has and the bar's command opens the card on request. A
+  // click on nothing, Close, another model or Versions closes it. A click made while a tool is in hand
+  // is that tool's, not a question about the object. Between a click and its answer an open card
+  // stays, saying so, rather than closing and reopening.
+  const componentBoard = useComponentInfoBoard(documentProjectId ?? null, active && hasModel);
+  const infoAvailable = componentBoard.status === "ready" && (componentBoard.datasets.length > 0 || componentBoard.invalid.length > 0);
+  const infoPicksRef = useRef({ allowed: false, available: false, open: false });
+  infoPicksRef.current = { allowed: !documentOpen && !model?.directTool && sketch.tool === null && !measuring && tool === null,
+    available: infoAvailable, open: infoOpen };
+  const noteInfoPick = (pick: ViewportPick | null) => {
+    if (pick === null) { infoPendingRef.current = false; setInfoPending(false); setInfoOpen(false); return; }
+    const { allowed, available, open } = infoPicksRef.current;
+    if (!allowed || (!available && !open)) return;
+    infoPendingRef.current = true; setInfoPending(true);
+    setInfoOpen(true); setVersionsOpen(false);
+  };
+  const openInfo = () => { setInfoOpen(true); setVersionsOpen(false); };
+  useEffect(() => {
+    if (picked !== null) { infoPendingRef.current = false; setInfoPending(false); return; }
+    // The pick went away without a new click: another model, another base, or a cleared selection.
+    if (!infoPendingRef.current) setInfoOpen(false);
+  }, [picked]);
+  // A click the shell never answered (a refused request) stops saying it is being identified.
+  useEffect(() => {
+    if (!infoPending) return;
+    const timer = setTimeout(() => { if (infoPendingRef.current) setInfoPending(false); }, 8000);
+    return () => clearTimeout(timer);
+  }, [infoPending]);
+  useEffect(() => { if (documentOpen) setInfoOpen(false); }, [documentOpen]);
+  const infoDirty = Boolean(model?.sync?.dirty);
+  const shownRunId = viewedModelSource?.runId, shownState = viewedModelSource?.stateDigest;
+  const shownModel = useMemo<ShownModel | null>(() => documentProjectId && shownRunId && shownState && !infoDirty
+    ? { projectId: documentProjectId, runId: shownRunId, stateDigest: shownState } : null,
+  [documentProjectId, shownRunId, shownState, infoDirty]);
+  const statusWord = useCallback((status: FieldStatus) => t(`componentInfo.status.${status}`), [t]);
+  const infoSubject = useMemo<ComponentInfoSubject | null>(() => {
+    if (!infoOpen || documentOpen) return null;
+    if (picked === null) return infoPending ? { kind: "pending" } : { kind: "unresolved", label: null };
+    if (picked.componentId === null) return { kind: "unresolved", label: designObjectLabel(picked.elementId) };
+    return { kind: "card", card: buildComponentCard({
+      componentId: picked.componentId, elementId: picked.elementId,
+      modelLabel: designObjectLabel(picked.componentId) ?? picked.componentId,
+      shown: shownModel, pickMatchesShown: pickMatchesShown(picked, shownModel), board: componentBoard,
+    }, statusWord) };
+  }, [infoOpen, documentOpen, picked, infoPending, shownModel, componentBoard, statusWord]);
   const pickedStatus = picked && (
     <span className="picked" title={developerMode ? t("stage.picked.title", {
       status: picked.status, sourceState: picked.sourceState,
@@ -1356,6 +1409,7 @@ export function Stage({
   const toggleVersions = () => {
     if (!versionsOpen) onVersionsOpen?.();
     setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setBarMenu(null); setParameterLocksOpen(false);
+    setInfoOpen(false);
   };
   // #352: Export and More take the place of the palette's view tools, one open at a time and,
   // like those, beside neither tracing paper nor the parameter locks. Versions docked at the
@@ -1457,6 +1511,8 @@ export function Stage({
         {explicitBase && <MenuCommand disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading"}
           onClick={onDefaultBase}>{t("stage.base.default")}</MenuCommand>}
         {!onReturnToBoard && picked && onOpenBoard && <MenuCommand onClick={onOpenBoard}>{t("workspace.monkeyboard")}</MenuCommand>}
+        {!documentOpen && picked?.componentId && !infoOpen && <MenuCommand aria-controls="stage-component-info" onClick={openInfo}>
+          {t("componentInfo.title")}</MenuCommand>}
         {exportMenu}
         {moreMenu}
       </SurfaceMenus>
@@ -1509,7 +1565,7 @@ export function Stage({
             stopMeasuring(); setMeasuring(false);
             onSource(label);
           }}
-          onPick={(pick) => { pushPullNeedsFace.current = false; onPick(pick); }}
+          onPick={(pick) => { pushPullNeedsFace.current = false; noteInfoPick(pick); onPick(pick); }}
           idle={hasModel ? undefined : (
             <div className="stage-empty">
               <svg className="stage-empty__icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" aria-hidden="true">
@@ -2213,6 +2269,8 @@ export function Stage({
           onOpen={onOpenVersion} onOpenRun={onOpenRun} onCompare={onCompareVersion}
         />
       </aside>}
+      {/* #549: what the Board's datasets say about the picked component, in the same docked slot. */}
+      {infoSubject && <ComponentInfoPanel subject={infoSubject} onClose={() => { infoPendingRef.current = false; setInfoOpen(false); }} />}
 
       {documentMounted && <div style={{ visibility: documentOpen ? "visible" : "hidden" }} inert={!documentOpen} aria-hidden={!documentOpen}>
         {documentProjectId ? <DocumentCanvas key={`${documentProjectId}:${documentRunId}:${documentView.sourceSha}:${documentView.revisionRef}`}

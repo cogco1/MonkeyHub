@@ -1,0 +1,32 @@
+{
+  "schema": "MonkeyHubComponentInfo@1",
+  "id": "thermal-fixture",
+  "title": "Thermal",
+  "role": "section",
+  "order": 30,
+  "preparedAt": "2026-10-02",
+  "appliesTo": {
+    "projectId": "fixture-project",
+    "runId": "run-a",
+    "stateDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "versionLabel": "version A"
+  },
+  "missing": "No thermal data recorded",
+  "sources": [
+    { "id": "lab", "label": "conductivity test report", "date": "2026-09-12", "kind": "measurement" }
+  ],
+  "groups": {
+    "wall-type-1": {
+      "title": "Wall type 1",
+      "fields": [ { "label": "U-value", "value": 0.35, "unit": "W/m²K", "status": "verified", "source": "lab" } ],
+      "shared": true,
+      "allocation": { "basis": "by face area", "fields": [ { "label": "Share", "value": "per square metre" } ] }
+    }
+  },
+  "components": {
+    "post-1": {
+      "fields": [ { "label": "Conductivity", "value": 0.13, "unit": "W/mK", "status": "verified", "source": "lab" } ],
+      "group": "wall-type-1"
+    }
+  }
+}
