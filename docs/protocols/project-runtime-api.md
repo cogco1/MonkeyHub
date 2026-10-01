@@ -1584,7 +1584,7 @@ and the request it answers is the Continue, bound like any other (`rawLanguage` 
 `feedbackQuote` passage of it). Results stay candidates when the user asked for options or
 alternatives, or when the loop's checks failed; a Continue to any other result needs the user's words
 asking for it. Modeling follows the moved head and offers 撤销, the same Continue back onto the
-previous position. An agent outside the Hub's conversations (Codex, Claude Code) reaches the Runtime
+previous position, where the working position named it. An agent outside the Hub's conversations (Codex, Claude Code) reaches the Runtime
 through this same adapter: after `presentation_bind` it presents each user request (`chat_present`,
 kind `user`) before acting on it, admits the finished loop and then continues on that request, and the
 Hub binds the presented message as it binds a native one. A client that calls the Runtime's HTTP API
