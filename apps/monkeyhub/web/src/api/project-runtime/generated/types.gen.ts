@@ -2056,6 +2056,16 @@ export type ConstructionEntityDto = {
         [key: string]: string;
     };
     /**
+     * Partfacets
+     *
+     * the material each of its parts states of its own, by part id; empty when none does
+     */
+    partFacets: {
+        [key: string]: {
+            [key: string]: string;
+        };
+    };
+    /**
      * Capabilities
      *
      * what its facets allow, where its geometry can take it
@@ -5028,7 +5038,7 @@ export type ExportTimingDto = {
 /**
  * FacetTargetDto
  *
- * Facets to set or remove on one geometry id (a component).
+ * Facets to set or remove on one geometry id (a component), or on one of its parts.
  */
 export type FacetTargetDto = {
     /**
@@ -5037,6 +5047,12 @@ export type FacetTargetDto = {
      * the geometry id the model view lists
      */
     id: string;
+    /**
+     * Part
+     *
+     * one of the ids the model view lists as this geometry id's parts: set or remove that part's own material.name and material.color, which it wears instead of the geometry id's; a part without its own wears the geometry id's, or none
+     */
+    part?: string | null;
     /**
      * Set
      *

@@ -625,13 +625,30 @@ The export reads its preview back and fails on a material whose name, colour or 
 differs. Nothing is inferred from names or shapes; retained candidates and their files are
 never rewritten, so only runs made after a declaration carry its material.
 
+**A part may wear its own material (#580).** A geometry id whose parts differ (a plinth of
+brick and block, a floor finish inside with paving outside) takes one facets target per part,
+`{id, part, set | remove}`, where `part` is one of the ids `GET /api/construction/model` lists as
+that entity's `parts`. A part states `material.name` and `material.color` and nothing else; they
+are kept under the component (`Component@1.fields.part_facets`) and read back as the entity's
+`partFacets`. The record refuses a part its component does not have (`422
+FACETS_TARGET_INVALID`, naming its parts), any other key on a part, and a colour that would give
+one material two colours across components and parts (`422 FACETS_INVALID`); a part that is to
+be removed or moved to another component loses its own material first. Each object wears, by
+precedence, its part's own material, else its component's, else none
+(`archflow:material_status: undeclared`). An object belongs to the part it is named after
+(`obj-<part>`, or `obj-<part>-<suffix>` for one of several; the longest such part wins, the rule
+a pick uses) among all of its component's parts; any other object of the component wears the
+component's. The preview export, the composed rewrite and its readback apply that one rule. No
+group is split and no layer, element, dependency or geometry changes.
+
 **The composed model wears the same declarations (#580).** A candidate that continues a
 complete composed model (an imported model with native objects patched in) rewrites that
 model's material table, object bindings and material labels from its run's declared materials
 on every compose, whether or not any geometry changed, so a material-only change gives the run
 composed bytes of its own. An object a seat's program delivers wears what that run's preview
-gives it; any other object wears the material the components its `archflow:component` names
-declare, as one native material named by it in its declared colour. Every other object, an
+gives it; any other object wears the material its part, else the components its
+`archflow:component` names, declare, as one native material named by it in its declared
+colour. Every other object, an
 imported object with no component included, wears none and carries
 `archflow:material_status: undeclared`. Materials the imported model or an earlier step brought
 are cleared, not kept: object bindings, layer render materials and block members' own materials
