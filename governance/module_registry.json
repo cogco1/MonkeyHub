@@ -8115,6 +8115,75 @@
       "notes": "Workspace tests cover restart reuse, task/cache placement, explicit overrides and preservation of project files. Signed-installation tests use an ephemeral in-process key and a fixture candidate; they exercise the verifier, not a real publisher identity. Distribution acceptance still requires an explicit candidate build plus isolated installer and installed-application smoke checks."
     },
     {
+      "module_id": "tools.benchmarks.daily_benchmark",
+      "owner_path": "tools/benchmarks/daily_benchmark.py",
+      "status": "canonical",
+      "purpose": "Measure MonkeyHub from a checkout the same way every day - Hub start, project open, opening Modeling, the projection check's routes and the idle cost - and keep the results, their trend and their budgets on the benchmark-data branch.",
+      "owns": [
+        "The daily benchmark's scenarios: Hub start as a first launch (an empty bytecode prefix) and warm, project open as the web client's ensureProject sends it, opening Modeling as the Modeling workspace sends it, the projection check's six routes cold and warm, and 60 s of idle CPU seconds and bytes read for the Hub and the worker",
+        "Starting Hubs from a checkout apart from any installed MonkeyHub: their own ports, runtime root, APPDATA, LOCALAPPDATA and bytecode prefix, and an account credential store that holds nothing",
+        "The MonkeyHubBenchmark@1 result: commit, date, runner, and each metric's samples, median and p90",
+        "The budgets (tools/benchmarks/budgets.json) and the flag rule: over budget, or a median both more than 20% and, for a time, more than 200 ms slower than the trailing 7-day median of the same runner",
+        "The orphan benchmark-data branch: results/<runner>/<YYYY-MM-DD>-<sha12>.json, trend.md and latest.json, and one issue title and body per flagged metric"
+      ],
+      "does_not_own": [
+        "the synthetic project and its generator - services/project-runtime/tests/synthetic_project.py, built before a run because a repository tool takes nothing from a test suite",
+        "the projection check's parity gate between a base and a candidate - tools/benchmarks/projection_check.py (GH-376), whose route list and settle step this reuses",
+        "the timings a running product records about itself - monkeymonitor",
+        "pushing, and opening or updating GitHub issues - .github/workflows/benchmark.yml",
+        "the Hub and the Project Runtime it measures - hub.shell and the project_runtime modules"
+      ],
+      "inputs": [
+        "built synthetic projects by size (SIZE=DIR), each copied before it is opened",
+        "the checkout's apps/monkeyhub/run.py and its Python source roots",
+        "MonkeyHubBenchmark@1 results, tools/benchmarks/budgets.json and optional budget overrides for one run",
+        "a checkout whose remote has, or is to get, the benchmark-data branch"
+      ],
+      "outputs": [
+        "one MonkeyHubBenchmark@1 JSON file and its Markdown summary per run",
+        "commits on the benchmark-data branch: results, trend.md, latest.json and README.md",
+        "the flagged metrics, and one issue title and body per flagged metric (JSON)"
+      ],
+      "public_api": [
+        "main",
+        "run",
+        "Options",
+        "Hub",
+        "ModelingOpening",
+        "open_project",
+        "read_routes",
+        "measure_idle",
+        "count_rounds",
+        "metric_entry",
+        "evaluate",
+        "summary_markdown",
+        "trend_markdown",
+        "latest_document",
+        "issue_plan",
+        "prepare_checkout",
+        "publish"
+      ],
+      "depends_on": [],
+      "used_by": [],
+      "invariants": [
+        "A measured Hub reads and writes only under --work: never an installed MonkeyHub's settings, data, ports or saved keys",
+        "A project given is never opened: every Hub reads a settled copy, and no scenario writes to it",
+        "Evaluation is a pure function of a result, the history and the budgets; only the same runner's runs of the 7 days before count",
+        "benchmark-data stays an orphan: its first commit has no parent, and nothing on it is merged into main",
+        "A result is added and never rewritten; a second run of one commit on one day keeps both"
+      ],
+      "tests": [
+        "tools/tests/test_daily_benchmark.py",
+        "tools/tests/test_benchmark_data.py"
+      ],
+      "notes": "CREATE (GH-547): no owner measured MonkeyHub over time. tools/benchmarks/projection_check.py compares one base with one candidate for parity and gates timings only at twice and 200 ms; monkeymonitor reads the timings a running product records; the other drivers in tools/benchmarks measure model turns.",
+      "files": [
+        "tools/benchmarks/daily_benchmark.py",
+        "tools/benchmarks/benchmark_data.py",
+        "tools/benchmarks/budgets.json"
+      ]
+    },
+    {
       "module_id": "monkeydiagram.documentation.styles",
       "owner_path": "packages/monkeydiagram/src/monkeydiagram/documentation/styles.py",
       "purpose": "Compose sheets in existing project styles and render common paper scenes to PDF, editable DXF and paper SVG.",
