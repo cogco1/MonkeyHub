@@ -224,7 +224,9 @@ def inspect_three_dm_index(data: bytes) -> dict[str, object]:
     This index includes unnamed objects and block definition members as saved.
     Names, layers and user strings are source metadata, not inferred semantics;
     visibility and material source are the native object attributes, not resolved
-    display properties. Geometry validity, bounds, encoding and morphology are
+    display properties. ``material`` is the one resolved value: the material the
+    object wears from this file's own table and where it comes from
+    (``_worn_material``). Geometry validity, bounds, encoding and morphology are
     deliberately outside this inexpensive lookup path.
     """
 
@@ -235,6 +237,11 @@ def inspect_three_dm_index(data: bytes) -> dict[str, object]:
     try:
         objects = tuple(model.Objects)
         layers, layers_by_index = _layers(model, objects)
+        materials = _material_table(model)
+        layer_materials = {
+            _integer(layer.Index, "layer index"): _integer(layer.RenderMaterialIndex, "layer render material index")
+            for layer in model.Layers
+        }
         rows: list[dict[str, Any]] = []
         object_ids: set[str] = set()
         for item in objects:
@@ -264,6 +271,9 @@ def inspect_three_dm_index(data: bytes) -> dict[str, object]:
                 ),
                 "material_source": _enum_name(
                     attributes.MaterialSource, "object material source"
+                ),
+                "material": _worn_material(
+                    attributes, rhino3dm, materials, layer_materials
                 ),
                 "attributes": attributes,
                 "geometry": geometry,
@@ -559,6 +569,58 @@ def _objects(
         by_id[object_id] = item
     rows.sort(key=lambda item: item["id"])
     return rows, by_id
+
+
+def _material_table(model: Any) -> list[tuple[str, str, str | None]]:
+    """Each native material's name, ``#RRGGBB`` diffuse colour and ``archflow:material_id``, by table index."""
+
+    rows: list[tuple[str, str, str | None]] = []
+    for material in model.Materials:
+        red, green, blue, _ = _rgba(material.DiffuseColor, "material diffuse color")
+        rows.append((
+            _string(material.Name, "material name"),
+            f"#{red:02X}{green:02X}{blue:02X}",
+            material.GetUserString("archflow:material_id") or None,
+        ))
+    return rows
+
+
+def _worn_material(
+    attributes: Any,
+    rhino3dm: Any,
+    materials: list[tuple[str, str, str | None]],
+    layer_materials: dict[int, int],
+) -> dict[str, object]:
+    """The material one object wears as this file binds it, and where it comes from.
+
+    The binding follows monkeycad's own rule (``three_dm_compose`` and the
+    mesh reader): from object, the object's material index; from layer, its
+    layer's render material; anything else wears none here. ``color`` is
+    that material's diffuse colour. ``source`` is ``declared`` when the
+    object's ``archflow:material`` label names the material it wears (by
+    name or by the material's ``archflow:material_id``), ``file`` when it
+    wears a material no declaration names - an imported base's, a role's
+    fallback - and ``undeclared`` when it wears none.
+    """
+
+    binding = attributes.MaterialSource
+    if binding == rhino3dm.ObjectMaterialSource.MaterialFromObject:
+        index = _integer(attributes.MaterialIndex, "object material index")
+    elif binding == rhino3dm.ObjectMaterialSource.MaterialFromLayer:
+        index = layer_materials.get(
+            _integer(attributes.LayerIndex, "object layer index"), -1
+        )
+    else:
+        index = -1
+    if not 0 <= index < len(materials):
+        return {"name": None, "color": None, "source": "undeclared"}
+    name, color, material_id = materials[index]
+    declared = attributes.GetUserString("archflow:material") or ""
+    return {
+        "name": name,
+        "color": color,
+        "source": "declared" if declared and declared in (name, material_id) else "file",
+    }
 
 
 def _materials(

@@ -89,6 +89,47 @@ class MeshLineViewTests(unittest.TestCase):
         self.assertTrue(self.dark(image, 1.0, middle, crop, 300))
         self.assertFalse(self.dark(image, 0.0, middle, crop, 300))
 
+    def test_fills_paint_each_visible_surface_its_own_colour_and_mark_an_object_without_one(self):
+        from PIL import Image
+
+        from monkeydiagram.projection.mesh_views import (
+            FILL_BACKGROUND, MeshViewError, UNKNOWN_FILL, UNKNOWN_HATCH, mesh_line_view, pixel_size, triangulate,
+        )
+
+        entries = self.entries(("wall", (0, 0, 0), (10, 1, 10)), ("front", (4, -4, 1), (2, 1, 2)),
+                               ("behind", (4, 3, 4), (2, 1, 2)), ("bare", (11, 0, 0), (3, 1, 6)))
+        crop, size = (-1, -1, 15, 11), 320
+        meshes, _ = triangulate(entries, [entry.name for entry in entries], linear_deflection=pixel_size(crop, size) / 2)
+        fills = {"wall": (200, 185, 143), "front": (160, 82, 45), "behind": (20, 90, 200), "bare": None}
+
+        def draw():
+            return mesh_line_view(meshes, **self.FRONT, crop_uv=crop, size_px=size, fills=fills)
+
+        view = draw()
+        self.assertEqual(view.png, draw().png, "the same input gives the same bytes")
+        self.assertEqual(view.seen, ("bare", "front", "wall"), "the box behind the wall does not show")
+        with Image.open(BytesIO(view.png)) as image:
+            self.assertEqual((image.mode, image.size), ("RGB", (view.width, view.height)))
+            image = image.copy()
+        scale = size / max(crop[2] - crop[0], crop[3] - crop[1])
+
+        def at(u, v):
+            return image.getpixel((round((u - crop[0]) * scale), round((crop[3] - v) * scale)))
+
+        # Inside a face a pixel is the object's own colour exactly: no light, no blend.
+        self.assertEqual(at(2, 8), fills["wall"])
+        self.assertEqual(at(5, 2), fills["front"], "the box in front of the wall is filled over it")
+        self.assertEqual(at(4.5, 4.5), fills["wall"], "the box behind the wall is hidden")
+        self.assertNotIn(fills["behind"], {colour for _, colour in image.getcolors(maxcolors=1 << 16)})
+        self.assertEqual(at(-0.5, -0.5), FILL_BACKGROUND)
+        # An object given no colour reads as unknown: grey under hatch lines, never a material colour.
+        bare = {image.getpixel((x, y)) for x in range(round(11.5 * scale) + 20, round(11.5 * scale) + 40)
+                for y in range(round(6 * scale), round(6 * scale) + 20)}
+        self.assertTrue({UNKNOWN_FILL, UNKNOWN_HATCH} <= bare, bare)
+        self.assertTrue(all(len(set(colour)) == 1 for colour in bare), "the unknown marking is neutral grey")
+        with self.assertRaises(MeshViewError):
+            mesh_line_view(meshes, **self.FRONT, crop_uv=crop, size_px=size, fills={"wall": (300, 0, 0)})
+
     def test_a_curve_without_faces_is_skipped_and_named(self):
         from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
         from OCP.gp import gp_Pnt
@@ -99,6 +140,32 @@ class MeshLineViewTests(unittest.TestCase):
         meshes, skipped = triangulate((curve, *self.entries(("wall", (0, 0, 0), (1, 1, 1)))), ["rail", "wall"],
                                       linear_deflection=0.01)
         self.assertEqual(([mesh.object_id for mesh in meshes], skipped), (["wall"], ("rail",)))
+
+
+class MeshFillTieTests(unittest.TestCase):
+    """Needs no OCP: two objects' faces in one plane, triangulated differently."""
+
+    def test_coplanar_faces_of_two_objects_fill_cleanly_and_a_nearer_one_still_wins(self):
+        from PIL import Image
+
+        from monkeydiagram.projection.mesh_views import ObjectMesh, mesh_line_view
+
+        red, blue = (200, 30, 30), (30, 30, 200)
+
+        def overlap(offset):
+            # Looking along +Y: the second square is ``offset`` nearer the eye, over the first's corner.
+            first = ObjectMesh("first", ((0, 0, 0), (6, 0, 0), (6, 0, 6), (0, 0, 6)), ((0, 1, 2), (0, 2, 3)))
+            second = ObjectMesh("second", ((3, -offset, 3), (9, -offset, 3), (9, -offset, 9), (3, -offset, 9)),
+                                ((0, 1, 3), (1, 2, 3)))
+            view = mesh_line_view([first, second], right=(1, 0, 0), up=(0, 0, 1), crop_uv=(0, 0, 9, 9), size_px=180,
+                                  fills={"first": red, "second": blue})
+            with Image.open(BytesIO(view.png)) as image:
+                # The overlap is u, v in 3..6: pixels 60..120 across and down, inside its edges.
+                return {image.getpixel((x, y)) for x in range(64, 117) for y in range(64, 117)}
+
+        self.assertEqual(overlap(0.0), {red}, "one plane: the lower label, no speckle")
+        self.assertEqual(overlap(1e-9), {red}, "rounding apart is still one plane")
+        self.assertEqual(overlap(0.01), {blue}, "a face a centimetre nearer is in front")
 
 
 class MeshLineViewMemoryTests(unittest.TestCase):

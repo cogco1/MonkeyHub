@@ -1,4 +1,7 @@
-"""The Agent closes each loop with one admission and continues only on the user's words.
+"""The Agent closes each loop with one admission and continues on the user's words.
+
+A change the user asked for continues once its loop is admitted: the request is the Continue (#575).
+Any other result is continued only when the user's words ask for it.
 
 #294 slices S3 and S4 at the chat boundary. A real Studio, managed by a Hub,
 runs real candidate runs over one P036 project; the chat tool adapter binds each
@@ -180,7 +183,9 @@ class AgentAdmissionTests(unittest.TestCase):
         tools = {tool["name"]: tool for tool in _tools_of(mcp_server)}
         described = tools["studio_request"]["description"]
         for words in ("POST /api/admissions", "supersedes", "study: {id, label, baseRunId}", "id an ASCII slug",
-                      "PUT /api/working-draft", "only when the user's words ask to continue", "taskClass",
+                      "PUT /api/working-draft", "a change the user asked for lands on their working design",
+                      "once its result is admitted, in the same turn", "the Continue. Options or alternatives they asked for",
+                      "and results whose checks failed, stay candidates", "any other result only on their words", "taskClass",
                       "only after visual_review looked at that result or an attempt it supersedes"):
             self.assertIn(words, described)
         quote = tools["studio_request"]["inputSchema"]["properties"]["feedbackQuote"]["description"]
@@ -242,6 +247,35 @@ class AgentAdmissionTests(unittest.TestCase):
         # Continue admits nothing.
         self.assertEqual(self.admissions(), [])
 
+    def test_a_requested_change_lands_on_the_working_design_once_admitted(self):
+        """#575: the user's request is the Continue. Nobody has to find the result and continue it by hand."""
+        request = "门廊太笨重了，让它的比例轻一些。"
+        prompt, message = self.hub_turn(request)
+        for contract in ("Reject a result only when the user's own words say so",
+                         "A change the user asked for lands on their working design: once its result is admitted, "
+                         "continue to it in the same turn",
+                         "Leave results as candidates when the user asked for options or alternatives or your checks failed"):
+            self.assertIn(contract, prompt)
+
+        # The Agent's script, following that contract: one loop, checked by readback and admitted, then continued.
+        result = self.generate(height=2.6)
+        self.tool("/api/admissions", {"results": [{"runId": result, "outcome": "admitted", "supersedes": [], "label": "轻门廊"}]},
+                  taskClass="deterministic_edit")
+        self.assertEqual(self.head(), self.reference, "admitting alone never moves the Working Head")
+        revision = self.tool("/api/working-source", method="GET")["revisionSha256"]
+        position = self.tool("/api/working-draft", {"runId": result, "baseRevisionSha256": revision}, method="PUT")
+        self.assertEqual((position["current"]["runId"], self.head()), (result, result))
+
+        # Bound to the request itself, which never says "continue": its message, and its words as the user wrote them.
+        bound = {"sessionId": self.session["id"], "messageId": message["id"]}
+        [(_, _, sent, _)] = [write for write in self.writes if write[0] == "PUT"]
+        self.assertEqual((sent["messageSource"], sent["rawLanguage"]), (bound, request))
+        [event] = self.continued(result)
+        self.assertEqual((event["origin"], event["previousHeadRunId"], event["targetRunId"], event["messageSource"]),
+                         ("hub-agent", self.reference, result, bound))
+        self.assertEqual([row["runId"] for record in self.admissions() for row in record["results"]], [result],
+                         "the Continue admitted nothing more")
+
     def test_the_binding_fills_message_source_and_words_only_where_they_decide(self):
         kept, tried = self.generate(height=2.4), self.generate(height=2.8)
         current = self.user("做两个方案比较一下")
@@ -283,7 +317,8 @@ class AgentAdmissionTests(unittest.TestCase):
         prompt, message = self.hub_turn(request)
         for contract in ("Close each completed loop with one admission that lists the attempts each result superseded",
                          "declare its Study with an id and label from the request", "Never admit intermediate runs",
-                         "Reject a result, or continue from one, only when the user's own words say so"):
+                         "Reject a result only when the user's own words say so",
+                         "Leave results as candidates when the user asked for options or alternatives"):
             self.assertIn(contract, prompt)
 
         # The Agent's script, following that contract. The user's words reject the first scheme.

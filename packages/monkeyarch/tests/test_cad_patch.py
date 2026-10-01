@@ -567,7 +567,8 @@ class ComposedThreeDmPatchTests(unittest.TestCase):
         self.assertEqual({o.Attributes.Name for o in restored.Objects}, {o.Attributes.Name for o in base.Objects})
         self.assertEqual(len(restored.InstanceDefinitions), 1)
 
-    def test_unassigned_replacements_inherit_exact_source_and_new_component_materials(self):
+    def test_replacements_inherit_no_material_from_the_base(self):
+        """What a composed object wears is rewritten from the run's declarations afterwards (#580), never inherited here."""
         r = self.rhino
         short = _compile(_rows()[:3])
         for prior, current in ((self.prior, self.changed), (short, self.prior)):
@@ -600,29 +601,13 @@ class ComposedThreeDmPatchTests(unittest.TestCase):
                 replaced = set(delivered_object_ids(current.proposal)) - set(select_patch_operations(current, prior).kept_object_ids)
                 for item in after.Objects:
                     if item.Attributes.Name in replaced:
-                        self.assertEqual(item.Attributes.MaterialSource, r.ObjectMaterialSource.MaterialFromObject)
-                        self.assertEqual(item.Attributes.MaterialIndex, 0)
-                        self.assertEqual(item.Attributes.GetUserString("archflow:material"), "source-glass")
+                        self.assertEqual(item.Attributes.MaterialSource, r.ObjectMaterialSource.MaterialFromLayer)
+                        self.assertEqual(item.Attributes.MaterialIndex, -1)
+                        self.assertEqual(item.Attributes.GetUserString("archflow:material"), "")
+                # the base's own table is left exactly as it was
                 self.assertAlmostEqual(after.Materials[0].Transparency, 0.65)
                 self.assertAlmostEqual(after.Materials[0].PhysicallyBased.Opacity, 0.35)
                 self.assertEqual(after.Materials[0].GetBitmapTexture().FileName, "source-texture.png")
-
-    def test_new_object_does_not_guess_between_component_materials(self):
-        r = self.rhino
-        short = _compile(_rows()[:3])
-        base = self.native_model(short)
-        second = base.Materials.Add(r.Material())
-        next(iter(base.Objects)).Attributes.MaterialIndex = second
-        donor = self.native_model(self.prior)
-        for item in (*base.Objects, *donor.Objects):
-            item.Attributes.SetUserString("archflow:component", "building")
-        for item in donor.Objects:
-            item.Attributes.MaterialSource = r.ObjectMaterialSource.MaterialFromLayer
-            item.Attributes.MaterialIndex = -1
-        after = r.File3dm.FromByteArray(patch_composed_three_dm(self.encoded(base), prior_program=short, program=self.prior, replacement_3dm=self.encoded(donor)))
-        added = next(item for item in after.Objects if item.Attributes.Name == "obj-pediment-west")
-        self.assertEqual(added.Attributes.MaterialIndex, -1)
-        self.assertEqual(len(after.Materials), 2)
 
     def test_unchanged_program_returns_original_bytes(self):
         base = self.native_model(self.prior, feet=True)

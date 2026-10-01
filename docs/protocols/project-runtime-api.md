@@ -101,7 +101,7 @@ tolerate it.
 | GET | `/api/index/{table}` | read-only rows of the project index (ADR-008): `table` is `run`, `record`, `artifact`, `document`, `candidate` or `stage`; the query names exact column values in camelCase (`runId`, `sha256`, `kind`, `assetSha256`, `branchId`, `candidateId`, `stageRef`, ...) and `limit` (default 1000). Answers `{projectId, epoch, revision, table, rows, truncated}` from one snapshot; each row carries its `rev` and names the P036 record it was read from — the rows are never evidence, the record is. 503 `INDEX_UNAVAILABLE` while the index is loading, behind this process's own last write, or when the process keeps none; 404 `INDEX_TABLE_NOT_FOUND`; 422 `INDEX_FILTER_INVALID` | reads a derived index | provisional |
 | GET | `/api/artifacts/{sha256}/bytes` | the certified bytes, re-hashed before they are served; `ETag`, RFC 6266 `Content-Disposition`, `Cache-Control: no-store` | reads shared | stable |
 | POST | `/api/model-assets` → 201 | original 3DM bytes (`projectId`, `fileName`, `contentBase64`, maximum 128 MiB). Both `runId` and `stateDigest` bind a composed model; omitting both retains an external source by exact byte digest. External rows have `representation=external` and null `modelSource`, design state and Stage; they are viewable original files, not semantic edit bases. Retries reuse exact registered bytes and preserve earlier revisions. No HEAD change | **writes shared source** | provisional |
-| GET | `/api/model-assets/{asset_sha256}/index` | exact `runId` + `stateDigest`; GUID-sorted native object metadata, units and source binding. `offset` / `limit` (default 50, maximum 200), optional repeated `objectId` GUIDs (maximum 200). Returns `objectCount`, `matchedCount`, `nextOffset`; unknown GUIDs fail with 404, mismatched source with 409. Names, layers and raw user strings are not inferred architectural roles. No geometry validation, scope admission or edit | reads shared | provisional |
+| GET | `/api/model-assets/{asset_sha256}/index` | exact `runId` + `stateDigest`; GUID-sorted native object metadata, units and source binding. `offset` / `limit` (default 50, maximum 200), optional repeated `objectId` GUIDs (maximum 200). Returns `objectCount`, `matchedCount`, `nextOffset`; unknown GUIDs fail with 404, mismatched source with 409. Names, layers and raw user strings are not inferred architectural roles. Each object's `material` is the one resolved value: `{name, color, source}` of the material it wears from the file's own table (its own, or its layer's render material; `color` is the diffuse `#RRGGBB`); `source` is `declared` when its `archflow:material` label names that material, `file` when no declaration names it, `undeclared` (null name and colour) when it wears none. No geometry validation, scope admission or edit | reads shared | provisional |
 | POST | `/api/artifacts/{sha256}/rhino-export` → 201 | that run's exact STEP imported into this machine's Rhino and kept as an editable `*.work.3dm`; body carries `runId`, because the same bytes can be exported by more than one run. Ordinary and blocking, one export at a time; the answer is the work model's own artifact row, carrying `sourceStepSha256`. Asking again for the same source answers with the model already made. Without a local Rhino or shell: 409 `RHINO_HOST_UNAVAILABLE` | **writes shared workspace** | stable |
 | POST | `/api/captures` → 201 | a viewport PNG (maximum 32 MiB) retained under the named existing run's `workspaces/studio-captures/`; body carries `runId` and `pngBase64`, response carries its project-relative path and digest. Optional exact `modelSource` also registers a preview in the existing source-document store and adds `document` to the response; source run must equal `runId` | **writes shared workspace + optional source document** | stable |
 | GET | `/api/model-assets/{asset_sha256}/preview` | required `runId` + `stateDigest`; verifies the exact retained model and returns its registered viewport `SourceDocument`, or `null` when none exists. Image bytes use the existing documents route and SHA-256 verification. Ordinary uploaded images are never selected | reads shared | provisional |
@@ -239,6 +239,15 @@ It returns source metadata and an inline PNG (base64 `data`, `mimeType`, width/h
 It reuses the retained STEP projection and creates no drawing record or project file. The
 source is verified on every read; the projection of a view already drawn for the same exact
 source is reused from process memory, never written.
+`display=material` (default `line`) draws the same exact source in the same views and frame
+with each object filled flat, without light, in the diffuse colour of the material the model
+asset's own table binds to it (its own material, or its layer's render material), so a pixel
+inside a face is exactly that colour; an object that wears none is grey (`#C8C8C8`) under
+darker 45-degree hatch lines, never a guessed colour. The answer has
+`representation=orthographic-material-projection` and a `legend`: each material the drawn
+objects wear (`name`, `color`, `source` `declared` or `file`, `objects` drawn, `visible` in this
+view) and the `undeclared` / `undeclaredVisible` counts. Nothing is rendered or inferred; the
+same exact source draws the same bytes.
 Incomplete/composed-only, Rhino-only or mismatched sources refuse; no bounding-box image stands
 in for missing geometry. MonkeyHub exposes the image as native MCP image content and keeps
 source metadata in a separate text block.
@@ -271,7 +280,8 @@ characters), 1–8 `criteria` (`criterionId`, `text`), up to 6 `preserve` condit
 (`taskClass`, `allowed`, `used`, `lastFindingIds`).
 
 A modeling review names one model (`kind: "model"`, `runId`, `stateDigest`, `assetSha256`)
-and model-view directions (`front`, `back`, `left`, `right`, `top`, `axon`). Other domains
+and model-view directions (`front`, `back`, `left`, `right`, `top`, `axon`), each a line view,
+or with `-material` (`axon-material`) its material view. Other domains
 name exact registered pages (`kind: "page"`, `runId`, `assetSha256`, explicit `revisionRef`,
 `pageIndex`). Source identity includes the document and revision: different documents may
 both name page 0. The caller may use `viewRecipe: ["page-0"]` for that bundle; the Runtime
@@ -614,6 +624,23 @@ keeps its component's distinction colour and carries `archflow:material_status: 
 The export reads its preview back and fails on a material whose name, colour or binding
 differs. Nothing is inferred from names or shapes; retained candidates and their files are
 never rewritten, so only runs made after a declaration carry its material.
+
+**The composed model wears the same declarations (#580).** A candidate that continues a
+complete composed model (an imported model with native objects patched in) rewrites that
+model's material table, object bindings and material labels from its run's declared materials
+on every compose, whether or not any geometry changed, so a material-only change gives the run
+composed bytes of its own. An object a seat's program delivers wears what that run's preview
+gives it; any other object wears the material the components its `archflow:component` names
+declare, as one native material named by it in its declared colour. Every other object, an
+imported object with no component included, wears none and carries
+`archflow:material_status: undeclared`. Materials the imported model or an earlier step brought
+are cleared, not kept: object bindings, layer render materials and block members' own materials
+(members wear their instance's). A table entry no object wears any more stays in the table,
+unreferenced. Object GUIDs, geometry, names, layers and every other user string are untouched.
+Before registering, the runtime reads the final bytes back against the input model and the
+native exports (each object's GUID, its user strings other than the two material labels, and
+its encoded geometry, compared by content rather than by bounds) and against the declarations;
+a mismatch fails the candidate and registers no composed model.
 
 ### 5.2 The judgement is retained
 
@@ -1410,8 +1437,9 @@ The Working Head is the architect's editing base, which ordinary Modeling, Drawi
 Board work follows. It is read from the retained working position (`design/working.json`
 `current`), which only the explicit `PUT /api/working-draft` moves: Continue on a shown result,
 adopting the architect's own Sync, or the Hub Agent continuing on the user's bound words (#294
-Q3). A generated candidate, including a continuation of the base,
-is recorded and shown but never adopted (GH-234 Q1/Q2). An unreadable position falls back to the
+Q3). A change the user asked for is continued that way once its result is admitted: the request is
+the Continue (#575, revising GH-234 Q2). A generated candidate, including a continuation of the base,
+is recorded and shown but never adopted by the Runtime itself (GH-234 Q1). An unreadable position falls back to the
 main line's accepted head and then the reference run, with a warning. A position whose run has a live
 rejection (§5.5) stays the head and adds a warning; only Continue moves it. Resolving it writes nothing, takes no project
 guard and never picks a newest file. A continuation keeps its source position's branch, so a
@@ -1582,7 +1610,7 @@ Lock, supersede and Stage acceptance are not exposed by this capability. Runtime
 authorization and CAS remain authoritative. Its schema tool derives these
 narrowed inputs from the actual Runtime OpenAPI rather than another Decision DTO.
 
-The same tool closes the Agent's loops and continues only on the user's words (#294 Q3). It
+The same tool closes the Agent's loops and continues on the user's words (#294 Q3, #575). It
 exposes `POST /api/admissions` with `task.kind` fixed to `hub-chat`, and `PUT
 /api/working-draft`; it reads `GET /api/admissions`, `GET /api/working-source` and `GET
 /api/working-draft/revision`. Hub fills `messageSource` from the last user message the Agent was
@@ -1593,7 +1621,18 @@ CHAT_FEEDBACK_SOURCE`), as is provider-supplied provenance, another task kind or
 without a run (`422`). The schema tool hides the bound fields, and the Continue reply carries only
 `projectId`, `revisionSha256` and `current`. The Hub prompt asks for one admission per completed
 loop: a declared Study for several alternatives, each result's superseded attempts, no
-intermediate runs, and a rejection or Continue only on the user's own words.
+intermediate runs, and a rejection only on the user's own words. A change the user asked for then
+lands on their working design (#575): in the same turn the Agent continues to the admitted result,
+and the request it answers is the Continue, bound like any other (`rawLanguage` is that message, or a
+`feedbackQuote` passage of it). Results stay candidates when the user asked for options or
+alternatives, or when the loop's checks failed; a Continue to any other result needs the user's words
+asking for it. Modeling follows the moved head and offers 撤销, the same Continue back onto the
+previous position, where the working position named it. An agent outside the Hub's conversations (Codex, Claude Code) reaches the Runtime
+through this same adapter: after `presentation_bind` it presents each user request (`chat_present`,
+kind `user`) before acting on it, admits the finished loop and then continues on that request, and the
+Hub binds the presented message as it binds a native one. A client that calls the Runtime's HTTP API
+directly has no bound message: its Continue is recorded as the architect's own act, so it is not how
+an agent lands a change.
 An admission that admits a result is sent only once its loop has finished (#294, owner decision
 2026-10-01). Beside it the tool argument `taskClass` names the loop's class, as `visual_review`
 names them, unless a review spent for the same user message already fixed it: `422

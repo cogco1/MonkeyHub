@@ -967,6 +967,81 @@ async function idleMinute() {
   } finally { await idle.close(); }
 }
 /**
+ * #575: a change the person asked for lands on their working design. The Agent's Continue moves the
+ * project's working position, and the runtime's index says so in one event; Modeling follows it, shows
+ * its model and says so at the project bar's right end with Undo. Undo is the Design Tree's own Undo
+ * write: the same Continue back onto the base the follow came from, against the revision read now. A
+ * move back says so and offers nothing more, and a base no position entry named offers no Undo.
+ */
+async function requestedChangeLands() {
+  preferences = { ...preferences, language: "en" };
+  const projectId = "L", projectDir = "D:\\fixture\\L", name = "Landing project";
+  if (!projects.some((row) => row.projectId === projectId)) projects.push({ projectId, projectDir, name, chatCount: 0, version: 0, stage: "S0" });
+  workspaceFixture.designTrees.set(projectId, { stages: ["home-L"], edits: [] });
+  workspaceFixture.runStates.set(projectId, new Map([["land-change", {}], ["land-other", {}]]));
+  workspaceFixture.headsFollowDraft.add(projectId);
+  const entry = (runId) => ({ runId, sourceStageRef: null, branchId: "main", updatedAt: "2026-10-01T00:00:00Z", label: null });
+  const draft = { revisionSha256: "1".repeat(64), current: entry("home-L"), localDraft: null, writes: [], hold: null, failure: null };
+  workspaceFixture.workingDrafts.set(projectId, draft);
+  const continues = () => workspaceFixture.requests.filter((row) => row.projectId === projectId && row.method === "PUT" && row.name === "/api/working-draft");
+  const land = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  land.setDefaultTimeout(15000);
+  land.on("pageerror", (error) => errors.push(error.message));
+  await land.route((url) => url.pathname.startsWith("/api/"), hubApi);
+  const bar = land.locator(".chat-project-workspace:not([hidden]) .project-bar");
+  const notice = bar.locator("[data-follow-notice]"), undo = bar.locator('[data-action="follow-undo"]');
+  const openModeling = async () => {
+    await land.goto(origin);
+    await land.getByRole("button", { name, exact: true }).first().click();
+    await land.waitForFunction(() => ["Modeling", "Board"].every((label) =>
+      document.querySelector(`.chat-rail__tool[aria-label="${label}"]`)?.dataset.state === "running"));
+    const modeling = land.getByRole("button", { name: "Modeling", exact: true });
+    if (await modeling.getAttribute("aria-pressed") !== "true") await modeling.click();
+    await land.locator('.chat-project-workspace:not([hidden]) [data-project-surface="arch"]:not([hidden]) .stage canvas').first().waitFor();
+    await land.waitForFunction(() => !document.querySelector(".chat-project-workspace:not([hidden]) .boot"));
+  };
+  // What the Agent's PUT /api/working-draft leaves behind, as the runtime's index announces it.
+  const agentContinues = (runId, revision) => {
+    draft.current = entry(runId); draft.revisionSha256 = revision.repeat(64);
+    workspaceFixture.commit(projectId);
+  };
+  try {
+    await openModeling();
+    assert.equal(await notice.count(), 0, "opening on the head follows nothing");
+    agentContinues("land-change", "2");
+    await notice.filter({ hasText: "Following the current model" }).waitFor();
+    assert.equal(await undo.innerText(), "Undo");
+    assert.equal(await undo.getAttribute("title"), "Continue back to the previous model");
+    assert.ok(workspaceFixture.requests.some((row) => row.projectId === projectId && row.name === "/api/state" && row.query.run === "land-change"),
+      "the editing base followed the head");
+    const until = Date.now() + 15000;
+    while (!workspaceFixture.requests.some((row) => row.projectId === projectId && row.name.endsWith("/bytes") && row.runId === "land-change")) {
+      if (Date.now() > until) assert.fail("the view did not follow the head to its model");
+      await land.waitForTimeout(50);
+    }
+    assert.deepEqual(continues(), [], "following writes nothing");
+    await land.screenshot({ path: path.join(temporary, "follow-undo.png") });
+
+    // Undo: one Continue back onto the base and its line, against the position's revision as read now.
+    await undo.click();
+    await notice.filter({ hasText: "Back to the previous model" }).waitFor();
+    const [back] = continues();
+    assert.deepEqual(back.body, { projectId, runId: "home-L", baseRevisionSha256: "2".repeat(64), branchId: "main" });
+    assert.equal(continues().length, 1);
+    assert.equal(draft.current.runId, "home-L", "the head is back where it was");
+    assert.equal(await undo.count(), 0, "a move back offers no undo of its own");
+
+    // A base no position entry named (the line's Stage answered for it) is not put back: no Undo.
+    draft.current = null; draft.revisionSha256 = "3".repeat(64);
+    workspaceFixture.commit(projectId);
+    await openModeling();
+    agentContinues("land-other", "4");
+    await notice.filter({ hasText: "Following the current model" }).waitFor();
+    assert.equal(await undo.count(), 0, "nothing names the previous position, so nothing is offered");
+    assert.equal(continues().length, 1);
+  } finally { await land.close(); }
+}
+/**
  * #253: a Board image discussion in the real built Hub, against the synthetic project runtime. The
  * Board hands the composer a draft and saves nothing: a Board change the runtime refused stays
  * unsaved and does not hold the discussion back. Sent, the message names exactly the chosen pages and
@@ -2046,6 +2121,8 @@ try {
     await page.locator(".chat-composer").screenshot({ path: path.join(temporary, "composer-zh.png") });
   } else if (process.env.MONKEYHUB_UI_FOCUS === "idle") {
     await idleMinute();
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "land") {
+    await requestedChangeLands();
   } else if (process.env.MONKEYHUB_UI_FOCUS === "render") {
     await boardImageDiscussion();
   } else {
@@ -4659,6 +4736,7 @@ try {
   updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false, error: null };
   if (!process.env.MONKEYHUB_UI_FOCUS) { await suggestionCards(); await boardImageDiscussion(); }
   await idleMinute();
+  if (!process.env.MONKEYHUB_UI_FOCUS) await requestedChangeLands();
   }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));
