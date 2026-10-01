@@ -1,4 +1,37 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-580",
+      "lanes": [
+        {
+          "id": "compose",
+          "status": "active",
+          "branch": "codex/580-compose",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-580-compose",
+          "base_ref": "64fff11bbeafbb90fa49489b2975ae8d4fbe29ec",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "monkeycad.formats",
+            "monkeycad.execution",
+            "project_runtime.candidate"
+          ],
+          "write_scope": [
+            "packages/monkeycad/src/monkeycad/formats/three_dm_compose.py",
+            "packages/monkeycad/src/monkeycad/program.py",
+            "services/project-runtime/src/project_runtime/application/candidate.py",
+            "packages/monkeycad/tests/test_three_dm_compose.py",
+            "packages/monkeyarch/tests/test_cad_patch.py",
+            "services/project-runtime/tests/test_cad_export.py",
+            "docs/protocols/project-runtime-api.md",
+            "governance/module_registry.json",
+            "docs/architecture/system-map.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
