@@ -1,24 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-538",
-      "status": "active",
-      "branch": "codex/538-retire-worktrees",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-538-retire-worktrees",
-      "base_ref": "105b410a9be2345807e562fa986ab12354a7fdae",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "tools.dev.workspace"
-      ],
-      "write_scope": [
-        "tools/dev/workspace.py",
-        "CONTRIBUTING.md",
-        "docs/development/work-environment.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
