@@ -105,7 +105,7 @@ class CleaningTests(RetentionFixture):
         a, b, c, d, drafts = self.line()
         states = {draft: self.state_of(draft)["stateDigest"] for draft in drafts}
         rows = {draft: self.row(draft) for draft in drafts}
-        # The words that asked for the first draft, as an intent model compiled them into its run.
+        # A sentence an intent model compiled into the first draft; the words the run itself kept (#575) come first.
         self.repository.put_json(run=self.repository.load_run(drafts[0]), record_kind=INTENT_COMPILATION,
                                  destination=records(drafts[0]),
                                  payload={"schema": "IntentCompilation@1", "proposal_id": "proposal-x",
@@ -130,7 +130,8 @@ class CleaningTests(RetentionFixture):
             self.assertEqual((entry["rule"], entry["supersededBy"], entry["baseRunId"], entry["stateDigest"]),
                              (RULE_SUPERSEDED, c, b, states[draft]))
             self.assertEqual((entry["trashedAt"], entry["expiresAt"]), (NOW.isoformat(), (NOW + timedelta(days=30)).isoformat()))
-            self.assertEqual(entry["label"], "Close the north wall" if draft == drafts[0] else None)
+            # Named by the sentence its proposal was made from, which its run kept.
+            self.assertEqual(entry["label"], "set height to 2.6" if draft == drafts[0] else "set height to 2.601")
             self.assertIn(c, entry["reason"])
         # The line, its head, the design branches and the issued version are as they were.
         graph = self.graph()

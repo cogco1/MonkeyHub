@@ -230,6 +230,8 @@ def _change_answer(
         compilation_receipt=None if compilation.receipt is None else compilation.receipt.to_dict(),
         document_comment_ref=document_comment_ref,
         model_source=model_source_from(body.model_source) if body.model_source else None,
+        # The sentence the exchange opened with is what its run is asked for (#575).
+        request=resolution.pending.original_utterance,
     )
     request.app.state.proposals.put(proposal)
     request.app.state.pending_intents.close(body.continuation_token)
@@ -647,6 +649,8 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         source_stage_ref=projection.source_stage_ref,
         document_comment_ref=document_comment_ref,
         model_source=model_source,
+        # The sentence the exchange opened with is what its run is asked for (#575).
+        request=resolution.pending.original_utterance,
     )
     request.app.state.proposals.put(proposal)
     type_ms = int((time.perf_counter() - typed_at) * 1000)

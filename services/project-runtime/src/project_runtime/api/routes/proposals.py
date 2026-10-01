@@ -62,7 +62,7 @@ from ...application.projection import (
     project_proposed_record,
     require_actionable,
 )
-from ...application.proposals import Proposal, continue_proposal, operator_of, proposal_from, sentences_of
+from ...application.proposals import Proposal, continue_proposal, operator_of, proposal_from, request_of, sentences_of
 from ...application.gestures import DocumentAnnotationRef, read_document_tracing
 from ...errors import BlockedNeedsHuman, StudioError
 from ..dto.proposal import (
@@ -214,7 +214,9 @@ def create_proposal(
             context_refs=body.context_refs(),
         ))
     proposal = replace(proposal, source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
-                       source_stage_ref=projection.source_stage_ref)
+                       source_stage_ref=projection.source_stage_ref,
+                       # The words it was asked in, which its run keeps (#575): the sentence, or the edit's summary.
+                       request=body.semantic_edit.summary if body.semantic_edit is not None else body.utterance)
     return _remember_proposal(request, proposal, base, previous)
 
 
@@ -679,6 +681,8 @@ def _reproposed(
         replacement = continue_proposal(projection, proposal, revision)
         return state.proposals.put(replace(
             replacement, utterance=utterance, pending=None,
+            # The change is the proposal and the architect's change made on top of it, asked in both (#575).
+            request=request_of(proposal.request, utterance),
             source_run_id=proposal.source_run_id, source_stage_ref=proposal.source_stage_ref,
             compilation_receipt=None if compilation.receipt is None else compilation.receipt.to_dict(),
             document_comment_ref=proposal.document_comment_ref,
@@ -704,6 +708,8 @@ def _reproposed(
             source_stage_ref=proposal.source_stage_ref,
             document_comment_ref=proposal.document_comment_ref,
             model_source=proposal.model_source,
+            # The modified sentence replaces the proposal, and is what its run is asked in (#575).
+            request=utterance,
         )
     )
 
