@@ -40,7 +40,7 @@ from archflow.state.geometry_program import (
     InterfaceDatumKind,
     LengthUnit,
 )
-from spine_fixture import (
+from tests.support.spine_fixture import (
     COMMITMENT,
     ProducerFixture,
     ScriptedProvider,

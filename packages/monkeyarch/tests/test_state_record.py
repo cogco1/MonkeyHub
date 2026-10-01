@@ -867,7 +867,7 @@ class StateRecordTests(unittest.TestCase):
         """P102 last step: the record answers the four identity questions, so the compiler takes it directly."""
 
         from monkeyarch.compilation.geometry import compile_geometry_program
-        from spine_fixture import COMMITMENT, _proposal, _state
+        from tests.support.spine_fixture import COMMITMENT, _proposal, _state
 
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})

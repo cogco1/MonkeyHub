@@ -43,8 +43,9 @@ import { ElevationPanel, type ElevationControls } from "./ElevationPanel";
 import { ModelToolButton } from "./ModelToolButton";
 import { MenuCommand, MenuSeparator, StatusLine, SurfaceMenus } from "../chrome/SurfaceChrome";
 import { preparePushPull } from "./pushPull";
-import { ComponentInfoPanel, useComponentInfoBoard, type ComponentInfoSubject } from "../componentInfo/ComponentInfoCard";
-import { buildComponentCard, pickMatchesShown, type FieldStatus, type ShownModel } from "../componentInfo/componentInfo";
+import { ComponentInfoPanel, useChangesSince, useComponentInfoBoard, useShownLineage,
+  type ComponentInfoSubject } from "../componentInfo/ComponentInfoCard";
+import { buildComponentCard, datasetRelation, pickMatchesShown, type FieldStatus, type ShownModel } from "../componentInfo/componentInfo";
 import "./stageNotices.css";
 import type { NormalDragController } from "../../workspaces/monkeyarch/viewer/normalDrag";
 import { constrainedTranslation, type TranslationConstraint } from "../../workspaces/monkeyarch/viewer/translationGizmo";
@@ -1366,6 +1367,12 @@ export function Stage({
   const shownModel = useMemo<ShownModel | null>(() => documentProjectId && shownRunId && shownState && !infoDirty
     ? { projectId: documentProjectId, runId: shownRunId, stateDigest: shownState } : null,
   [documentProjectId, shownRunId, shownState, infoDirty]);
+  // The shown version's line, read while the Board has data to inherit, so an opened card already knows it (#575).
+  const shownLineage = useShownLineage(shownModel, active && hasModel && infoAvailable);
+  const inheritedFrom = useMemo(() => componentBoard.status !== "ready" || shownLineage === undefined ? [] : [...new Set(
+    componentBoard.datasets.filter((item) => datasetRelation(item.dataset, shownModel, shownLineage) === "inherited")
+      .map((item) => item.dataset.appliesTo.runId))].sort(), [componentBoard, shownModel, shownLineage]);
+  const changesSince = useChangesSince(shownModel?.runId ?? null, inheritedFrom, infoOpen && !documentOpen);
   const statusWord = useCallback((status: FieldStatus) => t(`componentInfo.status.${status}`), [t]);
   const infoSubject = useMemo<ComponentInfoSubject | null>(() => {
     if (!infoOpen || documentOpen) return null;
@@ -1375,8 +1382,9 @@ export function Stage({
       componentId: picked.componentId, elementId: picked.elementId,
       modelLabel: designObjectLabel(picked.componentId) ?? picked.componentId,
       shown: shownModel, pickMatchesShown: pickMatchesShown(picked, shownModel), board: componentBoard,
+      lineage: shownLineage ?? null, lineagePending: shownLineage === undefined, changes: changesSince,
     }, statusWord) };
-  }, [infoOpen, documentOpen, picked, infoPending, shownModel, componentBoard, statusWord]);
+  }, [infoOpen, documentOpen, picked, infoPending, shownModel, componentBoard, statusWord, shownLineage, changesSince]);
   const pickedStatus = picked && (
     <span className="picked" title={developerMode ? t("stage.picked.title", {
       status: picked.status, sourceState: picked.sourceState,
@@ -2061,6 +2069,9 @@ export function Stage({
           {annotationToolsOpen && <div id="annotation-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.annotate")}>
             <ModelToolButton icon="erase" label={t("document.tool.eraser")} aria-pressed={eraser} disabled={!annotationsReady}
               onClick={() => { const next = !eraser; chooseDrawingTool(null); setAnnotationToolsOpen(true); setAnnotationCancel((value) => value + 1); setEraser(next); }} />
+            {/* #577: the whole tracing paper in one undoable step, through the eraser's own path. */}
+            <ModelToolButton icon="clear" label={t("stage.tools.clear.label")} disabled={!annotationsReady || gestures.length === 0}
+              onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onEraseGestures(gestures.map((_, index) => index)); }} />
             <ModelToolButton icon="undo" label={t("stage.tools.undo.label")} disabled={!canUndoGesture} onClick={onUndoGesture} />
             <ModelToolButton icon="redo" label={t("document.redo")} disabled={!canRedoGesture} onClick={onRedoGesture} />
             {(tool !== null || eraser) && <ModelToolButton icon="close" label={t("stage.tools.cancel.label")}
