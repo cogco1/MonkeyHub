@@ -1,23 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-549",
-      "status": "active",
-      "branch": "codex/integration-565-569",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-565-569",
-      "base_ref": "51d600cd4498b0ec173b3571c5cc58a62fe409ad",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/web/src/i18n/messages.en.ts",
-        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
