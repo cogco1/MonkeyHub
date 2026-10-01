@@ -14,7 +14,6 @@ import math
 from typing import Any, Mapping
 
 from archflow.state.state_record import StateRecord, parameter_bindings_of, resolve_element_bindings
-from jsonschema import Draft202012Validator
 
 from .intent_context import IntentContext, control_unit, _named_refs, _rows
 
@@ -127,6 +126,9 @@ def provider_schema(schema: Mapping[str, Any], strict_transform) -> dict[str, An
 def validate_request_answer(answer: Mapping[str, Any], context: IntentContext,
                             schema: Mapping[str, Any]) -> None:
     """Check response shape and writable scope, leaving architectural checks downstream."""
+    # Loaded where an answer is checked: about 50 ms of a worker's start otherwise (#449).
+    from jsonschema import Draft202012Validator
+
     errors = list(Draft202012Validator(schema).iter_errors(answer))
     if errors:
         error = errors[0]

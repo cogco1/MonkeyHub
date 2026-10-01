@@ -177,6 +177,57 @@ asyncio.run(check())
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_a_worker_starts_without_answer_validation_or_pdf_writing(self) -> None:
+        """#449: what a few routes use when they run is not loaded for every worker's start."""
+
+        program = """
+import asyncio
+from pathlib import Path
+import sys
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
+
+app = create_app(StudioSettings(cad_export="off", project_dir=Path("unbound-placeholder")))
+
+async def start():
+    async with app.router.lifespan_context(app):
+        pass
+
+asyncio.run(start())
+print(sorted(name for name in ("jsonschema", "reportlab") if name in sys.modules))
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", program], capture_output=True, text=True,
+            env={**os.environ, "PYTHONPATH": _SOURCE_PYTHONPATH},
+            timeout=60, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.strip().splitlines()[-1], "[]")
+
+    def test_a_started_worker_derives_its_routes_before_it_serves(self) -> None:
+        """#449: no request derives route state on the server's thread once a worker has started.
+
+        A path no route has is routed through every router. Without the
+        preparation ``main`` asks for, that first request derives them all.
+        """
+
+        import fastapi.routing
+
+        for prepared in (True, False):
+            with self.subTest(prepared=prepared):
+                app = create_app(StudioSettings(cad_export="off", project_dir=Path("unbound-placeholder")))
+                app.state.prepare_first_reads = prepared
+                with patch.object(fastapi.routing, "get_dependant", wraps=fastapi.routing.get_dependant) as derive, \
+                        TestClient(app) as client:
+                    started = derive.call_count
+                    self.assertEqual(client.get("/api/no-such-view").status_code, 404)
+                    on_request = derive.call_count - started
+                if prepared:
+                    self.assertGreater(started, 0, "the routes are derived while the worker starts")
+                    self.assertEqual(on_request, 0, "a request derived route state")
+                else:
+                    self.assertGreater(on_request, 0)
+
     def test_stop_command_and_owner_pipe_eof_close_job_admission(self) -> None:
         for owner_input in ("ignored\nstop\n", ""):
             with self.subTest(owner_input=owner_input):
