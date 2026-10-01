@@ -274,6 +274,7 @@
         "CadExecutionError",
         "CadCapabilityError",
         "expected_object_semantics",
+        "declared_material",
         "ROOT_LAYER",
         "CadTranslationError",
         "select_patch_operations",
@@ -597,7 +598,7 @@
         "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified conversion-provider selection; provider execution remains separate from the standalone SKP reader, with no project writes.",
         "independent local SketchUp C API reading of visible face geometry into meters/Z-up meshes; nested instances, transformations, holes and visibility, without launching a desktop host",
         "patching caller-supplied composed 3dm bytes from exact prior/current compiled programs and a native replacement preview, preserving unchanged objects and shared block/material tables with explicit unit conversion",
-        "composed replacements without explicit donor materials inherit the same source object material or a unique source component material, preserving native PBR and textures"
+        "rewriting a composed model's material table, object bindings and material labels from the run's declared materials on every compose, and reading the final composed bytes back against their base, the native exports and those declarations"
       ],
       "does_not_own": [
         "producing the file - monkeycad.occt and monkeycad.rhino",
@@ -608,13 +609,13 @@
       "inputs": [
         ".3dm file path or bytes",
         "model bytes with their source and target format; SKP bytes and an optional local SketchUp SDK path",
-        "caller-supplied composed 3dm bytes, the exact prior and current compiled programs and a native replacement preview"
+        "caller-supplied composed 3dm bytes, the exact prior and current compiled programs and a native replacement preview; the run's declared materials (material.name by component id, material.color by material)"
       ],
       "outputs": [
         "ThreeDmInspection (ThreeDmInspection@N)",
         "Plain native source index value; no persisted record or semantic classification",
         "Mesh and Scene values, encoded 3DM/GLB bytes and their conversion readback",
-        "patched composed 3dm bytes"
+        "patched composed 3dm bytes, rewritten to wear the run's declared materials; a composed readback that raises CadPatchError naming each mismatch"
       ],
       "public_api": [
         "inspect_three_dm",
@@ -627,13 +628,17 @@
         "inspect_three_dm_index",
         "monkeycad.formats.meshes.convert",
         "read_skp",
-        "patch_composed_three_dm"
+        "patch_composed_three_dm",
+        "rewrite_composed_materials",
+        "verify_composed_three_dm",
+        "ComposedPatch"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
         "archflow.state.geometry_program",
         "monkeycad.execution",
-        "monkeycad.integrations"
+        "monkeycad.integrations",
+        "monkeycad.occt"
       ],
       "invariants": [
         "read-only: rhino3dm is imported lazily, one immutable byte snapshot is read, and no Rhino process is started",
@@ -644,7 +649,8 @@
         "inspect_three_dm keeps strict geometry and visible-bounds checks; inspect_three_dm_contents preserves imported invalid geometry as data and never substitutes a geometric-validation result",
         "Imported meshes and saved render meshes retain their faceted/approximation quality; no native reader creates a STEP or an OCCT execution receipt. SKP originals remain with the application owner; the reader does not write project data.",
         "SKP-derived mesh object IDs follow persistent instance paths and tag IDs within the same model; names and geometry changes do not mint new object identities. Unsupported or missing persistent IDs are refused.",
-        "composed-model replacement retains the source GUID for each rebuilt logical object; newly added objects cannot reuse any source GUID, including retired ones; saved readback verifies the expected identity"
+        "composed-model replacement retains the source GUID for each rebuilt logical object; newly added objects cannot reuse any source GUID, including retired ones; saved readback verifies the expected identity",
+        "a composed model wears what its run declares, whatever its geometry did: on every compose, an empty patch selection included, an object a program delivers wears what that run's preview gives it, any other object the material its archflow:component's components declare, and every object without one wears none and carries archflow:material_status = undeclared; materials the base brought (object, layer and block-member bindings) are cleared, GUIDs, geometry and every other user string stay, and a table entry no object wears any more is left unreferenced"
       ],
       "status": "canonical",
       "tests": [
@@ -653,7 +659,8 @@
         "packages/monkeycad/tests/model_export_glb_reader.mjs",
         "packages/monkeycad/tests/test_model_providers.py",
         "packages/monkeycad/tests/test_model_conversion_regressions.py",
-        "packages/monkeycad/tests/test_sketchup_reader.py"
+        "packages/monkeycad/tests/test_sketchup_reader.py",
+        "packages/monkeycad/tests/test_three_dm_compose.py"
       ],
       "notes": "The single source of the inspection key sets that viewers and readback both check against. formats/ also holds the bounded 3DM/GLB mesh codecs (meshes.py) and their conversion providers (conversion.py), SketchUp reading (sketchup_reader.py) and the composition of a patched .3dm (three_dm_compose.py).",
       "files": [
