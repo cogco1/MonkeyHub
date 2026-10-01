@@ -1,4 +1,23 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-355/browser-suites",
+      "status": "active",
+      "branch": "codex/355-browser-fixes",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-355-browser-fixes",
+      "base_ref": "6ce1654e74e87b6b23a0de49aa84b2cef5196ffa",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "hub.shell"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/web/test/settingsAutosave.browser.mjs",
+        "apps/monkeyhub/web/test/recipeTransfer.browser.mjs"
+      ],
+      "depends_on": []
+    }
+  ]
 }
