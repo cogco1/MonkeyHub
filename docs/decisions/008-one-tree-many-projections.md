@@ -1,5 +1,7 @@
 # ADR-008 — One decision tree, many projections: a derived index and a content-keyed cache
 
+> **Replaced in part by [ADR-012](012-the-open-runtime-is-the-only-writer.md) (2026-10-02, #599):** the open project's runtime is its only writer, and the layout watch (#363) is no longer how the index or the Hub hear of changes. Changes from elsewhere are found at open and on an explicit refresh. The rest of this record stands.
+
 **Decision (2026-09-26):** P036 stays the only source of truth. What a surface or an agent reads about the
 decision tree comes from two derived stores. Either store can be deleted at any time and rebuilt from P036.
 
