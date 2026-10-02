@@ -1,29 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-280",
-      "lanes": [
-        {
-          "id": "versions-locale",
-          "status": "active",
-          "branch": "codex/integration-codex-1002",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-codex-1002",
-          "base_ref": "5ee327e4e9ca2ce3b6e8bcc949ab45c033db86bb",
-          "contributor": "Codex",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            ".github/workflows/verify.yml",
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
