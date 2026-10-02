@@ -792,6 +792,13 @@ class ProjectRuntimeManager:
         last_token: ReadToken | None = None
         # The same for the last successful derivation of which work copies exist.
         last_copy_token: ReadToken | None = None
+        # Taken as observing starts, not on the first idle fallback: the watch
+        # walks the project on its own thread while the opening pass reads it,
+        # so the reads after that record the token they began under, and the
+        # first idle question after an open asks nothing again when nothing
+        # moved (#435, #599). Nothing waits for that walk here.
+        with suppress(OSError):
+            runtime.binding.layout_watch()
         while not self._closing.is_set():
             force_read = runtime.wake.take()
             checked = runtime.wake.take_check()

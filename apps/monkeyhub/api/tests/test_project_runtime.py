@@ -23,7 +23,8 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, project_fixture, wait_for
-from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.repository import FilesystemProjectRepository, project_root_key
+from archflow.project.watch import running_watches
 from project_runtime.binding import ProjectBinding, ReadToken
 from project_runtime.settings import StudioSettings
 from monkeyhub_api.runtime import manager as runtime_module, worker_http
@@ -1501,6 +1502,40 @@ class RuntimeCostTests(unittest.TestCase):
         derived_runs = [row[0] for row in runtime.work_copy_key]
         self.assertIn("external-run", derived_runs)
         self.assertIn("reopened-run", derived_runs)
+
+    def test_the_first_idle_question_after_an_open_derives_nothing_when_nothing_moved(self):
+        # Nothing had read the binding before its observer started, and the
+        # binding's layout watch started on the first idle fallback. The
+        # opening derivation then had no token to record, so the first idle
+        # question after every open derived everything once more. The observer
+        # now takes the watch as it starts; the watch walks the project while
+        # the opening pass reads it.
+        repository = self.project()
+        manager = self.manager()
+        runtime = self.runtime(manager, repository)
+        _settle(repository.layout.root)
+        now = [0.0]
+
+        def opening_read(row, cold=False):
+            # The retained read takes at least as long as one walk of the
+            # project by a watch that is running.
+            watch = running_watches().get(project_root_key(row.project_dir))
+            if watch is not None:
+                watch.latest()
+
+        def heartbeat(timeout):
+            now[0] += timeout
+            if now[0] >= 120:
+                manager._closing.set()
+            return False
+
+        runtime.wake.set()  # what open() asks of its observer
+        with patch.object(manager, "refresh", side_effect=opening_read), \
+             patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as inputs, \
+             patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
+            manager._watch(runtime)
+        self.assertEqual(inputs.call_count, 1, "the first idle question after an open derived the work copies again")
 
     def test_work_copies_derived_under_an_unsettled_token_are_derived_again(self):
         # A token taken while the project was still settling does not prove
