@@ -277,9 +277,43 @@ try {
     await until(() => workspace().locator(".render-references li").count(), (n) => n === 2, "two refs saved");
     await workspace().getByRole("button", { name: "Move reference up 2", exact: true }).click();
     await direction().fill("Soft morning light");
-    await generate().dblclick();
-    first = (await until(jobs, (r) => r.jobs[0]?.status === "succeeded", "first output")).jobs[0];
-    await refresh().click(); await until(() => workspace().locator('.render-image img').count(), (n) => n > 0, "visible output");
+    // The inverse ordering: completion is read while the queued POST response is delayed.
+    // Invalidating that read must schedule one catch-up, not strand the accepted job as pending.
+    let releaseAccepted, releaseCompleted, acceptedResponse, completedHistory, historyReads = 0;
+    const acceptedGate = new Promise(resolve => { releaseAccepted = resolve; });
+    const completedGate = new Promise(resolve => { releaseCompleted = resolve; });
+    const jobsRoute = "**/project-a/api/render/jobs";
+    await page.route(jobsRoute, async route => {
+      const response = await route.fetch();
+      if (route.request().method() === "POST") {
+        acceptedResponse = await response.json(); await acceptedGate;
+      } else {
+        historyReads += 1; completedHistory = await response.json(); await completedGate;
+      }
+      await route.fulfill({ response });
+    });
+    try {
+      await generate().dblclick();
+      await until(() => acceptedResponse, Boolean, "accepted POST response held after admission");
+      assert.equal(acceptedResponse.status, "queued");
+      first = (await until(jobs, (r) => r.jobs[0]?.status === "succeeded", "first output")).jobs[0];
+      await refresh().click();
+      await until(() => completedHistory, value => value?.jobs[0]?.status === "succeeded", "completed history captured during submission");
+      assert.equal(historyReads, 1);
+      releaseAccepted();
+      await until(() => history().count(), n => n === 1, "queued POST was applied before the terminal read");
+      assert.match(await history().first().innerText(), /Queued/);
+      assert.equal(await generate().isDisabled(), true);
+      releaseCompleted();
+      await until(() => workspace().locator('.render-image img').count(), n => n > 0, "completion selected automatically after the invalidated read");
+      await until(() => generate().isEnabled(), Boolean, "completion ends pending state without another manual refresh");
+      assert.equal(historyReads, 2, "one read-only catch-up consumes the completed attempt");
+      assert.equal(await workspace().locator('.render-image img').last().getAttribute("alt"), first.document.fileName);
+      assert.equal(requests.filter(r => r.method === "POST" && r.url.endsWith("/project-a/api/render/jobs")).length, 1);
+      console.log("PASS inverse submit-refresh ordering: terminal completion selected by one read-only catch-up");
+    } finally {
+      releaseAccepted(); releaseCompleted(); await page.unroute(jobsRoute);
+    }
     assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 1);
     source = first.request.source; refs = first.request.references;
     const documents = (await api("project-a", "/api/documents")).documents;
@@ -315,8 +349,52 @@ try {
     assert.equal(await workspace().locator('.render-model-canvas').isVisible(), false, 'no blank canvas when no model is loaded');
   });
   await step("project and workspace switches preserve inputs, stop hidden polling and do not cancel or resend", async () => {
-    await direction().fill("SLOW afternoon"); await generate().click();
-    await until(jobs, (r) => r.jobs.some((j) => j.status === "running"), "running offline job");
+    // Hold POST before admission, then read the old history during submission.
+    // Its later arrival must not erase the accepted attempt or allow another paid call.
+    const sourceBefore = await workspace().getByRole("combobox", { name: "Source image", exact: true }).inputValue();
+    const providerBefore = await workspace().getByRole("combobox", { name: "AI engine", exact: true }).inputValue();
+    const createsBefore = requests.filter(r => r.method === "POST" && r.url.endsWith("/project-a/api/render/jobs")).length;
+    let releaseSubmit, releaseHistory, submitHeld = false, oldHistory;
+    const submitGate = new Promise(resolve => { releaseSubmit = resolve; });
+    const historyGate = new Promise(resolve => { releaseHistory = resolve; });
+    const jobsRoute = "**/project-a/api/render/jobs";
+    await page.route(jobsRoute, async route => {
+      if (route.request().method() === "POST") {
+        submitHeld = true; await submitGate; await route.continue();
+      } else {
+        const response = await route.fetch(); oldHistory = await response.json();
+        await historyGate; await route.fulfill({ response });
+      }
+    });
+    try {
+      await direction().fill("SLOW afternoon"); await generate().click();
+      await until(() => submitHeld, Boolean, "submission held before admission");
+      await refresh().click();
+      await until(() => oldHistory, value => value?.jobs.length === 1, "old history captured during submission");
+      assert.equal(oldHistory.jobs[0].jobId, first.jobId);
+      assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 1, "held submission has not called the provider");
+      releaseSubmit();
+      await until(jobs, r => r.jobs.some(j => j.status === "running"), "running offline job");
+      await until(() => history().count(), n => n === 2, "accepted attempt is visible before releasing the old read");
+      assert.equal(await generate().isDisabled(), true, "accepted attempt blocks a second submission");
+      releaseHistory();
+      await until(() => refresh().isEnabled(), Boolean, "old history response finished");
+      const pending = history().filter({ hasText: "SLOW afternoon" });
+      assert.equal(await pending.count(), 1, "late history must not erase the accepted attempt");
+      assert.match(await pending.innerText(), /Queued|Generating/);
+      assert.equal(await generate().isDisabled(), true, "late history must not re-enable Generate");
+      assert.equal(await workspace().locator('.render-image img').last().getAttribute("alt"), first.document.fileName, "previous successful image stays visible");
+      assert.equal(await workspace().getByRole("combobox", { name: "Source image", exact: true }).inputValue(), sourceBefore);
+      assert.equal(await workspace().getByRole("combobox", { name: "AI engine", exact: true }).inputValue(), providerBefore);
+      const accepted = (await jobs()).jobs.find(job => job.request.direction === "SLOW afternoon");
+      assert.deepEqual(accepted.request.source, source);
+      assert.equal(accepted.providerId, providerBefore);
+      assert.equal(requests.filter(r => r.method === "POST" && r.url.endsWith("/project-a/api/render/jobs")).length - createsBefore, 1);
+      assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 2, "one new provider invocation");
+      console.log("PASS controlled submit-refresh ordering: pending visible, Generate disabled, prior result/source/provider retained, one create/call");
+    } finally {
+      releaseSubmit(); releaseHistory(); await page.unroute(jobsRoute);
+    }
     await page.getByRole("button", { name: "Project B", exact: true }).click();
     await direction().waitFor(); assert.equal(await direction().inputValue(), "");
     await delay(500); const count = requests.filter((r) => r.url.includes("project-a/api/render/")).length;
@@ -728,7 +806,10 @@ try {
     await hubPage.getByRole('button', { name: 'Render', exact: true }).click();
     await hubPage.getByRole('button', { name: 'Modeling', exact: true }).click();
     assert.equal(posts.filter((url) => url.includes('/api/project/modeling')).length, 1, 'shared readiness does not repeat Arch seed');
-    await hubPage.getByRole('button', { name: 'cold-arch', exact: true }).first().click();
+    // Beside an open workspace an unpinned projects list folds (#564): open it the way a person would.
+    const coldArch = hubPage.getByRole('button', { name: 'cold-arch', exact: true }).first();
+    if (!(await coldArch.isVisible())) await hubPage.getByRole('button', { name: 'Show projects', exact: true }).first().click();
+    await coldArch.click();
     await hubPage.getByRole('button', { name: 'Modeling', exact: true }).click();
     metrics = await until(read, (m) => JSON.stringify(m.current['cold-arch']) !== JSON.stringify(m.baseline['cold-arch']), 'Arch-first still seeds author inputs');
     assert.ok(Object.keys(metrics.current['cold-arch']).some((name) => name.startsWith('input/')));

@@ -164,7 +164,7 @@ def append_board_selection(binding, base, board_revision, ids):
     pages = deepcopy(current["pages"])
     found = False
     for row in rows:
-        source = row.get("customData", {}).get("sourceDocument")
+        source = (row.get("customData") or {}).get("sourceDocument")
         if row.get("type") != "image" or not source:
             continue
         found = True

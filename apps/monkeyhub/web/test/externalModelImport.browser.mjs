@@ -72,7 +72,7 @@ async function versions() {
   const toggle = page.locator('.project-bar .stage__versions-toggle');
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
   const panel = surface().getByRole('region', { name: 'Model versions', exact: true });
-  const summary = panel.locator('summary').filter({ hasText: '已有模型与历史运行' });
+  const summary = panel.locator('summary').filter({ hasText: 'Existing models and past runs' });
   await summary.waitFor();
   if (!(await summary.evaluate(el => el.parentElement.open))) await summary.click();
   return panel;

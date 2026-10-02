@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useConnection, useStudio } from "../../api/project-runtime/ProjectRuntimeContext";
 import { publicationClient } from "../../api/project-runtime/publication";
-import { asStudioApiError } from "../../api/project-runtime/client";
+import { asStudioApiError, type StudioApiError } from "../../api/project-runtime/client";
+import { ErrorPanel } from "../../app/ErrorPanel";
 import type { PublicationDto, PublicationElementDto, SourceDocumentDto } from "../../api/project-runtime/generated";
 import { pageSource, documentKey } from "../monkeyboard/boardScene";
 import { usePreferences } from "../../features/settings/preferences";
@@ -56,10 +57,12 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]);
   const queue = useRef<ReturnType<typeof createPublicationSaveQueue> | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
+  const [saveError, setSaveError] = useState<StudioApiError | null>(null);
   const [dirty, setDirty] = useState(false);
   const [pageIndex, setPageIndex] = useState(0), [selected, setSelected] = useState<string | null>(null);
-  const [running, setBusy] = useState(false), [importing, setImporting] = useState(false), [error, setError] = useState("");
+  const [running, setBusy] = useState(false), [importing, setImporting] = useState(false);
+  const [error, setError] = useState<StudioApiError | null>(null);
+  const [layoutHint, setLayoutHint] = useState("");
   const busy = running || importing;
   const [attempt, setAttempt] = useState(0), [asset, setAsset] = useState("");
   const [scale, setScale] = useState(1);
@@ -93,7 +96,7 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
       if (!alive.current) return;
       ++readEpoch.current; setDraft(next); setDirty(changed); setSaving(writing);
       setImporting(queue.current?.importing() ?? false);
-      setSaveError(cause ? asStudioApiError(cause).detail : "");
+      setSaveError(cause ? asStudioApiError(cause) : null);
     };
     // Take over the pending writer before a GET can race its final acknowledgement.
     const pending = pendingPublications.get(cacheKey);
@@ -111,8 +114,8 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
       if (!queue.current) {
         queue.current = createPublicationSaveQueue(saved, api.save, notify); setDraft(saved);
       } else queue.current.accept(saved);
-      setError("");
-    }).catch((cause) => { if (live) setError(asStudioApiError(cause).detail); });
+      setError(null); setLayoutHint("");
+    }).catch((cause) => { if (live) setError(asStudioApiError(cause)); });
     return () => { live = false; };
   }, [active, api, studio, projectId, cacheKey, refreshKey, attempt]);
   useEffect(() => {
@@ -135,8 +138,8 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
   const run = async (action: () => Promise<unknown>) => {
     if (locked.current) return;
     ++readEpoch.current;
-    locked.current = true; setBusy(true); setError("");
-    try { await action(); } catch (cause) { if (alive.current) setError(asStudioApiError(cause).detail); }
+    locked.current = true; setBusy(true); setError(null); setLayoutHint("");
+    try { await action(); } catch (cause) { if (alive.current) setError(asStudioApiError(cause)); }
     finally { ++readEpoch.current; locked.current = false; if (alive.current) setBusy(false); }
   };
   useEffect(() => {
@@ -191,9 +194,12 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
   const reload = () => {
     if (queue.current?.pending() && !window.confirm(zh ? "放弃未保存的排版，重新读取？" : "Discard unsaved changes and reload?")) return;
     ++readEpoch.current; queue.current?.discard(); queue.current = null; setDirty(false); setDraft(null);
-    setError(""); setSaveError(""); setAttempt((value) => value + 1);
+    setError(null); setLayoutHint(""); setSaveError(null); setAttempt((value) => value + 1);
   };
-  if (!draft) return <section className="publish-workspace"><p>{error || (zh ? "正在读取排版…" : "Loading publication…")}</p>{error && <button onClick={() => setAttempt((value) => value + 1)}>{zh ? "重试" : "Retry"}</button>}</section>;
+  if (!draft) return <section className="publish-workspace">{error ? <><ErrorPanel error={error} what="Publish" /><button onClick={() => setAttempt((value) => value + 1)}>{zh ? "重试" : "Retry"}</button></> : <p>{zh ? "正在读取排版…" : "Loading publication…"}</p>}</section>;
+  // A failed queued write also rejects the enclosing import/export operation.
+  // Show its retained-draft recovery once, including for locally wrapped errors.
+  const separateError = error && (error.code !== saveError?.code || error.status !== saveError?.status || error.detail !== saveError?.detail);
   return <section className="publish-workspace" aria-label="Publish">
     {/* #337: Layout's title and exports sit in the project bar after Board | Layout, its save state at the bar's right end. */}
     <SurfaceMenus label="Publish" active={active}
@@ -202,8 +208,9 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
       <MenuCommand disabled={busy || !draft.pages.length} onClick={() => void run(() => exportFile("pptx"))}>PPTX</MenuCommand>
       <MenuCommand disabled={busy || !draft.pages.length} onClick={() => void run(() => exportFile("pdf"))}>PDF</MenuCommand>
     </SurfaceMenus>
-    {saveError && <div role="alert" className="publish-error">{saveError}<button disabled={busy || saving} onClick={() => void queue.current?.retry().then(() => { setError(""); setAttempt((value) => value + 1); }).catch(() => {})}>{zh ? "重试保存" : "Retry save"}</button><button disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
-    {error && <div role="alert" className="publish-error">{error}<button disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
+    {saveError && <div className="publish-error"><ErrorPanel error={saveError} what="Publish" /><button disabled={busy || saving} onClick={() => void queue.current?.retry().then(() => { setError(null); setLayoutHint(""); setAttempt((value) => value + 1); }).catch(() => {})}>{zh ? "重试保存" : "Retry save"}</button><button disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
+    {separateError && <div className="publish-error"><ErrorPanel error={error} what="Publish" /><button disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
+    {layoutHint && <div role="alert" className="publish-error">{layoutHint}<button disabled={busy || saving} onClick={reload}>{zh ? "重新读取" : "Reload"}</button></div>}
     <div className="publish-body">
       <aside className="publish-pages" aria-label={zh ? "页面顺序" : "Page order"}>
         <button disabled={busy || draft.pages.length >= 60} onClick={addPage}>{zh ? "+ 添加页" : "+ Page"}</button>
@@ -240,9 +247,9 @@ export default function PublishWorkspace({ projectId, active, refreshKey = 0, bo
             const imageHeight = draft.spec.height! - top - imageTop;
             const imageWidth = (draft.spec.width! - 2 * margin - gap * Math.max(0, images.length - 1)) / Math.max(1, images.length);
             if (imageHeight < (images.length ? draft.spec.height! * .2 : 0) || imageWidth < 20) {
-              setError(zh ? "文字过多，无法应用图文布局。请缩短文字、调整文字框或分到其他页面。" : "There is not enough room for this layout. Shorten the text, resize text boxes or split content across pages."); return;
+              setLayoutHint(zh ? "文字过多，无法应用图文布局。请缩短文字、调整文字框或分到其他页面。" : "There is not enough room for this layout. Shorten the text, resize text boxes or split content across pages."); return;
             }
-            setError("");
+            setError(null); setLayoutHint("");
             let textY = top, imageIndex = 0;
             change({ ...draft, pages: draft.pages.map((row, index) => index === pageIndex ? { ...row, elements: row.elements.map((element) => {
               if (element.kind === "text") {

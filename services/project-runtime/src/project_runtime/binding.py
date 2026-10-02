@@ -106,6 +106,9 @@ _DESIGN_HISTORIES = ContentMemo("studio.design-histories", max_entries=256)
 _SURVEY_RUNS = ContentMemo("studio.survey-runs", max_entries=4096)
 # What makes the survey skip a run rather than fail.
 _SURVEY_UNREADABLE = (StudioError, ProjectRepositoryError, ValueError, OSError)
+# What makes one run's retained change unreadable to the reader that asked,
+# rather than fail it (``RunChanges``).
+_CHANGE_UNREADABLE = (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError)
 
 _T = TypeVar("_T")
 _MISSING = object()
@@ -1055,6 +1058,43 @@ class ProjectBinding:
             return self.repository.load_json(ref)
         except Exception:
             return None
+
+
+class RunChanges:
+    """Runs' retained changes as one reader read them: each run's ``candidate_delta``, at most once.
+
+    A derivation over many runs asks for the same runs' changes again and
+    again. The Worktree Graph walks each line back to the source it shares
+    with the head, collecting the keep conditions every step declared, and
+    names each step by the words its change kept. One ``RunChanges`` belongs
+    to one such reader - a request, or one pass of a projector - and answers
+    each run's change, or raises its refusal again, as it was first read.
+
+    It keeps nothing past its reader. A run's change may still be being
+    retained, and a run can move to the project trash and back, so the next
+    reader reads again. What it answers is shared by its reader's asks, so
+    nobody may change it.
+    """
+
+    __slots__ = ("_binding", "_read")
+
+    def __init__(self, binding: ProjectBinding) -> None:
+        self._binding = binding
+        self._read: dict[str, Any] = {}
+
+    def __call__(self, run_id: str) -> dict[str, Any] | None:
+        """``ProjectBinding.candidate_delta(run_id)``, read on this reader's first ask only."""
+
+        found = self._read.get(run_id, _MISSING)
+        if found is _MISSING:
+            try:
+                found = self._binding.candidate_delta(run_id)
+            except _CHANGE_UNREADABLE as exc:
+                found = exc
+            self._read[run_id] = found
+        if isinstance(found, BaseException):
+            raise found
+        return found
 
 
 class ProcessState(Protocol):

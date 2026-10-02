@@ -493,7 +493,7 @@ class CutPlanTests(CandidateTestCase):
         candidate = self.client.get(f"/api/candidates/{job['candidateId']}").json()
         return job["candidateId"], next(row["modelSource"] for row in candidate["artifacts"] if row["format"] == "3dm")
 
-    def test_status_follows_the_working_head_before_anything_is_accepted(self):
+    def test_status_follows_the_working_head_without_accepting_the_continuation(self):
         first = self.generate()
         candidate, model = self.propose_move(.4)
         adopt(self.client, candidate)
@@ -920,3 +920,81 @@ class CutPlanTests(CandidateTestCase):
         # A standard is the first default, never a refusal (D-05-3).
         explicit = self.generate(drawingId="plan-c", hatchSpacingMm=2.5)
         self.assertEqual(explicit["viewRecipe"]["graphics"]["hatchSpacingMm"], 2.5)
+
+
+@unittest.skipUnless(occt_available(), "cadquery-ocp is not installed")
+class ZeroStageCutPlanTests(CandidateTestCase):
+    def test_retained_working_head_draws_and_reopens_without_creating_a_stage(self):
+        # Unlike CutPlanTests.setUp, this fixture never initializes or accepts a Stage.
+        self.client.close()
+        settings = StudioSettings(project_dir=self.root / PROJECT_ID, cad_export="occt")
+        self.app = create_app(settings)
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+        head = self.repository.read_head()
+
+        def assert_unstaged(client):
+            response = client.get("/api/design-history")
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["stages"], [])
+            self.assertEqual(response.json()["branches"], [])
+            self.assertEqual(self.repository.read_design_branches(), {})
+            self.assertEqual(self.repository.read_head(), head)
+
+        assert_unstaged(self.client)
+        request = self.client.post("/api/proposals", json={"projectId": PROJECT_ID,
+            "stateDigest": self.state_digest, "sourceRunId": REFERENCE_RUN_ID, "semanticEdit": room_edit()})
+        self.assertEqual(request.status_code, 201, request.text)
+        result = self.start(request.json()["proposalId"])
+        self.assertEqual(self.finished(result["jobId"])["status"], "succeeded")
+        candidate = self.client.get(f"/api/candidates/{result['candidateId']}").json()
+        model = next(row["modelSource"] for row in candidate["artifacts"] if row["format"] == "3dm")
+        adopt(self.client, result["candidateId"])
+        working_response = self.client.get("/api/working-source", params={"workspace": "drawing"})
+        self.assertEqual(working_response.status_code, 200, working_response.text)
+        working = working_response.json()
+        self.assertTrue(working["compatible"])
+        self.assertEqual(working["source"], model)
+        self.assertIsNone(working["stageRef"])
+        self.assertEqual(working["head"]["origin"], "working-position")
+        self.assertFalse(working["head"]["accepted"])
+        self.assertIsNone(working["head"]["sourceStageRef"])
+        self.assertIsNotNone(working["revisionSha256"])
+        assert_unstaged(self.client)
+
+        payload = {"projectId": PROJECT_ID, "modelSource": working["source"],
+                   "drawingId": "unstaged-room-plan", "fileName": "Unaccepted room",
+                   "cutHeight": 1.2, "bottom": 0, "scaleDenominator": 50}
+        generated = self.client.post("/api/drawings/plans", json=payload)
+        self.assertEqual(generated.status_code, 201, generated.text)
+        document = generated.json()
+        self.assertEqual(document["modelSource"], model)
+        self.assertIsNone(document["sourceStageRef"])
+        self.assertEqual(document["fileName"], "Unaccepted room.png")
+        self.assertEqual(document["viewRecipe"]["kind"], "cut-plan")
+        identity = {key: document[key] for key in ("runId", "assetSha256", "revisionRef")}
+        vector = self.client.get("/api/drawings/plans/vector", params=identity)
+        self.assertEqual(vector.status_code, 200, vector.text)
+        self.assertIn("<svg", vector.json()["svg"])
+        assert_unstaged(self.client)
+
+        # A new application reads the retained model and drawing; no in-memory source or Stage is supplied.
+        self.client.close()
+        with TestClient(create_app(settings)) as reopened:
+            self.assertEqual(reopened.get("/api/working-source", params={"workspace": "drawing"}).json(), working)
+            listing = reopened.get("/api/documents")
+            self.assertEqual(listing.status_code, 200, listing.text)
+            self.assertEqual(next(row for row in listing.json()["documents"]
+                                  if row["revisionRef"] == document["revisionRef"]), document)
+            status = reopened.post("/api/drawings/plans/status", json=identity)
+            self.assertEqual(status.status_code, 200, status.text)
+            self.assertEqual(status.json()["status"], "current")
+            self.assertEqual(status.json()["targetModelSource"], model)
+            self.assertIsNone(status.json()["targetStageRef"])
+            retained_vector = reopened.get("/api/drawings/plans/vector", params=identity)
+            self.assertEqual(retained_vector.status_code, 200, retained_vector.text)
+            self.assertEqual(retained_vector.json(), vector.json())
+            retry = reopened.post("/api/drawings/plans", json=payload)
+            self.assertEqual(retry.status_code, 201, retry.text)
+            self.assertEqual(retry.json(), document)
+            assert_unstaged(reopened)

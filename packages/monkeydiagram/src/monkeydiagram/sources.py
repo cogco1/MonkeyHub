@@ -32,7 +32,8 @@ from archflow.project.repository import FilesystemProjectRepository, ProjectRepo
 SOURCE_RECEIPT_SCHEMA = "OcctExecutionReceipt@1"
 STEP_MEDIA_TYPE = "model/step"
 _STEP_FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,159}\.step$")
-_UNITS = ("meter", "millimeter", "inch", "foot")
+#: CAD length units accepted by retained drawing sources and views.
+DRAWING_LENGTH_UNITS = ("meter", "millimeter", "inch", "foot")
 
 
 class DrawingElevationError(ValueError):
@@ -146,17 +147,21 @@ class VerifiedElevationSource:
     entries: tuple[StepEntry, ...]
 
 
-def _require(condition: bool, message: str) -> None:
+def require_drawing(condition: bool, message: str) -> None:
+    """Refuse an invalid source or retained drawing with the shared drawing error."""
+
     if not condition:
         raise DrawingElevationError(message)
 
 
-def _artifact_bytes(repository: FilesystemProjectRepository, ref: ProjectArtifactRef) -> bytes:
+def read_artifact_bytes(repository: FilesystemProjectRepository, ref: ProjectArtifactRef) -> bytes:
+    """Read a retained artifact only when its bytes match the pinned SHA-256."""
+
     try:
         data = repository.layout.resolve_record(ref).read_bytes()
     except (OSError, ValueError) as exc:
         raise DrawingElevationError(f"cannot read {ref.relative_path}: {exc}") from exc
-    _require(hashlib.sha256(data).hexdigest() == ref.sha256, f"{ref.relative_path} does not match its sha256")
+    require_drawing(hashlib.sha256(data).hexdigest() == ref.sha256, f"{ref.relative_path} does not match its sha256")
     return data
 
 
@@ -164,39 +169,39 @@ def read_elevation_source(repository: FilesystemProjectRepository, source: Eleva
     """Verify source bytes against their STEP receipt or native registration; read-only."""
 
     if isinstance(source, NativeModelSource):
-        return _read_native_source(repository, source)
+        return read_native_source(repository, source)
     if not isinstance(source, ElevationSource):
         raise TypeError("source must be ElevationSource or NativeModelSource")
     project_id = repository.load_manifest().project_id
     try:
         run = repository.load_run(source.run_id)
         receipt_ref = ProjectRecordRef(project_id, source.cad_receipt_relative_path, source.cad_receipt_sha256)
-        _require(receipt_ref.record_kind == "seat-occt-execution", "the source CAD receipt is not a seat-occt-execution record")
+        require_drawing(receipt_ref.record_kind == "seat-occt-execution", "the source CAD receipt is not a seat-occt-execution record")
         receipt = repository.load_json(receipt_ref)
     except ProjectRepositoryError as exc:
         raise DrawingElevationError(f"source run or CAD receipt cannot be read: {exc}") from exc
     try:
-        _require(receipt["schema"] == SOURCE_RECEIPT_SCHEMA, "the source receipt is not an OcctExecutionReceipt@1")
-        _require(receipt["status"] == "succeeded" and receipt["readback_verified"] is True,
+        require_drawing(receipt["schema"] == SOURCE_RECEIPT_SCHEMA, "the source receipt is not an OcctExecutionReceipt@1")
+        require_drawing(receipt["status"] == "succeeded" and receipt["readback_verified"] is True,
                  "the source CAD execution did not succeed with a verified readback")
         identity = receipt["identity"]
         length_unit = identity["length_unit"]
-        _require(length_unit in _UNITS, f"source length unit {length_unit!r} is not a CAD unit")
-        _require(identity["up_axis"] == "Z-up", "the source STEP is not in the CAD Z-up frame")
+        require_drawing(length_unit in DRAWING_LENGTH_UNITS, f"source length unit {length_unit!r} is not a CAD unit")
+        require_drawing(identity["up_axis"] == "Z-up", "the source STEP is not in the CAD Z-up frame")
         binding = identity["binding"]
-        _require(binding["project_id"] == project_id and binding["run_id"] == source.run_id,
+        require_drawing(binding["project_id"] == project_id and binding["run_id"] == source.run_id,
                  "the source receipt is bound to another project or run")
-        _require(binding["base"] == run.base.to_dict(), "the source receipt's base is not the source run's base")
+        require_drawing(binding["base"] == run.base.to_dict(), "the source receipt's base is not the source run's base")
         program_digest = binding["program_digest"]
         stage_id = binding["stage_id"]
         exact = receipt["exact_artifact"]
-        _require(exact["exact_brep"] is True, "the source artifact is not exact B-rep")
-        _require(exact["sha256"].lower() == source.step_sha256, "the source STEP sha256 is not the one the receipt certifies")
-        _require(exact["relative_path"] == PurePosixPath(source.step_relative_path).name,
+        require_drawing(exact["exact_brep"] is True, "the source artifact is not exact B-rep")
+        require_drawing(exact["sha256"].lower() == source.step_sha256, "the source STEP sha256 is not the one the receipt certifies")
+        require_drawing(exact["relative_path"] == PurePosixPath(source.step_relative_path).name,
                  "the source STEP file name is not the one the receipt certifies")
         deliveries = exact["deliveries"]
         physical = tuple(receipt["physical_object_ids"])
-        _require(len(physical) == len(set(physical)) and set(physical) == set(deliveries) and bool(physical),
+        require_drawing(len(physical) == len(set(physical)) and set(physical) == set(deliveries) and bool(physical),
                  "the source receipt's physical object ids and deliveries disagree")
     except (KeyError, TypeError, AttributeError) as exc:
         raise DrawingElevationError(f"the source receipt does not carry the expected contract: {exc!r}") from exc
@@ -205,32 +210,34 @@ def read_elevation_source(repository: FilesystemProjectRepository, source: Eleva
         step_bytes = step_path.read_bytes()
     except OSError as exc:
         raise DrawingElevationError(f"the source STEP cannot be read: {source.step_relative_path}") from exc
-    _require(hashlib.sha256(step_bytes).hexdigest() == source.step_sha256,
+    require_drawing(hashlib.sha256(step_bytes).hexdigest() == source.step_sha256,
              "the source STEP's bytes do not match its pinned sha256")
     try:
         entries = read_step(step_path, length_unit=length_unit)
     except OcctBackendError as exc:
         raise DrawingElevationError(f"the source STEP cannot be cold-read: {exc}") from exc
     names = [entry.name for entry in entries]
-    _require(all(isinstance(name, str) and name for name in names), "the source STEP holds an unnamed shape")
-    _require(len(names) == len(set(names)), "the source STEP holds duplicate shape names")
+    require_drawing(all(isinstance(name, str) and name for name in names), "the source STEP holds an unnamed shape")
+    require_drawing(len(names) == len(set(names)), "the source STEP holds duplicate shape names")
     missing = sorted(set(physical) - set(names))
     extra = sorted(set(names) - set(physical))
-    _require(not missing and not extra,
+    require_drawing(not missing and not extra,
              f"STEP names and receipt physical object ids differ: missing {missing[:5]}, extra {extra[:5]}")
     return VerifiedElevationSource(run=run, receipt=receipt, length_unit=length_unit, program_digest=program_digest,
                            stage_id=stage_id, physical_object_ids=tuple(sorted(physical)), entries=tuple(entries))
 
 
-def _read_native_source(repository, source):
+def read_native_source(repository: FilesystemProjectRepository, source: NativeModelSource) -> VerifiedElevationSource:
+    """Verify a registered native model and read its shapes without STEP provenance."""
+
     from monkeycad.backends.occt.measure import measure_shape
     from monkeycad.backends.occt.native_models import read_three_dm
 
     project_id = repository.load_manifest().project_id
     run = repository.load_run(source.run_id)
-    _require(source.registration.project_id == source.artifact.project_id == project_id,
+    require_drawing(source.registration.project_id == source.artifact.project_id == project_id,
              "the native model belongs to another project")
-    _require(source.registration.record_kind == "studio-model-asset" and
+    require_drawing(source.registration.record_kind == "studio-model-asset" and
              PurePosixPath(source.registration.relative_path).parts[:3] == ("runs", run.run_id, "records"),
              "the native model must have a registration in its source run")
     payload = repository.load_json(source.registration)
@@ -238,27 +245,27 @@ def _read_native_source(repository, source):
     external = (schema == "StudioExternalModelAsset@1" or
                 (schema == "StudioModelAsset@1" and payload.get("representation") == "external"
                  and payload.get("modelSource") is None))
-    _require(schema in {"StudioModelAsset@1", "StudioExternalModelAsset@1"} and payload.get("projectId") == project_id,
+    require_drawing(schema in {"StudioModelAsset@1", "StudioExternalModelAsset@1"} and payload.get("projectId") == project_id,
              "the native model registration is invalid")
     retained = payload.get("artifact", {})
-    _require(all(retained.get(key) == getattr(source.artifact, key)
+    require_drawing(all(retained.get(key) == getattr(source.artifact, key)
                  for key in ("relative_path", "sha256", "media_type")),
              "the native model differs from its registered original")
     bound = None if external else payload.get("modelSource")
-    _require((not external and isinstance(bound, Mapping) and bound.get("runId") == run.run_id and
+    require_drawing((not external and isinstance(bound, Mapping) and bound.get("runId") == run.run_id and
               bound.get("assetSha256") == source.artifact.sha256) or
              (external and payload.get("runId") == run.run_id and
               payload.get("assetSha256") == source.artifact.sha256 and
               run.run_id == "studio-model-" + source.artifact.sha256),
              "the native model registration has a different source binding")
-    data = _artifact_bytes(repository, source.artifact)
+    data = read_artifact_bytes(repository, source.artifact)
     try:
         entries, unit = read_three_dm(data)
     except OcctBackendError as exc:
         raise DrawingElevationError(str(exc)) from exc
-    _require(unit == payload.get("lengthUnit"), "native model units differ from its registration")
+    require_drawing(unit == payload.get("lengthUnit"), "native model units differ from its registration")
     ids = tuple(entry.name for entry in entries)
-    _require(bool(ids) and len(set(ids)) == len(ids), "native model object identities are empty or duplicated")
+    require_drawing(bool(ids) and len(set(ids)) == len(ids), "native model object identities are empty or duplicated")
     # Plain readback values for the common frame/section operations, not an execution receipt.
     measured = {entry.name: {"bbox": measure_shape(entry.shape).to_dict()["bbox"]} for entry in entries}
     facts = {"identity": {"length_unit": unit}, "physical_object_ids": ids, "readback": measured, "modelSource": bound}
@@ -269,6 +276,7 @@ def _read_native_source(repository, source):
 
 
 __all__ = [
+    "DRAWING_LENGTH_UNITS",
     "DrawingElevationError",
     "ElevationSource",
     "NativeModelSource",
@@ -276,5 +284,8 @@ __all__ = [
     "current_object_id",
     "inspection_witness_ids",
     "object_semantics",
+    "read_artifact_bytes",
     "read_elevation_source",
+    "read_native_source",
+    "require_drawing",
 ]

@@ -1,6 +1,7 @@
 """A read-only Worktree Graph: current head, its line, running work, other lines and conflicts."""
 
 import base64
+from collections import Counter
 from unittest import mock
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -19,6 +20,7 @@ from project_runtime import status
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from project_runtime.status import worktree_graph
+from project_runtime.application import working_draft
 from project_runtime.application.working_draft import lineage_of
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
@@ -324,6 +326,49 @@ class HeadLineTests(AdmissionFixture):
         self.assertEqual((self.repository.read_working_draft(), self.repository.read_design_branches(),
                           self.repository.read_head()), before)
         self.assertTrue(set(drafts) <= set(self.repository.run_ids()))
+
+    def test_one_graph_reads_each_step_of_the_line_once_however_many_drafts_compare_with_it(self):
+        _a, b, c, _d, drafts = self.line_with_two_drafts()
+        drafts = (*drafts, self.result(source=b, height=2.62))
+        binding = bound_project(self.app.state)
+        before = worktree_graph(binding)
+        reads = []
+        original = ProjectBinding.candidate_delta
+
+        def counted(this, run_id):
+            reads.append(run_id)
+            return original(this, run_id)
+
+        with mock.patch.object(ProjectBinding, "candidate_delta", counted):
+            graph = worktree_graph(binding)
+        self.assertEqual(graph, before, "reading each change once changes no answer")
+        self.assertEqual({line.run_id for line in graph.lines if line.relation == "superseded"}, set(drafts))
+        # Each draft's comparison walks the head's line back to B. C's change is read once for all three,
+        # and each draft's once, however many walks pass through them.
+        self.assertEqual(reads.count(c), 1, reads)
+        self.assertEqual({run: reads.count(run) for run in drafts}, dict.fromkeys(drafts, 1))
+
+    def test_a_fresh_process_reads_each_runs_change_once_for_the_whole_graph(self):
+        a, b, c, d, drafts = self.line_with_two_drafts()
+        drafts = (*drafts, self.result(source=b, height=2.62))
+        binding = bound_project(self.app.state)
+        before = worktree_graph(binding)
+        reads = []
+        original = ProjectBinding.candidate_delta
+
+        def counted(this, run_id):
+            reads.append(run_id)
+            return original(this, run_id)
+
+        # As a process that has remembered nothing yet: its lineage walks and the head's read the changes too.
+        with mock.patch.dict(working_draft._PARENTS, clear=True), mock.patch.dict(status._REQUESTS, clear=True), \
+                mock.patch.object(ProjectBinding, "candidate_delta", counted):
+            graph = worktree_graph(binding)
+        self.assertEqual(graph, before)
+        counts = Counter(reads)
+        self.assertTrue({a, b, c, d, *drafts} <= set(counts), counts)
+        # The head's projection reads the head's change for itself; the graph reads every run's change once.
+        self.assertEqual({run: count for run, count in counts.items() if run != d and count != 1}, {}, counts)
 
     def test_a_draft_somebody_took_further_stays_a_diverged_line(self):
         _a, b, _c, d, (continued, admitted) = self.line_with_two_drafts()

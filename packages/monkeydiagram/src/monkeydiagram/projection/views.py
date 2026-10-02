@@ -48,7 +48,7 @@ from monkeydiagram.rendering.svg import (
     svg_objects,
 )
 from monkeydiagram.sources import (
-    _UNITS,
+    DRAWING_LENGTH_UNITS,
     DrawingElevationError,
     VerifiedElevationSource,
     current_object_id,
@@ -64,7 +64,7 @@ CLEANUP_TOLERANCE_MM = 0.05
 
 
 @contextmanager
-def _observed_stage(observer, phase: str, *, parent_event_id: str | None = None, details=None):
+def observed_stage(observer, phase: str, *, parent_event_id: str | None = None, details=None):
     """Report a real call boundary without changing its value or exception."""
 
     details = {} if details is None else details
@@ -111,13 +111,15 @@ def _cross(a, b):
     return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
 
 
-def _finite(value, label: str) -> float:
+def finite_number(value, label: str) -> float:
+    """Read one finite drawing coordinate or setting, excluding booleans."""
+
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise DrawingElevationError(f"{label} must be a finite number")
     return float(value)
 
 
-def _cleaned(lines, regions, *, crop_uv, hidden_lines: bool, unit: str, scale_denominator: int):
+def clean_view_lines(lines, regions, *, crop_uv, hidden_lines: bool, unit: str, scale_denominator: int):
     """The lines one drawing draws, cropped to its window and cleaned at the paper tolerance, with the report.
 
     The tolerance is ``CLEANUP_TOLERANCE_MM`` on the sheet, in the source's
@@ -171,17 +173,17 @@ class ElevationView:
         if (not isinstance(self.crop_uv, Sequence) or isinstance(self.crop_uv, (str, bytes))
                 or len(self.crop_uv) != 4):
             raise DrawingElevationError("crop_uv must be (u_min, v_min, u_max, v_max)")
-        crop = tuple(_finite(v, "crop_uv") for v in self.crop_uv)
+        crop = tuple(finite_number(v, "crop_uv") for v in self.crop_uv)
         if not (crop[0] < crop[2] and crop[1] < crop[3]):
             raise DrawingElevationError("crop_uv must have u_min < u_max and v_min < v_max")
         object.__setattr__(self, "crop_uv", crop)
-        object.__setattr__(self, "near_depth", _finite(self.near_depth, "near_depth"))
-        object.__setattr__(self, "far_depth", _finite(self.far_depth, "far_depth"))
+        object.__setattr__(self, "near_depth", finite_number(self.near_depth, "near_depth"))
+        object.__setattr__(self, "far_depth", finite_number(self.far_depth, "far_depth"))
         if not self.near_depth < self.far_depth:
             raise DrawingElevationError("near_depth must be less than far_depth")
         if not isinstance(self.hidden_lines, bool):
             raise DrawingElevationError("hidden_lines must be a bool")
-        deflection = _finite(self.linear_deflection, "linear_deflection")
+        deflection = finite_number(self.linear_deflection, "linear_deflection")
         if deflection <= 0.0:
             raise DrawingElevationError("linear_deflection must be positive")
         object.__setattr__(self, "linear_deflection", deflection)
@@ -250,26 +252,26 @@ def project_model_axis_elevation(
 
     if not isinstance(view, ElevationView):
         raise TypeError("view must be ElevationView")
-    if unit not in _UNITS:
+    if unit not in DRAWING_LENGTH_UNITS:
         raise DrawingElevationError(f"unit {unit!r} is not a CAD length unit")
     try:
-        with _observed_stage(operation_observer, "drawing.hlr", parent_event_id=parent_event_id,
+        with observed_stage(operation_observer, "drawing.hlr", parent_event_id=parent_event_id,
                              details={"scope": "global_visibility", "input_object_ids": sorted(object_ids)}) as observation:
             lines = project_occt_lines(
                 entries, object_ids=tuple(object_ids), origin=view.origin, right=view.right, up=view.up,
                 linear_deflection=view.linear_deflection, depth_range=(view.near_depth, view.far_depth),
             )
             observation["emitted_object_ids"] = sorted({line.object_id for line in lines})
-        with _observed_stage(operation_observer, "drawing.svg", parent_event_id=parent_event_id,
+        with observed_stage(operation_observer, "drawing.svg", parent_event_id=parent_event_id,
                              details={"input_object_ids": sorted({line.object_id for line in lines})}) as observation:
-            cleaned, cleanup = _cleaned(lines, (), crop_uv=view.crop_uv, hidden_lines=view.hidden_lines, unit=unit,
+            cleaned, cleanup = clean_view_lines(lines, (), crop_uv=view.crop_uv, hidden_lines=view.hidden_lines, unit=unit,
                                         scale_denominator=view.scale_denominator)
             svg = drawing_svg(
                 cleaned, crop_uv=view.crop_uv, unit=unit, scale_denominator=view.scale_denominator,
                 hidden_lines=view.hidden_lines, title=view.name, semantics=semantics,
             )
             observation["emitted_object_ids"] = list(svg_objects(svg))
-        with _observed_stage(operation_observer, "drawing.png", parent_event_id=parent_event_id):
+        with observed_stage(operation_observer, "drawing.png", parent_event_id=parent_event_id):
             png = render_svg_png(svg)
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"elevation {view.name}: {exc}") from exc
@@ -295,7 +297,9 @@ class SectionPerspectiveError(DrawingElevationError):
         self.code = code
 
 
-def _refuse(code: str, message: str):
+def refuse_section(code: str, message: str):
+    """Refuse a section request with its stable, caller-visible reason code."""
+
     raise SectionPerspectiveError(code, message)
 
 
@@ -304,17 +308,17 @@ def _numbers(value, count: int, label: str) -> tuple[float, ...]:
 
     if (not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or len(value) != count
             or any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in value)):
-        _refuse("SECTION_REQUEST_INVALID", f"{label} must be {count} numbers")
+        refuse_section("SECTION_REQUEST_INVALID", f"{label} must be {count} numbers")
     if any(not math.isfinite(v) for v in value):
-        _refuse("SECTION_VALUE_NOT_FINITE", f"{label} holds a value that is not finite")
+        refuse_section("SECTION_VALUE_NOT_FINITE", f"{label} holds a value that is not finite")
     return tuple(float(v) for v in value)
 
 
 def _number(value, label: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        _refuse("SECTION_REQUEST_INVALID", f"{label} must be a number")
+        refuse_section("SECTION_REQUEST_INVALID", f"{label} must be a number")
     if not math.isfinite(value):
-        _refuse("SECTION_VALUE_NOT_FINITE", f"{label} is not finite")
+        refuse_section("SECTION_VALUE_NOT_FINITE", f"{label} is not finite")
     return float(value)
 
 
@@ -343,21 +347,21 @@ def _checked_section(section, deflection: float) -> dict[str, Any]:
     """A section request, checked and canonical: ``{line, keep}`` or ``{origin, normal}``, refused by name."""
 
     if not isinstance(section, Mapping) or set(section) not in ({"line", "keep"}, {"origin", "normal"}):
-        _refuse("SECTION_REQUEST_INVALID", "the section is either {line, keep} or {origin, normal}")
+        refuse_section("SECTION_REQUEST_INVALID", "the section is either {line, keep} or {origin, normal}")
     if "line" in section:
         line = section["line"]
         if not isinstance(line, Sequence) or isinstance(line, (str, bytes)) or len(line) != 2:
-            _refuse("SECTION_REQUEST_INVALID", "the section line must be two plan points [[x1, y1], [x2, y2]]")
+            refuse_section("SECTION_REQUEST_INVALID", "the section line must be two plan points [[x1, y1], [x2, y2]]")
         start, end = (_numbers(point, 2, "a section line point") for point in line)
         if section["keep"] not in ("left", "right"):
-            _refuse("SECTION_REQUEST_INVALID", "keep must be left or right of walking along the section line")
+            refuse_section("SECTION_REQUEST_INVALID", "keep must be left or right of walking along the section line")
         if math.dist(start, end) <= deflection:
-            _refuse("SECTION_LINE_DEGENERATE", "the section line has no length; give two distinct plan points")
+            refuse_section("SECTION_LINE_DEGENERATE", "the section line has no length; give two distinct plan points")
         return {"line": [list(start), list(end)], "keep": section["keep"]}
     origin = _numbers(section["origin"], 3, "the section origin")
     raw = _numbers(section["normal"], 3, "the section normal")
     if math.hypot(*raw) <= _TOLERANCE:
-        _refuse("SECTION_NORMAL_DEGENERATE", "the section normal has no length")
+        refuse_section("SECTION_NORMAL_DEGENERATE", "the section normal has no length")
     return {"origin": list(origin), "normal": list(raw)}
 
 
@@ -385,7 +389,7 @@ def model_axis_section(
     look = tuple(-value + 0.0 for value in normal)
     axis = next((index for index in (0, 1) if abs(abs(look[index]) - 1.0) <= _TOLERANCE), None)
     if axis is None or any(abs(look[index]) > _TOLERANCE for index in range(3) if index != axis):
-        _refuse("SECTION_PLANE_NOT_MODEL_AXIS", "a vertical section's plane contains CAD +Z and is perpendicular to X or "
+        refuse_section("SECTION_PLANE_NOT_MODEL_AXIS", "a vertical section's plane contains CAD +Z and is perpendicular to X or "
                                                 "Y; draw any other plane as a section perspective")
     direction = [0.0, 0.0, 0.0]
     direction[axis] = math.copysign(1.0, look[axis])
@@ -437,34 +441,34 @@ def _section_paper_rules(hatch, beyond, spacing_mm: float) -> dict[str, Any]:
     if hatch is not None:
         by_material = hatch.get("byMaterial") if isinstance(hatch, Mapping) else None
         if not isinstance(hatch, Mapping) or set(hatch) != {"byMaterial"} or not isinstance(by_material, Mapping):
-            _refuse("SECTION_REQUEST_INVALID", "graphics.hatch takes byMaterial: {material: {spacingMm, angleDeg, poche}}")
+            refuse_section("SECTION_REQUEST_INVALID", "graphics.hatch takes byMaterial: {material: {spacingMm, angleDeg, poche}}")
         if len(by_material) > 100:
-            _refuse("SECTION_REQUEST_INVALID", "graphics.hatch.byMaterial takes at most 100 materials")
+            refuse_section("SECTION_REQUEST_INVALID", "graphics.hatch.byMaterial takes at most 100 materials")
         complete = {}
         for material, rule in sorted(by_material.items(), key=lambda item: str(item[0])):
             if (not isinstance(material, str) or not 1 <= len(material) <= 100
                     or any(ord(char) < 32 or ord(char) == 127 for char in material)):
-                _refuse("SECTION_REQUEST_INVALID", "each hatch material is a printable name of 1 to 100 characters")
+                refuse_section("SECTION_REQUEST_INVALID", "each hatch material is a printable name of 1 to 100 characters")
             if not isinstance(rule, Mapping) or not set(rule) <= {"spacingMm", "angleDeg", "poche"}:
-                _refuse("SECTION_REQUEST_INVALID", f"the {material} hatch rule takes spacingMm, angleDeg and poche")
+                refuse_section("SECTION_REQUEST_INVALID", f"the {material} hatch rule takes spacingMm, angleDeg and poche")
             spacing = spacing_mm if rule.get("spacingMm") is None else _number(rule["spacingMm"], f"the {material} hatch spacingMm")
             if rule.get("spacingMm") is not None and not 0.5 <= spacing <= 20.0:
-                _refuse("SECTION_REQUEST_INVALID", f"the {material} hatch spacingMm must be 0.5 to 20 paper millimetres")
+                refuse_section("SECTION_REQUEST_INVALID", f"the {material} hatch spacingMm must be 0.5 to 20 paper millimetres")
             angle = 45.0 if rule.get("angleDeg") is None else _number(rule["angleDeg"], f"the {material} hatch angleDeg")
             if not 0.0 <= angle < 180.0:
-                _refuse("SECTION_REQUEST_INVALID", f"the {material} hatch angleDeg must be from 0 up to 180 degrees")
+                refuse_section("SECTION_REQUEST_INVALID", f"the {material} hatch angleDeg must be from 0 up to 180 degrees")
             poche = rule.get("poche", False)
             if not isinstance(poche, bool):
-                _refuse("SECTION_REQUEST_INVALID", f"the {material} hatch poche must be true or false")
+                refuse_section("SECTION_REQUEST_INVALID", f"the {material} hatch poche must be true or false")
             complete[material] = {"spacingMm": float(spacing), "angleDeg": float(angle), "poche": poche}
         if complete:
             rules["hatch"] = {"byMaterial": complete}
     if beyond is not None:
         if not isinstance(beyond, Mapping) or set(beyond) != {"fade"}:
-            _refuse("SECTION_REQUEST_INVALID", "graphics.beyond takes fade, from 0 (black) to 1 (white)")
+            refuse_section("SECTION_REQUEST_INVALID", "graphics.beyond takes fade, from 0 (black) to 1 (white)")
         fade = _number(beyond["fade"], "the beyond fade")
         if not 0.0 <= fade <= 1.0:
-            _refuse("SECTION_REQUEST_INVALID", "the beyond fade must be from 0 (black) to 1 (white)")
+            refuse_section("SECTION_REQUEST_INVALID", "the beyond fade must be from 0 (black) to 1 (white)")
         if fade:
             rules["beyond"] = {"fade": fade}
     return rules
@@ -513,19 +517,19 @@ class SectionPerspectiveView:
             raise SectionPerspectiveError("SECTION_REQUEST_INVALID", str(exc)) from exc
         deflection = _number(self.linear_deflection, "linear_deflection")
         if deflection <= 0.0:
-            _refuse("SECTION_REQUEST_INVALID", "linear_deflection must be positive")
+            refuse_section("SECTION_REQUEST_INVALID", "linear_deflection must be positive")
         object.__setattr__(self, "linear_deflection", deflection)
         canonical = _checked_section(self.section, deflection)
         object.__setattr__(self, "section", canonical)
         origin, normal = _section_plane(canonical)
         camera = {} if self.camera is None else self.camera
         if not isinstance(camera, Mapping) or not set(camera) <= {"eye", "target", "up", "fovDeg", "eyeHeight"}:
-            _refuse("SECTION_REQUEST_INVALID", "the camera takes eye, target, up, fovDeg or eyeHeight")
+            refuse_section("SECTION_REQUEST_INVALID", "the camera takes eye, target, up, fovDeg or eyeHeight")
         explicit = "eye" in camera or "target" in camera
         if explicit and not {"eye", "target"} <= set(camera):
-            _refuse("SECTION_REQUEST_INVALID", "an explicit camera needs both eye and target")
+            refuse_section("SECTION_REQUEST_INVALID", "an explicit camera needs both eye and target")
         if explicit and "eyeHeight" in camera:
-            _refuse("SECTION_REQUEST_INVALID", "eyeHeight places the default eye; an explicit camera states its eye")
+            refuse_section("SECTION_REQUEST_INVALID", "eyeHeight places the default eye; an explicit camera states its eye")
         resolved: dict[str, Any] = {}
         for key in ("eye", "target", "up"):
             if key in camera:
@@ -535,47 +539,47 @@ class SectionPerspectiveView:
                 resolved[key] = _number(camera[key], f"the camera {key}")
         fov = resolved.get("fovDeg", DEFAULT_SECTION_FOV_DEG)
         if not 0.0 < fov < 180.0:
-            _refuse("SECTION_CAMERA_DEGENERATE", "fovDeg must be between 0 and 180 degrees")
+            refuse_section("SECTION_CAMERA_DEGENERATE", "fovDeg must be between 0 and 180 degrees")
         up = tuple(resolved.get("up", (0.0, 0.0, 1.0)))
         in_plane = tuple(u - _dot(up, normal) * n for u, n in zip(up, normal))
         if math.hypot(*up) <= _TOLERANCE or math.hypot(*in_plane) <= 1e-6 * math.hypot(*up):
-            _refuse("SECTION_CAMERA_DEGENERATE", "the camera up must not be parallel to the section normal; "
+            refuse_section("SECTION_CAMERA_DEGENERATE", "the camera up must not be parallel to the section normal; "
                                                  "give an up that lies across the section plane")
         if explicit:
             eye, target = resolved["eye"], resolved["target"]
             side = _dot([e - o for e, o in zip(eye, origin)], normal)
             if side < -deflection:
-                _refuse("SECTION_EYE_ON_KEPT_SIDE", "the eye stands on the kept side of the section; "
+                refuse_section("SECTION_EYE_ON_KEPT_SIDE", "the eye stands on the kept side of the section; "
                                                     "stand it on the removed side, where the normal points")
             if side <= deflection:
-                _refuse("SECTION_EYE_ON_PLANE", "the eye stands on the section plane; move it onto the removed side")
+                refuse_section("SECTION_EYE_ON_PLANE", "the eye stands on the section plane; move it onto the removed side")
             if math.dist(eye, target) <= deflection:
-                _refuse("SECTION_CAMERA_DEGENERATE", "the eye and the target coincide")
+                refuse_section("SECTION_CAMERA_DEGENERATE", "the eye and the target coincide")
             if _dot([t - e for t, e in zip(target, eye)], normal) >= 0.0:
-                _refuse("SECTION_CAMERA_DEGENERATE", "the camera must look through the cut toward the kept side")
+                refuse_section("SECTION_CAMERA_DEGENERATE", "the camera must look through the cut toward the kept side")
         object.__setattr__(self, "camera", resolved or None)
         if self.depth is not None:
             depth = _number(self.depth, "depth")
             if depth <= 0.0:
-                _refuse("SECTION_DEPTH_INVALID", "depth must be a positive distance behind the section plane")
+                refuse_section("SECTION_DEPTH_INVALID", "depth must be a positive distance behind the section plane")
             object.__setattr__(self, "depth", depth)
         hidden = self.hidden_object_ids
         if (not isinstance(hidden, (list, tuple)) or any(not isinstance(name, str) or not name for name in hidden)
                 or len(set(hidden)) != len(hidden)):
-            _refuse("SECTION_REQUEST_INVALID", "hiddenObjectIds must be distinct physical object ids")
+            refuse_section("SECTION_REQUEST_INVALID", "hiddenObjectIds must be distinct physical object ids")
         object.__setattr__(self, "hidden_object_ids", tuple(sorted(hidden)))
         if (isinstance(self.scale_denominator, bool) or not isinstance(self.scale_denominator, int)
                 or self.scale_denominator <= 0):
-            _refuse("SECTION_REQUEST_INVALID", "scale_denominator must be a positive integer")
+            refuse_section("SECTION_REQUEST_INVALID", "scale_denominator must be a positive integer")
         graphics = dict(DEFAULT_SECTION_GRAPHICS)
         requested = {} if self.graphics is None else self.graphics
         if not isinstance(requested, Mapping) or not set(requested) <= {*graphics, "hatch", "beyond"}:
-            _refuse("SECTION_REQUEST_INVALID", "graphics takes cutLineMm, visibleLineMm, hatchSpacingMm, hatch and beyond")
+            refuse_section("SECTION_REQUEST_INVALID", "graphics takes cutLineMm, visibleLineMm, hatchSpacingMm, hatch and beyond")
         for key in DEFAULT_SECTION_GRAPHICS:
             if key in requested:
                 graphics[key] = _number(requested[key], key)
                 if graphics[key] <= 0.0:
-                    _refuse("SECTION_REQUEST_INVALID", f"{key} must be a positive paper millimetre value")
+                    refuse_section("SECTION_REQUEST_INVALID", f"{key} must be a positive paper millimetre value")
         graphics.update(_section_paper_rules(requested.get("hatch"), requested.get("beyond"), graphics["hatchSpacingMm"]))
         object.__setattr__(self, "graphics", graphics)
 
@@ -681,18 +685,18 @@ def project_section_perspective(
 
     if not isinstance(view, SectionPerspectiveView):
         raise TypeError("view must be SectionPerspectiveView")
-    if unit not in _UNITS:
+    if unit not in DRAWING_LENGTH_UNITS:
         raise DrawingElevationError(f"unit {unit!r} is not a CAD length unit")
     frame = view.frame()
     origin, right, up, normal = frame
     try:
-        with _observed_stage(operation_observer, "drawing.hlr", parent_event_id=parent_event_id,
+        with observed_stage(operation_observer, "drawing.hlr", parent_event_id=parent_event_id,
                              details={"scope": "global_visibility", "input_object_ids": sorted(object_ids)}) as observation:
             cut = section_occt_lines(entries, object_ids=tuple(object_ids), origin=origin, right=right, up=up,
                                      linear_deflection=view.linear_deflection)
             points = [point for line in cut for point in line.points]
             if not points:
-                _refuse("SECTION_PLANE_MISSES_MODEL", "the section plane meets none of the drawn objects; "
+                refuse_section("SECTION_PLANE_MISSES_MODEL", "the section plane meets none of the drawn objects; "
                                                       "move it through the model")
             u0, u1 = min(p[0] for p in points), max(p[0] for p in points)
             v0, v1 = min(p[1] for p in points), max(p[1] for p in points)
@@ -745,10 +749,10 @@ def project_section_perspective(
             "graphics": deepcopy(view.graphics),
             "hiddenObjectIds": list(view.hidden_object_ids),
         }
-        with _observed_stage(operation_observer, "drawing.svg", parent_event_id=parent_event_id,
+        with observed_stage(operation_observer, "drawing.svg", parent_event_id=parent_event_id,
                              details={"input_object_ids": sorted({line.object_id for line in perspective.lines})}) as observation:
             # The scale holds at the section plane, so the paper tolerance is measured there.
-            cleaned, cleanup = _cleaned(perspective.lines, perspective.regions, crop_uv=crop, hidden_lines=False,
+            cleaned, cleanup = clean_view_lines(perspective.lines, perspective.regions, crop_uv=crop, hidden_lines=False,
                                         unit=unit, scale_denominator=view.scale_denominator)
             svg = drawing_svg(
                 cleaned, crop_uv=crop, unit=unit, scale_denominator=view.scale_denominator,
@@ -756,7 +760,7 @@ def project_section_perspective(
                 projection=SECTION_PERSPECTIVE_KIND, semantics=semantics,
             )
             observation["emitted_object_ids"] = list(svg_objects(svg))
-        with _observed_stage(operation_observer, "drawing.png", parent_event_id=parent_event_id):
+        with observed_stage(operation_observer, "drawing.png", parent_event_id=parent_event_id):
             png = render_svg_png(svg)
     except SectionPerspectiveError:
         raise
@@ -776,11 +780,11 @@ def section_perspective_objects(verified: VerifiedElevationSource, hidden_object
     hidden_object_ids = [current_object_id(name, set(verified.physical_object_ids)) for name in hidden_object_ids]
     unknown = sorted(set(hidden_object_ids) - set(verified.physical_object_ids))
     if unknown:
-        _refuse("DRAWING_OBJECT_UNKNOWN", "These physical objects are not in the selected model: " + ", ".join(unknown))
+        refuse_section("DRAWING_OBJECT_UNKNOWN", "These physical objects are not in the selected model: " + ", ".join(unknown))
     excluded = set(hidden_object_ids) | inspection_witness_ids(verified.receipt)
     selected = tuple(name for name in verified.physical_object_ids if name not in excluded)
     if not selected:
-        _refuse("DRAWING_EMPTY", "Keep at least one physical object in the section perspective.")
+        refuse_section("DRAWING_EMPTY", "Keep at least one physical object in the section perspective.")
     return selected
 
 
@@ -797,8 +801,12 @@ __all__ = [
     "SectionPerspectiveProjection",
     "SectionPerspectiveView",
     "axonometric_frame",
+    "clean_view_lines",
+    "finite_number",
     "model_axis_section",
+    "observed_stage",
     "project_model_axis_elevation",
     "project_section_perspective",
+    "refuse_section",
     "section_perspective_objects",
 ]

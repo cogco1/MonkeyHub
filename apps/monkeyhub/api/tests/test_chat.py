@@ -117,6 +117,42 @@ if "--output-format" in args:
               "skills": ["monkeyhub-library:hatch-review", "design", "newthing"]})
     else:
         emit({"type": "system", "session_id": native})
+    if any(marker in prompt for marker in ("limit-assistant-test", "limit-result-test", "limit-stalled-test",
+                                           "limit-enriched-test", "limit-child-test", "provider-result-test")):
+        # Synthetic messages in the official Agent SDK wire shapes. The actual
+        # F18 local log is not a fixture: no live account or quota is consumed.
+        detail = "You've hit your limit · resets 7pm (UTC). " + os.environ["CHAT_TEST_SECRET"]
+        if "limit-child-test" in prompt:
+            marker = Path(sys.argv[1]).with_name("release-pipe-child")
+            child = "import sys,time; from pathlib import Path; p=Path(sys.argv[1]); p.with_suffix('.started').touch();\nwhile p.exists(): time.sleep(.05)\np.with_suffix('.exited').touch()"
+            subprocess.Popen([sys.executable, "-c", child, str(marker)], stdin=subprocess.DEVNULL)
+            while not marker.with_suffix(".started").exists():
+                time.sleep(.01)
+        if "limit-assistant-test" in prompt or "limit-enriched-test" in prompt:
+            emit({"type": "assistant", "session_id": native, "error": "rate_limit",
+                  "message": {"content": [{"type": "text", "text": "Rate limit exceeded." if "limit-enriched-test" in prompt else detail}]}})
+        else:
+            limited = "provider-result-test" not in prompt
+            emit({"type": "result", "session_id": native, "is_error": True,
+                  "api_error_status": 429 if limited else 400,
+                  "errors": [detail if limited else "The requested operation was refused."]})
+        # Claude's stream-json input remains open for interjections. Only EOF,
+        # not killing this process, can finish this already-failed turn.
+        sys.stdin.read()
+        if "limit-stalled-test" in prompt:
+            time.sleep(20)
+        if "limit-assistant-test" in prompt or "limit-enriched-test" in prompt:
+            emit({"type": "result", "session_id": native, "is_error": True,
+                  "errors": [detail if "limit-enriched-test" in prompt else "The provider reported a failed turn."]})
+        sys.exit(0)
+    if "limit-warning-test" in prompt:
+        for status in ("allowed_warning", "rejected"):
+            emit({"type": "rate_limit_event", "session_id": native,
+                  "rate_limit_info": {"status": status, "rateLimitType": "seven_day"}})
+        emit({"type": "assistant", "message": {"content": [{"type": "text",
+              "text": "Explain the phrase You've hit your limit and how a rate_limit error works."}]}})
+        emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "retryable",
+              "is_error": True, "content": "rate_limit: this tool call can be retried"}]}})
     emit({"type": "stream_event", "event": {"type": "content_block_delta",
         "delta": {"type": "text_delta", "text": "hello "}}})
     emit({"type": "stream_event", "event": {"type": "content_block_delta",
@@ -985,6 +1021,108 @@ class ChatTests(unittest.TestCase):
         self.assertIsNone(failed.model)
         self.post(session, "try again")
         self.assertEqual(self.finished(session).status, "idle")
+
+    def test_terminal_claude_limits_close_input_and_keep_the_provider_reason(self):
+        original = {p.relative_to(self.project): p.read_bytes() for p in self.project.rglob("*") if p.is_file()}
+        for prompt in ("limit-assistant-test", "limit-result-test"):
+            with self.subTest(prompt=prompt):
+                session = self.create(provider="claude")
+                started = time.monotonic()
+                with patch.object(providers, "_stop_process", wraps=providers._stop_process) as stop:
+                    self.post(session, prompt)
+                    failed = self.finished(session)
+                    self.assertLess(time.monotonic() - started, 3, "a terminal refusal must not wait for the turn timeout")
+                    stop.assert_not_called()  # EOF lets the failed CLI finish normally.
+                self.assertEqual(failed.status, "failed")
+                self.assertEqual(failed.error.code, "CHAT_RATE_LIMITED")
+                self.assertIn("You've hit your limit", failed.error.detail)
+                self.assertIn("resets 7pm (UTC)", failed.error.detail)
+                self.assertIn("[redacted]", failed.error.detail)
+                self.assertNotIn(os.environ["CHAT_TEST_SECRET"], failed.model_dump_json())
+                self.assertFalse(any(row.status == "streaming" for row in failed.messages))
+                self.assertIsNone(failed.model)
+                native = self.store._sessions[session.id].nativeSessionId
+                self.post(session, "try again")
+                self.assertEqual(self.finished(session).status, "idle")
+                self.assertEqual(self.store._sessions[session.id].nativeSessionId, native)
+        self.assertEqual(len(self.calls()), 4, "only the person's two refusals and two retries were submitted")
+        self.assertEqual(original, {p.relative_to(self.project): p.read_bytes() for p in self.project.rglob("*") if p.is_file()})
+
+    def test_non_limit_failed_result_finishes_in_its_own_words(self):
+        session = self.create(provider="claude")
+        self.post(session, "provider-result-test")
+        failed = self.finished(session)
+        self.assertEqual(failed.status, "failed")
+        self.assertEqual(failed.error.code, "CHAT_PROVIDER_FAILED")
+        self.assertEqual(failed.error.detail, "The requested operation was refused.")
+
+    def test_a_failed_cli_ignoring_eof_is_bounded_without_losing_its_error(self):
+        self.store.timeout_s = 2.0
+        session = self.create(provider="claude")
+        started = time.monotonic()
+        self.post(session, "limit-stalled-test")
+        failed = self.finished(session)
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertEqual(failed.status, "failed")
+        self.assertEqual(failed.error.code, "CHAT_RATE_LIMITED", "the deadline must not overwrite the provider's refusal")
+        self.assertIn("resets 7pm (UTC)", failed.error.detail)
+        self.assertEqual(len(self.calls()), 1, "cleanup must not repeat the provider request")
+
+    def test_final_failed_result_can_add_reset_words_to_the_original_refusal(self):
+        session = self.create(provider="claude")
+        self.post(session, "limit-enriched-test")
+        failed = self.finished(session)
+        self.assertEqual(failed.error.code, "CHAT_RATE_LIMITED")
+        self.assertIn("Rate limit exceeded.", failed.error.detail)
+        self.assertIn("resets 7pm (UTC)", failed.error.detail)
+        self.assertIn("[redacted]", failed.error.detail)
+        self.assertNotIn(os.environ["CHAT_TEST_SECRET"], failed.model_dump_json())
+
+    def test_terminal_refusal_does_not_wait_for_descendant_held_output_pipes(self):
+        marker = self.root / "release-pipe-child"
+        marker.touch()
+        session = self.create(provider="claude")
+        started = time.monotonic()
+        try:
+            self.post(session, "limit-child-test")
+            failed = self.finished(session)
+            self.assertLess(time.monotonic() - started, 5)
+            self.assertEqual(failed.status, "failed")
+            self.assertEqual(failed.error.code, "CHAT_RATE_LIMITED")
+            self.assertTrue(marker.with_suffix(".started").exists())
+            self.assertFalse(marker.with_suffix(".exited").exists(), "the child's inherited pipes are still open")
+        finally:
+            marker.unlink(missing_ok=True)
+            wait_for(lambda: marker.with_suffix(".exited").exists(), bool)
+
+    def test_limit_classification_requires_a_failure_from_the_top_level_turn(self):
+        session = self.store._sessions[self.create(provider="claude").id]
+        for event in (
+            {"type": "turn.failed", "error": {"code": "usage_limit_reached", "message": "No quota remains."}},
+            {"type": "result", "is_error": True, "errors": ["Rate limit exceeded. Retry later."]},
+            {"type": "turn.failed", "error": {"message": json.dumps({"status": 429, "error": {"message": "Too many requests."}})}},
+        ):
+            with self.subTest(event=event):
+                failure, finished = self.store._event(session, event, {})
+                self.assertEqual(failure.code, "CHAT_RATE_LIMITED")
+                self.assertTrue(finished)
+        for event, finished in (
+            ({"type": "assistant", "error": "rate_limit", "parent_tool_use_id": "child",
+              "message": {"content": [{"type": "text", "text": "You've hit your limit."}]}}, False),
+            ({"type": "assistant", "message": {"content": [{"type": "text", "text": "You've hit your limit."}]}}, False),
+            ({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected"}}, False),
+            ({"type": "result", "is_error": False, "result": "Quota exceeded is an error message."}, True),
+        ):
+            with self.subTest(event=event):
+                self.assertEqual(self.store._event(session, event, {}), (None, finished))
+
+    def test_rate_limit_status_prose_and_tool_errors_do_not_end_the_turn(self):
+        session = self.create(provider="claude")
+        self.post(session, "limit-warning-test")
+        finished = self.finished(session)
+        self.assertEqual(finished.status, "idle")
+        self.assertIsNone(finished.error)
+        self.assertEqual(next(row.content for row in reversed(finished.messages) if row.role == "assistant"), "hello world")
 
     def test_cross_project_chats_run_together_and_stop_is_scoped(self):
         first, second, other = self.create(), self.create(), self.create(self.other)
