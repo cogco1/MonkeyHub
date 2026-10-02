@@ -151,9 +151,13 @@ def _require_state(binding, body, projection: StateProjection, what: str) -> Non
 
 def _remember(request: Request, proposal: Proposal, base: StateProjection, previous: Proposal | None,
               body: ConstructionRequestDto | FacetsRequestDto | HostedOpeningRequestDto) -> ProposalDto:
-    """Place the proposal on its exact source, as the drawing routes do, then keep or continue it."""
+    """Place the proposal on its exact source, as the drawing routes do, then keep or continue it.
+
+    The caller's ``summary`` is the sentence its run keeps as what it was asked for (#575); a change left
+    to describe itself was asked in no words.
+    """
 
     proposal = replace(proposal,
                        source_run_id=body.source_run_id or (base.run.run_id if base.reference_state_exact else None),
-                       source_stage_ref=base.source_stage_ref)
+                       source_stage_ref=base.source_stage_ref, request=body.summary)
     return _remember_proposal(request, proposal, base, previous)

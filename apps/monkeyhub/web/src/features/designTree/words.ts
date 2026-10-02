@@ -65,14 +65,15 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
   const optionName = (node: TreeNode) => node.label
     ? `${node.letter && !OWN_LETTER.test(node.label) ? `${node.letter} · ` : ""}${node.label}`
     : t("designTree.optionUnnamed", { letter: node.letter ?? "" }).trim();
-  // #575: a step of Current's line is called what it was named, else what asked for it, else its place on the line.
-  const stepName = (node: TreeNode) => node.label ?? node.step!.request ?? t("designTree.step.numbered", { number: node.step!.number });
+  // #575: a step of Current's line, or of the line it left, is called by the words that asked for it (rule 5), else
+  // what it was named, else its place on the line.
+  const stepName = (node: TreeNode) => node.step!.request ?? node.label ?? t("designTree.step.numbered", { number: node.step!.number });
   // #575: a drafts card names the kept drafts it folds; one that holds only drafts the project cleaned says so.
   const draftsName = (node: TreeNode) => node.drafts!.runs.length || !node.drafts!.cleaned.length
     ? t("designTree.drafts.group", { count: node.drafts!.runs.length })
     : t("designTree.drafts.cleanedGroup", { count: node.drafts!.cleaned.length });
   // The folds and the line's steps and drafts are named the same on a card and everywhere else.
-  const lineName = (node: TreeNode): string | null => node.kind === "step" ? stepName(node)
+  const lineName = (node: TreeNode): string | null => node.kind === "step" || node.kind === "later" ? stepName(node)
     : node.kind === "fold" ? t("designTree.fold.steps", { count: node.fold!.steps.length })
       : node.kind === "drafts" ? draftsName(node)
         : node.kind === "draft" ? node.label ?? t("designTree.draft.unnamed") : null;
@@ -106,6 +107,11 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
   const admitter = (candidate: NonNullable<TreeNode["candidate"]>) => candidate.admittedOrigin === "retroactive"
     ? t("designTree.actor.retroactive") : candidate.admittedOrigin === HUB_AGENT ? t("designTree.actor.hubAgent")
       : actor(candidate.admittedBy);
+  /** #575 rule 5: the words that asked for Current itself, quoted; empty when its run kept none. */
+  const currentRequest = (): string => {
+    const request = byId(CURRENT)?.current?.request;
+    return request ? t("designTree.current.request", { request }) : "";
+  };
   const currentAt = (): string => {
     const current = byId(CURRENT);
     const anchor = byId(current?.parent ?? null);
@@ -120,6 +126,8 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
     if (!tree) return "";
     if (node.kind === "pending") return pendingText(node.pending!.status);
     if (node.kind === "step") return t("designTree.step.numbered", { number: node.step!.number });
+    if (node.kind === "later") return t("designTree.later.status", { number: node.step!.number });
+    if (node.kind === "current") return currentRequest();
     if (node.kind === "draft") return t("designTree.status.superseded", { node: lineRun(node.draft!.supersededBy) ?? "—" });
     if (node.kind === "fold") return node.fold!.drafts ? t("designTree.fold.drafts", { count: node.fold!.drafts }) : t("designTree.fold.open");
     if (node.kind === "drafts") {
@@ -182,11 +190,12 @@ export function treeWords(t: TFunction, tree: GrowthTree | null) {
   const accept = tree?.accept;
   const scene: SceneWords = {
     current: t("designTree.current"), origin: t("designTree.origin"), name: cardName, pending: pendingText, currentAt: currentAt(),
+    currentRequest: currentRequest(),
     accept: accept?.nextLabel ? t("designTree.action.accept", { stage: accept.nextLabel }) : t("designTree.action.acceptNext"),
     acceptBlocked: t("designTree.action.acceptNext"), status, fork,
   };
-  return { stageName, optionName, stepName, studyName, title, actor, admitter, currentAt, status, fork, pendingText, check, column, scene, byId, lineRun,
-    cleaned, cleanedBy };
+  return { stageName, optionName, stepName, studyName, title, actor, admitter, currentAt, currentRequest, status, fork, pendingText, check, column,
+    scene, byId, lineRun, cleaned, cleanedBy };
 }
 
 export type TreeWords = ReturnType<typeof treeWords>;

@@ -30,6 +30,8 @@ export interface SceneWords {
   name(node: TreeNode): string;
   pending(status: PendingStatus): string;
   currentAt: string;
+  /** #575: the words that asked for Current itself, quoted, which name its card; empty or left out when none were kept. */
+  currentRequest?: string;
   accept: string;
   acceptBlocked: string;
   status(node: TreeNode): string;
@@ -351,10 +353,14 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
         picture(node.id, slot, preview, 100);
       }
       // Where Current stands takes a second line when the card has room above its button: a long version name keeps its end.
+      // #575 rule 5: the words that asked for Current name it on the first line; where it stands keeps the rest.
       const summaryTop = card.y + 12 + title * LINE_HEIGHT;
       const lines = Math.max(1, Math.min(2, Math.floor((box.y - 4 - summaryTop) / (sub * LINE_HEIGHT))));
-      text(`${node.id}:summary`, card.x + 14, summaryTop, wrap(words.currentAt, sub, card.width - 28 - aside, lines).join("\n"), sub, INK,
-        data("summary", { node: node.id }));
+      const request = words.currentRequest ?? "", wide = card.width - 28 - aside;
+      if (request) text(`${node.id}:request`, card.x + 14, summaryTop, clip(request, sub, wide), sub, INK, data("name", { node: node.id }));
+      const at = request ? lines - 1 : lines;
+      if (at > 0) text(`${node.id}:summary`, card.x + 14, summaryTop + (request ? sub * LINE_HEIGHT : 0), wrap(words.currentAt, sub, wide, at).join("\n"),
+        sub, request ? INK_2 : INK, data("summary", { node: node.id }));
       const allowed = tree.accept.allowed;
       rect(`${node.id}:accept`, box, allowed ? { backgroundColor: ACCENT, strokeColor: ACCENT, strokeWidth: 1.5 } : { strokeColor: MUTED, strokeStyle: "dashed", strokeWidth: 1.5 },
         data("accept", { node: node.id }));
@@ -383,7 +389,8 @@ export function buildTreeScene(tree: GrowthTree, layout: GrowthLayout, options: 
         : { action: "expand" as const, expand: steps ? "steps" as const : "drafts" as const }) });
       return;
     }
-    // An option, a step of Current's line, a superseded draft or a running line: a small card with its status bar, letter and name.
+    // An option, a step of Current's line or of the line it left (#575), a superseded draft or a running line: a small card with
+    // its status bar, letter and name.
     const pending = node.kind === "pending";
     rect(`${node.id}:card`, card, pending
       ? { strokeColor: RUNNING, strokeStyle: "dotted", strokeWidth: 1.5, opacity }

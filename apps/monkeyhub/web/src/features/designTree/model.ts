@@ -11,17 +11,24 @@
  * Only facts become nodes: Stages from design history, admitted Candidates
  * from the #294 contract, running lines from the Worktree Graph and the
  * Working Head from the working source. Runs, repairs and results rejected
- * before admission never do, with two exceptions the Worktree Graph names
+ * before admission never do, with the exceptions the Worktree Graph names
  * (#575): the runs Current's own line was made through after the last node
  * the tree has for it are its steps, and the earlier ones fold behind one
  * control; the drafts that line superseded fold where they started, and so do
  * the ones the project already cleaned into its trash, restorable for a while.
+ * A result admitted alone and continued, which is what a requested change that
+ * landed is, is one more step of the line and not a node of its own: it folds
+ * like a plain step, and the head's own is Current. Only Stages, an option
+ * chosen among others and a point something else grows from stand on their
+ * own (Kaiwen, 2026-10-01). After a return to an earlier step, the line
+ * Current left stays drawn after it, faintly, a step at a time, and each
+ * step is named by the words that asked for it.
  * This module is pure and has no copy: the surfaces word it.
  */
 import type { AdmissionActorDto, DesignCandidateDto, DesignStageDto, DesignStudyDto, LineStepDto, ReviewJudgementDto, TrashEntryDto, WorkingHeadDto, WorktreeLineDto } from "../../api/project-runtime/generated";
 import type { DesignTreeSource } from "./contract";
 
-export type TreeNodeKind = "origin" | "stage" | "candidate" | "pending" | "current" | "step" | "fold" | "drafts" | "draft";
+export type TreeNodeKind = "origin" | "stage" | "candidate" | "pending" | "current" | "step" | "fold" | "drafts" | "draft" | "later";
 
 export interface StageFacts {
   readonly ref: string;
@@ -71,10 +78,14 @@ export interface CurrentFacts {
   readonly request: string | null;
 }
 
-/** A run of Current's line that no Stage or admitted option stands for (#575). */
+/**
+ * A run of Current's line that no Stage or option chosen among others stands for (#575), or, on a "later" node, a
+ * step of the line Current left when it returned to an earlier one.
+ */
 export interface StepFacts {
   /** Its place on the line, the project start being 0: a step no words name is called by it. */
   readonly number: number;
+  /** The words that asked for it, which name it (#575 rule 5). */
   readonly request: string | null;
   readonly updatedAt: string | null;
 }
@@ -190,8 +201,13 @@ export interface GrowthTree {
   readonly steps: { readonly count: number; readonly open: boolean };
   /** The drafts Current's line superseded (#575): how many, and whether each is drawn or they are folded. */
   readonly drafts: { readonly count: number; readonly open: boolean };
-  /** Each run of Current's line with a node, by run: a folded step's own node included, so a fact can name it. */
+  /**
+   * Each run of Current's line with a node, by run: a folded step's own node included, so a fact can name it; and
+   * each later step's (#575).
+   */
   readonly lineNodes: ReadonlyMap<string, TreeNode>;
+  /** After a return to an earlier step, the line Current left, drawn after it: its nodes, oldest first (#575). */
+  readonly later: readonly string[];
 }
 
 export const CURRENT = "current";
@@ -203,6 +219,7 @@ export const pendingNodeId = (lineId: string) => `pending:${lineId}`;
 export const stepNodeId = (runId: string) => `step:${runId}`;
 export const draftNodeId = (runId: string) => `draft:${runId}`;
 export const draftsNodeId = (at: string) => `drafts:${at}`;
+export const laterNodeId = (runId: string) => `later:${runId}`;
 /** Earlier steps fold only when there is more than one: one is simply drawn. */
 const FOLD_FROM = 2;
 
@@ -322,6 +339,54 @@ export function buildGrowthTree(source: DesignTreeSource, includeProcessed = fal
   // this head's (a graph read before the head moved names another), and walked from the head, nearest first.
   const line: readonly LineStepDto[] = head && worktrees?.line?.at(-1)?.runId === head.runId ? worktrees.line : [];
   const lineStep = new Map(line.map((step, index) => [step.runId, { step, index }]));
+  // #575 rule 4: after a return to an earlier step, the line Current left, while the graph names it for this head.
+  const laterSteps: readonly LineStepDto[] = head && line.length && worktrees?.later?.[0]?.baseRunId === head.runId ? worktrees.later : [];
+
+  // #575 rule 3 (Kaiwen, 2026-10-01): a result admitted alone and continued, which is what a requested change that
+  // landed is, is one more step of the line rather than a node of its own. On Current's line it folds like a plain
+  // step, the head's own is Current, and on the line Current left it is a later step. An option chosen among others
+  // stands, as a Stage does, and so does a point something else grows from: another option, or work still running.
+  const onLine = new Set(line.map((step) => step.runId));
+  const runningFrom = new Set((worktrees?.lines ?? []).filter((row) => row.kind === "running" && PENDING.has(row.status))
+    .map((row) => row.baseRunId));
+  const grown = new Map<string, string[]>();
+  for (const [id, parent] of parents) if (parent !== null) grown.set(parent, [...grown.get(parent) ?? [], id]);
+  const alone = (id: string) => (members.get(nodes.get(id)!.studyId ?? "")?.length ?? 0) <= 1;
+  const forks = (id: string, runId: string) => runningFrom.has(runId) ||
+    (grown.get(id) ?? []).some((child) => !onLine.has(nodes.get(child)?.runId ?? ""));
+  // What stands for each option that is a step from now on: the line around it, Current, or its later step.
+  const absorbed = new Map<string, string>();
+  for (const step of line) {
+    const id = candidateByRun.get(step.runId);
+    if (!id || !alone(id)) continue;
+    if (step.runId === head!.runId) absorbed.set(id, CURRENT);
+    else if (!forks(id, step.runId)) absorbed.set(id, "line");
+  }
+  const laterRuns: string[] = [];
+  for (const step of laterSteps) {
+    const id = candidateByRun.get(step.runId);
+    // The future the tree already draws ends it there: a Stage, or an option chosen among others.
+    if (stageByRun.has(step.runId) || (id && !alone(id))) break;
+    if (id) absorbed.set(id, laterNodeId(step.runId));
+    laterRuns.push(step.runId);
+  }
+  // What grew from such an option grows from what stands for it: on the line, from the nearest node kept before it.
+  const keptAbove = (id: string): string | null => {
+    let cursor = parents.get(id) ?? null;
+    for (const seen = new Set<string>(); cursor !== null && absorbed.has(cursor) && !seen.has(cursor); cursor = parents.get(cursor) ?? null) seen.add(cursor);
+    return cursor;
+  };
+  for (const [id, parent] of [...parents]) {
+    if (parent === null || !absorbed.has(parent) || absorbed.has(id)) continue;
+    const by = absorbed.get(parent)!;
+    parents.set(id, by === "line" || onLine.has(nodes.get(id)!.runId ?? "") ? keptAbove(parent) : by);
+  }
+  for (const id of absorbed.keys()) {
+    candidateByRun.delete(nodes.get(id)!.runId!);
+    nodes.delete(id);
+    parents.delete(id);
+  }
+
   // Current hangs from the first node its own line reaches; without a line, its lineage.
   const lineage = line.length ? line.map((step) => step.runId).reverse() : head?.lineage?.length ? head.lineage : head ? [head.runId] : [];
   let anchor: string | null = null, editsAfter = 0;
@@ -406,17 +471,31 @@ export function buildGrowthTree(source: DesignTreeSource, includeProcessed = fal
     }
   }
 
+  const laterIds: string[] = [];
   if (head) {
     const sourceDisposition = uniqueCandidates.find((candidate) => candidate.candidateId === head.runId)?.review?.disposition ?? null;
-    nodes.set(CURRENT, { id: CURRENT, kind: "current", parent: null, runId: head.runId, label: head.label ?? null, summary: null,
-      letter: null, studyId: null, current: { headRunId: head.runId, accepted: head.accepted, sourceDisposition,
+    // The head's own step is Current: an admitted result's account of itself is Current's (#575 rule 3).
+    nodes.set(CURRENT, { id: CURRENT, kind: "current", parent: null, runId: head.runId, label: head.label ?? null,
+      summary: line.at(-1)?.summary?.trim() || null, letter: null, studyId: null, current: { headRunId: head.runId, accepted: head.accepted,
+        sourceDisposition,
         // After its last step, or the project start its line began from, the head is one more run.
         editsAfter: stepNodes.length ? 1 : originRun !== null ? lineage.indexOf(originRun) : editsAfter,
         request: line.at(-1)?.request?.trim() || null } });
     parents.set(CURRENT, last);
+    // #575 rule 4: the line Current left stays after it, a step at a time and named as it was; each can be continued.
+    const headNumber = numberOf(line.length - 1);
+    laterRuns.forEach((runId, index) => {
+      const step = laterSteps[index];
+      const id = laterNodeId(runId);
+      nodes.set(id, { id, kind: "later", parent: null, runId, label: step.label?.trim() || null, summary: step.summary?.trim() || null,
+        letter: null, studyId: null, step: { number: headNumber + index + 1, request: step.request?.trim() || null, updatedAt: step.updatedAt ?? null } });
+      parents.set(id, laterIds.at(-1) ?? CURRENT);
+      laterIds.push(id);
+    });
   }
 
-  // Running and queued work waits where it started: at a step drawn on Current's line too, but never on its fold.
+  // Running and queued work waits where it started: at a step drawn on Current's line too, but never on its fold,
+  // and at a later step of the line Current left.
   const runningLines = (worktrees?.lines ?? []).filter((row): row is WorktreeLineDto & { status: PendingStatus } =>
     row.kind === "running" && PENDING.has(row.status));
   for (const line of runningLines) {
@@ -425,6 +504,7 @@ export function buildGrowthTree(source: DesignTreeSource, includeProcessed = fal
     let parent: string | null;
     if (head && base === head.runId) parent = anchor !== null && nodes.get(anchor)?.runId === head.runId ? anchor : CURRENT;
     else parent = nodeOfRun(base) ?? (base && !folded && stepRuns.includes(base) ? stepNodeId(base) : null) ??
+      (base && laterRuns.includes(base) ? laterNodeId(base) : null) ??
       (head && base && lineage.includes(base) ? CURRENT : null) ?? stageLabel(line.baseStageRef) ?? (head ? CURRENT : null);
     nodes.set(id, { id, kind: "pending", parent: null, runId: line.runId, label: line.label?.trim() || null, summary: line.detail?.trim() || null,
       letter: null, studyId: line.studyId ?? null,
@@ -510,17 +590,19 @@ export function buildGrowthTree(source: DesignTreeSource, includeProcessed = fal
   const freshCandidates = [...finalNodes.values()].filter((node) => node.kind === "candidate" && !onTrunk.has(node.id) &&
     !continued.has(node.id) && currentStage !== null && stageLabel(node.candidate!.baseStageRef) === currentStage).map((node) => node.id);
 
-  // Every run of Current's line that a node names, a folded step's own node included.
+  // Every run of Current's line that a node names, a folded step's own node included, and each later step.
   const lineNodes = new Map<string, TreeNode>();
   for (const step of line) {
     const id = step.runId === head?.runId ? CURRENT : step.runId === originRun ? ORIGIN : nodeOfRun(step.runId) ?? stepNodeId(step.runId);
     const node = finalNodes.get(id) ?? stepNodes.find((candidate) => candidate.runId === step.runId);
     if (node) lineNodes.set(step.runId, node);
   }
+  for (const id of laterIds) lineNodes.set(finalNodes.get(id)!.runId!, finalNodes.get(id)!);
 
   return { nodes: finalNodes, children, studies, root, trunk, onTrunk, continued, currentStage,
     accept: acceptState(source, head, finalNodes), counts, freshCandidates, processedCount,
-    steps: { count: stepNodes.length, open: !folded }, drafts: { count: superseded.length, open: Boolean(open.drafts) }, lineNodes };
+    steps: { count: stepNodes.length, open: !folded }, drafts: { count: superseded.length, open: Boolean(open.drafts) }, lineNodes,
+    later: laterIds };
 }
 
 function acceptState(source: DesignTreeSource, head: WorkingHeadDto | null, nodes: ReadonlyMap<string, TreeNode>): AcceptState {
@@ -550,11 +632,12 @@ export const trunkKey = (tree: GrowthTree) => tree.trunk.join("|");
 
 /**
  * A node Continue can return Current to: a Stage, an admitted option, a step of Current's line, a draft it
- * superseded, or the project start its line began from (#575). Current itself, running work and the folds cannot.
+ * superseded, the project start its line began from, or a later step of the line it left (#575). Current itself,
+ * running work and the folds cannot.
  */
 export function continuable(node: TreeNode): boolean {
   return node.runId !== null && (node.kind === "candidate" || node.kind === "stage" || node.kind === "step" || node.kind === "draft"
-    || node.kind === "origin");
+    || node.kind === "origin" || node.kind === "later");
 }
 
 /**

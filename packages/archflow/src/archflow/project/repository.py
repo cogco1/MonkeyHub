@@ -2833,6 +2833,10 @@ class FilesystemProjectRepository:
 
         cutoff = self._working_time(now) - (TRASH_RETENTION if retention is None else retention)
         purged: list[str] = []
+        if not self._trash_holds_anything():
+            # Nothing to purge or recover: take no lock, so a project opened with an empty trash
+            # is left exactly as it was, without even a lock file (#575).
+            return ()
         with self._lock, self._head_lock, self._design_lock:
             self._recover_trash()
             for entry in self.trash_entries():
@@ -2855,6 +2859,17 @@ class FilesystemProjectRepository:
                     _LOG.warning("a purged run's files are removed by the next purge: %s", failure)
                 purged.append(entry.run_id)
         return tuple(purged)
+
+    def _trash_holds_anything(self) -> bool:
+        """Whether the trash has a manifest or a run directory, a purge's leftovers included; reads only."""
+
+        for directory in (self.layout.trash / "entries", self.layout.trash / "runs"):
+            try:
+                if any(directory.iterdir()):
+                    return True
+            except FileNotFoundError:
+                continue
+        return False
 
     def run_mentions(self, run_ids: Iterable[str]) -> dict[str, frozenset[str]]:
         """Where the project's retained JSON names each run, outside that run's own directory.

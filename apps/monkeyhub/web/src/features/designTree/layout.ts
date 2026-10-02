@@ -17,7 +17,9 @@
  * another and no footprint overlaps (a tree has E = V - 1). Current's earlier
  * steps stand on the trunk before it, or the one control that folds them
  * does, and the drafts its line superseded hang muted where they started
- * (#575). Positions never depend on zoom; the scene only changes what it draws.
+ * (#575). After a return to an earlier step, the line Current left goes on
+ * after it along the trunk's own row, muted. Positions never depend on zoom;
+ * the scene only changes what it draws.
  * Grown from the #284 prototype (`docs/prototypes/candidate-graph/prototype.js`).
  */
 import type { GrowthTree, TreeNodeKind } from "./model";
@@ -152,14 +154,15 @@ export function layoutGrowthTree(tree: GrowthTree): GrowthLayout {
     weights.set(id, value);
     return value;
   };
-  // A side branch grows on through Stages and through options that were continued.
-  const grows = (id: string) => kindOf(id) === "stage" || (kindOf(id) === "candidate" && kids(id).length > 0);
+  // A side branch grows on through Stages and through options that were continued, and the line Current left
+  // through each of its later steps (#575).
+  const grows = (id: string) => kindOf(id) === "stage" || kindOf(id) === "later" || (kindOf(id) === "candidate" && kids(id).length > 0);
   const chainFrom = (id: string): string[] => {
     const path = [id], seen = new Set([id]);
     for (let cursor = id; ;) {
       const next = kids(cursor).filter((child) => !seen.has(child) && !tree.onTrunk.has(child) && grows(child));
       if (!next.length) break;
-      next.sort((a, b) => weightOf(b) - weightOf(a));
+      next.sort((a, b) => Number(kindOf(b) === "later") - Number(kindOf(a) === "later") || weightOf(b) - weightOf(a));
       cursor = next[0];
       seen.add(cursor);
       path.push(cursor);
@@ -245,8 +248,10 @@ export function layoutGrowthTree(tree: GrowthTree): GrowthLayout {
         column += 1;
         clear = Math.max(clear, rule);
       }
-      // The last point of a side row hands the row on to its first option; the rest hang below.
-      const level = side !== 0 && next === undefined ? members[0] ?? null : null;
+      // The last point of a side row hands the row on to its first option; the rest hang below. After Current, the
+      // line it left when it returned to an earlier step goes on along the trunk's own row, faintly (#575).
+      const level = next !== undefined ? null : side !== 0 ? members[0] ?? null
+        : members.find((member) => kindOf(member) === "later") ?? null;
       const hung = members.filter((member) => member !== level);
       const start = order.length;
       let stack: number | null = null, forkX = card.x + card.width;

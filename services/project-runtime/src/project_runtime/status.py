@@ -261,8 +261,10 @@ class LineStep:
     name a person gave the run (a saved version's label), else its accepted
     Stage's, else its admitted result's; ``request`` is the words that asked
     for it, when they were retained (its admission's ``rawLanguage``, else the
-    sentence an intent model compiled into it); ``summary`` is an admitted
-    result's own account of the change.
+    request its own change keeps, else the sentence an intent model compiled
+    into it); ``summary`` is an admitted result's own account of the change.
+    The steps the head moved back past (``WorktreeGraph.later``) are named the
+    same way.
     """
 
     run_id: str
@@ -296,6 +298,8 @@ class WorktreeGraph:
     warnings: tuple[str, ...]
     # The head's line, oldest first and ending at the head (#575).
     line: tuple[LineStep, ...] = ()
+    # After a return to an earlier step, the line the head left: oldest first, from the step made from the head (#575).
+    later: tuple[LineStep, ...] = ()
 
 
 def _exact_record(binding: ProjectBinding, run_id: str, cache: dict[str, StateRecord]) -> StateRecord:
@@ -364,7 +368,7 @@ def _relation(lineage: tuple[str, ...], head: WorkingHead | None) -> tuple[str, 
 # superseded rather than as a diverged line; nothing about it is moved or
 # deleted.
 
-# Retained records never change, so each run's compiled request is read once per process.
+# Retained records never change, so each run's request is read once per process.
 _REQUESTS: dict[tuple[str, str], str | None] = {}
 # Continue events are never removed: a run once continued stays continued.
 _CONTINUED: set[tuple[str, str]] = set()
@@ -372,17 +376,27 @@ _MEMO_LIMIT = 4096
 
 
 def _compiled_request(binding: ProjectBinding, run_id: str) -> str | None:
-    """The sentence an intent model compiled into this run, when its run retained one."""
+    """The words this run was asked in, as the run itself retained them (#575).
+
+    The request its change keeps (``StudioCandidateDelta@1`` ``request``): a
+    sentence, or an outside agent's summary. A run made before changes kept
+    one was asked in the sentence an intent model compiled into it, when a
+    model did. None for a change nobody asked for in words.
+    """
 
     key = (str(binding.repository.layout.root), run_id)
     if key in _REQUESTS:
         return _REQUESTS[key]
     try:
-        payloads = [binding.repository.load_json(ref) for ref in binding.record_refs(run_id, kind=INTENT_COMPILATION)]
+        kept = (binding.candidate_delta(run_id) or {}).get("request")
+        if isinstance(kept, str) and kept.strip():
+            words = kept.strip()
+        else:
+            payloads = [binding.repository.load_json(ref) for ref in binding.record_refs(run_id, kind=INTENT_COMPILATION)]
+            words = next((payload["utterance"].strip() for payload in payloads
+                          if isinstance(payload.get("utterance"), str) and payload["utterance"].strip()), None)
     except _UNREADABLE:
         return None
-    words = next((payload["utterance"].strip() for payload in payloads
-                  if isinstance(payload.get("utterance"), str) and payload["utterance"].strip()), None)
     if len(_REQUESTS) >= _MEMO_LIMIT:
         _REQUESTS.clear()
     _REQUESTS[key] = words
@@ -400,11 +414,46 @@ def _admitted_words(store: AdmissionStore, run_id: str) -> tuple[str | None, str
     return row.get("label"), row.get("summary"), claims[0].record.payload.get("rawLanguage")
 
 
+@dataclass(frozen=True, slots=True)
+class _LineWords:
+    """What a line's runs are named by, read once for the whole graph: each Stage's run and label, and the admissions."""
+
+    stages: Mapping[str, str]
+    labels: Mapping[str, str]
+    store: AdmissionStore
+
+
+def _line_words(binding: ProjectBinding, warnings: list[str]) -> _LineWords:
+    stages: dict[str, str] = {}
+    labels: dict[str, str] = {}
+    for branch_id in sorted(binding.repository.read_design_branches()):
+        try:
+            for ref, stage in binding.design_history(branch_id):
+                if stage.candidate_id not in stages:
+                    stages[stage.candidate_id], labels[stage.candidate_id] = ref.uri, stage.label
+        except _UNREADABLE as exc:
+            warnings.append(f"Branch {branch_id} could not be read for the line: {getattr(exc, 'detail', exc)}")
+    return _LineWords(stages, labels, admission_store(binding))
+
+
+def _step(binding: ProjectBinding, run_id: str, base_run_id: str | None, value: dict, words: _LineWords) -> LineStep:
+    """One run of a line, in the words its retained facts give it."""
+
+    entry = value["runs"].get(run_id) or {}
+    label, summary, said = _admitted_words(words.store, run_id)
+    return LineStep(
+        run_id=run_id, base_run_id=base_run_id,
+        label=entry.get("label") or words.labels.get(run_id) or label,
+        request=said or _compiled_request(binding, run_id), summary=summary,
+        stage_ref=words.stages.get(run_id), updated_at=entry.get("updatedAt"),
+    )
+
+
 def _head_line(binding: ProjectBinding, head: WorkingHead | None, value: dict,
-               warnings: list[str]) -> tuple[LineStep, ...]:
+               words: _LineWords | None) -> tuple[LineStep, ...]:
     """The head's first-parent chain, oldest first, each step in its retained words."""
 
-    if head is None:
+    if head is None or words is None:
         return ()
     runs = [head.run_id]
     bases: dict[str, str | None] = {}
@@ -416,27 +465,56 @@ def _head_line(binding: ProjectBinding, head: WorkingHead | None, value: dict,
         bases[run_id] = parents[0] if parents else None
         if parents and parents[0] not in runs and len(runs) < _LINE_LIMIT:
             runs.append(parents[0])
-    stages: dict[str, str] = {}
-    labels: dict[str, str] = {}
-    for branch_id in sorted(binding.repository.read_design_branches()):
-        try:
-            for ref, stage in binding.design_history(branch_id):
-                if stage.candidate_id not in stages:
-                    stages[stage.candidate_id], labels[stage.candidate_id] = ref.uri, stage.label
-        except _UNREADABLE as exc:
-            warnings.append(f"Branch {branch_id} could not be read for the line: {getattr(exc, 'detail', exc)}")
-    store = admission_store(binding)
-    steps = []
-    for run_id in reversed(runs):
-        entry = value["runs"].get(run_id) or {}
-        label, summary, words = _admitted_words(store, run_id)
-        steps.append(LineStep(
-            run_id=run_id, base_run_id=bases[run_id],
-            label=entry.get("label") or labels.get(run_id) or label,
-            request=words or _compiled_request(binding, run_id), summary=summary,
-            stage_ref=stages.get(run_id), updated_at=entry.get("updatedAt"),
-        ))
-    return tuple(steps)
+    return tuple(_step(binding, run_id, bases[run_id], value, words) for run_id in reversed(runs))
+
+
+def _later_line(binding: ProjectBinding, head: WorkingHead | None, value: dict, results: list[WorktreeLine],
+                words: _LineWords | None, warnings: list[str]) -> tuple[LineStep, ...]:
+    """The steps the head moved back past (#575): after a return to an earlier step, the line it left.
+
+    Of the retained results that continue the head, the ones the head once
+    stood on (a Continue event names them) and the runs each was made through
+    from the head, by first parents, are the line it left. Where that line
+    forked, it goes on along the branch the working position moved onto most
+    recently, to the last run there the head stood on. Oldest first, from the
+    step made from the head; each can be continued again. Nothing is written.
+    """
+
+    if head is None or words is None:
+        return ()
+    paths: list[list[str]] = []
+    for line in results:
+        if line.kind != "result" or line.relation != "ahead" or line.run_id is None:
+            continue
+        if not _was_continued(binding, line.run_id, warnings):
+            continue
+        path: list[str] | None = [line.run_id]
+        while path is not None:
+            try:
+                parents = _parents(binding, path[-1])
+            except _UNREADABLE:
+                parents = ()
+            if parents and parents[0] == head.run_id:
+                break
+            # Not made from the head by first parents (a combine's input), or past the walk's limit.
+            path = None if not parents or parents[0] in path or len(path) >= _LINE_LIMIT else [*path, parents[0]]
+        if path is not None:
+            paths.append(path[::-1])
+
+    def moved_onto(run_id: str) -> str:
+        return (value["runs"].get(run_id) or {}).get("updatedAt") or ""
+
+    later: list[str] = []
+    while True:
+        depth = len(later)
+        newest: dict[str, str] = {}
+        for path in paths:
+            if len(path) > depth and path[:depth] == later:
+                newest[path[depth]] = max(newest.get(path[depth], ""), moved_onto(path[-1]))
+        if not newest:
+            break
+        later.append(max(newest, key=lambda run_id: (newest[run_id], run_id)))
+    return tuple(_step(binding, run_id, base, value, words) for run_id, base in zip(later, (head.run_id, *later)))
 
 
 def _was_continued(binding: ProjectBinding, run_id: str, warnings: list[str]) -> bool:
@@ -655,7 +733,8 @@ def worktree_graph(binding: ProjectBinding, *, jobs: JobRegistry | None = None, 
     head, warnings = resolved.head, list(resolved.warnings)
     value, _ = binding.repository.read_working_draft()
     admissions = _admissions(binding, warnings)
-    line = _head_line(binding, head, value, warnings)
+    words = None if head is None else _line_words(binding, warnings)
+    line = _head_line(binding, head, value, words)
     lines: list[WorktreeLine] = []
     if head is not None:
         lines.append(WorktreeLine(
@@ -679,8 +758,10 @@ def worktree_graph(binding: ProjectBinding, *, jobs: JobRegistry | None = None, 
             relation="separate",
         ))
     lines.extend(_running_lines(binding, value["active"], jobs, head))
-    lines.extend(_result_lines(binding, value, head, line, admissions, warnings))
+    results = _result_lines(binding, value, head, line, admissions, warnings)
+    lines.extend(results)
+    later = _later_line(binding, head, value, results, words, warnings)
     lines = _with_admissions(lines, admissions)
     representations = _representations(binding, render_jobs, warnings)
     return WorktreeGraph(binding.project_id, head, resolved.revision_sha256, tuple(lines),
-                         tuple(representations), tuple(warnings), line)
+                         tuple(representations), tuple(warnings), line, later)

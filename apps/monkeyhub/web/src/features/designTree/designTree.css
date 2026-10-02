@@ -173,6 +173,9 @@
 .design-tree-list__mark[data-kind="fold"] { border-style: dashed; border-color: var(--accent); color: var(--accent); }
 .design-tree-list__mark[data-kind="drafts"], .design-tree-list__mark[data-kind="draft"] { border-style: dashed; color: var(--faint); }
 .design-tree-list li:is([data-kind="drafts"], [data-kind="draft"]) { opacity: .62; }
+/* #575: the line Current left after a return stays, faintly, and each of its steps can be continued again. */
+.design-tree-list__mark[data-kind="later"] { border-style: dashed; border-color: var(--accent); color: var(--accent); }
+.design-tree-list li[data-group="later"] { opacity: .62; }
 .design-tree-list__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .design-tree-list__status { margin-left: auto; padding-left: 12px; color: var(--muted); font-size: var(--text-caption, 12px); white-space: nowrap; }
 @media (max-width: 640px) { .design-tree-list__status { display: none; } }

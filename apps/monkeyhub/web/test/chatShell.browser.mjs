@@ -971,7 +971,9 @@ async function idleMinute() {
  * project's working position, and the runtime's index says so in one event; Modeling follows it, shows
  * its model and says so at the project bar's right end with Undo. Undo is the Design Tree's own Undo
  * write: the same Continue back onto the base the follow came from, against the revision read now. A
- * move back says so and offers nothing more, and a base no position entry named offers no Undo.
+ * move back says so and offers nothing more, and a base no position entry named offers no Undo. A
+ * Continue from the Design Tree confirms itself in the tree's toast with Undo, and Modeling follows it
+ * without a second notice: one write, one Undo.
  */
 async function requestedChangeLands() {
   preferences = { ...preferences, language: "en" };
@@ -1039,6 +1041,33 @@ async function requestedChangeLands() {
     await notice.filter({ hasText: "Following the current model" }).waitFor();
     assert.equal(await undo.count(), 0, "nothing names the previous position, so nothing is offered");
     assert.equal(continues().length, 1);
+
+    // #575: a Continue from the Design Tree is the tree's own move. Its toast offers the one Undo that write has;
+    // Modeling, back on screen, follows it without a notice or an Undo of its own.
+    await bar.locator(".stage-chip").click();
+    const tree = land.locator('.chat-project-workspace:not([hidden]) [data-project-surface="tree"]');
+    await bar.getByRole("button", { name: "List", exact: true }).click();
+    await tree.locator('[role="treeitem"][data-kind="stage"]').click();
+    const marker = workspaceFixture.requests.length;
+    await tree.locator('.design-tree-inspector[data-kind="stage"] [data-action="continue"]').click();
+    const toast = bar.locator(".design-tree-toast");
+    await toast.filter({ hasText: "Current is now “S0”" }).waitFor();
+    assert.equal(await toast.locator('[data-action="undo"]').count(), 1, "the tree's toast offers its Undo");
+    assert.deepEqual([continues().length, continues().at(-1).body.runId], [2, "home-L"]);
+    await bar.locator(".stage-chip").click();
+    const following = Date.now() + 15000;
+    while (!workspaceFixture.requests.slice(marker).some((row) => row.projectId === projectId && row.name === "/api/state" && row.query.run === "home-L")) {
+      if (Date.now() > following) assert.fail("Modeling did not follow the tree's Continue");
+      await land.waitForTimeout(50);
+    }
+    // The notice of the Agent's earlier move is spent once the base moves; nothing takes its place.
+    await notice.waitFor({ state: "detached" });
+    for (let tick = 0; tick < 25; tick += 1) {
+      assert.equal(await notice.count(), 0, "Modeling says nothing more about the tree's own Continue");
+      assert.equal(await undo.count(), 0, "one write, one Undo");
+      await land.waitForTimeout(100);
+    }
+    await land.screenshot({ path: path.join(temporary, "tree-continue-one-undo.png") });
   } finally { await land.close(); }
 }
 /**

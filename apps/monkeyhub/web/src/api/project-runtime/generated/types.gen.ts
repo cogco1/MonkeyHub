@@ -6011,7 +6011,7 @@ export type LineStepDto = {
     /**
      * Request
      *
-     * The words that asked for it, when retained: its admission's rawLanguage, else the sentence an intent model compiled into it.
+     * The words that asked for it, when retained: its admission's rawLanguage, else the request its own run keeps (the sentence or outside agent's summary its proposal was made from), else the sentence an intent model compiled into it. Null for a change nobody asked for in words.
      */
     request: string | null;
     /**
@@ -13589,6 +13589,12 @@ export type WorktreeGraphDto = {
      * The Working Head's line, oldest first and ending at the head: its first-parent chain, each step with its retained label, request and summary (#575). Empty without a head.
      */
     line: Array<LineStepDto>;
+    /**
+     * Later
+     *
+     * After a return to an earlier step: the steps the head moved back past, oldest first, from the one made from the head to the last one it stood on, along the branch it moved onto most recently where the line forked (#575). Each can be continued again. Empty while no run the head once stood on continues it.
+     */
+    later: Array<LineStepDto>;
     /**
      * Lines
      */

@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...application.retention import TrashView
-from ...status import RuntimeSnapshot, WorktreeGraph
+from ...status import LineStep, RuntimeSnapshot, WorktreeGraph
 from .candidate import JobDto, job_dto
 from .design_history import DesignBranchDto, DesignStageDto, branch_dto, stage_dto
 from .project import ProjectVersionDto
@@ -110,7 +110,9 @@ class LineStepDto(BaseModel):
     label: str | None = Field(description=
         "The name it was given: a saved version's label, else its accepted Stage's, else its admitted result's.")
     request: str | None = Field(description=
-        "The words that asked for it, when retained: its admission's rawLanguage, else the sentence an intent model compiled into it.")
+        "The words that asked for it, when retained: its admission's rawLanguage, else the request its own run keeps "
+        "(the sentence or outside agent's summary its proposal was made from), else the sentence an intent model "
+        "compiled into it. Null for a change nobody asked for in words.")
     summary: str | None = Field(description="An admitted result's own summary of the change.")
     stage_ref: str | None = Field(alias="stageRef", description="The accepted Stage this run is, if it is one.")
     updated_at: str | None = Field(alias="updatedAt", description="When the working position last listed or moved onto it.")
@@ -136,18 +138,27 @@ class WorktreeGraphDto(BaseModel):
     line: list[LineStepDto] = Field(description=
         "The Working Head's line, oldest first and ending at the head: its first-parent chain, each step with its "
         "retained label, request and summary (#575). Empty without a head.")
+    later: list[LineStepDto] = Field(description=
+        "After a return to an earlier step: the steps the head moved back past, oldest first, from the one made from "
+        "the head to the last one it stood on, along the branch it moved onto most recently where the line forked "
+        "(#575). Each can be continued again. Empty while no run the head once stood on continues it.")
     lines: list[WorktreeLineDto]
     representations: list[RepresentationStateDto]
     warnings: list[str]
 
 
+def _step_dto(step: LineStep) -> LineStepDto:
+    return LineStepDto(
+        run_id=step.run_id, base_run_id=step.base_run_id, label=step.label, request=step.request,
+        summary=step.summary, stage_ref=step.stage_ref, updated_at=step.updated_at,
+    )
+
+
 def worktree_graph_dto(value: WorktreeGraph) -> WorktreeGraphDto:
     return WorktreeGraphDto(
         project_id=value.project_id, head=working_head_dto(value.head), revision_sha256=value.revision_sha256,
-        line=[LineStepDto(
-            run_id=step.run_id, base_run_id=step.base_run_id, label=step.label, request=step.request,
-            summary=step.summary, stage_ref=step.stage_ref, updated_at=step.updated_at,
-        ) for step in value.line],
+        line=[_step_dto(step) for step in value.line],
+        later=[_step_dto(step) for step in value.later],
         lines=[WorktreeLineDto(
             line_id=line.line_id, kind=line.kind, run_id=line.run_id, job_id=line.job_id, label=line.label,
             base_run_id=line.base_run_id, base_stage_ref=line.base_stage_ref, branch_id=line.branch_id,
