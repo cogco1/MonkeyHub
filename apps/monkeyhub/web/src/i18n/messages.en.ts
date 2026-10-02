@@ -1432,6 +1432,8 @@ export const chatCopy = {
     reconnecting: "Connection interrupted. Reading the current project state…", workerCrashed: "The project service exited", recoverWorker: "Recover project service", recovering: "Recovering…",
     recoveryHint: "Recovery reads saved results. Unfinished changes need review.", operationRecovery: "An operation needs recovery review", operationFailed: "An operation did not complete", operationStale: "An operation has an outdated base", runtimeOperations: "Project operations", operationCommitted: "Committed", operationPending: "No commit confirmed",
     workCopyRefused: "A work copy's change was not registered as a new revision",
+    // ADR-012: nothing watches an open project; a change made outside MonkeyHub is read when the person asks.
+    reloadProject: "Reload project from disk", projectChangedOutside: "The project folder was changed outside MonkeyHub and has been read again.",
     // GH-285: one folded process row per Agent turn, and the jump to the latest message.
     processWorked: (elapsed: string, steps: number) => `Worked ${elapsed} · ${steps} ${steps === 1 ? "step" : "steps"}`,
     processSteps: (steps: number) => `Process · ${steps} ${steps === 1 ? "step" : "steps"}`,
