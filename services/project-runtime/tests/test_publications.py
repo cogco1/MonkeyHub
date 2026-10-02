@@ -196,8 +196,11 @@ class PublicationTests(unittest.TestCase):
         earlier = board_helpers.image_element(document, 0, "earlier") | {"x": 30, "y": 30, "frameId": "review-frame"}
         unselected = board_helpers.image_element(document, 0, "unselected")
         removed = board_helpers.image_element(document, 0, "deleted") | {"isDeleted": True, "frameId": "review-frame"}
-        frame = {"id": "review-frame", "type": "frame", "x": 0, "y": 0, "width": 800, "height": 700, "name": "Selected pages"}
-        board = self.client.put("/api/board", json=board_helpers.body([later, unselected, frame, earlier, removed]))
+        frame = {"id": "review-frame", "type": "frame", "x": 0, "y": 0, "width": 800, "height": 700,
+                 "name": "Selected pages", "customData": None}
+        note = {"id": "note", "type": "text", "text": "Keep on Board", "frameId": "review-frame", "customData": None}
+        shape = {"id": "shape", "type": "rectangle", "frameId": "review-frame", "customData": None}
+        board = self.client.put("/api/board", json=board_helpers.body([later, unselected, frame, note, earlier, shape, removed]))
         self.assertEqual(board.status_code, 200, board.text)
         revision = board.json()["revisionSha256"]
         changed = self.client.put("/api/board", json=board_helpers.body([unselected], revision))
@@ -212,6 +215,11 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/board").json(), changed.json())
         self.assertEqual(self.new_client().get("/api/publication").json(), saved)
         before = self.files()
+        repeated = self.client.post("/api/publication/from-board", json={"projectId": PROJECT_ID,
+            "baseRevisionSha256": saved["revisionSha256"], "boardRevisionSha256": revision, "elementIds": ["review-frame"]})
+        self.assertEqual(repeated.status_code, 200, repeated.text)
+        self.assertEqual(repeated.json(), saved)
+        self.assertEqual(self.files(), before)
         invalid = self.client.post("/api/publication/from-board", json={"projectId": PROJECT_ID,
             "baseRevisionSha256": saved["revisionSha256"], "boardRevisionSha256": revision, "elementIds": ["not-saved"]})
         self.assertEqual(invalid.status_code, 409, invalid.text)
@@ -219,6 +227,55 @@ class PublicationTests(unittest.TestCase):
         exported = self.export(saved["revisionSha256"])
         self.assertEqual(exported.status_code, 200, exported.text)
         self.assertEqual(len(PdfReader(BytesIO(exported.content)).pages), 2)
+        self.assert_design_unchanged()
+
+    def test_mixed_board_selection_ignores_marks_with_missing_null_or_empty_metadata(self):
+        document = self.upload(two_page_pdf())
+        first = board_helpers.image_element(document, 0, "first")
+        second = board_helpers.image_element(document, 1, "second")
+        marks = [{"id": f"{kind}-{label}", "type": kind, **metadata}
+                 for kind in ("text", "rectangle", "frame")
+                 for label, metadata in (("missing", {}), ("null", {"customData": None}), ("empty", {"customData": {}}))]
+        board = self.client.put("/api/board", json=board_helpers.body([first, *marks, second]))
+        self.assertEqual(board.status_code, 200, board.text)
+        body = {"projectId": PROJECT_ID, "baseRevisionSha256": None,
+                "boardRevisionSha256": board.json()["revisionSha256"],
+                "elementIds": ["second", *[row["id"] for row in marks], "first"]}
+        result = self.client.post("/api/publication/from-board", json=body)
+        self.assertEqual(result.status_code, 200, result.text)
+        saved = result.json()
+        self.assertEqual([row["elements"][1]["source"] for row in saved["pages"]], [source(document, 1), source(document, 0)])
+        before = self.files()
+        body["baseRevisionSha256"] = saved["revisionSha256"]
+        repeated = self.client.post("/api/publication/from-board", json=body)
+        self.assertEqual(repeated.status_code, 200, repeated.text)
+        self.assertEqual(repeated.json(), saved)
+        reopened = self.new_client()
+        self.assertEqual(reopened.get("/api/publication").json(), saved)
+        self.assertEqual(reopened.get("/api/board").json(), board.json())
+        self.assertEqual(self.files(), before)
+        self.assert_design_unchanged()
+
+    def test_board_selection_without_eligible_images_refuses_without_writes(self):
+        document = self.upload(two_page_pdf())
+        saved = self.save_publication(request([page("authored", "Keep this page")]))
+        marks = [{"id": label, "type": "text", **metadata}
+                 for label, metadata in (("missing", {}), ("null", {"customData": None}), ("empty", {"customData": {}}))]
+        board = self.client.put("/api/board", json=board_helpers.body([
+            *marks, board_helpers.image_element(document, 0, "unselected")]))
+        self.assertEqual(board.status_code, 200, board.text)
+        before = self.files()
+        for mark in marks:
+            with self.subTest(metadata=mark["id"]):
+                result = self.client.post("/api/publication/from-board", json={"projectId": PROJECT_ID,
+                    "baseRevisionSha256": saved["revisionSha256"], "boardRevisionSha256": board.json()["revisionSha256"],
+                    "elementIds": [mark["id"]]})
+                self.assertEqual(result.status_code, 422, result.text)
+                self.assertEqual(result.json()["code"], "PUBLICATION_BOARD_SELECTION")
+                self.assertEqual(self.files(), before)
+        reopened = self.new_client()
+        self.assertEqual(reopened.get("/api/publication").json(), saved)
+        self.assertEqual(reopened.get("/api/board").json(), board.json())
         self.assert_design_unchanged()
 
     def test_text_overflow_is_reported_for_both_formats_without_writes(self):
