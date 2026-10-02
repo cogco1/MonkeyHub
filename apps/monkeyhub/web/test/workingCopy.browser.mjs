@@ -21,6 +21,7 @@ const fixture = await createRetainedModelFixture({ name: "working-copy" });
 const { project, group, sources: { A, B }, document, webRoot, projectRoot, getJson } = fixture;
 const errors = [], requests = [], captures = [], passed = [], consoleErrors = [];
 const http = createHttpServer();
+let annotationSize = null;
 let browser, vite, page, closing = false, phase = "setup", allowedMutation = null;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const sourceKey = (source) => JSON.stringify([source.runId, source.stateDigest, source.assetSha256]);
@@ -43,7 +44,7 @@ async function step(name, action) { phase = name; await action(); passed.push(na
 const annotationWrites = () => requests.filter((row) => row.path === "/api/model-annotations" && row.method === "PUT" && row.response);
 const positionWrites = () => requests.filter((row) => row.path === "/api/working-draft" && row.method === "PUT" && row.response);
 async function ready(source, readStart = 0) {
-  await until(state, (value) => value?.status === "ready" && value.loadingSha === null && sourceKey(value.loadedModelSource ?? {}) === sourceKey(source),
+  await until(state, (value) => value?.status === "ready" && value.annotationsReady && value.loadingSha === null && sourceKey(value.loadedModelSource ?? {}) === sourceKey(source),
     `Exact ${source.runId}/${source.assetSha256} model did not load`, 60000);
   await until(() => requests.slice(readStart).findLast((row) => row.path === "/api/model-annotations" && row.method === "GET" && row.response &&
     sourceKey(row.response.modelSource) === sourceKey(source)), Boolean, "Exact source ink was not read");
@@ -66,12 +67,31 @@ async function view(source) {
   await tree.locator(`.design-tree-inspector[data-node=${JSON.stringify(id)}]`).getByRole("button", { name: "View", exact: true }).click();
   await ready(source);
   await openTracing();
+  await equalCanvas();
 }
-async function inkImage() { await delay(380); return inkCanvas().evaluate((canvas) => canvas.toDataURL()); }
+async function equalCanvas() {
+  // #337's read-only-source notice takes one row above B, but not Current A.
+  // Compare their ink at equal *canvas* dimensions, not equal window heights.
+  // The browser window adapts to the real measured chrome; no product CSS or
+  // camera is modified, and exact pixel/pose assertions below stay unchanged.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const size = await inkCanvas().evaluate(canvas => [canvas.width, canvas.height]);
+  annotationSize ??= size;
+  const box = await inkCanvas().boundingBox(), viewport = page.viewportSize();
+  assert.ok(box && viewport && size[0] > 200 && size[1] > 200);
+  if (size[0] !== annotationSize[0] || size[1] !== annotationSize[1]) {
+    await page.setViewportSize({ width: viewport.width + annotationSize[0] - size[0], height: viewport.height + annotationSize[1] - size[1] });
+    await until(() => inkCanvas().evaluate(canvas => [canvas.width, canvas.height]),
+      value => JSON.stringify(value) === JSON.stringify(annotationSize), "The annotation canvas must regain its measured size");
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  }
+}
+async function inkImage() { await equalCanvas(); await delay(380); return inkCanvas().evaluate((canvas) => canvas.toDataURL()); }
 async function drawLine(source, baseline, y) {
   const before = annotationWrites().length;
   allowedMutation = { method: "PUT", path: "/api/model-annotations", source, revision: baseline.revisionSha256 };
   await openTracing();
+  await equalCanvas();
   await page.locator("#annotation-tools").getByTitle("Draw a straight annotation line", { exact: true }).click();
   await until(() => activeCanvas().getAttribute("data-armed"), (value) => value === "true", "Line tool did not arm");
   const box = await activeCanvas().boundingBox();
@@ -128,7 +148,7 @@ try {
         const marker = '  const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");';
         assert.equal(source.split(marker).length, 2);
         return { code: source.replace(marker, marker + `\n(window as unknown as {__retainedModel: unknown}).__retainedModel = {
-          loadedModelSource, editingModelSource, status: viewerStatus, loadingSha: artifactLoadingSha,
+          loadedModelSource, editingModelSource, status: viewerStatus, loadingSha: artifactLoadingSha, annotationsReady: modelAnnotations.ready,
         };`), map: null };
       },
     }], server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null, proxy: {} } });
@@ -276,7 +296,7 @@ try {
   await step("reload restores exact B and its server ink while existing drawings remain unchanged", async () => {
     const start = requests.length;
     await page.goto(`${origin}/?lang=en`, { waitUntil: "domcontentloaded" });
-    await ready(B, start); await openTracing();
+    await ready(B, start); await openTracing(); await equalCanvas();
     const restoredRead = requests.slice(start).findLast((row) => row.path === "/api/model-annotations" && row.method === "GET" && row.response &&
       sourceKey(row.response.modelSource) === sourceKey(B));
     assert.deepEqual(restoredRead.response, savedB.response, "The new page must itself reread B's exact saved annotation revision");
