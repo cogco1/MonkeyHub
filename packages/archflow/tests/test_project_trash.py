@@ -165,6 +165,13 @@ class TrashRoundTripTests(_TrashCase):
         self.assertEqual(self.repo.trash_entries(), ())
         FilesystemProjectRepository.open(self.root)
 
+    def test_purging_an_empty_trash_writes_nothing(self) -> None:
+        # A project opened with nothing in its trash is left as it was: not even a lock file appears.
+        # (A fresh project: no design write has taken the design lock yet.)
+        before = sorted(path.relative_to(self.root).as_posix() for path in self.root.rglob("*"))
+        self.assertEqual(self.repo.purge_trash(now=later(TRASHED, days=90)), ())
+        self.assertEqual(sorted(path.relative_to(self.root).as_posix() for path in self.root.rglob("*")), before)
+
     def test_a_restore_never_replaces_a_run(self) -> None:
         self.draft("draft")
         self.trash("draft")
