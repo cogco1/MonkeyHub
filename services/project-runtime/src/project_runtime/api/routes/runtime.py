@@ -44,7 +44,7 @@ def read_worktrees(request: Request) -> WorktreeGraphDto:
     except (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError) as exc:
         # One unreadable render record must not hide the rest of the project's work.
         renders, unread = None, f"Render results could not be read: {getattr(exc, 'detail', exc)}"
-    graph = worktree_graph(binding, jobs=request.app.state.jobs, render_jobs=renders)
+    graph = worktree_graph(binding, jobs=request.app.state.jobs, render_jobs=renders, indexed=True)
     if unread is not None:
         graph = replace(graph, warnings=(*graph.warnings, unread))
     return worktree_graph_dto(graph)

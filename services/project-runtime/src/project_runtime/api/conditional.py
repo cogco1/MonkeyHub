@@ -58,8 +58,11 @@ CONDITIONAL_READS: dict[str, tuple[str, ...]] = {
     "/api/trash": (),
 }
 
-# The listed views that read the project index once one answers.
-INDEXED_READS = frozenset({"/api/artifacts", "/api/documents"})
+# The listed views that read the project index once one answers: the listings,
+# and since #599 the design tree's views.
+INDEXED_READS = frozenset({
+    "/api/artifacts", "/api/documents", "/api/design-history", "/api/worktrees", "/api/working-source",
+})
 
 NOT_CACHED = b"no-cache"
 

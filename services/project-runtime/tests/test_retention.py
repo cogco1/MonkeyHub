@@ -14,6 +14,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import shutil
 import tempfile
+import time
+import unittest
 
 from fastapi.testclient import TestClient
 
@@ -22,11 +24,12 @@ from archflow.project.record_kinds import (
     AUDIT_EVENT,
     INTENT_COMPILATION,
     STUDIO_CANDIDATE_DELTA,
+    STUDIO_LOCAL_DRAFT,
     STUDIO_MODEL_ANNOTATIONS,
     STUDIO_RENDER_JOB,
     STUDIO_WORKING_COPY,
 )
-from archflow.project.repository import RunNotTrashed
+from archflow.project.repository import FilesystemProjectRepository, RunNotTrashed
 from project_runtime.application.artifacts import ModelSource, save_document
 from project_runtime.application.boards import BOARD_RUN_ID
 from project_runtime.application.retention import (
@@ -39,13 +42,14 @@ from project_runtime.application.retention import (
     RetentionSweeps,
     clean_superseded,
     plan_cleaning,
+    prune_recovery,
 )
 from project_runtime.binding import bound_project
 from project_runtime.main import create_app
 from project_runtime.protocol import BASE_CAPABILITIES
 from project_runtime.settings import StudioSettings
 
-from .support import PROJECT_ID, REFERENCE_RUN_ID
+from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project
 from .test_candidate_admission import AdmissionFixture
 from .test_rendering import png
 
@@ -378,3 +382,105 @@ class WhenItRunsTests(RetentionFixture):
         self.assertTrue(sweeps.wait(1))
         self.assertIsNone(sweeps.last, "no sweep starts once the Runtime stops")
         self.assertEqual(self.trash()["entries"], [])
+
+
+class RecoveryExpiryTests(unittest.TestCase):
+    """The Runtime expires superseded local recovery itself, by the rule the Hub's 15-minute timer applied (ADR-012).
+
+    Only a crash-recovery snapshot that is neither the current ``localDraftRef``
+    nor updated within the last 24 hours goes, and never a run. Every sweep does
+    it - at open, after a Continue - and so does the Runtime's own 15-minute
+    cadence while the project is open; the Hub no longer writes the project.
+    """
+
+    OLD = "2020-01-01T00:00:00+00:00"
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository, _ = make_project(self.root)
+        self.app = create_app(StudioSettings(project_dir=self.root / PROJECT_ID, cad_export="off"))
+        self.addCleanup(self.app.state.stop_index_events)
+        self.sweeps = RetentionSweeps(self.app.state, clock=lambda: NOW)
+        self.addCleanup(self.sweeps.stop)
+
+    def automatic(self, name: str) -> None:
+        self.repository.create_run(name)
+        value, revision = self.repository.read_working_draft()
+        value["runs"][name] = {"updatedAt": self.OLD, "sourceStageRef": None, "branchId": None, "label": None,
+                               "automatic": True}
+        self.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
+
+    def snapshot(self, commands: list, *, project: str = PROJECT_ID):
+        drafts = self.repository.create_run("studio-working-draft")
+        return self.repository.put_json(
+            run=drafts, destination=PersistenceDestination(PersistenceArea.RUN_RECOVERY, run_id=drafts.run_id),
+            record_kind=STUDIO_LOCAL_DRAFT,
+            payload={"schema": "StudioLocalDraft@1", "projectId": project, "updatedAt": self.OLD,
+                     "draft": {"source": {"projectId": project, "sourceRunId": "source", "sourceStageRef": None,
+                                          "stateDigest": "a" * 64}, "commands": commands, "attempt": None}})
+
+    def recovery(self):
+        """A superseded snapshot and the current one, both older than a day."""
+
+        self.automatic("source")
+        superseded, current = self.snapshot([{"id": "move"}]), self.snapshot([{"id": "move"}, {"id": "lift"}])
+        value, revision = self.repository.read_working_draft()
+        value["localDraftRef"] = current.to_dict()
+        self.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        return superseded, current
+
+    def exists(self, ref) -> bool:
+        return (self.repository.layout.root / ref.relative_path).is_file()
+
+    def listing(self) -> list[str]:
+        root = self.repository.layout.root
+        return sorted(path.relative_to(root).as_posix() for path in root.rglob("*"))
+
+    def test_only_superseded_local_recovery_expires_and_no_run_leaves(self) -> None:
+        superseded, current = self.recovery()
+        self.automatic("agent-candidate")
+        runs = self.repository.run_ids()
+        sweep = self.sweeps.sweep("prune")
+        self.assertEqual(sweep.expired, (superseded.relative_path,))
+        self.assertFalse(self.exists(superseded))
+        self.assertTrue(self.exists(current), "the current recovery is kept however old it is")
+        self.assertEqual(self.repository.run_ids(), runs, "no run leaves on the timer")
+        self.assertEqual((sweep.cleaned, sweep.purged), ((), ()))
+        self.assertEqual(self.sweeps.sweep("prune").expired, ())
+
+    def test_a_project_without_a_working_position_is_left_as_it_was(self) -> None:
+        before = self.listing()
+        self.assertEqual(prune_recovery(bound_project(self.app.state), now=NOW), ())
+        self.assertEqual(self.sweeps.sweep("prune").expired, ())
+        self.assertEqual(self.listing(), before)
+
+    def test_an_inconsistent_snapshot_refuses_the_whole_expiry_and_says_so(self) -> None:
+        superseded, current = self.recovery()
+        foreign = self.snapshot([{"id": "foreign"}], project="elsewhere")
+        sweep = self.sweeps.sweep("prune")
+        self.assertEqual(sweep.expired, ())
+        self.assertTrue(all(self.exists(ref) for ref in (superseded, current, foreign)))
+        self.assertTrue(any("not expired" in warning for warning in sweep.warnings), sweep.warnings)
+
+    def test_every_sweep_expires_it_open_continue_and_the_runtimes_own_cadence(self) -> None:
+        superseded, _ = self.recovery()
+        self.assertEqual(self.sweeps.sweep("open").expired, (superseded.relative_path,))
+        later = self.snapshot([{"id": "later"}])
+        self.assertEqual(self.sweeps.sweep("continue").expired, (later.relative_path,))
+
+        cadence = RetentionSweeps(self.app.state, clock=lambda: NOW, prune_interval_s=0.05)
+        self.addCleanup(cadence.stop)
+        cadence.at_open()
+        self.assertTrue(cadence.wait(60), "the sweep at open ends")
+        latest = self.snapshot([{"id": "latest"}])
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and not (cadence.last and latest.relative_path in cadence.last.expired):
+            time.sleep(0.05)
+        self.assertFalse(self.exists(latest), "the cadence expired it with nobody asking")
+        self.assertEqual(cadence.last.trigger, "prune")
+        cadence.stop()
+        self.assertTrue(cadence.wait(10))
+        stopped = self.snapshot([{"id": "after the stop"}])
+        time.sleep(0.3)
+        self.assertTrue(self.exists(stopped), "a stopped Runtime expires nothing more")

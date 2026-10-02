@@ -92,11 +92,25 @@ def settle(root: Path) -> None:
         os.utime(path, ns=(stat.st_atime_ns + shift, stat.st_mtime_ns + shift))
 
 
+# Every project an ADR-012 runtime has opened keeps this empty lease file. The
+# first runtime to open a copy without one creates it, which moves the root's
+# time once, and the racy rule then reads the project as still settling for
+# two seconds: no 304 in that window, although nothing a reader sees changed.
+WRITER_LEASE_FILE = "writer.lock"
+
+
+def as_opened(root: Path) -> None:
+    """Give a copied project the empty lease file an opened project keeps (ADR-012); settle it after."""
+
+    (root / WRITER_LEASE_FILE).touch(exist_ok=True)
+
+
 def scratch_copy(project: Path, scratch: Path) -> Path:
-    """Copy the project into ``scratch`` under its own folder name."""
+    """Copy the project into ``scratch`` under its own folder name, as a project that has been opened."""
 
     target = scratch / project.name
     shutil.copytree(project, target)
+    as_opened(target)
     settle(target)
     return target
 

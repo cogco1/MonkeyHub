@@ -747,9 +747,9 @@ class ChatTests(unittest.TestCase):
         # A normal writable workspace: the assistant works, rather than reads.
         self.assertEqual(call["args"][call["args"].index("-s") + 1], "workspace-write")
         # The turn runs in the source checkout it is working on; the bound
-        # project travels as the writable root beside it.
+        # project is not added beside it as a writable root (ADR-012).
         self.assertEqual(Path(call["cwd"]), providers._source_checkout())
-        self.assertEqual(call["args"][call["args"].index("--add-dir") + 1], str(self.project))
+        self.assertNotIn("--add-dir", call["args"])
         after = {str(path.relative_to(self.project)): path.read_bytes() for path in self.project.rglob("*") if path.is_file()}
         self.assertEqual(after, before)
 
@@ -1200,16 +1200,16 @@ class ChatTests(unittest.TestCase):
             codex_command, _ = self.store._command(self.store._sessions[codex.id])
             claude_command, _ = self.store._command(self.store._sessions[claude.id])
 
-        # Codex: its normal writable sandbox, rooted in the source, with the
-        # bound project writable beside it.
+        # Codex: its normal writable sandbox, rooted in the source. The bound
+        # project is read there, never added as a writable root (ADR-012).
         self.assertIn("workspace-write", codex_command)
         self.assertNotIn("alwaysLoad", " ".join(codex_command), "a Claude CLI setting, not Codex's")
         self.assertNotIn("read-only", codex_command)
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", codex_command)
         self.assertEqual(codex_command[codex_command.index("-C") + 1], str(source))
-        self.assertEqual(codex_command[codex_command.index("--add-dir") + 1], str(self.project))
+        self.assertNotIn("--add-dir", codex_command)
 
-        # Claude: its own built-in tools, the source and project, and chat scratch.
+        # Claude: its own built-in tools, the source, the project to read, and chat scratch.
         self.assertEqual(claude_command[claude_command.index("--tools") + 1], "default")
         # Available is not approved. With nobody to answer a prompt, the tools a
         # headless turn may actually use have to be named, and editing and
@@ -1258,6 +1258,90 @@ class ChatTests(unittest.TestCase):
                 self.assertNotIn(".claude", scratch.parts)
         self.assertNotEqual(*scratch_paths)
         self.assertEqual(original, {p.relative_to(self.project): p.read_bytes() for p in self.project.rglob("*") if p.is_file()})
+
+    def test_claude_reads_the_project_but_its_write_and_edit_are_denied_there(self):
+        """ADR-012: the agent's design changes go studio_request -> Hub -> runtime, never into the folder.
+
+        One Edit path rule denies every built-in tool that writes a file in the
+        bound project, Write included. Reading it stays as it was, scratch and
+        a source checkout stay writable, and nothing else in the command moves.
+        """
+        for source in (None, providers._source_checkout()):
+            with self.subTest(source=source), patch.object(providers, "_source_checkout", return_value=source):
+                session = self.create(provider="claude")
+                with self.store._lock:
+                    saved = self.store._sessions[session.id]
+                    command, _ = self.store._command(saved)
+                    with patch.object(providers, "_claude_denied", return_value=()):
+                        undenied, _ = self.store._command(saved)
+                project = saved.projectDir
+                # The CLI's own spelling of an absolute path: //<drive letter>/<path> on Windows.
+                rule = ("Edit(//" + project[0].lower() + project[2:].replace("\\", "/") + "/**)"
+                        if os.name == "nt" else f"Edit(/{project}/**)")
+                self.assertEqual(command.count("--disallowedTools"), 1)
+                at = command.index("--disallowedTools")
+                self.assertEqual(command[at + 1], rule)
+                self.assertTrue(command[at + 2].startswith("--"), "the project's rule is the only one denied")
+                # Scratch is the agent's own place to write: outside the project, and still added.
+                scratch = str(self.runtime / "chats" / session.id / "scratch")
+                self.assertFalse(Path(scratch).resolve().is_relative_to(Path(project).resolve()))
+                added = [command[index + 1] for index, value in enumerate(command) if value == "--add-dir"]
+                self.assertEqual(added, ([project] if source is not None else []) + [scratch])
+                approved = command[command.index("--allowedTools") + 1].split(",")
+                for name in ("Read", "Write", "Edit", "Bash"):
+                    self.assertIn(name, approved, name)
+                # Nothing else moves: the same tools, directories, mode and session.
+                self.assertEqual(command[:at] + command[at + 2:], undenied)
+
+    def test_codex_is_not_given_the_project_as_a_writable_root(self):
+        """ADR-012 for Codex: the Hub names no writable place in the project.
+
+        The pinned ACP adapter has no read-only sandbox (its read-only mode is
+        workspace-write with approvals on its working directory), so what the
+        Hub decides is which roots it adds: the ACP configuration names none,
+        and a legacy `codex exec` turn adds no directory beside its workspace.
+        """
+        from monkeyhub_api.chat import acp_session as adapter
+
+        started = []
+
+        class Recorder:
+            """Stands in for the adapter only, at the boundary it is called on."""
+
+            def __init__(self, **arguments):
+                started.append(arguments)
+                self.default_model = "fixture-model-a"
+
+            def prompt(self, text, session_id, model, on_session, timeout_s, *, images=()):
+                on_session("fixture/session:recorded")
+
+            def close(self):
+                pass
+
+        def strings(value):
+            if isinstance(value, dict):
+                return [text for item in value.values() for text in strings(item)]
+            if isinstance(value, list):
+                return [text for item in value for text in strings(item)]
+            return [value] if isinstance(value, str) else []
+
+        acp = self.create()
+        self.store._sessions[acp.id].transport = "acp"
+        with patch.object(adapter, "CodexAcpSession", Recorder):
+            self.post(acp)
+            self.assertEqual(self.finished(acp).status, "idle")
+        [arguments] = started
+        project = self.store._sessions[acp.id].projectDir
+        configured = json.loads(arguments["environment"]["CODEX_CONFIG"])
+        self.assertEqual(set(configured), {"mcp_servers"})
+        self.assertFalse([text for text in strings(configured) if project in text])
+        self.assertEqual(arguments["environment"]["INITIAL_AGENT_MODE"], "read-only")
+
+        legacy = self.create()
+        with self.store._lock:
+            command, _ = self.store._command(self.store._sessions[legacy.id])
+        self.assertEqual(command[command.index("-C") + 1], str(providers._source_checkout()))
+        self.assertNotIn("--add-dir", command)
 
     def test_a_turn_runs_where_the_source_is_and_says_what_it_may_change(self):
         session = self.create()
@@ -4526,6 +4610,33 @@ class ChatTests(unittest.TestCase):
         self.assertIn("turn stopped", finished.stdout)
         self.assertLess(time.monotonic() - began, 60,
                         "the stalled read held the interpreter open on the way out")
+
+
+class ClaudeProjectRuleTests(unittest.TestCase):
+    """How the bound project becomes the Claude CLI's deny rule (#599).
+
+    Measured with the installed CLI 2.1.283 on Windows, its tool calls scripted
+    by a local stand-in for the Messages API: //d/..., //D/..., D:\\... and
+    D:/... all match the folder; //D:/... and any Write(...) rule silently
+    match nothing; a folder named "Villa [v2]" is matched only with its
+    brackets escaped, while spaces, commas, parentheses, braces, # and ! match
+    as they are.
+    """
+
+    def test_the_rule_names_the_folder_the_way_the_cli_matches_it(self):
+        for folder, rule in (
+            ("D:\\PROJECTS\\01_ACTIVE_当前项目\\ARCHFLOW CAADRIA 2027\\villa",
+             "Edit(//d/PROJECTS/01_ACTIVE_当前项目/ARCHFLOW CAADRIA 2027/villa/**)"),
+            ("d:\\Smith, House (copy\\#1 !villa {a,b}", "Edit(//d/Smith, House (copy/#1 !villa {a,b}/**)"),
+            ("D:\\Projects\\Villa [v2]\\", "Edit(//d/Projects/Villa \\[v2\\]/**)"),
+            ("\\\\?\\D:\\Projects\\villa", "Edit(//d/Projects/villa/**)"),
+            ("\\\\server\\share\\villa", "Edit(//server/share/villa/**)"),
+            ("\\\\?\\UNC\\server\\share\\villa", "Edit(//server/share/villa/**)"),
+            ("/home/kaiwen/villa [v2]", "Edit(//home/kaiwen/villa \\[v2\\]/**)"),
+            ("D:\\", "Edit(//d/**)"),
+        ):
+            with self.subTest(folder=folder):
+                self.assertEqual(providers._claude_denied(folder), (rule,))
 
 
 class AcpCommandTests(unittest.TestCase):

@@ -62,7 +62,7 @@ from .artifacts import (
 )
 from ..authentication import ActorAttribution, LOCAL_ACTOR_ID, ORIGIN_HUB, ORIGIN_HUB_AGENT, ORIGIN_STUDIO
 from ..binding import retained_sources
-from ..binding import ProjectBinding, ReferenceRun, record_kind
+from ..binding import ProjectBinding, ReferenceRun, RunChanges, record_kind
 from .candidate import CandidateRun, describe, read_candidate_delta, replay_candidate
 from .compare import shapes_of
 from .episodes import (
@@ -77,6 +77,7 @@ from .validation import validate_candidate, validate_design_candidate
 from .working_draft import lineage_of, resolve_working_source
 from ..ports import StudioEventSink
 from ..errors import StudioError, error_sentence
+from ..index import IndexedRuns, indexed_runs
 
 
 AUDIT_EVENT_SCHEMA = "AuditEvent@1"
@@ -460,7 +461,27 @@ def read_design_history(
     branch_id: str = "main",
     *,
     include_rejected: bool = False,
+    indexed: bool = False,
 ) -> DesignHistory:
+    """One line's committed Stages, and the project's Candidate Pool.
+
+    ``indexed`` is a route's read (#599): when one snapshot of the project
+    index holds this process's writes (``indexed_runs``), the pool's lineage
+    reads each run's change from it, its legacy evidence is read only from
+    the runs it names, and the Working Head's projection surveys it;
+    otherwise the runs are read. The Stages, their sources and acceptance,
+    the reviews and the admissions are read from the project either way.
+    """
+
+    rows = indexed_runs(binding) if indexed else None
+    if rows is None:
+        return _design_history(binding, branch_id, include_rejected, None)
+    with rows.reading(binding):
+        return _design_history(binding, branch_id, include_rejected, rows)
+
+
+def _design_history(binding: ProjectBinding, branch_id: str, include_rejected: bool,
+                    rows: IndexedRuns | None) -> DesignHistory:
     branches = _branches(binding)
     stages: tuple[StageView, ...] = ()
     if branches:
@@ -468,7 +489,7 @@ def read_design_history(
         stages = tuple(read_stage(binding, ref) for ref, _ in history)
     reviews = review_judgements(binding)
     stages = tuple(replace(stage, review=reviews.get(("stage", stage.ref.uri))) for stage in stages)
-    pool = candidate_pool(binding, branch_id=branch_id, include_rejected=include_rejected)
+    pool = candidate_pool(binding, branch_id=branch_id, include_rejected=include_rejected, rows=rows)
     pool = replace(pool, candidates=tuple(replace(candidate, review=reviews.get(("candidate", candidate.candidate_id)))
                                           for candidate in pool.candidates))
     # An unstaged project still has a pool: its Candidates sit under no Stage.
@@ -1970,16 +1991,23 @@ def _legacy_from(
 
 
 def _legacy_evidence(
-    binding: ProjectBinding,
+    binding: ProjectBinding, rows: IndexedRuns | None = None,
 ) -> tuple[tuple[_LegacyStudy, ...], tuple[_LegacyEpisode, ...], tuple[str, ...]]:
     """Retained Explorations and accepted episodes, the legacy admission evidence.
 
-    Both live in ordinary run records, with no index. Each run is looked at
-    once per bound project, and a run that appears later when it appears; this
-    process's own writers of either kind make every run be looked at again. A
-    record another process adds to an older run is read after a restart.
+    Both live in ordinary run records. Each run is looked at once per bound
+    project, and a run that appears later when it appears; this process's own
+    writers of either kind make every run be looked at again. A record another
+    process adds to an older run is read after a restart. With the caller's
+    snapshot of the project index (``rows``, #599), only the runs it names as
+    holding either kind are read, on every call.
     """
 
+    if rows is not None:
+        return _legacy_from(binding, {
+            run_id: _legacy_run(binding, run_id)
+            for run_id in sorted(rows.holding(STUDIO_WORKING_COPY) | rows.holding(DELIBERATION_EPISODE))
+        })
     generation = evidence_generation()
     try:
         signature: int | None = binding.repository.layout.runs.stat().st_mtime_ns
@@ -2029,7 +2057,7 @@ def _stage_candidate(
 
 def _pool_entries(
     binding: ProjectBinding, store: AdmissionStore, stages: Sequence[tuple[ProjectRecordRef, DesignStage]],
-    *, include_rejected: bool, detailed: bool,
+    *, include_rejected: bool, detailed: bool, rows: IndexedRuns | None = None,
 ) -> tuple[dict[str, PoolCandidate], dict[str, dict[str, Any]], list[str]]:
     """Each Candidate once, from its strongest retained fact, before lineage.
 
@@ -2074,7 +2102,7 @@ def _pool_entries(
     for ref, stage in stages:
         if stage.candidate_id not in claimed and stage.candidate_id not in entries:
             entries[stage.candidate_id] = _stage_candidate(binding, ref, stage, warnings, detailed=detailed)
-    legacy_studies, episodes, legacy_warnings = _legacy_evidence(binding)
+    legacy_studies, episodes, legacy_warnings = _legacy_evidence(binding, rows)
     warnings.extend(legacy_warnings)
     for group in legacy_studies:
         study_id = f"{STUDY_WORKING_COPY}:{group.group_id}"
@@ -2108,6 +2136,7 @@ def _pool_entries(
 
 def candidate_pool(
     binding: ProjectBinding, *, branch_id: str = "main", include_rejected: bool = False,
+    rows: IndexedRuns | None = None,
 ) -> CandidatePool:
     """The admitted Candidates and their Studies, from retained facts only.
 
@@ -2115,12 +2144,16 @@ def candidate_pool(
     run carries that Stage as ``acceptedStageRef``, and so does the nearest
     Candidate the Stage's accepted run was developed from ("S3 from B"), found
     between that run and its parent Stage. A Candidate without a Stage has no
-    ``baseStageRef``: it sits under the Unstaged root.
+    ``baseStageRef``: it sits under the Unstaged root. ``rows`` is the
+    caller's snapshot of the project index (#599): every lineage, the Working
+    Head's too, reads each run's change from it.
     """
 
+    changes = None if rows is None else RunChanges(binding, kept=rows.changes)
     store = admission_store(binding)
     stages, stage_warnings = _committed_stages(binding, preferred=branch_id)
-    entries, studies, found = _pool_entries(binding, store, stages, include_rejected=include_rejected, detailed=True)
+    entries, studies, found = _pool_entries(binding, store, stages, include_rejected=include_rejected, detailed=True,
+                                            rows=rows)
     warnings = [*stage_warnings, *found]
     known: dict[str, tuple[str, ...]] = {}
     admitted = {run_id for run_id, entry in entries.items() if entry.outcome == ADMITTED}
@@ -2130,14 +2163,14 @@ def candidate_pool(
         if stage.candidate_id in admitted:
             accepted.setdefault(stage.candidate_id, ref.uri)
         parent_run = None if stage.parent_stage is None else stage_runs.get(stage.parent_stage)
-        for ancestor in lineage_of(binding, stage.candidate_id, known=known)[1:]:
+        for ancestor in lineage_of(binding, stage.candidate_id, known=known, changes=changes)[1:]:
             if ancestor == parent_run:
                 break
             if ancestor in admitted and entries[ancestor].legacy != LEGACY_STAGE:
                 accepted.setdefault(ancestor, ref.uri)
                 break
     try:
-        head = resolve_working_source(binding).head
+        head = resolve_working_source(binding, changes=changes).head
     except _UNREADABLE as exc:
         head = None
         warnings.append(f"The Working Head could not be read: {_detail(exc)}")
@@ -2146,7 +2179,8 @@ def candidate_pool(
         replace(
             entry,
             accepted_stage_ref=accepted.get(run_id),
-            continued_from=next((ancestor for ancestor in lineage_of(binding, run_id, known=known)[1:]
+            continued_from=next((ancestor for ancestor in lineage_of(binding, run_id, known=known,
+                                                                     changes=changes)[1:]
                                  if ancestor in admitted), None),
             in_working_head_lineage=run_id in head_lineage,
         )
@@ -2164,8 +2198,8 @@ def candidate_pool(
         base_run, base_stage = meta["baseRunId"], meta["baseStageRef"]
         if meta["source"] == STUDY_ADMISSION:
             # A loop declared no base: it starts at the nearest run outside the loop.
-            starts = {next((run for run in lineage_of(binding, run_id, known=known)[1:] if run not in meta["loop"]),
-                           None) for run_id in ids}
+            starts = {next((run for run in lineage_of(binding, run_id, known=known, changes=changes)[1:]
+                            if run not in meta["loop"]), None) for run_id in ids}
             stage_refs = {entries[run_id].base_stage_ref for run_id in ids}
             base_run = next(iter(starts)) if len(starts) == 1 else None
             base_stage = next(iter(stage_refs)) if len(stage_refs) == 1 else None
@@ -2173,12 +2207,19 @@ def candidate_pool(
     return CandidatePool(candidates, tuple(listed), tuple(dict.fromkeys(warnings)))
 
 
-def admission_index(binding: ProjectBinding) -> tuple[dict[str, tuple[str, str | None]], tuple[str, ...]]:
-    """Each run's admission and Study, for views that list runs; nothing is written."""
+def admission_index(
+    binding: ProjectBinding, *, rows: IndexedRuns | None = None,
+) -> tuple[dict[str, tuple[str, str | None]], tuple[str, ...]]:
+    """Each run's admission and Study, for views that list runs; nothing is written.
+
+    ``rows`` is the caller's snapshot of the project index (#599): the legacy
+    evidence is read only from the runs it names.
+    """
 
     store = admission_store(binding)
     stages, warnings = _committed_stages(binding)
-    entries, _studies, found = _pool_entries(binding, store, stages, include_rejected=True, detailed=False)
+    entries, _studies, found = _pool_entries(binding, store, stages, include_rejected=True, detailed=False,
+                                             rows=rows)
     # The runtime's run view names no withdrawal of its own: a result the Agent withdrew
     # reads there as an attempt its loop replaced, never as one the architect turned down.
     index = {run_id: (SUPERSEDED if entry.outcome == WITHDRAWN else entry.outcome, entry.study_id)

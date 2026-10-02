@@ -1205,18 +1205,20 @@ class ChatStore:
         mcp = self._tool_connection(session)
         model = session.model
         # The assistant works where the work is: this Hub's own source tree when
-        # it is a checkout, with the bound project writable beside it, so a
-        # candidate can be produced and the code that produced it can be fixed.
+        # it is a checkout, with the bound project readable beside it. A
+        # candidate is produced through the Hub, which writes the project
+        # (ADR-012), and the code that produced it can be fixed here.
         source = providers._source_checkout()
         workdir = str(source) if source is not None else session.projectDir
         if kind == "codex":
             # Let Codex read its native profile, provider and credentials.
             # Its table overrides merge, so disable the effective MCP names
             # explicitly. Never copy credential-bearing config into argv.
+            # The project is not added as a writable root beside the workspace
+            # (ADR-012); an installed Hub's workspace is the project itself.
             mcp_servers = self._codex_mcp(session, commands[kind], environment)
             command = [*commands[kind], "exec", "--json", "--skip-git-repo-check",
                        "-C", workdir, "-s", "workspace-write", "--color", "never",
-                       *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
                        "-c", f"mcp_servers={providers._toml_value(mcp_servers)}"]
             if model:
                 command += ["-m", model]
@@ -1246,6 +1248,7 @@ class ChatStore:
                 only_library = (*(("--plugin-dir", str(skills)) if skills is not None else ()),
                                 "--setting-sources", "project,local", "--settings",
                                 skill_plugins.claude_settings(self.runtime_root, providers._claude_user_settings()))
+            denied = providers._claude_denied(session.projectDir)
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
                        "--include-partial-messages", "--permission-mode", "dontAsk", "--permission-prompts", "none",
                        # Two different questions, and both have to be answered.
@@ -1254,7 +1257,11 @@ class ChatStore:
                        # it with no prompt attached. Named rather than bypassed:
                        # reading, editing and running in the workspace above,
                        # plus this adapter's own tools and nothing else.
+                       # `--disallowedTools` then takes Write and Edit back in
+                       # the bound project, which is read here and changed only
+                       # through the Hub (ADR-012).
                        "--tools", "default", "--allowedTools", ",".join(providers._claude_approved(self.runtime_root)),
+                       *(("--disallowedTools", *denied) if denied else ()),
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
                        *only_library,
                        "--add-dir", str(scratch),
@@ -1434,10 +1441,12 @@ class ChatStore:
                 environment["CODEX_PATH"] = providers._native_codex(commands["codex"])
                 # In this pinned adapter, read-only means workspace-write with
                 # user approvals. Its default agent mode uses auto-review.
+                # That sandbox writes the folder it starts in and the roots
+                # added to it. The Hub adds none (ADR-012); an installed Hub
+                # starts it in the project, which it can therefore still write.
                 environment["INITIAL_AGENT_MODE"] = "read-only"
                 environment["CODEX_CONFIG"] = json.dumps({
                     "mcp_servers": self._codex_mcp(session, commands["codex"], environment),
-                    "sandbox_workspace_write": {"writable_roots": [session.projectDir]},
                 })
                 client = CodexAcpSession(
                     command=self._acp_command, cwd=str(providers._source_checkout() or session.projectDir),

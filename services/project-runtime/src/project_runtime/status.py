@@ -38,6 +38,7 @@ from .application.working_draft import (
     DESIGN_CONTINUED, WorkingHead, WorkingSources, _parents, lineage_of, read_working_draft,
 )
 from .errors import StudioError
+from .index import IndexedRuns, indexed_runs
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,15 +310,18 @@ class _GraphReads:
     the same runs again. ``changes`` answers each run's retained change, for
     the Working Head's own lineage too; ``parents`` is the one parent map
     every walk of the graph shares (``lineage_of``'s ``known``), and
-    ``records`` holds each run's exact State Record. Nothing read here
-    answers the next graph.
+    ``records`` holds each run's exact State Record. ``rows`` is the graph's
+    snapshot of the project index, when one answers (#599): ``changes``
+    answers from it, and so does whether a run holds what a reader would
+    look for. Nothing read here answers the next graph.
     """
 
-    __slots__ = ("binding", "changes", "parents", "records")
+    __slots__ = ("binding", "changes", "parents", "records", "rows")
 
-    def __init__(self, binding: ProjectBinding) -> None:
+    def __init__(self, binding: ProjectBinding, rows: IndexedRuns | None = None) -> None:
         self.binding = binding
-        self.changes = RunChanges(binding)
+        self.rows = rows
+        self.changes = RunChanges(binding, kept=None if rows is None else rows.changes)
         self.parents: dict[str, tuple[str, ...]] = {}
         self.records: dict[str, StateRecord] = {}
 
@@ -415,14 +419,17 @@ _CONTINUED: set[tuple[str, str]] = set()
 _MEMO_LIMIT = 4096
 
 
-def _compiled_request(binding: ProjectBinding, run_id: str, changes: RunChanges | None = None) -> str | None:
+def _compiled_request(binding: ProjectBinding, run_id: str, changes: RunChanges | None = None,
+                      rows: IndexedRuns | None = None) -> str | None:
     """The words this run was asked in, as the run itself retained them (#575).
 
     The request its change keeps (``StudioCandidateDelta@1`` ``request``): a
     sentence, or an outside agent's summary. A run made before changes kept
     one was asked in the sentence an intent model compiled into it, when a
     model did. None for a change nobody asked for in words. ``changes`` is
-    the caller's own reading of the runs' changes, when it keeps one.
+    the caller's own reading of the runs' changes, when it keeps one;
+    ``rows``, the caller's snapshot of the project index, says which runs
+    hold an intent compilation to read (#599).
     """
 
     key = (str(binding.repository.layout.root), run_id)
@@ -432,6 +439,8 @@ def _compiled_request(binding: ProjectBinding, run_id: str, changes: RunChanges 
         kept = ((binding.candidate_delta if changes is None else changes)(run_id) or {}).get("request")
         if isinstance(kept, str) and kept.strip():
             words = kept.strip()
+        elif rows is not None and not rows.holds(run_id, INTENT_COMPILATION):
+            words = None
         else:
             payloads = [binding.repository.load_json(ref) for ref in binding.record_refs(run_id, kind=INTENT_COMPILATION)]
             words = next((payload["utterance"].strip() for payload in payloads
@@ -485,7 +494,7 @@ def _step(reads: _GraphReads, run_id: str, base_run_id: str | None, value: dict,
     return LineStep(
         run_id=run_id, base_run_id=base_run_id,
         label=entry.get("label") or words.labels.get(run_id) or label,
-        request=said or _compiled_request(reads.binding, run_id, reads.changes), summary=summary,
+        request=said or _compiled_request(reads.binding, run_id, reads.changes, reads.rows), summary=summary,
         stage_ref=words.stages.get(run_id), updated_at=entry.get("updatedAt"),
     )
 
@@ -524,7 +533,7 @@ def _later_line(reads: _GraphReads, head: WorkingHead | None, value: dict, resul
     for line in results:
         if line.kind != "result" or line.relation != "ahead" or line.run_id is None:
             continue
-        if not _was_continued(reads.binding, line.run_id, warnings):
+        if not _was_continued(reads.binding, line.run_id, warnings, reads.rows):
             continue
         path: list[str] | None = [line.run_id]
         while path is not None:
@@ -552,16 +561,21 @@ def _later_line(reads: _GraphReads, head: WorkingHead | None, value: dict, resul
     return tuple(_step(reads, run_id, base, value, words) for run_id, base in zip(later, (head.run_id, *later)))
 
 
-def _was_continued(binding: ProjectBinding, run_id: str, warnings: list[str]) -> bool:
+def _was_continued(binding: ProjectBinding, run_id: str, warnings: list[str],
+                   rows: IndexedRuns | None = None) -> bool:
     """Whether the Working Head ever stood on this run, as the Continue events beside it say.
 
     A run whose events cannot be read counts as continued: it is compared as
-    a diverged line, as it was before anything was called superseded.
+    a diverged line, as it was before anything was called superseded. With
+    the caller's snapshot of the project index (``rows``, #599), a run that
+    keeps no audit event beside it is not read.
     """
 
     key = (str(binding.repository.layout.root), run_id)
     if key in _CONTINUED:
         return True
+    if rows is not None and not rows.holds(run_id, AUDIT_EVENT, "reviews"):
+        return False
     try:
         refs = binding.repository.list_json(
             run=binding.load_run(run_id), record_kind=AUDIT_EVENT,
@@ -655,7 +669,7 @@ def _result_lines(reads: _GraphReads, value: dict, head: WorkingHead | None, lin
     kept: set[str] = set()
     for entry, _delta, lineage, relation, _ancestor in found:
         if relation == "diverged" and ((admissions.get(entry.runId) or ("none",))[0] == ADMITTED
-                                       or _was_continued(binding, entry.runId, warnings)):
+                                       or _was_continued(binding, entry.runId, warnings, reads.rows)):
             kept.update(lineage)
     if any(relation == "diverged" and ancestor in moved_on and entry.runId not in kept
            for entry, _delta, _lineage, relation, ancestor in found):
@@ -691,11 +705,12 @@ def _result_lines(reads: _GraphReads, value: dict, head: WorkingHead | None, lin
     return lines
 
 
-def _admissions(binding: ProjectBinding, warnings: list[str]) -> dict[str, tuple[str, str | None]]:
+def _admissions(binding: ProjectBinding, warnings: list[str],
+                rows: IndexedRuns | None = None) -> dict[str, tuple[str, str | None]]:
     """Each run's retained admission and Study (#294), read once for the whole graph."""
 
     try:
-        index, found = admission_index(binding)
+        index, found = admission_index(binding, rows=rows)
     except (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError) as exc:
         warnings.append(f"Candidate admissions could not be read: {getattr(exc, 'detail', exc)}")
         return {}
@@ -717,19 +732,33 @@ def _with_admissions(lines: list[WorktreeLine], index: Mapping[str, tuple[str, s
 _GRAPH_STATE = {CURRENT: "current", OUTDATED: "stale", FROZEN: "frozen", UNAVAILABLE: "unavailable"}
 
 
+class _ListedReads(RepresentationReads):
+    """The graph's representation reads, with the document listing its snapshot of the index holds (#599)."""
+
+    def __init__(self, binding: ProjectBinding, working: WorkingSources, listed) -> None:
+        super().__init__(binding, working)
+        self._listed = listed
+
+    @property
+    def documents(self):
+        return self._listed
+
+
 def _representations(binding: ProjectBinding, render_jobs, warnings: list[str],
-                     working: WorkingSources) -> list[RepresentationState]:
+                     working: WorkingSources, listed=None) -> list[RepresentationState]:
     """Each drawing's latest revision and each render attempt, in one status vocabulary.
 
     A drawing row is the representation-status projection of its latest page,
     so it says what the Drawing tool says: a change outside the plan's read set
     leaves it current. A render row is the render owner's reading of the
     attempt's retained request, the reader that projection uses for an AI page.
+    ``listed`` is the project's document listing when the graph's snapshot
+    of the index holds it (#599); otherwise the runs are listed.
     """
 
     rows: list[RepresentationState] = []
     # The graph's own Working Head and one document listing for every row.
-    reads = RepresentationReads(binding, working)
+    reads = RepresentationReads(binding, working) if listed is None else _ListedReads(binding, working, listed)
     latest = {}
     try:
         documents = reads.documents
@@ -762,7 +791,8 @@ def _representations(binding: ProjectBinding, render_jobs, warnings: list[str],
     return rows
 
 
-def worktree_graph(binding: ProjectBinding, *, jobs: JobRegistry | None = None, render_jobs=None) -> WorktreeGraph:
+def worktree_graph(binding: ProjectBinding, *, jobs: JobRegistry | None = None, render_jobs=None,
+                   indexed: bool = False) -> WorktreeGraph:
     """Derive the project's current head, its line, active work and other lines without writing.
 
     One build reads each run's retained change once, through one
@@ -771,14 +801,30 @@ def worktree_graph(binding: ProjectBinding, *, jobs: JobRegistry | None = None, 
     walks every lineage of its own over one parent map and keeps each exact
     State Record once (``_GraphReads``). It resolves the Working Head once,
     for itself and for its representation rows.
+
+    ``indexed`` is a route's read (#599): when one snapshot of the project
+    index holds this process's writes (``indexed_runs``), each run's change,
+    the reference survey, which runs hold legacy admission evidence, intent
+    compilations or Continue events, and the document listing come from it;
+    otherwise the runs are read. The working position, the branches, the
+    Stages and the State Records compared are read from the project either way.
     """
 
-    reads = _GraphReads(binding)
+    rows = indexed_runs(binding, documents=True) if indexed else None
+    if rows is None:
+        return _worktree_graph(binding, jobs, render_jobs, None)
+    with rows.reading(binding):
+        return _worktree_graph(binding, jobs, render_jobs, rows)
+
+
+def _worktree_graph(binding: ProjectBinding, jobs: JobRegistry | None, render_jobs,
+                    rows: IndexedRuns | None) -> WorktreeGraph:
+    reads = _GraphReads(binding, rows)
     working = WorkingSources(binding, changes=reads.changes)
     resolved = working()
     head, warnings = resolved.head, list(resolved.warnings)
     value, _ = binding.repository.read_working_draft()
-    admissions = _admissions(binding, warnings)
+    admissions = _admissions(binding, warnings, rows)
     words = None if head is None else _line_words(binding, warnings)
     line = _head_line(reads, head, value, words)
     lines: list[WorktreeLine] = []
@@ -808,6 +854,7 @@ def worktree_graph(binding: ProjectBinding, *, jobs: JobRegistry | None = None, 
     lines.extend(results)
     later = _later_line(reads, head, value, results, words, warnings)
     lines = _with_admissions(lines, admissions)
-    representations = _representations(binding, render_jobs, warnings, working)
+    representations = _representations(binding, render_jobs, warnings, working,
+                                       None if rows is None else rows.documents)
     return WorktreeGraph(binding.project_id, head, resolved.revision_sha256, tuple(lines),
                          tuple(representations), tuple(warnings), line, later)

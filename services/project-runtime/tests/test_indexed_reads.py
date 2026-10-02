@@ -2,12 +2,12 @@
 
 Two applications serve one project: one reads the runs, the other keeps a
 project index in a cache directory outside the project. Every route that
-reads the index - the artifact and document listings and the two byte
-lookups - is compared byte for byte before a write, after this process's
-writes and after another process's write, and is shown to answer from its
-rows rather than from the runs. The index is written only by its keeper's
-thread; a request only reads a snapshot of it, and falls back to the runs
-whenever the index cannot answer.
+reads the index - the artifact and document listings, the two byte lookups
+and, since #599, the design tree's views - is compared byte for byte before
+a write, after this process's writes and after another process's write, and
+is shown to answer from its rows rather than from the runs. The index is
+written only by its keeper's thread; a request only reads a snapshot of it,
+and falls back to the runs whenever the index cannot answer.
 """
 
 from __future__ import annotations
@@ -28,12 +28,14 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from archflow.project.index import INDEX_FILE, IndexLocked, ProjectIndex
+from archflow.project.index import INDEX_FILE, IndexKeeper, IndexLocked, ProjectIndex
 from archflow.project.index.store import _WriterLease
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import STUDIO_CANDIDATE_DELTA
 from project_runtime.application import artifacts
 from project_runtime import binding as binding_module
 from project_runtime.binding import ProjectBinding, bound_project
-from project_runtime.index import StudioProjector, attach_project_index
+from project_runtime.index import StudioProjector, attach_project_index, indexed_runs
 from project_runtime.synchronization import pull_shared_project
 from project_runtime.main import create_app
 from project_runtime.settings import SettingsError, StudioSettings
@@ -41,8 +43,8 @@ from project_runtime.api.conditional import INDEXED_READS
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, retain_rhino_receipt
 from .test_conditional_reads import settle, slow_disk, wait_until
-from .test_design_history import DesignHistoryFixture
 from .test_documents import image_bytes
+from .test_working_source import WorkingSourceFixture
 
 # Every listing route that reads the index, and nothing else.
 READS = (
@@ -50,11 +52,19 @@ READS = (
     "/api/documents",
     f"/api/documents?runId={REFERENCE_RUN_ID}",
 )
+# The design tree's views (#599): they read the index for what every run says, and the project for the rest.
+TREE_READS = (
+    "/api/design-history?branchId=main",
+    "/api/worktrees",
+    "/api/working-source?workspace=modeling",
+)
 MODEL_BYTES = b"project-index-3dm"
 MODEL_SHA256 = hashlib.sha256(MODEL_BYTES).hexdigest()
+# The threads that keep the index and the layout watch, which read the runs by design.
+BACKGROUND = ("project-index:", "layout-watch:", "projection-")
 
 
-class IndexedReadTests(DesignHistoryFixture):
+class IndexedReadTests(WorkingSourceFixture):
     def setUp(self) -> None:
         super().setUp()
         cache = Path(tempfile.mkdtemp())
@@ -99,14 +109,14 @@ class IndexedReadTests(DesignHistoryFixture):
         return response.json()
 
     def assert_same(self, label: str) -> None:
-        for route in READS:
+        for route in READS + TREE_READS:
             with self.subTest(label=label, route=route):
                 plain, indexed = self.client.get(route), self.indexed.get(route)
                 self.assertEqual(indexed.status_code, plain.status_code, indexed.text)
                 self.assertEqual(indexed.content, plain.content)
 
     def test_only_the_routes_that_read_the_index_are_listed(self) -> None:
-        self.assertEqual({route.split("?")[0] for route in READS}, set(INDEXED_READS))
+        self.assertEqual({route.split("?")[0] for route in READS + TREE_READS}, set(INDEXED_READS))
 
     def test_every_indexed_view_is_the_same_bytes_before_and_after_writes(self) -> None:
         stage = self.initialize()
@@ -186,15 +196,108 @@ class IndexedReadTests(DesignHistoryFixture):
         binding = self.binding()
         settle(self.project_dir)
         self.caught_up(binding)
-        for route in ("/api/artifacts", "/api/documents", "/api/design-history?branchId=main", "/api/board"):
+        routes = ("/api/artifacts", "/api/documents", *TREE_READS, "/api/board")
+        for route in routes:
             self.indexed.get(route)
         kept = {key[1][1] for key in binding._memo if key[1][0] == "conditional-read"}
-        tags = {route: self.indexed.get(route).headers["etag"]
-                for route in ("/api/artifacts", "/api/documents", "/api/board")}
+        tags = {route: self.indexed.get(route).headers["etag"] for route in routes}
 
         self.assertIn(tags["/api/board"], kept, "a view the index does not serve still keeps its answer")
-        self.assertNotIn(tags["/api/artifacts"], kept)
-        self.assertNotIn(tags["/api/documents"], kept)
+        for route in ("/api/artifacts", "/api/documents", *TREE_READS):
+            with self.subTest(route=route):
+                self.assertNotIn(tags[route], kept)
+                self.assertEqual(self.indexed.get(route, headers={"If-None-Match": tags[route]}).status_code, 304)
+
+    def tree_with_lines(self) -> dict[str, str]:
+        """A Working Head two steps from its Stage, a result diverged from that Stage, and a run two changes claim."""
+
+        stage = self.initialize()
+        first = self.candidate_from(stage)
+        self.adopt(first)
+        head = self.continue_from(first)
+        self.adopt(head)
+        other = self.candidate_from(stage, 2.8)
+        broken = self.candidate_from(stage, 3.1)
+        run = self.repository.load_run(broken)
+        [ref] = self.repository.list_json(run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD,
+                                                                                      run_id=broken),
+                                          record_kind=STUDIO_CANDIDATE_DELTA)
+        # A second retained change for the same run: every reader refuses it (CANDIDATE_DELTA_INVALID).
+        self.repository.put_json(run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=broken),
+                                 record_kind=STUDIO_CANDIDATE_DELTA,
+                                 payload={**self.repository.load_json(ref), "request": "a competing change"})
+        return {"stage": stage["candidateId"], "first": first, "head": head, "other": other, "broken": broken}
+
+    def test_the_tree_reads_every_runs_change_and_survey_from_one_snapshot(self) -> None:
+        """#599: the tree's views read each run's change and the reference survey from the index, not the runs."""
+
+        runs = self.tree_with_lines()
+        binding = self.binding()
+        self.caught_up(binding)
+        self.assert_same("a line, a diverged result and a run with competing changes")
+        graph = self.indexed.get("/api/worktrees").json()
+        self.assertEqual(graph["head"]["lineage"], [runs["head"], runs["first"], runs["stage"]])
+        self.assertTrue(any(runs["broken"] in warning for warning in graph["warnings"]), graph["warnings"])
+
+        asked: list[tuple[str, str]] = []
+
+        def counted(name, original):
+            def reader(this, run_id, *args, **kwargs):
+                if not threading.current_thread().name.startswith(BACKGROUND):
+                    asked.append((name, run_id))
+                return original(this, run_id, *args, **kwargs)
+            return reader
+
+        def reads(client) -> list[tuple[str, str]]:
+            asked.clear()
+            with mock.patch.object(ProjectBinding, "candidate_delta",
+                                   counted("change", ProjectBinding.candidate_delta)), \
+                    mock.patch.object(ProjectBinding, "_survey_run", counted("survey", ProjectBinding._survey_run)), \
+                    mock.patch.object(ProjectBinding, "_receipts_of", counted("receipts", ProjectBinding._receipts_of)):
+                for route in TREE_READS:
+                    self.assertEqual(client.get(route).status_code, 200, route)
+            return list(asked)
+
+        indexed = reads(self.indexed)
+        # Only the Working Head's own projection reads its change, and the run whose change the index
+        # could not read is read from the project, so its refusal is the project's own.
+        self.assertEqual({run_id for name, run_id in indexed if name == "change"}, {runs["head"], runs["broken"]})
+        self.assertEqual([entry for entry in indexed if entry[0] != "change"], [],
+                         "no run was surveyed and no run's receipts were listed")
+
+    def test_the_tree_reads_the_runs_when_the_index_cannot_answer(self) -> None:
+        self.tree_with_lines()
+        binding = self.binding()
+        self.caught_up(binding)
+        surveyed: list[str] = []
+        original = ProjectBinding._survey_run
+
+        def counted(this, run_id):
+            if not threading.current_thread().name.startswith(BACKGROUND):
+                surveyed.append(run_id)
+            return original(this, run_id)
+
+        def refused(index):
+            raise sqlite3.OperationalError("disk I/O error")
+
+        with mock.patch.object(ProjectBinding, "_survey_run", counted):
+            for route in TREE_READS:
+                self.assertEqual(self.indexed.get(route).status_code, 200, route)
+            self.assertEqual(surveyed, [], "the index answers the Working Head's survey")
+            with mock.patch.object(ProjectIndex, "snapshot", refused):
+                for route in TREE_READS:
+                    with self.subTest(route=route):
+                        surveyed.clear()
+                        answered = self.indexed.get(route)
+                        self.assertEqual(set(surveyed), set(self.repository.run_ids()), "the runs were surveyed")
+                        self.assertEqual(answered.status_code, 200, answered.text)
+                        self.assertEqual(answered.content, self.client.get(route).content)
+
+        # An index still behind this process's own writes once the wait ends is not read either.
+        with mock.patch.object(IndexKeeper, "wait_readable", lambda keeper, timeout=None: None):
+            self.assertIsNone(indexed_runs(binding))
+            for route in TREE_READS:
+                self.assertEqual(self.indexed.get(route).content, self.client.get(route).content, route)
 
     def test_a_restarted_process_never_answers_not_modified_to_the_last_one(self) -> None:
         binding = self.binding()
@@ -375,8 +478,12 @@ class IndexedReadTests(DesignHistoryFixture):
         self.assertEqual({name for name in callers if not name.startswith(("layout-watch:", "project-index:"))},
                          set(), "a request thread read the project")
 
-    def test_a_started_worker_derives_its_first_views_once_before_any_request_asks(self) -> None:
-        """#449: a worker with an index prepares its first reads; one asked meanwhile waits for them."""
+    def test_a_started_worker_prepares_its_first_views_before_any_request_asks(self) -> None:
+        """#449: a worker with an index prepares its first reads; one asked meanwhile waits for them.
+
+        Once the index answers, the tree's views read it on every request and
+        keep no prepared answer (#599).
+        """
 
         from project_runtime.api.routes import episodes, runtime
 
@@ -402,18 +509,16 @@ class IndexedReadTests(DesignHistoryFixture):
             asked = pool.submit(client.get, "/api/design-history?branchId=main")
             time.sleep(0.3)
             self.assertFalse(asked.done(), "a first read waits for the preparation")
+            self.assertIsNotNone(app.state.binding.await_index(30), "the index loaded")
             release.set()
             first = asked.result(30)
             for thread in threading.enumerate():
                 if thread.name == "studio-first-reads":
                     thread.join(30)
-            self.assertIsNotNone(app.state.binding.index_state(), "the index loaded")
-            self.assertEqual(derived["history"], 1, "the history was derived once, before it was asked for")
-            # Once more after the index's first commit, which the worktrees' tag names.
-            self.assertIn(derived["worktrees"], (1, 2))
+            self.assertEqual(derived["history"], 2, "the index answered the history asked for, not the preparation")
             before = dict(derived)
             worktrees = client.get("/api/worktrees")
-            self.assertEqual(derived, before, "the first reads answer what was prepared")
+            self.assertEqual(derived["worktrees"], before["worktrees"] + 1, "and the worktrees read it again")
             self.assertEqual((first.status_code, worktrees.status_code), (200, 200))
             self.assertEqual(first.content, self.client.get("/api/design-history?branchId=main").content)
             self.assertEqual(worktrees.content, self.client.get("/api/worktrees").content)
@@ -424,6 +529,38 @@ class IndexedReadTests(DesignHistoryFixture):
                                        == self.client.get("/api/design-history?branchId=main").content
                                        != first.content, 10))
             self.assertGreater(derived["history"], 1)
+
+    def test_a_started_worker_with_a_loaded_index_lists_no_run_before_it_serves(self) -> None:
+        """#449, #599: the preparation walks every run only when no index answers in time."""
+
+        self.tree_with_lines()
+        self.binding().close()  # the kept index: the next process reuses it
+        listed: list[str] = []
+        original = ProjectBinding.record_refs
+
+        def counted(this, run_id, *, kind=None):
+            if threading.current_thread().name == "studio-first-reads":
+                listed.append(run_id)
+            return original(this, run_id, kind=kind)
+
+        for app, walks in ((self.app_with_index(), False),
+                           (create_app(StudioSettings(project_dir=self.project_dir, cad_export="off")), True)):
+            app.state.prepare_first_reads = True
+            listed.clear()
+            # A slow machine may take longer than a second to load the kept index: give it time.
+            with self.subTest(index=not walks), mock.patch.object(ProjectBinding, "record_refs", counted), \
+                    mock.patch.object(binding_module, "INDEX_CATCH_UP_S", 30.0), TestClient(app) as client:
+                answer = client.get("/api/worktrees")
+                for thread in threading.enumerate():
+                    if thread.name == "studio-first-reads":
+                        thread.join(30)
+                self.assertEqual(answer.content, self.client.get("/api/worktrees").content)
+                if walks:
+                    self.assertEqual(set(listed), set(self.repository.run_ids()), "without an index, every run")
+                else:
+                    self.assertEqual(listed, [], "with a loaded index no run is listed")
+                    self.assertIn(app.state.binding.await_index(0).index.loaded, ("reused", "reconciled"))
+                app.state.binding.close()
 
     def timed(self, route: str, **headers: str) -> tuple[int, float]:
         started = time.perf_counter()

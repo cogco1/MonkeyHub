@@ -106,7 +106,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.benchmarks import benchmark_data
-from tools.benchmarks.projection_check import ROUTES, settle
+from tools.benchmarks.projection_check import ROUTES, as_opened, settle
 from tools.dev import source_roots, workspace
 
 SCHEMA = benchmark_data.RESULT_SCHEMA
@@ -618,6 +618,7 @@ def copy_project(source: Path, destination: Path, size: int) -> Project:
 
     target = destination / source.name
     shutil.copytree(source, target)
+    as_opened(target)
     settle(target)
     project_id = json.loads((target / "project.json").read_text(encoding="utf-8"))["project_id"]
     return Project(size, target, project_id)

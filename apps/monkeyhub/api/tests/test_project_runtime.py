@@ -23,7 +23,9 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, project_fixture, wait_for
-from archflow.project.repository import FilesystemProjectRepository, project_root_key
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import STUDIO_LOCAL_DRAFT
+from archflow.project.repository import FilesystemProjectRepository, project_root_key, write_serial
 from archflow.project.watch import running_watches
 from project_runtime.binding import ProjectBinding, ReadToken
 from project_runtime.settings import StudioSettings
@@ -1453,6 +1455,52 @@ class RuntimeCostTests(unittest.TestCase):
         self.assertGreater(opened[0][1], 0)
         self.assertEqual(inputs.call_count, 1, "an idle pass derived the work copies of an unchanged project")
         self.assertEqual(records.call_count, opened[0][1], "an idle pass read the records of the project's runs")
+
+    def test_the_observer_writes_nothing_to_the_project(self):
+        # ADR-012: the open project's runtime is its only writer. The observer
+        # expired superseded local recovery every 15 minutes from the Hub's own
+        # process; that is the runtime's sweep now (retention.prune_recovery).
+        # Forty observed minutes leave an expirable snapshot where it is.
+        repository = self.project()
+        drafts = repository.create_run("studio-working-draft")
+        old = "2020-01-01T00:00:00+00:00"
+
+        def snapshot(commands):
+            return repository.put_json(
+                run=drafts, destination=PersistenceDestination(PersistenceArea.RUN_RECOVERY, run_id=drafts.run_id),
+                record_kind=STUDIO_LOCAL_DRAFT,
+                payload={"schema": "StudioLocalDraft@1", "projectId": self.fixture.PROJECT_ID, "updatedAt": old,
+                         "draft": {"source": {"projectId": self.fixture.PROJECT_ID, "sourceRunId": None,
+                                              "sourceStageRef": None, "stateDigest": "a" * 64},
+                                   "commands": commands, "attempt": None}})
+
+        superseded, current = snapshot([{"id": "move"}]), snapshot([{"id": "move"}, {"id": "lift"}])
+        value, revision = repository.read_working_draft()
+        value["localDraftRef"] = current.to_dict()
+        repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        root = repository.layout.root
+        listing = sorted(path.relative_to(root).as_posix() for path in root.rglob("*"))
+        manager = self.manager()
+        runtime = self.runtime(manager, repository)
+        written = write_serial(root)
+        now = [0.0]
+
+        def heartbeat(timeout):
+            now[0] += 5 * 60
+            if now[0] > 40 * 60:
+                manager._closing.set()
+            return False
+
+        runtime.wake.set()  # what open() asks of its observer
+        prune = FilesystemProjectRepository.prune_working_draft
+        with patch.object(FilesystemProjectRepository, "prune_working_draft", autospec=True, side_effect=prune) as expiry, \
+             patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
+            manager._watch(runtime)
+        expiry.assert_not_called()
+        self.assertEqual(write_serial(root), written, "the Hub process wrote below the project")
+        self.assertTrue((root / superseded.relative_path).is_file())
+        self.assertEqual(sorted(path.relative_to(root).as_posix() for path in root.rglob("*")), listing)
 
     def test_the_observer_derives_the_work_copies_again_once_the_project_moved_or_on_a_wake(self):
         repository = self.project()
