@@ -349,6 +349,8 @@ try {
         if (name === "/api/protocol") return await json({ protocol: "archflow/2", server: "fixture", serverVersion: "test", mode: "local",
           capabilities: ["working-copies", "model-annotations", "events", "operation-timing", ...(diagnosticsEnabled ? ["operation-diagnostics"] : []), ...(historyEnabled ? ["design-history", "drawing-elevations", "document-visual-input"] : []),
             ...(workingDraftEnabled ? ["working-draft"] : [])] });
+        // Modeling reads component-info cards from this project's existing Board.
+        if (name === "/api/board") return await json({ projectId, title: "", elements: [], seenDocuments: [], revisionSha256: null });
         if (name === "/api/working-draft") return await json(workingDraftDto());
         if (name === "/api/project") return await json(binding());
         if (name === "/api/drawings/styles") return await json({ styles: [] });
