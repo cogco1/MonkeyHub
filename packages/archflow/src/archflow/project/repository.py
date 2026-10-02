@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from pathlib import PurePath
 from pathlib import PurePosixPath
+from stat import FILE_ATTRIBUTE_REPARSE_POINT, S_ISLNK
 from typing import Any, BinaryIO
 from uuid import uuid4
 from urllib.parse import unquote, urlsplit
@@ -488,6 +489,23 @@ def _stamp(path: Path) -> os.stat_result | None:
 def _unchanged(path: Path, size: int, mtime_ns: int) -> bool:
     stat = _stamp(path)
     return stat is not None and stat.st_size == size and stat.st_mtime_ns == mtime_ns
+
+
+def _plain(own: os.stat_result) -> bool:
+    """Whether a path's own stat, taken without following it, shows no link, junction or other reparse point."""
+
+    return not S_ISLNK(own.st_mode) and not getattr(own, "st_file_attributes", 0) & FILE_ATTRIBUTE_REPARSE_POINT
+
+
+def _plain_entry(entry: os.DirEntry) -> bool:
+    """``_plain`` for a listed entry. On Windows the entry's own stat comes with the listing, so this reads nothing."""
+
+    try:
+        if entry.is_symlink() or entry.is_junction():
+            return False
+        return os.name != "nt" or _plain(entry.stat(follow_symlinks=False))
+    except OSError:
+        return False
 
 
 def _remembered_bytes(key: tuple) -> tuple[Path, bytes] | None:
@@ -2518,11 +2536,15 @@ class FilesystemProjectRepository:
         kept = None if _reading_fresh() else _VERIFIED_RECORDS.get((self._root_key, ref.relative_path, ref.sha256))
         return os.stat(self._record_path(ref) if kept is None else kept[0])
 
-    def _read_record(self, ref: ProjectRecordRef) -> tuple[Path, bytes, dict[str, Any] | None]:
+    def _read_record(
+        self, ref: ProjectRecordRef, plain: Path | None = None,
+    ) -> tuple[Path, bytes, dict[str, Any] | None]:
         """The record's resolved path and verified bytes, with their payload when they were just parsed.
 
         Kept bytes (``_RECORD_BYTES``) are answered, unparsed, while their file
-        keeps the stat they were read with.
+        keeps the stat they were read with. ``plain`` is the record's path when
+        the listing reading it has just found it plain on a plain way from the
+        project root (``_plain_names``): resolving it would lead nowhere else.
         """
 
         self._require_record(ref)
@@ -2530,7 +2552,7 @@ class FilesystemProjectRepository:
         kept = _remembered_bytes(key)
         if kept is not None:
             return kept[0], kept[1], None
-        path = self._record_path(ref)
+        path = self._record_path(ref) if plain is None else plain
         read = _read_bytes_stamped(path)
         if _sha256(read.data) != ref.sha256:
             raise ProjectIntegrityError(f"record digest mismatch: {ref.relative_path}")
@@ -3144,12 +3166,21 @@ class FilesystemProjectRepository:
                 return kept
         refs = []
         pattern = "*.json" if record_kind is None else f"{record_kind}-*.json"
+        plain_names: frozenset[str] | None = None
+
+        def plain_path(path: Path) -> Path | None:
+            # Looked at once per listing, and only when a listed record has to be read.
+            nonlocal plain_names
+            if plain_names is None:
+                plain_names = self._plain_names(directory)
+            return path if path.name in plain_names else None
+
         for path in sorted(directory.glob(pattern)):
             # ``glob`` joins each name onto ``directory``, so this is the
             # record's project-relative path ``_record_ref`` would compute.
             relative = f"{relative_directory}/{path.name}"
             if record_kind is None:
-                ref = self._listed_record(path, relative)
+                ref = self._listed_record(path, relative, plain_path)
             else:
                 try:
                     kind, digest = parse_record_file_name(path.name)
@@ -3161,20 +3192,52 @@ class FilesystemProjectRepository:
                 ref = None if verified is None else verified[0]
                 if ref is None:
                     ref = self._record_ref(path, digest, "application/json")
-                    self.load_json(ref)
+                    self._read_record(ref, plain_path(path))
             refs.append(ref)
         listed = tuple(refs)
         if stat is not None:
             _keep_listing(key, stat.st_mtime_ns, stat.st_mtime_ns, scanned_at, listed)
         return listed
 
-    def _listed_record(self, path: Path, relative: str) -> ProjectRecordRef:
+    def _plain_names(self, directory: Path) -> frozenset[str]:
+        """The names in ``directory`` that are where they say: plain entries on a plain way from the project root.
+
+        Resolving a path follows links, junctions and other reparse points. A
+        path below the already resolved project root that passes none of them
+        resolves to itself, so a record named here stays in the project
+        without a ``Path.resolve()`` per record (#575). A link, junction or
+        reparse point on the way from the root, or as the entry itself, leaves
+        names out, and those records are resolved and checked as any read
+        checks them, ``project-relative path escapes project root`` included.
+        Nothing is kept.
+        """
+
+        try:
+            parts = directory.relative_to(self.layout.root).parts
+        except ValueError:
+            return frozenset()
+        current = self.layout.root
+        try:
+            for part in parts:
+                current = current / part
+                if not _plain(os.lstat(current)):
+                    return frozenset()
+            with os.scandir(directory) as entries:
+                return frozenset(entry.name for entry in entries if _plain_entry(entry))
+        except OSError:
+            return frozenset()
+
+    def _listed_record(
+        self, path: Path, relative: str, plain_path: Callable[[Path], Path | None] | None = None,
+    ) -> ProjectRecordRef:
         """The ref of one listed record, its digest taken from its own bytes.
 
         The digest is the one these bytes have, so they are parsed as read
         instead of read again to be checked against it (#314). A record
         verified before under the digest its name claims answers instead,
-        while its file is unchanged: its bytes hashed to that digest.
+        while its file is unchanged: its bytes hashed to that digest. A
+        record its listing found plain (``_plain_names``) is not resolved:
+        resolving it would lead nowhere else.
         """
 
         try:
@@ -3187,7 +3250,7 @@ class FilesystemProjectRepository:
                 return verified[0] or self._record_ref(path, claimed, "application/json")
         read = _read_bytes_stamped(path)
         ref = self._record_ref(path, _sha256(read.data), "application/json")
-        resolved = self._record_path(ref)
+        resolved = (None if plain_path is None else plain_path(path)) or self._record_path(ref)
         _parse_json_document(read.data, resolved.name)
         _remember_verified((self._root_key, ref.relative_path, ref.sha256), ref, resolved, read, keep_bytes=False)
         return ref

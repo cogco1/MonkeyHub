@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from archflow.project.repository import FilesystemProjectRepository, ProjectAlreadyExists, ProjectHeadLocked, ProjectIntegrityError, PromotionAuthorityError, StaleDesignBranch, StaleProjectHead, add_write_observer
+from archflow.project.layout import ProjectLayout
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, PROMOTION_DECISION, STATE_RECORD
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, ProjectVersionRef, RunRef
@@ -358,9 +359,17 @@ class ProjectRepositoryTests(unittest.TestCase):
         historical = path.with_name(path.name.replace("state-record-", "state-record-archived-", 1))
         historical.write_bytes(path.read_bytes())
         self.repository.layout.resolve_record(unrelated).write_bytes(b"unrelated incomplete payload")
-        with patch.object(self.repository, "load_json", wraps=self.repository.load_json) as load:
+        records = {path.name, historical.name, self.repository.layout.resolve_record(unrelated).name}
+        read_bytes, read = Path.read_bytes, []
+
+        def recorded(opened: Path) -> bytes:
+            read.append(opened.name)
+            return read_bytes(opened)
+
+        with patch.object(Path, "read_bytes", autospec=True, side_effect=recorded):
             self.assertEqual(self.repository.list_json(run=run, destination=destination, record_kind=STATE_RECORD), (selected,))
-        self.assertEqual([call.args[0] for call in load.call_args_list], [selected])
+        # Only the selected record is read and verified, once; neither other record is opened.
+        self.assertEqual([name for name in read if name in records], [path.name])
         legacy = self.repository.list_json(run=run, destination=destination, record_kind="state-record-archived")
         self.assertEqual(len(legacy), 1, "readable historical kinds need not be registered for new writes")
         with self.assertRaises(ProjectIntegrityError):
@@ -899,6 +908,119 @@ class RunPublicationTests(unittest.TestCase):
         self.assertEqual(self.partial_runs(), [])
         self.assertEqual(len([line for line in logged.output if "completed in place" in line]), 2)
         self.assertEqual([item.name for item in self.repository.layout.runs.iterdir() if item.name.startswith(".")], [])
+
+
+class ListingContainmentTests(unittest.TestCase):
+    """A listing reads no record outside the project and walks into no link it cannot vouch for (#575).
+
+    A record reached from the project root through plain directories, and
+    plain itself, is listed without a ``Path.resolve()`` of its own. Whatever
+    passes a link, a junction or another reparse point is resolved as every
+    read resolves it, and refused when that leads out of the project.
+    """
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name) / "project-a"
+        self.outside = Path(self.temporary.name) / "outside"
+        self.repository = FilesystemProjectRepository.initialize(
+            self.root,
+            project_id="project-a",
+            initial_state={"phase": "request", "commitments": []},
+        )
+
+    def records(self, run_id: str) -> tuple[RunRef, PersistenceDestination, list[ProjectRecordRef]]:
+        run = self.repository.create_run(run_id)
+        destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id)
+        written = [self.repository.put_json(run=run, destination=destination, record_kind=kind, payload=payload)
+                   for kind, payload in ((STATE_RECORD, {"schema": "StateRecord@1", "run": run_id}),
+                                         (DESIGN_STAGE, {"schema": "DesignStage@1", "run": run_id}))]
+        return run, destination, written
+
+    def link_directory(self, link: Path, target: Path) -> None:
+        """Make ``link`` lead to ``target`` as a host can without privileges: a junction on Windows, else a symlink."""
+
+        if os.name == "nt":
+            import _winapi
+
+            _winapi.CreateJunction(str(target), str(link))
+            # Removed before the temporary directory, so that cleanup never walks through it.
+            self.addCleanup(os.rmdir, link)
+        else:
+            os.symlink(target, link, target_is_directory=True)
+            self.addCleanup(os.unlink, link)
+
+    def moved_out(self, run_id: str) -> Path:
+        """The run's record directory moved out of the project, and linked back where it stood."""
+
+        records = self.repository.layout.run(run_id).records
+        self.outside.mkdir()
+        target = self.outside / "records"
+        records.rename(target)
+        self.link_directory(records, target)
+        return target
+
+    def test_a_plain_listing_resolves_no_record(self) -> None:
+        run, destination, written = self.records("plain-run")
+        original = ProjectLayout.resolve_record
+        with patch.object(ProjectLayout, "resolve_record", autospec=True, side_effect=original) as resolved:
+            listed = self.repository.list_json(run=run, destination=destination)
+        self.assertEqual(sorted(ref.relative_path for ref in listed), sorted(ref.relative_path for ref in written))
+        self.assertEqual(resolved.call_count, 0)
+        # What the listing verified is read as before.
+        self.assertEqual({self.repository.load_json(ref)["schema"] for ref in listed}, {"StateRecord@1", "DesignStage@1"})
+
+    def test_a_listing_refuses_records_reached_through_a_link_out_of_the_project(self) -> None:
+        run, destination, written = self.records("linked-run")
+        self.moved_out("linked-run")
+        with self.assertRaisesRegex(ValueError, "escapes project root"):
+            self.repository.list_json(run=run, destination=destination)
+        with self.assertRaisesRegex(ValueError, "escapes project root"):
+            self.repository.list_json(run=run, destination=destination, record_kind=STATE_RECORD)
+        with self.assertRaisesRegex(ValueError, "escapes project root"):
+            self.repository.load_json(written[0])
+
+    def test_a_listing_refuses_a_run_linked_in_from_outside_the_project(self) -> None:
+        run, destination, _written = self.records("outside-run")
+        run_root = self.repository.layout.run("outside-run").root
+        self.outside.mkdir()
+        target = self.outside / "outside-run"
+        run_root.rename(target)
+        self.link_directory(run_root, target)
+        with self.assertRaisesRegex(ValueError, "escapes project root"):
+            self.repository.list_json(run=run, destination=destination)
+
+    def test_a_link_that_stays_in_the_project_lists_as_before(self) -> None:
+        _source, _source_destination, written = self.records("source-run")
+        aliased = self.repository.create_run("aliased-run")
+        records = self.repository.layout.run("aliased-run").records
+        records.rmdir()
+        self.link_directory(records, self.repository.layout.run("source-run").records)
+        destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id="aliased-run")
+        original = ProjectLayout.resolve_record
+        with patch.object(ProjectLayout, "resolve_record", autospec=True, side_effect=original) as resolved:
+            listed = self.repository.list_json(run=aliased, destination=destination)
+        # Each record behind the link is resolved, as every read resolves it, and stays in the project.
+        self.assertEqual(resolved.call_count, len(written))
+        self.assertEqual(sorted(ref.relative_path for ref in listed),
+                         sorted(ref.relative_path.replace("source-run", "aliased-run") for ref in written))
+        self.assertEqual(sorted(ref.sha256 for ref in listed), sorted(ref.sha256 for ref in written))
+
+    def test_a_record_that_is_itself_a_link_out_of_the_project_is_refused(self) -> None:
+        run, destination, written = self.records("record-link-run")
+        record = self.repository.layout.resolve_record(written[0])
+        self.outside.mkdir()
+        target = self.outside / record.name
+        target.write_bytes(record.read_bytes())
+        record.unlink()
+        try:
+            os.symlink(target, record)
+        except OSError as exc:  # Windows without the symbolic-link privilege
+            self.skipTest(f"this host cannot make a file link: {exc}")
+        self.addCleanup(record.unlink)
+        with self.assertRaisesRegex(ValueError, "escapes project root"):
+            self.repository.list_json(run=run, destination=destination)
 
 
 if __name__ == "__main__":
