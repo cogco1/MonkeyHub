@@ -1,4 +1,33 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-575",
+      "lanes": [
+        {
+          "id": "tree-speed",
+          "status": "active",
+          "branch": "codex/575-tree-speed",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-575-tree-speed",
+          "base_ref": "45c6bd8b2a15dc377fc0d16c4532ddd0a8ef2f7d",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "project_runtime.binding",
+            "project_runtime.candidate"
+          ],
+          "write_scope": [
+            "services/project-runtime/src/project_runtime/binding.py",
+            "services/project-runtime/src/project_runtime/status.py",
+            "services/project-runtime/tests/test_worktrees.py",
+            "services/project-runtime/tests/test_binding.py",
+            "governance/module_registry.json",
+            "docs/architecture/system-map.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
