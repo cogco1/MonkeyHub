@@ -160,6 +160,23 @@ class BindingTests(unittest.TestCase):
                                                 "services/project-runtime/src/project_runtime/__init__.py"])
 
 
+class ScratchCopyTests(unittest.TestCase):
+    """The copy a side reads is a project that has been opened (ADR-012), settled, and the given project is untouched."""
+
+    def test_a_scratch_copy_keeps_the_lease_file_an_opened_project_keeps(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "given" / "project"
+            (source / "runs").mkdir(parents=True)
+            (source / "project.json").write_text("{}", encoding="utf-8")
+            copy = projection_check.scratch_copy(source, Path(temporary) / "scratch")
+            self.assertTrue((copy / projection_check.WRITER_LEASE_FILE).is_file())
+            self.assertEqual((copy / projection_check.WRITER_LEASE_FILE).read_bytes(), b"")
+            self.assertFalse((source / projection_check.WRITER_LEASE_FILE).exists(), "the given project is never changed")
+            # Settled after the lease file was made: the racy rule does not read the copy as settling.
+            newest = max(path.stat().st_mtime_ns for path in [copy, *copy.rglob("*")])
+            self.assertLess(newest, projection_check.time.time_ns() - 2_000_000_000)
+
+
 class EndToEndTests(unittest.TestCase):
     """One real run: this checkout against itself, on the smallest scenario."""
 
