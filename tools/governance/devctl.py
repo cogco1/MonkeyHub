@@ -386,9 +386,10 @@ def render_stage_ladder() -> list[str]:
 
 
 def render_semantic_registry() -> str:
-    """Roles, conditions and the compound phrases that resolve to them."""
+    """Roles, conditions, the compound phrases that resolve to them, and the facets a component may carry."""
 
     from archflow.semantics.conditions import CONDITIONS
+    from archflow.semantics.facets import FACET_REASONS, FACETS, FREE_TEXT_MAX, FREE_TEXT_MIN, facet_format
     from archflow.semantics.registry import COMPOUND_PHRASES
     from archflow.semantics.roles import ROLES
 
@@ -402,6 +403,15 @@ def render_semantic_registry() -> str:
         lines.append("")
     lines += ["## Compound phrases (authored before the registry; resolve once)", "", "| phrase | roles | conditions |", "| --- | --- | --- |"]
     lines += [f"| {tick}{k}{tick} | {', '.join(v[0])} | {', '.join(v[1])} |" for k, v in COMPOUND_PHRASES.items()]
+    lines += ["", "## Facets", "",
+              "A component's L3 meaning (" + tick + "Component@1.fields.facets" + tick + "). A key added after the "
+              "construction spec's table says why the registered keys could not say it.", "",
+              "| key | accepts | added because |", "| --- | --- | --- |"]
+    for key, allowed in FACETS.items():
+        form = facet_format(key)
+        accepts = (", ".join(allowed) if allowed is not None else form.words if form is not None
+                   else f"free text, {FREE_TEXT_MIN}-{FREE_TEXT_MAX} characters")
+        lines.append(f"| {tick}{key}{tick} | {accepts} | {FACET_REASONS.get(key, 'the construction spec, section 3.4')} |")
     return "\n".join(lines) + "\n"
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import ContextManager, Any, BinaryIO, Mapping, Protocol
+from typing import ContextManager, Any, BinaryIO, Iterable, Mapping, Protocol
 
 from archflow.project.manifest import ProjectManifest
 from archflow.project.refs import (
@@ -114,8 +114,9 @@ class DesignBranchStore(Protocol):
 class WorkingDraftStore(Protocol):
     """P036 owns mutable working positions and expiry of superseded local recovery.
 
-    No run is ever removed here, however old or unreferenced: an automatic
-    candidate stays until the architect explicitly rejects or archives it.
+    No run is ever removed here, however old or unreferenced. A run leaves
+    ``runs/`` only through the project trash (``RunTrash``), whole and
+    restorable, under rules its caller owns.
     """
 
     def working_draft_guard(self) -> ContextManager[None]: ...
@@ -131,6 +132,52 @@ class WorkingDraftStore(Protocol):
     def release_working_run(self, run_id: str) -> None: ...
 
     def prune_working_draft(self, *, now: str) -> tuple[str, ...]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class TrashEntry:
+    """One run in the project trash (#575), as its manifest states it.
+
+    ``rule`` and ``reason`` are the caller's: which retention rule moved it and
+    why, in a sentence. ``state_digest``, ``superseded_by``, ``base_run_id``
+    and ``label`` are what the caller knew of the run when it moved it, kept
+    so the trash can be read without reading the run. ``working_row`` is the
+    working-draft row the run took with it and gets back when it is restored.
+    """
+
+    run_id: str
+    trashed_at: str
+    rule: str
+    reason: str
+    state_digest: str | None = None
+    superseded_by: str | None = None
+    base_run_id: str | None = None
+    label: str | None = None
+    working_row: Mapping[str, Any] | None = None
+
+
+class RunTrash(Protocol):
+    """Runs move out of ``runs/`` only here: whole, with a manifest, restorable until purged (#575).
+
+    The store decides nothing about which run may go. It refuses a run that
+    something it owns still holds - the Working Head, an execution, a saved
+    or chosen working row, the local recovery, a review or Stage kept in the
+    run, the published history - and a run it cannot rename whole stays where
+    it is. ``run_mentions`` is the read a caller asks before choosing.
+    """
+
+    def trash_run(
+        self, run_id: str, *, now: str, rule: str, reason: str, state_digest: str | None = None,
+        superseded_by: str | None = None, base_run_id: str | None = None, label: str | None = None,
+    ) -> TrashEntry: ...
+
+    def trash_entries(self) -> tuple[TrashEntry, ...]: ...
+
+    def restore_trashed_run(self, run_id: str) -> TrashEntry: ...
+
+    def purge_trash(self, *, now: str) -> tuple[str, ...]: ...
+
+    def run_mentions(self, run_ids: Iterable[str]) -> dict[str, frozenset[str]]: ...
 
 
 class ProjectTransferStore(Protocol):

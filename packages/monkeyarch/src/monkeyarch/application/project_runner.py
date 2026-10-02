@@ -140,7 +140,7 @@ from archflow.state.geometry_program import (
     load_compiled_geometry_program,
 )
 from archflow.state.spatial import SiteBounds
-from archflow.state.state_record import RecordBinding, Relation, SchematicPack, StateRecord, ValidatorBinding, bootstrap_developed_state, developed_design_view, project_grids_of, project_levels_of, volume_boxes_of
+from archflow.state.state_record import DeclaredMaterials, RecordBinding, Relation, SchematicPack, StateRecord, ValidatorBinding, bootstrap_developed_state, declared_materials, developed_design_view, project_grids_of, project_levels_of, volume_boxes_of
 from archflow.state.stage_workflow import (
     HARNESS_WORKFLOW_IDS,
     ProjectStageWorkflow,
@@ -685,15 +685,23 @@ def _observe_runner_operation(observer, phase: str, *, parent_event_id=None, det
 
 
 def _export(repository, run, branch, branch_destination, program, stage_id: str, options: RunOptions, provenance: dict, *, source: _SourceSeat | None = None,
-            operation_observer: Callable[[Mapping[str, Any]], None] | None = None) -> dict:
-    """Export through the selected executor, retaining one parent for its real steps."""
+            operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
+            materials: DeclaredMaterials = DeclaredMaterials({}, {}, {})) -> dict:
+    """Export through the selected executor, retaining one parent for its real steps.
+
+    ``materials`` is what the record's components and their parts declare
+    (``declared_materials``): the export names each declared material and
+    gives it one colour, a part's own before its component's, and says of
+    every other object of a component that its material is undeclared.
+    """
 
     details = {"scope": "cad_export", "input_identity": {"program_digest": program.program_digest},
                "execution_path": "unknown"}
     with _observe_runner_operation(operation_observer, f"geometry_export.{options.cad_backend}.unknown", details=details) as event:
         event["source_ref"] = provenance.get("state_record_ref")
         result = _execute_cad(repository, run, branch, branch_destination, program, stage_id, options, provenance,
-                              source=source, operation_observer=operation_observer, observation_parent_id=event["event_id"])
+                              source=source, operation_observer=operation_observer, observation_parent_id=event["event_id"],
+                              materials=materials)
         path = result.get("path", "unknown")
         event.update(phase=f"geometry_export.{options.cad_backend}.{path}",
                      status="succeeded" if result.get("status") == "succeeded" else "failed")
@@ -858,16 +866,21 @@ def _prior_patch_source(repository, run, request, backend):
 
 
 def _execute_cad(repository, run, branch, branch_destination, program, stage_id, options, provenance, *, source=None,
-                 operation_observer=None, observation_parent_id=None):
+                 operation_observer=None, observation_parent_id=None, materials=DeclaredMaterials({}, {}, {})):
     backend = get_cad_backend(options.cad_backend)
     workspace = _export_workspace(options, stage_id)
     destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
     program_ref = repository.put_json(run=run, destination=branch_destination, record_kind=stage_geometry_program(stage_id), payload=program.to_dict())
     binding = CadProgramBinding(program_ref, branch, stage_id, program.program_digest,
                                 program.proposal.design_state_digest, program.proposal.predecessor_program_digest)
+    # The record's declared materials, keyed by the component ids the program binds its objects to,
+    # and by the parts of a component one of whose parts declares its own.
+    material_by_component, material_by_part, material_colors = materials
     request = CadExecutionRequest(program, binding, workspace, f"{stage_id}@{program.program_digest[:12]}",
         provenance=provenance, backend_options=options.execution_options(), operation_observer=operation_observer,
-        observation_parent_id=observation_parent_id)
+        observation_parent_id=observation_parent_id,
+        material_by_component=dict(material_by_component) or None, material_colors=dict(material_colors) or None,
+        material_by_part=dict(material_by_part) or None)
 
     def summary(result, ref, *, path=None, seconds=None):
         artifacts = {a.name: a for a in result.artifacts}
@@ -1041,6 +1054,8 @@ def run_project(
         rows = element_rows_of(record)
     except ElementProducerError as exc:
         raise ProjectRunnerError(str(exc)) from exc
+    # What every export names its materials from: the components' own facets, never their ids or shapes.
+    materials = declared_materials(record)
     record_ref = put(STATE_RECORD, {**record.to_dict(), **no_authority(_AUTH)})
     levels_ref = put(PROJECT_LEVELS, {**levels.to_dict(), **no_authority(_AUTH)})
     grids_ref = put(PROJECT_GRIDS, {**grids.to_dict(), **no_authority(_AUTH)}).uri if grids is not None else None
@@ -1161,7 +1176,8 @@ def run_project(
                 cad = None
                 if options.export:
                     cad = _export(repository, run, branch, branch_destination, program, f"{stage_guard.envelope.stage_id}-{seat_id}", options,
-                                  {"target": "PROJECT_RUNNER", "workflow_stage_id": stage_guard.envelope.stage_id, "workflow_stage_index": str(stage_guard.envelope.stage_index), "stage_envelope_ref": stage_guard.envelope_record_ref.uri, "seat": seat_id, "candidate_status": "HOLD", "frame_semantics": "BUILDING_LOCAL_Y_UP", "state_record_ref": record_ref.uri}, source=sources.get(seat_id), operation_observer=operation_observer)
+                                  {"target": "PROJECT_RUNNER", "workflow_stage_id": stage_guard.envelope.stage_id, "workflow_stage_index": str(stage_guard.envelope.stage_index), "stage_envelope_ref": stage_guard.envelope_record_ref.uri, "seat": seat_id, "candidate_status": "HOLD", "frame_semantics": "BUILDING_LOCAL_Y_UP", "state_record_ref": record_ref.uri}, source=sources.get(seat_id), operation_observer=operation_observer,
+                                  materials=materials)
                 seat_status = "proposal_accepted" if cad is None or cad.get("status") == "succeeded" else "export_failed"
                 seat_result = SeatResult(seat_id, round_index, seat_status, program_ref.uri, program.program_digest, len(program.objects), covered, undeclared, issues, time.perf_counter() - t0, cad, declined=declined,
                                          declination_reasons={e.component_id: str(e.params.get("reason")) for e in own if e.producer == "declined"}, relation_check_ref=relation_check_ref)

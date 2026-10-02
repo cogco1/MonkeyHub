@@ -29,13 +29,18 @@ import {
   Material,
   Matrix3,
   Mesh,
+  MeshLambertMaterial,
   MeshStandardMaterial,
   Object3D,
   OrthographicCamera,
+  PCFShadowMap,
   PerspectiveCamera,
   Plane,
+  PlaneGeometry,
+  Quaternion,
   Raycaster,
   Scene,
+  ShadowMaterial,
   ShapeUtils,
   Sphere,
   SRGBColorSpace,
@@ -57,9 +62,12 @@ import {
 } from "./sceneInspection";
 import {
   DEFAULT_MODEL_DISPLAY_STYLE,
+  PRESENTATION_PALETTE,
+  UNDECLARED_HATCH,
   applyDisplayStyle,
   buildFeatureEdgeOverlay,
   captureModelAppearance,
+  declaresNoMaterial,
   disposeDisplayMaterials,
   disposeFeatureEdgeOverlay,
   fadeOpacity,
@@ -67,6 +75,7 @@ import {
   matchesSemanticCarrier,
   modelingPalette,
   prepareLoadedModel,
+  presentationLegend,
   restoreModelAppearance,
   restoreOpacity,
   savedObjectVisible,
@@ -75,6 +84,7 @@ import {
   type MaterialOpacity,
   type ModelAppearance,
   type ModelDisplayStyle,
+  type PresentationLegend,
   type SemanticHighlightTarget,
 } from "./modelDisplay";
 import { fitDistance } from "./fitCamera";
@@ -317,9 +327,11 @@ export interface ViewportController {
   /** Remove temporary display projections and restore the loaded file exactly. */
   showOriginal(): void;
   /**
-   * Paint the model in its file's own look or the pale Modeling look. A view
-   * preference only: it survives model loads, keeps the camera and the current
-   * selection, and never writes geometry, design state or the file's materials.
+   * Paint the model in its file's own look, the pale Modeling look or the
+   * Presentation look. A view preference only: it survives model loads, keeps
+   * the current selection, and never writes geometry, design state or the file's
+   * materials. Choosing a style keeps the camera; leaving Presentation stands the
+   * camera back exactly where it was when Presentation was chosen.
    */
   setDisplayStyle(style: ModelDisplayStyle): void;
   setLayerVisibility(index: number, visible: boolean): void;
@@ -429,7 +441,131 @@ interface ViewportRuntime {
   grid: GridHelper;
   nativeLights: Group;
   modelingLights: Group;
+  /** Presentation's sky, its sun and the ground that catches the sun's shadow (#562); shown only in Presentation. */
+  presentationStage: Group;
+  sun: DirectionalLight;
+  shadowGround: Mesh;
+  /** Where the view stood when Presentation was chosen, given back exactly when another style is. */
+  presentationCamera: CameraSnapshot | null;
+  /** Hands the component what Presentation's legend says now: null outside Presentation or without a model. */
+  presented: (legend: PresentationLegend | null) => void;
   render: () => void;
+}
+
+/** One camera's own pose and lens, as a snapshot keeps them. */
+interface CameraPose {
+  readonly position: Vector3;
+  readonly quaternion: Quaternion;
+  readonly up: Vector3;
+  readonly zoom: number;
+  readonly near: number;
+  readonly far: number;
+  readonly fov: number | null;
+}
+
+/** Where a view stood: which projection was on, both cameras' poses and lenses, and the orbit target. */
+interface CameraSnapshot {
+  readonly projection: ProjectionMode;
+  readonly target: Vector3;
+  readonly perspective: CameraPose;
+  readonly orthographic: CameraPose;
+}
+
+function cameraPose(camera: ViewCamera): CameraPose {
+  return { position: camera.position.clone(), quaternion: camera.quaternion.clone(), up: camera.up.clone(), zoom: camera.zoom,
+    near: camera.near, far: camera.far, fov: camera instanceof PerspectiveCamera ? camera.fov : null };
+}
+
+function snapshotCamera(runtime: ViewportRuntime): CameraSnapshot {
+  return { projection: projectionMode(runtime.camera), target: runtime.controls.target.clone(),
+    perspective: cameraPose(runtime.perspectiveCamera), orthographic: cameraPose(runtime.orthographicCamera) };
+}
+
+/**
+ * Stand the view exactly where a snapshot left it: both cameras' poses and lenses,
+ * the projection that was on, and the orbit target. The frame stays the viewport's
+ * own, which a resize may have changed since. The orbit's own update is not run:
+ * it would carry the pose through spherical coordinates and back.
+ */
+function restoreCamera(runtime: ViewportRuntime, snapshot: CameraSnapshot): void {
+  const poses: Array<[ViewCamera, CameraPose]> = [[runtime.perspectiveCamera, snapshot.perspective], [runtime.orthographicCamera, snapshot.orthographic]];
+  for (const [camera, pose] of poses) {
+    camera.position.copy(pose.position);
+    camera.quaternion.copy(pose.quaternion);
+    camera.up.copy(pose.up);
+    camera.zoom = pose.zoom;
+    camera.near = pose.near;
+    camera.far = pose.far;
+    if (camera instanceof PerspectiveCamera && pose.fov !== null) camera.fov = pose.fov;
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+  }
+  const camera = snapshot.projection === "orthographic" ? runtime.orthographicCamera : runtime.perspectiveCamera;
+  runtime.camera = camera;
+  runtime.controls.object = camera;
+  runtime.translation?.setCamera(camera);
+  runtime.controls.target.copy(snapshot.target);
+}
+
+/**
+ * Presentation's light (#562), after the offline look it previews: one sun from the front
+ * left and high - the direction that look lit its models from - over a sky fill and a warm
+ * grey ground. Three divides a light by π on a matte surface, so in the stand-ins' own
+ * terms a face square to the sun shows its colour itself (sky 0.48 + sun 0.6 × 0.87 ≈ 1),
+ * a wall turned from the sun about two thirds as bright in sRGB, and the sun's shadow keeps a
+ * fifth of its light: a shaded face still reads as the same material.
+ */
+const PRESENTATION_SUN = new Vector3(-1, -1.5, 3.2).normalize();
+const PRESENTATION_SKY = { sky: 0xffffff, ground: 0xbab6ad, intensity: 0.48 * Math.PI };
+const PRESENTATION_SUN_INTENSITY = 0.6 * Math.PI;
+/**
+ * The sun's shadow: a map of 2048 texels across the model's bounding sphere, softened by a
+ * four-texel filter; the ground under the model takes it at about a fifth of the paper.
+ */
+const PRESENTATION_SHADOW = { mapSize: 2048, intensity: 0.8, radius: 4, ground: 0.24 };
+
+/** Whether the export said this object's components declare no material: its own strings, nothing else. */
+function undeclaredObject(runtime: ViewportRuntime, object: Object3D): boolean {
+  return declaresNoMaterial(runtime.modelIndex?.identity(object)?.userStrings);
+}
+
+/**
+ * Stand Presentation's sun over the model on screen, at any scale: its shadow camera
+ * frames the model's bounding sphere as the sun sees it, so the whole map is spent on
+ * this model, and the bias that keeps a lit face from shadowing itself follows the size
+ * of a texel. The ground that catches the shadow lies just under the model's lowest
+ * point; it is not part of the model, so nothing picks, snaps to or frames it.
+ * Outside Presentation, or with nothing loaded, there is no ground.
+ */
+function placeSun(runtime: ViewportRuntime): void {
+  const { sun, shadowGround } = runtime;
+  const box = runtime.style === "presentation" && runtime.model ? new Box3().setFromObject(runtime.model) : null;
+  shadowGround.visible = box !== null && !box.isEmpty();
+  if (box === null || box.isEmpty()) return;
+  const sphere = box.getBoundingSphere(new Sphere());
+  const radius = Math.max(sphere.radius, 1e-3);
+  sun.target.position.copy(sphere.center);
+  sun.position.copy(sphere.center).addScaledVector(PRESENTATION_SUN, 2 * radius);
+  const frame = sun.shadow.camera;
+  frame.left = frame.bottom = -radius;
+  frame.right = frame.top = radius;
+  frame.near = radius * 0.5;
+  frame.far = radius * 6;
+  frame.updateProjectionMatrix();
+  sun.shadow.normalBias = 1.5 * (2 * radius) / sun.shadow.mapSize.x;
+  sun.shadow.bias = -0.0002;
+  sun.updateMatrixWorld();
+  sun.target.updateMatrixWorld();
+  shadowGround.position.set(sphere.center.x, sphere.center.y, box.min.z - radius * 1e-4);
+  shadowGround.scale.set(radius * 8, radius * 8, 1);
+  shadowGround.updateMatrixWorld();
+}
+
+/** The sun, the ground and the legend for what is on screen now: after a restyle, a new model or a clear. */
+function presentModel(runtime: ViewportRuntime): void {
+  placeSun(runtime);
+  runtime.presented(runtime.style === "presentation" && runtime.model && runtime.appearance
+    ? presentationLegend(runtime.model, runtime.appearance, (object) => undeclaredObject(runtime, object)) : null);
 }
 
 function createPreviewGroup(name: string, temporary = true): Group {
@@ -845,7 +981,8 @@ function isUnder(object: Object3D, root: Object3D): boolean {
  */
 function highlightMaterial(material: Material, accent: Color, own?: MaterialOpacity): Material {
   const copy = material.clone();
-  if (copy instanceof MeshStandardMaterial) {
+  // Presentation's matte surfaces are Lambert ones; they take the same lift.
+  if (copy instanceof MeshStandardMaterial || copy instanceof MeshLambertMaterial) {
     copy.emissive = new Color(accent);
     copy.emissiveIntensity = 0.22;
   }
@@ -917,15 +1054,22 @@ function resetDisplayStyle(runtime: ViewportRuntime): void {
   runtime.styleEdges = null;
 }
 
-/** The canvas and light rig that go with the chosen style and the shell's theme. */
+/**
+ * The canvas and light rig that go with the chosen style and the shell's theme.
+ * Each style has its own lights and only Presentation's sun casts a shadow, so
+ * choosing another style puts back exactly the canvas and lights it had.
+ */
 function paintStage(runtime: ViewportRuntime): void {
-  const modeling = runtime.style === "modeling";
-  runtime.background.set(modeling ? currentPalette().background : themeColours().viewport);
+  const modeling = runtime.style === "modeling", presentation = runtime.style === "presentation";
+  runtime.background.set(presentation ? PRESENTATION_PALETTE.background : modeling ? currentPalette().background : themeColours().viewport);
   // The grid lies 2 mm under Z=0 and shows through a pale face resting on the
-  // ground; the working look is a neutral canvas, so it goes. Original keeps it.
-  runtime.grid.visible = !modeling;
-  runtime.nativeLights.visible = !modeling;
+  // ground; the working look is a neutral canvas, so it goes, and Presentation's
+  // ground is the shadow it catches. Original keeps it.
+  runtime.grid.visible = runtime.style === "original";
+  runtime.nativeLights.visible = runtime.style === "original";
   runtime.modelingLights.visible = modeling;
+  runtime.presentationStage.visible = presentation;
+  runtime.renderer.shadowMap.enabled = presentation;
 }
 
 /**
@@ -941,13 +1085,16 @@ function restyleRuntime(runtime: ViewportRuntime): void {
   const blending = runtime.model !== null && runtime.secondary !== null && runtime.blendT !== null;
   if (blending) restoreOpacity(runtime.restore);
   resetDisplayStyle(runtime);
-  if (runtime.style === "modeling" && runtime.model && runtime.appearance) {
+  if (runtime.style !== "original" && runtime.model && runtime.appearance) {
     const palette = currentPalette();
-    applyDisplayStyle(runtime.model, runtime.appearance, "modeling", runtime.styled, palette);
-    runtime.styleEdges = buildFeatureEdgeOverlay(runtime.model, runtime.appearance, outlineEdges, palette, accentColour());
+    applyDisplayStyle(runtime.model, runtime.appearance, runtime.style, runtime.styled, palette,
+      (object) => undeclaredObject(runtime, object));
+    runtime.styleEdges = buildFeatureEdgeOverlay(runtime.model, runtime.appearance, outlineEdges,
+      runtime.style === "presentation" ? PRESENTATION_PALETTE : palette, accentColour());
     runtime.scene.add(runtime.styleEdges.group);
   }
   paintStage(runtime);
+  presentModel(runtime);
   applyHighlight(runtime, lit);
   if (blending) {
     fadeOpacity(materialsUnder(runtime.model!), runtime.restore, 1 - runtime.blendT!);
@@ -1226,13 +1373,20 @@ export const ThreeDmViewport = forwardRef<
 
   // The last style asked for, by prop or by the controller; a new runtime starts in it.
   const styleRef = useRef<ModelDisplayStyle>(displayStyle ?? DEFAULT_MODEL_DISPLAY_STYLE);
+  // What Presentation shows beside the model; null in the other styles and on an empty stage.
+  const [legend, setLegend] = useState<PresentationLegend | null>(null);
   const chooseDisplayStyle = useCallback((style: ModelDisplayStyle) => {
     styleRef.current = style;
     const runtime = runtimeRef.current;
     if (!runtime || runtime.style === style) return;
     clearHover(false);
+    const leaving = runtime.style === "presentation" ? runtime.presentationCamera : null;
     runtime.style = style;
+    // Presentation's views are its own: the view it was chosen in comes back exactly when it is left.
+    // A stage chosen empty remembers the view its first model opens in (openFiles).
+    runtime.presentationCamera = style === "presentation" && runtime.model ? snapshotCamera(runtime) : null;
     restyleRuntime(runtime);
+    if (leaving) restoreCamera(runtime, leaving);
     runtime.render();
   }, [clearHover]);
   useEffect(() => { if (displayStyle) chooseDisplayStyle(displayStyle); }, [chooseDisplayStyle, displayStyle]);
@@ -1283,6 +1437,7 @@ export const ThreeDmViewport = forwardRef<
     rebuildSnapIndex(runtime);
     runtime.modelBounds = null;
     runtime.appearance = null;
+    presentModel(runtime);
     runtime.render();
     callbacksRef.current.onInspection(null);
     reportStatus("idle", "No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm or .skp from this machine here");
@@ -1778,6 +1933,8 @@ export const ThreeDmViewport = forwardRef<
       // architect may have orbited while the replacement was being parsed.
       if (preserveCamera) runtime.render();
       else fitRuntime(runtime);
+      // Presentation chosen on an empty stage gives back, when it is left, the view its first model opened in.
+      if (runtime.style === "presentation" && runtime.presentationCamera === null) runtime.presentationCamera = snapshotCamera(runtime);
       const fallbackWarning = nurbsFallbackWarning(model);
       reportStatus(
         "ready",
@@ -2174,7 +2331,7 @@ export const ThreeDmViewport = forwardRef<
         const runtime = runtimeRef.current;
         if (!runtime || (!runtime.model && !runtime.draftObjects.size)) return null;
         return captureRenderView(runtime.scene, runtime.camera, runtime.controls.target,
-          runtime.perspectiveCamera.fov, runtime.renderer.toneMappingExposure);
+          runtime.perspectiveCamera.fov, runtime.renderer.toneMappingExposure, runtime.renderer.shadowMap.enabled);
       },
       camera: cameraState,
       unprojectOnPlane,
@@ -2295,6 +2452,8 @@ export const ThreeDmViewport = forwardRef<
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.toneMapping = ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
+    // Filtered (soft) shadow maps; paintStage turns them on for Presentation alone.
+    renderer.shadowMap.type = PCFShadowMap;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.domElement.className = "viewport-canvas";
     renderer.domElement.setAttribute("aria-label", "3DM model viewport");
@@ -2324,7 +2483,24 @@ export const ThreeDmViewport = forwardRef<
     modelingLights.name = "archflow-modeling-lights";
     modelingLights.visible = false;
     modelingLights.add(sky, sun);
-    scene.add(nativeLights, modelingLights);
+    // Presentation (#562): a sky fill, one sun that casts the only shadow in the viewer, and a
+    // ground that shows nothing but that shadow. placeSun stands them over each model.
+    const presentationSky = new HemisphereLight(PRESENTATION_SKY.sky, PRESENTATION_SKY.ground, PRESENTATION_SKY.intensity);
+    presentationSky.position.set(0, 0, 1);
+    const presentationSun = new DirectionalLight(0xffffff, PRESENTATION_SUN_INTENSITY);
+    presentationSun.castShadow = true;
+    presentationSun.shadow.mapSize.set(PRESENTATION_SHADOW.mapSize, PRESENTATION_SHADOW.mapSize);
+    presentationSun.shadow.intensity = PRESENTATION_SHADOW.intensity;
+    presentationSun.shadow.radius = PRESENTATION_SHADOW.radius;
+    const shadowGround = new Mesh(new PlaneGeometry(1, 1), new ShadowMaterial({ opacity: PRESENTATION_SHADOW.ground, depthWrite: false }));
+    shadowGround.name = "archflow-presentation-ground";
+    shadowGround.receiveShadow = true;
+    shadowGround.visible = false;
+    const presentationStage = new Group();
+    presentationStage.name = "archflow-presentation-stage";
+    presentationStage.visible = false;
+    presentationStage.add(presentationSky, presentationSun, presentationSun.target, shadowGround);
+    scene.add(nativeLights, modelingLights, presentationStage);
 
     let grid = buildGrid(themeColours());
     scene.add(grid);
@@ -2414,6 +2590,11 @@ export const ThreeDmViewport = forwardRef<
       grid,
       nativeLights,
       modelingLights,
+      presentationStage,
+      sun: presentationSun,
+      shadowGround,
+      presentationCamera: null,
+      presented: setLegend,
       render,
     };
     runtimeRef.current = runtime;
@@ -2481,6 +2662,9 @@ export const ThreeDmViewport = forwardRef<
       media.removeEventListener("change", applyTheme);
       themeObserver.disconnect();
       disposeGrid(grid);
+      shadowGround.geometry.dispose();
+      shadowGround.material.dispose();
+      presentationSun.shadow.dispose();
       // Give the WebGL context back now, not at garbage collection: past the browser's
       // limit the oldest live context is lost, and that is a view still mounted, such as
       // Modeling hidden behind a comparison. A hidden view never reaches this cleanup.
@@ -2564,7 +2748,59 @@ export const ThreeDmViewport = forwardRef<
           {t(`stage.snap.${snapFeedback.kind}`)}{snapFeedback.projected ? ` · ${t("stage.snap.projected")}` : ""}
         </span>
       </div>}
+      {/* #562: while Presentation shows a model, its orthographic views and what its colours are. */}
+      {legend && <div data-presentation style={{ position: "absolute", top: 12, right: 12, zIndex: 5, display: "grid", justifyItems: "end",
+        gap: 6, maxWidth: "min(300px, calc(100% - 24px))", pointerEvents: "none" }}>
+        <div className="viewtools" role="group" aria-label={t("stage.presentation.views")} style={{ pointerEvents: "auto" }}>
+          {PRESENTATION_VIEWS.map(([view, standard]) => <button type="button" key={view} data-presentation-view={view}
+            title={t(`stage.presentation.${view}Title`)} onClick={() => {
+              const runtime = runtimeRef.current;
+              if (runtime) standardRuntime(runtime, standard);
+            }}>{t(`stage.presentation.${view}`)}</button>)}
+        </div>
+        {/* Folded by default, so the picture stays clear; the line still says how many objects are hatched. */}
+        <details data-presentation-legend style={{ maxWidth: "100%", padding: "5px 9px", border: "1px solid var(--line)", borderRadius: "var(--radius-lg)",
+          background: "var(--overlay)", color: "var(--ink-2)", fontSize: "calc(11px * var(--font-scale, 1))", pointerEvents: "auto" }}>
+          <summary style={{ cursor: "pointer", whiteSpace: "nowrap" }}>
+            {t("stage.presentation.legendSummary", { count: legend.materials.length })}
+            {legend.undeclared > 0 && <span title={t("stage.presentation.undeclared", { count: legend.undeclared })}
+              style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 8 }}>
+              <span aria-hidden="true" style={{ ...LEGEND_SWATCH, background: UNDECLARED_SWATCH }} />{legend.undeclared}</span>}
+          </summary>
+          <ul aria-label={t("stage.presentation.legend")} style={{ display: "grid", gap: 3, margin: "6px 0 1px", padding: 0, listStyle: "none",
+            maxHeight: "40vh", overflowY: "auto" }}>
+            {legend.materials.map(({ name, colour }) => <li key={`${name} ${colour}`} data-material={name} title={colour}
+              style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              <span aria-hidden="true" style={{ ...LEGEND_SWATCH, background: colour }} />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+            </li>)}
+            {legend.undeclared > 0 && <li data-undeclared={legend.undeclared} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span aria-hidden="true" style={{ ...LEGEND_SWATCH, background: UNDECLARED_SWATCH }} />
+              {t("stage.presentation.undeclared", { count: legend.undeclared })}
+            </li>}
+            {legend.materials.length === 0 && legend.undeclared === 0 && <li>{t("stage.presentation.noMaterials")}</li>}
+          </ul>
+        </details>
+      </div>}
       {dragActive && <div className="drop-target">Release to open locally</div>}
     </div>
   );
 });
+
+/** Presentation's camera presets: orthographic front, side (from the right) and axonometric, the viewer's own standard views. */
+const PRESENTATION_VIEWS: ReadonlyArray<readonly ["front" | "side" | "axonometric", StandardView]> = [
+  ["front", "front"], ["side", "right"], ["axonometric", "iso"],
+];
+
+const LEGEND_SWATCH = { flex: "none", width: 11, height: 11, border: "1px solid rgba(0, 0, 0, 0.18)", borderRadius: 2 } as const;
+
+/**
+ * The legend's picture of the undeclared hatch: the same thin diagonal lines over a neutral grey. The
+ * hatch darkens light before the sRGB encoding; the swatch's black is laid over encoded colour, so it
+ * takes the encoded share of that darkening.
+ */
+const UNDECLARED_SWATCH = (() => {
+  const line = (UNDECLARED_HATCH.width / Math.SQRT2).toFixed(2), period = (UNDECLARED_HATCH.spacing / Math.SQRT2).toFixed(2);
+  const shade = (1 - (1 - UNDECLARED_HATCH.depth) ** (1 / 2.2)).toFixed(3);
+  return `repeating-linear-gradient(45deg, rgba(0, 0, 0, ${shade}) 0 ${line}px, transparent ${line}px ${period}px), #c9c6bf`;
+})();

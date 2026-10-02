@@ -40,6 +40,8 @@ export default function ModelPreview({ active, readView, onModeling, onCapture, 
             renderer.setSize(width, height); lastWidth = width; lastHeight = height;
           }
           renderer.toneMappingExposure = view.exposure;
+          // Presentation's sun casts shadows in Modeling (#562); the preview shows the still a capture makes.
+          renderer.shadowMap.enabled = view.shadows === true;
           renderer.domElement.hidden = false;
           renderer.render(view.scene, view.camera);
         } else if (renderer) renderer.domElement.hidden = true;

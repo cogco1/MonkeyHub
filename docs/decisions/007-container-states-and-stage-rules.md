@@ -8,7 +8,7 @@ maps to exactly one place in the P036 layout:
 | Work in progress | `input/runner/state-record.json` (and `seats.json`), the designer's authored files | the designer; read by one module, never digested by the repository |
 | Shared | `runs/<run_id>/` — the exact record used (`state-record`), the developed state, programs, checks, receipts | the runner, through `put_json` |
 | Published | `HEAD` — the one compare-and-swap position | `prepare_transition` + `compare_and_swap`, from a `PromotionDecision@1` |
-| Archived | superseded `canonical/state-v…` snapshots and old runs | nobody deletes; the chain is the archive |
+| Archived | superseded `canonical/state-v…` snapshots and old runs | nobody deletes; the chain is the archive. Amended by #575 (owner decision 2026-10-01): a draft the line superseded or a failed attempt that nothing refers to moves whole into the project's `trash/`, restorable for 30 days and then purged; line steps, Stages, admitted results and the canonical chain never do |
 
 The act that moves a run to Published is called an **issue** (出图), never "moving HEAD"; `HEAD` remains
 the file name the repository format owns, and nothing else uses the word. A run that passed every

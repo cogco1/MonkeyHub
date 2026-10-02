@@ -43,6 +43,8 @@ import {
   readWorkingSourceApiWorkingSourceGet,
   readRepresentationStatusApiRepresentationStatusGet,
   readWorktreesApiWorktreesGet,
+  readProjectTrashApiTrashGet,
+  restoreFromTrashApiTrashRestorePost,
   selectCurrentWorkingDraftApiWorkingDraftPut,
   saveCurrentWorkingDraftApiWorkingDraftSavePost,
   retainLocalWorkingDraftApiWorkingDraftLocalPut,
@@ -105,6 +107,7 @@ import {
 } from "./generated";
 import type {
   WorkingDraftDto, WorkingRevisionDto, WorkingSourceDto, WorktreeGraphDto, WorkingDraftSelectionDto, WorkingDraftSaveDto, LocalDraftRequestDto,
+  ProjectTrashDto, TrashRestoreDto, TrashRestoreRequestDto,
   RepresentationStatusDto,
   BoardDto, BoardExportRequestDto, BoardRequestDto,
   DesignHistoryDto, DesignStageDto, DesignBranchDto,
@@ -196,7 +199,8 @@ function base64Of(buffer: ArrayBuffer): string {
 
 /**
  * The polled views the runtime answers conditionally (#363): design history,
- * worktrees, artifacts, documents, working source, board and render jobs. The
+ * worktrees, artifacts, documents, working source, board, render jobs and the
+ * project trash. The
  * last 200 of each, by its path and query, is kept with its ETag for the
  * KEPT_VIEWS views read most recently; a refresh sends `If-None-Match`, and a
  * 304 answers with the very object kept, so a caller can tell by identity that
@@ -310,6 +314,14 @@ export const createStudioClient = (connection: ServerConnection) => ({
   /** Read-only: the Working Head, running work, other lines and whether they reconcile. */
   worktrees(signal?: AbortSignal): Promise<WorktreeGraphDto> {
     return conditional(connection)("GET /api/worktrees", {}, (headers) => readWorktreesApiWorktreesGet({ client: connection.client, headers }), signal);
+  },
+  /** The project trash (#575): superseded drafts and failed attempts moved out whole, restorable until purged. */
+  trash(signal?: AbortSignal): Promise<ProjectTrashDto> {
+    return conditional(connection)("GET /api/trash", {}, (headers) => readProjectTrashApiTrashGet({ client: connection.client, headers }), signal);
+  },
+  /** Brings one trashed run back as it left, with any trashed run it was made from; it is never cleaned again. */
+  restoreTrashed(body: TrashRestoreRequestDto): Promise<TrashRestoreDto> {
+    return call("POST /api/trash/restore", restoreFromTrashApiTrashRestorePost({ client: connection.client, body }));
   },
   selectWorkingDraft(body: WorkingDraftSelectionDto): Promise<WorkingDraftDto> {
     return call("PUT /api/working-draft", selectCurrentWorkingDraftApiWorkingDraftPut({ client: connection.client, body }));

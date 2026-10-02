@@ -1291,6 +1291,65 @@ class OcctExportTests(unittest.TestCase):
         self.assertEqual(again["closure_status"], "SATISFIED")
         self.assertEqual(len(project.files("seat-structure")), 4)
 
+    def test_the_records_declared_materials_reach_every_seats_preview(self) -> None:
+        """#560: each export names what the record's components declare, one material per name in one colour."""
+
+        import rhino3dm
+
+        def declaring(record, facets):
+            # Facets ride on a plain Component@1, as the Studio authors one; a frozen
+            # DesignComponent@1 payload is taken exactly and holds no other key.
+            return replace(record, entities=tuple(
+                replace(e, fields={**{k: v for k, v in e.fields.items() if k != "schema"}, "facets": facets[e.entity_id]})
+                if e.entity_id in facets else e
+                for e in record.entities))
+
+        # facets are construction-first meaning: a record that declares no massing, as the Studio's are
+        plain = _geometry_only(_record(elements=("wall-south",), extra_entities=(_prism_row(),)))
+        # two components of one material in two seats; the colour is stated on one of them
+        record = declaring(plain, {"portico-columns": {"material.name": "limestone", "material.color": "#D8D0C0"},
+                                   "exterior-walls": {"material.name": "limestone"}})
+        project = _ExportProject(self, record)
+        receipt = project.run_once()
+        self.assertTrue(receipt["seat_execution_complete"], receipt["seat_results"])
+
+        def previews(run_receipt):
+            for seat in run_receipt["seat_results"]:
+                if seat.get("cad"):
+                    preview = project.workspace(seat["seat_id"]) / seat["cad"]["preview_artifact"]["relative_path"]
+                    yield seat["seat_id"], seat["cad"], rhino3dm.File3dm.Read(str(preview))
+
+        seen = 0
+        for seat_id, cad, model in previews(receipt):
+            seen += 1
+            with self.subTest(seat=seat_id):
+                self.assertEqual([(m.Name, tuple(m.DiffuseColor)[:3]) for m in model.Materials], [("limestone", (216, 208, 192))])
+                self.assertTrue(len(model.Objects))
+                for obj in model.Objects:
+                    self.assertEqual((obj.Attributes.MaterialSource, obj.Attributes.MaterialIndex),
+                                     (rhino3dm.ObjectMaterialSource.MaterialFromObject, 0), obj.Attributes.Name)
+                    self.assertEqual(obj.Attributes.GetUserString("archflow:material"), "limestone")
+                retained = project.repository.load_json(record_ref_from_uri(cad["execution_ref"], "demo"))
+                self.assertEqual({row["name"] for row in retained["preview_artifact"]["materials"].values()}, {"limestone"})
+        self.assertEqual(seen, 2)
+
+        # the same record without its facets: every object says its material is undeclared and wears none
+        bare = project.run_once(plain)
+        for seat_id, cad, model in previews(bare):
+            with self.subTest(seat=seat_id, facets=False):
+                self.assertEqual(cad["path"], "occt")
+                self.assertEqual(len(model.Materials), 0)
+                for obj in model.Objects:
+                    self.assertEqual(obj.Attributes.GetUserString("archflow:material_status"), "undeclared")
+
+        # another colour for the same material is another export, never the earlier file reused
+        recoloured = declaring(plain, {"portico-columns": {"material.name": "limestone", "material.color": "#A09080"},
+                                       "exterior-walls": {"material.name": "limestone"}})
+        again = project.run_once(recoloured)
+        for seat_id, cad, model in previews(again):
+            with self.subTest(seat=seat_id, colour="#A09080"):
+                self.assertEqual([(m.Name, tuple(m.DiffuseColor)[:3]) for m in model.Materials], [("limestone", (160, 144, 128))])
+
     def test_the_same_program_in_the_same_run_reuses_the_verified_files_and_nothing_else(self) -> None:
         project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)))
         first = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}

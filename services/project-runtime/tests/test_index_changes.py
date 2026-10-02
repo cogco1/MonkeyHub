@@ -207,12 +207,16 @@ class IndexChangesTests(DesignHistoryFixture):
 
     def test_each_commit_is_announced_on_the_event_stream(self) -> None:
         events = self.app_.state.events
+        before = self.snapshot()["revision"]
         revision = int(self.write("plan.png").headers["x-monkey-index"].split(":")[1])
 
         self.assertTrue(wait_until(lambda: any(
             event["type"] == "index.committed" and event["revision"] >= revision for event in events.replay()), 10))
-        committed = [event for event in events.replay() if event["type"] == "index.committed"]
-        self.assertIn("run", committed[-1]["domains"])
+        # The write's own commits, not the last one: the watcher commits the
+        # objects the write stored about 60 ms after it answered.
+        committed = [event for event in events.replay()
+                     if event["type"] == "index.committed" and before < event["revision"] <= revision]
+        self.assertIn("run", {domain for event in committed for domain in event["domains"]})
         self.assertEqual(committed[-1]["epoch"], self.snapshot()["epoch"])
 
     def test_a_process_that_keeps_no_index_says_so(self) -> None:

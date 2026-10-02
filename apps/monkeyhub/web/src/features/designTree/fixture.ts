@@ -9,9 +9,13 @@
  * lineage, Stage acceptance, the working position, rejected results) and
  * answers Continue and Accept the way the existing routes do, so browser and
  * unit tests can serve it from a stubbed runtime. Everything in it is invented.
+ * `unadmittedLineFacts` is a second project (#575): nothing admitted or
+ * staged, one line of continued runs, and two drafts that line superseded;
+ * its Worktree Graph names the line and the drafts as the runtime does, and
+ * `clean` moves drafts into its project trash as the runtime's sweep would.
  */
-import type { DesignBranchDto, DesignCandidateDto, DesignHistoryDto, DesignStageDto, DesignStudyDto, WorkingDraftDto, WorkingHeadDto,
-  WorkingSourceDto, WorktreeGraphDto, WorktreeLineDto } from "../../api/project-runtime/generated";
+import type { DesignBranchDto, DesignCandidateDto, DesignHistoryDto, DesignStageDto, DesignStudyDto, LineStepDto, ProjectTrashDto, TrashEntryDto,
+  TrashRestoreDto, WorkingDraftDto, WorkingHeadDto, WorkingSourceDto, WorktreeGraphDto, WorktreeLineDto } from "../../api/project-runtime/generated";
 
 export const FIXTURE_PROJECT = "riverside-library";
 const ref = (run: string, record = "design-stage") => `project://${FIXTURE_PROJECT}/runs/${run}/review/${record}.json`;
@@ -61,13 +65,25 @@ export interface DesignTreeFixtureState {
   /** Results the architect turned down: never Candidates, and never a Stage. */
   readonly rejected: Set<string>;
   running: RunningFact[];
-  branchHead: string;
+  /** The main line's newest Stage; null in a project with no Stage and so no line yet. */
+  branchHead: string | null;
   head: string;
   /** No saved working position: the line's accepted head answers for the Working Head, as before any Continue. */
   followsLine: boolean;
   revision: number;
   /** Modeling's edits the working draft holds and no candidate has recorded yet; they hold Continue back. */
   localDraft: WorkingDraftDto["localDraft"];
+  /** #575: the names saved versions gave runs, and the words that asked for runs, as the Worktree Graph's line reads them. */
+  readonly labels: Map<string, string>;
+  readonly requests: Map<string, string>;
+  /** #575: the retained working results; the Worktree Graph lists those off Current's line. */
+  readonly results: string[];
+  /** #575: runs the Working Head once stood on (each Continue leaves an event beside its run). */
+  readonly continued: Set<string>;
+  /** #575: results whose comparison with Current's line conflicts: they changed what it changed. */
+  readonly conflicting: Set<string>;
+  /** #575: the project trash, oldest first; absent until something is cleaned. */
+  trashed?: TrashEntryDto[];
 }
 
 export class FixtureRefusal extends Error {
@@ -132,6 +148,45 @@ export function riversideLibraryFacts(): DesignTreeFixtureState {
     followsLine: false,
     revision: 1,
     localDraft: null,
+    labels: new Map(),
+    requests: new Map(),
+    results: [],
+    continued: new Set(),
+    conflicting: new Set(),
+  };
+}
+
+/**
+ * A project that admitted and staged nothing (#575), shaped like the owner's thi-hemp-study-01: outside
+ * agents made each run through the runtime API and the person continued them one after another from the
+ * project start; two earlier attempts at the third version were built on the second and never taken further.
+ */
+export function unadmittedLineFacts(): DesignTreeFixtureState {
+  const start = "studio-projection";
+  const runs = new Map<string, RunFact>([
+    [start, { parent: null, sourceStage: null }],
+    ["run-site-massing", { parent: start, sourceStage: null }],
+    ["run-v1", { parent: "run-site-massing", sourceStage: null }],
+    ["run-v2", { parent: "run-v1", sourceStage: null }],
+    ["run-v3-closed", { parent: "run-v2", sourceStage: null }],
+    ["run-v3-glazed", { parent: "run-v2", sourceStage: null }],
+    ["run-v3", { parent: "run-v2", sourceStage: null }],
+    ["run-v3-materials", { parent: "run-v3", sourceStage: null }],
+  ]);
+  return {
+    runs, stages: [], candidates: [], studies: [], rejected: new Set(), running: [], branchHead: null,
+    head: "run-v3-materials", followsLine: false, revision: 1, localDraft: null,
+    labels: new Map([
+      ["run-v1", "V1 - timber frame and hemp walls"],
+      ["run-v2", "V2 - pitched roof, open gable ends"],
+      ["run-v3", "V3 - ribbed roof, open side triangles"],
+      ["run-v3-closed", "V3 - closed wall and simple mono-pitch roof"],
+      ["run-v3-glazed", "V3 - ribbed roof, open side triangles, full-width glazing"],
+    ]),
+    requests: new Map([["run-v3-materials", "Give V3's walls and ribs their materials"]]),
+    results: [...runs.keys()].filter((run) => run !== start),
+    continued: new Set(["run-site-massing", "run-v1", "run-v2", "run-v3", "run-v3-materials"]),
+    conflicting: new Set(["run-v3-closed", "run-v3-glazed"]),
   };
 }
 
@@ -154,11 +209,47 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
     }
     return out;
   };
+  const lineId = () => state.branchHead === null ? null : "main";
   const head = (): WorkingHeadDto => {
     const stage = stageOfRun(state.head);
     return { runId: state.head, stateDigest: digest(`state:${state.head}`), recordDigest: digest(`record:${state.head}`),
-      sourceStageRef: stage ? stage.ref : state.runs.get(state.head)?.sourceStage ?? null, branchId: "main", accepted: stage !== null,
-      origin: state.followsLine ? "branch-head" : "working-position", label: null, modelSource: modelSource(state.head), lineage: lineageOf(state.head) };
+      sourceStageRef: stage ? stage.ref : state.runs.get(state.head)?.sourceStage ?? null, branchId: lineId(), accepted: stage !== null,
+      origin: state.followsLine ? "branch-head" : "working-position", label: state.labels.get(state.head) ?? null,
+      modelSource: modelSource(state.head), lineage: lineageOf(state.head) };
+  };
+  /** #575: Current's line as the Worktree Graph names it, oldest first, each run in its retained words. */
+  const line = (): LineStepDto[] => lineageOf(state.head).reverse().map((run) => {
+    const option = state.candidates.find((candidate) => candidate.run === run);
+    return { runId: run, baseRunId: state.runs.get(run)?.parent ?? null,
+      label: state.labels.get(run) ?? stageOfRun(run)?.label ?? option?.label ?? null, request: state.requests.get(run) ?? null,
+      summary: option?.summary ?? null, stageRef: stageOfRun(run)?.ref ?? null, updatedAt: null };
+  });
+  /**
+   * #575: the retained results off Current's line, as the runtime reads them: a diverged result whose source the
+   * line moved on from, which conflicts with it and which nobody continued or admitted (nor anything built on it), is
+   * superseded by the step made from that source.
+   */
+  const resultLines = (steps: readonly LineStepDto[]): WorktreeLineDto[] => {
+    const inHead = new Set(lineageOf(state.head));
+    const admitted = new Set([...state.candidates.map((candidate) => candidate.run), ...state.stages.map((stage) => stage.run)]);
+    const movedOn = new Map(steps.filter((step) => step.baseRunId !== null).map((step) => [step.baseRunId!, step.runId]));
+    const rows = state.results.filter((run) => !inHead.has(run)).map((run) => {
+      const lineage = lineageOf(run);
+      const ancestor = lineage.includes(state.head) ? state.head : lineage.slice(1).find((other) => inHead.has(other)) ?? null;
+      return { run, lineage, ancestor, relation: lineage.includes(state.head) ? "ahead" as const : ancestor ? "diverged" as const : "separate" as const };
+    });
+    const kept = new Set(rows.filter((row) => row.relation === "diverged" && (admitted.has(row.run) || state.continued.has(row.run)))
+      .flatMap((row) => row.lineage));
+    return rows.map(({ run, ancestor, relation }): WorktreeLineDto => {
+      const conflict = relation === "diverged" && state.conflicting.has(run);
+      const supersededBy = conflict && ancestor && movedOn.has(ancestor) && !kept.has(run) ? movedOn.get(ancestor)! : null;
+      return { lineId: `result:${run}`, kind: "result", runId: run, jobId: null, label: state.labels.get(run) ?? null,
+        baseRunId: state.runs.get(run)?.parent ?? null, baseStageRef: state.runs.get(run)?.sourceStage ?? null, branchId: null, status: "ready",
+        relation: supersededBy ? "superseded" : relation, reads: [], writes: ["entity:roof"],
+        reconcile: relation === "diverged" ? conflict ? "conflict" : "can-combine" : relation === "ahead" ? "none" : "unknown",
+        conflicts: conflict ? ["entity:roof"] : [], detail: null, updatedAt: null,
+        admission: admitted.has(run) ? "admitted" : "none", studyId: null, supersededBy };
+    });
   };
   const stageDto = (stage: StageFact): DesignStageDto => ({
     stageRef: stage.ref, parentStageRef: stage.parent, branchId: "main", label: stage.label, candidateId: stage.run,
@@ -166,11 +257,42 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
     acceptance: { eventId: `audit-${stage.run}`, occurredAt: stage.acceptedAt, action: "design.accepted", status: "accepted",
       actorId: stage.acceptedBy, authenticated: false, origin: "studio", auditRef: ref(stage.run, "audit-event") },
   });
+  const RETENTION_DAYS = 30;
   return {
     state,
+    /** #575: the runtime's sweep, for these runs: each leaves the results for the trash, with what superseded it. */
+    clean(runIds: readonly string[], trashedAt = "2026-10-01T09:00:00+00:00"): void {
+      const superseded = new Map(resultLines(line()).map((row) => [row.runId, row.supersededBy]));
+      const expires = new Date(Date.parse(trashedAt) + RETENTION_DAYS * 24 * 3600 * 1000).toISOString();
+      for (const run of runIds) {
+        const at = state.results.indexOf(run);
+        if (at < 0) throw new FixtureRefusal(409, "RUN_NOT_TRASHED", `${run} is no retained result.`);
+        state.results.splice(at, 1);
+        state.trashed = [...state.trashed ?? [], { runId: run, trashedAt, expiresAt: expires, rule: "superseded",
+          reason: "Built where the line moved on; nobody continued or admitted it.", supersededBy: superseded.get(run) ?? null,
+          baseRunId: state.runs.get(run)?.parent ?? null, label: state.labels.get(run) ?? null, stateDigest: digest(`state:${run}`) }];
+      }
+      state.revision += 1;
+    },
+    /** GET /api/trash. */
+    trash(): ProjectTrashDto {
+      return { projectId: FIXTURE_PROJECT, retentionDays: RETENTION_DAYS, entries: [...state.trashed ?? []] };
+    },
+    /** POST /api/trash/restore: the run is a retained result again, exactly as before. */
+    restoreTrashed(body: { projectId: string; runId: string }): TrashRestoreDto {
+      if (body.projectId !== FIXTURE_PROJECT) throw new FixtureRefusal(409, "PROJECT_MISMATCH", "The request belongs to another project.");
+      if (!(state.trashed ?? []).some((entry) => entry.runId === body.runId)) {
+        throw new FixtureRefusal(404, "TRASH_ENTRY_NOT_FOUND", `The project trash holds no run ${body.runId}.`);
+      }
+      state.trashed = (state.trashed ?? []).filter((entry) => entry.runId !== body.runId);
+      state.results.push(body.runId);
+      state.revision += 1;
+      return { projectId: FIXTURE_PROJECT, restored: [body.runId], trash: this.trash() };
+    },
     designHistory(branchId = "main"): DesignHistoryDto {
       if (branchId !== "main") throw new FixtureRefusal(404, "DESIGN_BRANCH_NOT_FOUND", "The design branch does not exist.");
-      const branch: DesignBranchDto = { branchId: "main", parentBranch: null, forkStageRef: S0, headStageRef: state.branchHead };
+      const branches: DesignBranchDto[] = state.branchHead === null ? []
+        : [{ branchId: "main", parentBranch: null, forkStageRef: S0, headStageRef: state.branchHead }];
       const inHead = new Set(lineageOf(state.head));
       const candidates: DesignCandidateDto[] = state.candidates.map((candidate) => ({
         candidateId: candidate.run, outcome: "admitted", label: candidate.label, summary: candidate.summary,
@@ -188,7 +310,7 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
           admittedAt: stage.acceptedAt, admissionRef: stage.ref, legacy: "stage", acceptedStageRef: stage.ref, continuedFrom: null,
           inWorkingHeadLineage: inHead.has(stage.run), blockedBy: [], supersedes: [] });
       }
-      return { projectId: FIXTURE_PROJECT, branches: [branch], branchId: "main", stages: historyOrder().map(stageDto),
+      return { projectId: FIXTURE_PROJECT, branches, branchId: "main", stages: historyOrder().map(stageDto),
         candidates, studies: state.studies.map((study) => ({ ...study, candidateIds: [...study.candidateIds] })), warnings: [] };
     },
     workingSource(workspace: WorkingSourceDto["workspace"] = "modeling"): WorkingSourceDto {
@@ -201,23 +323,26 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
       const admitted = state.candidates.find((candidate) => candidate.run === state.head);
       const verdict: WorktreeLineDto["admission"] = state.rejected.has(state.head) ? "rejected"
         : admitted || stageOfRun(state.head) ? "admitted" : "none";
+      const steps = line();
       const lines: WorktreeLineDto[] = [
-        { lineId: `head:${state.head}`, kind: "head", runId: state.head, jobId: null, label: null, baseRunId: null, baseStageRef: null,
-          branchId: "main", status: "current", relation: "head", reads: [], writes: [], reconcile: "none", conflicts: [], detail: null, updatedAt: null,
-          admission: verdict, studyId: admitted?.studyId ?? null },
+        { lineId: `head:${state.head}`, kind: "head", runId: state.head, jobId: null, label: state.labels.get(state.head) ?? null,
+          baseRunId: state.runs.get(state.head)?.parent ?? null, baseStageRef: null, branchId: lineId(), status: "current", relation: "head", reads: [],
+          writes: [], reconcile: "none", conflicts: [], detail: null, updatedAt: null, admission: verdict, studyId: admitted?.studyId ?? null,
+          supersededBy: null },
         // Running work has no verdict yet.
         ...state.running.map((line): WorktreeLineDto => ({
           lineId: line.lineId, kind: "running", runId: null, jobId: line.lineId.replace(/^running:/, ""), label: line.label, baseRunId: line.base,
           baseStageRef: stageOfRun(line.base)?.ref ?? state.runs.get(line.base)?.sourceStage ?? null, branchId: null, status: line.status,
           relation: "ahead", reads: [], writes: [], reconcile: "unknown", conflicts: [], detail: line.detail, updatedAt: "2026-09-25T21:40:00Z",
-          admission: "none", studyId: null })),
+          admission: "none", studyId: null, supersededBy: null })),
+        ...resultLines(steps),
       ];
-      return { projectId: FIXTURE_PROJECT, head: current, revisionSha256: revision(), lines, representations: [], warnings: [] };
+      return { projectId: FIXTURE_PROJECT, head: current, revisionSha256: revision(), line: steps, lines, representations: [], warnings: [] };
     },
     workingDraft(): WorkingDraftDto {
       const current = head();
       return { projectId: FIXTURE_PROJECT, revisionSha256: revision(), current: state.followsLine ? null : { runId: state.head,
-        sourceStageRef: current.sourceStageRef ?? null, branchId: "main", updatedAt: "2026-09-25T22:00:00Z", label: null },
+        sourceStageRef: current.sourceStageRef ?? null, branchId: lineId(), updatedAt: "2026-09-25T22:00:00Z", label: null },
         recovery: [], saved: [], managedRunIds: [], localDraft: state.localDraft };
     },
     /** PUT /api/working-draft: the Working Head moves to an exact finished run, or back to the line's head with none. */
@@ -226,7 +351,11 @@ export function createDesignTreeFixture(state: DesignTreeFixtureState = riversid
       if (body.baseRevisionSha256 !== revision()) throw new FixtureRefusal(409, "WORKING_DRAFT_STALE", "The working position changed; read it before selecting another source.");
       if (body.runId !== null && !state.runs.has(body.runId)) throw new FixtureRefusal(409, "WORKING_DRAFT_UNAVAILABLE", "This run has no exact finished state to continue.");
       state.followsLine = body.runId === null;
-      state.head = body.runId ?? state.stages.find((stage) => stage.ref === state.branchHead)!.run;
+      // Without a run, the line's accepted head answers; without a line, the project's start.
+      state.head = body.runId ?? state.stages.find((stage) => stage.ref === state.branchHead)?.run
+        ?? [...state.runs].find(([, run]) => run.parent === null)![0];
+      // A move onto a run leaves its Continue event beside it.
+      if (body.runId !== null) state.continued.add(body.runId);
       state.revision += 1;
       return this.workingDraft();
     },

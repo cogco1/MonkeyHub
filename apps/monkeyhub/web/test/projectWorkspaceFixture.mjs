@@ -4,7 +4,10 @@ import rhino3dm from "rhino3dm";
 
 // Fixtures for the actual Hub-mounted workspace components. The API boundary,
 // project identity and model bytes are real shapes; no substitute page is used.
-export async function createProjectWorkspaceFixture(runtimes, sessions, { onIndex = () => {} } = {}) {
+// `model(rhino, { projectId, runId })` may write a run's 3DM itself (a File3dm, which
+// the fixture serialises and deletes); without one, or when it returns null, a run's
+// model is one floor square named `floor-<project>-<run>`.
+export async function createProjectWorkspaceFixture(runtimes, sessions, { onIndex = () => {}, model: writeModel = null } = {}) {
   const rhino = await rhino3dm(), projects = new Map(), requests = [];
   // Projects whose runtime keeps a working draft (autosave), by project id:
   // { revisionSha256, current, localDraft, writes, hold, failure }. A test may set
@@ -79,11 +82,19 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
     const home = `home-${id}`, assets = new Map();
     const artifact = (runId) => {
       if (assets.has(runId)) return assets.get(runId).dto;
-      const model = new rhino.File3dm(), mesh = new rhino.Mesh(), attributes = new rhino.ObjectAttributes();
-      mesh.vertices().add(0, 0, 0); mesh.vertices().add(2, 0, 0); mesh.vertices().add(2, 2, 0); mesh.vertices().add(0, 2, 0);
-      mesh.faces().addQuadFace(0, 1, 2, 3); attributes.name = `floor-${id}-${runId}`; model.objects().add(mesh, attributes);
-      const bytes = Buffer.from(model.toByteArray()), sha256 = digest(bytes), stateDigest = stateDigestOf(id, runId);
-      model.delete(); mesh.delete(); attributes.delete();
+      const written = writeModel?.(rhino, { projectId: id, runId }) ?? null;
+      let bytes;
+      if (written) {
+        bytes = Buffer.from(written.toByteArray());
+        written.delete();
+      } else {
+        const model = new rhino.File3dm(), mesh = new rhino.Mesh(), attributes = new rhino.ObjectAttributes();
+        mesh.vertices().add(0, 0, 0); mesh.vertices().add(2, 0, 0); mesh.vertices().add(2, 2, 0); mesh.vertices().add(0, 2, 0);
+        mesh.faces().addQuadFace(0, 1, 2, 3); attributes.name = `floor-${id}-${runId}`; model.objects().add(mesh, attributes);
+        bytes = Buffer.from(model.toByteArray());
+        model.delete(); mesh.delete(); attributes.delete();
+      }
+      const sha256 = digest(bytes), stateDigest = stateDigestOf(id, runId);
       const dto = { artifactId: `${runId}:model`, runId, stageId: "fixture", seatId: "fixture", fileName: `${runId}.3dm`,
         sha256, sizeBytes: bytes.length, available: true, unavailableReason: null, lengthUnit: "meters",
         programRef: null, programDigest: null, designStateDigest: stateDigest, receiptRef: "fixture", format: "3dm",
@@ -272,6 +283,19 @@ export async function createProjectWorkspaceFixture(runtimes, sessions, { onInde
       }
       workingDraft.revisionSha256 = digest(JSON.stringify([workingDraft.revisionSha256, name, body]));
       return json(workingDraftDto(projectId));
+    }
+    // #562: Render keeps the view Modeling shows as a project image bound to the exact model source and its camera,
+    // as the runtime's POST /api/render/views does; this fixture registers it with the project's documents.
+    if (method === "POST" && name === "/api/render/views") {
+      const png = Buffer.from(body.pngBase64, "base64");
+      assert.equal(png.toString("ascii", 1, 4), "PNG", "a retained view is a PNG");
+      const assetSha256 = digest(png);
+      const dto = { projectId, runId: "render-views", assetSha256, fileName: `model-view-${assetSha256.slice(0, 8)}.png`, mimeType: "image/png",
+        sizeBytes: png.length, pageCount: 1, pages: [{ pageIndex: 0, width: png.readUInt32BE(16), height: png.readUInt32BE(20), rotation: 0 }],
+        revisionRef: null, modelSource: body.modelSource, sourceStageRef: body.sourceStageRef ?? null,
+        viewRecipe: { kind: "model-view", camera: body.camera, screenSize: body.screenSize }, generatedAt: "2026-10-01T00:00:00Z" };
+      documents.set(projectId, [...(documents.get(projectId) ?? []), { dto, bytes: png }]);
+      return json(dto);
     }
     // #332: Layout saves its edits as they are made, on the exact revision it read.
     if (method === "PUT" && name === "/api/publication") {

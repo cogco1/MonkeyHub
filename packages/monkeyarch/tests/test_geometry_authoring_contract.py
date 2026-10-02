@@ -13,7 +13,7 @@ from monkeyarch.application.geometry_proposal import (
     produce_geometry_program_proposal,
     proposal_authoring_output,
 )
-from spine_fixture import COMMITMENT, IDENTITY, ProducerFixture, ScriptedProvider
+from tests.support.spine_fixture import COMMITMENT, IDENTITY, ProducerFixture, ScriptedProvider
 
 
 class AuthoringContractTextTests(unittest.TestCase):

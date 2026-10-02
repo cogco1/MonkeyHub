@@ -101,7 +101,7 @@ tolerate it.
 | GET | `/api/index/{table}` | read-only rows of the project index (ADR-008): `table` is `run`, `record`, `artifact`, `document`, `candidate` or `stage`; the query names exact column values in camelCase (`runId`, `sha256`, `kind`, `assetSha256`, `branchId`, `candidateId`, `stageRef`, ...) and `limit` (default 1000). Answers `{projectId, epoch, revision, table, rows, truncated}` from one snapshot; each row carries its `rev` and names the P036 record it was read from — the rows are never evidence, the record is. 503 `INDEX_UNAVAILABLE` while the index is loading, behind this process's own last write, or when the process keeps none; 404 `INDEX_TABLE_NOT_FOUND`; 422 `INDEX_FILTER_INVALID` | reads a derived index | provisional |
 | GET | `/api/artifacts/{sha256}/bytes` | the certified bytes, re-hashed before they are served; `ETag`, RFC 6266 `Content-Disposition`, `Cache-Control: no-store` | reads shared | stable |
 | POST | `/api/model-assets` → 201 | original 3DM bytes (`projectId`, `fileName`, `contentBase64`, maximum 128 MiB). Both `runId` and `stateDigest` bind a composed model; omitting both retains an external source by exact byte digest. External rows have `representation=external` and null `modelSource`, design state and Stage; they are viewable original files, not semantic edit bases. Retries reuse exact registered bytes and preserve earlier revisions. No HEAD change | **writes shared source** | provisional |
-| GET | `/api/model-assets/{asset_sha256}/index` | exact `runId` + `stateDigest`; GUID-sorted native object metadata, units and source binding. `offset` / `limit` (default 50, maximum 200), optional repeated `objectId` GUIDs (maximum 200). Returns `objectCount`, `matchedCount`, `nextOffset`; unknown GUIDs fail with 404, mismatched source with 409. Names, layers and raw user strings are not inferred architectural roles. No geometry validation, scope admission or edit | reads shared | provisional |
+| GET | `/api/model-assets/{asset_sha256}/index` | exact `runId` + `stateDigest`; GUID-sorted native object metadata, units and source binding. `offset` / `limit` (default 50, maximum 200), optional repeated `objectId` GUIDs (maximum 200). Returns `objectCount`, `matchedCount`, `nextOffset`; unknown GUIDs fail with 404, mismatched source with 409. Names, layers and raw user strings are not inferred architectural roles. Each object's `material` is the one resolved value: `{name, color, source}` of the material it wears from the file's own table (its own, or its layer's render material; `color` is the diffuse `#RRGGBB`); `source` is `declared` when its `archflow:material` label names that material, `file` when no declaration names it, `undeclared` (null name and colour) when it wears none. No geometry validation, scope admission or edit | reads shared | provisional |
 | POST | `/api/artifacts/{sha256}/rhino-export` → 201 | that run's exact STEP imported into this machine's Rhino and kept as an editable `*.work.3dm`; body carries `runId`, because the same bytes can be exported by more than one run. Ordinary and blocking, one export at a time; the answer is the work model's own artifact row, carrying `sourceStepSha256`. Asking again for the same source answers with the model already made. Without a local Rhino or shell: 409 `RHINO_HOST_UNAVAILABLE` | **writes shared workspace** | stable |
 | POST | `/api/captures` → 201 | a viewport PNG (maximum 32 MiB) retained under the named existing run's `workspaces/studio-captures/`; body carries `runId` and `pngBase64`, response carries its project-relative path and digest. Optional exact `modelSource` also registers a preview in the existing source-document store and adds `document` to the response; source run must equal `runId` | **writes shared workspace + optional source document** | stable |
 | GET | `/api/model-assets/{asset_sha256}/preview` | required `runId` + `stateDigest`; verifies the exact retained model and returns its registered viewport `SourceDocument`, or `null` when none exists. Image bytes use the existing documents route and SHA-256 verification. Ordinary uploaded images are never selected | reads shared | provisional |
@@ -121,9 +121,11 @@ tolerate it.
 | POST | `/api/design-branches` → 201 | a sustained branch forked from a reachable historical Stage | writes design ref | provisional |
 | GET | `/api/working-source?workspace=` | the Working Head (§4.1) and the exact source one workspace (`modeling`, `drawing`, `render`, `board`) follows: `head{runId, stateDigest, sourceStageRef, branchId, accepted, origin, lineage}`, `compatible`, `source`, `stageRef` (only for an exact accepted Stage model), `reason`, `warnings`. `policy=frozen` with `runId`/`stateDigest`/`assetSha256` keeps that pin and says whether the head moved past it | reads the working position + shared + design refs | provisional |
 | GET | `/api/working-draft/revision` | `{projectId, revisionSha256}` of the working position alone, for polling whether the head may have moved; no local draft and no project guard | reads the working position | provisional |
-| PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words | **writes the working position + that run's review** | provisional |
+| PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words. In the project's own Runtime a move onto a run then cleans what the line now moves past into the project trash, on a thread of its own (§4.1) | **writes the working position + that run's review** | provisional |
 | GET | `/api/representation-status?runId=&assetSha256=&revisionRef=&pageIndex=` | one exact registered page's representation status (§4.1) in the projection's own words: `{projectId, state, reason}`, `state` one of `current`, `outdated`, `frozen`, `unavailable`. A page that cannot be read, or whose replacements loop, is `unavailable`; nothing is stored | reads the working position + shared + design refs | provisional |
-| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged or started | reads the working position + shared + design refs + the admissions review + server memory | provisional |
+| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, the head's `line` of steps oldest first with their retained `label`, `request`, `summary` and `stageRef` (#575), other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), a draft the line superseded as `relation: superseded` with `supersededBy`, each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged, started, moved or deleted | reads the working position + shared + design refs + the admissions review + each result's Continue events + server memory | provisional |
+| GET | `/api/trash` | the project trash (#575, §4.1): `retentionDays` (30) and each entry oldest first, `runId`, `trashedAt`, `expiresAt`, `rule` (`superseded`, `replaced-attempt`, `failed-attempt`), `reason`, `supersededBy`, `baseRunId`, `label` and `stateDigest`. Answered conditionally (ETag) like the tree's other views | reads `trash/entries/` | provisional |
+| POST | `/api/trash/restore` | `{projectId, runId}`: moves that trashed run back into `runs/` exactly as it left, with its working-draft row and every trashed run it names (what it was made from); answers `restored` and the trash as it now is. A restored run is never cleaned again. `TRASH_ENTRY_NOT_FOUND` (404), `TRASH_RESTORE_REFUSED` (409, its place in `runs/` is taken or it could not be moved whole) | **moves runs back + writes the working position + the retention run's review** | provisional |
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
 | POST | `/api/drawings/section-perspectives` → 201 | exact-model section perspective document: `section` (`{line, keep}` or `{origin, normal}`) cuts the retained STEP, the kept side is drawn in perspective with the section plane as picture plane (true to scale at `scaleDenominator`), the cut in poché; optional `camera` (`{eye, target, up?, fovDeg?}` or the default one-point `{eyeHeight?, fovDeg?}`), `depth`, `hiddenObjectIds`; `cutLineMm`, `visibleLineMm`, `hatchSpacingMm` and, validated and stored as a cut plan's, `hatch.byMaterial.<material>` (`{spacingMm 0.5–20, angleDeg 0–<180, poche}`, stored complete: spacing defaults to this request's `hatchSpacingMm`, angle 45, poché false) and `beyond.fade` (0–1), so the cut takes the material hatch/poché and the fade greys what lies beyond it; an empty `byMaterial` or a zero fade is the request without them; the view recipe records the request, plane and resolved camera; refusals are named (`SECTION_PLANE_MISSES_MODEL`, `SECTION_EYE_ON_KEPT_SIDE`, …) | writes shared drawing artifacts and document registration | provisional |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
@@ -239,6 +241,15 @@ It returns source metadata and an inline PNG (base64 `data`, `mimeType`, width/h
 It reuses the retained STEP projection and creates no drawing record or project file. The
 source is verified on every read; the projection of a view already drawn for the same exact
 source is reused from process memory, never written.
+`display=material` (default `line`) draws the same exact source in the same views and frame
+with each object filled flat, without light, in the diffuse colour of the material the model
+asset's own table binds to it (its own material, or its layer's render material), so a pixel
+inside a face is exactly that colour; an object that wears none is grey (`#C8C8C8`) under
+darker 45-degree hatch lines, never a guessed colour. The answer has
+`representation=orthographic-material-projection` and a `legend`: each material the drawn
+objects wear (`name`, `color`, `source` `declared` or `file`, `objects` drawn, `visible` in this
+view) and the `undeclared` / `undeclaredVisible` counts. Nothing is rendered or inferred; the
+same exact source draws the same bytes.
 Incomplete/composed-only, Rhino-only or mismatched sources refuse; no bounding-box image stands
 in for missing geometry. MonkeyHub exposes the image as native MCP image content and keeps
 source metadata in a separate text block.
@@ -271,7 +282,8 @@ characters), 1–8 `criteria` (`criterionId`, `text`), up to 6 `preserve` condit
 (`taskClass`, `allowed`, `used`, `lastFindingIds`).
 
 A modeling review names one model (`kind: "model"`, `runId`, `stateDigest`, `assetSha256`)
-and model-view directions (`front`, `back`, `left`, `right`, `top`, `axon`). Other domains
+and model-view directions (`front`, `back`, `left`, `right`, `top`, `axon`), each a line view,
+or with `-material` (`axon-material`) its material view. Other domains
 name exact registered pages (`kind: "page"`, `runId`, `assetSha256`, explicit `revisionRef`,
 `pageIndex`). Source identity includes the document and revision: different documents may
 both name page 0. The caller may use `viewRecipe: ["page-0"]` for that bundle; the Runtime
@@ -600,6 +612,53 @@ neighbouring element whose field shares a name is named there only to be refused
    or advance a stage.
 
 Review readiness is memoised per (candidate, published version): reading it twice is one result.
+
+**Declared materials reach the candidate's model.** `POST /api/proposals/facets` sets a
+component's `material.name` (the architect's words) and, when the design states it,
+`material.color`, an sRGB `#RRGGBB` (either case is accepted and kept in upper case). The
+record refuses a colour without a name and two colours for one material, naming the components
+(`422 FACETS_INVALID`). A candidate exports what its record's components declare: the 3dm
+preview holds one native material per declared name, named by it and bound to each of its
+objects (which also carry `archflow:material`), in the declared colour or, without one, an
+identity colour derived from the name alone that claims no appearance; the component layers of
+one material share that colour. An object whose components declare no material wears none,
+keeps its component's distinction colour and carries `archflow:material_status: undeclared`.
+The export reads its preview back and fails on a material whose name, colour or binding
+differs. Nothing is inferred from names or shapes; retained candidates and their files are
+never rewritten, so only runs made after a declaration carry its material.
+
+**A part may wear its own material (#580).** A geometry id whose parts differ (a plinth of
+brick and block, a floor finish inside with paving outside) takes one facets target per part,
+`{id, part, set | remove}`, where `part` is one of the ids `GET /api/construction/model` lists as
+that entity's `parts`. A part states `material.name` and `material.color` and nothing else; they
+are kept under the component (`Component@1.fields.part_facets`) and read back as the entity's
+`partFacets`. The record refuses a part its component does not have
+(`422 FACETS_TARGET_INVALID`, naming its parts), any other key on a part, and a colour that
+would give one material two colours across components and parts (`422 FACETS_INVALID`); a part
+that is to be removed or moved to another component loses its own material first. Each object wears, by
+precedence, its part's own material, else its component's, else none
+(`archflow:material_status: undeclared`). An object belongs to the part it is named after
+(`obj-<part>`, or `obj-<part>-<suffix>` for one of several; the longest such part wins, the rule
+a pick uses) among all of its component's parts; any other object of the component wears the
+component's. The preview export, the composed rewrite and its readback apply that one rule. No
+group is split and no layer, element, dependency or geometry changes.
+
+**The composed model wears the same declarations (#580).** A candidate that continues a
+complete composed model (an imported model with native objects patched in) rewrites that
+model's material table, object bindings and material labels from its run's declared materials
+on every compose, whether or not any geometry changed, so a material-only change gives the run
+composed bytes of its own. An object a seat's program delivers wears what that run's preview
+gives it; any other object wears the material its part, else the components its
+`archflow:component` names, declare, as one native material named by it in its declared
+colour. Every other object, an imported object with no component included, wears none and
+carries `archflow:material_status: undeclared`. Materials the imported model or an earlier step brought
+are cleared, not kept: object bindings, layer render materials and block members' own materials
+(members wear their instance's). A table entry no object wears any more stays in the table,
+unreferenced. Object GUIDs, geometry, names, layers and every other user string are untouched.
+Before registering, the runtime reads the final bytes back against the input model and the
+native exports (each object's GUID, its user strings other than the two material labels, and
+its encoded geometry, compared by content rather than by bounds) and against the declarations;
+a mismatch fails the candidate and registers no composed model.
 
 ### 5.2 The judgement is retained
 
@@ -1129,7 +1188,8 @@ wherever a server offers it.
 
 `capabilities` is how a client hides what a server cannot do instead of discovering it as a 404.
 A capability name is a feature, not a route: `projection`, `pick`, `gestures`, `intents`,
-`proposals`, `candidates`, `candidate-admission` (§5.5), `captures`, `compare`, `artifacts`, `program`, `validation`, `events`, and
+`proposals`, `candidates`, `candidate-admission` (§5.5), `captures`, `compare`, `artifacts`, `program`, `validation`, `events`,
+`project-trash` (§4.1: `GET /api/trash` and its restore), and
 `cad-export` when geometry export is enabled, and `rhino-export` when Rhino is explicitly selected.
 
 An explicitly configured MonkeyMonitor diagnostic directory adds `operation-timing`
@@ -1396,8 +1456,9 @@ The Working Head is the architect's editing base, which ordinary Modeling, Drawi
 Board work follows. It is read from the retained working position (`design/working.json`
 `current`), which only the explicit `PUT /api/working-draft` moves: Continue on a shown result,
 adopting the architect's own Sync, or the Hub Agent continuing on the user's bound words (#294
-Q3). A generated candidate, including a continuation of the base,
-is recorded and shown but never adopted (GH-234 Q1/Q2). An unreadable position falls back to the
+Q3). A change the user asked for is continued that way once its result is admitted: the request is
+the Continue (#575, revising GH-234 Q2). A generated candidate, including a continuation of the base,
+is recorded and shown but never adopted by the Runtime itself (GH-234 Q1). An unreadable position falls back to the
 main line's accepted head and then the reference run, with a warning. A position whose run has a live
 rejection (§5.5) stays the head and adds a warning; only Continue moves it. Resolving it writes nothing, takes no project
 guard and never picks a newest file. A continuation keeps its source position's branch, so a
@@ -1409,6 +1470,51 @@ chosen version (`follow: "frozen"` in its recipe) stays on that version until it
 candidate deltas and the job queue; its `reconcile` is the StateRecord combine rule applied as a
 dry run from the nearest shared source. Owner attribution belongs to the Hub journal, not to
 project records.
+
+The graph also names the head's own line (#575): `line` is its first-parent chain, oldest first and
+ending at the head, so the inputs a combine merged stay off it. Each step carries `runId`,
+`baseRunId` (null for a run made from no other; the first step names one only when the line was cut
+short at 64 runs), `label` (a saved version's label, else its accepted Stage's, else its admitted
+result's), `request` (the admission's `rawLanguage`, else the sentence an intent model compiled into
+the run), `summary` (an admitted result's own), `stageRef` and `updatedAt` from the working
+position. A retained result whose nearest shared source with the head is a step the line moved on
+from, whose comparison with the head conflicts (it changed what the line changed since), and which
+nobody took further is a draft that line superseded: `relation: superseded`, with `supersededBy`
+naming the step made from that source. Nobody took it further when neither it nor any retained
+result built on it was continued (no `design.continued` event names it) or admitted; an admitted
+option and work that combines with the head stay `diverged`. A superseded draft keeps its `writes`,
+`reconcile` and `conflicts` for whoever asks; the Design Tree folds it where the line moved on
+instead of showing it as a line with conflicts. Reading the graph moves, deletes and rewrites nothing.
+
+**The project trash (#575).** Like autosave, a project keeps the steps one can return to, not every
+version made on the way (Kaiwen, 2026-10-01). Only these may be cleaned: a draft the graph names
+`superseded`; an attempt an admitted result `supersedes`, or a result its own loop withdrew, with the
+attempts that result replaced; and a failed attempt, a design change whose run never finished. Each
+is cleaned only when all of these hold: it is on no kept line (the Working Head's, a design branch
+Stage's or an admitted result's); nobody continued, admitted or rejected it, and nothing built on it
+stays; it is no saved version, no working position a person chose and no execution's input; its own
+run holds only what its execution wrote (no drawing page, render, annotation, Board scene, working
+copy, review, Stage or attributed act); and no retained record outside it names it, except the
+admission that replaced or withdrew it. The search for its id covers every run's records (Board
+component-info datasets' `appliesTo.runId`, registered drawing pages and their model sources, render
+attempts and model-source pins, document annotations, admissions and Studies, saved versions, Stages,
+working copies), `design/branches.json`, `events/`, `canonical/` and `input/`; the project index is
+derived from those records and adds nothing. A run another cleaned run names goes after it, and one
+a kept run names stays. When anything that could keep a run cannot be read - the working position,
+the admissions, a design branch - nothing is cleaned.
+
+What may go moves, whole and unchanged, into the project's `trash/` (`trash/runs/<runId>/`, beside a
+`ProjectTrashEntry@1` manifest in `trash/entries/`), taking its working-draft row with it; the
+repository refuses the Working Head, a run in an execution's ledger, a saved or chosen row, the local
+recovery, a run keeping a review, Stage or attributed act, a branch Stage and the published history.
+The project index forgets a trashed run and sees a restored one again. The project's own Runtime
+cleans on a thread of its own at project open, once the index has loaded and entries older than 30
+days are purged, and after each Continue; each sweep that moved runs retains one `AuditEvent@1`
+`design.cleaned` (actor `studio:retention-rule`, origin `runtime`, the runs with their rule and
+reason) and each restore one `design.restored`, in the fixed `studio-retention` run. A run those
+events name is never cleaned again, so a draft a person restored stays. `GET /api/trash` lists the
+trash and `POST /api/trash/restore` brings one run back; shared objects (`objects/sha256`) never move
+and a purge does not reclaim them.
 
 The position's `revisionSha256` (from `GET /api/working-draft`, `/api/working-draft/revision` and
 `/api/working-source`) is the compare-and-swap token that `PUT /api/working-draft`, `POST
@@ -1552,7 +1658,7 @@ Lock, supersede and Stage acceptance are not exposed by this capability. Runtime
 authorization and CAS remain authoritative. Its schema tool derives these
 narrowed inputs from the actual Runtime OpenAPI rather than another Decision DTO.
 
-The same tool closes the Agent's loops and continues only on the user's words (#294 Q3). It
+The same tool closes the Agent's loops and continues on the user's words (#294 Q3, #575). It
 exposes `POST /api/admissions` with `task.kind` fixed to `hub-chat`, and `PUT
 /api/working-draft`; it reads `GET /api/admissions`, `GET /api/working-source` and `GET
 /api/working-draft/revision`. Hub fills `messageSource` from the last user message the Agent was
@@ -1563,7 +1669,18 @@ CHAT_FEEDBACK_SOURCE`), as is provider-supplied provenance, another task kind or
 without a run (`422`). The schema tool hides the bound fields, and the Continue reply carries only
 `projectId`, `revisionSha256` and `current`. The Hub prompt asks for one admission per completed
 loop: a declared Study for several alternatives, each result's superseded attempts, no
-intermediate runs, and a rejection or Continue only on the user's own words.
+intermediate runs, and a rejection only on the user's own words. A change the user asked for then
+lands on their working design (#575): in the same turn the Agent continues to the admitted result,
+and the request it answers is the Continue, bound like any other (`rawLanguage` is that message, or a
+`feedbackQuote` passage of it). Results stay candidates when the user asked for options or
+alternatives, or when the loop's checks failed; a Continue to any other result needs the user's words
+asking for it. Modeling follows the moved head and offers 撤销, the same Continue back onto the
+previous position, where the working position named it. An agent outside the Hub's conversations (Codex, Claude Code) reaches the Runtime
+through this same adapter: after `presentation_bind` it presents each user request (`chat_present`,
+kind `user`) before acting on it, admits the finished loop and then continues on that request, and the
+Hub binds the presented message as it binds a native one. A client that calls the Runtime's HTTP API
+directly has no bound message: its Continue is recorded as the architect's own act, so it is not how
+an agent lands a change.
 An admission that admits a result is sent only once its loop has finished (#294, owner decision
 2026-10-01). Beside it the tool argument `taskClass` names the loop's class, as `visual_review`
 names them, unless a review spent for the same user message already fixed it: `422

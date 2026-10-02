@@ -64,7 +64,11 @@ class ModelSourceIndexDto(BaseModel):
     units: dict[str, Any]
     object_count: int = Field(alias="objectCount")
     matched_count: int = Field(alias="matchedCount")
-    objects: list[dict[str, Any]]
+    objects: list[dict[str, Any]] = Field(description=(
+        "Native object rows as saved. Each row's material is the one resolved value: {name, color (#RRGGBB, the "
+        "material table's diffuse colour), source}, the material the object wears (its own, or its layer's render "
+        "material); source is declared when its archflow:material label names that material, file when no "
+        "declaration names it, undeclared (name and color null) when it wears none."))
     offset: int
     next_offset: int | None = Field(alias="nextOffset")
 

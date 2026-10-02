@@ -111,7 +111,8 @@ export function textScaleFor(zoom: number, level: ZoomLevel): number {
   return Math.min(24, 2 ** (Math.round(2 * Math.log2(1 / Math.max(zoom, 0.01))) / 2));
 }
 
-export default function DesignTreeCanvas({ tree, source = null, words, selected, fitRequest, centerOn = null, title, onSelect, onAccept, onLevel }: {
+export default function DesignTreeCanvas({ tree, source = null, words, selected, fitRequest, centerOn = null, title, onSelect, onAccept, onLevel,
+  onExpand = () => undefined }: {
   tree: GrowthTree;
   /** What the tree was built from: it names each node's model, whose preview a close card shows. */
   source?: DesignTreeSource | null;
@@ -125,6 +126,8 @@ export default function DesignTreeCanvas({ tree, source = null, words, selected,
   onSelect(node: string | null): void;
   onAccept(): void;
   onLevel(level: ZoomLevel): void;
+  /** A fold was clicked (#575): open Current's earlier steps, or the drafts its line superseded. */
+  onExpand?(fold: "steps" | "drafts"): void;
 }) {
   const canvas = useRef<ExcalidrawImperativeAPI | null>(null);
   const root = useRef<HTMLDivElement | null>(null);
@@ -343,6 +346,7 @@ export default function DesignTreeCanvas({ tree, source = null, words, selected,
       if (!hit) { onSelect(null); return; }
       if (hit.action === "zoom" && hit.zoomTo) { fitTo(hit.zoomTo, 0.9); return; }
       if (hit.action === "accept") { onAccept(); return; }
+      if (hit.action === "expand" && hit.expand) { onExpand(hit.expand); return; }
       onSelect(hit.node);
     },
   });

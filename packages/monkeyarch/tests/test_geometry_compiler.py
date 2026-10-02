@@ -1,8 +1,9 @@
 """P089: the geometry compiler over the spine's own design state.
 
 The state is the projection of an authored ``StateRecord@1``
-(``spine_fixture.py``), which is what ``monkeyarch.application.project_runner`` hands the
-compiler. The frozen digests below are that state's, computed once.
+(``tests/support/spine_fixture.py``), which is what
+``monkeyarch.application.project_runner`` hands the compiler. The frozen digests
+below are that state's, computed once.
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ from archflow.state.geometry_program import (
     LengthUnit,
     ObjectRevisionPrecondition,
 )
-from spine_fixture import COMMITMENT, EVIDENCE, _codes, _number, _operation, _proposal, _state
+from tests.support.spine_fixture import COMMITMENT, EVIDENCE, _codes, _number, _operation, _proposal, _state
 
 
 class GeometryCompilerTests(unittest.TestCase):

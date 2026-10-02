@@ -61,6 +61,7 @@
 
 .component-info[data-state="mismatch"] .component-info__state,
 .component-info__state[data-card-state="mismatch"],
+.component-info__state[data-card-state="reshaped"],
 .component-info__state[data-card-state="error"] {
   border-color: var(--unchecked);
 }
@@ -123,11 +124,22 @@ section.component-info__block {
   overflow-wrap: anywhere;
 }
 
+/* The key information on one line: value, status, then the arrow, which flows after the last word. */
+.component-info__line {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.component-info__line > * + * {
+  margin-left: 6px;
+}
+
 .component-info__value {
   font-variant-numeric: tabular-nums;
 }
 
 .component-info__status {
+  display: inline-block;
   padding: 0 5px;
   border: 1px solid currentColor;
   border-radius: var(--radius-xs);
@@ -150,6 +162,78 @@ section.component-info__block {
   flex-basis: 100%;
   color: var(--muted);
   font-size: var(--text-caption);
+}
+
+/* #549: what explains an item folds under a small arrow beside it, shut until asked. */
+.component-info__fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 18px;
+  min-width: 18px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--faint);
+  font: inherit;
+  font-size: var(--text-caption);
+  font-weight: 400;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.component-info__fold:hover,
+.component-info__fold[aria-expanded="true"] {
+  color: var(--muted);
+}
+
+.component-info__fold:hover {
+  background: var(--overlay);
+}
+
+.component-info__fold:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.component-info__fold svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  transition: transform 0.15s ease;
+}
+
+.component-info__fold[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+.component-info__block-title .component-info__fold,
+.component-info__group-title .component-info__fold {
+  margin-left: 4px;
+}
+
+.component-info__detail {
+  display: grid;
+  flex-basis: 100%;
+  gap: 2px;
+  min-width: 0;
+}
+
+.component-info__notes {
+  display: grid;
+  gap: 4px;
+}
+
+.component-info__detail[hidden],
+.component-info__notes[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .component-info__fold svg {
+    transition: none;
+  }
 }
 
 .component-info__url {
@@ -225,10 +309,10 @@ section.component-info__block {
 }
 
 /* A value still to be confirmed, asked for or unknown reads as such without its badge. */
-.component-info__field:is([data-status="to-confirm"], [data-status="to-ask"]) > dd > .component-info__value {
+.component-info__field:is([data-status="to-confirm"], [data-status="to-ask"]) > dd > .component-info__line > .component-info__value {
   color: var(--unchecked);
 }
 
-.component-info__field[data-status="unknown"] > dd > .component-info__value {
+.component-info__field[data-status="unknown"] > dd > .component-info__line > .component-info__value {
   color: var(--faint);
 }

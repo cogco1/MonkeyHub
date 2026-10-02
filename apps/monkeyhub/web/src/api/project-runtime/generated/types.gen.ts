@@ -2056,6 +2056,16 @@ export type ConstructionEntityDto = {
         [key: string]: string;
     };
     /**
+     * Partfacets
+     *
+     * the material each of its parts states of its own, by part id; empty when none does
+     */
+    partFacets: {
+        [key: string]: {
+            [key: string]: string;
+        };
+    };
+    /**
      * Capabilities
      *
      * what its facets allow, where its geometry can take it
@@ -5028,7 +5038,7 @@ export type ExportTimingDto = {
 /**
  * FacetTargetDto
  *
- * Facets to set or remove on one geometry id (a component).
+ * Facets to set or remove on one geometry id (a component), or on one of its parts.
  */
 export type FacetTargetDto = {
     /**
@@ -5038,9 +5048,15 @@ export type FacetTargetDto = {
      */
     id: string;
     /**
+     * Part
+     *
+     * one of the ids the model view lists as this geometry id's parts: set or remove that part's own material.name and material.color, which it wears instead of the geometry id's; a part without its own wears the geometry id's, or none
+     */
+    part?: string | null;
+    /**
      * Set
      *
-     * facet keys and values to add or change: architectural.role, architectural.enclosure, structural.role, material.name, fabrication.method
+     * facet keys and values to add or change: architectural.role, architectural.enclosure, structural.role, material.name, material.color (#RRGGBB, with material.name), fabrication.method
      */
     set?: {
         [key: string]: string;
@@ -5968,6 +5984,54 @@ export type LevelFootprintDto = {
      * Footprintm2
      */
     footprintM2: number;
+};
+
+/**
+ * LineStepDto
+ *
+ * One run of the Working Head's line (#575), in the words its retained facts give it.
+ */
+export type LineStepDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Baserunid
+     *
+     * The run this step was made from; null for a run made from no other. The line's first step names its own base only when the line was cut short.
+     */
+    baseRunId: string | null;
+    /**
+     * Label
+     *
+     * The name it was given: a saved version's label, else its accepted Stage's, else its admitted result's.
+     */
+    label: string | null;
+    /**
+     * Request
+     *
+     * The words that asked for it, when retained: its admission's rawLanguage, else the sentence an intent model compiled into it.
+     */
+    request: string | null;
+    /**
+     * Summary
+     *
+     * An admitted result's own summary of the change.
+     */
+    summary: string | null;
+    /**
+     * Stageref
+     *
+     * The accepted Stage this run is, if it is one.
+     */
+    stageRef: string | null;
+    /**
+     * Updatedat
+     *
+     * When the working position last listed or moved onto it.
+     */
+    updatedAt: string | null;
 };
 
 /**
@@ -6905,6 +6969,8 @@ export type ModelSourceIndexDto = {
     matchedCount: number;
     /**
      * Objects
+     *
+     * Native object rows as saved. Each row's material is the one resolved value: {name, color (#RRGGBB, the material table's diffuse colour), source}, the material the object wears (its own, or its layer's render material); source is declared when its archflow:material label names that material, file when no declaration names it, undeclared (name and color null) when it wears none.
      */
     objects: Array<{
         [key: string]: unknown;
@@ -6964,7 +7030,7 @@ export type ModelUpload = {
 /**
  * ModelViewDto
  *
- * Transient pixels from a verified model, not a material render or saved drawing.
+ * Transient pixels from a verified model, not a lit render or saved drawing.
  */
 export type ModelViewDto = {
     source: ModelSourceDto;
@@ -6973,13 +7039,17 @@ export type ModelViewDto = {
      */
     view: 'front' | 'back' | 'left' | 'right' | 'top' | 'axon';
     /**
+     * Display
+     */
+    display?: 'line' | 'material';
+    /**
      * Mimetype
      */
     mimeType?: 'image/png';
     /**
      * Data
      *
-     * Base64 PNG bytes from the exact source model's orthographic line projection.
+     * Base64 PNG bytes from the exact source model: its orthographic line projection, or with display material each object filled flat, without light, in the diffuse colour of the material it wears.
      */
     data: string;
     /**
@@ -6993,7 +7063,71 @@ export type ModelViewDto = {
     /**
      * Representation
      */
-    representation?: 'orthographic-line-projection';
+    representation?: 'orthographic-line-projection' | 'orthographic-material-projection';
+    /**
+     * display material only: the materials drawn, read from the exact model asset's own table, and the undeclared count.
+     */
+    legend?: ModelViewLegendDto | null;
+};
+
+/**
+ * ModelViewLegendDto
+ *
+ * What a material view drew: each material its drawn objects wear, and how many wear none.
+ */
+export type ModelViewLegendDto = {
+    /**
+     * Materials
+     */
+    materials: Array<ModelViewMaterialDto>;
+    /**
+     * Undeclared
+     *
+     * Drawn objects that wear no material: grey (#C8C8C8) under darker 45-degree hatch lines, never a guessed colour.
+     */
+    undeclared: number;
+    /**
+     * Undeclaredvisible
+     *
+     * Of those, the objects that show in this view.
+     */
+    undeclaredVisible: number;
+};
+
+/**
+ * ModelViewMaterialDto
+ *
+ * One material the drawn objects wear, as the exact model asset's own material table holds it.
+ */
+export type ModelViewMaterialDto = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Color
+     *
+     * The material's diffuse colour, #RRGGBB; a pixel inside a face of an object wearing it is exactly this colour.
+     */
+    color: string;
+    /**
+     * Source
+     *
+     * declared: the object's archflow:material label names this material; file: the file binds it but no declaration names it (an imported base's material, a role's fallback such as glazing).
+     */
+    source: 'declared' | 'file';
+    /**
+     * Objects
+     *
+     * Drawn objects wearing it.
+     */
+    objects: number;
+    /**
+     * Visible
+     *
+     * Of those, the objects that show in this view; one hidden behind or inside another still counts in objects.
+     */
+    visible: number;
 };
 
 /**
@@ -8814,6 +8948,28 @@ export type ProjectTransferDto = {
     contents?: {
         [key: string]: string;
     };
+};
+
+/**
+ * ProjectTrashDto
+ *
+ * The project trash, oldest entry first.
+ */
+export type ProjectTrashDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Retentiondays
+     *
+     * How long an entry can be restored before it is purged.
+     */
+    retentionDays: number;
+    /**
+     * Entries
+     */
+    entries: Array<TrashEntryDto>;
 };
 
 /**
@@ -12377,6 +12533,101 @@ export type TransformElementRequestDto = {
 };
 
 /**
+ * TrashEntryDto
+ *
+ * One run in the project trash: what moved, why, what superseded it, and until when it can be restored.
+ */
+export type TrashEntryDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Trashedat
+     *
+     * When it moved into the trash.
+     */
+    trashedAt: string;
+    /**
+     * Expiresat
+     *
+     * When it is purged; until then it can be restored.
+     */
+    expiresAt: string;
+    /**
+     * Rule
+     *
+     * Which retention rule moved it: superseded (a draft the head's line superseded), replaced-attempt (an attempt an admitted result replaced, or one its loop withdrew) or failed-attempt (a design change whose run never finished).
+     */
+    rule: string;
+    /**
+     * Reason
+     *
+     * Why it was moved, in one sentence.
+     */
+    reason: string;
+    /**
+     * Supersededby
+     *
+     * The run that superseded it: the line's step for a superseded draft, the admitted result for a replaced attempt.
+     */
+    supersededBy: string | null;
+    /**
+     * Baserunid
+     *
+     * The run it was made from.
+     */
+    baseRunId: string | null;
+    /**
+     * Label
+     *
+     * Its name or the words that asked for it, when it had them.
+     */
+    label: string | null;
+    /**
+     * Statedigest
+     *
+     * Its design state's digest, when it finished.
+     */
+    stateDigest: string | null;
+};
+
+/**
+ * TrashRestoreDto
+ *
+ * What came back, and the trash as it now is.
+ */
+export type TrashRestoreDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Restored
+     *
+     * The runs that came back: the one asked for first, then those it names.
+     */
+    restored: Array<string>;
+    trash: ProjectTrashDto;
+};
+
+/**
+ * TrashRestoreRequestDto
+ *
+ * Restore one trashed run: it comes back whole, with any trashed run it was made from.
+ */
+export type TrashRestoreRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+};
+
+/**
  * UnknownCoverageDto
  *
  * The components no edge touches: unknown impact, not zero impact.
@@ -12886,7 +13137,7 @@ export type VisualReviewRequestDto = {
     /**
      * Viewrecipe
      *
-     * For a model, the model-view directions to render (front, back, left, right, top); for pages, the distinct page-<pageIndex> values of the named pages. The runtime gives repeated page numbers unique source-<source ordinal>-page-<pageIndex> frame names automatically.
+     * For a model, the model-view directions to render (front, back, left, right, top, axon), each a line view, or with -material (axon-material) in the colours of the materials its objects wear; for pages, the distinct page-<pageIndex> values of the named pages. The runtime gives repeated page numbers unique source-<source ordinal>-page-<pageIndex> frame names automatically.
      */
     viewRecipe: Array<string>;
     /**
@@ -13333,6 +13584,12 @@ export type WorktreeGraphDto = {
      */
     revisionSha256: string | null;
     /**
+     * Line
+     *
+     * The Working Head's line, oldest first and ending at the head: its first-parent chain, each step with its retained label, request and summary (#575). Empty without a head.
+     */
+    line: Array<LineStepDto>;
+    /**
      * Lines
      */
     lines: Array<WorktreeLineDto>;
@@ -13349,7 +13606,7 @@ export type WorktreeGraphDto = {
 /**
  * WorktreeLineDto
  *
- * One line of work: the head, another accepted line, running work or a retained result.
+ * One line of work: the head, another accepted line, running work or a retained result, superseded or not.
  */
 export type WorktreeLineDto = {
     /**
@@ -13393,9 +13650,9 @@ export type WorktreeLineDto = {
     /**
      * Relation
      *
-     * ahead continues the head; behind started from an older head; diverged shares an older source; separate shares none shown here.
+     * ahead continues the head; behind started from an older head; diverged shares an older source; superseded is a diverged draft built where the head's line later moved on through another step (supersededBy) and changing what the line changed since (reconcile conflict), which nobody continued or admitted, nor anything built on it (#575); separate shares none shown here.
      */
-    relation: 'head' | 'ahead' | 'behind' | 'diverged' | 'separate';
+    relation: 'head' | 'ahead' | 'behind' | 'diverged' | 'superseded' | 'separate';
     /**
      * Reads
      */
@@ -13436,6 +13693,12 @@ export type WorktreeLineDto = {
      * The Study that verdict grouped the run into, if any.
      */
     studyId: string | null;
+    /**
+     * Supersededby
+     *
+     * For a superseded draft: the step of the head's line that replaced it, the one made from where the draft started. Null for every other line.
+     */
+    supersededBy: string | null;
 };
 
 export type ReadHealthApiHealthGetData = {
@@ -13744,6 +14007,76 @@ export type ReadWorktreesApiWorktreesGetResponses = {
 };
 
 export type ReadWorktreesApiWorktreesGetResponse = ReadWorktreesApiWorktreesGetResponses[keyof ReadWorktreesApiWorktreesGetResponses];
+
+export type ReadProjectTrashApiTrashGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/trash';
+};
+
+export type ReadProjectTrashApiTrashGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadProjectTrashApiTrashGetError = ReadProjectTrashApiTrashGetErrors[keyof ReadProjectTrashApiTrashGetErrors];
+
+export type ReadProjectTrashApiTrashGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectTrashDto;
+};
+
+export type ReadProjectTrashApiTrashGetResponse = ReadProjectTrashApiTrashGetResponses[keyof ReadProjectTrashApiTrashGetResponses];
+
+export type RestoreFromTrashApiTrashRestorePostData = {
+    body: TrashRestoreRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/trash/restore';
+};
+
+export type RestoreFromTrashApiTrashRestorePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RestoreFromTrashApiTrashRestorePostError = RestoreFromTrashApiTrashRestorePostErrors[keyof RestoreFromTrashApiTrashRestorePostErrors];
+
+export type RestoreFromTrashApiTrashRestorePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: TrashRestoreDto;
+};
+
+export type RestoreFromTrashApiTrashRestorePostResponse = RestoreFromTrashApiTrashRestorePostResponses[keyof RestoreFromTrashApiTrashRestorePostResponses];
 
 export type ReadIndexChangesApiIndexGetData = {
     body?: never;
@@ -15861,6 +16194,10 @@ export type ReadModelViewApiDrawingsModelViewGetData = {
          * View
          */
         view?: 'front' | 'back' | 'left' | 'right' | 'top' | 'axon';
+        /**
+         * Display
+         */
+        display?: 'line' | 'material';
     };
     url: '/api/drawings/model-view';
 };

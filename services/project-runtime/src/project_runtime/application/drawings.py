@@ -29,6 +29,7 @@ from uuid import uuid4
 
 from monkeycad.backends.occt.projection import project_occt_lines
 from monkeycad.backends.occt.errors import OcctBackendError
+from monkeycad.formats.three_dm_inspector import ThreeDmInspectionError, inspect_three_dm_index
 from archflow.contracts.canonical import canonical_digest, canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STUDIO_SOURCE_DOCUMENT
@@ -255,7 +256,7 @@ def model_view_pipeline(view: str) -> dict[str, Any]:
     right, up, look = _VIEW_FRAMES[view]
     # The source of this module's framing and meshing of the view, like the mesh renderer's own version.
     code = hashlib.sha256("".join(inspect.getsource(function) for function in (
-        _elevation_view, _axon_meshes, _draw_view, draw_loaded_view)).encode("utf-8")).hexdigest()[:12]
+        _elevation_view, _view_meshes, _draw_view, draw_loaded_view)).encode("utf-8")).hexdigest()[:12]
     return {"view": view, "right": list(right), "up": list(up), "look": list(look), "margin": VIEW_MARGIN,
             "chordPx": AXON_CHORD_PX, "code": code, "mesh": mesh_pipeline()}
 
@@ -406,25 +407,55 @@ def _elevation_view(
         raise StudioError(409, "DRAWING_SOURCE_INVALID", "The exact model has no complete retained bounds for this elevation.") from exc
 
 
-# Recent model views by exact verified source and view name. The projection is
-# the slow part of a model view and depends on nothing else; the source is
-# verified again on every read. Transient process memory, never project data.
-_MODEL_VIEWS: OrderedDict[tuple[Any, str], tuple[bytes, int, int]] = OrderedDict()
+# Recent model views by exact verified source, view name and display. The
+# projection is the slow part of a model view and depends on nothing else; the
+# source is verified again on every read. Transient process memory, never
+# project data.
+_MODEL_VIEWS: OrderedDict[tuple[Any, ...], Any] = OrderedDict()
 _MODEL_VIEW_LIMIT = 32
 _model_views_lock = threading.Lock()
 #: The longest edge of a model view, in pixels.
 MODEL_VIEW_MAX_EDGE = 1024
+#: How a model view draws the model: its visible lines, or each object filled
+#: with the material it wears (#580). Each display names its representation.
+LINE_DISPLAY = "line"
+MATERIAL_DISPLAY = "material"
+MODEL_VIEW_REPRESENTATIONS = {LINE_DISPLAY: "orthographic-line-projection",
+                              MATERIAL_DISPLAY: "orthographic-material-projection"}
 
 
 @dataclass(frozen=True, slots=True)
 class ModelViewDrawing:
-    """One drawn model view and where its time went: reading the source, then drawing it."""
+    """One drawn model view and where its time went: reading the source, then drawing it.
+
+    A view drawn from the mesh also names the objects it meshed and, when
+    filled, those that show.
+    """
 
     png: bytes
     width: int
     height: int
     load_s: float
     render_s: float
+    objects: tuple[str, ...] = ()
+    seen: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class MaterialView:
+    """One model view in the materials its objects wear, and the legend of what it drew.
+
+    ``legend`` is ``{"materials": [{name, color, source, objects, visible}],
+    "undeclared": n, "undeclaredVisible": m}``: each material the drawn
+    objects wear as the model asset's table resolves it, how many drawn
+    objects wear it and how many of those show; then the drawn objects that
+    wear none, drawn grey under a hatch.
+    """
+
+    png: bytes
+    width: int
+    height: int
+    legend: dict[str, Any]
 
 
 def check_model_view_source(binding: ProjectBinding, model_source: ModelSource, view: str) -> None:
@@ -493,7 +524,14 @@ def draw_model_view(
     return draw_loaded_view(load_model_view(binding, model_source), view=view, size_px=size_px, png_text=png_text)
 
 
-def _draw_view(binding, source, receipt, view, *, size_px, png_text, started, verified=None) -> ModelViewDrawing:
+def _draw_view(binding, source, receipt, view, *, size_px, png_text, started, verified=None,
+               fills=None) -> ModelViewDrawing:
+    """Draw one view: the axonometric, or any view given ``fills``, from the mesh; the elevations by the exact solve.
+
+    ``fills`` (object id to an sRGB triple, or None for an object that wears
+    no colour) fills each object's visible surface in the same frame.
+    """
+
     from PIL import Image
 
     try:
@@ -501,11 +539,12 @@ def _draw_view(binding, source, receipt, view, *, size_px, png_text, started, ve
             verified = read_elevation_source(binding.repository, source)
         recipe = _elevation_view(receipt, view, hidden_lines=False, scale_denominator=1)
         loaded = perf_counter()
-        if view == "axon":
-            meshes, recipe = _axon_meshes(verified, receipt, recipe, size_px)
+        if view == "axon" or fills is not None:
+            meshes, recipe = _view_meshes(verified, receipt, recipe, size_px)
             drawn = mesh_line_view(meshes, right=recipe.right, up=recipe.up,
-                                   crop_uv=recipe.crop_uv, size_px=size_px, text=png_text)
-            return ModelViewDrawing(drawn.png, drawn.width, drawn.height, loaded - started, perf_counter() - loaded)
+                                   crop_uv=recipe.crop_uv, size_px=size_px, text=png_text, fills=fills)
+            return ModelViewDrawing(drawn.png, drawn.width, drawn.height, loaded - started, perf_counter() - loaded,
+                                    tuple(mesh.object_id for mesh in meshes), drawn.seen)
         u0, v0, u1, v1 = recipe.crop_uv
         mm_per_unit = {"meter": 1000, "millimeter": 1, "inch": 25.4, "foot": 304.8}[verified.length_unit]
         # The existing PNG renderer uses 150 dpi. Choose its paper scale before
@@ -522,7 +561,7 @@ def _draw_view(binding, source, receipt, view, *, size_px, png_text, started, ve
     return ModelViewDrawing(projected.png, width, height, loaded - started, perf_counter() - loaded)
 
 
-def _axon_meshes(verified: VerifiedElevationSource, receipt, recipe: ElevationView, size_px: int):
+def _view_meshes(verified: VerifiedElevationSource, receipt, recipe: ElevationView, size_px: int):
     """The surfaces to draw and the view framing them.
 
     A curve-only object has no surface to hide or be hidden by: it is left out
@@ -563,12 +602,93 @@ def model_view(binding: ProjectBinding, *, model_source: ModelSource, view: str)
             _MODEL_VIEWS.move_to_end(key)
             return _MODEL_VIEWS[key]
     drawn = _draw_view(binding, source, receipt, view, size_px=MODEL_VIEW_MAX_EDGE, png_text=None, started=started)
+    return _keep_model_view(key, (drawn.png, drawn.width, drawn.height))
+
+
+def _keep_model_view(key, value):
     with _model_views_lock:
-        _MODEL_VIEWS[key] = (drawn.png, drawn.width, drawn.height)
+        _MODEL_VIEWS[key] = value
         _MODEL_VIEWS.move_to_end(key)
         while len(_MODEL_VIEWS) > _MODEL_VIEW_LIMIT:
             _MODEL_VIEWS.popitem(last=False)
-    return drawn.png, drawn.width, drawn.height
+    return value
+
+
+def material_view(binding: ProjectBinding, *, model_source: ModelSource, view: str) -> MaterialView:
+    """Read one exact retained model in the colours of the materials its objects wear, without retaining a drawing.
+
+    The source, shapes and frame are the line view's. Each object is filled
+    flat, without light, with the diffuse colour of the material the exact
+    model asset's own table binds to it (``inspect_three_dm_index``: its own
+    material, or its layer's render material), so a pixel inside one of its
+    faces is that colour exactly; an object that wears none is grey under a
+    hatch. Nothing comes from a name, a declaration the file does not carry
+    or a render: the same exact source draws the same pixels. A repeated
+    view is served from process memory once the source verifies again.
+    """
+
+    started = perf_counter()
+    kept: list = []
+    source, receipt = _complete_source(binding, model_source, None, loaded=kept)
+    key = (source, view, MATERIAL_DISPLAY, model_source.asset_sha256)
+    with _model_views_lock:
+        if key in _MODEL_VIEWS:
+            _MODEL_VIEWS.move_to_end(key)
+            return _MODEL_VIEWS[key]
+    try:
+        verified = kept[0] if kept else read_elevation_source(binding.repository, source)
+    except DrawingElevationError as exc:
+        raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
+    worn = _worn_materials(binding, model_source, source, verified.physical_object_ids)
+    fills = {object_id: None if material["color"] is None else tuple(bytes.fromhex(material["color"][1:]))
+             for object_id, material in worn.items()}
+    drawn = _draw_view(binding, source, receipt, view, size_px=MODEL_VIEW_MAX_EDGE, png_text=None, started=started,
+                       verified=verified, fills=fills)
+    materials: dict[tuple[str, str, str], dict[str, Any]] = {}
+    undeclared = [0, 0]
+    for object_id in drawn.objects:
+        material, shows = worn[object_id], int(object_id in drawn.seen)
+        if material["color"] is None:
+            undeclared[0] += 1
+            undeclared[1] += shows
+            continue
+        row = materials.setdefault((material["name"], material["color"], material["source"]), {
+            "name": material["name"], "color": material["color"], "source": material["source"],
+            "objects": 0, "visible": 0})
+        row["objects"] += 1
+        row["visible"] += shows
+    legend = {"materials": [materials[group] for group in sorted(materials)],
+              "undeclared": undeclared[0], "undeclaredVisible": undeclared[1]}
+    return _keep_model_view(key, MaterialView(drawn.png, drawn.width, drawn.height, legend))
+
+
+def _worn_materials(binding, model_source: ModelSource, source, object_ids) -> dict[str, dict[str, Any]]:
+    """The material each drawn object wears, read from the exact model asset's own bytes.
+
+    A native model's drawn object is named by its GUID (a block member by its
+    path of GUIDs, the member last); an exact STEP's by the object id its
+    mesh preview names the same object by. A drawn object the asset does not
+    name exactly once is refused rather than given a guessed material.
+    """
+
+    _, data = artifact_bytes(binding, model_source.asset_sha256, run_id=model_source.run_id)
+    try:
+        rows = inspect_three_dm_index(data)["objects"]
+    except ThreeDmInspectionError as exc:
+        raise StudioError(422, "MODEL_INDEX_UNAVAILABLE", exc.message) from exc
+    native = isinstance(source, NativeModelSource)
+    named: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        named.setdefault(row["object_id"] if native else row["name"], []).append(row)
+    worn = {}
+    for object_id in object_ids:
+        matches = named.get(object_id.rsplit("/", 1)[-1].lower() if native else object_id, ())
+        if len(matches) != 1:
+            raise StudioError(409, "MODEL_MATERIALS_UNAVAILABLE",
+                              f"The exact model asset names drawn object {object_id} {len(matches)} times, "
+                              "so the material it wears cannot be shown.")
+        worn[object_id] = matches[0]["material"]
+    return worn
 
 
 def _registered_drawing(

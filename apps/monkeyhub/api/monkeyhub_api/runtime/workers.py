@@ -1,6 +1,8 @@
 """Supervise owned local service processes; never retry their domain operations."""
 
 from dataclasses import dataclass, field
+from functools import partial
+from http.client import HTTPConnection
 import json
 import os
 from pathlib import Path
@@ -10,7 +12,7 @@ import threading
 import time
 from typing import Callable, Literal
 from urllib.error import URLError
-from urllib.request import ProxyHandler, build_opener
+from urllib.request import HTTPHandler, ProxyHandler, build_opener
 from uuid import uuid4
 
 from ..models import HubError, HubFailure
@@ -21,12 +23,45 @@ WorkerState = Literal["starting", "ready", "busy", "stopping", "stopped", "crash
 # for a probe: a thread blocked on the process ends the wait at once. Probes
 # find a service that is alive but no longer answering, or answering as
 # someone else, so a verified worker that is idle is asked less often; one that
-# is starting, busy or has just missed a probe is asked as before.
-_STARTING_PROBE_S = 0.1
+# is busy or has just missed a probe is asked as before. One that is starting
+# is asked often (#449): its first answer is what the person opening it waits for.
+_STARTING_PROBE_S = 0.05
 _ACTIVE_PROBE_S = 1.0
 _STABLE_PROBE_S = 5.0
 # How long a verified service may miss probes before it is ``unavailable``.
 _UNAVAILABLE_AFTER_S = 5.0
+# How long a probe waits for the answer once its connection is open.
+_PROBE_TIMEOUT_S = 1.0
+# How long a probe of a launch that has not answered yet waits for its port to
+# accept (#449). Nothing listens there until the service has imported its
+# application, and Windows refuses a loopback connection to such a port only
+# after about 2 s of retries: a probe then used its whole timeout, and a service
+# that began listening meanwhile was seen only after the next one, up to a
+# second late. A listening port accepts at once, however busy its process.
+_STARTING_CONNECT_S = 0.03
+
+
+def _connect_within(limit: float, address, timeout, source_address=None) -> socket.socket:
+    """Connect within ``limit``; the exchange then has the request's own timeout."""
+
+    connection = socket.create_connection(address, limit, source_address)
+    connection.settimeout(timeout)
+    return connection
+
+
+class _ProbeHandler(HTTPHandler):
+    """Open a health probe's connection, within ``connect_limit`` while one is set."""
+
+    connect_limit: float | None = None
+
+    def http_open(self, req):
+        return self.do_open(self._connection, req)
+
+    def _connection(self, host, **kwargs) -> HTTPConnection:
+        connection = HTTPConnection(host, **kwargs)
+        if self.connect_limit is not None:
+            connection._create_connection = partial(_connect_within, self.connect_limit)
+        return connection
 
 
 def project_key(project_dir: str | None) -> str:
@@ -231,14 +266,17 @@ class WorkerSupervisor:
     def _watch(self, child: _Child) -> None:
         deadline = time.monotonic() + 30
         unavailable_since = None
-        opener = build_opener(ProxyHandler({}))
+        probe = _ProbeHandler()
+        opener = build_opener(ProxyHandler({}), probe)
         while child.process.poll() is None:
             with self._lock:
                 check = child.desired_state == "running"
                 before = self._shown_state(child)
+                # Until the launch has answered, its port may not listen yet.
+                probe.connect_limit = _STARTING_CONNECT_S if child.service_pid is None else None
             if check:
                 try:
-                    with opener.open(f"http://127.0.0.1:{child.port}/api/health", timeout=1) as response:
+                    with opener.open(f"http://127.0.0.1:{child.port}/api/health", timeout=_PROBE_TIMEOUT_S) as response:
                         health = json.loads(response.read(65536))
                     if not isinstance(health, dict):
                         raise ValueError("Health must be an object")

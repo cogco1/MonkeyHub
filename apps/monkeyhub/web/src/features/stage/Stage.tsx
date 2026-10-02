@@ -34,7 +34,7 @@ import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monke
 import { createDocumentAnnotationsController } from "../../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { ModelAnnotationsHandle } from "../../workspaces/monkeyarch/useModelAnnotations";
 import { distanceBetween, type SnapConstraint } from "../../workspaces/monkeyarch/viewer/featureEdges";
-import { DEFAULT_MODEL_DISPLAY_STYLE, type ModelDisplayStyle } from "../../workspaces/monkeyarch/viewer/modelDisplay";
+import { MODEL_DISPLAY_STYLES, rememberDisplayStyle, rememberedDisplayStyle, type ModelDisplayStyle } from "../../workspaces/monkeyarch/viewer/modelDisplay";
 import { cancelInteractionFrame, createInteractionSession, scheduleInteractionFrame } from "../../workspaces/monkeyarch/interactionSession";
 import type { PushPullTarget, ScaleMode } from "../../workspaces/monkeyarch/interactionSession";
 import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "./ModelEditPanel";
@@ -43,8 +43,9 @@ import { ElevationPanel, type ElevationControls } from "./ElevationPanel";
 import { ModelToolButton } from "./ModelToolButton";
 import { MenuCommand, MenuSeparator, StatusLine, SurfaceMenus } from "../chrome/SurfaceChrome";
 import { preparePushPull } from "./pushPull";
-import { ComponentInfoPanel, useComponentInfoBoard, type ComponentInfoSubject } from "../componentInfo/ComponentInfoCard";
-import { buildComponentCard, pickMatchesShown, type FieldStatus, type ShownModel } from "../componentInfo/componentInfo";
+import { ComponentInfoPanel, useChangesSince, useComponentInfoBoard, useShownLineage,
+  type ComponentInfoSubject } from "../componentInfo/ComponentInfoCard";
+import { buildComponentCard, datasetRelation, pickMatchesShown, type FieldStatus, type ShownModel } from "../componentInfo/componentInfo";
 import "./stageNotices.css";
 import type { NormalDragController } from "../../workspaces/monkeyarch/viewer/normalDrag";
 import { constrainedTranslation, type TranslationConstraint } from "../../workspaces/monkeyarch/viewer/translationGizmo";
@@ -481,9 +482,11 @@ export function Stage({
   const [annotationToolsOpen, setAnnotationToolsOpen] = useState(false);
   // #352: Export and More in the bar hold what the view tools' panel held; one opens at a time.
   const [barMenu, setBarMenu] = useState<"export" | "more" | null>(null);
-  // A viewing preference of this Stage only. The viewport takes it as a prop, so
-  // it keeps the choice across model loads and a remounted canvas opens in it.
-  const [displayStyle, setDisplayStyle] = useState<ModelDisplayStyle>(DEFAULT_MODEL_DISPLAY_STYLE);
+  // How this browser shows models: view state, like a pinned panel, not a Hub setting. The
+  // viewport takes it as a prop, so it keeps the choice across model loads and a remounted
+  // canvas opens in it; a refreshed page opens in the style chosen last (#562).
+  const [displayStyle, setDisplayStyle] = useState<ModelDisplayStyle>(() => rememberedDisplayStyle());
+  const chooseDisplayStyle = (style: ModelDisplayStyle) => { setDisplayStyle(style); rememberDisplayStyle(style); };
   const [parameterLocksOpen, setParameterLocksOpen] = useState(false);
   // #352: the palette's own More: the less frequent drawing tools, tracing paper and the drawing plane.
   const [moreToolsOpen, setMoreToolsOpen] = useState(false);
@@ -1364,6 +1367,12 @@ export function Stage({
   const shownModel = useMemo<ShownModel | null>(() => documentProjectId && shownRunId && shownState && !infoDirty
     ? { projectId: documentProjectId, runId: shownRunId, stateDigest: shownState } : null,
   [documentProjectId, shownRunId, shownState, infoDirty]);
+  // The shown version's line, read while the Board has data to inherit, so an opened card already knows it (#575).
+  const shownLineage = useShownLineage(shownModel, active && hasModel && infoAvailable);
+  const inheritedFrom = useMemo(() => componentBoard.status !== "ready" || shownLineage === undefined ? [] : [...new Set(
+    componentBoard.datasets.filter((item) => datasetRelation(item.dataset, shownModel, shownLineage) === "inherited")
+      .map((item) => item.dataset.appliesTo.runId))].sort(), [componentBoard, shownModel, shownLineage]);
+  const changesSince = useChangesSince(shownModel?.runId ?? null, inheritedFrom, infoOpen && !documentOpen);
   const statusWord = useCallback((status: FieldStatus) => t(`componentInfo.status.${status}`), [t]);
   const infoSubject = useMemo<ComponentInfoSubject | null>(() => {
     if (!infoOpen || documentOpen) return null;
@@ -1373,8 +1382,9 @@ export function Stage({
       componentId: picked.componentId, elementId: picked.elementId,
       modelLabel: designObjectLabel(picked.componentId) ?? picked.componentId,
       shown: shownModel, pickMatchesShown: pickMatchesShown(picked, shownModel), board: componentBoard,
+      lineage: shownLineage ?? null, lineagePending: shownLineage === undefined, changes: changesSince,
     }, statusWord) };
-  }, [infoOpen, documentOpen, picked, infoPending, shownModel, componentBoard, statusWord]);
+  }, [infoOpen, documentOpen, picked, infoPending, shownModel, componentBoard, statusWord, shownLineage, changesSince]);
   const pickedStatus = picked && (
     <span className="picked" title={developerMode ? t("stage.picked.title", {
       status: picked.status, sourceState: picked.sourceState,
@@ -1465,12 +1475,13 @@ export function Stage({
       </div>
       <button type="button" disabled={!model?.hasSelection} onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>
       {/* How the model is painted: one choice, carried to the viewport as a prop so a
-          remounted canvas opens in it too. */}
+          remounted canvas opens in it too. The title says what the chosen look shows. */}
       <label className="stage-menu__field" title={t(`stage.display.${displayStyle}Title`)}>
         <span>{t("stage.display.label")}</span>
         <select data-display-style value={displayStyle}
-          onChange={(event) => setDisplayStyle(event.target.value as ModelDisplayStyle)}>
-          {(["modeling", "original"] as const).map((style) => <option key={style} value={style}>{t(`stage.display.${style}`)}</option>)}
+          onChange={(event) => chooseDisplayStyle(event.target.value as ModelDisplayStyle)}>
+          {MODEL_DISPLAY_STYLES.map((style) => <option key={style} value={style} title={t(`stage.display.${style}Title`)}>
+            {t(`stage.display.${style}`)}</option>)}
         </select>
       </label>
       <span className="stage-menu__sep" aria-hidden="true" />
@@ -2058,6 +2069,9 @@ export function Stage({
           {annotationToolsOpen && <div id="annotation-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.annotate")}>
             <ModelToolButton icon="erase" label={t("document.tool.eraser")} aria-pressed={eraser} disabled={!annotationsReady}
               onClick={() => { const next = !eraser; chooseDrawingTool(null); setAnnotationToolsOpen(true); setAnnotationCancel((value) => value + 1); setEraser(next); }} />
+            {/* #577: the whole tracing paper in one undoable step, through the eraser's own path. */}
+            <ModelToolButton icon="clear" label={t("stage.tools.clear.label")} disabled={!annotationsReady || gestures.length === 0}
+              onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onEraseGestures(gestures.map((_, index) => index)); }} />
             <ModelToolButton icon="undo" label={t("stage.tools.undo.label")} disabled={!canUndoGesture} onClick={onUndoGesture} />
             <ModelToolButton icon="redo" label={t("document.redo")} disabled={!canRedoGesture} onClick={onRedoGesture} />
             {(tool !== null || eraser) && <ModelToolButton icon="close" label={t("stage.tools.cancel.label")}

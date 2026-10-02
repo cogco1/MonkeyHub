@@ -12,6 +12,11 @@ export interface RenderView {
   readonly fov: number;
   readonly aspect: number;
   readonly exposure: number;
+  /**
+   * Whether the scene's lights cast shadows as Modeling draws it now: Presentation's
+   * sun does (#562). A preview and a capture draw them too, so a still is the look on screen.
+   */
+  readonly shadows?: boolean;
   readonly modelSource?: ModelSourceDto | null;
   readonly sourceStageRef?: string | null;
   readonly sourceIssue?: "unsaved" | "loading" | "unbound" | null;
@@ -27,12 +32,14 @@ const EPSILON = 1e-9;
 /** The loaded CAD model is Z-up. */
 const MODEL_UP = new Vector3(0, 0, 1);
 
-async function drawPng(scene: Scene, camera: ViewCamera, screenSize: [number, number], exposure: number): Promise<Blob> {
+async function drawPng(scene: Scene, camera: ViewCamera, screenSize: [number, number], exposure: number, shadows: boolean): Promise<Blob> {
   const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   try {
     renderer.setPixelRatio(1); renderer.setSize(...screenSize, false);
     renderer.outputColorSpace = SRGBColorSpace; renderer.toneMapping = ACESFilmicToneMapping;
     renderer.toneMappingExposure = exposure;
+    // The scene's own lights cast its shadows here as on screen; the map is this renderer's own.
+    renderer.shadowMap.enabled = shadows;
     renderer.render(scene, camera);
     return await new Promise<Blob>((resolve, reject) => renderer.domElement.toBlob(
       blob => blob ? resolve(blob) : reject(new Error("Could not capture the modeling view.")), "image/png"));
@@ -51,16 +58,16 @@ export function renderCamera(view: RenderView): RenderCameraDto {
 export async function renderViewImage(view: RenderView): Promise<{ png: Blob; screenSize: [number, number]; camera: RenderCameraDto }> {
   const screenSize: [number, number] = view.aspect >= 1 ? [2048, Math.max(1, Math.round(2048 / view.aspect))]
     : [Math.max(1, Math.round(2048 * view.aspect)), 2048];
-  return { png: await drawPng(view.scene, view.camera, screenSize, view.exposure), screenSize, camera: renderCamera(view) };
+  return { png: await drawPng(view.scene, view.camera, screenSize, view.exposure, view.shadows === true), screenSize, camera: renderCamera(view) };
 }
 
 /**
  * Draw the scene on screen now through a saved camera: its own matrices, pixel
  * size and exposure, so the new picture frames the current model exactly as
- * the saved one framed its model.
+ * the saved one framed its model, in the look Modeling shows it in now.
  */
 export async function renderSavedViewImage(view: RenderView, saved: SavedView): Promise<Blob> {
-  return drawPng(view.scene, savedCamera(saved.camera), saved.screenSize, saved.camera.exposure);
+  return drawPng(view.scene, savedCamera(saved.camera), saved.screenSize, saved.camera.exposure, view.shadows === true);
 }
 
 /** A camera that draws through the saved matrices as they are; nothing recomputes them. */
@@ -134,11 +141,11 @@ export function savedViewCamera(saved: RenderCameraDto, focus: Vec3, lens: numbe
   };
 }
 
-export function captureRenderView(scene: Scene, camera: ViewCamera, target: Vector3, fov: number, exposure: number): RenderView {
+export function captureRenderView(scene: Scene, camera: ViewCamera, target: Vector3, fov: number, exposure: number, shadows = false): RenderView {
   camera.updateMatrixWorld(true);
   const copy = camera.clone() as ViewCamera;
   const aspect = "aspect" in copy ? copy.aspect : (copy.right - copy.left) / (copy.top - copy.bottom);
-  return { scene, camera: copy, target: [target.x, target.y, target.z], fov, aspect, exposure };
+  return { scene, camera: copy, target: [target.x, target.y, target.z], fov, aspect, exposure, shadows };
 }
 
 /** Preserve the source projection by fitting the canvas, not changing its lens. */

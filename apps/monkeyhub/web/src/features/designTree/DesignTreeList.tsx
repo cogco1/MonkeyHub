@@ -2,7 +2,8 @@
  * The same tree as a list: the view for the keyboard, screen readers and
  * narrow screens, since the canvas is a picture to assistive technology.
  * The current line first, from the root to Current; under each point, the
- * options not taken there and whatever a later Continue left behind.
+ * options not taken there and whatever a later Continue left behind. A fold
+ * (#575) is a row too: Enter opens it, as a click on the canvas does.
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useT } from "../../i18n/useT";
@@ -61,7 +62,9 @@ export function DesignTreeList({ tree, words, selected, onSelect }: {
           data-node={row.id} data-group={row.group} data-kind={node.kind} style={{ paddingInlineStart: `${10 + row.depth * 22}px` }}
           onClick={() => { setFocus(row.id); onSelect(row.id); }} onKeyDown={(event) => move(event, row.id)}>
           <span className="design-tree-list__mark" data-kind={node.kind} aria-hidden="true">
-            {node.kind === "stage" ? `S${node.stage!.number}` : node.kind === "candidate" ? node.letter ?? "·" : node.kind === "current" ? "●" : node.kind === "pending" ? "…" : "○"}
+            {node.kind === "stage" ? `S${node.stage!.number}` : node.kind === "candidate" ? node.letter ?? "·" : node.kind === "current" ? "●"
+              : node.kind === "pending" ? "…" : node.kind === "step" ? String(node.step!.number) : node.kind === "fold" ? "⋯"
+                : node.kind === "drafts" ? String(node.drafts!.runs.length + node.drafts!.cleaned.length) : node.kind === "draft" ? "×" : "○"}
           </span>
           <span className="design-tree-list__title">{words.title(node)}</span>
           <span className="design-tree-list__status">{[group[row.group], status].filter(Boolean).join(" · ")}</span>

@@ -17,7 +17,16 @@ import unittest
 from dataclasses import replace
 
 from archflow.project.refs import ProjectVersionRef
-from archflow.semantics.facets import FACET_KEYS, FACETS, FREE_TEXT_MAX, FREE_TEXT_MIN, allowed_facet_values, suggest_facet_key
+from archflow.semantics.facets import (
+    FACET_KEYS,
+    FACET_REASONS,
+    FACETS,
+    FREE_TEXT_MAX,
+    FREE_TEXT_MIN,
+    allowed_facet_values,
+    facet_format,
+    suggest_facet_key,
+)
 from archflow.state.state_record import (
     Entity,
     StateRecord,
@@ -43,10 +52,13 @@ class FacetRegistryTests(unittest.TestCase):
     """packages/archflow/src/archflow/semantics/facets.py, in the style of packages/archflow/tests/test_semantics.py."""
 
     def test_registry_has_exactly_the_spec_table_keys(self) -> None:
+        """The spec table's keys, and material.color, added with its written reason (#560)."""
+
         self.assertEqual(FACET_KEYS, frozenset({
             "architectural.role", "architectural.enclosure", "structural.role",
-            "material.name", "fabrication.method",
+            "material.name", "material.color", "fabrication.method",
         }))
+        self.assertEqual(set(FACET_REASONS), {"material.color"})
 
     def test_registry_has_exactly_the_spec_table_values(self) -> None:
         self.assertEqual(set(FACETS["architectural.role"]), {
@@ -79,9 +91,14 @@ class ComponentFacetsValidationTests(unittest.TestCase):
 
     def test_free_text_keys_accept_ordinary_text(self) -> None:
         for key, allowed in FACETS.items():
-            if allowed is not None:
+            if allowed is not None or facet_format(key) is not None:
                 continue
             _facet_record({key: "reclaimed oak"})  # must not raise
+
+    def test_a_formatted_key_refuses_ordinary_text(self) -> None:
+        with self.assertRaises(StateRecordError) as raised:
+            _facet_record({"material.name": "reclaimed oak", "material.color": "reclaimed oak"})
+        self.assertIn("#RRGGBB", str(raised.exception))
 
     def test_free_text_boundary_lengths_are_accepted(self) -> None:
         _facet_record({"material.name": "x" * FREE_TEXT_MIN})

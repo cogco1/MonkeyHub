@@ -68,7 +68,7 @@ from monkeycad.execution import (
     long_path,
 )
 from monkeycad.formats.three_dm_inspector import ThreeDmInspection, ThreeDmInspectionError, inspect_three_dm
-from monkeycad.program import CadTranslationError, _resolved_layer_colors, expected_object_semantics
+from monkeycad.program import CadTranslationError, _material_color, _resolved_layer_colors, expected_object_semantics
 
 
 OCCT_ADAPTER_ID = "occt-in-process"
@@ -102,9 +102,15 @@ def _preview_materials(
 ) -> dict[str, PreviewMaterial]:
     """The declared native material each delivered object wears, keyed by object id.
 
-    Every declared component material is carried into the preview. Roles
-    come from ``program.proposal.assemblies`` alone, never from an object's
-    name: GLAZING keeps its glass fallback and an undeclared FRAME is shaded.
+    Every declared component or part material (the object's
+    ``archflow:material``, by part first, #580) is carried into the preview
+    as one native material named by it, in its one colour
+    (``_material_color``: the declared colour, else the identity of its
+    name), so the objects of one material share one table entry. An object
+    whose components and part declare none wears no material and keeps its
+    layer's distinction colour. Roles come from ``program.proposal.assemblies``
+    alone, never from an object's name: GLAZING keeps its glass fallback and
+    an undeclared FRAME is shaded.
     """
 
     objects = semantics["objects"]
@@ -113,8 +119,7 @@ def _preview_materials(
         row = objects[object_id]
         declared = row["user_text"].get("archflow:material")
         if declared:
-            layer_color = layer_colors.get(row["layer"], (0, 0, 0))
-            color = (material_colors or {}).get(declared, layer_color)
+            color = _material_color(declared, material_colors)
             materials[object_id] = PreviewMaterial(name=declared, diffuse=tuple(int(c) for c in color))
     for assembly in program.proposal.assemblies:
         for object_id in assembly.objects_for(AssemblyRole.GLAZING):
@@ -342,6 +347,7 @@ def execute_occt_export(
     material_by_component: Mapping[str, str] | None = None,
     material_colors: Mapping[str, tuple[int, int, int]] | None = None,
     layer_by_component: Mapping[str, str] | None = None,
+    material_by_part: Mapping[str, Mapping[str, str | None]] | None = None,
     preview: bool = True,
     prior_program: CompiledGeometryProgram | None = None,
     prior_step: Path | None = None,
@@ -428,6 +434,7 @@ def execute_occt_export(
             expected_object_semantics(
                 program,
                 material_by_component=material_by_component,
+                material_by_part=material_by_part,
                 layer_by_component=layer_by_component,
             )
         )
@@ -597,7 +604,11 @@ def execute_occt_export(
                 observation_parent_id=observation_parent_id,
             )
             preview_artifact = _preview_artifact(
-                preview_path, workspace, linear_deflection, mesh_counts, preview_materials
+                preview_path, workspace, linear_deflection, mesh_counts, preview_materials,
+                declared=frozenset(
+                    object_id for object_id, material in preview_materials.items()
+                    if semantics["objects"][object_id]["user_text"].get("archflow:material") == material.name
+                ),
             )
         except (OcctBackendError, OSError) as exc:
             failures.append(_failure("cad_execution.preview_write_failed", str(exc)))
@@ -743,6 +754,7 @@ def _preview_artifact(
     linear_deflection: float,
     mesh_counts: Mapping[str, Mapping[str, int]],
     materials: Mapping[str, PreviewMaterial],
+    declared: frozenset[str] = frozenset(),
 ) -> dict[str, object]:
     artifact: dict[str, object] = {
         "format": _PREVIEW_FORMAT,
@@ -766,8 +778,14 @@ def _preview_artifact(
         artifact.update(format="3dm render-mesh and curve preview", curve_counts=curves,
                         geometry="render meshes and native polylines from the same OCCT model as the STEP file",
                         note="Surfaces are render meshes; polylines are native curves. STEP retains the exact model.")
-    if materials:
+    if declared:
+        artifact["carries"].append(
+            "one native material per declared material, named by it and worn by each of its objects; "
+            "an object whose components declare none wears no material"
+        )
+    if set(materials) - declared:
         artifact["carries"].append("native object materials for assembly frame and glazing members")
+    if materials:
         artifact["materials"] = {
             object_id: material.to_dict() for object_id, material in sorted(materials.items())
         }

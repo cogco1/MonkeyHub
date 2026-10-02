@@ -55,6 +55,7 @@ CONDITIONAL_READS: dict[str, tuple[str, ...]] = {
     "/api/working-source": (),
     "/api/board": (),
     "/api/render/jobs": ("render_jobs",),
+    "/api/trash": (),
 }
 
 # The listed views that read the project index once one answers.

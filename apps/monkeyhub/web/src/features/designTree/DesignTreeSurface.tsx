@@ -16,7 +16,7 @@ import DesignTreeCanvas from "./DesignTreeCanvas";
 import { DesignTreeDetails } from "./DesignTreeDetails";
 import { DesignTreeList } from "./DesignTreeList";
 import type { DesignTreeView } from "./DesignTreeBar";
-import { CURRENT, type TreeNode } from "./model";
+import { CURRENT, FOLD, type TreeNode } from "./model";
 import type { ZoomLevel } from "./scene";
 import type { DesignTreeData } from "./useDesignTree";
 import { treeWords, type SurfaceName } from "./words";
@@ -53,12 +53,23 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
   const words = useMemo(() => treeWords(t, tree), [t, tree]);
   const node = selected && tree ? tree.nodes.get(selected) ?? null : null;
   useEffect(() => { if (selected && tree && !tree.nodes.has(selected)) setSelected(null); }, [tree, selected]);
+  // #575: the folds open in place. Drafts that started from a folded step show once the steps do.
+  const { folds, setFolds } = data;
+  const expand = useCallback((fold: "steps" | "drafts") => {
+    const inside = Boolean(tree?.nodes.get(FOLD)?.fold?.drafts);
+    setFolds(fold === "steps" ? { ...folds, steps: true } : { ...folds, drafts: true, ...(inside ? { steps: true } : {}) });
+  }, [folds, setFolds, tree]);
   const select = useCallback((id: string | null) => {
+    const chosen = id ? tree?.nodes.get(id) : undefined;
+    // A fold is a control, not a node to inspect: choosing it opens it, from the canvas or the list alike. A drafts
+    // card that holds drafts the project cleaned opens its inspector instead, which lists them with Restore (#575).
+    if (chosen?.kind === "fold" || (chosen?.kind === "drafts" && !chosen.drafts!.cleaned.length)) {
+      expand(chosen.kind === "fold" ? "steps" : "drafts"); return;
+    }
     setSelected(id);
     setConfirmAccept(false);
-    const chosen = id ? tree?.nodes.get(id) : undefined;
     if (chosen?.kind === "candidate" && chosen.runId) markSeen(chosen.runId);
-  }, [tree, markSeen]);
+  }, [tree, markSeen, expand]);
   const acceptFromCanvas = useCallback(() => { setSelected(CURRENT); setConfirmAccept(Boolean(tree?.accept.allowed)); }, [tree]);
   // Focus once per request, when the tree has the node: its inspector opens and the canvas centres it.
   const [center, setCenter] = useState<{ node: string; request: number } | null>(null);
@@ -97,6 +108,13 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
       {tree && tree.processedCount > 0 && <><MenuSeparator /><MenuCommand aria-pressed={data.showProcessed}
         onClick={() => data.setShowProcessed(!data.showProcessed)}>{data.showProcessed
           ? t("designTree.processed.hide") : t("designTree.processed.show", { count: tree.processedCount })}</MenuCommand></>}
+      {/* #575: Current's earlier steps and the drafts its line superseded fold by default; these open and close them. */}
+      {tree && tree.steps.count > 1 && <><MenuSeparator /><MenuCommand aria-pressed={tree.steps.open}
+        onClick={() => tree.steps.open ? setFolds({ ...folds, steps: false }) : expand("steps")}>{tree.steps.open
+          ? t("designTree.steps.hide") : t("designTree.steps.show", { count: tree.steps.count })}</MenuCommand></>}
+      {tree && tree.drafts.count > 0 && <><MenuSeparator /><MenuCommand aria-pressed={tree.drafts.open}
+        onClick={() => tree.drafts.open ? setFolds({ ...folds, drafts: false }) : expand("drafts")}>{tree.drafts.open
+          ? t("designTree.drafts.hide") : t("designTree.drafts.show", { count: tree.drafts.count })}</MenuCommand></>}
       {mode === "canvas" && tree && <><MenuSeparator /><MenuCommand onClick={() => setFitRequest((value) => value + 1)}>{t("designTree.fit")}</MenuCommand></>}
     </SurfaceMenus>
     {data.source && !data.admissions && <p className="design-tree__notice">{t("designTree.noAdmissions")}</p>}
@@ -110,11 +128,12 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
           <button type="button" className="btn btn--small" onClick={data.reload}>{t("designTree.retry")}</button></> : t("designTree.loading")}
       </div> : mode === "canvas" ? <>
         <DesignTreeCanvas tree={tree} source={data.source} words={words} selected={selected} fitRequest={fitRequest} centerOn={center} title={t("designTree.title")}
-          onSelect={select} onAccept={acceptFromCanvas} onLevel={setLevel} />
+          onSelect={select} onAccept={acceptFromCanvas} onLevel={setLevel} onExpand={expand} />
         <p className="visually-hidden">{t("designTree.canvasNote")}</p>
       </> : <DesignTreeList tree={tree} words={words} selected={selected} onSelect={select} />}
       {tree && node && <DesignTreeDetails tree={tree} node={node} words={words} data={data} confirmAccept={confirmAccept}
         onConfirmAccept={setConfirmAccept} onClose={() => select(null)} onView={view} onRecordEdits={onRecordEdits}
+        onShowDrafts={() => expand("drafts")}
         onCompare={onCompare && ((target) => { if (target.runId) { markSeen(target.runId); onCompare(target.runId); } })} />}
     </div>
     {/* #337 L5: what is selected, else how to work the canvas; at the right end, what the canvas's colours and

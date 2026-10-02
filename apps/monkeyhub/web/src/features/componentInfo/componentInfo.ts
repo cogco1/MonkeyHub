@@ -375,10 +375,38 @@ export interface ShownModel {
   readonly stateDigest: string;
 }
 
-/** A dataset applies only to the version it was written for: same project, run and state. */
+/** A dataset written for exactly this version: same project, run and state. */
 export function appliesToShown(dataset: ComponentInfoDataset, shown: ShownModel | null): boolean {
   return shown !== null && dataset.appliesTo.projectId === shown.projectId &&
     dataset.appliesTo.runId === shown.runId && dataset.appliesTo.stateDigest === shown.stateDigest;
+}
+
+/**
+ * The line the shown version stands on (#575): the runs it continued, nearest first, as the Working
+ * Head's lineage names them, and each run's state where an export of it says.
+ */
+export interface ShownLineage {
+  readonly runId: string;
+  readonly ancestors: readonly string[];
+  readonly states: ReadonlyMap<string, string>;
+}
+
+/** Whether each component's exported shape changed in the shown version since a run it descends from, by that run. */
+export type ChangesSince = ReadonlyMap<string, ReadonlyMap<string, boolean> | "unknown">;
+
+/**
+ * How a dataset reaches the shown version (#575; Kaiwen, 2026-10-01: "继承"). Written for that
+ * version, it is its own; written for a version the shown one continued from, on the same line, it
+ * is inherited, as the person and the agents add meaning step by step along one line. Data written
+ * on another line, or for a state its run never had, is not this version's.
+ */
+export function datasetRelation(dataset: ComponentInfoDataset, shown: ShownModel | null,
+  lineage: ShownLineage | null): "own" | "inherited" | null {
+  if (shown === null || dataset.appliesTo.projectId !== shown.projectId) return null;
+  if (dataset.appliesTo.runId === shown.runId) return dataset.appliesTo.stateDigest === shown.stateDigest ? "own" : null;
+  if (lineage === null || lineage.runId !== shown.runId || !lineage.ancestors.includes(dataset.appliesTo.runId)) return null;
+  const state = lineage.states.get(dataset.appliesTo.runId);
+  return state === undefined || state === dataset.appliesTo.stateDigest ? "inherited" : null;
 }
 
 /**
@@ -440,6 +468,8 @@ export interface CardDataset {
   readonly role: "summary" | "section";
   readonly preparedAt: string;
   readonly appliesTo: AppliesTo;
+  /** Written for a version the shown one continued from, rather than for the shown version itself. */
+  readonly inherited: boolean;
 }
 
 export type CardState = "loading" | "error" | "none" | "unverified" | "mismatch" | "ready";
@@ -458,6 +488,8 @@ export interface ComponentCard {
   readonly mismatched: readonly CardDataset[];
   readonly invalid: readonly InvalidCard[];
   readonly sources: readonly (InfoSource & { readonly datasetTitle: string })[];
+  /** The versions inherited data was written for, since which this component's exported shape changed. */
+  readonly reshapedSince: readonly string[];
 }
 
 export interface CardInput {
@@ -470,6 +502,12 @@ export interface CardInput {
   /** Whether the pick was resolved against that same shown version. */
   readonly pickMatchesShown: boolean;
   readonly board: BoardInfo;
+  /** The shown version's line; without it, only data written for the shown version itself applies. */
+  readonly lineage?: ShownLineage | null;
+  /** The line is still being read: data written for another version waits for it instead of being called another line's. */
+  readonly lineagePending?: boolean;
+  /** What changed since the versions inherited data was written for, as far as it is known yet. */
+  readonly changes?: ChangesSince;
 }
 
 const byOrder = (left: ComponentInfoDataset, right: ComponentInfoDataset) =>
@@ -499,27 +537,39 @@ function cardBlock(dataset: ComponentInfoDataset, componentId: string, statusWor
   };
 }
 
-const cardDataset = (item: BoardDataset): CardDataset => ({ elementId: item.elementId, id: item.dataset.id,
-  title: item.dataset.title, role: item.dataset.role, preparedAt: item.dataset.preparedAt, appliesTo: item.dataset.appliesTo });
+const cardDataset = (item: BoardDataset, inherited = false): CardDataset => ({ elementId: item.elementId, id: item.dataset.id,
+  title: item.dataset.title, role: item.dataset.role, preparedAt: item.dataset.preparedAt, appliesTo: item.dataset.appliesTo,
+  inherited });
+
+/** The versions inherited datasets name, in the words the datasets give them. */
+export const versionLabel = (appliesTo: AppliesTo) => appliesTo.versionLabel ?? appliesTo.runId;
 
 /**
  * Decide what the card shows. Data is shown only when the board has been read, the pick was
- * resolved against the exact version on screen and a dataset was written for that version;
- * otherwise the card says which of these is missing and shows the model's own label and ids.
- * `statusWord` words a status a dataset did not word itself.
+ * resolved against the exact version on screen and a dataset was written for that version or
+ * for one it continued from on its line (inherited, and flagged where the component's shape
+ * changed since); otherwise the card says which of these is missing and shows the model's own
+ * label and ids. `statusWord` words a status a dataset did not word itself.
  */
 export function buildComponentCard(input: CardInput, statusWord: (status: FieldStatus) => string): ComponentCard {
   const { board, componentId, shown } = input;
   const ready = board.status === "ready" ? board : null;
   const datasets = ready?.datasets ?? [];
   const usable = shown !== null && input.pickMatchesShown;
-  const used = usable ? datasets.filter((item) => appliesToShown(item.dataset, shown)) : [];
-  const mismatched = usable ? datasets.filter((item) => !appliesToShown(item.dataset, shown)) : [];
+  const relation = (item: BoardDataset) => datasetRelation(item.dataset, shown, input.lineage ?? null);
+  const used = usable ? datasets.filter((item) => relation(item) !== null) : [];
+  const mismatched = usable ? datasets.filter((item) => relation(item) === null) : [];
+  const inherited = used.filter((item) => relation(item) === "inherited");
+  // A shape this component no longer has is the one thing inherited data may describe wrongly.
+  const reshapedSince = [...new Set(inherited.filter((item) => {
+    const changed = input.changes?.get(item.dataset.appliesTo.runId);
+    return changed !== undefined && changed !== "unknown" && changed.get(componentId) === true;
+  }).map((item) => versionLabel(item.dataset.appliesTo)))];
   const state: CardState = board.status === "error" ? "error"
     : ready === null ? "loading"
     : datasets.length === 0 ? "none"
     : !usable ? "unverified"
-    : used.length === 0 ? "mismatch" : "ready";
+    : used.length === 0 ? (input.lineagePending ? "loading" : "mismatch") : "ready";
   const ordered = used.map((item) => item.dataset).sort(byOrder);
   const summary = ordered.filter((dataset) => dataset.role === "summary").map((dataset) => cardBlock(dataset, componentId, statusWord));
   const sections = ordered.filter((dataset) => dataset.role === "section").map((dataset) => cardBlock(dataset, componentId, statusWord));
@@ -529,8 +579,10 @@ export function buildComponentCard(input: CardInput, statusWord: (status: FieldS
   return {
     componentId, elementId: input.elementId, name: named ?? input.modelLabel, state, shown,
     boardRevision: ready?.revisionSha256 ?? null, summary, sections,
-    used: used.map(cardDataset), mismatched: mismatched.map(cardDataset), invalid: ready?.invalid ?? [],
+    used: used.map((item) => cardDataset(item, inherited.includes(item))), mismatched: mismatched.map((item) => cardDataset(item)),
+    invalid: ready?.invalid ?? [],
     sources: ordered.flatMap((dataset) => (dataset.sources ?? []).map((source) => ({ ...source, datasetTitle: dataset.title }))),
+    reshapedSince,
   };
 }
 
@@ -553,6 +605,11 @@ export function stateSentence(card: ComponentCard, t: CardWords): string | null 
     case "mismatch": return t("componentInfo.state.mismatch", { labels: mismatchLabels(card).join(t("componentInfo.listSeparator")) });
     default: return null;
   }
+}
+
+/** The one line a ready card adds when inherited data may describe a shape this component no longer has. */
+export function reshapedSentence(card: ComponentCard, t: CardWords): string {
+  return t("componentInfo.reshapedSince", { labels: card.reshapedSince.join(t("componentInfo.listSeparator")) });
 }
 
 /** A field's value as printed: the value, then its unit. */
@@ -598,13 +655,14 @@ function blockText(block: CardBlock, t: CardWords, heading: boolean): string[] {
 }
 
 /**
- * The card as plain text, for Copy: exactly what it shows, data and technical section alike, so a
- * pasted card can be checked against the model it came from.
+ * The card as plain text, for Copy: everything it holds, folded notes and technical section alike,
+ * so a pasted card can be checked against the model it came from.
  */
 export function componentCardText(card: ComponentCard, t: CardWords): string {
   const lines = [card.name];
   const sentence = stateSentence(card, t);
   if (sentence) lines.push(sentence);
+  if (card.state === "ready" && card.reshapedSince.length) lines.push(reshapedSentence(card, t));
   if (card.state === "ready") {
     for (const block of card.summary) lines.push(...blockText(block, t, card.summary.length > 1));
     for (const block of card.sections) lines.push("", ...blockText(block, t, true));
@@ -614,7 +672,8 @@ export function componentCardText(card: ComponentCard, t: CardWords): string {
   lines.push(card.shown
     ? `${t("componentInfo.shown")}: ${card.shown.projectId} · ${card.shown.runId} · ${card.shown.stateDigest}`
     : `${t("componentInfo.shown")}: ${t("componentInfo.shownNone")}`);
-  for (const item of card.used) lines.push(`${t("componentInfo.dataset")}: ${item.title} (${item.id}) · ${item.preparedAt} · ${item.appliesTo.versionLabel ?? item.appliesTo.runId}`);
+  for (const item of card.used) lines.push(`${t("componentInfo.dataset")}: ${item.title} (${item.id}) · ${item.preparedAt} · ${item.inherited
+    ? t("componentInfo.inheritedFrom", { label: versionLabel(item.appliesTo) }) : versionLabel(item.appliesTo)}`);
   for (const item of card.mismatched) lines.push(`${t("componentInfo.mismatchedDataset")}: ${item.title} (${item.id}) · ${item.appliesTo.versionLabel ?? ""} · ${item.appliesTo.runId} · ${item.appliesTo.stateDigest}`);
   for (const source of card.sources) lines.push(`${t("componentInfo.sourceLine")}: ${source.label}${source.date ? ` · ${source.date}` : ""}${source.kind ? ` · ${source.kind}` : ""}`);
   if (card.invalid.length) lines.push(t("componentInfo.invalidCards", { count: card.invalid.length }));

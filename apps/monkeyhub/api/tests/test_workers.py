@@ -8,6 +8,7 @@ import signal
 import socket
 import sys
 import tempfile
+import threading
 import time
 from types import SimpleNamespace
 import unittest
@@ -338,6 +339,36 @@ class WorkerSupervisorTests(unittest.TestCase):
                  "The watcher did not record the exit", timeout=_STABLE_PROBE_S)
         self.assertLess(min(when for when in changes if when >= killed) - killed, 1.0)
         self.assertEqual(child.error.code, "PROCESS_EXITED")
+
+    def test_a_starting_launch_is_asked_again_while_its_port_does_not_listen_yet(self):
+        """#449: a port nobody listens on fails a starting probe at once, not after the probe's timeout.
+
+        Windows refuses such a connection only after about 2 s of retries, so a
+        probe used to wait out its whole timeout and a service that began
+        listening meanwhile was seen up to a second late.
+        """
+
+        launch = self.launch("not-listening")
+        exited = threading.Event()
+        process = SimpleNamespace(pid=4321, stdin=None, poll=lambda: 1 if exited.is_set() else None)
+        child = _Child(launch, process, "instance", self.root / "worker.log")
+        connect = socket.create_connection
+        attempts = []
+
+        def counted(address, *args, **kwargs):
+            attempts.append(time.monotonic())
+            return connect(address, *args, **kwargs)
+
+        with patch("monkeyhub_api.runtime.workers.socket.create_connection", side_effect=counted):
+            watcher = threading.Thread(target=self.supervisor._watch, args=(child,), daemon=True)
+            watcher.start()
+            time.sleep(1.0)
+            exited.set()
+            child.signal.set()
+            watcher.join(5)
+        self.assertFalse(watcher.is_alive())
+        self.assertIsNone(child.service_pid)
+        self.assertGreaterEqual(len(attempts), 4, "one starting probe waited out its whole timeout")
 
     def test_a_simulated_minute_probes_an_idle_worker_on_the_stable_cadence(self):
         launch = self.launch("cadence")

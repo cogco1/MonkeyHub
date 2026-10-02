@@ -37,7 +37,12 @@ from typing import Any, Mapping
 from monkeyarch.application.geometry_proposal import GeometryProposalProviderIdentity
 from archflow.state.geometry_program import load_compiled_geometry_program
 from monkeyarch.domain.discipline_seats import SeatSpec
-from monkeycad.formats.three_dm_compose import patch_composed_three_dm
+from monkeycad.formats.three_dm_compose import (
+    ComposedPatch,
+    patch_composed_three_dm,
+    rewrite_composed_materials,
+    verify_composed_three_dm,
+)
 from archflow.project.layout import cad_workspace_path
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
@@ -58,6 +63,7 @@ from archflow.state.state_record import (
     StateRecordOperator,
     apply_state_record_operator,
     combine_component_changes,
+    declared_materials,
     developed_design_view,
 )
 
@@ -167,13 +173,23 @@ def _retain_composed_candidate(
     binding: ProjectBinding, source: ArtifactRecord, run_id: str, receipt: Mapping[str, Any],
     *, source_receipt: Mapping[str, Any] | None,
 ) -> None:
-    """Compose the runner's native exports into the exact input model and retain it."""
+    """Compose the runner's native exports into the exact input model, dress it in the run's materials and retain it.
+
+    Every compose rewrites the model's materials from what the run's own
+    retained record declares (#580), the declaration its native exports were
+    made with, whether or not any geometry changed. The final bytes are read
+    back against the input model, the native exports and that declaration
+    before they are registered; a model that does not read back fails the
+    candidate and nothing is registered.
+    """
 
     before = {row["seat_id"]: row for row in _rows((source_receipt or {}).get("seat_results"))}
     after = {row["seat_id"]: row for row in _rows(receipt.get("seat_results"))}
     if not before or before.keys() != after.keys():
         raise ValueError("The composed candidate needs the same retained geometry seats as its source model.")
-    _, composed = artifact_bytes(binding, source.sha256, run_id=source.run_id)
+    _, original = artifact_bytes(binding, source.sha256, run_id=source.run_id)
+    composed = original
+    patches: list[ComposedPatch] = []
     listing = list_artifacts(binding, run_id=run_id)
     for seat_id, seat in after.items():
         prior_ref = before[seat_id].get("program_ref")
@@ -189,7 +205,21 @@ def _retain_composed_candidate(
         program = load_compiled_geometry_program(binding.repository.load_json(record_ref_from_uri(next_ref, binding.project_id)))
         _, donor = artifact_bytes(binding, donors[0].sha256, run_id=run_id)
         composed = patch_composed_three_dm(composed, prior_program=prior_program, program=program, replacement_3dm=donor)
+        patches.append(ComposedPatch(prior_program=prior_program, program=program, replacement_3dm=donor))
     projection = project_state(binding, run_id)
+    if not projection.reference_state_exact:
+        raise ValueError("The composed candidate's run has no exact retained record to read its declared materials from.")
+    # What the record's components and their parts declare, part first, in the rewrite and its readback alike.
+    material_by_component, material_by_part, material_colors = declared_materials(projection.record)
+    composed = rewrite_composed_materials(composed, programs=tuple(patch.program for patch in patches),
+                                          material_by_component=material_by_component, material_colors=material_colors,
+                                          material_by_part=material_by_part)
+    try:
+        verify_composed_three_dm(composed, base_3dm=original, patches=tuple(patches),
+                                 material_by_component=material_by_component, material_colors=material_colors,
+                                 material_by_part=material_by_part)
+    except ValueError as exc:  # CadPatchError names each object that did not read back
+        raise ValueError(f"The composed candidate model was not retained: {exc}") from exc
     register_model_asset(binding, run_id, projection.state_digest, f"{run_id}-composed.3dm", base64.b64encode(composed).decode(), generated=True)
 
 

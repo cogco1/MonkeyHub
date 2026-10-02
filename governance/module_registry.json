@@ -227,8 +227,8 @@
         "CadProgramBinding and backend export identities: the exact P036 record/branch/stage identity an export is bound to; RhinoCadProgramBinding remains a compatibility alias with unchanged serialization",
         "the execution status and errors every backend reports (CadExecutionStatus, CadExecutionError, CadCapabilityError)",
         "the speculative-workspace rules shared by the OCCT, Rhino and Blender backends: an existing absolute caller-supplied directory, workspace-relative portable artifact paths and their SHA-256",
-        "the layer path and layer colour tables derived from components and material assignment",
-        "the archflow:* object user text each physical object must carry (expected_object_semantics)",
+        "the layer path and layer colour tables derived from components and material assignment: a layer whose components declare one material wears its colour (declared, else an identity colour derived from its name alone), any other keeps its path-derived distinction colour",
+        "the archflow:* object user text each physical object must carry (expected_object_semantics), including archflow:material for a declaring part or component (part first: material_by_part, then material_by_component) and archflow:material_status = undeclared for one whose part and components declare none",
         "writing each of an operation's statements through as an archflow:<key> user string, verbatim, and the reserved identity keys a statement may not take",
         "per-object structural digests of what the CAD script actually emits",
         "the diff into changed / added / retired / kept object ids, with a reason per object",
@@ -250,7 +250,7 @@
         "CompiledGeometryProgram",
         "CadProgramBinding (RhinoCadProgramBinding compatibility alias)",
         "speculative workspace Path",
-        "CadExecutionRequest with explicit artifact stem, material/layer maps, observer, optional verified source and backend option mapping; no repository handle",
+        "CadExecutionRequest with explicit artifact stem, material maps (by component, by part, colours) and layer map, observer, optional verified source and backend option mapping; no repository handle",
         "prior CompiledGeometryProgram"
       ],
       "outputs": [
@@ -274,6 +274,7 @@
         "CadExecutionError",
         "CadCapabilityError",
         "expected_object_semantics",
+        "declared_material",
         "ROOT_LAYER",
         "CadTranslationError",
         "select_patch_operations",
@@ -283,6 +284,7 @@
       "depends_on": [
         "archflow.project.refs",
         "archflow.state.geometry_program",
+        "archflow.state.state_record",
         "monkeycad.blender",
         "monkeycad.occt",
         "monkeycad.rhino"
@@ -292,14 +294,16 @@
         "an object is rebuilt only when its structural digest or its analytic bounds actually changed, beyond tolerance",
         "the rebuild set is closed over input edges - nothing consumed or produced by a rebuilt operation is left stale",
         "an inexpressible patch fails CadPatchError, which is a signal to rebuild, never a partial document",
-        "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError"
+        "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError",
+        "a declared material has one colour wherever it is used and no colour is derived from a component or layer path for it; an undeclared component is never given a material name or colour of one"
       ],
       "status": "canonical",
       "tests": [
         "tests/integration/test_cad_backend_contract.py",
         "packages/monkeyarch/tests/test_cad_patch.py",
         "tests/integration/test_cad_execution.py",
-        "packages/monkeyarch/tests/test_cad_program.py"
+        "packages/monkeyarch/tests/test_cad_program.py",
+        "packages/monkeycad/tests/test_material_colors.py"
       ],
       "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added. P103 incremental export; the only reason a run may reuse a prior .3dm. #515: execution.py holds the interface, binding, status and errors, the export provenance and bounds helpers both exporters share, and the speculative-workspace and hash helpers (they raise CadExecutionError and the interface calls them, so they are not a module of their own); registry.py the backend table; program.py the object semantics every backend's readback is checked against; patch.py the operation diff.",
       "files": [
@@ -317,7 +321,7 @@
       "purpose": "The in-process OCCT backend: build a compiled program as exact B-reps, write and cold-read STEP with a mesh .3dm preview from the same model, and answer drawing and measurement queries on named shapes: hidden-line projection, plane sections, section perspectives, native 3dm decoding and solid-pair measurement.",
       "owns": [
         "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, bounded planar surface, retained polyline curve, capped or uncapped polyline loft, circular revolve, boolean and linear array operations; exact STEP write/readback and tessellated mesh and native curve .3dm preview from one model",
-        "native preview material assignment and readback for caller-declared component materials and existing FRAME/GLAZING role fallbacks, including actual glass transparency",
+        "native preview material assignment and readback for caller-declared component and part materials - one native material per declared name, in its one colour, bound to each of its objects, a part's own before its component's - and existing FRAME/GLAZING role fallbacks, including actual glass transparency",
         "verifying source OCCT STEP shape reuse for unchanged physical objects while rebuilding changed operations and required intermediate inputs",
         "how the OCCT executor realizes a difference: a profile-with-holes extrusion when every void pierces an extruded base along its extrusion, otherwise a boolean cut (difference_strategy auto, boolean or profile_with_holes), recorded as the receipt's lowering",
         "orthographic visible/hidden polylines of named STEP shapes with their source object ids (project_occt_lines): one exact HLRBRep_Algo solve over every selected shape in a caller-stated right/up frame, an exact near/far depth slab, chord-deflection discretization in the STEP read unit",
@@ -390,7 +394,8 @@
       "tests": [
         "tests/integration/test_occt_execution.py",
         "tests/integration/test_cad_backend_contract.py",
-        "packages/monkeycad/tests/test_occt_native_models.py"
+        "packages/monkeycad/tests/test_occt_native_models.py",
+        "packages/monkeycad/tests/test_material_colors.py"
       ],
       "notes": "P107 in-process OCCT executor; OCP and rhino3dm are imported lazily, so importing the package or any of its modules loads neither. #515 splits it by concern: kernel (the binding and the shape helpers the others share), build and boolean, measure, step, native_models, projection, section and preview, with the export orchestration in export.py and the registered OcctBackend in backend.py.",
       "files": [
@@ -417,7 +422,7 @@
         "the rhinoscriptsyntax emission of the analytic operation kinds (solid, revolve, extrusion, planar_surface, loft, boolean union/difference/intersection, linear and radial array, transform, curve)",
         "the P103 partial emission of an operation subset",
         "the Rhino-side prelude that opens the prior model, deletes the retired objects and re-stamps kept objects, copying and remapping their referenced native material tables",
-        "native Rhino object material assignment from the caller-declared material and colour maps, in addition to layer display colours",
+        "native Rhino object material assignment from the caller-declared material maps (by component and by part) and colour map, in addition to layer display colours",
         "the STEP-import script: the same header, semantics tail and layer table as the program script, with each named object read from its own single-object STEP under a digest check, and the delivery's own retained material applied last so nothing overwrites it",
         "the immutable export plan: workspace layout, script, completion token, host witness and the full validation denominator digest",
         "the STA PowerShell/COM worker source and its shell-free encoded command",
@@ -591,11 +596,11 @@
         "per-object encoded-geometry digests and morphology analysis (planarity, curve sampling and exact native polyline vertices/length)",
         "the typed, fail-closed inspection error codes",
         "reading original 3dm container bytes, geometry encodings, user strings, block definitions/references and material tables without claiming geometric validity or bounds; invalid geometry object ids remain explicit",
-        "lightweight native identity, layer, block/reference and raw user-string indexing from exact 3dm bytes, without per-object geometry encoding or validation",
+        "lightweight native identity, layer, block/reference and raw user-string indexing from exact 3dm bytes, without per-object geometry encoding or validation; each indexed object's worn material resolved from the file's own table (its own, or its layer's render material: name, diffuse #RRGGBB) and whether its archflow:material label declares it (declared, file or undeclared)",
         "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified conversion-provider selection; provider execution remains separate from the standalone SKP reader, with no project writes.",
         "independent local SketchUp C API reading of visible face geometry into meters/Z-up meshes; nested instances, transformations, holes and visibility, without launching a desktop host",
         "patching caller-supplied composed 3dm bytes from exact prior/current compiled programs and a native replacement preview, preserving unchanged objects and shared block/material tables with explicit unit conversion",
-        "composed replacements without explicit donor materials inherit the same source object material or a unique source component material, preserving native PBR and textures"
+        "rewriting a composed model's material table, object bindings and material labels from the run's declared materials on every compose, and reading the final composed bytes back against their base, the native exports and those declarations"
       ],
       "does_not_own": [
         "producing the file - monkeycad.occt and monkeycad.rhino",
@@ -606,13 +611,13 @@
       "inputs": [
         ".3dm file path or bytes",
         "model bytes with their source and target format; SKP bytes and an optional local SketchUp SDK path",
-        "caller-supplied composed 3dm bytes, the exact prior and current compiled programs and a native replacement preview"
+        "caller-supplied composed 3dm bytes, the exact prior and current compiled programs and a native replacement preview; the run's declared materials (material.name by component id, what each part wears where a part of its component states its own, material.color by material)"
       ],
       "outputs": [
         "ThreeDmInspection (ThreeDmInspection@N)",
         "Plain native source index value; no persisted record or semantic classification",
         "Mesh and Scene values, encoded 3DM/GLB bytes and their conversion readback",
-        "patched composed 3dm bytes"
+        "patched composed 3dm bytes, rewritten to wear the run's declared materials; a composed readback that raises CadPatchError naming each mismatch"
       ],
       "public_api": [
         "inspect_three_dm",
@@ -625,13 +630,17 @@
         "inspect_three_dm_index",
         "monkeycad.formats.meshes.convert",
         "read_skp",
-        "patch_composed_three_dm"
+        "patch_composed_three_dm",
+        "rewrite_composed_materials",
+        "verify_composed_three_dm",
+        "ComposedPatch"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
         "archflow.state.geometry_program",
         "monkeycad.execution",
-        "monkeycad.integrations"
+        "monkeycad.integrations",
+        "monkeycad.occt"
       ],
       "invariants": [
         "read-only: rhino3dm is imported lazily, one immutable byte snapshot is read, and no Rhino process is started",
@@ -642,7 +651,8 @@
         "inspect_three_dm keeps strict geometry and visible-bounds checks; inspect_three_dm_contents preserves imported invalid geometry as data and never substitutes a geometric-validation result",
         "Imported meshes and saved render meshes retain their faceted/approximation quality; no native reader creates a STEP or an OCCT execution receipt. SKP originals remain with the application owner; the reader does not write project data.",
         "SKP-derived mesh object IDs follow persistent instance paths and tag IDs within the same model; names and geometry changes do not mint new object identities. Unsupported or missing persistent IDs are refused.",
-        "composed-model replacement retains the source GUID for each rebuilt logical object; newly added objects cannot reuse any source GUID, including retired ones; saved readback verifies the expected identity"
+        "composed-model replacement retains the source GUID for each rebuilt logical object; newly added objects cannot reuse any source GUID, including retired ones; saved readback verifies the expected identity",
+        "a composed model wears what its run declares, whatever its geometry did: on every compose, an empty patch selection included, an object a program delivers wears what that run's preview gives it, any other object the material its part (by its name) declares, else what its archflow:component's components declare, and every object without one wears none and carries archflow:material_status = undeclared; materials the base brought (object, layer and block-member bindings) are cleared, GUIDs, geometry and every other user string stay, and a table entry no object wears any more is left unreferenced"
       ],
       "status": "canonical",
       "tests": [
@@ -651,7 +661,8 @@
         "packages/monkeycad/tests/model_export_glb_reader.mjs",
         "packages/monkeycad/tests/test_model_providers.py",
         "packages/monkeycad/tests/test_model_conversion_regressions.py",
-        "packages/monkeycad/tests/test_sketchup_reader.py"
+        "packages/monkeycad/tests/test_sketchup_reader.py",
+        "packages/monkeycad/tests/test_three_dm_compose.py"
       ],
       "notes": "The single source of the inspection key sets that viewers and readback both check against. formats/ also holds the bounded 3DM/GLB mesh codecs (meshes.py) and their conversion providers (conversion.py), SketchUp reading (sketchup_reader.py) and the composition of a patched .3dm (three_dm_compose.py).",
       "files": [
@@ -777,11 +788,11 @@
     {
       "module_id": "monkeydiagram.projection.mesh_views",
       "owner_path": "packages/monkeydiagram/src/monkeydiagram/projection/mesh_views.py",
-      "purpose": "Draw a fast look-only line view of named shapes from their triangles against a depth buffer: the model view's axonometric and the projection cache's thumbnails. Created because the exact hidden-line solve (monkeycad.occt through monkeydiagram.drawing_runs) grows too fast with object count for a view nobody retains, and no drawing owner rasterises meshes.",
+      "purpose": "Draw a fast look-only line view of named shapes from their triangles against a depth buffer: the model view's axonometric and the projection cache's thumbnails, and, given each object's colour, the same view with each visible surface filled (the model view's material display, #580). Created because the exact hidden-line solve (monkeycad.occt through monkeydiagram.drawing_runs) grows too fast with object count for a view nobody retains, and no drawing owner rasterises meshes.",
       "owns": [
         "triangulating the named shapes at a caller-chosen chord error, after forgetting any mesh a shape already holds so a model read once draws every size as a fresh read would, and naming the curve-only objects left out (triangulate)",
         "feature edges of each object's welded mesh: creases over CREASE_DEGREES, open boundaries, non-manifold edges and view silhouettes",
-        "the scanline depth buffer at twice the output resolution and the edge visibility test against it, reduced to an anti-aliased greyscale PNG whose longer side is the requested size (mesh_line_view)",
+        "the scanline depth buffer at twice the output resolution and the edge visibility test against it, reduced to an anti-aliased greyscale PNG whose longer side is the requested size (mesh_line_view); given fills, the object in front under each pixel (the lowest label among coplanar ones), each visible surface filled flat without light in its own sRGB colour, an object without one grey under a hatch, the edges over them, as an RGB PNG naming the objects that show",
         "RENDERER_VERSION, derived from the source of this module's drawing functions, tessellate_shape and the model reader (read_elevation_source), so it changes whenever the same input would draw different pixels without a hand bump; and mesh_pipeline: every setting and library version (OCP, numpy, Pillow) that changes the pixels",
         "working memory bounded by pixel count: triangles are rasterised and edges sampled in chunks of at most a million candidate pixels, splitting a large triangle into row bands; the output side is at most MAX_SIZE_PX",
         "the caller-named PNG text chunks; no time or random id in the bytes"
@@ -799,7 +810,7 @@
       ],
       "outputs": [
         "ObjectMesh tuple and skipped object ids",
-        "MeshLineView (PNG bytes, size, triangle and edge counts)"
+        "MeshLineView (PNG bytes, size, triangle and edge counts, and the objects a filled view shows)"
       ],
       "public_api": [
         "triangulate",
@@ -1366,7 +1377,7 @@
         "packages/monkeyarch/tests/test_wall_solver_contact.py",
         "tests/integration/test_prism_cutouts.py"
       ],
-      "notes": "P092 host side: the wall grants the aperture, the opening type never moves it. The spine suite drives it through the authored record's south wall (packages/monkeyarch/tests/spine_fixture.py)."
+      "notes": "P092 host side: the wall grants the aperture, the opening type never moves it. The spine suite drives it through the authored record's south wall (tests/support/spine_fixture.py)."
     },
     {
       "module_id": "monkeyarch.compilation.geometry",
@@ -1626,7 +1637,7 @@
       "tests": [
         "packages/monkeyarch/tests/test_production_policy.py"
       ],
-      "notes": "ModelPhase.INTENT_COMPILATION is the Studio's phase; nothing retained carries it yet. The archived P053 control plane held the only other instantiation of these contracts. The spine suite drives the Protocol and the receipt round trip through packages/monkeyarch/tests/spine_fixture.py ScriptedProvider."
+      "notes": "ModelPhase.INTENT_COMPILATION is the Studio's phase; nothing retained carries it yet. The archived P053 control plane held the only other instantiation of these contracts. The spine suite drives the Protocol and the receipt round trip through tests/support/spine_fixture.py ScriptedProvider."
     },
     {
       "module_id": "archflow.project.archive",
@@ -1909,7 +1920,8 @@
         "resolving a project-relative path or a record/artifact ref to an absolute path inside the root",
         "the names of the two authored work-in-progress files (input/runner/state-record.json, input/runner/seats.json)",
         "the names of the three authored work-in-progress files (input/runner/state-record.json, input/runner/seats.json, input/runner/program-sheet.json)",
-        "the project-relative design/branches.json position table path"
+        "the project-relative design/branches.json position table path",
+        "the project trash's paths (#575): trash/runs/<run_id> for a trashed run's whole directory and trash/entries/<run_id>.json for its manifest, kept apart so no run id can collide with a manifest"
       ],
       "does_not_own": [
         "creating directories or writing files (archflow.project.repository)",
@@ -1944,7 +1956,10 @@
         "FINGERPRINT_SETTLED_NS",
         "LayoutFingerprint.from_lines",
         "is_layout_directory",
-        "pointer_file_lines"
+        "pointer_file_lines",
+        "ProjectLayout.trash",
+        "ProjectLayout.trashed_run",
+        "ProjectLayout.trash_manifest"
       ],
       "depends_on": [
         "archflow.project.refs"
@@ -1961,7 +1976,8 @@
         "packages/archflow/tests/test_project_inputs.py",
         "tests/integration/test_project_runner.py",
         "packages/archflow/tests/test_project_fingerprint.py",
-        "packages/archflow/tests/test_project_watch.py"
+        "packages/archflow/tests/test_project_watch.py",
+        "packages/archflow/tests/test_project_trash.py"
       ],
       "notes": "A path table walked by every FilesystemProjectRepository test; only the two authored-input paths are asserted directly, in packages/archflow/tests/test_project_inputs.py. RunLayout is returned by ProjectLayout.run but never imported by name."
     },
@@ -2292,7 +2308,8 @@
         "the fail-closed check that a producer was assigned a destination (require_destination, PersistenceDestinationRequired)",
         "the structural protocols a repository satisfies (RecordSink, WorkspaceSink)",
         "the project-scoped design branch read/CAS port; no writer implementation",
-        "structural project snapshot and candidate transfer port; persistence remains with P036"
+        "structural project snapshot and candidate transfer port; persistence remains with P036",
+        "the project trash port (RunTrash) and the entry it answers with (TrashEntry, #575); persistence remains with P036"
       ],
       "does_not_own": [
         "any implementation of these ports (archflow.project.repository is the only one)",
@@ -2316,7 +2333,9 @@
         "PersistenceDestinationRequired",
         "DesignBranchStore",
         "ProjectTransferStore",
-        "WorkingDraftStore"
+        "WorkingDraftStore",
+        "RunTrash",
+        "TrashEntry"
       ],
       "depends_on": [
         "archflow.project.manifest",
@@ -2330,7 +2349,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "packages/archflow/tests/test_project_repository.py"
+        "packages/archflow/tests/test_project_repository.py",
+        "packages/archflow/tests/test_project_trash.py"
       ],
       "notes": "WorkspaceSink is the narrow binary-file seam for an already assigned run workspace; it does not make the file canonical or receipt-certified."
     },
@@ -2589,8 +2609,9 @@
         "Read-only classification of the declared project format as current, supported legacy, too new or invalid",
         "Ephemeral retained-format inventories, preserved retained kinds and migration blockers through the existing guarded transfer closure; no second format manifest",
         "Forward format-1 to format-2 migration into a new empty directory from a disposable staging copy: the source is never written; every retained record is restated at the pointers its schema owner declares (archflow.project.version_refs) and re-hashed, and the rename cascades to a fixed point so every record ref, project:// URI and design branch naming it moves with it; a record carrying a legacy identity no owner declares blocks the migration; everything the declarations do not own is copied byte for byte; the migration retains its own ProjectFormatMigration@1 receipt in a format-migration run inside the project it produced",
-        "The project working position and explicit retention choices in design/working.json; CAS updates and expiry of superseded local recovery snapshots. No run is removed automatically.",
-        "the process-wide memos of verified record bytes (64 MB, no record above 4 MB), verified record identities and stamp-keyed listings (list_json, run manifests, design branches) (ADR-008 phase 1a)"
+        "The project working position and explicit retention choices in design/working.json; CAS updates and expiry of superseded local recovery snapshots. No run is removed automatically here: a run leaves runs/ only through the project trash.",
+        "the process-wide memos of verified record bytes (64 MB, no record above 4 MB), verified record identities and stamp-keyed listings (list_json, run manifests, design branches) (ADR-008 phase 1a)",
+        "the project trash (#575): trash_run moves one whole run directory into trash/runs/<run_id> in one rename, beside a ProjectTrashEntry@1 manifest (when, why, which rule, its state digest, what superseded it, the working row it took); restore_trashed_run moves it back with its row; purge_trash deletes entries past the 30-day retention; trash_entries lists whole entries; run_mentions reads where retained JSON outside a run names it, for a caller choosing what may go"
       ],
       "does_not_own": [
         "path naming inside a project (archflow.project.layout)",
@@ -2658,7 +2679,18 @@
         "FilesystemProjectRepository.require_json",
         "FilesystemProjectRepository.record_stat",
         "project_root_key",
-        "project_path_key"
+        "project_path_key",
+        "FilesystemProjectRepository.trash_run",
+        "FilesystemProjectRepository.trash_entries",
+        "FilesystemProjectRepository.restore_trashed_run",
+        "FilesystemProjectRepository.purge_trash",
+        "FilesystemProjectRepository.run_mentions",
+        "RunNotTrashed",
+        "TrashEntryNotFound",
+        "RunNotRestored",
+        "TRASH_RETENTION",
+        "TRASH_ENTRY_SCHEMA",
+        "names_run"
       ],
       "depends_on": [
         "archflow.project.digests",
@@ -2682,11 +2714,13 @@
         "design branch creation expects no existing branch; advancement compares the exact Stage ref and preserves fork identity; canonical HEAD is unchanged",
         "candidate transfer installs immutable dependencies only and never accepts a Stage or changes published HEAD; pull checks the expected local branch mapping, preserves local runs and inputs, and refuses a different published HEAD",
         "Format planning refuses a source missing the existing advisory lock files rather than creating them; declared schema inventory is not a typed reference migration plan, and a supported legacy format 1 is upgradeable only through migrate_project_format into a new directory; the source is never written",
-        "Working-draft cleanup never removes a run, input or shared object: an automatic candidate stays whether or not anything refers to it. It removes only local recovery snapshots that are neither the current localDraftRef nor updated within the last 24 hours, and one inconsistent snapshot refuses the whole expiry.",
+        "Working-draft cleanup never removes a run, input or shared object: an automatic candidate stays whether or not anything refers to it. It removes only local recovery snapshots that are neither the current localDraftRef nor updated within the last 24 hours, and one inconsistent snapshot refuses the whole expiry. A run leaves runs/ only through trash_run.",
         "Source validation and reference writes share the same cross-process guard as cleanup; in-process and filesystem locks are acquired in project, HEAD, design order. Full project archives preserve working metadata and local recovery; candidate synchronization never replaces the local working position.",
         "every on-disk mutation this module makes is counted by write_serial for each registered root containing it and reported to that root's add_write_observer callbacks after it lands; an observer that raises is logged and never fails the write; roots are keyed by project_root_key (normalized case, absolute, resolved, without a Win32 extended-length prefix), so every spelling of one root shares its serial and observers",
         "load_json parses a payload of its own for every caller; kept verified bytes are used only while their file keeps the size and time it was read with, and only once that time was settled; a listing, a run manifest or the design branches are kept only under a settled stat stamp of the place they were read from, and a write this process makes forgets the kept places it can have changed (the written path, what lies below it and its directory's listing); verify reads every file itself",
-        "a run is published whole: create_run, create_run_batch and a transfer bringing a run not yet present stage its run.json and areas (or its transferred files) in a dot-named directory beside the runs and rename that into runs/<run_id> in one step, never replacing an existing directory; one whose staging directory something outside the process keeps busy past every retry is completed in place, as before; no run id begins with a dot, so run_ids never lists a run still being staged, nor a staging directory an interrupted writer left behind; adding to an existing run stays one immutable file at a time"
+        "a run is published whole: create_run, create_run_batch and a transfer bringing a run not yet present stage its run.json and areas (or its transferred files) in a dot-named directory beside the runs and rename that into runs/<run_id> in one step, never replacing an existing directory; one whose staging directory something outside the process keeps busy past every retry is completed in place, as before; no run id begins with a dot, so run_ids never lists a run still being staged, nor a staging directory an interrupted writer left behind; adding to an existing run stays one immutable file at a time",
+        "the trash moves, never copies: a run is renamed whole into trash/runs/<run_id> and back, or stays where it is (RunNotTrashed, RunNotRestored); its files are never rewritten and shared objects never move. trash_run refuses the Working Head, a run an execution's ledger names (as run or source), a saved or chosen working row, the local recovery and its source, a run keeping any review, Stage, attributed act or local recovery record, a design branch's Stage run and every run the published event chain names; it takes the project, HEAD and design locks, and an unlabelled automatic working row moves with the run into the manifest",
+        "trash crash order: trashing writes the manifest, then drops the run's working row, then renames the run; restoring renames it back, then puts the row back, then removes the manifest; purging renames the entry to a dot name, removes its manifest, then its files. A manifest without its trashed run is settled by the next trash, restore or purge (the row back if the run is in runs/, then no manifest), so reopening never meets a working row without its run and a run is never in two places or part of one; an unreadable manifest is left alone and never purged or restored"
       ],
       "status": "canonical",
       "tests": [
@@ -2714,7 +2748,7 @@
         "per-seat orchestration: scope, exclusions, production context, proposal authoring, program retention, handover compilation",
         "component coverage: what counts as covered, what is declined, what is undeclared and when that is fatal",
         "assembling what reaches the relation check across the existing seat order: the record's declared relations and producer-built support relations wait for their checker inputs; final unmeasurable relations remain retained unchecked",
-        "backend-neutral dispatch through get_cad_backend().execute(request), retaining native receipts; exact verified result reuse, source reuse and declared patch/rebuild/oracle behavior",
+        "backend-neutral dispatch through get_cad_backend().execute(request), retaining native receipts; exact verified result reuse, source reuse and declared patch/rebuild/oracle behavior; every request carries the materials the record's components and their parts declare (declared_materials: material.name by component id, what each part wears where a part states its own, material.color by material)",
         "the retained record kinds (state-record, stage-closure, stage-exit-binding, project-levels, project-grids, selected-spatial-option, discipline-seat, seat-authoring-context, seat-geometry-program, seat-relation-check, seat-handover, seat-round-receipt, runner-run-failure, RunnerRunReceipt@3)",
         "the stage closure and exit binding of a run: the CompositeStageClosureReceipt compiled from the run's own relation checks and seat results, and the StageExitBinding derived from a SATISFIED one",
         "the synthetic bounds that make a Space@1 zone measurable: its volumes' declared min/max, entered in objects_by_element under the zone's entity id",
@@ -2805,14 +2839,16 @@
         "source ProducedElement values and STEP shapes are reused only after verifying row inputs, dependency context and retained source execution; current-run relation and solid checks still receive the complete model; missing legacy producer results fall back to full production",
         "Export observer failure never fails or repeats an export; the workflow imports no monitoring implementation",
         "an explicitly requested work-model export realizes no seat: its retained receipt is skipped when looking for a prior export to reuse or patch",
-        "adding a registered CAD backend does not add runner dispatch branches; cached receipts and patch sources pass exact P036 binding and artifact integrity checks"
+        "adding a registered CAD backend does not add runner dispatch branches; cached receipts and patch sources pass exact P036 binding and artifact integrity checks",
+        "materials reach an export only from the record's facets, keyed by the component ids the program binds and by those components' part ids; nothing is read from a component's id, name or shape"
       ],
       "status": "canonical",
       "tests": [
         "tests/integration/test_project_runner.py",
         "packages/monkeyarch/tests/test_state_record.py",
         "tests/integration/test_cad_backend_contract.py",
-        "tests/integration/test_blender_projection_runner.py"
+        "tests/integration/test_blender_projection_runner.py",
+        "tests/integration/test_declared_materials.py"
       ],
       "notes": "packages/archflow/src/archflow/state/state_record.py imports SchematicPack/bootstrap_developed_state from here - the state to runtime inversion ADR-001's record (section 2.2) folds away."
     },
@@ -2983,9 +3019,11 @@
     {
       "module_id": "archflow.semantics.facets",
       "owner_path": "packages/archflow/src/archflow/semantics/facets.py",
-      "purpose": "The registered L3 facets a component may carry once its meaning is established: namespaced key/value pairs, each key either a closed set of values or free text.",
+      "purpose": "The registered L3 facets a component may carry once its meaning is established: namespaced key/value pairs, each key a closed set of values, free text, or text in one written form.",
       "owns": [
-        "the facet vocabulary (architectural.role, architectural.enclosure, structural.role, material.name, fabrication.method), which keys are free text, and the free-text length bounds"
+        "the facet vocabulary (architectural.role, architectural.enclosure, structural.role, material.name, material.color, fabrication.method), which keys are free text, and the free-text length bounds",
+        "the one written form of a formatted key (material.color: an sRGB hex colour #RRGGBB, kept in upper case), its canonical spelling and its sRGB channels",
+        "the written reason of each key added after the construction spec's table (FACET_REASONS, ADR-006)"
       ],
       "does_not_own": [
         "roles - archflow.semantics.roles",
@@ -2997,18 +3035,27 @@
       "public_api": [
         "FACETS",
         "FACET_KEYS",
+        "FACET_FORMATS",
+        "FACET_REASONS",
+        "FacetFormat",
         "FREE_TEXT_MIN",
         "FREE_TEXT_MAX",
         "allowed_facet_values",
+        "facet_format",
+        "canonical_facet_value",
+        "material_color_rgb",
         "suggest_facet_key"
       ],
       "depends_on": [],
       "invariants": [
-        "a facet is not an entity type and not a role or a condition (ADR-006); an enumerated key accepts only its closed set of values, a free-text key accepts 1-120 characters"
+        "a facet is not an entity type and not a role or a condition (ADR-006); an enumerated key accepts only its closed set of values, a free-text key accepts 1-120 characters",
+        "a formatted key accepts only text in its form; canonical_facet_value changes only the case of an otherwise well-formed colour and guesses no colour from any other text",
+        "a key added after the spec table carries its written reason why the registered keys cannot be composed to say it"
       ],
       "status": "canonical",
       "tests": [
-        "packages/monkeyarch/tests/test_facets.py"
+        "packages/monkeyarch/tests/test_facets.py",
+        "packages/archflow/tests/test_material_facets.py"
       ],
       "notes": "Facets live on Component@1.fields.facets (spec docs/design/construction-api.md §3.4); GH-419 Task C2."
     },
@@ -3772,6 +3819,10 @@
         "design_components_of",
         "component_semantics",
         "component_facets",
+        "component_part_facets",
+        "declared_materials",
+        "DeclaredMaterials",
+        "part_of_object",
         "developed_design_view",
         "RecordBinding",
         "legacy_state_digest",
@@ -3828,7 +3879,9 @@
         "Lock changes alter only existing Parameter.lock_authority; exact bases and ordinary value/dependency protections remain enforced, new downstream bindings are allowed, and only an explicit unlock permits detaching existing locked bindings",
         "a record is a value: its readings (digest, state_digest, dependency_edges, resolve_element_bindings, per-entity parameter bindings, design_components_of per source and developed_design_view per argument tuple) are taken once per instance and kept on it; dataclasses.replace starts a new instance with nothing kept, and resolve_element_bindings hands each caller rows of its own",
         "an element named in another element's references.voids is upstream of it: changing the void invalidates the host",
-        "facets on a component are its only L3 meaning a capability may read; changing them changes no element, object, datum or dependency"
+        "facets on a component are its only L3 meaning a capability may read; changing them changes no element, object, datum or dependency",
+        "a part's own material lives under its component (part_facets: part id -> material.name and material.color only): the record refuses a part the component does not have and any other key, and declared_materials resolves every part of a component one of whose parts states its own by precedence (the part's, else the component's, else none); an exported object belongs to the part it is named after (part_of_object: obj-<element id>, or obj-<element id>-<suffix>, the longest such part winning), the one naming rule a pick also reads",
+        "a material.color is stated with the material.name it colours, on a component or on a part, and every component and part sharing a material.name carries the same material.color or none; anything else is refused naming the components and parts, while records without colours or facets stay valid"
       ],
       "status": "canonical",
       "tests": [
@@ -3838,7 +3891,8 @@
         "packages/monkeyarch/tests/test_massing_metrics.py",
         "packages/monkeyarch/tests/test_lintel_bearing.py",
         "tests/integration/test_window_relational_update.py",
-        "services/project-runtime/tests/test_derivation_memo.py"
+        "services/project-runtime/tests/test_derivation_memo.py",
+        "packages/archflow/tests/test_material_facets.py"
       ],
       "notes": "The projection is built here; state no longer imports runtime."
     },
@@ -4106,6 +4160,7 @@
         "WORK_COPY_WORKSPACE",
         "GET /api/drawings/model-view",
         "model_view",
+        "material_view",
         "POST /api/drawings/plans",
         "POST /api/drawings/plans/status",
         "GET /api/drawings/plans/dimensions",
@@ -4197,7 +4252,7 @@
         "a work copy names one exact registration - run, asset sha256 and revisionRef together, where a null revisionRef selects the registration that carries none and never the newest different one; its own identity is the origin document, so the same registration resolves to the same file across restarts, and it holds the origin's own media type because that is the kind of file it contains; a document whose pages are answered for by different documents, whose page has become another page of one document, whose current replacement has a different page count or is a different kind of file, or whose registered media type has no editable copy at all, has no one file that can stand for it: the row carries that reason and the request is refused as not editable, naming any copy already made; the row names the whole registration it answers for and no page number, because one file answers for the whole document",
         "registered source bytes stay immutable: edited work-copy bytes become a new registered document through the existing save_document replacement path, declaring the whole document they replace, with no modelSource, drawingId, sourceStageRef or revisionRef inherited and no change to canonical HEAD",
         "an upload names either the pages it replaces or the one document it replaces whole, never both; a declared whole-document replacement must be the same kind of file with the same page count as the document it replaces, so a file that gained or lost a page is refused visibly instead of registering pages that are placed on no board; a page-by-page upload may still take any page of a longer file, and no two old pages may be answered for by one uploaded page",
-        "model-view is a transient orthographic PNG from a complete retained STEP bound to exact run/stateDigest/model asset; it creates no drawing or project record and refuses unsupported sources. Its views are the five model-axis directions and the isometric axon; every read verifies the source again, and the projection is reused in process memory by the exact source that run/stateDigest/asset resolve to and the view name.",
+        "model-view is a transient orthographic PNG from a complete retained STEP bound to exact run/stateDigest/model asset; it creates no drawing or project record and refuses unsupported sources. Its views are the five model-axis directions and the isometric axon; every read verifies the source again, and the projection is reused in process memory by the exact source that run/stateDigest/asset resolve to and the view name. display=material draws the same source and frame with each object filled flat in the diffuse colour of the material the exact model asset's own table binds to it (inspect_three_dm_index), an object wearing none grey under a hatch, and answers a legend of the materials drawn (declared or file) and the undeclared count; a drawn object the asset does not name exactly once is refused (MODEL_MATERIALS_UNAVAILABLE) rather than given a guessed colour, and its reuse key adds the display and the asset.",
         "Uploaded model registrations protect their source run permanently; generated compositions retain generated provenance, and their runs, like every run, are never removed automatically. Legacy registrations are conservatively protected.",
         "Cut-plan freshness is derived from exact source object inputs intersecting the view slab, including entering and occluding objects, and resolved dimension anchors; unknown targets and broken anchors are explicit. Rebuild preserves the recipe and immutable prior revision; no nearest-object rebinding is allowed.",
         "A rebuilt cut plan replaces its previous revision whole unless the page's visible aspect ratio changed. A competing rebuild of an already replaced revision is refused before projection; an identical predecessor retry or an unchanged revision returns its retained result. Restoring an older recipe creates a new revision and replacement with the exact before/after and actor, even when the pixels match history. Why a page was replaced - representation, source or upload - is derived from the two registrations and never stored; Render counts only a source or upload replacement as a newer input.",
@@ -4230,6 +4285,7 @@
         "services/project-runtime/tests/test_drawing_dimensions.py",
         "services/project-runtime/tests/test_model_exports.py",
         "services/project-runtime/tests/test_model_source_index.py",
+        "services/project-runtime/tests/test_material_view.py",
         "services/project-runtime/tests/test_model_load_monitoring.py",
         "apps/monkeyhub/web/test/externalModelImport.browser.mjs",
         "services/project-runtime/tests/test_section_perspective.py",
@@ -4616,12 +4672,13 @@
         "executing a semantic component proposal through the same run_operator path as scalar and massing proposals",
         "retaining the exact document comment referenced by a proposal in the candidate run without substituting newer ink or source file versions",
         "rechecking a proposal model source and its exact pinned document association before candidate execution, including original saved page and calibration references on traced elements",
-        "arranging composed-model continuation after native candidate execution: matching retained seat programs and CAD exports, calling the existing CAD composition adapter, and registering the complete result through project_runtime.documents",
+        "arranging composed-model continuation after native candidate execution: matching retained seat programs and CAD exports, calling the existing CAD composition adapter, rewriting the result's materials from the run's own retained declaration (declared_materials) and reading its final bytes back before registering the complete result through project_runtime.documents",
         "retaining each candidate typed operator, exact immediate source and committed base Stage; replaying its chain against the saved materialized result",
         "retaining combined candidate source ids with one normalized operator against their common Stage; replaying all sources before acceptance",
         "Read-only runtime inspection of live jobs, exact retained candidates and branch-reachable committed Stages; managed candidate admission may accept a preallocated run id without weakening exact-base checks or re-executing an existing run",
         "Protecting an executing candidate and its input from automatic cleanup, and recording its finished result in the working position for recovery and comparison without moving the editing base or accepting a Stage.",
-        "The read-only Worktree Graph: the Working Head, other accepted lines, running and interrupted candidate work with exact bases and declared read/write refs, retained results off the head's line and whether the StateRecord combine rule accepts them with the head, plus each drawing's latest revision as project_runtime.binding's representation-status projection reads it (what the Drawing tool says) and each render attempt's retained source state; each finished line's retained admission (admitted, rejected, superseded or none) and Study"
+        "The read-only Worktree Graph: the Working Head and its line (its first-parent chain, oldest first, each step with its retained label, request, summary and Stage), other accepted lines, running and interrupted candidate work with exact bases and declared read/write refs, retained results off the head's line and whether the StateRecord combine rule accepts them with the head, a conflicting one the line moved past and nobody continued or admitted being a draft the line superseded (#575), plus each drawing's latest revision as project_runtime.binding's representation-status projection reads it (what the Drawing tool says) and each render attempt's retained source state; each finished line's retained admission (admitted, rejected, superseded or none) and Study",
+        "Kaiwen's retention rule (#575): which runs go to the project trash (plan_cleaning) - a draft the Worktree Graph names superseded, an attempt an admitted result replaced or its loop withdrew, a design change whose run never finished - and only off every kept line (the Working Head's, a Stage's, an admitted result's), never continued, admitted or rejected, no saved or chosen row, no execution's input, holding only what its execution wrote, and named by no retained record outside it but the admission that replaced it; moving them in order (clean_superseded), the trash read and restore (GET /api/trash, POST /api/trash/restore), the 30-day purge, and the sweeps at project open (after the index loads) and after each Continue on a thread of their own (RetentionSweeps)"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - monkeyarch.application.project_runner",
@@ -4693,7 +4750,23 @@
         "worktree_graph",
         "WorktreeGraph",
         "WorktreeLine",
-        "RepresentationState"
+        "LineStep",
+        "RepresentationState",
+        "GET /api/trash",
+        "POST /api/trash/restore",
+        "plan_cleaning",
+        "clean_superseded",
+        "read_trash",
+        "restore_trashed",
+        "purge_expired",
+        "RetentionSweeps",
+        "CleaningPlan",
+        "Sweep",
+        "TrashView",
+        "ProjectTrashDto",
+        "TrashEntryDto",
+        "TrashRestoreRequestDto",
+        "TrashRestoreDto"
       ],
       "depends_on": [
         "archflow.project.inputs",
@@ -4735,7 +4808,10 @@
         "candidate ownership continues the selected source run through its retained seat round and discipline-seat refs; only explicitly deleted Component roots retire, legacy sources without a seat schedule keep authored-pack behavior, and missing or ambiguous retained ownership is refused",
         "changed-component coverage is checked before composed-model registration and on cold candidate reads from the existing retained operator and runner receipt; a run that did not build its own changed components is not recovered as a succeeded candidate",
         "the Worktree Graph never merges, starts, replays or writes; conflicts are compared from the nearest shared source, never from a common Stage that both lines already changed",
-        "a Worktree Graph drawing row is the representation-status projection of the drawing's latest page, so a change outside the plan's read set leaves it current; the graph says stale for outdated and keeps its other words"
+        "a superseded draft is read from retained facts only (its lineage, the combine dry run, design.continued events and admissions) and stays listed with its comparison; the Worktree Graph itself moves, deletes and rewrites nothing",
+        "a Worktree Graph drawing row is the representation-status projection of the drawing's latest page, so a change outside the plan's read set leaves it current; the graph says stale for outdated and keeps its other words",
+        "cleaning never moves the Working Head, a design branch, HEAD, a line step, a Stage or an admitted result; an unreadable working position, admission or design branch cleans nothing; a run some kept run names stays, and a run that names another moves before it; each sweep that moved runs retains one design.cleaned AuditEvent@1 and each restore one design.restored in the fixed studio-retention run, and a run those events name is never cleaned again; a restore brings back every trashed run the restored run names",
+        "every composed candidate wears what its run's exact retained record declares, whether or not geometry changed, and its final bytes are read back (GUIDs, encoded geometry, non-material user strings and materials) before registration; a model that does not read back fails the candidate and registers nothing, and retained composed models are never rewritten"
       ],
       "status": "canonical",
       "tests": [
@@ -4751,7 +4827,8 @@
         "services/project-runtime/tests/test_model_load_monitoring.py",
         "apps/monkeyhub/web/test/candidatePreview.browser.mjs",
         "services/project-runtime/tests/test_runtime.py",
-        "services/project-runtime/tests/test_worktrees.py"
+        "services/project-runtime/tests/test_worktrees.py",
+        "services/project-runtime/tests/test_retention.py"
       ],
       "notes": "The whole module is arrangement: the kernel runner does the work, this decides when and with what.",
       "files": [
@@ -4766,7 +4843,8 @@
         "services/project-runtime/src/project_runtime/api/dto/events.py",
         "services/project-runtime/src/project_runtime/status.py",
         "services/project-runtime/src/project_runtime/api/routes/runtime.py",
-        "services/project-runtime/src/project_runtime/api/dto/runtime.py"
+        "services/project-runtime/src/project_runtime/api/dto/runtime.py",
+        "services/project-runtime/src/project_runtime/application/retention.py"
       ]
     },
     {
@@ -4820,7 +4898,7 @@
         "the project recipe as a scoped decision (correction capture, option A): a person's confirmed require decision in the drawing domain whose typedBinding kind recipe holds closed paper-space graphics values, and project_recipe, the one per-key read of it a new drawing takes between its own previous revision and the code default",
         "a recipe travelling between projects (#252): recipe_export, the one DrawingRecipeExport@1 form of an active recipe decision (values, target, hold, decision id, revision sha256 and its own canonical sha256; nothing else of the project), read_recipe_export, its closed and digest-checked reading, and import_recipe, which retains one as a person's soft_preference for the whole project citing the export's sha256; tools/project/export_drawing_recipe.py is its command line; the Runtime exports a selected revision, inspects a file without writes and imports on explicit confirmation through the same functions",
         "Composing explicitly selected exact Study evidence revisions into ContextPack separately from design facts and applicable decisions; no implicit Study scan, acceptance or project write.",
-        "the source-bound, read-only visual observation channel (GH-303): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners, the strict VisualObservation answer and provider seam, and the Harness allowance; POST /api/visual-reviews defaults to structured observation and also delivers exact rendered frames to the caller without another provider or fabricated findings; different documents may share a page index while exact sources and generated frame names stay distinct",
+        "the source-bound, read-only visual observation channel (GH-303): VisualReviewRequest over exact model or registered-page sources, EvidenceFrame values taken from the model-view and page-export owners, the strict VisualObservation answer and provider seam, and the Harness allowance; POST /api/visual-reviews defaults to structured observation and also delivers exact rendered frames to the caller without another provider or fabricated findings; different documents may share a page index while exact sources and generated frame names stay distinct; a modeling view named <view>-material is the model view's material display of the same exact model",
         "candidate admission: one CandidateAdmission@1 per closed loop (a task, one worktree of it, or one person's act) in the fixed explicit studio-admissions P036 run, written only through the completion gate Stage acceptance shares, with the boundary's actor, the stated task, Study and bound message, each result's outcome, pinned model, receipt and superseded attempts",
         "the Candidate Pool read for the Design Tree: admitted Candidates and their Studies from admission records and from legacy facts that already prove admission (a committed Stage's run, a retained Exploration's non-base option, an accepted episode's produced run), with lineage-derived continuedFrom and acceptedStageRef and Working Head membership",
         "the attributable, revisioned rejection, archival/restoration and endorsement of an exact retained Candidate or Stage; this changes no design position"
@@ -5803,7 +5881,7 @@
       "purpose": "Read governance registries through bounded module, capability and live-work lookups, and render the generated system and semantic maps.",
       "owns": [
         "loading the live work registry (ArchFlowDevelopmentRegistry@3, GitHub Issue claims only) for the work lookup",
-        "rendering docs/architecture/system-map.md and docs/architecture/semantic-registry.md, including the stage-ladder table generated from PHASE_LADDER",
+        "rendering docs/architecture/system-map.md and docs/architecture/semantic-registry.md, including the stage-ladder table generated from PHASE_LADDER and the facets table with each added key's reason",
         "Exact-id or ranked keyword module lookup with paged contract sections, dependencies, registered source paths and tests; ambiguous queries return bounded candidates",
         "Capability lookup over the same registry: exact id or goal words in either language, paged entry sections, and the sentence a no-hit answers with",
         "Read-only work lookup by exact claim, GH-<issue> or GH-<issue>/<lane>, showing the Issue link, branch/worktree/base/contributor/modules/paths/dependencies/handoff/blocked reason and findings from tools.governance.archcheck"
@@ -5837,6 +5915,7 @@
       ],
       "depends_on": [
         "archflow.semantics.conditions",
+        "archflow.semantics.facets",
         "archflow.semantics.registry",
         "archflow.semantics.roles",
         "archflow.state.stage_workflow",
@@ -6437,8 +6516,8 @@
         "POST /api/proposals/construction, POST /api/proposals/facets, POST /api/proposals/hosted-opening, GET /api/construction and GET /api/construction/model",
         "the modelling root new script geometry goes under: model when a seat builds it, else the first component a seat builds that is not itself script-made geometry",
         "a refused script as 422 CONSTRUCTION_INVALID with line, column and source line, including the record's refusal of the rows a script produced, answered at the script line that made the shape it names and in construction words",
-        "facet upserts on Component@1 through the component edit path, with stripped non-blank text and unknown or non-component targets refused",
-        "the construction model view: geometry rows with facets and the capabilities facets unlock (hosted-opening for architectural.role = wall)",
+        "facet upserts on Component@1 through the component edit path, with stripped non-blank text (a material.color kept in upper case) and unknown or non-component targets refused; a target naming one of the component's parts sets or removes that part's own material.name and material.color under it (part_facets), a part it does not have refused naming its parts",
+        "the construction model view: geometry rows with facets, the material each part states of its own (partFacets) and the capabilities facets unlock (hosted-opening for architectural.role = wall)",
         "the hosted-opening capability (Stage C): a door or window on a component of one element whose facets unlock it (architectural.role = wall), else 409 ENRICHMENT_REQUIRED naming the facet to add; a block realised as a wall in place first, else 422 HOST_NOT_WALL_SHAPED with the reason; ids opening-<n> skipping opening and type ids in use; a family as the type <opening>-type, checked by constructing it (FAMILY_INVALID); an optional interfaceRef that must be a relationship ref the record's connections declare (INTERFACE_UNKNOWN names them); the record's refusal as OPENING_INVALID in construction words",
         "the model view's openings per component of one element and its alongLine, where a door's or window's along is measured",
         "one proposal from the in-app Agent's construction answer (design_proposal): a script with its parameters or parameters alone, then facets on what that leaves, folded onto the same exact base"
@@ -6967,7 +7046,7 @@
         "Explicit Render result handoff to the existing Board using its exact SourceDocument page identity",
         "Nonsecret Render preferences through existing Hub settings; only MONKEYHUB_RENDER_API_KEY is mapped to the configured Gemini Runtime, never exposed over HTTP",
         "Modeling-to-Render preview borrows the mounted project scene and camera; explicit capture freezes an exact retained model view as the AI source. A result's saved view can be shown in Modeling through applyCamera, or captured again on the model Modeling shows as a new source while the earlier result stays (#218). Local edits, loading and blended/unbound views cannot claim a saved model source.",
-        "The project Design Tree (状态树) surface and its Stage chip: a planar growth tree of Stages, admitted Candidates and Studies (the #294 design-history contract), the Working Head and running work; View is read-only, Continue uses the working-draft route and Accept as next Stage the existing accept route, on Current only",
+        "The project Design Tree (状态树) surface and its Stage chip: a planar growth tree of Stages, admitted Candidates and Studies (the #294 design-history contract), the Working Head and running work, Current's line drawn as one chain of steps whose earlier ones fold behind one control and the drafts it superseded folded where it moved on, those the project cleaned into its trash with them, each restorable from the drafts card's inspector (#575); View is read-only, Continue (to an option, a Stage, a step or a draft) uses the working-draft route and Accept as next Stage the existing accept route, on Current only",
         "The shared project canvas host (features/canvas): Excalidraw mount defaults, the local font path, theme mapping, wheel zoom and scene-point click hit testing, used by MonkeyBoard and the Design Tree",
         "Hub-local integration diagnostic snapshot and explicit bounded rescan; qualification and bridge execution stay with the existing adapter owner.",
         "The configured skill library (#252): reading the library project's current skills through its Runtime and materializing them into a Claude plugin directory under <runtime root>/cache/skill-plugins/<index digest>/, passed with --plugin-dir; nothing is written into any project, and no library means an unchanged command",
@@ -7258,7 +7337,8 @@
         "apps/monkeyhub/web/src/features/designTree/fixture.ts",
         "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
         "apps/monkeyhub/web/src/ChatSuggestionCard.css",
-        "apps/monkeyhub/web/src/features/componentInfo/"
+        "apps/monkeyhub/web/src/features/componentInfo/",
+        "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
