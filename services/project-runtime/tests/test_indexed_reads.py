@@ -529,6 +529,38 @@ class IndexedReadTests(WorkingSourceFixture):
                                        != first.content, 10))
             self.assertGreater(derived["history"], 1)
 
+    def test_a_started_worker_with_a_loaded_index_lists_no_run_before_it_serves(self) -> None:
+        """#449, #599: the preparation walks every run only when no index answers in time."""
+
+        self.tree_with_lines()
+        self.binding().close()  # the kept index: the next process reuses it
+        listed: list[str] = []
+        original = ProjectBinding.record_refs
+
+        def counted(this, run_id, *, kind=None):
+            if threading.current_thread().name == "studio-first-reads":
+                listed.append(run_id)
+            return original(this, run_id, kind=kind)
+
+        for app, walks in ((self.app_with_index(), False),
+                           (create_app(StudioSettings(project_dir=self.project_dir, cad_export="off")), True)):
+            app.state.prepare_first_reads = True
+            listed.clear()
+            # A slow machine may take longer than a second to load the kept index: give it time.
+            with self.subTest(index=not walks), mock.patch.object(ProjectBinding, "record_refs", counted), \
+                    mock.patch.object(binding_module, "INDEX_CATCH_UP_S", 30.0), TestClient(app) as client:
+                answer = client.get("/api/worktrees")
+                for thread in threading.enumerate():
+                    if thread.name == "studio-first-reads":
+                        thread.join(30)
+                self.assertEqual(answer.content, self.client.get("/api/worktrees").content)
+                if walks:
+                    self.assertEqual(set(listed), set(self.repository.run_ids()), "without an index every run is listed")
+                else:
+                    self.assertEqual(listed, [], "with a loaded index no run is listed")
+                    self.assertIn(app.state.binding.await_index(0).index.loaded, ("reused", "reconciled"))
+                app.state.binding.close()
+
     def timed(self, route: str, **headers: str) -> tuple[int, float]:
         started = time.perf_counter()
         response = self.indexed.get(route, headers=headers)

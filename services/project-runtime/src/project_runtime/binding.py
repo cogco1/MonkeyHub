@@ -1261,9 +1261,10 @@ def prepare_bound_project(state: ProcessState) -> ProjectBinding:
     and design history a workspace asks for together - each list the same
     runs' records and survey the same receipts while the in-memory memos are
     still empty, and on one interpreter they queue behind each other doing
-    it. Here that is done once, with or without a project index: until the
-    index has loaded, and wherever it cannot answer, the design history and
-    the worktrees read the runs (#599). The binding is
+    it. Here that is done once. A project index that has loaded within
+    ``INDEX_CATCH_UP_S`` and holds this process's writes answers those views
+    from one snapshot instead (#599), so then no run is walked; otherwise -
+    no index, one still loading or rebuilding - the runs are. The binding is
     kept first, so a request that only needs it (the health check) does not
     wait for the runs; the caller holds back the views that would walk them
     beside this (``main.FirstReads``). The memos stay keyed by the files'
@@ -1275,9 +1276,10 @@ def prepare_bound_project(state: ProcessState) -> ProjectBinding:
 
     binding = bound_project(state)
     # The layout watch's first walk, which the first read token waits for,
-    # the runs' records, then their receipts' survey; an index loads on its
-    # keeper meanwhile.
+    # then the index's load, or the runs' records and their receipts' survey.
     binding.read_token()
+    if binding.await_index(INDEX_CATCH_UP_S) is not None and binding.index_reader(wait=0) is not None:
+        return binding
     for run_id in binding.run_ids():
         try:
             binding.record_refs(run_id)
