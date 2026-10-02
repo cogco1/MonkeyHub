@@ -1,4 +1,31 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-599",
+      "lanes": [
+        {
+          "id": "no-watch",
+          "status": "active",
+          "branch": "codex/599-no-watch",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-599-no-watch",
+          "base_ref": "f6904c65eca655d791e9f0fa5af98c66724896f3",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "archflow.project.watch",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
+            "apps/monkeyhub/api/tests/test_project_runtime.py",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "packages/archflow/tests/test_project_watch.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
