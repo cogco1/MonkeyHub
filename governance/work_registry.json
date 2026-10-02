@@ -15,6 +15,7 @@
           "handoff": null,
           "modules": [
             "archflow.project.repository",
+            "archflow.project.ports",
             "project_runtime.binding",
             "project_runtime.candidate",
             "project_runtime.intent",
@@ -22,6 +23,7 @@
           ],
           "write_scope": [
             "packages/archflow/src/archflow/project/repository.py",
+            "packages/archflow/src/archflow/project/ports.py",
             "services/project-runtime/src/project_runtime/api/routes/working_draft.py",
             "services/project-runtime/src/project_runtime/api/dto/working_draft.py",
             "services/project-runtime/src/project_runtime/application/working_draft.py",
