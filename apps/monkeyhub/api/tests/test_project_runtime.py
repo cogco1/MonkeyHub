@@ -24,7 +24,7 @@ from uuid import uuid4
 
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, project_fixture, wait_for
 from archflow.project.repository import FilesystemProjectRepository
-from project_runtime.binding import ProjectBinding
+from project_runtime.binding import ProjectBinding, ReadToken
 from project_runtime.settings import StudioSettings
 from monkeyhub_api.runtime import manager as runtime_module, worker_http
 from monkeyhub_api.models import ChatSummary, HubError, HubFailure
@@ -922,18 +922,20 @@ for _ in range(5):
                 self.assertFalse(any(call.args[1] == "/api/state" for call in reads.call_args_list))
             self.assertEqual(self.project_bytes(self.project), before)
 
-    def test_idle_watcher_rederives_work_copies_only_when_their_inputs_move(self):
+    def test_watcher_discovers_new_documents_and_opened_work_copies(self):
         with self.hub() as client:
             runtime_id = self.open_project(client)
             manager = client.app.state.runtimes
             runtime = manager.get(runtime_id)
             wait_for(lambda: runtime.work_copy_key is not None, "The opening pass did not bind work copies", timeout=10)
             with patch("monkeyhub_api.runtime.manager._WORK_COPY_CHECK_S", 0.2), \
-                    patch("monkeyhub_api.runtime.manager._IDLE_HEARTBEAT_S", 0.2),                     patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as checks,                     patch.object(manager, "bind_work_copies", wraps=manager.bind_work_copies) as binds:
-                # Deriving the list reads every record of every run (#314), so
-                # an idle watcher compares what decides it and derives nothing.
+                    patch("monkeyhub_api.runtime.manager._IDLE_HEARTBEAT_S", 0.2), \
+                    patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as checks, \
+                    patch.object(manager, "bind_work_copies", wraps=manager.bind_work_copies) as binds:
+                # An explicit wake still compares the inputs; unchanged
+                # inputs do not rederive the full document listing.
                 runtime.wake.set()
-                wait_for(lambda: checks.call_count >= 3, "The idle watcher stopped comparing its inputs", timeout=10)
+                wait_for(lambda: checks.call_count >= 1, "The explicit wake did not compare its inputs", timeout=10)
                 self.assertEqual(binds.call_count, 0, "An idle pass re-derived unchanged work copies")
 
                 with patch.object(runtime.wake, "set", wraps=runtime.wake.set) as wakes:
@@ -1362,6 +1364,8 @@ class RuntimeCostTests(unittest.TestCase):
 
     def test_a_simulated_idle_minute_costs_the_observer_one_pass_per_idle_interval(self):
         repository = self.project()
+        for index in range(149):
+            repository.create_run(f"idle-{index}")
         path = str(repository.layout.root)
         worker = WorkerSnapshot("studio:p0", "studio", self.fixture.PROJECT_ID, path, "instance", 4000,
                                 "running", "ready", True, "http://127.0.0.1:9/", None)
@@ -1389,9 +1393,155 @@ class RuntimeCostTests(unittest.TestCase):
         self.assertLessEqual(len(passes), 60 / runtime_module._IDLE_HEARTBEAT_S)
         self.assertEqual(set(passes), {runtime_module._IDLE_HEARTBEAT_S})
         # The retained history is read once, not on every idle fallback, and
-        # the work-copy inputs are compared on their own cadence only.
+        # successful copy discovery is reused across the idle fallback.
         self.assertEqual(refresh.call_count, 1)
-        self.assertLessEqual(inputs.call_count, 1 + 60 / runtime_module._WORK_COPY_CHECK_S)
+        self.assertEqual(inputs.call_count, 1, "An unchanged stable idle project rescanned its work-copy inputs")
+
+    def test_work_copy_discovery_checks_wakes_and_changed_or_unstable_tokens(self):
+        manager = self.manager()
+        runtime = self.runtime(manager, self.project())
+        stable = ReadToken("observer", 0, "first", True)
+        unstable = replace(stable, stable=False)
+        changed = replace(stable, fingerprint="changed")
+        # The two early wakes are a mutation and a reopen check respectively.
+        # A reopen skips an unchanged token but checks a changed one at once.
+        passes = [(0, stable, None), (30, stable, None), (31, stable, "set"),
+                  (32, stable, "check"), (62, unstable, None), (92, unstable, None),
+                  (122, changed, None), (152, changed, None), (182, None, None),
+                  (212, None, None), (242, changed, None), (243, stable, "check")]
+        now, token, counts = [0.0], [stable], []
+
+        def heartbeat(_timeout):
+            counts.append(inputs.call_count)
+            if len(counts) == len(passes):
+                manager._closing.set()
+            else:
+                now[0], token[0], wake = passes[len(counts)]
+                if wake:
+                    getattr(runtime.wake, wake)()
+
+        with patch.object(runtime.binding, "read_token", side_effect=lambda **_: token[0]), \
+             patch.object(manager, "refresh"), \
+             patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as inputs, \
+             patch.object(manager, "_observe_work_copies", return_value=0) as observe, \
+             patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
+            manager._watch(runtime)
+        self.assertEqual(counts, [1, 1, 2, 2, 3, 4, 5, 5, 6, 7, 8, 9])
+        self.assertEqual(observe.call_count, len(passes), "Skipped discovery also skipped observed files")
+
+    def test_failed_work_copy_discovery_does_not_keep_an_earlier_successful_token(self):
+        for failure in ("inputs", "bind"):
+            with self.subTest(failure=failure):
+                manager = self.manager()
+                runtime = self.runtime(manager, self.project(failure))
+                token = ReadToken("observer", 0, "unchanged", True)
+                now, counts, errors = [0.0], [], []
+                original_inputs, original_bind = manager._work_copy_inputs, manager.bind_work_copies
+
+                def discover(_runtime):
+                    if inputs.call_count == 2 and failure == "inputs":
+                        raise OSError("input listing failed")
+                    # Make the explicit wake ask for a new derivation too.
+                    return (original_inputs(_runtime), inputs.call_count > 1)
+
+                def bind(_runtime):
+                    if binds.call_count == 2 and failure == "bind":
+                        raise OSError("document listing failed")
+                    return original_bind(_runtime)
+
+                def heartbeat(_timeout):
+                    counts.append(inputs.call_count)
+                    errors.append(runtime.work_copy_error.code if runtime.work_copy_error else None)
+                    if len(counts) == 1:
+                        now[0] = 1.0
+                        runtime.wake.set()
+                    elif len(counts) < 4:
+                        now[0] += 30.0
+                    else:
+                        manager._closing.set()
+
+                with patch.object(runtime.binding, "read_token", return_value=token), \
+                     patch.object(manager, "refresh") as refresh, \
+                     patch.object(manager, "_work_copy_inputs", side_effect=discover) as inputs, \
+                     patch.object(manager, "bind_work_copies", side_effect=bind) as binds, \
+                     patch.object(manager, "_observe_work_copies", return_value=0), \
+                     patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+                     patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
+                    manager._watch(runtime)
+                self.assertEqual(counts, [1, 2, 3, 3])
+                self.assertEqual(errors, [None, "WORK_COPY_READ_FAILED", None, None])
+                self.assertEqual(refresh.call_count, 2, "Copy discovery failure invalidated retained history")
+                self.assertIsNone(runtime.error)
+
+    def test_tracked_copy_edits_and_refusals_stay_visible_under_an_unchanged_token(self):
+        manager = self.manager()
+        runtime = self.runtime(manager, self.project())
+        work = self.root / "editable.png"
+        first, second = b"first", b"other"
+        work.write_bytes(first)
+        stamp = work.stat()
+        digest = runtime_module.hashlib.sha256(first).hexdigest()
+        copy = SimpleNamespace(run_id="run", asset_sha256=digest, revision_ref=None,
+                               path=work, file_name=work.name, refusal="document no longer editable",
+                               known_sha256=frozenset({digest}))
+        observed = _WorkCopyObservation(copy, observed_sha256=digest)
+        runtime.work_copies[(copy.run_id, digest, None)] = observed
+        token = ReadToken("observer", 0, "unchanged", True)
+        instants, now, failures = [0, 2, 3, 32, 33, 62], [0.0], []
+
+        def heartbeat(_timeout):
+            failures.append(observed.failure.code if observed.failure else None)
+            if len(failures) in (2, 4):
+                # In-place external saves preserving both size and mtime do
+                # not move the layout token. The bounded content read must
+                # still find an edit, report its refusal and notice its undo.
+                work.write_bytes(second if len(failures) == 2 else first)
+                os.utime(work, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+            if len(failures) == len(instants):
+                manager._closing.set()
+            else:
+                now[0] = instants[len(failures)]
+
+        with patch.object(runtime.binding, "read_token", return_value=token), \
+             patch.object(manager, "refresh"), \
+             patch("monkeyhub_api.runtime.manager.list_document_work_copies", return_value=(copy,)), \
+             patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as inputs, \
+             patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]), \
+             patch("monkeyhub_api.runtime.manager.time.monotonic_ns", side_effect=lambda: int(now[0] * 1e9)):
+            manager._watch(runtime)
+        self.assertEqual(inputs.call_count, 1)
+        self.assertEqual(failures, [None, None, None, "WORK_COPY_NOT_EDITABLE", "WORK_COPY_NOT_EDITABLE", None])
+        self.assertIsNone(runtime.error)
+
+    def test_work_copy_discovery_keeps_the_token_from_before_the_scan(self):
+        manager = self.manager()
+        runtime = self.runtime(manager, self.project())
+        token = [ReadToken("observer", 0, "before", True)]
+        now, counts = [0.0], []
+        original_inputs = manager._work_copy_inputs
+
+        def discover(_runtime):
+            result = original_inputs(_runtime)
+            # A writer can publish while discovery is in progress. This token
+            # cannot vouch for inputs taken before the write.
+            token[0] = replace(token[0], fingerprint="after")
+            return result
+
+        def heartbeat(_timeout):
+            counts.append(inputs.call_count)
+            now[0] += 30.0
+            if len(counts) == 3:
+                manager._closing.set()
+
+        with patch.object(runtime.binding, "read_token", side_effect=lambda **_: token[0]), \
+             patch.object(manager, "refresh"), \
+             patch.object(manager, "_work_copy_inputs", side_effect=discover) as inputs, \
+             patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
+            manager._watch(runtime)
+        self.assertEqual(counts, [1, 2, 2])
 
     def test_a_status_change_ends_the_idle_wait_without_asking_for_a_read(self):
         manager = self.manager()

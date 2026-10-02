@@ -61,7 +61,8 @@ _WORK_COPY_CONTENT_REFRESH_NS = _IDLE_RETAINED_REFRESH_S * 1_000_000_000
 # list_documents; a drawing's receipt only adds who made it and why). If
 # another kind ever decides that, the work-copy key below has to name it too.
 _DOCUMENT_RECORD_KINDS = (STUDIO_SOURCE_DOCUMENT, STUDIO_DOCUMENT_MODEL_SOURCE)
-# How often an unwoken watcher compares that key; a wake compares it at once.
+# How often an unwoken watcher checks whether that key could have moved.
+# An unchanged stable read token skips the input scan; a wake compares at once.
 _WORK_COPY_CHECK_S = _IDLE_RETAINED_REFRESH_S
 # How many of each project's Studio events the Hub keeps to open a new page's panel with.
 _STUDIO_REPLAY = 200
@@ -787,6 +788,9 @@ class ProjectRuntimeManager:
         # The project's read token when the last successful refresh began;
         # None when the watch had published none yet.
         last_token: ReadToken | None = None
+        # Independent of retained reads: failed copy discovery cannot borrow
+        # a successful history read, or keep its own previous success.
+        last_work_copy_token: ReadToken | None = None
         while not self._closing.is_set():
             force_read = runtime.wake.take()
             checked = runtime.wake.take_check()
@@ -838,17 +842,25 @@ class ProjectRuntimeManager:
             # or a file that will not open therefore says nothing about whether
             # the project is stale, and never delays the next retained read.
             try:
-                if force_read or drained or time.monotonic() >= next_work_copy_check:
-                    # Which copies exist is re-derived only when what decides
-                    # it moved, checked on a wake and on the idle cadence, not
-                    # on every heartbeat of active work. Their metadata is still
-                    # watched every heartbeat, with bounded content reads after
-                    # a copy has settled.
+                if force_read or drained or checked or time.monotonic() >= next_work_copy_check:
                     next_work_copy_check = time.monotonic() + _WORK_COPY_CHECK_S
-                    inputs = self._work_copy_inputs(runtime)
-                    if inputs != runtime.work_copy_key:
-                        self.bind_work_copies(runtime)
-                        runtime.work_copy_key = inputs
+                    # Even listing the input refs and copy folders visits every
+                    # run. Reuse a successful discovery while the layout watch
+                    # says nothing moved, rather than scan on a bare timer.
+                    # Take the token before discovery, so a write during it is
+                    # still found next time. An absent or unstable token proves
+                    # nothing; an explicit mutation wake always checks.
+                    copy_token = runtime.binding.read_token(wait=False)
+                    if (force_read or drained or last_work_copy_token is None
+                            or not last_work_copy_token.stable or copy_token != last_work_copy_token):
+                        last_work_copy_token = None
+                        inputs = self._work_copy_inputs(runtime)
+                        if inputs != runtime.work_copy_key:
+                            self.bind_work_copies(runtime)
+                            runtime.work_copy_key = inputs
+                        last_work_copy_token = copy_token
+                # Already opened copies remain observed every heartbeat,
+                # including in-place edits that preserve the layout token.
                 self._observe_work_copies(runtime)
             except (StudioError, ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:
                 with runtime.lock:
