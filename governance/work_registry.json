@@ -22,6 +22,7 @@
             "tools.benchmarks.projection_check"
           ],
           "write_scope": [
+            "services/project-runtime/tests/test_projection_check.py",
             "tools/benchmarks/daily_benchmark.py",
             "tools/benchmarks/projection_check.py"
           ],
