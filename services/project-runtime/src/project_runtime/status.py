@@ -764,9 +764,10 @@ def _representations(binding: ProjectBinding, render_jobs, warnings: list[str],
 def worktree_graph(binding: ProjectBinding, *, jobs: JobRegistry | None = None, render_jobs=None) -> WorktreeGraph:
     """Derive the project's current head, its line, active work and other lines without writing.
 
-    One build reads each run's retained change, parents and exact record once
-    for all its lines and steps (``_GraphReads``), and resolves the Working
-    Head once for itself and its representation rows.
+    One build reads each run's retained change through one ``RunChanges``,
+    walks every lineage over one parent map and keeps each exact State Record
+    once (``_GraphReads``), for all its lines and steps. It resolves the
+    Working Head once, for itself and for its representation rows.
     """
 
     working = WorkingSources(binding)
