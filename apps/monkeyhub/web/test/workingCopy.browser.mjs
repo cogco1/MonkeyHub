@@ -13,12 +13,13 @@ import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createServer } from "vite";
+import react from "@vitejs/plugin-react";
 import { workspaceFixture } from "./workspaceFixture.mjs";
 import { createRetainedModelFixture } from "./retainedModelFixture.mjs";
 
 const fixture = await createRetainedModelFixture({ name: "working-copy" });
 const { project, group, sources: { A, B }, document, webRoot, projectRoot, getJson } = fixture;
-const errors = [], requests = [], captures = [], passed = [];
+const errors = [], requests = [], captures = [], passed = [], consoleErrors = [];
 const http = createHttpServer();
 let browser, vite, page, closing = false, phase = "setup", allowedMutation = null;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -115,10 +116,15 @@ try {
   assert.equal(group.selectedOptionId, "B");
   assert.equal(draftBefore.current.runId, A.runId);
   assert.equal(document.modelSource, null);
-  vite = await createServer({ root: webRoot, configFile: path.join(webRoot, "vite.config.ts"), logLevel: "error",
-    cacheDir: path.join(fixture.root, "vite-cache"), plugins: [workspaceFixture(), {
+  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error",
+    publicDir: ".generated/public", define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") },
+    cacheDir: path.join(fixture.root, "vite-cache"), plugins: [react(), workspaceFixture(), {
       name: "observe-retained-model", enforce: "pre", transform(source, id) {
-        if (id.split("?")[0].replaceAll("\\", "/") !== `${webRoot.replaceAll("\\", "/")}/src/app/App.tsx`) return;
+        const file = id.split("?")[0].replaceAll("\\", "/");
+        if (file === `${webRoot.replaceAll("\\", "/")}/test/workspace-fixture.tsx`) {
+          return { code: `import "/@fs/${path.resolve(webRoot, "../../../packages/web-shared/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
+        }
+        if (file !== `${webRoot.replaceAll("\\", "/")}/src/app/App.tsx`) return;
         const marker = '  const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");';
         assert.equal(source.split(marker).length, 2);
         return { code: source.replace(marker, marker + `\n(window as unknown as {__retainedModel: unknown}).__retainedModel = {
@@ -197,8 +203,12 @@ try {
   await context.route((url) => ["http:", "https:"].includes(url.protocol) && url.origin !== origin, (route) => { errors.push(`External request: ${route.request().url()}`); return route.abort(); });
   page = await context.newPage(); page.setDefaultTimeout(30000);
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
+  page.on("response", (response) => {
+    if (response.status() >= 400 && !new URL(response.url()).pathname.startsWith("/api/")) errors.push(`Asset ${response.status()}: ${response.url()}`);
+  });
   await page.goto(`${origin}/?view=board&lang=en`, { waitUntil: "domcontentloaded" });
-  await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
+  await page.locator(".monkeyboard-canvas canvas").first().waitFor();
   await until(() => getJson("/api/board"), (value) => value.elements.some((element) => element.type === "image" && !element.isDeleted), "The exact drawing must reach Board");
   await page.locator(".monkeyboard-actions > summary").click();
   await page.getByRole("button", { name: "Fit board", exact: true }).click();
@@ -292,7 +302,14 @@ try {
   });
   console.log(JSON.stringify({ passed: passed.length, sources: { A, B }, annotationPuts: annotationWrites().length, workingPositionPuts: positionWrites().length,
     retainedPreviews: captures.length, originalDocumentsChecked: documentsBefore.length, requests: requests.length }, null, 2));
-} catch (error) { console.error(`FAIL ${phase}: ${error.stack ?? error}`); if (errors.length) console.error(errors); process.exitCode = 1; }
+} catch (error) {
+  console.error(`FAIL ${phase}: ${error.stack ?? error}`);
+  const dom = page && !page.isClosed() ? await page.locator("body").innerText().catch(() => "unavailable") : "not opened";
+  console.error(JSON.stringify({ errors, consoleErrors, dom: dom.slice(0, 8000),
+    requests: requests.slice(-30).map(({ method, path, query, status, response }) => ({ method, path, query, status,
+      failure: status >= 400 ? response : undefined })) }, null, 2));
+  process.exitCode = 1;
+}
 finally {
   closing = true;
   await browser?.close();

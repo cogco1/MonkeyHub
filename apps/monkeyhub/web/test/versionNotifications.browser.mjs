@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createServer } from "vite";
+import react from "@vitejs/plugin-react";
 import { createRetainedModelFixture } from "./retainedModelFixture.mjs";
 import { workspaceFixture } from "./workspaceFixture.mjs";
 
@@ -41,6 +42,7 @@ const preferenceKey = "archflow-studio.user-preferences";
 const readMethods = new Set(["GET", "HEAD", "OPTIONS"]);
 const listPaths = ["/api/artifacts", "/api/working-copies", "/api/working-draft"];
 const errors = [], requests = [], writes = [], blockedWrites = [], failedRefreshes = [], passed = [], screenshots = [];
+const consoleErrors = [], assetFailures = [];
 const nextFailures = new Set();
 const requestLogs = new WeakMap();
 let revealB = false;
@@ -164,8 +166,12 @@ try {
   assert.notEqual(B.assetSha256, alternateB.assetSha256, "The same B run already has a different exact asset");
   assert.equal((await fixture.getJson("/api/working-draft")).current.runId, A.runId);
   assert.ok(group.baseStageRef, "The ready-candidate notice needs a retained common Stage");
-  vite = await createServer({ root: webRoot, configFile: path.join(webRoot, "vite.config.ts"), resolve: { dedupe: ["react", "react-dom"] },
-    logLevel: "error", cacheDir, publicDir: ".generated/public", plugins: [workspaceFixture(), {
+  vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] },
+    logLevel: "error", cacheDir, publicDir: ".generated/public",
+    // Match the existing Board/Design Tree browser fixtures: prebundle their
+    // Excalidraw dependency rather than adopting the production dev exclusion.
+    // canvasAssets still supplies the synced local fonts; foreign origins remain blocked.
+    define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") }, plugins: [workspaceFixture(), {
       name: "retained-notifications-host", enforce: "pre",
       transform(source, id) {
         const file = id.split("?")[0].replaceAll("\\", "/");
@@ -192,7 +198,7 @@ window.addEventListener("pagehide", () => { stopRelay(); stream.close(); project
             optionSources: workingCopies.flatMap(copy => copy.options.map(option => option.modelSource)),
           });`), map: null };
       },
-    }], server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null,
+    }, react()], server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null,
       proxy: { "/api": { target: apiOrigin, changeOrigin: false, followRedirects: false } } } });
   http.on("request", (request, response) => {
     if (request.url?.startsWith("/api/") && !readMethods.has(request.method)) {
@@ -239,10 +245,17 @@ window.addEventListener("pagehide", () => { stopRelay(); stream.close(); project
   page = await context.newPage();
   page.setDefaultTimeout(30_000);
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   page.on("requestfinished", (request) => { const log = requestLogs.get(request); if (log) log.completed = true; });
-  page.on("requestfailed", (request) => { const log = requestLogs.get(request); if (log) log.failed = true; });
+  page.on("requestfailed", (request) => {
+    const log = requestLogs.get(request);
+    if (log) log.failed = true;
+    else assetFailures.push({ url: request.url(), failure: request.failure()?.errorText });
+  });
   page.on("response", (response) => {
     const name = new URL(response.url()).pathname;
+    if (!name.startsWith("/api/") && !response.ok() && response.status() !== 304)
+      assetFailures.push({ url: response.url(), status: response.status() });
     if (name.startsWith("/api/") && !response.ok() && response.status() !== 304 &&
       response.headers()["x-version-fixture-failure"] !== "expected") errors.push(`${name}: HTTP ${response.status()}`);
   });
@@ -447,7 +460,18 @@ window.addEventListener("pagehide", () => { stopRelay(); stream.close(); project
     workingPositionWrites: 0, jsErrors: errors.length, screenshots }, null, 2));
 } catch (error) {
   console.error(`FAIL ${phase}: ${error.stack ?? error}`);
-  console.error(JSON.stringify({ errors, blockedWrites, failedRefreshes, passed, screenshots, requests: requests.slice(-30) }, null, 2));
+  const dom = await page?.evaluate(() => ({
+    title: document.title, text: document.body.innerText.slice(0, 16_000),
+    boundaries: [...document.querySelectorAll(".error-boundary")].map((node) => node.textContent),
+    surfaces: [...document.querySelectorAll("[data-project-surface]")].map((node) => ({
+      surface: node.getAttribute("data-project-surface"), hidden: node.hidden, display: getComputedStyle(node).display,
+      width: node.getBoundingClientRect().width, height: node.getBoundingClientRect().height,
+    })),
+  })).catch((cause) => ({ unavailable: String(cause) }));
+  const failureScreenshot = path.join(screenshotDir, "failure.png");
+  if (page) await page.screenshot({ path: failureScreenshot }).then(() => screenshots.push(failureScreenshot), () => {});
+  console.error(JSON.stringify({ errors, consoleErrors: consoleErrors.slice(-20), assetFailures: assetFailures.slice(-30), dom,
+    blockedWrites, failedRefreshes, passed, screenshots, requests: requests.slice(-30) }, null, 2));
   process.exitCode = 1;
 } finally {
   await browser?.close();
