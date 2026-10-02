@@ -22,13 +22,30 @@ import "./board.css";
 import { MenuCommand, StatusLine, SurfaceMenus } from "../../features/chrome/SurfaceChrome";
 import { BOARD_SCENE_LIMIT_BYTES, cardElementId, cardLabelText, componentInfoCardIds, isComponentInfoElement, placeDatasetCards, sceneBytes } from "../../features/componentInfo/boardDatasets";
 import { ComponentInfoError, parseDatasetImport, problemText, type ComponentInfoDataset } from "../../features/componentInfo/componentInfo";
-import { useT } from "../../i18n/useT";
+import { useT, type TFunction } from "../../i18n/useT";
 
 const copy = {
-  en: { loading: "Opening board…", loadFailed: "The board could not be opened.", retry: "Retry", sources: "Project documents", upload: "Upload PDF / image", title: "Board title", saved: "Saved", saving: "Saving…", dirty: "Unsaved changes", saveError: "Changes have not been saved.", conflict: "Another saved version exists. Your current canvas is preserved; these changes have not overwritten the saved board.", add: "Add page", open: "Open in MonkeyDiagram", openPage: "Edit this page", openHint: "Double-click a drawing to edit its page", fit: "Fit board", busy: "Receiving document…", clearAnnotations: "Clear annotations", clearAnnotationsHint: "Clear all drawn marks and text; keep drawings and frames. Ctrl+Z to undo.", crit: "Crit mode", critSubmit: "Submit", critExit: "Exit", export: "Export board pages", exportClean: "Clean originals · marks excluded", exportMerged: "Merged PDF", exportPages: "One PDF per page", exportPng: "PNG", exportJpeg: "JPEG", exportZip: "ZIP for transfer", exporting: "Preparing export…", exportDone: "Export ready.", exportEmpty: "Place at least one registered drawing page on the board before exporting.", empty: "Upload a PDF, PNG or JPEG to begin. New project drawings will appear here.", hint: "Wheel to zoom · Space or middle mouse to pan · Shift to select several", auto: "New documents arrive automatically", previewError: "Some page previews could not be loaded. The saved layout is retained.", unsupported: "Use PDF, PNG or JPEG files.", unbound: "This image has no registered project source. Upload its original file first.", page: "Page", pages: "pages", received: "Received", pending: "Pending", dismiss: "Dismiss", sourceError: "Project documents could not be refreshed.", select: "Select a drawing to open its original.", refresh: "Retry previews / receive", unknown: "Unknown error" },
-  "zh-CN": { loading: "正在打开画布…", loadFailed: "画布暂时无法打开。", retry: "重试", sources: "项目资料", upload: "上传 PDF / 图片", title: "画布标题", saved: "已保存", saving: "正在保存…", dirty: "有未保存的修改", saveError: "修改尚未保存。", conflict: "已有另一份保存版本。当前画布已保留，这些修改没有覆盖已保存版本。", add: "添加此页", open: "在 MonkeyDiagram 中打开", openPage: "编辑此页", openHint: "双击图纸即可编辑该页", fit: "查看全部", busy: "正在接收资料…", clearAnnotations: "清除批注", clearAnnotationsHint: "清除全部圈线、箭头和文字，保留图纸与图框；可用 Ctrl+Z 撤销。", crit: "Crit 模式", critSubmit: "提交", critExit: "退出", export: "整理导出图墙图纸", exportClean: "清洁原图 · 不含批注", exportMerged: "合并 PDF", exportPages: "单页 PDF", exportPng: "PNG", exportJpeg: "JPEG", exportZip: "传输 ZIP", exporting: "正在整理导出…", exportDone: "导出已就绪。", exportEmpty: "请先在图墙中摆放至少一页已登记图纸。", empty: "上传 PDF、PNG 或 JPEG 开始。项目的新图纸也会自动出现在这里。", hint: "滚轮缩放 · 空格或鼠标中键平移 · Shift 多选", auto: "自动接收新资料", previewError: "部分页面预览未能载入，已保留原有布局。", unsupported: "请使用 PDF、PNG 或 JPEG 文件。", unbound: "这张图片没有项目来源，请先上传原始文件。", page: "第", pages: "页", received: "已接收", pending: "待接收", dismiss: "关闭提示", sourceError: "项目资料暂时无法刷新。", select: "选中图纸可打开原始页面。", refresh: "重试预览 / 接收", unknown: "未知错误" },
+  en: { sources: "Project documents", upload: "Upload PDF / image", saved: "Saved", saving: "Saving…", dirty: "Unsaved changes", saveError: "Changes have not been saved.", add: "Add page", open: "Open in MonkeyDiagram", openPage: "Edit this page", openHint: "Double-click a drawing to edit its page", fit: "Fit board", busy: "Receiving document…", clearAnnotations: "Clear annotations", clearAnnotationsHint: "Clear all drawn marks and text; keep drawings and frames. Ctrl+Z to undo.", crit: "Crit mode", critSubmit: "Submit", critExit: "Exit", exportPng: "PNG", exportJpeg: "JPEG", empty: "Upload a PDF, PNG or JPEG to begin. New project drawings will appear here.", hint: "Wheel to zoom · Space or middle mouse to pan · Shift to select several", auto: "New documents arrive automatically", previewError: "Some page previews could not be loaded. The saved layout is retained.", unsupported: "Use PDF, PNG or JPEG files.", unbound: "This image has no registered project source. Upload its original file first.", page: "Page", pages: "pages", received: "Received", pending: "Pending", dismiss: "Dismiss", sourceError: "Project documents could not be refreshed.", select: "Select a drawing to open its original.", refresh: "Retry previews / receive", unknown: "Unknown error" },
+  "zh-CN": { sources: "项目资料", upload: "上传 PDF / 图片", saved: "已保存", saving: "正在保存…", dirty: "有未保存的修改", saveError: "修改尚未保存。", add: "添加此页", open: "在 MonkeyDiagram 中打开", openPage: "编辑此页", openHint: "双击图纸即可编辑该页", fit: "查看全部", busy: "正在接收资料…", clearAnnotations: "清除批注", clearAnnotationsHint: "清除全部圈线、箭头和文字，保留图纸与图框；可用 Ctrl+Z 撤销。", crit: "Crit 模式", critSubmit: "提交", critExit: "退出", exportPng: "PNG", exportJpeg: "JPEG", empty: "上传 PDF、PNG 或 JPEG 开始。项目的新图纸也会自动出现在这里。", hint: "滚轮缩放 · 空格或鼠标中键平移 · Shift 多选", auto: "自动接收新资料", previewError: "部分页面预览未能载入，已保留原有布局。", unsupported: "请使用 PDF、PNG 或 JPEG 文件。", unbound: "这张图片没有项目来源，请先上传原始文件。", page: "第", pages: "页", received: "已接收", pending: "待接收", dismiss: "关闭提示", sourceError: "项目资料暂时无法刷新。", select: "选中图纸可打开原始页面。", refresh: "重试预览 / 接收", unknown: "未知错误" },
 };
-type Copy = typeof copy.en;
+function boardCopy(language: "en" | "zh-CN", t: TFunction) {
+  return { ...copy[language],
+    loading: t("board.loading"),
+    loadFailed: t("board.loadFailed"),
+    retry: t("board.retry"),
+    title: t("board.title"),
+    conflict: t("board.conflict"),
+    export: t("board.export"),
+    exportClean: t("board.exportClean"),
+    exportMerged: t("board.exportMerged"),
+    exportPages: t("board.exportPages"),
+    exportZip: t("board.exportZip"),
+    exporting: t("board.exporting"),
+    exportDone: t("board.exportDone"),
+    exportEmpty: t("board.exportEmpty"),
+  };
+}
+type Copy = ReturnType<typeof boardCopy>;
 
 // #288: the selected page against the editing base, in the Runtime's representation-status words.
 const selectionCopy = {
@@ -77,14 +94,20 @@ function isAnnotation(element: ExcalidrawElement, sketchFrames: ReadonlySet<stri
     && ["freedraw", "line", "arrow", "rectangle", "ellipse", "diamond", "text"].includes(element.type);
 }
 
-const replacementCopy = {
-  en: { action: "Update this page", file: "Updated PDF / image", page: "Page number in the new file", hint: "Replace this page wherever it is placed on the board. Keep its position, scale and marks. The new page must have the same aspect ratio; the original remains in project documents.", cancel: "Cancel", submit: "Update in place", sending: "Updating page…",
-    updated: "«{name}» updated", updatedMore: "«{name}» updated · {count} more updated", view: "View",
-    workCopy: "Get editable copy", workCopyHint: "Editable copy" },
-  "zh-CN": { action: "更新此页原图", file: "更新后的 PDF / 图片", page: "新文件中的页码", hint: "更新图墙中此页的所有副本，保留位置、缩放与批注。新页须保持相同宽高比；旧原图仍保存在项目资料中。", cancel: "取消", submit: "原位更新", sending: "正在更新…",
-    updated: "«{name}» 已更新", updatedMore: "«{name}» 已更新 · 另有 {count} 页已更新", view: "查看",
-    workCopy: "获取可编辑副本", workCopyHint: "可编辑副本" },
-};
+function replacementCopy(t: TFunction) {
+  return {
+    action: t("board.replacement.action"),
+    file: t("board.replacement.file"),
+    page: t("board.replacement.page"),
+    hint: t("board.replacement.hint"),
+    cancel: t("board.replacement.cancel"),
+    submit: t("board.replacement.submit"),
+    sending: t("board.replacement.sending"),
+    view: t("board.replacement.view"),
+    workCopy: t("board.replacement.workCopy"),
+    workCopyHint: t("board.replacement.workCopyHint"),
+  };
+}
 
 const sketchCopy = {
   en: { newFrame: "New sketch frame", frameName: "Sketch", panel: "Sketch frame", level: "Level", storeyHeight: "Storey height (m)",
@@ -143,11 +166,10 @@ function sketchSelectionOf(elements: readonly ExcalidrawElement[], selectedIds: 
 
 /** One live update notice at a time: the newest page named, the rest counted. */
 type BoardUpdateNotice = { fileName: string; others: number; sources: PageSource[] };
-function updateNoticeText(notice: BoardUpdateNotice, language: "en" | "zh-CN"): string {
-  const text = replacementCopy[language];
+function updateNoticeText(notice: BoardUpdateNotice, t: TFunction): string {
   return notice.others > 0
-    ? text.updatedMore.replace("{name}", notice.fileName).replace("{count}", String(notice.others))
-    : text.updated.replace("{name}", notice.fileName);
+    ? t("board.replacement.updatedMore", { name: notice.fileName, count: notice.others })
+    : t("board.replacement.updated", { name: notice.fileName });
 }
 
 function ReplacementDialog({ target, language, returnFocus, onCancel, onSubmit, active }: {
@@ -161,7 +183,7 @@ function ReplacementDialog({ target, language, returnFocus, onCancel, onSubmit, 
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [error, setError] = useState("");
-  const text = replacementCopy[language];
+  const text = replacementCopy(useT());
   useEffect(() => {
     const element = dialog.current;
     if (active) element?.showModal(); else element?.close();
@@ -476,7 +498,8 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, onPubl
 }) {
   const studio = useStudio();
   const { language } = usePreferences();
-  const text = copy[language];
+  const t = useT();
+  const text = boardCopy(language, t);
   const [attempt, setAttempt] = useState(0);
   const [loaded, setLoaded] = useState<{ board: BoardDto; documents: SourceDocumentDto[]; files: BinaryFiles; failures: string[]; preview: PreviewLoader } | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -514,14 +537,15 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
 }) {
   const studio = useStudio();
   const { language } = usePreferences();
-  const text = copy[language];
+  const t = useT();
+  const text = boardCopy(language, t);
   const textRef = useRef<Copy>(text); textRef.current = text;
   const alive = useRef(true);
   const canvas = useRef<ExcalidrawImperativeAPI | null>(null);
   const root = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
   const infoInput = useRef<HTMLInputElement | null>(null);
-  const t = useT();
+  const replacementText = replacementCopy(t);
   const [title, setTitle] = useState(board.title);
   const titleRef = useRef(title);
   const [documents, setDocuments] = useState(initialDocuments);
@@ -1138,7 +1162,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const requestWorkCopy = (document: SourceDocumentDto) => serial(async () => {
     const workCopy = await studio.createDocumentWorkCopy(board.projectId, document.runId, document.assetSha256, document.revisionRef ?? null);
     if (!alive.current) return;
-    setNotice(`${replacementCopy[language].workCopyHint}: ${workCopy.relativePath}`);
+    setNotice(`${replacementText.workCopyHint}: ${workCopy.relativePath}`);
   });
   const source = selected && findSource(documents, selected);
   const contextSource = context?.source ?? selected;
@@ -1423,7 +1447,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     {saveState.error !== null && <div className="monkeyboard-alert" role="alert"><span>{saveState.conflict ? text.conflict : `${text.saveError} ${errorText(saveState.error)}`}</span>{!saveState.conflict && <button onClick={() => { void queue.retry().catch(() => {}); }}>{text.retry}</button>}</div>}
     {(previewFailed || sourceError) && <div className="monkeyboard-alert" role="alert"><span>{previewFailed ? text.previewError : `${text.sourceError} ${sourceError}`}</span><button onClick={retryVisuals} disabled={busy}>{text.refresh}</button></div>}
     {notice && <div className="monkeyboard-alert" role="alert"><span>{notice}</span><button onClick={() => setNotice("")} aria-label={text.dismiss}>×</button></div>}
-    {update && <div className="monkeyboard-alert monkeyboard-update" role="status"><span>{updateNoticeText(update, language)}</span><span className="monkeyboard-update-actions"><button onClick={focusUpdate}>{replacementCopy[language].view}</button><button onClick={() => setUpdate(null)} aria-label={text.dismiss}>×</button></span></div>}
+    {update && <div className="monkeyboard-alert monkeyboard-update" role="status"><span>{updateNoticeText(update, t)}</span><span className="monkeyboard-update-actions"><button onClick={focusUpdate}>{replacementText.view}</button><button onClick={() => setUpdate(null)} aria-label={text.dismiss}>×</button></span></div>}
     {!critMode && sketchSelection && <div className="monkeyboard-sketch" role="group" aria-label={sketchCopy[language].panel}>
       <strong>{(sketchSelection.frame as { name?: string | null }).name ?? sketchCopy[language].panel}</strong>
       <label>{sketchCopy[language].level}<select value={sketchSelection.data.levelId} disabled={!ready || busy || sketchSending || saveState.conflict} onChange={(event) => updateSketchFrame(sketchSelection.frame, { ...sketchSelection.data, levelId: event.target.value })}>{[...new Set([...(sketchLevels ?? []).map((level) => level.levelId), sketchSelection.data.levelId])].map((levelId) => <option key={levelId} value={levelId}>{levelId}</option>)}</select></label>
@@ -1450,8 +1474,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
             <p className="monkeyboard-received">{seen.current.has(key) ? text.received : text.pending}{document.generatedAt ? ` · ${new Date(document.generatedAt).toLocaleString(language, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}</p>
             <div className="monkeyboard-page-row"><select aria-label={`${document.fileName} ${text.page}`} value={page} onChange={(event) => setPages((value) => ({ ...value, [key]: Number(event.target.value) }))}>{document.pages.map((item) => <option value={item.pageIndex} key={item.pageIndex}>{text.page} {item.pageIndex + 1} / {document.pageCount}</option>)}</select><button disabled={!ready || busy || saveState.conflict} onClick={() => { void serial(() => addPage(document, page)); }}>{text.add}</button></div>
             <button className="monkeyboard-source-link" type="button" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(pageSource(document, page))}>{text.open}</button>
-            <button className="monkeyboard-source-update" disabled={!ready || busy || saveState.conflict} onClick={() => openReplacement(document, page)}>{replacementCopy[language].action}</button>
-            <button className="monkeyboard-source-work-copy" disabled={!ready || busy || saveState.conflict} onClick={() => { void requestWorkCopy(document); }}>{replacementCopy[language].workCopy}</button>
+            <button className="monkeyboard-source-update" disabled={!ready || busy || saveState.conflict} onClick={() => openReplacement(document, page)}>{replacementText.action}</button>
+            <button className="monkeyboard-source-work-copy" disabled={!ready || busy || saveState.conflict} onClick={() => { void requestWorkCopy(document); }}>{replacementText.workCopy}</button>
           </article>;
         })}</div>
       </aside>
@@ -1495,7 +1519,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
           </div>}
           <div className="monkeyboard-context-actions">
             {source && selected && onOpenDocument && <button disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(selected)}>{text.openPage}</button>}
-            {source && <button disabled={!ready || busy || saveState.conflict} onClick={openSelectedReplacement}>{replacementCopy[language].action}</button>}
+            {source && <button disabled={!ready || busy || saveState.conflict} onClick={openSelectedReplacement}>{replacementText.action}</button>}
             {/* #253: a plain registered image needs no model; nothing is saved or sent from here. */}
             {onRenderChatRequest && renderPages.length > 0 && <button type="button" className="monkeyboard-render-open" disabled={!ready} onClick={openRender}>{renderCopy[language].action}</button>}
             {context && (context.reason === "modelRequired" && context.source
