@@ -1,4 +1,29 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-253",
+      "lanes": [
+        {
+          "id": "submit-refresh-race",
+          "status": "active",
+          "branch": "codex/253-submit-refresh-race",
+          "worktree": "/workspace/shared/monkeyhub-535-dev/workspace/worktrees/codex-253-submit-refresh-race",
+          "base_ref": "45c6bd8b2a15dc377fc0d16c4532ddd0a8ef2f7d",
+          "contributor": "Codex",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/workspaces/render/RenderWorkspace.tsx",
+            "apps/monkeyhub/web/test/renderWorkspace.browser.mjs",
+            ".github/workflows/verify.yml"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
