@@ -512,6 +512,7 @@ export const messagesEn = {
     "review readiness is the server's result, read once per candidate and issue; archflow.project.issue alone can issue the run",
   "verdict.readReceipt": "Read the receipt",
   "verdict.held": "held",
+  "verdict.noRelations": "No checkable relations",
 
   "composer.context.talkingAbout": "talking about",
   "composer.context.nothingSelected": "nothing yet — pick in the model, or",

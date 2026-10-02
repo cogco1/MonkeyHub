@@ -492,6 +492,7 @@ export const messagesZhCN = {
     "复核条件由服务器给出；每个候选方案和版本只读取一次，只有 archflow.project.issue 可以签发运行",
   "verdict.readReceipt": "读取回执",
   "verdict.held": "成立",
+  "verdict.noRelations": "没有可检查的关系",
 
   "composer.context.talkingAbout": "当前对象",
   "composer.context.nothingSelected": "尚未选择 — 请在模型中点选，或",
