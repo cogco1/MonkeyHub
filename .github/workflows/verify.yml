@@ -255,6 +255,11 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node test/viewportSelection.browser.mjs
 
+      - name: Publish error recovery browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/publishWorkspace.browser.mjs
+
   hub-first-run:
     name: Hub first-run (${{ matrix.os }})
     strategy:
