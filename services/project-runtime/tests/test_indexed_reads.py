@@ -209,7 +209,7 @@ class IndexedReadTests(WorkingSourceFixture):
                 self.assertEqual(self.indexed.get(route, headers={"If-None-Match": tags[route]}).status_code, 304)
 
     def tree_with_lines(self) -> dict[str, str]:
-        """A Working Head two steps from its Stage, a result that diverged from the Stage, and a run whose change two records claim."""
+        """A Working Head two steps from its Stage, a result diverged from that Stage, and a run two changes claim."""
 
         stage = self.initialize()
         first = self.candidate_from(stage)
@@ -250,7 +250,8 @@ class IndexedReadTests(WorkingSourceFixture):
 
         def reads(client) -> list[tuple[str, str]]:
             asked.clear()
-            with mock.patch.object(ProjectBinding, "candidate_delta", counted("change", ProjectBinding.candidate_delta)), \
+            with mock.patch.object(ProjectBinding, "candidate_delta",
+                                   counted("change", ProjectBinding.candidate_delta)), \
                     mock.patch.object(ProjectBinding, "_survey_run", counted("survey", ProjectBinding._survey_run)), \
                     mock.patch.object(ProjectBinding, "_receipts_of", counted("receipts", ProjectBinding._receipts_of)):
                 for route in TREE_READS:
@@ -555,7 +556,7 @@ class IndexedReadTests(WorkingSourceFixture):
                         thread.join(30)
                 self.assertEqual(answer.content, self.client.get("/api/worktrees").content)
                 if walks:
-                    self.assertEqual(set(listed), set(self.repository.run_ids()), "without an index every run is listed")
+                    self.assertEqual(set(listed), set(self.repository.run_ids()), "without an index, every run")
                 else:
                     self.assertEqual(listed, [], "with a loaded index no run is listed")
                     self.assertIn(app.state.binding.await_index(0).index.loaded, ("reused", "reconciled"))
