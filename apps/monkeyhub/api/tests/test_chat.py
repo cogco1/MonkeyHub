@@ -747,9 +747,9 @@ class ChatTests(unittest.TestCase):
         # A normal writable workspace: the assistant works, rather than reads.
         self.assertEqual(call["args"][call["args"].index("-s") + 1], "workspace-write")
         # The turn runs in the source checkout it is working on; the bound
-        # project travels as the writable root beside it.
+        # project is not added beside it as a writable root (ADR-012).
         self.assertEqual(Path(call["cwd"]), providers._source_checkout())
-        self.assertEqual(call["args"][call["args"].index("--add-dir") + 1], str(self.project))
+        self.assertNotIn("--add-dir", call["args"])
         after = {str(path.relative_to(self.project)): path.read_bytes() for path in self.project.rglob("*") if path.is_file()}
         self.assertEqual(after, before)
 
@@ -1200,14 +1200,14 @@ class ChatTests(unittest.TestCase):
             codex_command, _ = self.store._command(self.store._sessions[codex.id])
             claude_command, _ = self.store._command(self.store._sessions[claude.id])
 
-        # Codex: its normal writable sandbox, rooted in the source, with the
-        # bound project writable beside it.
+        # Codex: its normal writable sandbox, rooted in the source. The bound
+        # project is read there, never added as a writable root (ADR-012).
         self.assertIn("workspace-write", codex_command)
         self.assertNotIn("alwaysLoad", " ".join(codex_command), "a Claude CLI setting, not Codex's")
         self.assertNotIn("read-only", codex_command)
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", codex_command)
         self.assertEqual(codex_command[codex_command.index("-C") + 1], str(source))
-        self.assertEqual(codex_command[codex_command.index("--add-dir") + 1], str(self.project))
+        self.assertNotIn("--add-dir", codex_command)
 
         # Claude: its own built-in tools, the source, the project to read, and chat scratch.
         self.assertEqual(claude_command[claude_command.index("--tools") + 1], "default")
@@ -1292,6 +1292,56 @@ class ChatTests(unittest.TestCase):
                     self.assertIn(name, approved, name)
                 # Nothing else moves: the same tools, directories, mode and session.
                 self.assertEqual(command[:at] + command[at + 2:], undenied)
+
+    def test_codex_is_not_given_the_project_as_a_writable_root(self):
+        """ADR-012 for Codex: the Hub names no writable place in the project.
+
+        The pinned ACP adapter has no read-only sandbox (its read-only mode is
+        workspace-write with approvals on its working directory), so what the
+        Hub decides is which roots it adds: the ACP configuration names none,
+        and a legacy `codex exec` turn adds no directory beside its workspace.
+        """
+        from monkeyhub_api.chat import acp_session as adapter
+
+        started = []
+
+        class Recorder:
+            """Stands in for the adapter only, at the boundary it is called on."""
+
+            def __init__(self, **arguments):
+                started.append(arguments)
+                self.default_model = "fixture-model-a"
+
+            def prompt(self, text, session_id, model, on_session, timeout_s, *, images=()):
+                on_session("fixture/session:recorded")
+
+            def close(self):
+                pass
+
+        def strings(value):
+            if isinstance(value, dict):
+                return [text for item in value.values() for text in strings(item)]
+            if isinstance(value, list):
+                return [text for item in value for text in strings(item)]
+            return [value] if isinstance(value, str) else []
+
+        acp = self.create()
+        self.store._sessions[acp.id].transport = "acp"
+        with patch.object(adapter, "CodexAcpSession", Recorder):
+            self.post(acp)
+            self.assertEqual(self.finished(acp).status, "idle")
+        [arguments] = started
+        project = self.store._sessions[acp.id].projectDir
+        configured = json.loads(arguments["environment"]["CODEX_CONFIG"])
+        self.assertEqual(set(configured), {"mcp_servers"})
+        self.assertFalse([text for text in strings(configured) if project in text])
+        self.assertEqual(arguments["environment"]["INITIAL_AGENT_MODE"], "read-only")
+
+        legacy = self.create()
+        with self.store._lock:
+            command, _ = self.store._command(self.store._sessions[legacy.id])
+        self.assertEqual(command[command.index("-C") + 1], str(providers._source_checkout()))
+        self.assertNotIn("--add-dir", command)
 
     def test_a_turn_runs_where_the_source_is_and_says_what_it_may_change(self):
         session = self.create()
