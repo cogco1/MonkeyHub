@@ -1,28 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-282",
-      "lanes": [
-        {
-          "id": "cli-limit-failure",
-          "status": "active",
-          "branch": "codex/integration-codex-1002",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-codex-1002",
-          "base_ref": "45c6bd8b2a15dc377fc0d16c4532ddd0a8ef2f7d",
-          "contributor": "Acacia",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
