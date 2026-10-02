@@ -648,13 +648,16 @@ def _derive_routes(app: FastAPI) -> None:
 def _prepare_first_reads(app: FastAPI) -> None:
     """What every first request would otherwise build for itself, built once while the process is idle (#449).
 
-    The workspace's first reads each list every run's records
-    (``prepare_bound_project``), with or without a project index: the design
-    history and the worktrees read the runs themselves. That is done here, on
+    Without a project index, the workspace's first reads each list every
+    run's records (``prepare_bound_project``), and the design history, the
+    worktrees and the working source read the runs themselves; with an index
+    that loads within a second they answer from one snapshot of it (#599) and
+    that walk is skipped. It is done here, on
     a thread of its own, once the process serves; the routers were derived
     before it listened (``_derive_routes``). Then the first views
-    (``_FIRST_READS``) are derived through the application, so the
-    conditional memo keeps each one under the project's read token: only a
+    (``_FIRST_READS``) are derived through the application; a view the
+    index does not answer keeps its conditional memo under the project's
+    read token: only a
     stable token keeps an answer, and a token the project moved past never
     answers it again. With an index, the worktrees
     are derived again after its first load, whose commit is one of the events
