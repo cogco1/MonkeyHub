@@ -258,7 +258,9 @@ jobs:
       - name: Publish error recovery browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: node test/publishWorkspace.browser.mjs
+        run: |
+          python -m pip install 'httpx2>=2.12'
+          node test/publishWorkspace.browser.mjs
 
   hub-first-run:
     name: Hub first-run (${{ matrix.os }})
