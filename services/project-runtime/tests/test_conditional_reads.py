@@ -2,11 +2,12 @@
 
 A view of the decision tree is re-derived from hundreds of retained records.
 Read twice under an unchanged project it is the same view: the second read
-answers 304 to a client that holds it and from memory to one that does not,
-and any write - this process's at once, another's once the project's layout
-watch has seen it - gives it a new tag. No request ever walks the project, so
-on a disk slow enough to make a walk take seconds an unchanged read still
-answers in milliseconds.
+answers 304 to a client that holds it and from memory to one that does not.
+This process's write gives it a new tag at once; another process's write
+does once the project is read again (a refresh), since nothing watches the
+project (ADR-012). No request ever walks the project, so on a disk slow
+enough to make a walk take seconds an unchanged read still answers in
+milliseconds.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from archflow.project.layout import FINGERPRINT_SETTLED_NS
 from archflow.project.record_kinds import STUDIO_BOARD_SCENE
 from archflow.project.refs import record_file_name
 from project_runtime.binding import MEMO_ENTRIES, ProjectBinding, bound_project
+from project_runtime.main import _hold_project
 from project_runtime.application.boards import BOARD_RUN_ID
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
@@ -108,6 +110,40 @@ def slow_disk(root: Path, seconds: float = 0.05):
         yield callers
 
 
+def layout_threads() -> list[str]:
+    """The threads that read a project's layout: a watch's (none since ADR-012) or a pending re-check's."""
+
+    return [thread.name for thread in threading.enumerate() if thread.name.startswith(("layout-watch", "layout-recheck"))]
+
+
+@contextmanager
+def counted_reads(root: Path):
+    """Name the thread of every ``stat`` and listing below ``root``, without slowing them."""
+
+    below = os.path.normcase(os.fspath(root))
+    callers: list[str] = []
+    real_stat, real_scandir = os.stat, os.scandir
+
+    def mine(path) -> bool:
+        try:
+            return os.path.normcase(os.fsdecode(path)).startswith(below)
+        except TypeError:
+            return False
+
+    def stat(path, *args, **kwargs):
+        if mine(path):
+            callers.append(threading.current_thread().name)
+        return real_stat(path, *args, **kwargs)
+
+    def scandir(path=".", *args, **kwargs):
+        if mine(path):
+            callers.append(threading.current_thread().name)
+        return real_scandir(path, *args, **kwargs)
+
+    with mock.patch("os.stat", stat), mock.patch("os.scandir", scandir):
+        yield callers
+
+
 def board(base: str | None, title: str) -> dict:
     return {"projectId": PROJECT_ID, "baseRevisionSha256": base, "title": title, "elements": [], "seenDocuments": []}
 
@@ -138,9 +174,9 @@ class ConditionalReadTests(unittest.TestCase):
         self.assertTrue(self.binding.read_token().stable)
 
     def catch_up(self) -> None:
-        """Let the layout watch see what the test did behind its back: one walk, waited for."""
+        """Read the project again, as a refresh does: the test changed it behind this process's back."""
 
-        self.binding.layout_watch().sync()
+        self.binding.refresh()
 
     def test_every_listed_read_carries_a_strong_tag(self) -> None:
         self.assertEqual({route.split("?")[0] for route in ROUTES}, set(CONDITIONAL_READS))
@@ -191,7 +227,7 @@ class ConditionalReadTests(unittest.TestCase):
         self.assertEqual(after.json()["title"], "second")
         self.assertNotEqual(after.headers["etag"], before.headers["etag"])
 
-    def test_another_writer_is_read_once_the_layout_watch_sees_it(self) -> None:
+    def test_another_writer_is_read_once_the_project_is_read_again(self) -> None:
         before = self.client.get("/api/board")
         token = self.binding.read_token()
         payload = {"schema": "StudioBoardScene@1", "projectId": PROJECT_ID,
@@ -203,16 +239,26 @@ class ConditionalReadTests(unittest.TestCase):
         # this process's write serial does not move, only the files do.
         (records / record_file_name(STUDIO_BOARD_SCENE, hashlib.sha256(data).hexdigest())).write_bytes(data)
 
-        # Nobody tells the watch; it sees the change itself, within about a
-        # second (a notification on Windows, a scan elsewhere).
-        self.assertTrue(wait_until(lambda: self.binding.read_token().fingerprint != token.fingerprint),
-                        "the layout watch never saw another process's write")
+        # Nothing watches the project (ADR-012): a watch would have seen it
+        # within a second; the view is the one it was until it is read again.
+        time.sleep(1.5)
+        self.assertEqual(self.binding.read_token(), token)
+        unchanged = self.client.get("/api/board", headers={"If-None-Match": before.headers["etag"]})
+        self.assertEqual(unchanged.status_code, 304)
+
+        refreshed = self.client.post("/api/project/refresh", json={"projectId": PROJECT_ID})
+        self.assertEqual(refreshed.status_code, 200, refreshed.text)
+        self.assertEqual(refreshed.json()["changedOutside"], True)
+        self.assertIn(f"runs/{BOARD_RUN_ID}/records", refreshed.json()["moved"])
+        self.assertNotEqual(self.binding.read_token().fingerprint, token.fingerprint)
         self.assertEqual(self.binding.read_token().serial, token.serial)
         after = self.client.get("/api/board", headers={"If-None-Match": before.headers["etag"]})
 
         self.assertEqual(after.status_code, 200)
         self.assertEqual(after.json()["title"], "outside")
         self.assertNotEqual(after.headers["etag"], before.headers["etag"])
+        again = self.client.post("/api/project/refresh", json={"projectId": PROJECT_ID})
+        self.assertEqual((again.json()["changedOutside"], again.json()["moved"]), (False, []))
 
     def test_an_unsettled_project_neither_answers_not_modified_nor_remembers(self) -> None:
         from project_runtime.application import boards
@@ -312,7 +358,7 @@ class ReadTokenTests(unittest.TestCase):
         self.addCleanup(self.binding.close)
 
     def catch_up(self) -> None:
-        self.binding.layout_watch().sync()
+        self.binding.refresh()
 
     def test_this_process_writes_move_the_token_at_once(self) -> None:
         settle(self.repository.layout.root)
@@ -332,6 +378,41 @@ class ReadTokenTests(unittest.TestCase):
         self.assertEqual(seen.serial, after.serial)
         self.assertNotEqual(seen.fingerprint, before.fingerprint)
         self.assertFalse(seen.stable, "just written: its times have not settled")
+
+    def test_an_own_write_moves_the_token_at_once_and_settles_after_one_re_check(self) -> None:
+        settle(self.repository.layout.root)
+        self.catch_up()
+        before = self.binding.read_token()
+        layout = self.binding.known_layout()
+        readings = dict(layout.readings)
+        self.repository.create_run("run-later")
+        moved = self.binding.read_token()
+        self.assertGreater(moved.serial, before.serial)
+        self.assertFalse(moved.stable)
+
+        # One re-check once the write's time has settled, and no other reading.
+        self.assertTrue(wait_until(lambda: self.binding.read_token().stable, FINGERPRINT_SETTLED_NS / 1e9 + 2))
+        settled = self.binding.read_token()
+        self.assertEqual(settled.serial, moved.serial)
+        self.assertNotEqual(settled.fingerprint, before.fingerprint)
+        self.assertEqual(layout.readings, {**readings, "recheck": readings["recheck"] + 1})
+        # Settled, nothing reads the project any more: no watch, no poll.
+        self.assertTrue(wait_until(lambda: layout_threads() == [], 2.0), layout_threads())
+        with counted_reads(self.repository.layout.root) as callers:
+            time.sleep(1.5)
+            self.assertEqual(self.binding.read_token(), settled)
+        self.assertEqual(callers, [], "something read the project while nothing moved")
+
+    def test_no_layout_watch_runs_after_open(self) -> None:
+        with TestClient(self.app) as client:
+            self.assertEqual(client.get("/api/board").status_code, 200)
+            self.assertEqual(client.get("/api/worktrees").status_code, 200)
+            self.assertIsNotNone(self.binding.read_token())
+            self.assertEqual([name for name in layout_threads() if name.startswith("layout-watch")], [])
+            # Once the open reading has settled, no layout thread at all.
+            self.assertTrue(wait_until(lambda: layout_threads() == [], FINGERPRINT_SETTLED_NS / 1e9 + 2),
+                            layout_threads())
+            self.assertTrue(self.binding.read_token().stable)
 
     def test_the_memo_keeps_only_what_a_stable_token_read(self) -> None:
         calls: list[int] = []
@@ -359,23 +440,69 @@ class ReadTokenTests(unittest.TestCase):
 
         self.assertIsNot(self.binding.memo(("entry", 0), lambda: object()), first)
 
-    def test_every_binding_on_the_project_shares_one_watch_until_the_last_closes(self) -> None:
-        others = [ProjectBinding.open(StudioSettings(project_dir=self.repository.layout.root)) for _ in range(3)]
-        for other in others:
-            self.addCleanup(other.close)
-        watches = {id(binding.layout_watch().watch) for binding in (self.binding, *others)}
-        watch = self.binding.layout_watch().watch
+    def test_only_the_runtime_s_binding_follows_the_layout(self) -> None:
+        settle(self.repository.layout.root)
+        self.catch_up()
+        self.assertTrue(self.binding.read_token().stable)
+        # Another process's binding - the Hub's, a render process's, a tool's -
+        # walks nothing and keeps nothing: nothing tells it when the runtime writes.
+        others = [ProjectBinding.open(StudioSettings(project_dir=self.repository.layout.root)),
+                  ProjectBinding.unconfigured(self.repository.layout.root, project_id=PROJECT_ID)]
+        with counted_reads(self.repository.layout.root) as callers:
+            for other in others:
+                self.addCleanup(other.close)
+                token = other.read_token(wait=False)
+                self.assertFalse(token.stable)
+                self.assertIsNot(other.memo(("probe",), object), other.memo(("probe",), object),
+                                 "a binding that follows no layout remembered an answer")
+                with self.assertRaises(RuntimeError):
+                    other.refresh()
+        self.assertEqual(callers, [], "a binding outside the runtime walked the project")
 
-        self.assertEqual(len(watches), 1)
-        self.assertEqual(watch.leases, 4)
-        for other in others:
-            other.close()
-        self.assertTrue(watch.running)
-        self.binding.close()
-        self.assertFalse(watch.running, "the last binding closed and its watch kept running")
-        # Reading again watches again.
+    def test_closing_the_binding_closes_its_layout_and_reading_again_opens_it_again(self) -> None:
+        layout = self.binding.known_layout()
         self.assertIsNotNone(self.binding.read_token())
-        self.assertIsNot(self.binding.layout_watch().watch, watch)
+        self.repository.create_run("run-later")
+        self.assertTrue(layout.pending)
+        self.binding.close()
+        self.assertFalse(layout.pending, "a re-check outlived the binding")
+        # Reading again opens the project's layout again: one walk.
+        self.assertIsNotNone(self.binding.read_token())
+        again = self.binding.known_layout()
+        self.assertIsNot(again, layout)
+        self.assertEqual(again.readings["open"], 1)
+
+
+class LeaseFileTests(unittest.TestCase):
+    """A runtime creates ``writer.lock`` as it opens a project (ADR-012), which moves the project folder's time."""
+
+    def test_a_project_opened_for_the_first_time_settles_by_itself_and_answers_not_modified(self) -> None:
+        temporary = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, temporary, True)
+        repository, _ = make_project(temporary)
+        root = repository.layout.root
+        # A project no runtime has opened since ADR-012 keeps no lease file;
+        # the fixture's own writes took the lease, and left one.
+        (root / "writer.lock").unlink()
+        settle(root)
+        held = _hold_project(StudioSettings(project_dir=root))
+        self.addCleanup(held.release)
+        self.assertTrue((root / "writer.lock").is_file())
+        app = create_app(StudioSettings(project_dir=root))
+        with TestClient(app) as client:
+            binding = bound_project(app.state)
+            self.addCleanup(binding.close)
+            first = client.get("/api/board")
+            self.assertEqual(first.status_code, 200)
+            self.assertFalse(binding.read_token().stable, "the folder's time moved a moment ago")
+            self.assertEqual(client.get("/api/board", headers={"If-None-Match": first.headers["etag"]}).status_code,
+                             200)
+            # Nobody reads the project again: its one re-check settles it.
+            self.assertTrue(wait_until(lambda: binding.read_token().stable, FINGERPRINT_SETTLED_NS / 1e9 + 2))
+            self.assertEqual(binding.known_layout().readings, {"open": 1, "recheck": 1, "refresh": 0})
+            settled = client.get("/api/board")
+            self.assertEqual(client.get("/api/board", headers={"If-None-Match": settled.headers["etag"]}).status_code,
+                             304)
 
 
 class SlowDiskTests(unittest.TestCase):
@@ -383,7 +510,7 @@ class SlowDiskTests(unittest.TestCase):
 
     A walk of this project then takes seconds. An unchanged read - answered
     304, or from the memo - must not notice: no request walks the project,
-    and none waits for the watch that does.
+    and none waits for the refresh that does.
     """
 
     def setUp(self) -> None:
@@ -400,7 +527,7 @@ class SlowDiskTests(unittest.TestCase):
         self.binding = bound_project(self.app.state)
         self.addCleanup(self.binding.close)
         settle(self.root)
-        self.binding.layout_watch().sync()
+        self.binding.refresh()
         self.assertTrue(self.binding.read_token().stable)
 
     def timed(self, route: str, **headers: str) -> tuple[int, float]:
@@ -416,15 +543,18 @@ class SlowDiskTests(unittest.TestCase):
             self.assertEqual(first.status_code, 200, first.text)
             tags[route] = first.headers["etag"]
         with slow_disk(self.root) as callers:
-            # The watch's own reads slow down too; the requests must not.
+            # A refresh's own reads slow down too; the requests must not.
             started = time.perf_counter()
-            watched = self.binding.layout_watch().sync()
+            refreshed = self.binding.refresh()
             walk_ms = (time.perf_counter() - started) * 1000
+            self.assertTrue(callers)
+            callers.clear()
             timings = {route: ([self.timed(route) for _ in range(5)],
                                [self.timed(route, **{"If-None-Match": tags[route]}) for _ in range(5)])
                        for route in routes}
 
-        self.assertTrue(watched.fingerprint.stable)
+        self.assertTrue(refreshed.layout.fingerprint.stable)
+        self.assertFalse(refreshed.changed)
         self.assertGreater(walk_ms, 500, "the disk was not slow: the test proves nothing")
         for route, (kept, unchanged) in timings.items():
             with self.subTest(route=route, walk_ms=round(walk_ms), kept=kept, unchanged=unchanged):
@@ -435,9 +565,7 @@ class SlowDiskTests(unittest.TestCase):
                     self.assertLess(statistics.median(milliseconds), 20)
                     # One stat on the request path would cost 50 ms by itself.
                     self.assertLess(max(milliseconds), 45)
-        self.assertTrue(callers)
-        self.assertEqual({name for name in callers if not name.startswith("layout-watch:")}, set(),
-                         "a request thread read the project's layout")
+        self.assertEqual(callers, [], "a request read the project's layout")
 
     def test_a_write_under_a_slow_disk_still_moves_the_token_at_once(self) -> None:
         before = self.client.get("/api/board")

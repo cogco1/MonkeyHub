@@ -354,9 +354,9 @@ def project_root_key(root: Path | str) -> str:
     """The one key this process files a project root under, however it is spelled.
 
     Normalized case, absolute, resolved and without an extended-length
-    prefix. ``write_serial``, ``add_write_observer`` and the layout watch
+    prefix. ``write_serial``, ``add_write_observer`` and the known layout
     (``archflow.project.watch``) key by it, so two spellings of one directory
-    share one serial, one set of observers and one watch.
+    share one serial and one set of observers.
     """
 
     text = _plain_spelling(os.path.normcase(os.fspath(root)))
@@ -390,8 +390,8 @@ def write_serial(root: Path | str) -> int:
 
     Counts only this process: another process's writes are visible to a
     reader through the project's layout fingerprint
-    (``archflow.project.layout``, kept current by ``archflow.project.watch``),
-    never here.
+    (``archflow.project.layout``) once the project is read again (at open or
+    on refresh, ``archflow.project.watch``), never here.
     """
 
     entry = _written_root(root)
@@ -1060,7 +1060,7 @@ def _rename_directory(source: Path, target: Path) -> bool:
     The rename never replaces anything: Windows refuses an existing target, and
     POSIX, which would replace an empty directory, has the target looked for
     first, under the writer's locks. On Windows a handle open below ``source``
-    (a scanner reading it, such as the layout watch, an indexer or antivirus)
+    (a scanner reading it, such as an indexer, a sync client or antivirus)
     refuses the rename for a moment; that is retried within a bound, as the
     HEAD swap's sharing violations are.
     """

@@ -228,8 +228,8 @@ class LayoutFingerprint:
         """The fingerprint of one scan's lines: sha256 over them sorted, and the racy rule.
 
         The one place both readers of a layout - ``layout_fingerprint`` and the
-        watch that keeps it current (``archflow.project.watch``) - turn what they
-        saw into a digest, so equal sightings give equal digests.
+        layout a runtime keeps between its readings (``archflow.project.watch``) -
+        turn what they saw into a digest, so equal sightings give equal digests.
         """
 
         text = "\n".join(sorted(lines))
@@ -287,8 +287,9 @@ def layout_fingerprint(root: Path | str) -> LayoutFingerprint:
     that cannot be read is named in a line and makes the result unstable.
 
     This walks the whole project, every time. Nothing on a request path calls
-    it: the project's layout watch (``archflow.project.watch``) keeps the same
-    fingerprint current in the background and is what a reader asks.
+    it: the project's runtime keeps the same fingerprint as it last read it
+    (``archflow.project.watch``: at open, with its own writes and on refresh)
+    and that is what a reader asks.
     """
 
     base = os.fspath(root)

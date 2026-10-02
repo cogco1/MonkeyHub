@@ -15,6 +15,12 @@ tag: a token that is not stable neither answers 304 nor is remembered, and the
 tag it gives is marked, so it can never match a later stable token that
 happens to carry the same digest.
 
+Nothing watches the project (ADR-012): the token's layout part moves at open,
+with this process's own writes (at once, through the write serial) and when
+the project is read again (``POST /api/project/refresh``). So 304 is answered
+only when nothing this process wrote and nothing a refresh found has changed;
+a change made outside MonkeyHub is answered after the next refresh.
+
 A view that reads the project index (``INDEXED_READS``) keeps no answer here
 once an index answers for the binding (ADR-008: no interim memo after a route
 reads the index): its tag also names the index's epoch and revision, and it is
@@ -102,10 +108,10 @@ def _token(state: State) -> tuple[ProjectBinding, ReadToken]:
 
 
 def _token_at_hand(state: State) -> tuple[ProjectBinding, ReadToken] | None:
-    """The token without leaving the event loop, once the binding is open and its watch has published.
+    """The token without leaving the event loop, once the binding is open and its layout was read.
 
     Reading it is an attribute read and a counter (``ProjectBinding.read_token``);
-    only opening the project and the watch's first walk need the thread pool.
+    only opening the project and its layout's first walk need the thread pool.
     """
 
     binding = getattr(state, "binding", None)

@@ -120,9 +120,10 @@ class ArtifactListingTests(_ProjectCase):
 
 class ReadTokenTests(_ProjectCase):
     def test_a_read_token_is_read_never_walked_and_a_write_moves_it_at_once(self) -> None:
-        binding = self.binding()
+        # The runtime's own binding follows the project's layout (ADR-012).
+        binding = ProjectBinding.open(self.settings, follows_layout=True)
         self.addCleanup(binding.close)
-        first = binding.read_token()  # the first read waits for the watch's first walk
+        first = binding.read_token()  # the first read is the open: one walk
         self.assertFalse(first.stable, "a project written just now has not settled")
         walked: list[str] = []
         original = watch._Tree._visit_one
@@ -139,11 +140,12 @@ class ReadTokenTests(_ProjectCase):
             after = binding.read_token()
             self.assertGreater(after.serial, first.serial)
             self.assertFalse(after.stable)
-            binding.layout_watch().sync()
+            read = [name for name in walked if not name.startswith("layout-recheck:")]
+            # The project is read again when someone asks: here, on this thread.
+            binding.refresh()
             seen = binding.read_token()
-        self.assertTrue(walked, "the watch never read the project")
-        self.assertEqual({name for name in walked if not name.startswith("layout-watch:")}, set(),
-                         "a reader's thread walked the project")
+        self.assertEqual(read, [], "a reader walked the project")
+        self.assertIn(threading.current_thread().name, walked, "the refresh never read the project")
         self.assertEqual(seen.serial, after.serial)
         self.assertNotEqual(seen.fingerprint, first.fingerprint)
 

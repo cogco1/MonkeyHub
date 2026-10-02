@@ -154,9 +154,9 @@ class RuntimeSseTests(LocalHubCase):
                     epoch, revision = written.headers["X-Monkey-Index"].split(":")
                 self.assertEqual(epoch, snapshot["epoch"])
                 self.assertGreater(int(revision), snapshot["revision"])
-                # The write's commits, not one frame: the worker's watcher commits the objects the
-                # write stored about 60 ms after it answered, and a write answered late names that
-                # later revision.
+                # The write's commits, not one frame: once the write has settled, the worker's
+                # layout re-check commits the lines of what it stored, and a write answered late
+                # names that later revision.
                 domains: set[str] = set()
                 for _ in range(200):
                     name, body = self.frame(stream)

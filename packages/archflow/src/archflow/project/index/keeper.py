@@ -1,4 +1,4 @@
-"""The one writer of a project's index: a thread fed by the layout watch and this process's writes.
+"""The one writer of a project's index: a thread fed by the project's known layout and this process's writes.
 
 No request ever projects, stats or writes for the index (ADR-008 phase 1b,
 #365). ``IndexKeeper`` owns a thread that loads the index, then applies every
@@ -6,9 +6,13 @@ change as it arrives:
 
 - this process's own P036 writes, named the moment they land by the
   repository's write observer (``add_write_observer``), only where they wrote;
-- everything the project's layout watch (``archflow.project.watch``) publishes:
-  each ``LayoutSighting`` carries the fingerprint's lines, and the lines that
-  moved since the last one say which runs to project again.
+- every reading of the project's layout as this process knows it
+  (``archflow.project.watch.KnownLayout``): the walk at open, the re-check
+  once a reading or a write has settled, and a refresh (ADR-012). Each
+  ``LayoutSighting`` carries the fingerprint's lines, and the lines that moved
+  since the last one say which runs to project again. Nothing watches the
+  project: a change made outside this process reaches the index at the next
+  open or refresh.
 
 ``index.lock`` may still be held by a process that is exiting (a restart
 that overlaps it): the keeper retries taking it with a bounded back-off and
@@ -41,7 +45,7 @@ import time
 from typing import Callable
 
 from archflow.project.repository import add_write_observer, project_path_key, write_serial
-from archflow.project.watch import LayoutLease, LayoutSighting
+from archflow.project.watch import KnownLayout, LayoutSighting
 
 from .store import IndexCommit, IndexLocked, IndexToken, IndexUnavailable, ProjectIndex, path_area
 
@@ -114,15 +118,17 @@ class IndexState:
 class IndexKeeper:
     """Keeps one ``ProjectIndex`` current on a thread of its own; the index's only writer.
 
-    ``lease`` is a share of the project's layout watch, which the keeper
-    listens to and releases when it stops.
+    ``layout`` is the project's layout as this process knows it: the keeper
+    listens to its readings and opens it if nobody has. The layout belongs to
+    whoever made it (the runtime's binding), which closes it; the keeper only
+    stops listening.
     """
 
-    def __init__(self, index: ProjectIndex, lease: LayoutLease, *, name: str = "") -> None:
+    def __init__(self, index: ProjectIndex, layout: KnownLayout, *, name: str = "") -> None:
         self.index = index
-        self._lease = lease
-        self._root = lease.watch.root
-        self._prefix = lease.watch.key if lease.watch.key.endswith(os.sep) else lease.watch.key + os.sep
+        self._layout = layout
+        self._root = layout.root
+        self._prefix = layout.key if layout.key.endswith(os.sep) else layout.key + os.sep
         self._name = name or os.path.basename(self._root.rstrip("\\/"))
         self._changed = threading.Condition()
         self._sighting: LayoutSighting | None = None
@@ -187,6 +193,26 @@ class IndexKeeper:
         self._loaded.wait(timeout)
         return self._state
 
+    def wait_seen(self, generation: int, timeout: float) -> IndexState | None:
+        """Wait until the rows hold the layout reading ``generation``, or a later one: the state, else None.
+
+        A refresh waits for this, so that its answer and every read after it
+        see what it read. An index that is loading, failed or stopped, or that
+        has not applied the reading within ``timeout``, answers None; readers
+        then read the project itself, as always.
+        """
+
+        deadline = time.monotonic() + timeout
+        with self._changed:
+            while True:
+                state = self._state
+                if state is not None and state.generation >= generation:
+                    return state
+                remaining = deadline - time.monotonic()
+                if self._stopping or remaining <= 0 or not self.running:
+                    return None
+                self._changed.wait(remaining)
+
     @property
     def status(self) -> str:
         """One line on what the index is doing: ready, loading, waiting for its lock, failed or stopped."""
@@ -215,12 +241,12 @@ class IndexKeeper:
         self._remove_observer = add_write_observer(self._root, self._wrote)
         with self._changed:
             self._noted_serial = write_serial(self._root)
-        self._remove_listener = self._lease.add_listener(self._saw)
+        self._remove_listener = self._layout.add_listener(self._saw)
         self._thread = threading.Thread(target=self._run, name=f"project-index:{self._name}", daemon=True)
         self._thread.start()
 
     def stop(self, *, wait: bool = True) -> bool:
-        """End the thread, close the index and give back the watch lease. True once it has ended."""
+        """End the thread, close the index and stop listening to the layout. True once it has ended."""
 
         with self._changed:
             self._stopping = True
@@ -243,7 +269,6 @@ class IndexKeeper:
                 remove()
         self._remove_listener = self._remove_observer = None
         self.index.close()
-        self._lease.release(wait=False)
         self._loaded.set()
         with self._changed:
             self._changed.notify_all()
@@ -267,16 +292,13 @@ class IndexKeeper:
             self._changed.notify_all()
 
     def _saw(self, sighting: LayoutSighting) -> None:
-        """The watch listener: keep the newest sighting, and nothing more."""
+        """The layout listener: keep the newest sighting, and nothing more."""
 
         with self._changed:
             earlier = self._sighting
-            if earlier is not None and earlier.reread:
-                # Two sightings folded into one keep both passes' in-place hints.
-                sighting = LayoutSighting(sighting.layout, sighting.lines, sighting.scanned_at_ns,
-                                          earlier.reread | sighting.reread)
-            self._sighting = sighting
-            self._changed.notify_all()
+            if earlier is None or sighting.layout.generation > earlier.layout.generation:
+                self._sighting = sighting
+                self._changed.notify_all()
 
     def _take(self, *, wait: bool) -> tuple[LayoutSighting | None, set[str], bool, int] | None:
         """What changed since the last apply; None once stopping."""
@@ -298,6 +320,9 @@ class IndexKeeper:
         try:
             if not self._lock():
                 return
+            # The open reading - one walk, unless a reader took it already -
+            # is where the load starts.
+            self._layout.latest()
             first = self._first_sighting()
             if first is None:
                 return
@@ -343,8 +368,9 @@ class IndexKeeper:
         """Take ``index.lock``, retrying with a bounded back-off; False once stopping.
 
         Raises ``IndexLocked`` when another writer still holds it after
-        ``LOCK_RETRY_TOTAL_S``. Meanwhile the watch and the write observer keep
-        noting what changes, so the load that follows misses nothing.
+        ``LOCK_RETRY_TOTAL_S``. Meanwhile the layout's readings and the write
+        observer keep noting what changes, so the load that follows misses
+        nothing.
         """
 
         delay = LOCK_RETRY_FIRST_S
@@ -388,7 +414,7 @@ class IndexKeeper:
         if sighting is None:
             self.index.apply(None, 0, areas=areas)
         else:
-            self.index.apply(sighting.lines, sighting.scanned_at_ns, areas=areas, reread=sighting.reread)
+            self.index.apply(sighting.lines, sighting.scanned_at_ns, areas=areas)
         self.applies += 1
 
     def _rebuild(self, sighting: LayoutSighting) -> None:

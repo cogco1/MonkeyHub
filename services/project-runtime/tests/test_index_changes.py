@@ -212,8 +212,8 @@ class IndexChangesTests(DesignHistoryFixture):
 
         self.assertTrue(wait_until(lambda: any(
             event["type"] == "index.committed" and event["revision"] >= revision for event in events.replay()), 10))
-        # The write's own commits, not the last one: the watcher commits the
-        # objects the write stored about 60 ms after it answered.
+        # The write's own commits, not the last one: once the write has
+        # settled, the layout's re-check commits the lines of what it stored.
         committed = [event for event in events.replay()
                      if event["type"] == "index.committed" and before < event["revision"] <= revision]
         self.assertIn("run", {domain for event in committed for domain in event["domains"]})

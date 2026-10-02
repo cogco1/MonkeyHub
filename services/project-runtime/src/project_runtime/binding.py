@@ -53,7 +53,7 @@ from archflow.project.repository import (
     ProjectRepositoryError,
     write_serial,
 )
-from archflow.project.watch import LayoutLease, release_when_collected, watch_layout
+from archflow.project.watch import KnownLayout, LayoutRefresh
 from archflow.state.stage_workflow import HARNESS_WORKFLOW_IDS
 from archflow.state.design_portfolio import DesignBranch, DesignStage
 from archflow.state.state_record import Entity, StateRecord, StateRecordError
@@ -94,6 +94,13 @@ MEMO_ENTRIES = 128
 # own writes before it reads the runs itself (ADR-008 phase 1b). Waiting is
 # not work: the index's own thread projects, never the request's.
 INDEX_CATCH_UP_S = 1.0
+# How long a refresh waits for the project index to apply what it read
+# (``ProjectBinding.refresh``): projecting again what moved outside can take
+# seconds when much did.
+REFRESH_INDEX_WAIT_S = 30.0
+# The layout part of the token of a binding that follows no layout: it never
+# matches a reading, and the token is never stable.
+UNFOLLOWED_LAYOUT = "unfollowed"
 
 # Parsed State Records by content digest, shared by every binding in the
 # process (ADR-008 phase 1a; ``ProjectBinding.state_record``). Sized by the
@@ -123,9 +130,12 @@ class ReadToken:
     """What every answer derived from the project's files is derived under.
 
     Two answers computed under equal tokens read the same files. ``serial``
-    moves with this process's own writes, ``fingerprint`` with anyone's, and
-    ``stable`` says the fingerprint is old enough to be trusted to move and
-    was taken after this process's last write.
+    moves with this process's own writes, and ``fingerprint`` with what the
+    last reading of the project's layout saw: at open, once this process's
+    writes have settled, and on refresh, which is when a change made by
+    anyone else is read (ADR-012). ``stable`` says the fingerprint is old
+    enough to be trusted to move and was taken after this process's last
+    write.
     """
 
     epoch: str
@@ -187,6 +197,13 @@ class ProjectBinding:
     whenever what they were read from can have moved, and may read what the
     project index (``use_index``) keeps. The index is derived and outside the
     project, and its own thread writes it; this binding only reads it.
+
+    Only the open project's runtime binding (``bound_project``) follows the
+    project's layout (``follows_layout``): its process is the project's only
+    writer (ADR-012), so the layout moves at open, with that process's writes
+    and on refresh. Any other binding - MonkeyHub's, a render process's, a
+    tool's - walks nothing and keeps nothing under a token, since nothing
+    tells it when the runtime wrote.
     """
 
     def __init__(
@@ -196,6 +213,7 @@ class ProjectBinding:
         project_id: str,
         project_dir: Path,
         settings: StudioSettings,
+        follows_layout: bool = False,
     ) -> None:
         self.repository = repository
         self.project_id = project_id
@@ -211,11 +229,12 @@ class ProjectBinding:
         self._memo_lock = threading.Lock()
         self._memo: OrderedDict[tuple[ReadToken, tuple], Any] = OrderedDict()
         self._memo_token: ReadToken | None = None
-        # This binding's share of the project's layout watch, taken on the
-        # first read and given back by ``close`` (or once nobody holds the
-        # binding any more).
+        # The project's layout as this process last read it, made on the
+        # first read token and closed by ``close`` (or once nobody holds the
+        # binding any more); only for the runtime's own binding.
+        self.follows_layout = follows_layout
         self._layout_lock = threading.Lock()
-        self._layout_lease: LayoutLease | None = None
+        self._layout: KnownLayout | None = None
         self._layout_finalizer: weakref.finalize | None = None
         # The project index's keeper, when one is in use (ADR-008 phase 1b),
         # stopped by ``close`` or once nobody holds the binding any more.
@@ -228,70 +247,94 @@ class ProjectBinding:
     def read_token(self, *, wait: bool = True) -> ReadToken | None:
         """The token an answer read from the project's files now is derived under.
 
-        Read, never taken: the project's layout watch (``archflow.project.watch``)
-        keeps the fingerprint current on a thread of its own, and this reads
-        the latest one it published - no request ever walks the project. So
-        this process's writes change the token at once through ``serial``, and
-        a fingerprint published before the newest of them is not stable:
-        nothing is kept or answered 304 under it until the watch has seen that
-        write too. Anyone else's writes move ``fingerprint`` once the watch sees
-        them, within about a second.
+        The runtime's binding reads it from the project's layout as this
+        process last read it (``archflow.project.watch.KnownLayout``): the very
+        first read walks the whole project once (the open), and every read
+        after it is one attribute read and a counter - no request walks the
+        project and nothing watches it. This process's writes change the token
+        at once through ``serial``, and a fingerprint read before the newest of
+        them is not stable: nothing is kept or answered 304 under it until the
+        one re-check after that write has settled, about two seconds later. A
+        change made by any other process moves ``fingerprint`` once the project
+        is read again (``refresh``) or opened again (ADR-012). With
+        ``wait=False`` a read before the first answers None instead.
 
-        Only the very first read waits, for the watch's first walk. With
-        ``wait=False`` that read answers None instead, and so does any read
-        before this binding has asked for the watch.
+        A binding that follows no layout (``follows_layout``) walks nothing
+        and answers a token that is never stable: nothing tells it when the
+        runtime wrote, so it keeps nothing under one.
         """
 
         # Before the fingerprint: a write in between then leaves the serial
         # past the one that fingerprint was taken under.
         serial = write_serial(self.repository.layout.root)
-        lease = self._layout_lease
-        if lease is None:
+        if not self.follows_layout:
+            return ReadToken(READ_EPOCH, serial, UNFOLLOWED_LAYOUT, False)
+        layout = self._layout
+        if layout is None:
             if not wait:
                 return None
-            lease = self.layout_watch()
-        seen = lease.latest(wait=wait)
+            layout = self.known_layout()
+        seen = layout.latest(wait=wait)
         if seen is None:
             return None
         return ReadToken(
             READ_EPOCH, serial, seen.fingerprint.digest, seen.fingerprint.stable and seen.serial == serial,
         )
 
-    def layout_watch(self) -> LayoutLease:
-        """This binding's lease on the project's layout watch, taken on first use.
+    def known_layout(self) -> KnownLayout:
+        """The project's layout as this process last read it, made on first use (the runtime's binding only).
 
-        Every binding on one root shares that root's one watch. A test or a
-        tool that changed the project behind the watch's back can ``sync`` it.
+        Nobody reads it yet when it is made: the first ``latest`` walks.
         """
 
-        lease = self._layout_lease
-        if lease is not None:
-            return lease
+        layout = self._layout
+        if layout is not None:
+            return layout
+        if not self.follows_layout:
+            raise RuntimeError("only the open project's runtime binding follows the project's layout (ADR-012)")
         with self._layout_lock:
-            if self._layout_lease is None:
-                lease = watch_layout(self.repository.layout.root)
-                self._layout_finalizer = release_when_collected(self, lease)
-                self._layout_lease = lease
-            return self._layout_lease
+            if self._layout is None:
+                layout = KnownLayout(self.repository.layout.root)
+                self._layout_finalizer = weakref.finalize(self, layout.close)
+                self._layout = layout
+            return self._layout
+
+    def refresh(self, *, wait: float = REFRESH_INDEX_WAIT_S) -> LayoutRefresh:
+        """Read the project again now, and say what changed outside this process (ADR-012).
+
+        This process's own writes are taken in first, then the whole project
+        is walked once; whatever moved besides was changed outside it - by
+        hand, by a sync, by a restore, by an agent's command - and the answer
+        names it. The read token moves with the reading. The project index, if
+        one is kept, projects again what moved; this returns once it holds the
+        reading, or after ``wait`` seconds.
+        """
+
+        refreshed = self.known_layout().refresh()
+        keeper = self._index_keeper
+        if keeper is not None:
+            keeper.wait_seen(refreshed.layout.generation, wait)
+        return refreshed
 
     def use_index(self, index: ProjectIndex) -> IndexKeeper:
         """Keep ``index`` current on a thread of its own and read from it once it is loaded.
 
-        The keeper holds its own share of the layout watch and this process's
-        write observer; it loads (reconciles or rebuilds) the file and applies
-        every change in the background. Until it has loaded, and whenever it
-        fails, every reader reads the project itself: opening the project
-        never waits for the index.
+        The keeper listens to this binding's layout and this process's write
+        observer; it loads (reconciles or rebuilds) the file and applies every
+        change in the background. Until it has loaded, and whenever it fails,
+        every reader reads the project itself: opening the project never waits
+        for the index.
 
         The keeper must not outlive the binding: ``close`` stops it, and so
         does collecting a binding nobody closed. Its projector therefore holds
         the binding weakly (``StudioProjector``).
         """
 
+        layout = self.known_layout()
         with self._layout_lock:
             if self._index_keeper is not None:
                 raise RuntimeError("this binding already has a project index")
-            keeper = IndexKeeper(index, watch_layout(self.repository.layout.root), name=self.project_id)
+            keeper = IndexKeeper(index, layout, name=self.project_id)
             self._index_keeper = keeper
             self._index_finalizer = weakref.finalize(self, keeper.stop, wait=False)
         keeper.start()
@@ -355,11 +398,11 @@ class ProjectBinding:
         return getattr(self._indexed, "kept", None)
 
     def close(self) -> None:
-        """Stop the index's keeper and give back this binding's share of the layout watch.
+        """Stop the index's keeper and close this binding's layout.
 
-        The watch holds a handle on the project folder, so whoever is done
-        with the project closes its binding. Reading again watches again; the
-        index is not kept again until ``use_index`` is called again.
+        Closing the layout cancels a re-check still to come and stops hearing
+        this process's writes. Reading again opens the layout again (one walk);
+        the index is not kept again until ``use_index`` is called again.
         """
 
         with self._layout_lock:
@@ -370,12 +413,12 @@ class ProjectBinding:
         if keeper is not None:
             keeper.stop()
         with self._layout_lock:
-            lease, self._layout_lease = self._layout_lease, None
+            layout, self._layout = self._layout, None
             finalizer, self._layout_finalizer = self._layout_finalizer, None
         if finalizer is not None:
             finalizer.detach()
-        if lease is not None:
-            lease.release()
+        if layout is not None:
+            layout.close()
 
     def memo(self, key: tuple, compute: Callable[[], _T]) -> _T:
         """``compute()``, remembered under the current token while it is stable.
@@ -429,7 +472,9 @@ class ProjectBinding:
 
         It carries none of a Runtime's configuration: no configured reference
         run, so the rule alone chooses one, and nothing exported. The caller
-        has verified that ``project_dir`` holds ``project_id``.
+        has verified that ``project_dir`` holds ``project_id``. It follows no
+        layout: the runtime writes the project, and nothing tells this
+        process when (ADR-012).
         """
 
         root = Path(project_dir)
@@ -441,8 +486,12 @@ class ProjectBinding:
         )
 
     @classmethod
-    def open(cls, settings: StudioSettings) -> ProjectBinding:
-        """Open the configured project, or refuse and say what went wrong."""
+    def open(cls, settings: StudioSettings, *, follows_layout: bool = False) -> ProjectBinding:
+        """Open the configured project, or refuse and say what went wrong.
+
+        ``follows_layout`` is for the open project's runtime alone
+        (``bound_project``); see ``ProjectBinding``.
+        """
 
         project_dir = Path(settings.project_dir)
         try:
@@ -464,6 +513,7 @@ class ProjectBinding:
             project_id=location.project_id,
             project_dir=location.root,
             settings=settings,
+            follows_layout=follows_layout,
         )
 
     def head(self) -> ProjectVersionRef:
@@ -1275,8 +1325,8 @@ def prepare_bound_project(state: ProcessState) -> ProjectBinding:
     """
 
     binding = bound_project(state)
-    # The layout watch's first walk, which the first read token waits for,
-    # then the index's load, or the runs' records and their receipts' survey.
+    # The layout's open walk, which the first read token takes, then the
+    # index's load, or the runs' records and their receipts' survey.
     binding.read_token()
     if binding.await_index(INDEX_CATCH_UP_S) is not None and binding.index_reader(wait=0) is not None:
         return binding
@@ -1298,7 +1348,8 @@ def _open_bound_project(state: ProcessState) -> ProjectBinding:
     with _BINDING_LOCK:
         binding = getattr(state, "binding", None)
         if binding is None:
-            binding = ProjectBinding.open(state.settings)
+            # The process's own binding: the open project's runtime follows its layout (ADR-012).
+            binding = ProjectBinding.open(state.settings, follows_layout=True)
             index_dir = getattr(state.settings, "project_index_dir", None)
             if index_dir is not None:
                 # Imported here: the projector reads through the artifacts

@@ -1968,8 +1968,8 @@
         "never creates a directory and never writes",
         "a resolved path that escapes the project root raises",
         "a ref belonging to another project is refused",
-        "layout_fingerprint reads directory and pointer-file metadata only: it opens, reads and writes no file, and a result is stable only when its newest time is more than two seconds older than the scan; LayoutFingerprint.from_lines is the one place a scan's lines become a digest and a stability, and is_layout_directory the one traversal rule (no link, no junction), so the layout watch (archflow.project.watch) states the same fingerprint of the same tree",
-        "layout_fingerprint walks the whole project on every call; no request path calls it, and a reader asks the layout watch (archflow.project.watch) instead"
+        "layout_fingerprint reads directory and pointer-file metadata only: it opens, reads and writes no file, and a result is stable only when its newest time is more than two seconds older than the scan; LayoutFingerprint.from_lines is the one place a scan's lines become a digest and a stability, and is_layout_directory the one traversal rule (no link, no junction), so the known layout (archflow.project.watch) states the same fingerprint of the same tree",
+        "layout_fingerprint walks the whole project on every call; no request path calls it, and a reader asks the project's known layout (archflow.project.watch) instead"
       ],
       "status": "canonical",
       "tests": [
@@ -2113,7 +2113,7 @@
       "purpose": "The derived project index (ADR-008 phase 1b): one SQLite file per project in a cache directory outside it, filled by one projector for a rebuild and for every change on one keeper thread, stamped, never migrated, and read in snapshots by agents and routes without re-reading the records.",
       "owns": [
         "ProjectIndex: the index file, its schema (meta, place, run, record, artifact, document, candidate, stage, projection), the writer lease beside it, load (reuse, reconcile or rebuild), apply (projected before the write transaction opens; one commit, and one revision when a row changed), quarantine of an unreadable file, and read-only snapshots",
-        "IndexKeeper: the index's only writer, a thread per index fed by the layout watch's sightings (archflow.project.watch add_listener) and this process's write observer; its IndexState, and whether the rows hold every write this process made (readable)",
+        "IndexKeeper: the index's only writer, a thread per index fed by the readings of the project's known layout (archflow.project.watch KnownLayout.add_listener: open, re-check, refresh) and this process's write observer; it takes the open reading when nobody has; its IndexState, whether the rows hold every write this process made (readable) and whether they hold a given reading (wait_seen)",
         "IndexStamp and manifest_stamp: schema version, projector version, project id and the digest of project.json; a different stamp rebuilds under a new epoch",
         "the row values a projector returns (RunRows, TreeRows, RecordRow, ArtifactRow, DocumentRow, CandidateRow, StageRow) and the Projector protocol",
         "line_places, place_area and path_area: which part of a project a layout line or a written path belongs to",
@@ -2125,13 +2125,13 @@
         "what a row holds, and how it is derived (the projector: project_runtime.binding's StudioProjector)",
         "where the cache directory is (the caller names it: the Studio passes <runtime root>/cache/projects/<runtime_id>/index, the index subdirectory of the project cache directory the Hub names)",
         "reading or writing the project's files (archflow.project.repository); the index writes only inside its own directory",
-        "the layout fingerprint and its lines (archflow.project.layout, kept current by archflow.project.watch)"
+        "the layout fingerprint and its lines (archflow.project.layout, read by archflow.project.watch)"
       ],
       "inputs": [
         "an explicit cache directory",
         "a Projector",
         "a stamp function",
-        "a LayoutLease on the project's layout watch",
+        "the project's KnownLayout (archflow.project.watch), which its owner closes",
         "paths this process wrote below the root (add_write_observer)"
       ],
       "outputs": [
@@ -2156,6 +2156,7 @@
         "IndexKeeper.readable",
         "IndexKeeper.wait_readable",
         "IndexKeeper.wait_loaded",
+        "IndexKeeper.wait_seen",
         "IndexKeeper.stop",
         "IndexKeeper.status",
         "IndexState",
@@ -2225,7 +2226,7 @@
         "services/project-runtime/tests/test_index_changes.py",
         "services/project-runtime/tests/test_projections.py"
       ],
-      "notes": "Created because no owner held a persistent derived store (ADR-008 phase 1b, #365). It hears of changes only through archflow.project.watch and the repository write observer; it never walks the project itself.",
+      "notes": "Created because no owner held a persistent derived store (ADR-008 phase 1b, #365). It hears of changes only through the known layout's readings (archflow.project.watch) and the repository write observer; it never walks the project itself.",
       "files": [
         "packages/archflow/src/archflow/project/index/__init__.py",
         "packages/archflow/src/archflow/project/index/keeper.py",
@@ -2235,46 +2236,43 @@
     {
       "module_id": "archflow.project.watch",
       "owner_path": "packages/archflow/src/archflow/project/watch.py",
-      "purpose": "Keeps each project root's layout fingerprint current on one background thread per root and process, so a reader takes the latest fingerprint with one attribute read and no request ever walks the project (ADR-008, #363).",
+      "purpose": "Keeps a project root's layout as this process last read it, with no thread of its own, so a reader takes the last reading with one attribute read and no request ever walks the project; it reads the project at open, once more after this process's own writes have settled, and on an explicit refresh, which names what moved outside this process. Nothing watches the project (ADR-008, ADR-012, #363, #599).",
       "owns": [
-        "the one layout watch per project root and process: its thread, its leases and its stop",
-        "the Windows directory-change watch on a project root (ReadDirectoryChangesW through ctypes: one overlapped, recursive read on a handle that shares read, write and delete)",
-        "keeping a layout fingerprint current incrementally: which directories a notification, a write observed in this process or a lost batch makes it read again, the scan every POLL_S where no notification arrives, the settle pass and the safety-net walk",
-        "telling a listener every publication (add_listener): the fingerprint's own lines and the directories a notification or a write asked the pass to read again, so a keeper of something derived from the tree can tell what moved"
+        "KnownLayout: the project's layout as this process last read it, with no thread, no handle on the folder and no poll; the open walk (taken by the first reader), the one-shot re-check and the explicit refresh",
+        "keeping a layout fingerprint current with this process's own writes (add_write_observer): each written path is queued on the writer's thread and read by one re-check once it has settled (FINGERPRINT_SETTLED_NS), which stats only the directories written or too young to trust; a reading that is not settled, such as the open after a runtime created writer.lock, gets the same one re-check",
+        "reading a project again on request (KnownLayout.refresh, LayoutRefresh): this process's own writes taken in first, then one walk, and every place whose line moved besides named as moved outside this process",
+        "telling a listener every publication (add_listener): the fingerprint's own lines, so a keeper of something derived from the tree can tell what moved"
       ],
       "does_not_own": [
         "what a fingerprint states, its digest and its racy rule (archflow.project.layout)",
         "the write serial and the write observers (archflow.project.repository)",
-        "what a reader keeps under a fingerprint, and when it may answer 304 (project_runtime.binding)"
+        "what a reader keeps under a fingerprint, and when it may answer 304 (project_runtime.binding)",
+        "when a project is read again: the runtime's binding and its refresh route (project_runtime.binding)"
       ],
       "inputs": [
         "project root path (any spelling, including a Win32 extended-length prefix)",
-        "file-system change notifications below the root",
-        "paths this process wrote below the root (add_write_observer)"
+        "paths this process wrote below the root (add_write_observer)",
+        "an explicit request to read the project again (refresh)"
       ],
       "outputs": [
-        "WatchedLayout",
-        "LayoutLease",
-        "LayoutSighting"
+        "LayoutReading",
+        "LayoutSighting",
+        "LayoutRefresh"
       ],
       "public_api": [
-        "watch_layout",
-        "LayoutLease",
-        "LayoutLease.latest",
-        "LayoutLease.sync",
-        "LayoutLease.release",
-        "LayoutWatch",
-        "WatchedLayout",
-        "release_when_collected",
-        "running_watches",
-        "POLL_S",
-        "DEBOUNCE_S",
-        "SAFETY_S",
-        "RETRY_S",
-        "NOTIFY_BUFFER_BYTES",
-        "LayoutWatch.add_listener",
-        "LayoutLease.add_listener",
-        "LayoutSighting"
+        "KnownLayout",
+        "KnownLayout.latest",
+        "KnownLayout.open",
+        "KnownLayout.refresh",
+        "KnownLayout.add_listener",
+        "KnownLayout.pending",
+        "KnownLayout.close",
+        "LayoutReading",
+        "LayoutSighting",
+        "LayoutRefresh",
+        "SETTLE_MARGIN_S",
+        "SETTLE_LONGEST_S",
+        "TOUCHED_LIMIT"
       ],
       "depends_on": [
         "archflow.project.layout",
@@ -2283,12 +2281,13 @@
       ],
       "invariants": [
         "metadata only, like layout_fingerprint: it stats and lists directories and stats the pointer files; it opens, reads and writes no project file",
-        "one watch and at most one directory handle per project root (project_root_key) and process; the handle shares read, write and delete, so the root can be renamed, moved or deleted while watched, and it is closed when the root goes or is replaced, when the watch fails and when the last lease is released",
-        "what it publishes is layout_fingerprint of the same tree - the same lines, traversal and racy rule; a lost notification batch (0 bytes or ERROR_NOTIFY_ENUM_DIR), an unavailable or failed watch and every SAFETY_S cost one full walk; a notification alone never makes a fingerprint unstable",
-        "readers never walk: latest is one attribute read and only a first reader waits, for the first walk; every stat and listing runs on the watch's own thread",
-        "a WatchedLayout carries write_serial(root) read before its pass began, so a reader can tell a fingerprint taken before its own process's last write",
-        "a failure never leaves a stable fingerprint behind: it is published unstable until a walk succeeds; stopping cancels the pending read, waits for it and closes the handle before the thread ends",
-        "a listener runs on the watch's thread after the publication is visible, is told the last publication at once when it is added, and one that raises is logged and never stops the watch"
+        "nothing watches the project (ADR-012): no thread runs between readings, no handle is held on the folder and nothing is read on a clock; the project is read at open (one walk), in one re-check once this process's writes or a reading too young to trust have settled, and on refresh; a reading that could only settle more than SETTLE_LONGEST_S from now schedules nothing",
+        "what it publishes is layout_fingerprint of the same tree - the same lines, traversal and racy rule; a re-check stats only the directories written or too young to trust and lists one again only when its time moved; after a failed reading the next one walks the whole project",
+        "readers never walk after the open: latest is one attribute read, and nothing is read on a writer's thread",
+        "a LayoutReading carries write_serial(root) read before its reading began, so a reader can tell a fingerprint taken before its own process's last write",
+        "a refresh takes this process's own writes in before it walks, and never names as moved outside a place that one of them, or one landing while it walks, can have moved",
+        "a failure never leaves a stable fingerprint behind: it is published unstable; closing cancels a pending re-check and stops hearing writes",
+        "a listener runs on the thread that published, after the publication is visible, is told the last publication at once when it is added, and one that raises is logged and never stops a reading"
       ],
       "status": "canonical",
       "tests": [
@@ -2296,7 +2295,7 @@
         "services/project-runtime/tests/test_conditional_reads.py",
         "services/project-runtime/tests/test_derivation_memo.py"
       ],
-      "notes": "Created because the 0a fingerprint walk sat on the request path (#363): on a busy disk it took 0.2-1.2 s once per TTL, and an unchanged 304 waited for it. The notification tests need Windows and skip elsewhere; the scanning tests run on every platform. Windows still refuses to rename a folder that contains a watched root while the watch holds its handle; the Hub and Studio close the watch with the project."
+      "notes": "Created because the 0a fingerprint walk sat on the request path (#363). Until #599 it was a watch - a recursive ReadDirectoryChangesW, a root stat every second and a walk every 120 s, per root and process, in the worker and again in the Hub - and ADR-012 replaced it with readings at open, after this process's own writes and on refresh; the module id still names the watch it was."
     },
     {
       "module_id": "archflow.project.ports",
@@ -4464,7 +4463,8 @@
         "The current project working position (moved only by an explicit selection, never by recording a generated candidate), the automatic recovery listing of every unlabelled generated candidate however old, independent explicit saved versions (POST /api/working-draft/save; savedBy \"person\" only from the Hub page's history panel, recorded on the row, replaced by the next save of that run and kept by a Continue, #575) and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request; every selection onto a run retains who made it as an AuditEvent@1 design.continued beside that run, ids only (actor, origin, previous head run, target run, chat message ids), and a selection whose event cannot be retained is undone.",
         "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing; a live rejection of the working position is reported as a warning and never moves it",
         "The representation-status projection (#223): for one exact registered page, current, outdated, frozen or unavailable, the exact retained refs it was made from and its newest registered replacement, derived on every read by asking the page's owner (a cut plan's read set through plan_status, an AI render's retained request through Render's freshness, a page bound to one model state through model_is_current, a page bound to nothing through its replacements alone); it writes nothing and stores no status or dependency edge: the project-level dependency is this projection, not a second state; GET /api/representation-status answers it for one exact page in the projection's own words (#288)",
-        "the Studio projector of the project index (StudioProjector): each run's records, artifacts, documents and candidate source, the parts of its change the tree reads (change_parts), its part of the reference survey and its newest runner receipt, and the committed stages, read through the same readers the routes use; attaching the index in StudioSettings.project_index_dir (the index subdirectory of the Hub's project cache directory) to the one binding, kept current by its keeper; which reads use the index (only when it holds every write this process made): the artifact and document listings and, since #599, the design tree's views, which read every run from one snapshot (indexed_runs); the read-only agent query route GET /api/index/{table}; the client stores' catch-up route GET /api/index?since=&epoch= (#366): empty when current, the changes while the change log reaches back, otherwise a reset snapshot, tagged \"<epoch>:<revision>\""
+        "the Studio projector of the project index (StudioProjector): each run's records, artifacts, documents and candidate source, the parts of its change the tree reads (change_parts), its part of the reference survey and its newest runner receipt, and the committed stages, read through the same readers the routes use; attaching the index in StudioSettings.project_index_dir (the index subdirectory of the Hub's project cache directory) to the one binding, kept current by its keeper; which reads use the index (only when it holds every write this process made): the artifact and document listings and, since #599, the design tree's views, which read every run from one snapshot (indexed_runs); the read-only agent query route GET /api/index/{table}; the client stores' catch-up route GET /api/index?since=&epoch= (#366): empty when current, the changes while the change log reaches back, otherwise a reset snapshot, tagged \"<epoch>:<revision>\"",
+        "reading the project again on request (POST /api/project/refresh, ProjectBinding.refresh, ADR-012): one walk of the runtime binding's known layout, which answers whether the folder changed outside this runtime and names what moved; the read token moves with it, and the answer waits (bounded) for the project index to apply it"
       ],
       "does_not_own": [
         "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use archflow.project.repository ports; monkeyarch.application.project_runner is the writer of a modeling run and archflow.project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through archflow.project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
@@ -4539,6 +4539,8 @@
         "POST /api/sync/pull",
         "POST /api/sync/push",
         "POST /api/project/modeling",
+        "POST /api/project/refresh",
+        "ProjectRefreshDto",
         "initialize_modeling",
         "project_proposed_record",
         "drawing_context",
@@ -4574,7 +4576,8 @@
         "ProjectBinding.read_token",
         "ProjectBinding.memo",
         "ProjectBinding.state_record",
-        "ProjectBinding.layout_watch",
+        "ProjectBinding.known_layout",
+        "ProjectBinding.refresh",
         "ProjectBinding.close",
         "ProjectBinding.use_index",
         "ProjectBinding.await_index",
@@ -4588,6 +4591,7 @@
         "attach_project_index",
         "StudioProjector",
         "INDEX_CATCH_UP_S",
+        "REFRESH_INDEX_WAIT_S",
         "RunChanges",
         "change_parts",
         "KeptRuns",
@@ -4631,7 +4635,7 @@
         "main head Stage is the default when design history exists; a successful harness run alone never becomes a default committed Stage",
         "the Working Head is the architect's editing base, read from retained facts and never guessed from the newest file; a generated candidate is recorded and shown but never moves it, viewing history never moves it, and only the explicit working-draft selection (Continue, adopting the architect's own Sync, or the Hub Agent's Continue on the user's bound words through a Hub-managed Runtime) does; every selection onto a run is retained as an attributed design.continued event and admits no Candidate; a recorded continuation keeps its source position's branch",
         "a page's representation status is derived on read and never stored; an explicit page replacement answers before what the page depicts; a missing or unverifiable page or input is unavailable and is never rebound; a person's keep (a drawing's follow: frozen, Publish's freeze) is frozen; each consumer keeps its own wire words",
-        "an answer is remembered only in memory and only under a stable ReadToken, which is read from the project's layout watch (archflow.project.watch) and never walked on a request: this process's writes change the token at once and leave it unstable until the watch has seen them, another process's once the watch sees them (about a second); closing the binding gives back its share of the watch",
+        "an answer is remembered only in memory and only under a stable ReadToken. Only the open project's runtime binding (bound_project, follows_layout) reads it from the project's known layout (archflow.project.watch), never walked on a request after the open: this process's writes change the token at once and leave it unstable until their one re-check has settled them; another process's write moves it only once the project is read again (refresh) or opened again (ADR-012). A binding in another process (ProjectBinding.unconfigured, a render process's, a tool's) walks nothing and its token is never stable. Closing the binding cancels its pending re-check",
         "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view",
         "the drawing context publishes every wall's <id>-top from the producer itself, in production order, so a drawn shape standing on a wall keeps its drawing controls",
         "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)",
@@ -5666,8 +5670,8 @@
         "One process binds one project directory, keyed and supervised by MonkeyHub; in production it is reached only through the Hub's forwarding path, and it never grows a persistent user-settings file, a launcher, a tray or a UI of its own",
         "The Runtime parameter-lock proposal route uses the existing accept actor grant; local unauthenticated attribution identifies only the process boundary and does not prove a human caller",
         "POST /api/admissions uses the existing accept grant on a local-role Runtime; a shared project service does not expose it",
-        "only the exact GET paths in CONDITIONAL_READS carry an ETag, answer If-None-Match with 304 and are answered from the binding's memo, and only for a 200 read under a stable token; a path in INDEXED_READS (the artifact and document listings and, since #599, the design history, the worktrees and the working source) keeps no answer once an index answers and its tag also names the index's epoch and revision; every other method, path and status passes through unchanged",
-        "shutdown closes the bound project's binding after draining work, which stops its layout watch and lets go of the project folder",
+        "only the exact GET paths in CONDITIONAL_READS carry an ETag, answer If-None-Match with 304 and are answered from the binding's memo, and only for a 200 read under a stable token; a path in INDEXED_READS (the artifact and document listings and, since #599, the design history, the worktrees and the working source) keeps no answer once an index answers and its tag also names the index's epoch and revision; every other method, path and status passes through unchanged; a tag's layout part moves at open, with this process's writes and on refresh, so 304 is answered only when nothing this process wrote and nothing a refresh found has changed (ADR-012)",
+        "shutdown closes the bound project's binding after draining work, which stops its index keeper and cancels its layout's pending re-check",
         "main holds the project's writer lease before it serves and gives it up only after serving has stopped and accepted work has drained; a process that dies loses it with its process. One whose lease another process keeps past the bounded wait exits non-zero with one PROJECT_WRITER_BUSY line and serves and writes nothing; a folder holding no project.json takes no lease and gains no file",
         "an owner package's refusal (monkeyarch.authoring.frame.FrameError, ...) carries its own wire code and sentence; OWNER_REFUSALS is the one place that gives each kind its status, and create_app answers it in the same {code, detail} body a StudioError has (#519)",
         "MonkeyHub (apps/monkeyhub/api/monkeyhub_api) imports from project_runtime only main, errors, api.dto and the declared read API - binding.ProjectBinding and ReadToken, events, status, the document and work-copy readers (application.artifacts list_documents, document_bytes, list_document_work_copies, DocumentWorkCopy, WORK_COPY_WORKSPACE) and application.boards export_board_pages with BoardExportPage - and archcheck refuses any other import (architecture_policy forbidden_layer_imports, allowed; #519)"
@@ -7245,9 +7249,9 @@
         "Render, Board and Arch share one project Runtime; image execution and persistence remain project_runtime.render and project_runtime.documents, with no Render process or store",
         "A new Render attempt gets a new requestId; status refresh and workspace/project switches never resend an uncertain paid call",
         "Automatic project selection, chat and first Render entry attach and verify the Runtime without seeding authored modeling inputs; explicit Arch entry initializes only when the modeling projection is not ready, including after Render-first navigation",
-        "A project watcher derives which work copies exist again only when the runs, their document records or the files in their copy workspaces change, compared on a wake and every 30 s without reading other records; a read forwarded to Studio never wakes it (#314)",
+        "A project watcher derives which work copies exist again only when the runs, their document records or the files in their copy workspaces change: on a wake, and when asked (every 30 s and on a page's re-open) only once the worker has committed to the project's index since the last derivation, without reading other records; a read forwarded to Studio never wakes it (#314, ADR-012)",
         "The Agent looks through visual_review only, never studio_request or studio_schema: one allowance per answered user message, its class fixed once spent, more than two polish rounds only on the user's words; answered frames-rendering failures spend nothing, successful frame delivery supplies no finding ids for after_repair, and unanswered calls or failed structured-provider calls remain spent; an answered review is remembered by the exact models it showed, which a looking loop's admission needs, and a look admits, continues and accepts nothing",
-        "The idle project observer reads the retained history again only when the binding's read token (this process's write serial and the layout watch's fingerprint) moved or is not stable; asking walks nothing, and an observer that stops closes the binding, releasing the watch's handle on the project folder (#363)",
+        "The idle project observer reads the retained history again only when the worker committed to the project's index since the last read (index_hint counts the relayed commits, all but the projection queue's own); asking reads nothing, and the Hub keeps no layout watch and asks no read token: its binding follows no layout. A forwarded POST /api/project/refresh admits no operation and, answered, has the observer read the project again (#363, ADR-012)",
         "The Hub process writes no open project (ADR-012): the observer reads through its binding, a change goes through the project's runtime, and expiring superseded local recovery is that runtime's own sweep; only creating a new project and restoring an archive write a folder from the Hub, one nobody has open, under the writer lease for the length of that write",
         "Suggestion cards remain source-turn/revision-bound ChatStore messages. Selecting the latest completed card records its reference before the ordinary provider turn; stale, repeated, cross-project, non-idle, archived and external selections cannot execute. Estimates without a basis stay unknown; a suggestion grants no tool, installation, spending or project-issue authority.",
         "A render context is refused before any message is kept or any CLI starts when a page is not this project's exact registration, has a newer registered replacement or is not a PNG/JPEG image; nothing chooses a newest, same-named or nearby image instead",

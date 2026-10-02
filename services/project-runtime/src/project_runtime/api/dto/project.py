@@ -42,6 +42,34 @@ class ModelingInitializeRequestDto(BaseModel):
     project_id: str = Field(alias="projectId", min_length=1)
 
 
+class ProjectRefreshRequestDto(BaseModel):
+    """Read the project named here again (``POST /api/project/refresh``)."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+
+
+# The most places a refresh answer names; ``movedCount`` says how many moved.
+REFRESH_MOVED_LIMIT = 100
+
+
+class ProjectRefreshDto(BaseModel):
+    """What reading the project again found (ADR-012): whether its folder changed outside MonkeyHub."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    project_id: str = Field(alias="projectId")
+    changed_outside: bool = Field(
+        alias="changedOutside",
+        description="The project folder changed outside this runtime since it was last read: by hand, by a sync, "
+                    "by a restore or by an agent's command. What moved has been read again.")
+    moved: list[str] = Field(
+        description=f"The first {REFRESH_MOVED_LIMIT} places that moved, as project-relative paths ('.' for the "
+                    "project folder): directories and the pointer files (project.json, HEAD, design/branches.json, "
+                    "design/working.json). For diagnostics: a file other than a pointer file rewritten in place "
+                    "moves no place.")
+    moved_count: int = Field(alias="movedCount", description="How many places moved in all.")
+
+
 class ModelingInitializeDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
     project_id: str = Field(alias="projectId")
