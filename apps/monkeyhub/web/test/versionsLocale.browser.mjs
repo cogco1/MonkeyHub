@@ -51,7 +51,7 @@ const expected = {
 const failures = [], observations = [], unexpected = [];
 function equal(actual, desired, label) {
   observations.push({ label, actual, expected: desired });
-  try { assert.deepEqual(actual, desired, label); } catch (error) { failures.push(error.message); }
+  try { assert.deepEqual(actual, desired, label); } catch (error) { failures.push(error.message); console.error(JSON.stringify({ label, actual, expected: desired })); }
 }
 let vite, browser;
 const http = createHttpServer();
@@ -77,11 +77,11 @@ try {
             const tree=new URLSearchParams(location.search).get("mode")==="tree";
             const design={history,acceptedModelSources:[stage.modelSource],currentStageRef:stage.stageRef,currentModelSource:${JSON.stringify(source("draft-current"))},
               candidates,busy:false,error:null,workingDraft:${JSON.stringify(draft)},
-              onInitialize:record("initialize"),onStage:record("stage"),onBranch:record("branch"),onCandidate:record("candidate"),
+              onInitialize:()=>record("initialize")(),onStage:record("stage"),onBranch:record("branch"),onCandidate:record("candidate"),
               onAccept:record("accept"),onFork:record("fork"),onCombine:record("combine"),onRestoreDraft:record("restore"),onSaveDraft:record("save"),...overrides};
             return <VersionsStrip groups={groups} loadingSha={null} loadedShas={[]} loadedRunId="draft-current"
               onOpen={record("open")} onOpenRun={record("openRun")} onCompare={record("compare")}
-              workingCopies={${JSON.stringify(copies)}} design={design} onOpenTree={tree?record("tree"):undefined}/>;
+              workingCopies={${JSON.stringify(copies)}} design={design} onOpenTree={tree?()=>record("tree")():undefined}/>;
           }
           createRoot(document.getElementById("root")).render(<UserPreferencesProvider><Fixture/></UserPreferencesProvider>);
         `, map: null };
@@ -102,7 +102,7 @@ try {
     });
     const page = await context.newPage(); page.setDefaultTimeout(15_000);
     page.on("pageerror", (error) => failures.push(`${mode}/${initial}: ${error.message}`));
-    await page.goto(`${origin}/?mode=${mode}&language=${initial}`);
+    await page.goto(`${origin}/?mode=${mode}&lang=${initial}`);
     await page.waitForFunction(() => !!window.__setLanguage);
     await page.evaluate(language => window.__setLanguage(language), initial);
     const root = page.locator("#root > .versions");
@@ -167,6 +167,12 @@ try {
     }
     // Explicit actions still receive exactly the existing caller values.
     await current.locator("form button").click();
+    // The save response can also label the current run; it must not replace the input.
+    await page.evaluate(workingDraft => window.__setFixture({workingDraft}), {
+      ...draft, current: {...draft.current, label: "用户 {name}"},
+    });
+    assert.equal(await name.evaluate(node => node === window.__nameNode), true, "saving a name keeps the current input mounted");
+    assert.equal(await name.inputValue(), "  用户 {name}  ", "save response keeps the entered text");
     await current.locator(".vcard__exports button").first().click();
     await recovery.locator("button").click();
     await current.locator(".vcard__exports button").nth(1).click();
