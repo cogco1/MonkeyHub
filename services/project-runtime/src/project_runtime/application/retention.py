@@ -18,8 +18,11 @@ and only when all of these hold:
   the admission that replaced or withdrew it, and its own run holds only what
   its execution wrote - no drawing page, render, annotation, Board scene,
   working copy, review, Stage or attributed act;
-- it is no saved version, no working position a person chose, and no
-  execution's input.
+- it is no version a person saved, no working position a person chose, and
+  no execution's input. A name keeps a draft only when the person saved it in
+  the Hub (the history panel's save, which says so); a name an agent or any
+  other caller saved, and every name saved before saving recorded who saved
+  it, keeps nothing: the trash keeps that name with the draft.
 
 When unsure, nothing goes: an unreadable working position, admission or design
 branch stops the whole sweep, and a run whose reading fails stays. The trash is
@@ -92,6 +95,7 @@ from archflow.project.repository import (
     RunNotTrashed,
     TrashEntryNotFound,
     names_run,
+    saved_by_person,
 )
 
 from ..binding import ProjectBinding, bound_project, record_kind
@@ -278,8 +282,8 @@ def _held(binding: ProjectBinding, run_id: str, working: Mapping[str, Any], stor
     if run_id in working["active"] or any(run_id in sources for sources in working["active"].values()):
         return "an execution is using it"
     row = working["runs"].get(run_id)
-    if row is not None and row["label"] is not None:
-        return "it is a saved version"
+    if row is not None and saved_by_person(row):
+        return "a person saved it as a version"
     if row is not None and not row["automatic"]:
         return "a person chose it as the working position"
     if binding.candidate_delta(run_id) is None:
@@ -315,7 +319,9 @@ def _considered(binding: ProjectBinding, graph, working: Mapping[str, Any], stor
             reason, superseded_by = f"Its loop withdrew it (admission {claim.record.admission_id}).", None
         else:
             continue
-        found[run_id] = Cleanable(run_id, RULE_REPLACED, reason, superseded_by=superseded_by)
+        # A name no person saved goes with it, so the trash can say what it was.
+        found[run_id] = Cleanable(run_id, RULE_REPLACED, reason, superseded_by=superseded_by,
+                                  label=(working["runs"].get(run_id) or {}).get("label"))
     running = set() if jobs is None else {job.candidate_id for job in jobs.list()}
     for run_id in sorted(present):
         if run_id in found or run_id in working["runs"] or run_id in running:

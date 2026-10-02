@@ -37,11 +37,19 @@ class WorkingDraftSelectionDto(BaseModel):
 
 
 class WorkingDraftSaveDto(BaseModel):
+    """Name a run as a version. Every name is listed and shown; only one the person saved keeps its run (#575)."""
+
     model_config = ConfigDict(extra="forbid")
     projectId: str
     baseRevisionSha256: str | None
     runId: str = Field(min_length=1)
     label: str | None = Field(default=None, max_length=200)
+    savedBy: Literal["person"] | None = Field(
+        default=None,
+        description="\"person\" only when the person saves this name in the Hub (the history panel's save); the "
+        "run's working row then records that the person saved it, and only such a name keeps a superseded draft out of "
+        "the project trash. A name saved without it, by an agent or any other caller, is listed and shown the same "
+        "but keeps nothing. The caller's own statement, never a credential: agents leave it out.")
 
 
 class LocalDraftRequestDto(BaseModel):
