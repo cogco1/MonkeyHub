@@ -25,7 +25,7 @@ const row = (runId, label = null) => ({ runId, label, updatedAt: "2026-09-30T12:
 const draft = { projectId: "locale-project", current: row("draft-current"),
   saved: [row("draft-saved", "保留 {name}"), row("draft-unnamed")], recovery: [row("draft-recovery")], managedRunIds: [] };
 const artifact = { artifactId: "legacy-asset", runId: "legacy-run", sha256: "legacy-asset", fileName: "保留 {file}.3dm",
-  available: true, status: "succeeded", representation: "external", modelSource: null, kind: "model", mimeType: "model/3dm" };
+  available: true, format: "3dm", status: "succeeded", representation: "external", modelSource: null, kind: "model", mimeType: "model/3dm" };
 const groups = [{ runId: artifact.runId, label: "Run", title: "Legacy {title}", detail: null,
   exports: [{ artifact, seat: "seat", sourceLabel: "原始 {source}" }] }];
 const copies = [{ groupId: "exploration", label: "探索 {name}", selectedOptionId: "option-a",
