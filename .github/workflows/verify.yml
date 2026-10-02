@@ -164,7 +164,7 @@ jobs:
           python -m pip install -e packages/archflow -e packages/monkeycad -e packages/monkeyarch -e packages/monkeydiagram
           -e packages/monkeymonitor -e packages/monkeycontrol
           -r services/project-runtime/requirements.txt
-          -r apps/monkeyhub/api/requirements.txt
+          -r apps/monkeyhub/api/requirements.txt httpx2
 
       - name: Install web dependencies
         working-directory: apps/monkeyhub/web
@@ -212,6 +212,11 @@ jobs:
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
         run: node test/drawingCanvas.browser.mjs
+
+      - name: Board document page browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/boardDocumentOpen.browser.mjs
 
       # In-memory API fixtures, no project runtime (#355).
       - name: Board note handoff browser regression
