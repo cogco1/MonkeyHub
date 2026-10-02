@@ -160,10 +160,11 @@ class RunTrash(Protocol):
     """Runs move out of ``runs/`` only here: whole, with a manifest, restorable until purged (#575).
 
     The store decides nothing about which run may go. It refuses a run that
-    something it owns still holds - the Working Head, an execution, a saved
-    or chosen working row, the local recovery, a review or Stage kept in the
-    run, the published history - and a run it cannot rename whole stays where
-    it is. ``run_mentions`` is the read a caller asks before choosing.
+    something it owns still holds - the Working Head, an execution, a working
+    row a person chose or whose name a person saved, the local recovery, a
+    review or Stage kept in the run, the published history - and a run it
+    cannot rename whole stays where it is. ``run_mentions`` is the read a
+    caller asks before choosing.
     """
 
     def trash_run(
