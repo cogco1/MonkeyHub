@@ -277,9 +277,43 @@ try {
     await until(() => workspace().locator(".render-references li").count(), (n) => n === 2, "two refs saved");
     await workspace().getByRole("button", { name: "Move reference up 2", exact: true }).click();
     await direction().fill("Soft morning light");
-    await generate().dblclick();
-    first = (await until(jobs, (r) => r.jobs[0]?.status === "succeeded", "first output")).jobs[0];
-    await refresh().click(); await until(() => workspace().locator('.render-image img').count(), (n) => n > 0, "visible output");
+    // The inverse ordering: completion is read while the queued POST response is delayed.
+    // Invalidating that read must schedule one catch-up, not strand the accepted job as pending.
+    let releaseAccepted, releaseCompleted, acceptedResponse, completedHistory, historyReads = 0;
+    const acceptedGate = new Promise(resolve => { releaseAccepted = resolve; });
+    const completedGate = new Promise(resolve => { releaseCompleted = resolve; });
+    const jobsRoute = "**/project-a/api/render/jobs";
+    await page.route(jobsRoute, async route => {
+      const response = await route.fetch();
+      if (route.request().method() === "POST") {
+        acceptedResponse = await response.json(); await acceptedGate;
+      } else {
+        historyReads += 1; completedHistory = await response.json(); await completedGate;
+      }
+      await route.fulfill({ response });
+    });
+    try {
+      await generate().dblclick();
+      await until(() => acceptedResponse, Boolean, "accepted POST response held after admission");
+      assert.equal(acceptedResponse.status, "queued");
+      first = (await until(jobs, (r) => r.jobs[0]?.status === "succeeded", "first output")).jobs[0];
+      await refresh().click();
+      await until(() => completedHistory, value => value?.jobs[0]?.status === "succeeded", "completed history captured during submission");
+      assert.equal(historyReads, 1);
+      releaseAccepted();
+      await until(() => history().count(), n => n === 1, "queued POST was applied before the terminal read");
+      assert.match(await history().first().innerText(), /Queued/);
+      assert.equal(await generate().isDisabled(), true);
+      releaseCompleted();
+      await until(() => workspace().locator('.render-image img').count(), n => n > 0, "completion selected automatically after the invalidated read");
+      await until(() => generate().isEnabled(), Boolean, "completion ends pending state without another manual refresh");
+      assert.equal(historyReads, 2, "one read-only catch-up consumes the completed attempt");
+      assert.equal(await workspace().locator('.render-image img').last().getAttribute("alt"), first.document.fileName);
+      assert.equal(requests.filter(r => r.method === "POST" && r.url.endsWith("/project-a/api/render/jobs")).length, 1);
+      console.log("PASS inverse submit-refresh ordering: terminal completion selected by one read-only catch-up");
+    } finally {
+      releaseAccepted(); releaseCompleted(); await page.unroute(jobsRoute);
+    }
     assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 1);
     source = first.request.source; refs = first.request.references;
     const documents = (await api("project-a", "/api/documents")).documents;
@@ -347,7 +381,7 @@ try {
       await until(() => refresh().isEnabled(), Boolean, "old history response finished");
       const pending = history().filter({ hasText: "SLOW afternoon" });
       assert.equal(await pending.count(), 1, "late history must not erase the accepted attempt");
-      assert.match(await pending.innerText(), /Queued|Running/);
+      assert.match(await pending.innerText(), /Queued|Generating/);
       assert.equal(await generate().isDisabled(), true, "late history must not re-enable Generate");
       assert.equal(await workspace().locator('.render-image img').last().getAttribute("alt"), first.document.fileName, "previous successful image stays visible");
       assert.equal(await workspace().getByRole("combobox", { name: "Source image", exact: true }).inputValue(), sourceBefore);
