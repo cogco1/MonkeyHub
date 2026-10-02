@@ -98,9 +98,9 @@ export function VersionsStrip({
     const managed = new Set(draft?.managedRunIds ?? []);
     const legacy = groups.filter((group) => !managed.has(group.runId)).map((group) => ({ ...group, exports: group.exports.filter(({ artifact }) =>
       !knownModels.has(`${artifact.runId}:${artifact.sha256}`)) })).filter((group) => group.exports.length > 0);
-    const draftRow = (row: NonNullable<WorkingDraftDto["current"]>, label: string, save = false) => {
+    const draftRow = (row: NonNullable<WorkingDraftDto["current"]>, label: string, section: "current" | "saved" | "recovery", save = false) => {
       const selected = row.runId === design.currentModelSource?.runId;
-      return <div className="vcard" role="listitem" key={`${label}:${row.runId}`} data-working-draft={row.runId}>
+      return <div className="vcard" role="listitem" key={`${section}:${row.runId}`} data-working-draft={row.runId}>
         <div className="vcard__head"><strong>{label}</strong><time>{new Date(row.updatedAt).toLocaleString()}</time></div>
         <div className="vcard__exports"><button className="btn btn--small" disabled={design.busy} aria-pressed={selected}
           onClick={() => design.onRestoreDraft?.(row.runId)}>{t("stage.base.continue")}</button>
@@ -109,17 +109,17 @@ export function VersionsStrip({
             <button className="btn btn--small" disabled={design.busy} onClick={() => design.onAccept(row.runId)}>{t("designTree.action.acceptNext")}</button>}
         </div>
         {save && <form className="vcard__exports" onSubmit={(event) => { event.preventDefault(); design.onSaveDraft?.(row.runId, saveName.trim()); }}>
-          <input aria-label="重点版本名称" placeholder="重点版本名称（可选）" value={saveName} onChange={(event) => setSaveName(event.target.value)} />
-          <button className="btn btn--small" disabled={design.busy}>保存重点版本</button>
+          <input aria-label={t("stage.historyPanel.milestoneName")} placeholder={t("stage.historyPanel.milestonePlaceholder")} value={saveName} onChange={(event) => setSaveName(event.target.value)} />
+          <button className="btn btn--small" disabled={design.busy}>{t("stage.historyPanel.saveMilestone")}</button>
         </form>}
       </div>;
     };
-    return <div className="versions" role="list" aria-label="Stage 历史">
-      {draft?.current && draftRow(draft.current, "当前工作草稿 · 自动保存", true)}
-      {draft?.saved?.map((row) => draftRow(row, row.label || "已保存版本"))}
-      {draft && <details className="vcard"><summary>自动恢复点 · {(draft.recovery ?? []).length}</summary>
-        <p className="quiet">普通修改更新工作草稿。自动恢复点不会过期；重点版本与已确认 Stage 另行列出。</p>
-        {draft.recovery?.map((row) => draftRow(row, "恢复点"))}
+    return <div className="versions" role="list" aria-label={t("stage.historyPanel.ariaLabel")}>
+      {draft?.current && draftRow(draft.current, t("stage.historyPanel.currentDraft"), "current", true)}
+      {draft?.saved?.map((row) => draftRow(row, row.label || t("stage.historyPanel.savedVersion"), "saved"))}
+      {draft && <details className="vcard"><summary>{t("stage.historyPanel.recoveryPoints", { count: (draft.recovery ?? []).length })}</summary>
+        <p className="quiet">{t("stage.historyPanel.recoveryHelp")}</p>
+        {draft.recovery?.map((row) => draftRow(row, t("stage.historyPanel.recoveryPoint"), "recovery"))}
       </details>}
       {/* #302: Stages, lines, explorations and candidates are the Design Tree's; only the first Stage starts here. */}
       {onOpenTree ? <div className="vcard" data-design-tree-link>
@@ -129,8 +129,8 @@ export function VersionsStrip({
             onClick={design.onInitialize}>{t("designTree.action.accept", { stage: "S0" })}</button>}
         </div>{design.error && <p role="alert">{design.error}</p>}
       </div> : <>
-      <div className="vcard"><div className="vcard__head"><strong>设计历史</strong>
-        {history && history.branches.length > 0 && <select aria-label="Branch" value={history.branchId} disabled={design.busy}
+      <div className="vcard"><div className="vcard__head"><strong>{t("stage.historyPanel.designHistory")}</strong>
+        {history && history.branches.length > 0 && <select aria-label={t("stage.historyPanel.branch")} value={history.branchId} disabled={design.busy}
           onChange={(event) => design.onBranch(event.target.value)}>{history.branches.map((item) =>
             <option key={item.branchId} value={item.branchId}>{item.branchId}</option>)}</select>}
         {history?.branches.length === 0 && <button className="btn btn--small" disabled={design.busy || !design.currentModelSource}
@@ -140,41 +140,41 @@ export function VersionsStrip({
         <div className="vcard__head"><button className="btn btn--small" disabled={design.busy} onClick={() => design.onStage(stage)}
           aria-pressed={stage.stageRef === design.currentStageRef && stage.modelSource.runId === design.currentModelSource?.runId &&
             stage.modelSource.stateDigest === design.currentModelSource.stateDigest && stage.modelSource.assetSha256 === design.currentModelSource.assetSha256}>
-          {stage.label}{stage.stageRef === branch?.headStageRef ? " · 当前提交" : ""}</button>
-          <button className="btn btn--small" disabled={design.busy} onClick={() => { setForkStage(stage); setBranchName(""); }}>从这里新建分支</button>
+          {stage.label}{stage.stageRef === branch?.headStageRef ? t("stage.historyPanel.currentCommit") : ""}</button>
+          <button className="btn btn--small" disabled={design.busy} onClick={() => { setForkStage(stage); setBranchName(""); }}>{t("stage.historyPanel.fork")}</button>
         </div>
       </div>)}
       {forkStage && <form className="vcard" onSubmit={(event) => { event.preventDefault(); if (branchName.trim()) design.onFork(forkStage, branchName.trim()); }}>
-        <label>{forkStage.label} 的新分支名称 <input value={branchName} onChange={(event) => setBranchName(event.target.value)}
+        <label>{t("stage.historyPanel.branchName", { stage: forkStage.label })} <input value={branchName} onChange={(event) => setBranchName(event.target.value)}
           pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,99}" required placeholder="alternate-layout" /></label>
-        <button className="btn btn--small" disabled={design.busy || !branchName.trim()}>创建分支</button>
-        <button type="button" className="btn btn--small" onClick={() => setForkStage(null)}>取消</button>
+        <button className="btn btn--small" disabled={design.busy || !branchName.trim()}>{t("stage.historyPanel.createBranch")}</button>
+        <button type="button" className="btn btn--small" onClick={() => setForkStage(null)}>{t("stage.historyPanel.cancel")}</button>
       </form>}
-      {workingCopies.map((copy) => <div key={copy.groupId} className="vcard" data-working-copy={copy.groupId}><strong>探索 · {copy.label}</strong>
+      {workingCopies.map((copy) => <div key={copy.groupId} className="vcard" data-working-copy={copy.groupId}><strong>{t("stage.historyPanel.exploration", { label: copy.label })}</strong>
         <div className="vcard__exports">{copy.options.map((option) => <button key={option.id} className="btn btn--small" disabled={design.busy}
           onClick={() => design.onCandidate(option.modelSource)}>{option.label}{copy.selectedOptionId === option.id ? " · ✓" : ""}</button>)}</div></div>)}
-      <details className="vcard"><summary>候选方案与已有历史</summary>
+      <details className="vcard"><summary>{t("stage.historyPanel.candidates")}</summary>
       {design.candidates.length > 1 && <div className="vcard"><button className="btn btn--small"
         disabled={design.busy || selectedCandidates.length < 2 || selectedCandidates.some((candidate) => candidate.sourceStageRef !== commonSource)}
-        onClick={() => design.onCombine(selectedCandidates.map((candidate) => candidate.modelSource.runId))}>合并选中候选并预览</button>
-        <span className="quiet">选择同一 Stage 下的候选，合并后仍需接受。</span></div>}
+        onClick={() => design.onCombine(selectedCandidates.map((candidate) => candidate.modelSource.runId))}>{t("stage.historyPanel.combine")}</button>
+        <span className="quiet">{t("stage.historyPanel.combineHelp")}</span></div>}
       {design.candidates.filter((candidate) => !managed.has(candidate.modelSource.runId) ||
         draft?.recovery?.some((row) => row.runId === candidate.modelSource.runId)).map(({ label, modelSource, sourceStageRef }) => {
         const selected = modelSource.runId === design.currentModelSource?.runId && modelSource.assetSha256 === design.currentModelSource.assetSha256;
         return <div className="vcard" role="listitem" key={`${modelSource.runId}:${modelSource.assetSha256}`} data-preview-candidate={modelSource.runId}>
-          <div className="vcard__head"><label><input type="checkbox" aria-label={`合并 ${label}`} checked={combineIds.includes(modelSource.runId)}
+          <div className="vcard__head"><label><input type="checkbox" aria-label={t("stage.historyPanel.combineCandidate", { label })} checked={combineIds.includes(modelSource.runId)}
             disabled={design.busy || (commonSource !== undefined && sourceStageRef !== commonSource && !combineIds.includes(modelSource.runId))}
-            onChange={(event) => setCombineIds((current) => event.target.checked ? [...current, modelSource.runId] : current.filter((id) => id !== modelSource.runId))} />候选 · 未提交</label><strong>{label}</strong></div>
+            onChange={(event) => setCombineIds((current) => event.target.checked ? [...current, modelSource.runId] : current.filter((id) => id !== modelSource.runId))} />{t("stage.historyPanel.uncommitted")}</label><strong>{label}</strong></div>
           <div className="vcard__exports"><button className="btn btn--small" aria-pressed={selected} disabled={design.busy}
             onClick={() => design.onCandidate(modelSource)}>{t("stage.base.continue")}</button>
             {selected && branch && <button className="btn btn--small" disabled={design.busy || design.currentStageRef !== branch.headStageRef}
               onClick={() => design.onAccept(modelSource.runId)}>{t("designTree.action.acceptNext")}</button>}
-            {selected && branch && design.currentStageRef !== branch.headStageRef && <span className="quiet">此候选来自历史阶段，请先从该阶段新建分支。</span>}
+            {selected && branch && design.currentStageRef !== branch.headStageRef && <span className="quiet">{t("stage.historyPanel.historicalCandidate")}</span>}
           </div></div>;
       })}
       </details>
       </>}
-      {legacy.length > 0 && <details className="vcard"><summary>已有模型与历史运行 · 尚未归入 Stage</summary>
+      {legacy.length > 0 && <details className="vcard"><summary>{t("stage.historyPanel.legacy")}</summary>
         <VersionsStrip groups={legacy} loadingSha={loadingSha} loadedShas={loadedShas} loadedRunId={loadedRunId}
           onOpen={onOpen} onOpenRun={onOpenRun} onCompare={onCompare} />
       </details>}

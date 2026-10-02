@@ -63,6 +63,7 @@ try {
         return { code: `
           import { useState } from "react";
           import { createRoot } from "react-dom/client";
+          import { flushSync } from "react-dom";
           import { VersionsStrip } from "/src/features/stage/VersionsStrip";
           import { UserPreferencesProvider, usePreferences } from "/test/TestProviders.tsx";
           import "/src/app/styles.css";
@@ -73,7 +74,7 @@ try {
           function Fixture() {
             const {setLanguage}=usePreferences();
             const [overrides,setOverrides]=useState({});
-            window.__setLanguage=setLanguage; window.__setFixture=setOverrides;
+            window.__setLanguage=setLanguage; window.__setFixture=(value)=>flushSync(()=>setOverrides(value));
             const tree=new URLSearchParams(location.search).get("mode")==="tree";
             const design={history,acceptedModelSources:[stage.modelSource],currentStageRef:stage.stageRef,currentModelSource:${JSON.stringify(source("draft-current"))},
               candidates,busy:false,error:null,workingDraft:${JSON.stringify(draft)},

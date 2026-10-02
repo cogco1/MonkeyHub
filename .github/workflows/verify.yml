@@ -161,7 +161,7 @@ jobs:
 
       - name: Install API dependencies
         run: >-
-          python -m pip install -e packages/archflow -e packages/monkeycad -e packages/monkeyarch -e packages/monkeydiagram
+          python -m pip install -e packages/archflow -e "packages/monkeycad[occt]" -e packages/monkeyarch -e packages/monkeydiagram
           -e packages/monkeymonitor -e packages/monkeycontrol
           -r services/project-runtime/requirements.txt
           -r apps/monkeyhub/api/requirements.txt
@@ -192,6 +192,11 @@ jobs:
         run: |
           npm install --no-save --package-lock=false playwright
           npx playwright install --with-deps chrome
+
+      - name: Model history locale browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/versionsLocale.browser.mjs
 
       - name: Project usage browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
@@ -229,10 +234,27 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node test/workModelExport.browser.mjs
 
-      - name: Model history locale browser regression
+      - name: Candidate preview history regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
-        run: node test/versionsLocale.browser.mjs
+        run: node test/candidatePreview.browser.mjs
+
+      - name: External model import history regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/externalModelImport.browser.mjs
+
+      - name: Retained model previews history regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/modelPreviews.browser.mjs
+
+      - name: Model recording history regression
+        env:
+          MONKEYARCH_AUTOSAVE: "1"
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/modelSync.browser.mjs
 
       - name: Elevation browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
