@@ -103,6 +103,12 @@ print(json.dumps({'runA': REFERENCE_RUN_ID, 'digestA': digest_a, 'digestB': dige
     const stage = await request("POST", "/api/design-stages/initialize", { projectId: project.projectId, modelSource: A });
     // Creation was retired in #294. Retain the historical record through the
     // repository writer exactly as test_working_copies.py does, then cold-read it.
+    // The open Runtime is the project's only writer (ADR-012): stop it first, write
+    // outside it, and start it again before observations, which also leaves the
+    // API's read caches nothing to be taught.
+    const stopped = new Promise((resolve) => api.once("exit", resolve));
+    api.kill("SIGTERM");
+    await stopped;
     const groupSetup = spawnSync(python, ["-c", `
 import json, sys
 from pathlib import Path
@@ -119,11 +125,6 @@ r.put_json(run=r.load_run(a['runId']), destination=PersistenceDestination(Persis
  'selectedOptionId':'B','previousRevisionSha256':None})
 `, projectRoot, repoRoot, JSON.stringify(A), JSON.stringify(B), stage.stageRef], { cwd: apiRoot, env, encoding: "utf8" });
     assert.equal(groupSetup.status, 0, groupSetup.stderr || groupSetup.stdout);
-    // The API owns read caches. Bootstrap writes were outside its process;
-    // restart before observations instead of teaching the cache a test-only path.
-    const stopped = new Promise((resolve) => api.once("exit", resolve));
-    api.kill("SIGTERM");
-    await stopped;
     await startRuntime();
     const group = await getJson("/api/working-copies/retained-options");
     const draft = await getJson("/api/working-draft");
