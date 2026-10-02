@@ -1,4 +1,47 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-575",
+      "lanes": [
+        {
+          "id": "cleanup",
+          "status": "active",
+          "branch": "codex/575-saved-names",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-575-saved-names",
+          "base_ref": "45c6bd8b2a15dc377fc0d16c4532ddd0a8ef2f7d",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "archflow.project.repository",
+            "project_runtime.binding",
+            "project_runtime.candidate",
+            "project_runtime.intent",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "packages/archflow/src/archflow/project/repository.py",
+            "services/project-runtime/src/project_runtime/api/routes/working_draft.py",
+            "services/project-runtime/src/project_runtime/api/dto/working_draft.py",
+            "services/project-runtime/src/project_runtime/application/working_draft.py",
+            "services/project-runtime/src/project_runtime/application/retention.py",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+            "apps/monkeyhub/web/src/api/project-runtime/client.ts",
+            "apps/monkeyhub/web/src/app/App.tsx",
+            "apps/monkeyhub/web/test/savedVersion.test.ts",
+            "packages/archflow/tests/test_project_trash.py",
+            "services/project-runtime/tests/test_retention.py",
+            "services/project-runtime/tests/test_working_draft.py",
+            "docs/protocols/project-runtime-api.md",
+            "governance/module_registry.json",
+            "docs/architecture/system-map.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
