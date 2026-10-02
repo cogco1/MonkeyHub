@@ -36,6 +36,7 @@ export async function createRetainedModelFixture({ name = "retained-model" } = {
   try {
     const setup = spawnSync(python, ["-c", `
 import copy, json, sys
+import rhino3dm  # Fail clearly when monkeycad[inspection] was not installed.
 from pathlib import Path
 from tools.dev import source_roots
 source_roots.put_first(Path(sys.argv[2]))
