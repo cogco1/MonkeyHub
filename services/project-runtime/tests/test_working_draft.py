@@ -67,6 +67,54 @@ class WorkingDraftTests(CandidateTestCase):
             self.assertEqual(reopened, saved.json())
             self.assertEqual(reopened["current"]["runId"], accepted["candidateId"])
 
+    def test_a_saved_name_records_whether_the_person_saved_it(self):
+        # #575: only the Hub page's own save says the person saved a name; whoever saved it, the name shows.
+        from project_runtime.application.working_draft import record_candidate_draft
+        from project_runtime.binding import bound_project
+        accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        run_id = accepted["candidateId"]
+
+        def save(label, **extra):
+            body = {"projectId": PROJECT_ID, "runId": run_id, "baseRevisionSha256": self.read()["revisionSha256"],
+                    "label": label, **extra}
+            return self.client.post("/api/working-draft/save", json=body)
+
+        def row():
+            return self.repository.read_working_draft()[0]["runs"][run_id]
+
+        # An agent or any other caller over the plain API: the name is saved and listed, with no saver.
+        answer = save("V3 - closed wall and simple mono-pitch roof")
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertEqual([(entry["runId"], entry["label"]) for entry in answer.json()["saved"]],
+                         [(run_id, "V3 - closed wall and simple mono-pitch roof")])
+        self.assertNotIn("labelSavedBy", row())
+        self.assertTrue(row()["automatic"])
+        # The history panel's save says the person saved it, and the row records that.
+        answer = save("Study A", savedBy="person")
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertEqual((row()["label"], row()["labelSavedBy"], row()["automatic"]), ("Study A", "person", True))
+        # The listing reads as it did: a name, whoever saved it.
+        self.assertEqual([sorted(entry) for entry in answer.json()["saved"]],
+                         [["branchId", "label", "runId", "sourceStageRef", "updatedAt"]])
+        # Writing the row again keeps the name and who saved it: a Continue, and the candidate listed again.
+        record_candidate_draft(bound_project(self.app.state), run_id, REFERENCE_RUN_ID)
+        self.assertEqual((row()["label"], row()["labelSavedBy"]), ("Study A", "person"))
+        moved = self.client.put("/api/working-draft", json={"projectId": PROJECT_ID,
+            "baseRevisionSha256": self.read()["revisionSha256"], "runId": run_id})
+        self.assertEqual(moved.status_code, 200, moved.text)
+        self.assertEqual((row()["label"], row()["labelSavedBy"]), ("Study A", "person"))
+        # A name saved again without the mark is that caller's own, and records no saver.
+        self.assertEqual(save("V4").status_code, 200)
+        self.assertEqual(row()["label"], "V4")
+        self.assertNotIn("labelSavedBy", row())
+        # Only the person is a saver this boundary knows.
+        refused = save("V5", savedBy="agent")
+        self.assertEqual(refused.status_code, 422, refused.text)
+        self.assertEqual(row()["label"], "V4")
+        with TestClient(create_app(StudioSettings(project_dir=self.repository.layout.root, cad_export="off"))) as cold:
+            self.assertEqual(self.read(cold)["saved"][0]["label"], "V4")
+
     def test_an_automatic_candidate_older_than_24_hours_stays_listed_for_recovery(self):
         # GH-234 Q3: a generated candidate stays an alternative until the architect
         # explicitly rejects or archives it; age alone never drops it from the list.

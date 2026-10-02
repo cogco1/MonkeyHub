@@ -1487,6 +1487,8 @@ export const readWorkingRevisionApiWorkingDraftRevisionGet = <ThrowOnError exten
 
 /**
  * Save Current Working Draft
+ *
+ * Name a run as a version; the Hub page's own save says the person saved it (savedBy, #575).
  */
 export const saveCurrentWorkingDraftApiWorkingDraftSavePost = <ThrowOnError extends boolean = false>(options: Options<SaveCurrentWorkingDraftApiWorkingDraftSavePostData, ThrowOnError>): RequestResult<SaveCurrentWorkingDraftApiWorkingDraftSavePostResponses, SaveCurrentWorkingDraftApiWorkingDraftSavePostErrors, ThrowOnError> => (options.client ?? client).post<SaveCurrentWorkingDraftApiWorkingDraftSavePostResponses, SaveCurrentWorkingDraftApiWorkingDraftSavePostErrors, ThrowOnError>({
     url: '/api/working-draft/save',

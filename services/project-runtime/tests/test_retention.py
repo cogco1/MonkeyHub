@@ -99,6 +99,15 @@ class RetentionFixture(AdmissionFixture):
     def row(self, run_id: str) -> dict | None:
         return self.repository.read_working_draft()[0]["runs"].get(run_id)
 
+    def save(self, run_id: str, label: str, **body: object) -> None:
+        """Name a run: ``savedBy="person"`` is the history panel's save, without it an agent's or any caller's."""
+
+        position = self.client.get("/api/working-draft").json()
+        response = self.client.post("/api/working-draft/save", json={
+            "projectId": PROJECT_ID, "runId": run_id, "baseRevisionSha256": position["revisionSha256"], "label": label,
+            **body})
+        self.assertEqual(response.status_code, 200, response.text)
+
 
 class CleaningTests(RetentionFixture):
     def test_the_drafts_the_line_moved_past_go_to_the_trash_and_come_back(self) -> None:
@@ -159,6 +168,29 @@ class CleaningTests(RetentionFixture):
         self.assertIn(RETENTION_RUN_ID, again.kept[drafts[0]])
         self.assertEqual(self.restore("studio-cand-nothing", expect=404)["code"], "TRASH_ENTRY_NOT_FOUND")
 
+    def test_only_a_name_the_person_saved_keeps_a_superseded_draft(self) -> None:
+        # As in thi-hemp-study-01: an outside agent named an earlier attempt at C as it made it, and nobody chose it.
+        _a, _b, c, _d, (named, saved) = self.line()
+        self.save(named, "V3 - closed wall and simple mono-pitch roof")
+        self.save(saved, "V3 - ribbed roof", savedBy="person")
+        row = self.row(named)
+        self.assertEqual((row["label"], row["automatic"], "labelSavedBy" in row),
+                         ("V3 - closed wall and simple mono-pitch roof", True, False))
+
+        sweep = self.sweep()
+        self.assertEqual([entry.run_id for entry in sweep.cleaned], [named])
+        self.assertEqual(sweep.kept[saved], "a person saved it as a version")
+        self.assertIn(saved, self.repository.run_ids())
+        # The trash keeps the agent's name with the draft, restorable for 30 days.
+        [entry] = self.trash()["entries"]
+        self.assertEqual((entry["runId"], entry["rule"], entry["supersededBy"], entry["label"]),
+                         (named, RULE_SUPERSEDED, c, "V3 - closed wall and simple mono-pitch roof"))
+        self.assertEqual(entry["expiresAt"], (NOW + timedelta(days=30)).isoformat())
+        self.restore(named)
+        self.assertEqual(self.row(named), row, "it comes back with its name")
+        listed = {entry["runId"]: entry["label"] for entry in self.client.get("/api/working-draft").json()["saved"]}
+        self.assertEqual(listed, {named: "V3 - closed wall and simple mono-pitch roof", saved: "V3 - ribbed roof"})
+
     def test_the_line_its_admitted_results_and_its_stages_are_never_cleaned(self) -> None:
         stage = self.stage("S0")
         b = self.result(stage, 2.2)
@@ -185,13 +217,12 @@ class CleaningTests(RetentionFixture):
 
     def test_each_reference_keeps_a_draft(self) -> None:
         binding = bound_project(self.app.state)
-        a, b, c, d, drafts = self.line(attempts=12)
-        (free, saved, board, page, pinned, render, annotated, copied, rejected, studied, parent, decided) = drafts
-        # A saved version.
-        position = self.client.get("/api/working-draft").json()
-        response = self.client.post("/api/working-draft/save", json={
-            "projectId": PROJECT_ID, "runId": saved, "baseRevisionSha256": position["revisionSha256"], "label": "V3"})
-        self.assertEqual(response.status_code, 200, response.text)
+        a, b, c, d, drafts = self.line(attempts=13)
+        (free, named, saved, board, page, pinned, render, annotated, copied, rejected, studied, parent,
+         decided) = drafts
+        # A version the person saved in the Hub; a name an agent saved keeps nothing.
+        self.save(saved, "V3", savedBy="person")
+        self.save(named, "V3 - ribbed roof")
         # A Board component-info card that applies to it.
         card = {"id": "component-info:materials", "type": "rectangle", "x": 0, "y": 0, "width": 120, "height": 60,
                 "customData": {"componentInfo": {"schema": "MonkeyHubComponentInfo@1", "id": "materials", "title": "Materials",
@@ -218,22 +249,20 @@ class CleaningTests(RetentionFixture):
         built = self.result(source=studied, height=2.9)
         self.admit({"runId": built, "outcome": "admitted"}, study={"id": "roof", "label": "Roof", "baseRunId": studied})
         child = self.result(source=parent, height=2.95)
-        position = self.client.get("/api/working-draft").json()
-        response = self.client.post("/api/working-draft/save", json={
-            "projectId": PROJECT_ID, "runId": child, "baseRevisionSha256": position["revisionSha256"], "label": "Kept child"})
-        self.assertEqual(response.status_code, 200, response.text)
+        self.save(child, "Kept child", savedBy="person")
         self.repository.create_run("studio-decisions-test")
         self.repository.put_json(run=self.repository.load_run("studio-decisions-test"), record_kind=AUDIT_EVENT,
                                  destination=records("studio-decisions-test", PersistenceArea.RUN_REVIEW),
                                  payload={"schema": "AuditEvent@1", "action": "decision.noted", "subjectRunId": decided})
 
         sweep = self.sweep()
-        self.assertEqual([entry.run_id for entry in sweep.cleaned], [free])
+        self.assertEqual(sorted(entry.run_id for entry in sweep.cleaned), sorted([free, named]))
+        self.assertEqual({entry.run_id: entry.label for entry in sweep.cleaned}[named], "V3 - ribbed roof")
         expected = {
-            saved: "saved version", board: f"{BOARD_RUN_ID} names it", page: "studio-source-document",
+            saved: "a person saved it as a version", board: f"{BOARD_RUN_ID} names it", page: "studio-source-document",
             pinned: "studio-documents names it", render: "studio-render-attempts names it",
             annotated: STUDIO_MODEL_ANNOTATIONS, copied: STUDIO_WORKING_COPY, rejected: "rejected",
-            parent: f"{child} names it", decided: "studio-decisions-test names it", child: "saved version",
+            parent: f"{child} names it", decided: "studio-decisions-test names it", child: "a person saved it as a version",
         }
         for run_id, words in expected.items():
             self.assertIn(words, sweep.kept.get(run_id, ""), f"{run_id} should stay because of {words}")
@@ -244,6 +273,7 @@ class CleaningTests(RetentionFixture):
                          {studied: "diverged", built: "diverged"})
         self.assertTrue({studied, built} <= set(self.repository.run_ids()))
         self.assertNotIn(free, self.repository.run_ids())
+        self.assertNotIn(named, self.repository.run_ids())
 
 
 class AttemptTests(RetentionFixture):
@@ -264,13 +294,16 @@ class AttemptTests(RetentionFixture):
         repair = self.result(source=grown_from, height=3.3)
         self.admit({"runId": result, "outcome": "admitted", "supersedes": [replaced], "label": "Taller"},
                    {"runId": repair, "outcome": "admitted", "supersedes": [grown_from], "label": "Repaired"})
+        # Its agent named the replaced attempt as it made it: the name goes with it (#575).
+        self.save(replaced, "Taller, first try")
         sweep = self.sweep()
         entries = {entry.run_id: entry for entry in sweep.cleaned}
         self.assertEqual(set(entries), {failed, replaced})
         self.assertEqual((entries[failed].rule, entries[failed].superseded_by, entries[failed].base_run_id),
                          (RULE_FAILED, None, delta["source_run_ref"]["run_id"]))
         self.assertIn("never finished", entries[failed].reason)
-        self.assertEqual((entries[replaced].rule, entries[replaced].superseded_by), (RULE_REPLACED, result))
+        self.assertEqual((entries[replaced].rule, entries[replaced].superseded_by, entries[replaced].label),
+                         (RULE_REPLACED, result, "Taller, first try"))
         self.assertIn("kept line", sweep.kept[grown_from])
         for kept in (result, repair, grown_from, d):
             self.assertIn(kept, self.repository.run_ids())

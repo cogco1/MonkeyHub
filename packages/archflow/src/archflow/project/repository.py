@@ -1058,6 +1058,25 @@ def _unpublish_directory(root: Path) -> str | None:
     return None
 
 
+# ---- who saved a working row's name (#575)
+#
+# A row of ``design/working.json`` may carry its run's ``label``. ``labelSavedBy``
+# says that the person saved that label in the Hub (the history panel's save), and
+# a row carries it only then: a label an agent or any other caller saved, and every
+# row written before the key existed, records no saver. Every name is shown; only a
+# name a person saved keeps its run out of the project trash.
+
+_WORKING_ROW_FIELDS = frozenset({"updatedAt", "sourceStageRef", "branchId", "label", "automatic"})
+LABEL_SAVED_BY = "labelSavedBy"
+SAVED_BY_PERSON = "person"
+
+
+def saved_by_person(row: Mapping[str, Any]) -> bool:
+    """Whether the person saved this working row's label in the Hub: only such a name keeps its run (#575)."""
+
+    return row.get("label") is not None and row.get(LABEL_SAVED_BY) == SAVED_BY_PERSON
+
+
 # ---- the project trash's names (#575; ``FilesystemProjectRepository.trash_run``)
 
 TRASH_ENTRY_SCHEMA = "ProjectTrashEntry@1"
@@ -2587,10 +2606,12 @@ class FilesystemProjectRepository:
             raise ProjectIntegrityError("working draft current position is not retained")
         for run_id, row in value["runs"].items():
             require_identifier(run_id, "working run_id")
-            if (not isinstance(row, dict) or set(row) != {"updatedAt", "sourceStageRef", "branchId", "label", "automatic"}
+            # ``labelSavedBy`` is optional: a row from before it, or one no person named, has none (#575).
+            if (not isinstance(row, dict) or set(row) - {LABEL_SAVED_BY} != _WORKING_ROW_FIELDS
                     or type(row["automatic"]) is not bool
                     or any(row[key] is not None and not isinstance(row[key], str)
-                           for key in ("sourceStageRef", "branchId", "label"))):
+                           for key in ("sourceStageRef", "branchId", "label"))
+                    or (LABEL_SAVED_BY in row and (row[LABEL_SAVED_BY] != SAVED_BY_PERSON or row["label"] is None))):
                 raise ProjectIntegrityError("working run retention metadata is invalid")
             self._working_time(row["updatedAt"])
         for run_id, sources in value["active"].items():
@@ -2713,11 +2734,12 @@ class FilesystemProjectRepository:
 
         The caller decides which run may go and says why; this refuses a run
         that anything the repository owns still holds: the Working Head, an
-        execution's ledger (as run or source), a saved or chosen working row,
-        the local recovery, a review, Stage or attributed act retained in the
-        run, a design branch, or the published history. Its unlabelled
-        automatic row, if it has one, moves with it. ``RunNotTrashed`` says
-        why a run stayed.
+        execution's ledger (as run or source), a working row a person chose or
+        whose name a person saved (``saved_by_person``), the local recovery, a
+        review, Stage or attributed act retained in the run, a design branch,
+        or the published history. Its automatic row, if it has one, moves with
+        it, with any name no person saved. ``RunNotTrashed`` says why a run
+        stayed.
         """
 
         require_identifier(run_id, "run_id")
@@ -2919,8 +2941,8 @@ class FilesystemProjectRepository:
         if run_id in working["active"] or any(run_id in sources for sources in working["active"].values()):
             return "an execution is using it"
         row = working["runs"].get(run_id)
-        if row is not None and row["label"] is not None:
-            return "it is a saved version"
+        if row is not None and saved_by_person(row):
+            return "a person saved it as a version"
         if row is not None and not row["automatic"]:
             return "a person chose it as the working position"
         local = working["localDraftRef"]
