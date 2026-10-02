@@ -962,18 +962,53 @@ for _ in range(5):
                     wait_for(lambda: bound(work), "A copy opened through the Hub was not bound on its wake", timeout=10)
                     self.assertGreater(binds.call_count, derived)
 
-                with patch("monkeyhub_api.runtime.manager._WORK_COPY_CHECK_S", 0.2):
-                    # From this request's wake on, the idle question comes often.
+                with patch("monkeyhub_api.runtime.manager._WORK_COPY_CHECK_S", 0.2), \
+                        patch("monkeyhub_api.runtime.manager._ACTIVE_HEARTBEAT_S", 0.2), \
+                        patch.object(manager, "index_hint", wraps=manager.index_hint) as hints, \
+                        patch.object(manager, "_observe_work_copies", wraps=manager._observe_work_copies) as passes:
+                    # From this request's wake on, the idle question comes
+                    # often: a pass every 0.2 s, an observed copy or not.
                     asked = inputs.call_count
                     other = self.upload_image(client, runtime_id, self.png_bytes("black"))
                     wait_for(lambda: inputs.call_count > asked, "A registered document was not re-derived", timeout=10)
                     worker = client.app.state.applications.worker_snapshots(project_dir=str(self.project))[0]
+
+                    def indexed():
+                        # The worker has read and indexed everything written:
+                        # only a stable token answers 304, and a write is
+                        # stable once its re-check has read it, 2 s later. The
+                        # Hub has heard the index's last commit.
+                        listed = worker_http.request_http(worker.url, "/api/documents", timeout=30)
+                        tag = next((value for name, value in listed.headers.items() if name.lower() == "etag"), "")
+                        again = worker_http.request_http(worker.url, "/api/documents", headers={"If-None-Match": tag},
+                                                         timeout=30)
+                        index = worker_http.request_http(worker.url, "/api/index/run?limit=0", timeout=30)
+                        if (listed.status, again.status, index.status) != (200, 304, 200):
+                            return False
+                        heard = [call.args[1]["revision"] for call in hints.call_args_list
+                                 if call.args[0] == runtime_id and (call.args[1] or {}).get("revision") is not None]
+                        return bool(heard) and max(heard) >= index.json()["revision"]
+
+                    def unmoved():
+                        # Passes for a second, none of which heard a move or derived.
+                        before, looked = (runtime.index_moves, inputs.call_count), passes.call_count
+                        time.sleep(1.0)
+                        return (runtime.index_moves, inputs.call_count) == before and passes.call_count >= looked + 2
+
+                    # An upload moves the project twice: its own commit, and the
+                    # commit of the re-check that reads its files once settled.
+                    # Either may reach the Hub after the derivation its wake
+                    # made, and the idle question rightly derives again on it.
+                    wait_for(lambda: indexed() and unmoved(), "The uploads did not settle: a write left unread, "
+                             "a commit the Hub did not hear, or derivations without a move", timeout=30)
+                    moves, derivations = runtime.index_moves, inputs.call_count
                     with patch.object(runtime.wake, "set", wraps=runtime.wake.set) as wakes, \
                             patch.object(runtime.wake, "check", wraps=runtime.wake.check) as checks:
                         # A client that asks the worker itself wakes nothing in
-                        # the Hub, and writing a copy commits no row of the
-                        # project index. Nothing watches the project (ADR-012):
-                        # the idle questions keep finding nothing to derive.
+                        # the Hub, and neither writing a copy nor the re-check
+                        # that reads it commits a row of the project index.
+                        # Nothing watches the project (ADR-012): the idle
+                        # questions keep finding nothing to derive.
                         made = worker_http.request_http(
                             worker.url, f"/api/documents/{other['assetSha256']}/work-copy", "POST",
                             json.dumps({"projectId": self.project_id, "runId": other["runId"],
@@ -981,7 +1016,13 @@ for _ in range(5):
                             {"content-type": "application/json"}, timeout=30)
                         self.assertEqual(made.status, 201, made.body)
                         written = self.project / Path(*made.json()["relativePath"].split("/"))
+                        wait_for(indexed, "The worker did not read the copy once it settled, or the Hub did not hear "
+                                 "a commit", timeout=30)
+                        looked = passes.call_count
                         time.sleep(1.0)
+                        self.assertGreaterEqual(passes.call_count, looked + 2, "The observer made under two passes")
+                        self.assertEqual(runtime.index_moves, moves, "Writing a copy moved the project index")
+                        self.assertEqual(inputs.call_count, derivations, "An idle question derived the copies again")
                         self.assertFalse(bound(written))
                         self.assertEqual((wakes.call_count, checks.call_count), (0, 0))
                         # Reading the project again binds it: in the Hub too,
