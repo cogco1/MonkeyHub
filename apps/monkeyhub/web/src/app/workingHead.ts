@@ -67,6 +67,22 @@ export function followUndo(read: WorkingDraftDto | null | undefined, baseRunId: 
   return read && baseRunId !== null && read.current?.runId === baseRunId ? continueUndo(read, followed) : null;
 }
 
+/** A move of the Working Head the project's own Design Tree made: a Continue or its Undo, confirmed by the tree's toast. */
+export interface TreeHeadMove {
+  readonly runId: string;
+  readonly id: number;
+}
+
+/**
+ * Whether following the head onto `head` follows the Design Tree's own move (#575). The tree's toast already
+ * confirms that write with its 撤销, so the follow says nothing in the project bar: one write offers one 撤销. A move
+ * counts once (`followed` is the id of the last one followed that way), and only onto the run the tree moved Current
+ * to; a move made anywhere else is followed with its own notice.
+ */
+export function followsTreeMove(move: TreeHeadMove | null | undefined, followed: number | null, head: string): boolean {
+  return move != null && move.id !== followed && move.runId === head;
+}
+
 /** What 撤销 did: put the base back, or nothing, because Current moved on or holds unrecorded model edits. */
 export type FollowUndoOutcome = "undone" | "moved-on" | "unsynced";
 

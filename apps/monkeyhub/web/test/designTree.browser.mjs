@@ -819,13 +819,15 @@ try {
   assert.match(await card.innerText(), /Current comes from S0 · Site, but this line's newest Stage is S2 · Layout/);
   await shoot(tab, "07-continued-rerooted");
 
-  // Continue on the newest Stage's option, then Accept as next Stage from Current only.
+  // Continue on the newest Stage's option, then Accept as next Stage from Current only. That option was asked for
+  // alone (#575 rule 3): continued, it is Current itself, one more step after S2, and no card of its own.
   card = await clickNode("candidate:run-entrance-a");
   assert.match(await card.innerText(), /Study\s+Study from S2 · Layout/, "a Study without a name is named after where it started");
   await card.getByRole("button", { name: "Continue from here", exact: true }).click();
   await toast.filter({ hasText: "Current is now “Courtyard gate on the south bar”" }).waitFor();
-  await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 7);
-  checkTree(await scene(), [S0, "candidate:run-massing-c", S1, "candidate:run-facade-b", S2, "candidate:run-entrance-a", "current"], { "study-massing": 4, "study-facade": 2 });
+  await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 6);
+  checkTree(await scene(), [S0, "candidate:run-massing-c", S1, "candidate:run-facade-b", S2, "current"], { "study-massing": 4, "study-facade": 2 });
+  assert.equal((await scene()).elements.some((element) => element.id === "candidate:run-entrance-a:card"), false, "the lone option is Current");
   card = await clickNode("current");
   const acceptButton = card.locator('[data-action="accept"]');
   assert.equal(await acceptButton.innerText(), "Accept as S3");
@@ -841,8 +843,8 @@ try {
   assert.deepEqual(writes.at(-1), { method: "POST", name: "/api/candidates/run-entrance-a/accept",
     body: { projectId: PROJECT, branchId: "main", expectedHeadStageRef: fixture.state.stages.find((row) => row.run === "run-s2-layout").ref } });
   const S3 = `stage:${fixture.state.branchHead}`;
-  await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 8);
-  checkTree(await scene(), [S0, "candidate:run-massing-c", S1, "candidate:run-facade-b", S2, "candidate:run-entrance-a", S3, "current"], { "study-massing": 4, "study-facade": 2 });
+  await tab.waitForFunction(() => window.__treeApi.getSceneElements().find((element) => element.customData?.tree?.role === "trunk")?.points.length === 7);
+  checkTree(await scene(), [S0, "candidate:run-massing-c", S1, "candidate:run-facade-b", S2, S3, "current"], { "study-massing": 4, "study-facade": 2 });
   assert.equal((await chip.innerText()).replace(/\s+/g, " ").trim(), "S3 — Current · 2 running");
   await shoot(tab, "09-accepted-s3");
   if (shots) await inChinese("09a-accept-toast-zh");
@@ -896,9 +898,9 @@ try {
   await bar.getByRole("button", { name: "List", exact: true }).click();
   const items = surface.getByRole("treeitem");
   await items.first().waitFor();
-  // Four Stages, ten admitted options, two running lines and Current.
+  // Four Stages, nine admitted options (the tenth, asked for alone, is S3 itself now), two running lines and Current.
   const nodeCount = await tab.evaluate(() => document.querySelectorAll('.design-tree-list [role="treeitem"]').length);
-  assert.equal(nodeCount, 17, "every node of the tree is a list item");
+  assert.equal(nodeCount, 16, "every node of the tree is a list item");
   await items.first().focus();
   await tab.keyboard.press("ArrowDown");
   assert.equal(await tab.evaluate(() => document.activeElement?.dataset.node), await items.nth(1).getAttribute("data-node"));
@@ -1249,7 +1251,8 @@ try {
   assert.deepEqual(texts(lineView, "fold"), ["4 earlier steps", "2 superseded drafts inside"], "the earlier steps fold behind one control");
   assert.ok(!lineView.elements.some((element) => /run-|studio-projection|conflict|diverged|[0-9a-f]{16}/i.test(element.text ?? "")),
     "no ids, conflicts or diverged lines on the canvas");
-  assert.match(texts(lineView, "current").join(" ").replace(/\s+/g, " "), /1 edit after V3 - ribbed roof, open side triangles/);
+  // #575 rule 5: Current says the words that asked for it first, then where it stands, each clipped to the card.
+  assert.match(texts(lineView, "current").join(" ").replace(/\s+/g, " "), /“Give V3's walls and ribs their… 1 edit after V3 - ribbed roof,/);
   assert.deepEqual(await lineBar.getByRole("button", { name: /earlier steps|superseded drafts/ }).allInnerTexts(),
     ["Unfold 4 earlier steps", "Show superseded drafts (2)"]);
   await shoot(linePage, "13-line-folded");
@@ -1353,10 +1356,88 @@ try {
   await shoot(linePage, "20-cleaned-canvas");
   await lineContext.close();
 
+  // ------------------------------------------------------------------ Part D: changes that landed, and a return (#575 rules 3-5).
+  // Three changes the person asked for in chat, each admitted alone by the Hub Agent on their words and continued. They
+  // fold into the earlier steps like plain ones; Current is the latest step and says the words that asked for it, and
+  // every step goes by its words. Returning to the roof keeps the two steps after it drawn faintly after Current, and a
+  // later step is continued again from its own inspector.
+  fixture = fixtureModule.createDesignTreeFixture(fixtureModule.landedChangesFacts());
+  const landedContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
+  await landedContext.route((url) => ["http:", "https:"].includes(url.protocol) && url.origin !== origin, (route) => {
+    external.push(route.request().url()); return route.abort("blockedbyclient");
+  });
+  const landedPage = await landedContext.newPage();
+  landedPage.setDefaultTimeout(20_000);
+  landedPage.on("pageerror", (error) => errors.push(`landed: ${error.message}`));
+  landedPage.on("console", (message) => { if (message.type() === "error") errors.push(`landed: ${message.text()}`); });
+  await landedPage.goto(`${origin}/tree-workspace?lang=zh-CN&theme=light&view=tree`, { waitUntil: "domcontentloaded", timeout: 240_000 });
+  const landedSurface = landedPage.locator('[data-project-surface="tree"]');
+  const landedBar = landedPage.locator(".project-bar");
+  await landedSurface.locator(".design-tree__canvas canvas").first().waitFor({ timeout: 120_000 });
+  const landedTrunk = (count) => landedPage.waitForFunction((wanted) => window.__treeApi?.getSceneElements()
+    .find((element) => element.customData?.tree?.role === "trunk")?.points.length === wanted, count);
+  await landedTrunk(3);
+  let landedView = await scene(landedPage);
+  checkTree(landedView, ["origin", "fold", "current"], {});
+  assert.equal(landedView.elements.some((element) => element.id.startsWith("candidate:")), false, "no landed change is a card of its own");
+  assert.deepEqual(texts(landedView, "fold"), ["之前 3 步", "点击展开"]);
+  assert.match(texts(landedView, "current").join(" "), /「给 238 个构件定材质」/, "Current says the words that asked for it");
+  assert.ok(!landedView.elements.some((element) => /run-|studio-projection|[0-9a-f]{16}/i.test(element.text ?? "")), "no ids on the canvas");
+  await shoot(landedPage, "21-landed-folded");
+  await clickCanvasNode(landedPage, landedSurface, "fold", { inspect: false });
+  await landedTrunk(5);
+  landedView = await scene(landedPage);
+  checkTree(landedView, ["origin", "step:run-frame", "step:run-roof", "step:run-glazing", "current"], {});
+  assert.deepEqual(["step:run-frame", "step:run-roof", "step:run-glazing"].map((id) => texts(landedView, id).join(" ")),
+    ["Timber frame with hemp-lime walls", "把屋顶改成木肋拱", "南立面改成通高玻璃"], "each step goes by the words that asked for it");
+  await shoot(landedPage, "22-landed-open");
+  // Returning to the roof is the existing Continue; its toast names the step by its words.
+  let landedCard = await clickCanvasNode(landedPage, landedSurface, "step:run-roof");
+  assert.match(await landedCard.innerText(), /名称\s*Ribbed timber roof/, "the name it was also given is said beside its words");
+  await landedCard.getByRole("button", { name: "从这里继续", exact: true }).click();
+  const landedToast = landedPage.locator(".design-tree-toast");
+  await landedToast.filter({ hasText: "当前已改为「把屋顶改成木肋拱」" }).waitFor();
+  await landedTrunk(3);
+  await landedPage.waitForFunction(() => window.__treeApi.getSceneElements().some((element) => element.id === "later:run-materials:card"));
+  landedView = await scene(landedPage);
+  checkTree(landedView, ["origin", "step:run-frame", "current"], {});
+  const laterCards = ["later:run-glazing", "later:run-materials"].map((id) => landedView.elements.find((element) => element.id === `${id}:card`));
+  const currentCard = landedView.elements.find((element) => element.id === "current:card");
+  assert.ok(laterCards.every((card) => card.opacity < 100 && card.strokeStyle === "dashed"), "the steps it left are drawn faintly");
+  assert.ok(laterCards[0].x > currentCard.x + currentCard.width && laterCards[1].x > laterCards[0].x + laterCards[0].width &&
+    laterCards.every((card) => Math.abs(card.y + card.height / 2 - (currentCard.y + currentCard.height / 2)) < 1), "after Current, along its row");
+  assert.deepEqual(["later:run-glazing", "later:run-materials"].map((id) => texts(landedView, id).join(" ")), ["南立面改成通高玻璃", "给 238 个构件定材质"]);
+  assert.match(texts(landedView, "current").join(" "), /「把屋顶改成木肋拱」/);
+  await shoot(landedPage, "23-returned-later-steps");
+  // In the list the steps it left are a group of their own, after Current.
+  await landedBar.getByRole("button", { name: "列表", exact: true }).click();
+  await landedSurface.locator('[role="treeitem"][data-node="later:run-materials"]').waitFor();
+  assert.deepEqual(await landedSurface.getByRole("treeitem").evaluateAll((rows) => rows.map((row) => [row.dataset.node, row.dataset.group])),
+    [["origin", "trunk"], ["step:run-frame", "trunk"], ["current", "trunk"], ["later:run-glazing", "later"], ["later:run-materials", "later"]]);
+  assert.match(await landedSurface.locator('[role="treeitem"][data-node="current"]').innerText(), /「把屋顶改成木肋拱」/);
+  await shoot(landedPage, "24-returned-list");
+  await landedBar.getByRole("button", { name: "画布", exact: true }).click();
+  await landedPage.waitForFunction(() => window.__treeApi?.getSceneElements().some((element) => element.id === "later:run-materials:card"));
+  // A later step is continued again from its own inspector, not only through Undo.
+  landedCard = await clickCanvasNode(landedPage, landedSurface, "later:run-materials");
+  assert.match(await landedCard.innerText(), /后续步骤 · 当前回到之前时保留/);
+  assert.match(await landedCard.innerText(), /「从这里继续」会让当前再走到这里/);
+  const landedRevision = fixture.state.revision;
+  await landedCard.getByRole("button", { name: "从这里继续", exact: true }).click();
+  await landedToast.filter({ hasText: "当前已改为「给 238 个构件定材质」" }).waitFor();
+  assert.deepEqual(writes.at(-1), { method: "PUT", name: "/api/working-draft",
+    body: { projectId: PROJECT, runId: "run-materials", baseRevisionSha256: rev(landedRevision), branchId: null } });
+  await landedTrunk(5);
+  landedView = await scene(landedPage);
+  checkTree(landedView, ["origin", "step:run-frame", "step:run-roof", "step:run-glazing", "current"], {});
+  assert.equal(landedView.elements.some((element) => element.id.startsWith("later:")), false, "back on the line's last step, nothing is left after it");
+  await shoot(landedPage, "25-later-step-continued");
+  await landedContext.close();
+
   assert.deepEqual(unexpected, [], "the tree reads only what it declares");
   assert.deepEqual(external, [], "no external request");
   assert.deepEqual(errors.filter((message) => !/Failed to load resource: the server responded with a status of 404/.test(message)), []);
-  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, Current's line as one chain with its earlier steps folded and opened, superseded drafts folded where the line moved on, cleaned drafts listed and one restored, return to a step via Continue and Undo, three zoom levels with close-card server thumbnails read on demand and arriving through the index, inspector, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
+  console.log(JSON.stringify({ passed: "chip → tree, trunk, twigs, planar, Current's line as one chain with its earlier steps folded and opened, landed changes folded like plain steps and named by their words, a return keeping the line it left after Current and a later step continued again, superseded drafts folded where the line moved on, cleaned drafts listed and one restored, return to a step via Continue and Undo, three zoom levels with close-card server thumbnails read on demand and arriving through the index, inspector, review-open warning, View read-only, Continue re-roots via PUT /api/working-draft, its toast's Undo puts the previous Current back through the same PUT, Accept on Current only via POST accept with a toast and no Undo, a toast stays while hovered and then fades, no toast on refusal, the chip's viewing state continues from here, a rejected Current cannot be accepted, keyboard list, return to previous surface, zh copy, Hub rail entry and deep link",
     writes: writes.map((row) => `${row.method} ${row.name}`) }));
 } catch (error) {
   console.error("FAILED:", error);

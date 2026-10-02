@@ -9,18 +9,23 @@ from archflow.project.refs import record_ref_from_uri
 from archflow.state.state_record import StateRecordEditKind, StateRecordOperator
 
 from project_runtime.application.artifacts import ModelSource, save_document
+from fastapi.testclient import TestClient
+
 from project_runtime.binding import ProjectBinding, bound_project
 from project_runtime.application.candidate import run_operator
 from project_runtime.jobs import Job
 from project_runtime.application.projection import project_state
 from project_runtime import status
+from project_runtime.main import create_app
+from project_runtime.settings import StudioSettings
 from project_runtime.status import worktree_graph
 from project_runtime.application.working_draft import lineage_of
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_candidate_admission import AdmissionFixture
+from .test_construction_routes import ConstructionTestCase
 from .test_rendering import Adapter, finished, png, request, submit
-from .test_working_source import WorkingSourceFixture
+from .test_working_source import WorkingSourceFixture, adopt
 
 
 class _Jobs:
@@ -285,13 +290,8 @@ class HeadLineTests(AdmissionFixture):
         a, b, c, d, drafts = self.line_with_two_drafts()
         self.save(b, "V2")
         self.save(drafts[0], "V3 - closed wall and simple mono-pitch roof")
-        # The words that asked for D, as an intent model compiled them into its run.
-        self.repository.put_json(run=self.repository.load_run(d), record_kind=INTENT_COMPILATION,
-                                 destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=d),
-                                 payload={"schema": "IntentCompilation@1", "proposal_id": "proposal-d",
-                                          "utterance": "Give the ribs their materials", "base_state_digest": "0" * 64,
-                                          "receipt": {}})
-        # C's agent admitted it with its own words; a saved name would still come first.
+        # C's agent admitted it with the person's words, which come before the sentence its run was made from;
+        # a saved name would still come first.
         self.admit({"runId": c, "outcome": "admitted", "label": "V3 - ribbed roof", "summary": "Ribs at 1.2 m"},
                    rawLanguage="Make the roof ribbed")
         before = (self.repository.read_working_draft(), self.repository.read_design_branches(), self.repository.read_head())
@@ -302,7 +302,8 @@ class HeadLineTests(AdmissionFixture):
         self.assertEqual([step["runId"] for step in line], [a, b, c, d], "the line is A..D, oldest first")
         self.assertEqual([step["baseRunId"] for step in line], [None, a, b, c])
         self.assertEqual([step["label"] for step in line], [None, "V2", "V3 - ribbed roof", None])
-        self.assertEqual([step["request"] for step in line], [None, None, "Make the roof ribbed", "Give the ribs their materials"])
+        # Each run keeps the sentence its proposal was made from (#575); the project start was asked for by nobody.
+        self.assertEqual([step["request"] for step in line], [None, "set height to 2.2", "Make the roof ribbed", "set height to 2.8"])
         self.assertEqual([step["summary"] for step in line], [None, None, "Ribs at 1.2 m", None])
         self.assertEqual([step["stageRef"] for step in line], [None] * 4)
         self.assertTrue(all(step["updatedAt"] for step in line[1:]), line)
@@ -349,6 +350,82 @@ class HeadLineTests(AdmissionFixture):
         self.adopt(d)
         self.assertEqual({row["relation"] for row in self.results(self.graph()).values()}, {"superseded"})
 
+    def test_a_run_from_before_requests_were_kept_is_named_by_the_sentence_a_model_compiled(self):
+        binding = bound_project(self.app.state)
+        projection = project_state(binding, run_id=REFERENCE_RUN_ID)
+        # A change made the way runs were made before they kept their words: no request with its change.
+        operator = StateRecordOperator(kind=StateRecordEditKind.SET_SCALAR, base_record_digest=projection.record.digest,
+                                       base_state_digest=projection.record.state_digest,
+                                       target_ref="parameter:module", key="module", value=1.5)
+        run_operator(binding, self.settings, operator, "studio-cand-legacy", source_run_id=REFERENCE_RUN_ID)
+        self.assertIsNone(binding.candidate_delta("studio-cand-legacy")["request"])
+        self.adopt("studio-cand-legacy")
+        self.assertEqual(self.graph()["line"][-1]["request"], None, "a change nobody asked for in words has none")
+        self.repository.put_json(run=self.repository.load_run("studio-cand-legacy"), record_kind=INTENT_COMPILATION,
+                                 destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id="studio-cand-legacy"),
+                                 payload={"schema": "IntentCompilation@1", "proposal_id": "proposal-legacy",
+                                          "utterance": "Give the ribs their materials", "base_state_digest": "0" * 64,
+                                          "receipt": {}})
+        status._REQUESTS.clear()
+        self.assertEqual(self.graph()["line"][-1]["request"], "Give the ribs their materials")
+
+    def test_a_chat_admission_names_its_step_in_the_users_words(self):
+        made = self.result(height=2.4)
+        # The Hub binds the user's own words to the admission; the run itself kept the agent's sentence.
+        self.admit({"runId": made, "outcome": "admitted", "label": "Materials"}, task="hub-chat", client=self.managed(),
+                   messageSource={"sessionId": "chat-1", "messageId": "message-9"}, rawLanguage="给 238 个构件定材质")
+        self.adopt(made)
+        step = self.graph()["line"][-1]
+        self.assertEqual((step["runId"], step["request"], step["label"]), (made, "给 238 个构件定材质", "Materials"))
+        self.assertEqual(bound_project(self.app.state).candidate_delta(made)["request"], "set height to 2.4")
+
+    def test_returning_to_an_earlier_step_lists_the_steps_it_left_as_a_later_line(self):
+        a, b, c, d, drafts = self.line_with_two_drafts()
+        self.save(c, "V3")
+        self.adopt(b)
+        graph = self.graph()
+        self.assertEqual([step["runId"] for step in graph["line"]], [a, b])
+        later = graph["later"]
+        self.assertEqual([(step["runId"], step["baseRunId"]) for step in later], [(c, b), (d, c)],
+                         "the line it left, oldest first, from the step made from the head")
+        self.assertEqual([(step["label"], step["request"]) for step in later],
+                         [("V3", "set height to 2.7"), (None, "set height to 2.8")])
+        self.assertTrue(all(step["updatedAt"] for step in later))
+        # The drafts built on B were never stood on: they are no part of it. Nothing about the results changed.
+        results = self.results(graph)
+        self.assertEqual({run: results[run]["relation"] for run in (*drafts, c, d)}, dict.fromkeys((*drafts, c, d), "ahead"))
+        # Continued again, a later step is the head and the rest of the line still follows it.
+        self.adopt(c)
+        graph = self.graph()
+        self.assertEqual(([step["runId"] for step in graph["line"]], [step["runId"] for step in graph["later"]]), ([a, b, c], [d]))
+        self.adopt(d)
+        self.assertEqual(self.graph()["later"], [], "on the line's last step nothing is left after it")
+        # Back two steps at once: the whole line it left.
+        self.adopt(b)
+        self.adopt(a)
+        self.assertEqual([step["runId"] for step in self.graph()["later"]], [b, c, d])
+        # Reading the graph wrote nothing.
+        before = (self.repository.read_working_draft(), self.repository.read_design_branches())
+        self.graph()
+        self.assertEqual((self.repository.read_working_draft(), self.repository.read_design_branches()), before)
+
+    def test_where_the_line_left_forked_it_goes_on_through_the_branch_moved_onto_last(self):
+        _a, b, c, d, _drafts = self.line_with_two_drafts()
+        self.adopt(b)
+        e = self.result(source=b, height=2.9)
+        self.adopt(e)
+        self.adopt(b)
+        self.assertEqual([step["runId"] for step in self.graph()["later"]], [e], "E was stood on last")
+        # Standing on D again and returning: that whole line is the one left, not E.
+        self.adopt(d)
+        self.adopt(b)
+        self.assertEqual([step["runId"] for step in self.graph()["later"]], [c, d])
+        # A result made from the head and never continued is a result, not a later step.
+        fresh = self.result(source=b, height=3.0)
+        graph = self.graph()
+        self.assertEqual([step["runId"] for step in graph["later"]], [c, d])
+        self.assertEqual(self.results(graph)[fresh]["relation"], "ahead")
+
     def test_a_stage_on_the_line_is_named_by_its_label(self):
         stage = self.stage("S0")
         first = self.result(stage, 2.2)
@@ -357,3 +434,47 @@ class HeadLineTests(AdmissionFixture):
         self.assertEqual([step["runId"] for step in line], [stage["candidateId"], first])
         self.assertEqual((line[0]["label"], line[0]["stageRef"]), ("S0", stage["stageRef"]))
         self.assertEqual((line[1]["label"], line[1]["stageRef"], line[1]["baseRunId"]), (None, None, stage["candidateId"]))
+
+
+class RequestSentenceTests(ConstructionTestCase):
+    """#575 rule 5: a run keeps the sentence an outside agent asked for it in, and its line step is named by it."""
+
+    def graph(self, client: TestClient | None = None) -> dict:
+        response = (client or self.client).get("/api/worktrees")
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def continued(self, proposal: dict) -> str:
+        run_id = self.run_candidate(proposal["proposalId"])
+        adopt(self.client, run_id)
+        return run_id
+
+    def test_an_outside_agents_summary_names_its_run_and_survives_a_restart(self):
+        facets = self.continued(self.facets([{"id": "portico", "set": {"material.name": "brick"}}], summary="给 238 个构件定材质"))
+        delta = bound_project(self.client.app.state).candidate_delta(facets)
+        self.assertEqual(delta["request"], "给 238 个构件定材质")
+        self.assertEqual(self.graph()["line"][-1]["request"], "给 238 个构件定材质")
+        built = self.continued(self.construct("mass = extrude(rect(0, 0, 6, 4), 3)", summary="Add a timber pavilion",
+                                              sourceRunId=facets))
+        line = self.graph()["line"]
+        self.assertEqual([(step["runId"], step["request"]) for step in line[-2:]],
+                         [(facets, "给 238 个构件定材质"), (built, "Add a timber pavilion")])
+        # A restarted runtime holds no proposal and no memory of what it read: the runs say it themselves.
+        restarted = TestClient(create_app(StudioSettings(cad_export=self.cad_export, project_dir=self.project)))
+        self.addCleanup(restarted.close)
+        with mock.patch.dict(status._REQUESTS, clear=True):
+            self.assertEqual([step["request"] for step in self.graph(restarted)["line"][-2:]],
+                             ["给 238 个构件定材质", "Add a timber pavilion"])
+        self.assertEqual(restarted.app.state.proposals.for_state(delta["operator"]["base_state_digest"]), ())
+
+    def test_a_change_left_to_describe_itself_keeps_no_request_and_a_chain_keeps_each_steps_words(self):
+        described = self.continued(self.facets([{"id": "portico", "set": {"material.name": "brick"}}]))
+        self.assertIsNone(bound_project(self.client.app.state).candidate_delta(described)["request"])
+        self.assertIsNone(self.graph()["line"][-1]["request"], "the runtime's own description is no request")
+        made = self.construct("mass = extrude(rect(0, 0, 6, 4), 3)", summary="Add a timber pavilion", sourceRunId=described)
+        enriched = self.facets([{"id": "mass", "set": {"architectural.role": "wall"}}], summary="Make it a wall",
+                               stateDigest=made["baseStateDigest"], sourceProposalId=made["proposalId"], sourceRunId=described)
+        chained = self.continued(enriched)
+        self.assertEqual(self.graph()["line"][-1]["request"], "Add a timber pavilion; Make it a wall")
+        self.assertEqual(bound_project(self.client.app.state).candidate_delta(chained)["request"],
+                         "Add a timber pavilion; Make it a wall")

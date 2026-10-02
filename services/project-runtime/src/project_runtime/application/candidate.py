@@ -165,7 +165,7 @@ def execute_candidate(
         source_run_id=proposal.source_run_id, retain=retain,
         model_source=proposal.model_source,
         source_stage_ref=proposal.source_stage_ref,
-        monitor=monitor,
+        monitor=monitor, request=proposal.request,
     )
 
 
@@ -409,12 +409,15 @@ def run_operator(
     source_stage_ref: ProjectRecordRef | None = None,
     combined_candidate_ids: tuple[str, ...] = (),
     monitor: StudioMonitor | None = None,
+    request: str | None = None,
 ) -> Mapping[str, Any]:
     """Replay a typed operator against its selected or default exact base and run it.
 
     Its end lists the finished run for recovery and nothing more: the end of a
     run never admits it, and a loop is admitted only once it has finished
-    (#294, owner decision 2026-10-01).
+    (#294, owner decision 2026-10-01). ``request`` is the sentence the change
+    was asked in, when it was asked in words (#575); the run keeps it with its
+    change, so whatever names the run later reads it from the run itself.
     """
 
     from .working_draft import record_candidate_draft
@@ -426,7 +429,7 @@ def run_operator(
     try:
         receipt = _run_operator(binding, settings, operator, run_id, source_run_id=source_run_id,
             retain=retain, model_source=model_source, source_stage_ref=source_stage_ref,
-            combined_candidate_ids=combined_candidate_ids, monitor=monitor, projection=projection)
+            combined_candidate_ids=combined_candidate_ids, monitor=monitor, projection=projection, request=request)
         delta = read_candidate_delta(binding, run_id)
         record_candidate_draft(binding, run_id, delta["source_run_ref"]["run_id"])
         return receipt
@@ -439,6 +442,7 @@ def _run_operator(
     *, source_run_id: str | None = None, retain: tuple[tuple[str, Mapping[str, Any]], ...] = (),
     model_source: ModelSource | None = None, source_stage_ref: ProjectRecordRef | None = None,
     combined_candidate_ids: tuple[str, ...] = (), monitor: StudioMonitor | None = None, projection: StateProjection,
+    request: str | None = None,
 ) -> Mapping[str, Any]:
 
     seat_pack = load_seat_pack(binding.repository)
@@ -484,6 +488,9 @@ def _run_operator(
         "source_model": None if model_source is None else model_source.to_dict(),
         "operator": operator.to_dict(), "result_record_digest": successor.digest,
         "combined_candidate_ids": list(combined_candidate_ids),
+        # The words the change was asked in (#575): what names this run in the line it joins. Not design
+        # content: replays and comparisons never read it.
+        "request": request.strip() if request and request.strip() else None,
     }
     receipt = _run_successor(binding, settings, seat_pack, successor, run_id,
                              seats=seats,

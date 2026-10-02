@@ -123,7 +123,7 @@ tolerate it.
 | GET | `/api/working-draft/revision` | `{projectId, revisionSha256}` of the working position alone, for polling whether the head may have moved; no local draft and no project guard | reads the working position | provisional |
 | PUT | `/api/working-draft` | Continue: the working position, and so the Working Head, moves onto `runId`, or back to the default with `null`, under the `baseRevisionSha256` compare-and-swap; a move onto a run retains who made it as `AuditEvent@1` `design.continued` beside that run (§4.1). `messageSource` with `rawLanguage` marks the Hub Agent continuing on the user's bound words. In the project's own Runtime a move onto a run then cleans what the line now moves past into the project trash, on a thread of its own (§4.1) | **writes the working position + that run's review** | provisional |
 | GET | `/api/representation-status?runId=&assetSha256=&revisionRef=&pageIndex=` | one exact registered page's representation status (§4.1) in the projection's own words: `{projectId, state, reason}`, `state` one of `current`, `outdated`, `frozen`, `unavailable`. A page that cannot be read, or whose replacements loop, is `unavailable`; nothing is stored | reads the working position + shared + design refs | provisional |
-| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, the head's `line` of steps oldest first with their retained `label`, `request`, `summary` and `stageRef` (#575), other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), a draft the line superseded as `relation: superseded` with `supersededBy`, each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged, started, moved or deleted | reads the working position + shared + design refs + the admissions review + each result's Continue events + server memory | provisional |
+| GET | `/api/worktrees` | read-only Worktree Graph V0 (§4.1): the head line, the head's `line` of steps oldest first with their retained `label`, `request`, `summary` and `stageRef` (#575), after a return to an earlier step the `later` steps it moved back past, other accepted lines, running and interrupted changes with their exact base and declared read/write refs, retained results off the head's line with `relation` and `reconcile` (`can-combine`, `conflict` with the shared refs, `unknown`), a draft the line superseded as `relation: superseded` with `supersededBy`, each finished line's `admission` (`admitted`, `rejected`, `superseded`, `none`) and `studyId` (§5.5), and drawing/render `current`/`stale`/`frozen`/`running`/`unavailable` states, a drawing's as the Drawing tool reads it (§4.1). Nothing is merged, started, moved or deleted | reads the working position + shared + design refs + the admissions review + each result's Continue events + server memory | provisional |
 | GET | `/api/trash` | the project trash (#575, §4.1): `retentionDays` (30) and each entry oldest first, `runId`, `trashedAt`, `expiresAt`, `rule` (`superseded`, `replaced-attempt`, `failed-attempt`), `reason`, `supersededBy`, `baseRunId`, `label` and `stateDigest`. Answered conditionally (ETag) like the tree's other views | reads `trash/entries/` | provisional |
 | POST | `/api/trash/restore` | `{projectId, runId}`: moves that trashed run back into `runs/` exactly as it left, with its working-draft row and every trashed run it names (what it was made from); answers `restored` and the trash as it now is. A restored run is never cleaned again. `TRASH_ENTRY_NOT_FOUND` (404), `TRASH_RESTORE_REFUSED` (409, its place in `runs/` is taken or it could not be moved whole) | **moves runs back + writes the working position + the retention run's review** | provisional |
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
@@ -601,7 +601,12 @@ neighbouring element whose field shares a name is named there only to be refused
    client digest is stale (`409 STALE_BASE`), or the selected reference is not an exact retained
    State Record on current HEAD (`409 REFERENCE_STATE_NOT_EXACT`, `REFERENCE_BASE_STALE` or
    `REFERENCE_STATE_MISMATCH`). Everything after that is the job's, and a run the runner refuses
-   is a *failed job carrying the runner's own sentence*, never an HTTP error.
+   is a *failed job carrying the runner's own sentence*, never an HTTP error. The run keeps the
+   words its change was asked in as `request` in its `StudioCandidateDelta@1` (#575): an
+   utterance, a `semanticEdit`'s or a construction, facets or hosted-opening request's `summary`,
+   the sentence an `/api/intents` exchange opened with, or a modified decision's sentence; a
+   chain keeps each step's words, joined by `; `. A change left to describe itself keeps none.
+   The Worktree Graph names the run's line step by them.
 4. **Follow it.** `GET /api/jobs/{jobId}`, or the event stream.
 5. **Read review readiness.** `GET /api/candidates/{id}/validation` returns the kernel's
    validation receipt unedited, and beside it the server's `reviewReady`, a fixed conjunction of five named
@@ -1475,10 +1480,17 @@ The graph also names the head's own line (#575): `line` is its first-parent chai
 ending at the head, so the inputs a combine merged stay off it. Each step carries `runId`,
 `baseRunId` (null for a run made from no other; the first step names one only when the line was cut
 short at 64 runs), `label` (a saved version's label, else its accepted Stage's, else its admitted
-result's), `request` (the admission's `rawLanguage`, else the sentence an intent model compiled into
-the run), `summary` (an admitted result's own), `stageRef` and `updatedAt` from the working
-position. A retained result whose nearest shared source with the head is a step the line moved on
-from, whose comparison with the head conflicts (it changed what the line changed since), and which
+result's), `request` (the admission's `rawLanguage`, else the words the run itself kept with its
+change, else, for a run from before runs kept them, the sentence an intent model compiled into it),
+`summary` (an admitted result's own), `stageRef` and `updatedAt` from the working position. After a
+return to an earlier step, `later` lists the steps the head moved back past, in the same shape and
+oldest first, from the one made from the head: the retained results that continue the head and that
+it once stood on (a `design.continued` event names them), with the runs each was made through from the
+head by first parents. Where that line forked it goes on along the branch the working position moved
+onto most recently, to the last run there the head stood on. Each can be continued again; a result
+made from the head that nobody continued is not part of it, and every later step is still listed in
+`lines` as an `ahead` result. A retained result whose nearest shared source with the head is a step
+the line moved on from, whose comparison with the head conflicts (it changed what the line changed since), and which
 nobody took further is a draft that line superseded: `relation: superseded`, with `supersededBy`
 naming the step made from that source. Nobody took it further when neither it nor any retained
 result built on it was continued (no `design.continued` event names it) or admitted; an admitted

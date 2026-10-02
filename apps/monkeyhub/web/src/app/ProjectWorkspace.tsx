@@ -210,12 +210,14 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     setTreeNodeFocus({ node, request: ++focusRequests.current });
     onWorkspaceChange("tree");
   }, [onWorkspaceChange, closeComparison]);
-  // Names on the tree, for the comparison's captions only; the pair itself comes from retained records.
+  // Names on the tree, for the comparison's captions only; the pair itself comes from retained records. A step of the
+  // line, folded or not, and a later step are named as the tree names them (#575).
   const nameOfRun = useCallback((runId: string) => {
     const tree = designTree.tree;
     if (!tree) return null;
     const nodes = [...tree.nodes.values()];
-    const node = nodes.find((item) => item.kind === "stage" && item.runId === runId) ?? nodes.find((item) => item.kind === "candidate" && item.runId === runId);
+    const node = nodes.find((item) => item.kind === "stage" && item.runId === runId) ?? nodes.find((item) => item.kind === "candidate" && item.runId === runId)
+      ?? tree.lineNodes.get(runId);
     return node ? treeWords(t, tree).title(node) : null;
   }, [designTree.tree, t]);
   const studyFocused = useRef(0);
@@ -306,7 +308,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
           active={active && modelShown} refreshKey={refreshKey + attempt + headMoves} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
           onDesignContextChange={designContextChanged} onRenderReader={registerRenderReader} cameraRequest={cameraRequest}
           onView={(view) => viewRun({ ...view, back: false }, true)} onRecorder={registerRecorder}
-          onOpenTree={designTree.available ? () => onWorkspaceChange("tree") : undefined} />
+          onOpenTree={designTree.available ? () => onWorkspaceChange("tree") : undefined} treeMove={designTree.headMove} />
       </div>}
       {(publishVisited || workspace === "publish") && <div data-project-surface="publish" hidden={shown !== "publish"} inert={!active || shown !== "publish"}
         style={{ height: "100%", minHeight: 0, display: shown === "publish" ? "block" : "none" }}>

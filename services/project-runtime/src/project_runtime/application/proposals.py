@@ -91,12 +91,25 @@ class Proposal:
     # The sentence of every step a continued proposal folded in, in order
     # (``sentences_of``); empty for one step, whose utterance says it all.
     steps: tuple[str, ...] = ()
+    # The words this change was asked in, as whoever asked gave them: a
+    # sentence, or an outside agent's summary (#575). None where the runtime
+    # described the change itself: a direct modeling act, or a summary left
+    # out. The route that received the words attaches them; a run made from
+    # this proposal keeps them with its change (``request_of``).
+    request: str | None = None
 
 
 def sentences_of(proposal: Proposal) -> tuple[str, ...]:
     """What each step of this proposal said, in the order it was taken."""
 
     return proposal.steps or (proposal.utterance,)
+
+
+def request_of(*requests: str | None) -> str | None:
+    """One request out of the words each step was asked in, in order; None when none was asked in words."""
+
+    said = tuple(dict.fromkeys(text.strip() for text in requests if text and text.strip()))
+    return "; ".join(said) or None
 
 
 
@@ -198,6 +211,8 @@ def continue_proposal(
         component_id=proposal.component_id, element_id=proposal.element_id,
         target_ref=proposal.target_ref, key=proposal.key,
         steps=(*sentences_of(previous), *sentences_of(proposal)),
+        # One run of the whole chain is asked for in each step's own words (#575).
+        request=request_of(previous.request, proposal.request),
     )
 
 

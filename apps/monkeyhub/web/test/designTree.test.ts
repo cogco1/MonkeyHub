@@ -45,6 +45,14 @@ const sourceOf = (fixture: ReturnType<Api["createDesignTreeFixture"]>) => ({
   workingSource: fixture.workingSource(), worktrees: fixture.worktrees(),
 });
 
+/** #575: Riverside's entrance Study weighs a second option, so the entrance chosen there is a choice among others. */
+function secondEntrance(fixture: ReturnType<Api["createDesignTreeFixture"]>) {
+  fixture.state.runs.set("run-entrance-b", { parent: "run-s2-layout", sourceStage: fixture.state.branchHead });
+  fixture.state.candidates.push({ run: "run-entrance-b", label: "Corner entrance", summary: "A corner door at the south-east.",
+    studyId: "study-entrance", admittedBy: "Arch Agent", admittedAt: "2026-09-25T21:50:00Z", continuedFrom: null, acceptedStage: null, blockedBy: [] });
+  fixture.state.studies.find((study) => study.id === "study-entrance")!.candidateIds!.push("run-entrance-b");
+}
+
 /** The #284 layout promises: one left-to-right trunk, N-1 twigs per Study, no crossings, no overlaps. */
 function planarProblems(tree: Tree, drawing: Drawing): string[] {
   const problems: string[] = [];
@@ -184,9 +192,10 @@ test("Continue from an older twig re-roots the trunk and keeps the abandoned fut
   assert.equal([...drawing.nodes.values()].filter((node) => node.role === "twig" && tree.nodes.get(node.id)!.studyId === "study-massing").length, 4);
 });
 
-test("Accept after Continue adds the next Stage on the trunk, from the chosen option", async (t) => {
+test("Accept after Continue adds the next Stage on the trunk, from the option chosen among others", async (t) => {
   const api = await harness(t);
   const fixture = api.createDesignTreeFixture();
+  secondEntrance(fixture);
   fixture.selectWorkingDraft({ projectId: "riverside-library", runId: "run-entrance-a", baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
   let tree = api.buildGrowthTree(sourceOf(fixture));
   assert.equal(tree.accept.allowed, true);
@@ -289,6 +298,7 @@ test("only the option that is a Stage's accepted run reads accepted; the option 
     assert.equal(words.status(tree.nodes.get("candidate:run-massing-c")!), grew,
       "S1's accepted run is a later run: the option it grew from is not what was accepted");
   }
+  secondEntrance(fixture);
   fixture.selectWorkingDraft({ projectId: "riverside-library", runId: "run-entrance-a", baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
   tree = api.buildGrowthTree(sourceOf(fixture));
   fixture.accept(tree.accept.candidateId!, { projectId: "riverside-library", branchId: tree.accept.branchId!, expectedHeadStageRef: tree.accept.expectedHeadStageRef! });
@@ -1029,6 +1039,193 @@ test("the scene draws the folds as controls that open them, at every level, in b
   const words = (scene.skeletons as unknown as { id: string; type: string; text?: string }[])
     .filter((element) => element.type === "text" && element.id.startsWith("fold:")).map((element) => element.text);
   assert.deepEqual(words, ["之前 4 步", "含 2 份已被取代的草稿"]);
+});
+
+// ---- #575 rules 3-5: changes that landed fold like plain steps, a return keeps the line it left, words name the steps.
+
+test("#575 rule 3: changes that landed fold into the earlier steps like plain ones, and the head's own is Current", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture(api.landedChangesFacts());
+  const source = sourceOf(fixture);
+  // Each change was admitted alone on the person's words and continued: each is its own Study of one.
+  assert.deepEqual(source.history.candidates!.map((row) => [row.candidateId, row.inWorkingHeadLineage]),
+    [["run-roof", true], ["run-glazing", true], ["run-materials", true]]);
+  const tree = api.buildGrowthTree(source);
+  assert.deepEqual(tree.trunk, ["origin", "fold", "current"], "the tree shows only the latest step: Current");
+  assert.equal([...tree.nodes.values()].filter((node) => node.kind === "candidate").length, 0, "no landed change is a card of its own");
+  const fold = tree.nodes.get("fold")!;
+  assert.deepEqual(fold.fold!.steps.map((step) => [step.runId, step.label, step.step!.request]), [
+    ["run-frame", null, "Timber frame with hemp-lime walls"], ["run-roof", "Ribbed timber roof", "把屋顶改成木肋拱"],
+    ["run-glazing", "Full-height south glazing", "南立面改成通高玻璃"]]);
+  const current = tree.nodes.get("current")!;
+  assert.deepEqual([current.parent, current.current!.editsAfter, current.current!.request, current.summary],
+    ["fold", 1, "给 238 个构件定材质", "238 components declare their materials; the model wears them."]);
+  assert.deepEqual([tree.freshCandidates, tree.continued.size], [[], 0]);
+  assert.deepEqual(planarProblems(tree, api.layoutGrowthTree(tree)), []);
+  // Opened, the earlier steps stand on the trunk, and each can be continued.
+  const open = api.buildGrowthTree(source, false, { steps: true });
+  assert.deepEqual(open.trunk, ["origin", "step:run-frame", "step:run-roof", "step:run-glazing", "current"]);
+  assert.ok(["step:run-frame", "step:run-roof", "step:run-glazing"].every((id) => api.continuable(open.nodes.get(id)!)));
+  assert.deepEqual(planarProblems(open, api.layoutGrowthTree(open)), []);
+  // A point something else grows from stands on its own: two options weighed from the roof, which nobody took.
+  fixture.state.runs.set("run-glass-a", { parent: "run-roof", sourceStage: null });
+  fixture.state.runs.set("run-glass-b", { parent: "run-roof", sourceStage: null });
+  for (const run of ["run-glass-a", "run-glass-b"]) {
+    fixture.state.candidates.push({ run, label: run === "run-glass-a" ? "Clerestory" : "Full-height", summary: "", studyId: "study-glass",
+      admittedBy: "Arch Agent", admittedAt: "2026-10-01T09:30:00Z", continuedFrom: "run-roof", acceptedStage: null, blockedBy: [] });
+  }
+  fixture.state.studies.push({ id: "study-glass", label: "Glazing options", baseRunId: "run-roof", baseStageRef: null,
+    candidateIds: ["run-glass-a", "run-glass-b"], source: "declared" });
+  const forked = api.buildGrowthTree(sourceOf(fixture));
+  assert.deepEqual(forked.trunk, ["origin", "candidate:run-roof", "step:run-glazing", "current"]);
+  assert.deepEqual(["candidate:run-glass-a", "candidate:run-glass-b"].map((id) => forked.nodes.get(id)!.parent), ["candidate:run-roof", "candidate:run-roof"]);
+  assert.deepEqual(planarProblems(forked, api.layoutGrowthTree(forked)), []);
+  // So does a point work still runs from.
+  fixture.state.running.push({ lineId: "running:job-roof-light", base: "run-glazing", label: "Daylight check", status: "running", detail: null });
+  const working = api.buildGrowthTree(sourceOf(fixture));
+  assert.deepEqual(working.trunk, ["origin", "candidate:run-roof", "candidate:run-glazing", "current"]);
+  assert.equal(working.nodes.get("pending:running:job-roof-light")!.parent, "candidate:run-glazing");
+  assert.deepEqual(planarProblems(working, api.layoutGrowthTree(working)), []);
+});
+
+test("#575 rule 3: a lone option continued is Current itself, and once accepted its Stage follows the one it grew from", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture();
+  const s2 = `stage:${fixture.state.branchHead}`;
+  fixture.selectWorkingDraft({ projectId: "riverside-library", runId: "run-entrance-a", baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
+  let tree = api.buildGrowthTree(sourceOf(fixture));
+  assert.equal(tree.nodes.has("candidate:run-entrance-a"), false, "the only option of its Study, continued, is Current");
+  assert.deepEqual(tree.trunk.slice(-2), [s2, "current"]);
+  assert.deepEqual([tree.nodes.get("current")!.current!.editsAfter, tree.nodes.get("current")!.summary],
+    [1, "A canopy opens the low south bar; you enter through the courtyard."]);
+  assert.deepEqual([tree.accept.allowed, tree.accept.candidateId], [true, "run-entrance-a"]);
+  // Running work that started from S2 still waits there: S2 is the Stage it grew from.
+  assert.equal(tree.nodes.get("pending:running:job-entrance-b")!.parent, s2);
+  assert.deepEqual(planarProblems(tree, api.layoutGrowthTree(tree)), []);
+  fixture.accept(tree.accept.candidateId!, { projectId: "riverside-library", branchId: tree.accept.branchId!, expectedHeadStageRef: tree.accept.expectedHeadStageRef! });
+  tree = api.buildGrowthTree(sourceOf(fixture));
+  const s3 = `stage:${fixture.state.branchHead}`;
+  assert.deepEqual(tree.trunk.slice(-3), [s2, s3, "current"]);
+  assert.equal(tree.nodes.get(s3)!.parent, s2);
+  assert.equal(tree.nodes.has("candidate:run-entrance-a"), false);
+  assert.deepEqual(planarProblems(tree, api.layoutGrowthTree(tree)), []);
+});
+
+test("#575 rule 4: after a return, the line Current left stays after it, faintly, and any of its steps can be continued again", async (t) => {
+  const api = await harness(t);
+  const project = "riverside-library";
+  const fixture = api.createDesignTreeFixture(api.landedChangesFacts());
+  const read = fixture.workingDraft();
+  fixture.selectWorkingDraft(api.continueRequest(project, { runId: "run-roof", branchId: null }, read));
+  const source = sourceOf(fixture);
+  assert.deepEqual(source.worktrees.later.map((step) => [step.runId, step.baseRunId]), [["run-glazing", "run-roof"], ["run-materials", "run-glazing"]]);
+  const tree = api.buildGrowthTree(source);
+  assert.deepEqual(tree.trunk, ["origin", "step:run-frame", "current"]);
+  assert.deepEqual(tree.later, ["later:run-glazing", "later:run-materials"]);
+  assert.deepEqual(tree.later.map((id) => [tree.nodes.get(id)!.kind, tree.nodes.get(id)!.parent, tree.nodes.get(id)!.step!.number]),
+    [["later", "current", 3], ["later", "later:run-glazing", 4]]);
+  assert.equal([...tree.nodes.values()].some((node) => node.kind === "candidate"), false, "the changes it left are its later steps, not options");
+  assert.ok(tree.later.every((id) => api.continuable(tree.nodes.get(id)!)));
+  assert.equal(tree.nodes.get("current")!.current!.request, "把屋顶改成木肋拱");
+  for (const [catalog, words] of [
+    [messagesZhCN, ["南立面改成通高玻璃", "后续第 3 步 · 可再继续", "给 238 个构件定材质", "「把屋顶改成木肋拱」", "后续"]],
+    [messagesEn, ["南立面改成通高玻璃", "Later step 3 · continue again", "给 238 个构件定材质", "“把屋顶改成木肋拱”", "Later"]]] as const) {
+    const named = api.treeWords(translator(catalog) as never, tree);
+    assert.deepEqual([named.title(tree.nodes.get("later:run-glazing")!), named.status(tree.nodes.get("later:run-glazing")!),
+      named.title(tree.nodes.get("later:run-materials")!), named.scene.currentRequest, catalog["designTree.list.later"]], words);
+    assert.equal(named.lineRun("run-materials"), "给 238 个构件定材质", "a fact can name a later step");
+  }
+  const drawing = api.layoutGrowthTree(tree);
+  assert.deepEqual(planarProblems(tree, drawing), []);
+  // Drawn after Current along its row, quiet, and joined to it by a quiet line.
+  const [glazing, materials, current] = ["later:run-glazing", "later:run-materials", "current"].map((id) => drawing.nodes.get(id)!);
+  assert.ok(glazing.y === current.y && materials.y === current.y && glazing.x > current.x + current.card.width && materials.x > glazing.x + glazing.card.width);
+  assert.ok(glazing.muted && materials.muted);
+  assert.deepEqual(drawing.edges.filter((edge) => edge.to.startsWith("later:")).map((edge) => [edge.from, edge.to, edge.kind]),
+    [["current", "later:run-glazing", "muted-twig"], ["later:run-glazing", "later:run-materials", "branch"]]);
+  for (const level of ["far", "mid", "close"] as const) {
+    const scene = api.buildTreeScene(tree, drawing, { level, textScale: level === "far" ? 4 : 1, selected: null, fontFamily: 2,
+      words: api.treeWords(translator(messagesZhCN) as never, tree).scene });
+    assert.ok(tree.later.every((id) => scene.hits.some((hit) => hit.node === id && hit.action === "select")), `${level}: each later step can be selected`);
+    if (level !== "far") assert.ok((scene.skeletons as unknown as { id: string; opacity?: number }[])
+      .filter((element) => element.id.startsWith("later:") && element.id.endsWith(":card")).every((element) => element.opacity === 45), "drawn faintly");
+  }
+  // Continued again, a later step is Current and the rest of the line still follows it.
+  fixture.selectWorkingDraft({ projectId: project, runId: "run-glazing", baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
+  const again = api.buildGrowthTree(sourceOf(fixture));
+  assert.deepEqual([again.trunk, again.later], [["origin", "fold", "current"], ["later:run-materials"]]);
+  assert.deepEqual(again.nodes.get("fold")!.fold!.steps.map((step) => step.runId), ["run-frame", "run-roof"]);
+  assert.deepEqual(planarProblems(again, api.layoutGrowthTree(again)), []);
+  // The Undo of the return puts the line back: nothing is left after Current.
+  fixture.selectWorkingDraft({ projectId: project, runId: "run-materials", baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
+  const back = api.buildGrowthTree(sourceOf(fixture));
+  assert.deepEqual([back.trunk, back.later], [["origin", "fold", "current"], []]);
+  // A later step a fork left behind, or one the graph names for another head, is not drawn after Current.
+  const stale = api.buildGrowthTree({ ...sourceOf(fixture), worktrees: { ...sourceOf(fixture).worktrees,
+    later: [{ runId: "run-x", baseRunId: "run-roof", label: null, request: null, summary: null, stageRef: null, updatedAt: null }] } });
+  assert.deepEqual(stale.later, []);
+  // A runtime from before later lines draws none.
+  const older = api.buildGrowthTree({ ...sourceOf(fixture), worktrees: { ...sourceOf(fixture).worktrees, later: undefined } as never });
+  assert.deepEqual(older.later, []);
+});
+
+test("#575 rule 4: where the line Current left forked, it goes on along the branch Current stood on last", async (t) => {
+  const api = await harness(t);
+  const project = "riverside-library";
+  const fixture = api.createDesignTreeFixture(api.landedChangesFacts());
+  // From the roof the person once also went on to a second glazing, then back to the materials, then returned to the roof.
+  fixture.state.runs.set("run-glazing-2", { parent: "run-roof", sourceStage: null });
+  fixture.state.results.push("run-glazing-2");
+  fixture.state.requests.set("run-glazing-2", "南立面改成高侧窗");
+  const move = (runId: string) => fixture.selectWorkingDraft({ projectId: project, runId, baseRevisionSha256: fixture.workingDraft().revisionSha256 ?? null });
+  move("run-glazing-2");
+  move("run-materials");
+  move("run-roof");
+  assert.deepEqual(api.buildGrowthTree(sourceOf(fixture)).later, ["later:run-glazing", "later:run-materials"]);
+  move("run-glazing-2");
+  move("run-roof");
+  const tree = api.buildGrowthTree(sourceOf(fixture));
+  assert.deepEqual(tree.later, ["later:run-glazing-2"]);
+  assert.deepEqual(planarProblems(tree, api.layoutGrowthTree(tree)), []);
+});
+
+test("#575 rule 5: a step is named by the words that asked for it, and a name it was also given is said beside them", async (t) => {
+  const api = await harness(t);
+  const fixture = api.createDesignTreeFixture(api.unadmittedLineFacts());
+  fixture.state.requests.set("run-v2", "Pitch the roof and open the gables");
+  const tree = api.buildGrowthTree(sourceOf(fixture), false, { steps: true });
+  const v2 = tree.nodes.get("step:run-v2")!;
+  const en = api.treeWords(translator(messagesEn) as never, tree), zh = api.treeWords(translator(messagesZhCN) as never, tree);
+  assert.deepEqual([en.title(v2), v2.label], ["Pitch the roof and open the gables", "V2 - pitched roof, open gable ends"]);
+  assert.equal(en.title(tree.nodes.get("step:run-v1")!), "V1 - timber frame and hemp walls", "without words, its name");
+  assert.equal(en.title(tree.nodes.get("step:run-site-massing")!), "Step 1", "without either, its place on the line");
+  assert.deepEqual([en.scene.currentRequest, zh.scene.currentRequest, en.status(tree.nodes.get("current")!)],
+    ["“Give V3's walls and ribs their materials”", "「Give V3's walls and ribs their materials」", "“Give V3's walls and ribs their materials”"]);
+  // Current's card says the words first and where it stands after them, both inside the card at every size.
+  const drawing = api.layoutGrowthTree(tree);
+  const card = drawing.nodes.get("current")!.card;
+  type Text = { id: string; type: string; x: number; y: number; text?: string; fontSize?: number };
+  for (const [level, textScale] of [["mid", 1], ["mid", 2], ["close", 1]] as const) {
+    for (const words of [en, zh]) {
+      const scene = api.buildTreeScene(tree, drawing, { level, textScale, selected: null, fontFamily: 2, words: words.scene });
+      const texts = (scene.skeletons as unknown as Text[]).filter((element) => element.type === "text" && element.id.startsWith("current:"));
+      const request = texts.find((element) => element.id === "current:request")!, at = texts.find((element) => element.id === "current:summary");
+      assert.ok(request.text!.includes("Give V3"), `${level} ${textScale}: ${JSON.stringify(texts.map((row) => row.text))}`);
+      // Where it stands follows on the card's second line, as far as it fits; a larger text keeps only the words.
+      if (textScale === 1) assert.ok(at && request.y < at.y && words.currentAt().startsWith(at.text!.replace(/…$/, "")), at?.text);
+      for (const element of [request, at].filter((row): row is Text => Boolean(row))) {
+        const right = element.x + Math.max(...element.text!.split("\n").map((row) => api.textWidth(row, element.fontSize!)));
+        const bottom = element.y + element.text!.split("\n").length * element.fontSize! * 1.2;
+        assert.ok(element.x >= card.x && right <= card.x + card.width + 1e-6 && bottom <= card.y + card.height + 1e-6, `"${element.text}" leaves Current`);
+      }
+    }
+  }
+  // Without words, Current says where it stands, as before.
+  fixture.state.requests.delete("run-v3-materials");
+  const plain = api.buildGrowthTree(sourceOf(fixture));
+  const words = api.treeWords(translator(messagesEn) as never, plain);
+  const scene = api.buildTreeScene(plain, api.layoutGrowthTree(plain), { level: "mid", textScale: 1, selected: null, fontFamily: 2, words: words.scene });
+  assert.equal((scene.skeletons as unknown as Text[]).some((element) => element.id === "current:request"), false);
 });
 
 // ---- #575 slice 4: the drafts the project cleaned into its trash, and Restore.
