@@ -315,8 +315,52 @@ try {
     assert.equal(await workspace().locator('.render-model-canvas').isVisible(), false, 'no blank canvas when no model is loaded');
   });
   await step("project and workspace switches preserve inputs, stop hidden polling and do not cancel or resend", async () => {
-    await direction().fill("SLOW afternoon"); await generate().click();
-    await until(jobs, (r) => r.jobs.some((j) => j.status === "running"), "running offline job");
+    // Hold POST before admission, then read the old history during submission.
+    // Its later arrival must not erase the accepted attempt or allow another paid call.
+    const sourceBefore = await workspace().getByRole("combobox", { name: "Source image", exact: true }).inputValue();
+    const providerBefore = await workspace().getByRole("combobox", { name: "AI engine", exact: true }).inputValue();
+    const createsBefore = requests.filter(r => r.method === "POST" && r.url.endsWith("/project-a/api/render/jobs")).length;
+    let releaseSubmit, releaseHistory, submitHeld = false, oldHistory;
+    const submitGate = new Promise(resolve => { releaseSubmit = resolve; });
+    const historyGate = new Promise(resolve => { releaseHistory = resolve; });
+    const jobsRoute = "**/project-a/api/render/jobs";
+    await page.route(jobsRoute, async route => {
+      if (route.request().method() === "POST") {
+        submitHeld = true; await submitGate; await route.continue();
+      } else {
+        const response = await route.fetch(); oldHistory = await response.json();
+        await historyGate; await route.fulfill({ response });
+      }
+    });
+    try {
+      await direction().fill("SLOW afternoon"); await generate().click();
+      await until(() => submitHeld, Boolean, "submission held before admission");
+      await refresh().click();
+      await until(() => oldHistory, value => value?.jobs.length === 1, "old history captured during submission");
+      assert.equal(oldHistory.jobs[0].jobId, first.jobId);
+      assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 1, "held submission has not called the provider");
+      releaseSubmit();
+      await until(jobs, r => r.jobs.some(j => j.status === "running"), "running offline job");
+      await until(() => history().count(), n => n === 2, "accepted attempt is visible before releasing the old read");
+      assert.equal(await generate().isDisabled(), true, "accepted attempt blocks a second submission");
+      releaseHistory();
+      await until(() => refresh().isEnabled(), Boolean, "old history response finished");
+      const pending = history().filter({ hasText: "SLOW afternoon" });
+      assert.equal(await pending.count(), 1, "late history must not erase the accepted attempt");
+      assert.match(await pending.innerText(), /Queued|Running/);
+      assert.equal(await generate().isDisabled(), true, "late history must not re-enable Generate");
+      assert.equal(await workspace().locator('.render-image img').last().getAttribute("alt"), first.document.fileName, "previous successful image stays visible");
+      assert.equal(await workspace().getByRole("combobox", { name: "Source image", exact: true }).inputValue(), sourceBefore);
+      assert.equal(await workspace().getByRole("combobox", { name: "AI engine", exact: true }).inputValue(), providerBefore);
+      const accepted = (await jobs()).jobs.find(job => job.request.direction === "SLOW afternoon");
+      assert.deepEqual(accepted.request.source, source);
+      assert.equal(accepted.providerId, providerBefore);
+      assert.equal(requests.filter(r => r.method === "POST" && r.url.endsWith("/project-a/api/render/jobs")).length - createsBefore, 1);
+      assert.equal((await api("project-a", "/fixture/metrics")).calls.length, 2, "one new provider invocation");
+      console.log("PASS controlled submit-refresh ordering: pending visible, Generate disabled, prior result/source/provider retained, one create/call");
+    } finally {
+      releaseSubmit(); releaseHistory(); await page.unroute(jobsRoute);
+    }
     await page.getByRole("button", { name: "Project B", exact: true }).click();
     await direction().waitFor(); assert.equal(await direction().inputValue(), "");
     await delay(500); const count = requests.filter((r) => r.url.includes("project-a/api/render/")).length;

@@ -234,6 +234,15 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node test/elevation.browser.mjs
 
+      - name: Install Render fixture test dependencies
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        run: python -m pip install -e 'packages/monkeycad[occt]' 'httpx2>=2.12'
+
+      - name: Render workspace browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/renderWorkspace.browser.mjs
+
       # Stage interactions against in-memory fixtures, no project API (#355).
       - name: Push/Pull browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
