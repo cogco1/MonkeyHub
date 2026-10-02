@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { chatCopy as chatEn, hubCopy as hubEn, messagesEn } from "../src/i18n/messages.en.ts";
 import { chatCopy as chatZhCN, hubCopy as hubZhCN, messagesZhCN } from "../src/i18n/messages.zh-CN.ts";
+import { translateMessage } from "../../../../packages/web-shared/src/i18n.js";
 
 const placeholders = (message: string) => [...message.matchAll(/\{(\w+)\}/g)].map((match) => match[1]).sort();
 
@@ -55,4 +56,25 @@ test("the tracing-paper review controls are clear in both languages", () => {
     [messagesZhCN["stage.tools.annotate"], messagesZhCN["stage.tracingPaper.send"], messagesZhCN["stage.tracingPaper.sent"]],
     ["描图纸", "将审阅意见发送到画板", "审阅意见已发送到画板"],
   );
+});
+
+test("Board lifecycle, export and replacement consistently name the Board in each catalog", () => {
+  const keys = ["board.loading", "board.loadFailed", "board.title", "board.conflict", "board.export", "board.exportEmpty", "board.replacement.hint"] as const;
+  for (const key of keys) {
+    assert.match(messagesEn[key], /\bboard\b/i, key);
+    assert.match(messagesZhCN[key], /画板/, key);
+    assert.doesNotMatch(messagesZhCN[key], /画布|图墙|白板/, key);
+    assert.doesNotMatch(messagesEn[key], /canvas|whiteboard|drawing wall/i, key);
+  }
+  assert.equal(messagesEn["board.retry"], "Retry");
+  assert.equal(messagesZhCN["board.retry"], "重试");
+});
+
+test("Board replacement notices interpolate names and counts without interpreting filename placeholders", () => {
+  const name = "Review {count} {name}.png";
+  assert.equal(translateMessage(messagesEn, "board.replacement.updated", { name }), `«${name}» updated`);
+  assert.equal(translateMessage(messagesZhCN, "board.replacement.updated", { name }), `«${name}» 已更新`);
+  assert.equal(translateMessage(messagesEn, "board.replacement.updatedMore", { name, count: 2 }), `«${name}» updated · 2 more updated`);
+  assert.equal(translateMessage(messagesZhCN, "board.replacement.updatedMore", { name, count: 2 }), `«${name}» 已更新 · 另有 2 页已更新`);
+  assert.deepEqual(placeholders(messagesEn["board.replacement.updatedMore"]), ["count", "name"]);
 });
