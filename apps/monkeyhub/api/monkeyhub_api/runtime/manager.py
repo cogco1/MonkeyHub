@@ -4,6 +4,9 @@ No operation is replayed by a watcher or by recovery. A lost HTTP response is
 reconciled against retained results; absence of proof remains visible. The Hub
 reads an open project through its binding and writes nothing to it: the open
 project's runtime is its only writer (ADR-012), and a change goes through it.
+Nothing in the Hub watches the project either: what moves it is the Hub's own
+requests, which wake its observer, and the runtime's index commits, which the
+Hub hears on the worker's event stream.
 """
 
 from collections import deque
@@ -29,7 +32,7 @@ from project_runtime.application.artifacts import (
     document_bytes,
     list_document_work_copies,
 )
-from project_runtime.binding import ProjectBinding, ReadToken
+from project_runtime.binding import ProjectBinding
 from project_runtime.events import StudioEvents
 from project_runtime.errors import StudioError
 
@@ -62,13 +65,20 @@ _WORK_COPY_CONTENT_REFRESH_NS = _IDLE_RETAINED_REFRESH_S * 1_000_000_000
 # list_documents; a drawing's receipt only adds who made it and why). If
 # another kind ever decides that, the work-copy key below has to name it too.
 _DOCUMENT_RECORD_KINDS = (STUDIO_SOURCE_DOCUMENT, STUDIO_DOCUMENT_MODEL_SOURCE)
-# How often an unwoken watcher asks the project's read token whether that key
-# can have moved. The key is read again only when the token moved, or had not
-# settled when it was last read (#599). A check asks at once; a Hub mutation
-# reads the key at once.
+# How often an unwoken observer asks whether that key can have moved: whether
+# the worker committed to the project's index since the key was last read
+# (#599, ADR-012). A check asks at once; a Hub mutation reads the key at once.
 _WORK_COPY_CHECK_S = _IDLE_RETAINED_REFRESH_S
 # How many of each project's Studio events the Hub keeps to open a new page's panel with.
 _STUDIO_REPLAY = 200
+# Forwarded POSTs that read and never change the project, so no operation is
+# admitted for them: a body names what to read, or the project is read again.
+_READ_POSTS = frozenset({"/api/state/closure", "/api/pick/resolve", "/api/project/refresh"})
+# Reading the project again (ADR-012): the Hub reads it again too, whole.
+_REFRESH_PATH = "/api/project/refresh"
+# The domains of an index commit that do not say the project moved: a thumbnail
+# drawn, or the index loaded or rebuilt from the project as it was.
+_UNMOVED_DOMAINS = frozenset({"projections", "reset"})
 
 
 def binding_signature(project_dir: str) -> tuple[int, int, int, bool] | None:
@@ -185,6 +195,10 @@ class ProjectRuntime:
     # ``binding_signature`` when the binding was last verified. ``get`` checks
     # the project again only once these two stats move (#363).
     binding_signature: tuple | None = None
+    # How many of the worker's index commits the Hub has heard for this
+    # project that say it moved (``index_hint``): the observer's idle reads
+    # compare it, since nothing watches the project (ADR-012).
+    index_moves: int = 0
 
 
 class ProjectRuntimeManager:
@@ -251,8 +265,23 @@ class ProjectRuntimeManager:
         self.events.publish(event={"kind": kind, "runtimeId": runtime_id})
 
     def index_hint(self, runtime_id: str, index: dict | None) -> None:
-        """Tell attached clients that a project's index moved (``index``), or may have (None): read it again."""
+        """Tell attached clients that a project's index moved (``index``), or may have (None): read it again.
 
+        The project's observer counts a commit that says the project moved
+        (``ProjectRuntime.index_moves``): its idle reads follow the runtime's
+        commits, since nothing watches the project (ADR-012). A thumbnail drawn
+        (``projections``), the index loaded or rebuilt from the project as it
+        was (``reset``), and a hint without a revision (a first attachment, a
+        worker stream that restarted) are not counted: a worker that started or
+        restarted is read again on its own state change.
+        """
+
+        if index is not None and set(index.get("domains") or ()) - _UNMOVED_DOMAINS:
+            with self._lock:
+                runtime = self._projects.get(runtime_id)
+            if runtime is not None:
+                with runtime.lock:
+                    runtime.index_moves += 1
         self.events.publish(event={"kind": "index/committed", "runtimeId": runtime_id, "index": index})
 
     def studio_event(self, runtime_id: str, stream: str | None, event: dict) -> None:
@@ -767,26 +796,21 @@ class ProjectRuntimeManager:
             self._watch_project(runtime)
         finally:
             self._stop_following(runtime.runtime_id)
-            # The binding's layout watch holds the project folder open; a
-            # runtime that stopped observing lets go of it, and one opened
-            # again watches again on its first read.
+            # The Hub's binding follows no layout and holds nothing open; it is
+            # closed with the observer all the same.
             runtime.binding.close()
 
     def _watch_project(self, runtime: ProjectRuntime):
         next_retained_read = next_work_copy_check = 0.0
         last_snapshot_inputs = last_retained = None
-        # The project's read token when the last successful refresh began;
-        # None when the watch had published none yet.
-        last_token: ReadToken | None = None
-        # The same for the last successful derivation of which work copies exist.
-        last_copy_token: ReadToken | None = None
-        # Taken as observing starts, not on the first idle fallback: the watch
-        # walks the project on its own thread while the opening pass reads it,
-        # so the reads after that record the token they began under, and the
-        # first idle question after an open asks nothing again when nothing
-        # moved (#435, #599). Nothing waits for that walk here.
-        with suppress(OSError):
-            runtime.binding.layout_watch()
+        # How many of the worker's index commits the Hub had heard when the
+        # last successful retained read began (``index_moves``); None before
+        # the first. The same for the last successful derivation of which
+        # work copies exist. Nothing watches the project (ADR-012): it moves
+        # through the Hub's own requests, which wake this observer, and the
+        # runtime's commits, which these count. Comparing them reads nothing.
+        read_at: int | None = None
+        derived_at: int | None = None
         while not self._closing.is_set():
             force_read = runtime.wake.take()
             checked = runtime.wake.take_check()
@@ -799,35 +823,28 @@ class ProjectRuntimeManager:
             prompted = drained or force_read or active or worker_states != runtime.last_workers
             due = prompted or checked or time.monotonic() >= next_retained_read
             try:
-                token = None
-                if due and not prompted:
-                    # Only the idle fallback asks, and it asks only whether a
-                    # separate client changed the project. If nothing on disk
-                    # moved since the last such read - an equal, stable read
-                    # token - the retained history is not read again. The
-                    # binding's layout watch keeps that token current on its
-                    # own thread, so asking walks nothing (#363).
-                    token = runtime.binding.read_token()
-                    if last_token is not None and last_token.stable and token == last_token:
-                        due = False
-                        next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
+                moves = runtime.index_moves
+                if due and not prompted and read_at == moves:
+                    # Only the idle fallback or a page opening the project
+                    # again asks, and only whether a separate client changed
+                    # the project through its runtime. With no index commit
+                    # heard since the last read, the retained history is not
+                    # read again (#363, ADR-012).
+                    due = False
+                    next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 if due:
                     # Keep liveness/session reads responsive without rebuilding
                     # unchanged retained history on every idle heartbeat. Hub
                     # mutations wake this observer; the fallback sees changes
-                    # made through a separate Studio/project client.
-                    last_token = None
-                    if token is None:
-                        # Every read records the token it began under, so the
-                        # first idle fallback after an open or a wake is skipped
-                        # too when nothing moved since. Not waited for: before
-                        # the watch's first walk there is none, and the next
-                        # idle fallback reads as it always did (#435).
-                        token = runtime.binding.read_token(wait=False)
+                    # made through a separate Studio/project client once the
+                    # runtime has committed them.
+                    read_at = None
                     self.refresh(runtime, cold=drained)
                     next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
-                    # Taken before the read began, and kept only once it succeeded.
-                    last_token = token
+                    # Counted before the read began, and kept only once it
+                    # succeeded: the first idle fallback after an open or a
+                    # wake reads nothing when nothing moved since (#435).
+                    read_at = moves
             except (HubFailure, StudioError, OSError, HTTPException, ValueError) as exc:
                 next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 with runtime.lock:
@@ -840,30 +857,25 @@ class ProjectRuntimeManager:
             try:
                 # Which copies exist is derived again on a Hub mutation's wake
                 # and on a drained runtime's last pass. A check and the idle
-                # cadence first ask the project's read token, as the retained
-                # read does: deriving lists the document records of every run
-                # (#599), and an equal, stable token says that nothing deciding
-                # the copies moved since the last derivation. Their metadata is
-                # still watched every heartbeat, with bounded content reads
-                # after a copy has settled.
-                derive, copy_token = False, None
+                # cadence first ask whether the runtime committed since the
+                # last derivation, as the retained read does: deriving lists
+                # the document records of every run (#599). The copies already
+                # known are still looked at every heartbeat, each file on its
+                # own, with bounded content reads after a copy has settled
+                # (ADR-012: nothing else is watched).
+                derive = False
                 if force_read or drained or checked or time.monotonic() >= next_work_copy_check:
                     next_work_copy_check = time.monotonic() + _WORK_COPY_CHECK_S
-                    if force_read or drained:
-                        # As for the retained read, not waited for (#435).
-                        derive, copy_token = True, runtime.binding.read_token(wait=False)
-                    else:
-                        copy_token = runtime.binding.read_token()
-                        derive = not (last_copy_token is not None and last_copy_token.stable
-                                      and copy_token == last_copy_token)
+                    moves = runtime.index_moves
+                    derive = force_read or drained or derived_at != moves
                 if derive:
-                    last_copy_token = None
+                    derived_at = None
                     inputs = self._work_copy_inputs(runtime)
                     if inputs != runtime.work_copy_key:
                         self.bind_work_copies(runtime)
                         runtime.work_copy_key = inputs
-                    # Taken before the derivation began, and kept only once it succeeded.
-                    last_copy_token = copy_token
+                    # Counted before the derivation began, and kept only once it succeeded.
+                    derived_at = moves
                 self._observe_work_copies(runtime)
             except (StudioError, ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:
                 with runtime.lock:
@@ -922,7 +934,7 @@ class ProjectRuntimeManager:
             payload = {}
         if isinstance(payload, dict) and payload.get("projectId", runtime.project_id) != runtime.project_id:
             raise HubFailure(409, "PROJECT_MISMATCH", "This request names another project.")
-        mutation = method not in {"GET", "HEAD", "OPTIONS"} and not parsed.path.startswith("/api/events/") and parsed.path not in {"/api/state/closure", "/api/pick/resolve"}
+        mutation = method not in {"GET", "HEAD", "OPTIONS"} and not parsed.path.startswith("/api/events/") and parsed.path not in _READ_POSTS
         if method == "POST" and parsed.path == "/api/drawing-recipes/inspect":
             mutation = False  # File validation is a read, including a refused file.
         admission = None
@@ -983,9 +995,11 @@ class ProjectRuntimeManager:
                 result.headers["X-Monkey-Operation-Id"] = admission.record.operationId
                 runtime.operations.replied(admission, result)
                 self.emit("operation/progress" if admission.record.status in _ACTIVE else f"operation/{admission.record.status}", runtime.runtime_id)
-            if mutation:
+            if mutation or (parsed.path == _REFRESH_PATH and result.status < 400):
                 # A read changes nothing retained. Waking on every one made each
-                # page poll re-read the project's history (#314).
+                # page poll re-read the project's history (#314). Reading the
+                # project again is the exception: the person asked for it, and
+                # the Hub reads it again too, whole (ADR-012).
                 runtime.wake.set()
             return result
         except (OSError, TimeoutError, HTTPException, HubFailure) as exc:

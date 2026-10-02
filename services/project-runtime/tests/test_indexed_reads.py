@@ -7,7 +7,9 @@ and, since #599, the design tree's views - is compared byte for byte before
 a write, after this process's writes and after another process's write, and
 is shown to answer from its rows rather than from the runs. The index is
 written only by its keeper's thread; a request only reads a snapshot of it,
-and falls back to the runs whenever the index cannot answer.
+and falls back to the runs whenever the index cannot answer. Nothing watches
+the project (ADR-012): another process's write is read when the project is
+read again (``POST /api/project/refresh``).
 """
 
 from __future__ import annotations
@@ -60,8 +62,8 @@ TREE_READS = (
 )
 MODEL_BYTES = b"project-index-3dm"
 MODEL_SHA256 = hashlib.sha256(MODEL_BYTES).hexdigest()
-# The threads that keep the index and the layout watch, which read the runs by design.
-BACKGROUND = ("project-index:", "layout-watch:", "projection-")
+# The threads that keep the index and re-check the layout, which read the runs by design.
+BACKGROUND = ("project-index:", "layout-recheck:", "projection-")
 
 
 class IndexedReadTests(WorkingSourceFixture):
@@ -89,13 +91,18 @@ class IndexedReadTests(WorkingSourceFixture):
         return binding
 
     def caught_up(self, binding) -> None:
-        """Let the watch see what the test did behind its back, and the index apply it."""
+        """Read the project again, as a refresh does: the test changed it behind both processes' backs.
 
-        seen = binding.layout_watch().sync()
+        The indexed binding's index applies the reading before ``refresh``
+        returns; the plain process reads it again too.
+        """
+
+        binding.refresh()
         keeper = binding.await_index(30)
-        self.assertTrue(wait_until(lambda: keeper.state is not None
-                                   and keeper.state.digest == seen.fingerprint.digest, 10))
+        self.assertTrue(wait_until(lambda: keeper.state is not None and keeper.state.digest
+                                   == binding.known_layout().latest().fingerprint.digest, 10))
         self.assertIsNotNone(keeper.wait_readable(10))
+        bound_project(self.app.state).refresh()
 
     def document(self, name: str) -> dict:
         response = self.client.post("/api/documents", json={
@@ -155,6 +162,56 @@ class IndexedReadTests(WorkingSourceFixture):
         rows = {row["fileName"]: row["available"] for row in self.indexed.get("/api/artifacts").json()["artifacts"]
                 if row["runId"] == REFERENCE_RUN_ID}
         self.assertFalse(rows["model.3dm"])
+
+    def test_an_outside_edit_is_read_on_refresh_and_not_before(self) -> None:
+        """ADR-012: nothing watches the project; what changed outside MonkeyHub is read when it is read again."""
+
+        stage = self.initialize()
+        candidate = self.candidate_from(stage)
+        binding = self.binding()
+        settle(self.project_dir)
+        self.caught_up(binding)
+        worktrees = self.indexed.get("/api/worktrees")
+        self.assertEqual(worktrees.status_code, 200, worktrees.text)
+        self.assertIn(candidate, worktrees.text)
+        index = self.indexed.get("/api/index").json()
+        self.assertIn(f"run:{candidate}", [entity["id"] for entity in index["upserts"]])
+        since = {"since": index["revision"], "epoch": index["epoch"]}
+
+        # Moved out of the project folder by hand: this process wrote nothing.
+        os.rename(self.repository.layout.runs / candidate, self.project_dir / f"{candidate}.outside")
+        time.sleep(1.5)  # a watch would have seen it by now
+        self.assertEqual(self.indexed.get("/api/worktrees", headers={"If-None-Match": worktrees.headers["etag"]})
+                         .status_code, 304)
+        unmoved = self.indexed.get("/api/index", params=since).json()
+        self.assertEqual((unmoved["to"], unmoved["upserts"], unmoved["deletes"]), (index["revision"], [], []))
+
+        refreshed = self.indexed.post("/api/project/refresh", json={"projectId": PROJECT_ID})
+        self.assertEqual(refreshed.status_code, 200, refreshed.text)
+        answer = refreshed.json()
+        self.assertTrue(answer["changedOutside"])
+        self.assertIn(f"runs/{candidate}", answer["moved"])
+        self.assertEqual(answer["movedCount"], len(answer["moved"]))
+        self.assertEqual(refreshed.headers["x-monkey-index"].split(":")[0], index["epoch"])
+
+        after = self.indexed.get("/api/worktrees", headers={"If-None-Match": worktrees.headers["etag"]})
+        self.assertEqual(after.status_code, 200)
+        self.assertNotEqual(after.content, worktrees.content)
+        moved = self.indexed.get("/api/index", params=since).json()
+        self.assertGreater(moved["to"], index["revision"])
+        self.assertIn(f"run:{candidate}", moved["deletes"])
+        self.assertEqual(int(refreshed.headers["x-monkey-index"].split(":")[1]), moved["to"])
+        # The plain process, read again too, answers the same bytes.
+        self.assertTrue(self.client.post("/api/project/refresh", json={"projectId": PROJECT_ID}).json()["changedOutside"])
+        self.assertEqual(after.content, self.client.get("/api/worktrees").content)
+        self.assertFalse(self.indexed.post("/api/project/refresh", json={"projectId": PROJECT_ID})
+                         .json()["changedOutside"], "read again with nothing moved since")
+
+    def test_a_refresh_answers_only_for_its_own_project(self) -> None:
+        self.binding()
+        refused = self.indexed.post("/api/project/refresh", json={"projectId": "another-project"})
+        self.assertEqual((refused.status_code, refused.json()["code"]), (404, "PROJECT_NOT_FOUND"))
+        self.assertEqual(self.indexed.post("/api/project/refresh", json={}).status_code, 422)
 
     def test_no_request_projects_and_this_process_writes_are_read_at_once(self) -> None:
         binding = self.binding()
@@ -401,7 +458,7 @@ class IndexedReadTests(WorkingSourceFixture):
         self.assertEqual(self.indexed.get("/api/artifacts").content, self.client.get("/api/artifacts").content)
 
     def test_a_binding_nobody_holds_stops_its_keeper(self) -> None:
-        binding = ProjectBinding.open(self.indexed_app.state.settings)
+        binding = ProjectBinding.open(self.indexed_app.state.settings, follows_layout=True)
         keeper = attach_project_index(binding, self.index_dir)
         self.assertIsNotNone(keeper.wait_loaded(30), keeper.failure)
         thread = keeper._thread
@@ -475,7 +532,7 @@ class IndexedReadTests(WorkingSourceFixture):
                 self.assertEqual({status for status, _ in unchanged}, {304})
                 for answered in (read, unchanged):
                     self.assertLess(statistics.median([ms for _, ms in answered]), 20)
-        self.assertEqual({name for name in callers if not name.startswith(("layout-watch:", "project-index:"))},
+        self.assertEqual({name for name in callers if not name.startswith(("layout-recheck:", "project-index:"))},
                          set(), "a request thread read the project")
 
     def test_a_started_worker_prepares_its_first_views_before_any_request_asks(self) -> None:

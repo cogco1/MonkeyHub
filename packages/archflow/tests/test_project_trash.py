@@ -33,7 +33,7 @@ from archflow.project.repository import (
     RunNotTrashed,
     TrashEntryNotFound,
 )
-from archflow.project.watch import watch_layout
+from archflow.project.watch import KnownLayout
 
 PROJECT_ID = "building"
 TRASHED = "2026-10-01T09:00:00+00:00"
@@ -408,7 +408,9 @@ class TrashIndexTests(_TrashCase):
         projector = _Projector(self.repo)
         index = ProjectIndex(self.temporary / "cache", projector=projector,
                              stamp=lambda: manifest_stamp(self.root, projector_version=projector.version, project_id=PROJECT_ID))
-        keeper = IndexKeeper(index, watch_layout(self.root, notify=False), name="trash")
+        layout = KnownLayout(self.root)
+        self.addCleanup(layout.close)
+        keeper = IndexKeeper(index, layout, name="trash")
         keeper.start()
         self.addCleanup(keeper.stop)
         self.assertIsNotNone(keeper.wait_loaded(30), keeper.failure)

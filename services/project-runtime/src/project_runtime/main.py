@@ -345,7 +345,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     waiting is the difference between a service that stops and one that stops
     cleanly. Closing the binding stops its project index's keeper - what it had
     not applied yet, the next open reconciles from the project's layout - and
-    its layout watch, which holds the project folder open.
+    closes its layout, cancelling a re-check still to come. Nothing watches
+    the project while it is open (ADR-012).
     """
 
     if app.state.settings.service_role != SHARED_PROJECT_ROLE:
@@ -380,9 +381,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     await run_in_threadpool(app.state.jobs.shutdown)
     binding = getattr(app.state, "binding", None)
     if binding is not None:
-        # Its layout watch holds a handle on the project folder, and its index
-        # keeper the index file and its lock: let go of both with the project,
-        # not whenever the process happens to exit.
+        # Its index keeper holds the index file and its lock, and its layout
+        # may have a re-check to come: let go of both with the project, not
+        # whenever the process happens to exit.
         await run_in_threadpool(binding.close)
 
 

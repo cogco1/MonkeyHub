@@ -96,6 +96,7 @@ tolerate it.
 | GET | `/api/projects` | the projects this server binds: `projectId`, `name`, `isDefault`. Path-free | none | stable |
 | GET | `/api/projects/{projectId}` | that project's binding: `head`, `referenceRun`, `intentProvider` | reads published + shared | stable |
 | GET | `/api/project` | the same, for the default project (§10.2) | reads published + shared | stable |
+| POST | `/api/project/refresh` | read the project again (ADR-012): body `{projectId}`; answers `{projectId, changedOutside, moved, movedCount}`, whether the project folder changed outside this runtime since it was last read (by hand, by a sync, by a restore, by an agent's command) and the first 100 places that moved (project-relative directories and the pointer files; a file other than a pointer file rewritten in place moves none). When it changed, the project index projects again what moved, and a commit that changed rows moves the revision and is announced as `index.committed`; the answer comes once the index holds the reading. 404 `PROJECT_NOT_FOUND` for another project | reads the project's layout; writes nothing | provisional |
 | GET | `/api/state?run=` | the projection: component tree, `Element@1` rows and their numeric fields, parameters and their locks, dependency edges, `stateDigest`, `recordDigest`, `honesty[]` | reads work in progress + shared + published | stable |
 | GET | `/api/artifacts` | one row per certified file, with `format`, `representation`, `available` / `unavailableReason`; an OCCT STEP (`step` / `exact`) and mesh preview (`3dm` / `preview`) share one producing `receiptRef`. An editable work model is an additional `3dm` / `exact` row naming the STEP it was imported from in `sourceStepSha256` | reads shared | stable |
 | GET | `/api/index/{table}` | read-only rows of the project index (ADR-008): `table` is `run`, `record`, `artifact`, `document`, `candidate` or `stage`; the query names exact column values in camelCase (`runId`, `sha256`, `kind`, `assetSha256`, `branchId`, `candidateId`, `stageRef`, ...) and `limit` (default 1000). Answers `{projectId, epoch, revision, table, rows, truncated}` from one snapshot; each row carries its `rev` and names the P036 record it was read from — the rows are never evidence, the record is. 503 `INDEX_UNAVAILABLE` while the index is loading, behind this process's own last write, or when the process keeps none; 404 `INDEX_TABLE_NOT_FOUND`; 422 `INDEX_FILTER_INVALID` | reads a derived index | provisional |
@@ -1425,6 +1426,20 @@ folder held no project when it started, answers a write another process blocks w
 `409 PROJECT_WRITER_BUSY`. The Hub itself reads an open project through its binding and writes it
 only through its runtime (§4.1, expiring superseded local recovery).
 
+Nothing watches an open project (ADR-012): no recursive notification, no root poll, no periodic
+walk, in the runtime or the Hub. The runtime knows its own writes as they happen; it reads its
+project's layout once at open, once more after its own writes (or a reading too young to trust,
+such as the `writer.lock` it creates at open) have settled, and when someone asks it to read the
+project again. A change made outside MonkeyHub while the project is open - by hand, by a sync, by
+a restore, by an agent's command - is therefore read at the next open, or when the person
+chooses File > 「重新读取项目」 / "Reload project from disk" in the Hub: `POST /api/project/refresh`
+walks the folder once and answers whether it changed outside MonkeyHub. When it had, the Hub shows
+one status line saying so, reads the project again itself, and surfaces follow the index commit as
+for any other. Conditional reads answer 304 only when nothing this runtime wrote and nothing a
+refresh found has changed. A work copy the person opened in an external editor is still watched
+by the Hub on its own, that file alone (#314); a copy that a client makes by calling the runtime
+directly, past the Hub, is bound at the Hub's next read of the project.
+
 The local Hub exposes `GET /api/runtime` and `GET /api/runtime/projects/{runtime_id}` as one
 runtime view: exact project/path binding, published P036 version/digest, reachable design
 Stages, owned worker identity/health, chats and operation status. `POST /api/runtime/projects/open`
@@ -1434,15 +1449,19 @@ share a worker, operation admission or projection.
 
 Worker/session observation continues each second. Retained history is refreshed for active
 jobs/operations, mutation or attachment wakeups and worker changes; an idle runtime reuses
-its projection and checks for external project changes every 30 seconds. These reads verify
-existing receipt/source facts without rebuilding candidate previews or recalculating viability.
-A forwarded read (GET/HEAD, or a read-only POST such as `/api/state/closure`) does not wake
-the runtime. Which document work copies exist is derived again only when the runs, their
+its projection and, every 30 seconds, reads it again only when the runtime has committed to the
+project's index since the last read (the Hub hears each commit on the worker's event stream and
+counts those that say the project moved: not a thumbnail drawn, not the index loaded or rebuilt,
+not a hint without a revision). These reads verify existing receipt/source facts
+without rebuilding candidate previews or recalculating viability. A forwarded read (GET/HEAD,
+or a read-only POST such as `/api/state/closure`) does not wake the runtime, and admits no
+operation; `POST /api/project/refresh` admits none either, and then has the Hub read the
+project again. Which document work copies exist is derived again only when the runs, their
 document records or the files in their copy workspaces change, and that comparison reads no
-other record. It runs on a mutation's wake; otherwise only when the project's read token has
-moved since the last comparison, or had not settled then. The token is asked every 30 seconds
-and when a page opens the project again, so an idle runtime over an unchanged project compares
-nothing.
+other record. It runs on a mutation's wake; otherwise only when the runtime has committed
+since the last comparison. That count is asked every 30 seconds and when a page opens the
+project again, so an idle runtime over an unchanged project compares nothing, and nothing in
+the Hub walks the project.
 
 `GET /api/runtime/events` is SSE with event name `runtime`. Each event has `serverId`,
 `sequence`, `kind`, optional `runtimeId`, and optional `snapshot`; its event id combines the

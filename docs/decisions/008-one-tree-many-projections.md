@@ -75,10 +75,17 @@ decision tree comes from two derived stores. Either store can be deleted at any 
 - `index.lock` beside the file is the writer lease. A second process that asks is refused and reads P036; its keeper
   retries for a bounded time, since the holder may be a process that is exiting. Closing a binding (or collecting one
   nobody closed, or a shared-project pull replacing it) stops its keeper and gives the lease up.
-- One `IndexKeeper` thread per index is its only writer. It hears of changes from the project's layout watch (#363): each
-  publication (`LayoutSighting`) carries the fingerprint's own lines and the directories a notification or a write asked
-  it to read again. This process's writes also reach it at once through the repository's write observer. No request
-  thread projects, stats or writes for the index; the projector runs before the write transaction opens.
+- One `IndexKeeper` thread per index is its only writer. This process's writes reach it at once through the
+  repository's write observer, which names where each wrote. Since #599 (ADR-012) nothing watches the project: the
+  layout watch (#363) - a recursive `ReadDirectoryChangesW`, a root stat every second and a walk every 120 s, in the
+  worker and again in the Hub - is gone. The runtime's binding keeps the project's layout as it last read it
+  (`archflow.project.watch.KnownLayout`, no thread of its own) and reads it at three points: one walk at open, one
+  re-check once this process's writes (or a reading too young to trust, such as the `writer.lock` a runtime creates as
+  it opens a project) have settled, which stats only what was written or young, and an explicit refresh
+  (`POST /api/project/refresh`, the Hub's "Reload project from disk"), one walk that takes this process's writes in
+  first and names what moved besides. Each reading reaches the keeper as a `LayoutSighting` with the fingerprint's
+  own lines. A change made outside the runtime is read at the next open or refresh. No request thread projects,
+  stats or writes for the index; the projector runs before the write transaction opens.
 - Readers take one snapshot (one read transaction) for a whole listing. Any failure to read the index - loading,
   rebuilding, SQLite refusing, a run whose reading failed when projected - makes the listing read the runs, so every
   refusal stays the runs' own. A listing reads the index only once it holds every write this process made; until then
@@ -97,8 +104,13 @@ decision tree comes from two derived stores. Either store can be deleted at any 
   in every tag: the index's epoch survives a restart, the process's counters do not. Since #599, design history,
   worktrees and working source read every run's change, survey part and newest receipt from one snapshot, and keep
   no memo once an index answers; the board keeps its phase-0a memo until it reads the index.
-- Known limit: a file rewritten in place without a directory entry changing is seen only where a notification
-  (Windows) or this process's write names it. Byte routes still re-hash what they serve.
+- A tag's layout part moves at open, with this process's own writes (at once, through the write serial; settled by
+  the re-check) and on refresh, so 304 is answered only when nothing this process wrote and nothing a refresh found
+  has changed. Only the runtime's own binding follows the layout; a binding in another process (the Hub's, the
+  render process's, a tool's) walks nothing and keeps nothing under a token.
+- Known limits: a change made outside the runtime while the project is open is read at the next refresh or open
+  (ADR-012). A file rewritten in place without a directory entry changing is seen only where this process's write
+  names it. Byte routes still re-hash what they serve.
 
 **Phase 2 as built (#366, 2026-09-28):**
 - The cursor is `(epoch, revision)`, both the index's. A client keeps entities: `run:<id>` (a run's own body,
@@ -136,6 +148,11 @@ decision tree comes from two derived stores. Either store can be deleted at any 
   panel opens with a replay as it did on its own stream and no surface takes them for news. Frames the Hub relays are never dropped against the snapshot's sequence:
   the snapshot does not hold them. A Hub page therefore holds one event stream, whatever it shows; the per-page
   proxy of the worker stream (`/api/runtime/projects/{id}/studio/api/events`) is retired and answers 404.
+  Since #599 (ADR-012) these hints are also how the Hub's own project observer learns that the project moved: it
+  counts each commit that says so - not a thumbnail drawn (`projections`), not the index loaded or rebuilt
+  (`reset`), not a hint without a revision, since a worker that started or restarted is read again on its state
+  change - and its idle reads and its work-copy derivation run again only when that count moved since their last
+  success. It keeps no watch and asks no fingerprint.
 - Each open project has one client store (`src/api/project-runtime/projectStore.ts`) at the ChatShell level, shared by
   its surfaces and released by count: `{epoch, revision, byId}`, one request in flight, `wanted = max(wanted,
   hint.revision)`, a delta applied only onto its `from`, answers that are not newer dropped, another epoch reset.

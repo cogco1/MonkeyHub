@@ -2,8 +2,10 @@
 
 ``ProjectIndex`` keeps the rows one ``Projector`` derives from a project in a
 SQLite file outside it, and answers read-only snapshots. ``IndexKeeper`` is
-its only writer: a thread fed by the project's layout watch and this
-process's write observer, so no reader ever projects, and it announces each
+its only writer: a thread fed by the project's layout as this process knows
+it (read at open, on refresh and once a write has settled; nothing watches
+the project, ADR-012) and this process's write observer, so no reader ever
+projects, and it announces each
 commit to the listeners ``add_commit_listener`` registers (#366). The index
 also keeps the projection cache's status table (#367), which the projection
 queue writes under the same lock and whose done rows clients follow. Neither is a

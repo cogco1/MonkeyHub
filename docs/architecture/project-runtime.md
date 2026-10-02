@@ -228,8 +228,11 @@ while it is busy or has just missed a probe, and every 5 s while it is verified 
 once and wakes the project observer, which reports it. The observer passes every second while
 anything is in motion (an operation or job, a worker between states, a closing runtime, an
 observed work copy) and every 5 s otherwise; a Hub mutation, a chat change or an attaching
-client ends its wait. A write by another program is read on the 30 s idle fallback, and only
-when the project's read token moved since the last read, including the one at open.
+client ends its wait. Nothing watches the project (ADR-012): a write another client made through
+the runtime is read on the 30 s idle fallback, and only once the Hub has heard the runtime commit
+to the project's index since the last read, including the one at open. A change made outside
+MonkeyHub is read when the person reads the project again (File > Reload project from disk,
+`POST /api/project/refresh`): the runtime walks its folder once and says whether it changed.
 `GET /api/protocol` (`protocol.py`) answers `archflow/<major>` and the
 capability list computed from the settings; the client refuses a foreign or mismatched server
 at handshake ([project-runtime-api.md §1](../protocols/project-runtime-api.md)).
@@ -240,8 +243,9 @@ In production only through the Hub's forwarding path
 `/api/runtime/projects/{runtime_id}/studio/{path}` (`monkeyhub_api/runtime/routes.py`, `runtime/manager.py`
 `forward`): path allowlist (`/api/...` and `/openapi.json` only), project id checked in query
 and body (`PROJECT_MISMATCH`), `Idempotency-Key` admission for mutations — every request that is
-not `GET`, `HEAD` or `OPTIONS`, except `/api/events/*`, `POST /api/state/closure` and
-`POST /api/pick/resolve` (`runtime/manager.py`, `forward`) — `X-Monkey-Candidate`
+not `GET`, `HEAD` or `OPTIONS`, except `/api/events/*`, `POST /api/state/closure`,
+`POST /api/pick/resolve` and `POST /api/project/refresh`, which reads the project again and
+then has the Hub read it again too (`runtime/manager.py`, `forward`) — `X-Monkey-Candidate`
 and `X-Monkey-Worker` for candidate-producing requests, and an allowlist of forwarded request
 headers. `GET .../studio/api/events` is not forwarded (`STUDIO_EVENTS_RELAYED`): the Hub
 attaches once to each worker's own `/api/events` (`runtime/worker_http.py`, `_WorkerEvents`; it resumes

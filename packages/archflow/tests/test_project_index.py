@@ -6,9 +6,10 @@ epoch, and a file SQLite cannot read is moved aside and rebuilt. A kept file
 reopened after a restart is used as it is when nothing moved, and only what
 moved is projected again. A commit that changed a row moves the revision once.
 
-The keeper applies every change on a thread of its own, fed by the layout
-watch and this process's writes: a reader never projects, and a snapshot is
-one commit however many applies run beside it.
+The keeper applies every change on a thread of its own, fed by the readings
+of the project's known layout (open, re-check, refresh) and this process's
+writes: a reader never projects, and a snapshot is one commit however many
+applies run beside it. Another process's write reaches it on refresh.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ from archflow.project.layout import FINGERPRINT_SETTLED_NS, layout_fingerprint
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STATE_RECORD, STUDIO_BOARD_SCENE
 from archflow.project.repository import FilesystemProjectRepository
-from archflow.project.watch import _Tree, watch_layout
+from archflow.project.watch import KnownLayout, _Tree
 
 PROJECT_ID = "project-a"
 
@@ -57,7 +58,7 @@ def settle(root: Path) -> None:
 
 
 def sight(root: Path) -> tuple[tuple[str, ...], int]:
-    """The layout lines of the project now and when they were read, as a watch's walk gives them."""
+    """The layout lines of the project now and when they were read, as a layout's walk gives them."""
 
     tree = _Tree(os.fspath(root))
     scanned_at = time.time_ns()
@@ -555,9 +556,15 @@ class PlaceTests(unittest.TestCase):
 class KeeperTests(_IndexCase):
     """The keeper is the index's only writer, on a thread of its own."""
 
-    def keeper(self, projector: RecordingProjector | None = None) -> tuple[IndexKeeper, RecordingProjector]:
+    def known(self) -> KnownLayout:
+        layout = KnownLayout(self.root)
+        self.addCleanup(layout.close)
+        return layout
+
+    def keeper(self, projector: RecordingProjector | None = None,
+               layout: KnownLayout | None = None) -> tuple[IndexKeeper, RecordingProjector]:
         index, projector = self.index(projector)
-        keeper = IndexKeeper(index, watch_layout(self.root, notify=False), name="test")
+        keeper = IndexKeeper(index, layout or self.known(), name="test")
         keeper.start()
         self.addCleanup(keeper.stop)
         self.assertIsNotNone(keeper.wait_loaded(30), keeper.failure)
@@ -587,15 +594,31 @@ class KeeperTests(_IndexCase):
         self.assertEqual(heard[1].token.revision, heard[0].token.revision + 1)
         self.assertEqual(heard[1].domains, frozenset({"run"}))
 
-    def test_another_process_write_is_applied_once_the_watch_sees_it(self) -> None:
-        keeper, _ = self.keeper()
+    def test_another_process_write_is_applied_on_refresh_and_not_before(self) -> None:
+        layout = self.known()
+        keeper, _ = self.keeper(layout=layout)
         before = keeper.state
         (self.root / "runs" / "run-outside" / "records").mkdir(parents=True)
-        watched = keeper._lease.sync()
+        # Nothing watches the project: the index holds what it held.
+        time.sleep(1.0)
+        self.assertEqual(keeper.state, before)
+        self.assertEqual([row["run_id"] for row in keeper.index.query("run")], ["run-001"])
 
-        self.assertTrue(wait_until(lambda: keeper.state.digest == watched.fingerprint.digest))
-        self.assertGreater(keeper.state.token.revision, before.token.revision)
+        refreshed = layout.refresh()
+        self.assertTrue(refreshed.changed)
+        state = keeper.wait_seen(refreshed.layout.generation, 10)
+        self.assertIsNotNone(state)
+        self.assertEqual(state.digest, refreshed.layout.fingerprint.digest)
+        self.assertGreater(state.token.revision, before.token.revision)
         self.assertEqual([row["run_id"] for row in keeper.index.query("run")], ["run-001", "run-outside"])
+
+    def test_the_keeper_opens_the_layout_when_nobody_has(self) -> None:
+        layout = self.known()
+        self.assertIsNone(layout.latest(wait=False))
+        keeper, _ = self.keeper(layout=layout)
+        self.assertEqual(layout.readings["open"], 1)
+        self.assertEqual(keeper.state.digest, layout.latest().fingerprint.digest)
+        self.assertIsNone(keeper.wait_seen(layout.latest().generation + 1, 0.2), "a reading not taken yet")
 
     def test_a_restart_reuses_the_kept_file(self) -> None:
         settle(self.root)
@@ -624,7 +647,7 @@ class KeeperTests(_IndexCase):
         self.keeper()
         index, _ = self.index()
         with mock.patch.object(keeper_module, "LOCK_RETRY_TOTAL_S", 0.3):
-            second = IndexKeeper(index, watch_layout(self.root, notify=False), name="second")
+            second = IndexKeeper(index, self.known(), name="second")
             second.start()
             self.addCleanup(second.stop)
 
@@ -637,7 +660,7 @@ class KeeperTests(_IndexCase):
     def test_a_lock_given_up_while_the_keeper_retries_is_taken_and_the_index_loads(self) -> None:
         first, _ = self.keeper()
         index, _ = self.index()
-        second = IndexKeeper(index, watch_layout(self.root, notify=False), name="second")
+        second = IndexKeeper(index, self.known(), name="second")
         second.start()
         self.addCleanup(second.stop)
         self.assertTrue(wait_until(lambda: second.waiting is not None))
@@ -657,7 +680,7 @@ class KeeperTests(_IndexCase):
     def test_a_keeper_stopped_while_it_waits_for_the_lock_ends_at_once(self) -> None:
         self.keeper()
         index, _ = self.index()
-        second = IndexKeeper(index, watch_layout(self.root, notify=False), name="second")
+        second = IndexKeeper(index, self.known(), name="second")
         second.start()
         self.assertTrue(wait_until(lambda: second.waiting is not None))
         started = time.monotonic()

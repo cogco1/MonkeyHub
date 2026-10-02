@@ -7,7 +7,7 @@ import { projectStatus } from "./worktreeGraph";
 import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, OperationRecord, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent, UpdateStatus, UserSettingsDto } from "./api/generated";
 import { ProjectRuntimeProvider, useProjectRevision, useStudio } from "./api/project-runtime/ProjectRuntimeContext";
 import { projectStores, relayHubStream } from "./api/project-runtime/projectStore";
-import type { ModelSourceDto, RenderPageRefDto, SourceDocumentDto } from "./api/project-runtime/generated";
+import type { ModelSourceDto, ProjectRefreshDto, RenderPageRefDto, SourceDocumentDto } from "./api/project-runtime/generated";
 import { BoardRenderError, type BoardRenderChatRequest } from "./workspaces/monkeyboard/boardRender";
 import { ImageThumbnail } from "./workspaces/render/RenderResults";
 import { ModelThumbnail } from "./features/artifacts/ModelThumbnail";
@@ -582,6 +582,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [runtime, setRuntime] = useState<HubRuntimeDto | null>(null);
   const [eventsConnected, setEventsConnected] = useState(true);
   const [recovering, setRecovering] = useState(false);
+  // ADR-012: reading the project again (File menu), and the folder whose read found it changed outside MonkeyHub.
+  const [reloading, setReloading] = useState(false);
+  const [changedOutside, setChangedOutside] = useState<string | null>(null);
   const [projectDir, setProjectDir] = useState<string | null>(initial.projectDir ?? configuredProject);
   const [chatId, setChatId] = useState<string | null>(initial.chatId);
   const [chat, setChat] = useState<ChatDetail | null>(null);
@@ -742,6 +745,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // going nowhere. It is said here, on the runtime strip that already reports
   // what this attachment knows, and nowhere else.
   const workCopyRefusal = projectRuntime?.error?.code?.startsWith("WORK_COPY_") ? projectRuntime.error : null;
+  // The project on screen was read again and its folder had changed outside MonkeyHub (ADR-012).
+  const folderChanged = changedOutside !== null && changedOutside === projectDir;
   const draftKey = chatId ?? `new:${projectDir ?? ""}`;
   const draft = drafts[draftKey] ?? "";
   const attachments = draftAttachments[draftKey] ?? [];
@@ -1274,6 +1279,20 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       await refresh();
     } catch (cause) { if (selection.current.projectDir === target.projectDir) setError(asFailure(cause)); }
     finally { actionLock.current = false; setRecovering(false); }
+  };
+
+  // ADR-012: nothing watches an open project. Reading it again is the person's: the runtime reads its
+  // folder once and says whether it changed outside MonkeyHub; surfaces follow the index commit it makes.
+  const reloadProject = async () => {
+    if (!projectRuntime || reloading) return;
+    const target = projectRuntime;
+    setReloading(true); setError(null); setChangedOutside(null);
+    try {
+      const answer = await request<ProjectRefreshDto>(
+        `/api/runtime/projects/${encodeURIComponent(target.runtimeId)}/studio/api/project/refresh`, { projectId: target.projectId });
+      if (selection.current.projectDir === target.projectDir && answer.changedOutside) setChangedOutside(target.projectDir);
+    } catch (cause) { if (selection.current.projectDir === target.projectDir) setError(asFailure(cause)); }
+    finally { setReloading(false); }
   };
 
   // A changed, healthy instance is a new page host. Preserve each view selection,
@@ -1936,6 +1955,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       { kind: "command", id: "new-chat", label: mw.newChat, onSelect: startChat },
       { kind: "command", id: "new-project", label: mw.newProject, onSelect: () => { setDialogError(null); newDialog.current?.showModal(); } },
       { kind: "command", id: "add-project", label: mw.addProject, onSelect: () => { setDialogError(null); addDialog.current?.showModal(); } },
+      { kind: "command", id: "reload-project", label: t.reloadProject, disabled: !projectRuntime || reloading, onSelect: () => void reloadProject() },
       { kind: "separator", id: "archive" },
       { kind: "command", id: "export", label: mw.exportArchive, disabled: !project,
         onSelect: () => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); archiveDialog.current?.showModal(); } },
@@ -2056,10 +2076,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           onClick={() => void openTool("tree")}><Icon name="tree" /><span>{headerChip}</span></button>}
         {workspaceShown && <button type="button" ref={focusToggle} className="chat-focus" aria-description={t.focusHint} title={t.focusHint}
           onClick={toggleFocus}><Icon name="focus" /><span>{t.focus}</span></button>}</header>
-      {(!eventsConnected || crashed || recovering || workCopyRefusal) && <div className="chat-runtime" role="status" aria-live="polite">
+      {(!eventsConnected || crashed || recovering || workCopyRefusal || folderChanged) && <div className="chat-runtime" role="status" aria-live="polite">
         <div>{!eventsConnected && <p>{t.reconnecting}</p>}
           {(crashed || recovering) && <><p>{recovering ? t.recovering : t.workerCrashed}</p><small>{t.recoveryHint}</small></>}
           {workCopyRefusal && <><p>{t.workCopyRefused}</p><small>{workCopyRefusal.detail}</small></>}
+          {folderChanged && <p>{t.projectChangedOutside}</p>}
         </div>
         {crashed && <button type="button" className="chat-activity__open" disabled={recovering || busy || Boolean(toolBusy)} onClick={() => void recoverWorker()}><Icon name="refresh" />{recovering ? t.recovering : t.recoverWorker}</button>}
       </div>}

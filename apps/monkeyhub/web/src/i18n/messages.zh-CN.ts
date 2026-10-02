@@ -1388,6 +1388,8 @@ export const chatCopy = {
     reconnecting: "连接中断，正在重新读取项目状态…", workerCrashed: "项目服务已退出", recoverWorker: "恢复项目服务", recovering: "正在恢复…",
     recoveryHint: "恢复服务后读取已保存结果；未完成的修改需要重新检查。", operationRecovery: "有操作需要检查恢复结果", operationFailed: "有操作未完成", operationStale: "操作基底已过期", runtimeOperations: "项目操作", operationCommitted: "已提交", operationPending: "尚无提交确认",
     workCopyRefused: "可编辑副本的改动未能登记为新版本",
+    // ADR-012：打开的项目不再被后台监视；在 MonkeyHub 之外做的改动，由使用者要求时重新读取。
+    reloadProject: "重新读取项目", projectChangedOutside: "项目文件夹在 MonkeyHub 之外被修改过，已重新读取。",
     // GH-285：每轮 Agent 的过程折叠为一行，以及回到最新消息。
     processWorked: (elapsed: string, steps: number) => `用时 ${elapsed} · ${steps} 步`,
     processSteps: (steps: number) => `过程 · ${steps} 步`,

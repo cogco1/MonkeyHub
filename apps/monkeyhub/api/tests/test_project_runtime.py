@@ -25,9 +25,9 @@ from uuid import uuid4
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, project_fixture, wait_for
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_LOCAL_DRAFT
-from archflow.project.repository import FilesystemProjectRepository, project_root_key, write_serial
-from archflow.project.watch import running_watches
-from project_runtime.binding import ProjectBinding, ReadToken
+from archflow.project import layout as layout_module, watch as watch_module
+from archflow.project.repository import FilesystemProjectRepository, write_serial
+from project_runtime.binding import ProjectBinding
 from project_runtime.settings import StudioSettings
 from monkeyhub_api.runtime import manager as runtime_module, worker_http
 from monkeyhub_api.models import ChatSummary, HubError, HubFailure
@@ -962,18 +962,53 @@ for _ in range(5):
                     wait_for(lambda: bound(work), "A copy opened through the Hub was not bound on its wake", timeout=10)
                     self.assertGreater(binds.call_count, derived)
 
-                with patch("monkeyhub_api.runtime.manager._WORK_COPY_CHECK_S", 0.2):
-                    # From this request's wake on, the idle question comes often.
+                with patch("monkeyhub_api.runtime.manager._WORK_COPY_CHECK_S", 0.2), \
+                        patch("monkeyhub_api.runtime.manager._ACTIVE_HEARTBEAT_S", 0.2), \
+                        patch.object(manager, "index_hint", wraps=manager.index_hint) as hints, \
+                        patch.object(manager, "_observe_work_copies", wraps=manager._observe_work_copies) as passes:
+                    # From this request's wake on, the idle question comes
+                    # often: a pass every 0.2 s, an observed copy or not.
                     asked = inputs.call_count
                     other = self.upload_image(client, runtime_id, self.png_bytes("black"))
                     wait_for(lambda: inputs.call_count > asked, "A registered document was not re-derived", timeout=10)
                     worker = client.app.state.applications.worker_snapshots(project_dir=str(self.project))[0]
+
+                    def indexed():
+                        # The worker has read and indexed everything written:
+                        # only a stable token answers 304, and a write is
+                        # stable once its re-check has read it, 2 s later. The
+                        # Hub has heard the index's last commit.
+                        listed = worker_http.request_http(worker.url, "/api/documents", timeout=30)
+                        tag = next((value for name, value in listed.headers.items() if name.lower() == "etag"), "")
+                        again = worker_http.request_http(worker.url, "/api/documents", headers={"If-None-Match": tag},
+                                                         timeout=30)
+                        index = worker_http.request_http(worker.url, "/api/index/run?limit=0", timeout=30)
+                        if (listed.status, again.status, index.status) != (200, 304, 200):
+                            return False
+                        heard = [call.args[1]["revision"] for call in hints.call_args_list
+                                 if call.args[0] == runtime_id and (call.args[1] or {}).get("revision") is not None]
+                        return bool(heard) and max(heard) >= index.json()["revision"]
+
+                    def unmoved():
+                        # Passes for a second, none of which heard a move or derived.
+                        before, looked = (runtime.index_moves, inputs.call_count), passes.call_count
+                        time.sleep(1.0)
+                        return (runtime.index_moves, inputs.call_count) == before and passes.call_count >= looked + 2
+
+                    # An upload moves the project twice: its own commit, and the
+                    # commit of the re-check that reads its files once settled.
+                    # Either may reach the Hub after the derivation its wake
+                    # made, and the idle question rightly derives again on it.
+                    wait_for(lambda: indexed() and unmoved(), "The uploads did not settle: a write left unread, "
+                             "a commit the Hub did not hear, or derivations without a move", timeout=30)
+                    moves, derivations = runtime.index_moves, inputs.call_count
                     with patch.object(runtime.wake, "set", wraps=runtime.wake.set) as wakes, \
                             patch.object(runtime.wake, "check", wraps=runtime.wake.check) as checks:
                         # A client that asks the worker itself wakes nothing in
-                        # the Hub. The binding's layout watch sees the file the
-                        # worker writes, the read token moves, and the next idle
-                        # question binds the copy.
+                        # the Hub, and neither writing a copy nor the re-check
+                        # that reads it commits a row of the project index.
+                        # Nothing watches the project (ADR-012): the idle
+                        # questions keep finding nothing to derive.
                         made = worker_http.request_http(
                             worker.url, f"/api/documents/{other['assetSha256']}/work-copy", "POST",
                             json.dumps({"projectId": self.project_id, "runId": other["runId"],
@@ -981,9 +1016,26 @@ for _ in range(5):
                             {"content-type": "application/json"}, timeout=30)
                         self.assertEqual(made.status, 201, made.body)
                         written = self.project / Path(*made.json()["relativePath"].split("/"))
-                        wait_for(lambda: bound(written), "A copy written past the Hub was not bound once the project moved",
-                                 timeout=10)
+                        wait_for(indexed, "The worker did not read the copy once it settled, or the Hub did not hear "
+                                 "a commit", timeout=30)
+                        looked = passes.call_count
+                        time.sleep(1.0)
+                        self.assertGreaterEqual(passes.call_count, looked + 2, "The observer made under two passes")
+                        self.assertEqual(runtime.index_moves, moves, "Writing a copy moved the project index")
+                        self.assertEqual(inputs.call_count, derivations, "An idle question derived the copies again")
+                        self.assertFalse(bound(written))
                         self.assertEqual((wakes.call_count, checks.call_count), (0, 0))
+                        # Reading the project again binds it: in the Hub too,
+                        # and as no operation of the project.
+                        operations = len(runtime.operations.records())
+                        reread = self.proxy(client, runtime_id, "/api/project/refresh", "POST",
+                                            json={"projectId": self.project_id})
+                        self.assertEqual(reread.status_code, 200, reread.text)
+                        self.assertFalse(reread.json()["changedOutside"], "the runtime wrote that copy itself")
+                        wait_for(lambda: bound(written), "A copy written past the Hub was not bound once the project "
+                                 "was read again", timeout=10)
+                        self.assertEqual(len(runtime.operations.records()), operations)
+                        self.assertEqual(wakes.call_count, 1)
 
     def test_idle_runtime_skips_history_scans_but_refreshes_on_request_and_crash(self):
         with self.hub() as client:
@@ -1041,6 +1093,7 @@ for _ in range(5):
         manager = ProjectRuntimeManager(applications, chats)
         runtime = ProjectRuntime("idle", self.project_id, str(self.project), OperationManager(self.project_id),
                                  ProjectBinding.open(StudioSettings(project_dir=self.project, cad_export="off")))
+        manager._projects[runtime.runtime_id] = runtime
         chat = ChatSummary(id="chat", projectId=self.project_id, projectDir=str(self.project), title="status",
                            provider="codex", createdAt="2026-09-26", updatedAt="2026-09-26")
         admitted = []
@@ -1102,9 +1155,12 @@ for _ in range(5):
                 runtime.retained = {**runtime.retained, "runsScanned": 99}
             elif tick == 12:
                 self.assertEqual(current["retained"]["runs_scanned"], 99)
+                # A separate client writes through the runtime, which commits it:
+                # no Hub wake, and the due pass must see it.
                 self.repository.create_run("external-new-run")
+                manager.index_hint(runtime.runtime_id, {"epoch": "e", "revision": 2, "domains": ["run"]})
                 self.assertFalse(runtime.wake.is_set())
-                now[0] = 30.0  # A separate client has no Hub wake; the due pass must see it.
+                now[0] = 30.0
             elif tick == 13:
                 self.assertIn("external-new-run", [row[0] for row in runtime.work_copy_key])
                 manager._closing.set()
@@ -1184,17 +1240,6 @@ class WorkCopyObservationTests(unittest.TestCase):
             self.assertIsNone(self.read_at(2))
         self.assertIsNone(self.read_at(3.999))
         self.assertEqual(self.read_at(4), self.second)
-
-
-def _settle(root: Path) -> None:
-    """Age every time in a project, as if its last write were long ago."""
-
-    old = time.time_ns() - 60_000_000_000
-    for folder, _, names in os.walk(root):
-        for name in names:
-            os.utime(os.path.join(folder, name), ns=(old, old))
-    for folder, _, _ in os.walk(root, topdown=False):
-        os.utime(folder, ns=(old, old))
 
 
 class RuntimeCostTests(unittest.TestCase):
@@ -1301,45 +1346,36 @@ class RuntimeCostTests(unittest.TestCase):
         repository = self.project()
         manager = self.manager()
         runtime = self.runtime(manager, repository)
-        _settle(repository.layout.root)
-        # The binding's layout watch sees the aged times itself within a
-        # moment; the test waits for it rather than for the moment.
-        runtime.binding.layout_watch().sync()
-        watched = runtime.binding.layout_watch().watch
-        tree = watched._tree
-        walked_by = []
-        visit_one = tree._visit_one
-
-        def visit(relative, force_list):
-            walked_by.append(threading.current_thread().name)
-            return visit_one(relative, force_list)
-
-        tree._visit_one = visit
         now = [0.0]
         refreshes = []
-        script = []
 
         def heartbeat(_timeout):
             refreshes.append(refresh.call_count)
             step = len(refreshes)
             if step == 1:
-                now[0] = 30.0  # idle fallback due; nothing on disk moved
+                now[0] = 30.0  # idle fallback due; the runtime committed nothing
             elif step == 2:
                 now[0] = 60.0
-                repository.create_run("external-run")  # a separate client writes
-                _settle(repository.layout.root)
-                runtime.binding.layout_watch().sync()
+                # A separate client writes through the runtime, which commits
+                # it; the Hub hears the commit on the worker's stream.
+                repository.create_run("external-run")
+                manager.index_hint(runtime.runtime_id, {"epoch": "e", "revision": 2, "domains": ["run"]})
             elif step == 3:
                 now[0] = 90.0  # unchanged since that read
             elif step == 4:
                 runtime.wake.set()  # a Hub mutation still refreshes at once
             elif step == 5:
-                now[0] = 120.0  # that read recorded its token too: nothing to read (#435)
+                now[0] = 120.0  # that read counted the commits too: nothing to read (#435)
             elif step == 6:
+                # A thumbnail drawn, the index loaded again, or a stream that
+                # attached or restarted: none says the project moved (the
+                # first attachment came after the opening read).
+                manager.index_hint(runtime.runtime_id, {"epoch": "e", "revision": 3, "domains": ["projections"]})
+                manager.index_hint(runtime.runtime_id, {"epoch": "f", "revision": 1, "domains": ["reset"]})
+                manager.index_hint(runtime.runtime_id, None)
                 now[0] = 150.0
             else:
                 manager._closing.set()
-            script.append(now[0])
 
         with patch.object(manager, "refresh", wraps=manager.refresh) as refresh, \
              patch.object(runtime.wake, "wait", side_effect=heartbeat), \
@@ -1350,21 +1386,102 @@ class RuntimeCostTests(unittest.TestCase):
         # Refresh counts after each pass: first idle read, skipped, changed,
         # skipped, woken, skipped, skipped.
         self.assertEqual(refreshes, [1, 1, 2, 2, 3, 3, 3])
-        # The idle check read the watch's token; only the watch walked.
-        self.assertTrue(walked_by)
-        self.assertEqual({name for name in walked_by if not name.startswith("layout-watch:")}, set())
-        # The observer let go of the project folder when it stopped.
-        self.assertFalse(watched.running)
+        self.assertIn("external-run", runtime.binding.run_ids())
+
+    def test_the_hub_keeps_no_layout_watch_after_open(self):
+        # ADR-012: neither the worker nor the Hub watches the project.
+        repository = self.project()
+        manager = self.manager()
+        self.addCleanup(manager.shutdown)
+        opened = manager.open(self.fixture.PROJECT_ID, str(repository.layout.root))
+        wait_for(lambda: opened.retained is not None and opened.work_copy_key is not None,
+                 "the opening pass did not read the project", timeout=30)
+        self.assertEqual([thread.name for thread in threading.enumerate()
+                          if thread.name.startswith(("layout-watch", "layout-recheck"))], [])
+
+    def test_the_idle_observer_makes_no_fingerprint_walk(self):
+        # The observer's idle questions compare the runtime's commits the Hub
+        # heard; none walks the project, asks a fingerprint or keeps a watch.
+        repository = self.project()
+        manager = self.manager()
+        binding = ProjectBinding.unconfigured(repository.layout.root, project_id=self.fixture.PROJECT_ID)
+        runtime = ProjectRuntime("runtime", self.fixture.PROJECT_ID, str(repository.layout.root),
+                                 OperationManager(self.fixture.PROJECT_ID), binding)
+        manager._projects[runtime.runtime_id] = runtime
+        now, opened, walks, tokens = [0.0], [], [], []
+        real_walk, real_refresh = watch_module._Tree.walk, watch_module._Tree.refresh
+        real_fingerprint, real_token = layout_module.layout_fingerprint, ProjectBinding.read_token
+
+        def walk(tree, *args, **kwargs):
+            walks.append(("walk", threading.current_thread().name))
+            return real_walk(tree, *args, **kwargs)
+
+        def stat_again(tree, *args, **kwargs):
+            walks.append(("refresh", threading.current_thread().name))
+            return real_refresh(tree, *args, **kwargs)
+
+        def fingerprint(*args, **kwargs):
+            walks.append(("fingerprint", threading.current_thread().name))
+            return real_fingerprint(*args, **kwargs)
+
+        def token(this, *args, **kwargs):
+            tokens.append(threading.current_thread().name)
+            return real_token(this, *args, **kwargs)
+
+        def heartbeat(timeout):
+            if not opened:
+                opened.append(True)
+                time.sleep(0.5)  # a watch started by the opening pass has walked by now
+            now[0] += timeout
+            if now[0] >= 600:
+                manager._closing.set()
+            return False
+
+        runtime.wake.set()  # what open() asks of its observer
+        with patch.object(watch_module._Tree, "walk", walk), \
+             patch.object(watch_module._Tree, "refresh", stat_again), \
+             patch.object(layout_module, "layout_fingerprint", fingerprint), \
+             patch.object(ProjectBinding, "read_token", token), \
+             patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
+            manager._watch(runtime)
+        self.assertTrue(opened)
+        self.assertEqual(walks, [], "the Hub walked the project's layout")
+        self.assertEqual(tokens, [], "the Hub's observer asked a read token")
+
+    def test_reading_the_project_again_is_no_operation_and_wakes_a_full_read(self):
+        repository = self.project()
+        path = str(repository.layout.root)
+        worker = WorkerSnapshot("studio:p0", "studio", self.fixture.PROJECT_ID, path, "instance", 4000,
+                                "running", "ready", True, "http://127.0.0.1:9/", None)
+        manager = self.manager([worker])
+        runtime = self.runtime(manager, repository)
+        answer = HttpResult(200, json.dumps({"projectId": self.fixture.PROJECT_ID, "changedOutside": True,
+                                             "moved": ["runs"], "movedCount": 1}).encode("utf-8"),
+                            {"content-type": "application/json"})
+        body = json.dumps({"projectId": self.fixture.PROJECT_ID}).encode("utf-8")
+        with patch.object(runtime_module, "request_http", return_value=answer) as sent, \
+             patch.object(runtime.wake, "set", wraps=runtime.wake.set) as wakes:
+            result = manager.forward(runtime, "/api/project/refresh", "POST", body,
+                                     {"content-type": "application/json"})
+        self.assertEqual(result.status, 200)
+        self.assertEqual(sent.call_args.args[1:3], ("/api/project/refresh", "POST"))
+        self.assertEqual(runtime.operations.records(), [], "reading the project again was admitted as an operation")
+        self.assertEqual(wakes.call_count, 1, "the Hub did not read the project again")
+        refused = HttpResult(404, b'{"code": "PROJECT_NOT_FOUND", "detail": "no"}', {"content-type": "application/json"})
+        with patch.object(runtime_module, "request_http", return_value=refused), \
+             patch.object(runtime.wake, "set", wraps=runtime.wake.set) as wakes:
+            self.assertEqual(manager.forward(runtime, "/api/project/refresh", "POST", body, {}).status, 404)
+        self.assertEqual(wakes.call_count, 0)
 
     def test_first_idle_fallback_after_an_open_reuses_the_opening_read(self):
         # After an open, the first idle fallback read all retained history
-        # again although nothing had moved (#435). The opening read's token
-        # answers for it; a separate client's write is still read.
+        # again although nothing had moved (#435). The opening read counted the
+        # runtime's commits; a separate client's write is still read once the
+        # runtime has committed it.
         repository = self.project()
         manager = self.manager()
         runtime = self.runtime(manager, repository)
-        _settle(repository.layout.root)
-        runtime.binding.layout_watch().sync()
         now = [0.0]
         refreshes = []
 
@@ -1374,9 +1491,8 @@ class RuntimeCostTests(unittest.TestCase):
             if step in (1, 2):
                 now[0] += 30.0  # the first idle fallbacks after the open
             elif step == 3:
-                repository.create_run("external-run")  # a separate client writes
-                _settle(repository.layout.root)
-                runtime.binding.layout_watch().sync()
+                repository.create_run("external-run")  # a separate client writes through the runtime
+                manager.index_hint(runtime.runtime_id, {"epoch": "e", "revision": 2, "domains": ["run"]})
                 now[0] += 30.0
             else:
                 manager._closing.set()
@@ -1399,8 +1515,6 @@ class RuntimeCostTests(unittest.TestCase):
         manager = self.manager([worker])
         runtime = self.runtime(manager, repository)
         runtime.last_workers = (("instance", "ready", True),)
-        _settle(repository.layout.root)
-        runtime.binding.layout_watch().sync()
         now, passes = [0.0], []
 
         def heartbeat(timeout):
@@ -1433,8 +1547,6 @@ class RuntimeCostTests(unittest.TestCase):
         repository = self.project()
         manager = self.manager()
         runtime = self.runtime(manager, repository)
-        _settle(repository.layout.root)
-        runtime.binding.layout_watch().sync()
         now, opened = [0.0], []
 
         def heartbeat(timeout):
@@ -1506,15 +1618,13 @@ class RuntimeCostTests(unittest.TestCase):
         repository = self.project()
         manager = self.manager()
         runtime = self.runtime(manager, repository)
-        _settle(repository.layout.root)
-        runtime.binding.layout_watch().sync()
-        now, derived = [0.0], []
+        now, derived, commits = [0.0], [], [1]
 
         def write(run_id):
-            # A separate client adds a run; the watch is let see it settled.
+            # A separate client adds a run through the runtime, which commits it.
             repository.create_run(run_id)
-            _settle(repository.layout.root)
-            runtime.binding.layout_watch().sync()
+            commits[0] += 1
+            manager.index_hint(runtime.runtime_id, {"epoch": "e", "revision": commits[0], "domains": ["run"]})
 
         def heartbeat(_timeout):
             derived.append(inputs.call_count)
@@ -1552,24 +1662,14 @@ class RuntimeCostTests(unittest.TestCase):
         self.assertIn("reopened-run", derived_runs)
 
     def test_the_first_idle_question_after_an_open_derives_nothing_when_nothing_moved(self):
-        # Nothing had read the binding before its observer started, and the
-        # binding's layout watch started on the first idle fallback. The
-        # opening derivation then had no token to record, so the first idle
-        # question after every open derived everything once more. The observer
-        # now takes the watch as it starts; the watch walks the project while
-        # the opening pass reads it.
+        # The opening derivation once had nothing to record, so the first idle
+        # question after every open derived everything once more (#599). It
+        # records how many of the runtime's commits the Hub had heard, so the
+        # first question finds nothing moved.
         repository = self.project()
         manager = self.manager()
         runtime = self.runtime(manager, repository)
-        _settle(repository.layout.root)
         now = [0.0]
-
-        def opening_read(row, cold=False):
-            # The retained read takes at least as long as one walk of the
-            # project by a watch that is running.
-            watch = running_watches().get(project_root_key(row.project_dir))
-            if watch is not None:
-                watch.latest()
 
         def heartbeat(timeout):
             now[0] += timeout
@@ -1578,43 +1678,48 @@ class RuntimeCostTests(unittest.TestCase):
             return False
 
         runtime.wake.set()  # what open() asks of its observer
-        with patch.object(manager, "refresh", side_effect=opening_read), \
+        with patch.object(manager, "refresh"), \
              patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as inputs, \
              patch.object(runtime.wake, "wait", side_effect=heartbeat), \
              patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
             manager._watch(runtime)
         self.assertEqual(inputs.call_count, 1, "the first idle question after an open derived the work copies again")
 
-    def test_work_copies_derived_under_an_unsettled_token_are_derived_again(self):
-        # A token taken while the project was still settling does not prove
-        # that nothing moved: a write as recent as the derivation may be missing
-        # from it. That derivation is repeated on the next idle question, and
-        # once the token has settled the questions stop deriving.
+    def test_a_failed_or_overtaken_derivation_is_derived_again(self):
+        # A derivation is taken as current only once it succeeded, and only for
+        # the commits the Hub had heard when it began: one that failed, or one
+        # a commit overtook, is repeated on the next idle question.
         repository = self.project()
         manager = self.manager()
         runtime = self.runtime(manager, repository)
-        unsettled = ReadToken("epoch", 1, "layout", False)
-        current, now, derived = [unsettled], [0.0], []
+        now, derived, attempts = [0.0], [], [0]
+        real_inputs = manager._work_copy_inputs
+
+        def inputs(row):
+            attempts[0] += 1
+            if attempts[0] == 1:
+                raise OSError("simulated: a copy workspace could not be listed")
+            if attempts[0] == 2:
+                # The runtime commits while this derivation runs.
+                manager.index_hint(row.runtime_id, {"epoch": "e", "revision": 2, "domains": ["run"]})
+            return real_inputs(row)
 
         def heartbeat(_timeout):
-            derived.append(inputs.call_count)
-            if len(derived) == 2:
-                current[0] = replace(unsettled, stable=True)  # the same layout, now old enough to trust
-            elif len(derived) == 5:
+            derived.append(attempts[0])
+            if len(derived) == 5:
                 manager._closing.set()
             now[0] += 30.0
             return False
 
         runtime.wake.set()  # what open() asks of its observer
         with patch.object(manager, "refresh"), \
-             patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as inputs, \
-             patch.object(runtime.binding, "read_token", side_effect=lambda wait=True: current[0]), \
+             patch.object(manager, "_work_copy_inputs", side_effect=inputs), \
              patch.object(runtime.wake, "wait", side_effect=heartbeat), \
              patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
             manager._watch(runtime)
-        # Opening and the question after it under the unsettled token, the
-        # question once it settled, then nothing more.
+        # Failed at open, repeated, overtaken by a commit, repeated, then nothing more.
         self.assertEqual(derived, [1, 2, 3, 3, 3])
+        self.assertIsNone(runtime.work_copy_error)
 
     def test_a_status_change_ends_the_idle_wait_without_asking_for_a_read(self):
         manager = self.manager()

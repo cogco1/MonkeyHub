@@ -8861,6 +8861,48 @@ export type ProjectListDto = {
 };
 
 /**
+ * ProjectRefreshDto
+ *
+ * What reading the project again found (ADR-012): whether its folder changed outside MonkeyHub.
+ */
+export type ProjectRefreshDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Changedoutside
+     *
+     * The project folder changed outside this runtime since it was last read: by hand, by a sync, by a restore or by an agent's command. What moved has been read again.
+     */
+    changedOutside: boolean;
+    /**
+     * Moved
+     *
+     * The first 100 places that moved, as project-relative paths ('.' for the project folder): directories and the pointer files (project.json, HEAD, design/branches.json, design/working.json). For diagnostics: a file other than a pointer file rewritten in place moves no place.
+     */
+    moved: Array<string>;
+    /**
+     * Movedcount
+     *
+     * How many places moved in all.
+     */
+    movedCount: number;
+};
+
+/**
+ * ProjectRefreshRequestDto
+ *
+ * Read the project named here again (``POST /api/project/refresh``).
+ */
+export type ProjectRefreshRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+};
+
+/**
  * ProjectRevision
  */
 export type ProjectRevision = {
@@ -13859,6 +13901,41 @@ export type ReadProjectByIdApiProjectsProjectIdGetResponses = {
 };
 
 export type ReadProjectByIdApiProjectsProjectIdGetResponse = ReadProjectByIdApiProjectsProjectIdGetResponses[keyof ReadProjectByIdApiProjectsProjectIdGetResponses];
+
+export type RefreshProjectApiProjectRefreshPostData = {
+    body: ProjectRefreshRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/project/refresh';
+};
+
+export type RefreshProjectApiProjectRefreshPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RefreshProjectApiProjectRefreshPostError = RefreshProjectApiProjectRefreshPostErrors[keyof RefreshProjectApiProjectRefreshPostErrors];
+
+export type RefreshProjectApiProjectRefreshPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectRefreshDto;
+};
+
+export type RefreshProjectApiProjectRefreshPostResponse = RefreshProjectApiProjectRefreshPostResponses[keyof RefreshProjectApiProjectRefreshPostResponses];
 
 export type PrepareModelingApiProjectModelingPostData = {
     body: ModelingInitializeRequestDto;
