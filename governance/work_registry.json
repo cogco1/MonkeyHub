@@ -1,31 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-599",
-      "lanes": [
-        {
-          "id": "agent-read-only",
-          "status": "active",
-          "branch": "codex/599-agent-read-only",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-599-agent-read-only",
-          "base_ref": "5beffce220e5eb02deed6a4e7f74b73d40f2873d",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
-            "apps/monkeyhub/api/monkeyhub_api/chat/providers.py",
-            "apps/monkeyhub/api/tests/test_chat.py",
-            "governance/module_registry.json",
-            "docs/architecture/system-map.md"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
