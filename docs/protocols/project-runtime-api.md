@@ -1427,8 +1427,11 @@ its projection and checks for external project changes every 30 seconds. These r
 existing receipt/source facts without rebuilding candidate previews or recalculating viability.
 A forwarded read (GET/HEAD, or a read-only POST such as `/api/state/closure`) does not wake
 the runtime. Which document work copies exist is derived again only when the runs, their
-document records or the files in their copy workspaces change; that comparison runs on a wake
-and every 30 seconds and reads no other record.
+document records or the files in their copy workspaces change, and that comparison reads no
+other record. It runs on a mutation's wake; otherwise only when the project's read token has
+moved since the last comparison, or had not settled then. The token is asked every 30 seconds
+and when a page opens the project again, so an idle runtime over an unchanged project compares
+nothing.
 
 `GET /api/runtime/events` is SSE with event name `runtime`. Each event has `serverId`,
 `sequence`, `kind`, optional `runtimeId`, and optional `snapshot`; its event id combines the
