@@ -1,4 +1,43 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-599",
+      "lanes": [
+        {
+          "id": "index-reads",
+          "status": "active",
+          "branch": "codex/599-index-reads",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-599-index-reads",
+          "base_ref": "5beffce220e5eb02deed6a4e7f74b73d40f2873d",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "project_runtime.binding",
+            "project_runtime.candidate",
+            "project_runtime.intent",
+            "project_runtime.shell"
+          ],
+          "write_scope": [
+            "services/project-runtime/src/project_runtime/index.py",
+            "services/project-runtime/src/project_runtime/binding.py",
+            "services/project-runtime/src/project_runtime/status.py",
+            "services/project-runtime/src/project_runtime/application/working_draft.py",
+            "services/project-runtime/src/project_runtime/application/design_history.py",
+            "services/project-runtime/src/project_runtime/api/conditional.py",
+            "services/project-runtime/src/project_runtime/api/routes/runtime.py",
+            "services/project-runtime/src/project_runtime/api/routes/working_draft.py",
+            "services/project-runtime/src/project_runtime/api/routes/episodes.py",
+            "services/project-runtime/tests/test_indexed_reads.py",
+            "services/project-runtime/tests/test_binding.py",
+            "governance/module_registry.json",
+            "docs/architecture/system-map.md",
+            "docs/decisions/008-one-tree-many-projections.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
