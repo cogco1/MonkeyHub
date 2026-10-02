@@ -229,6 +229,11 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node test/workModelExport.browser.mjs
 
+      - name: Model history locale browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/versionsLocale.browser.mjs
+
       - name: Elevation browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
