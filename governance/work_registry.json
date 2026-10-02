@@ -1,31 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-599",
-      "lanes": [
-        {
-          "id": "adr",
-          "status": "active",
-          "branch": "codex/599-adr",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-599-adr",
-          "base_ref": "5ee327e4e9ca2ce3b6e8bcc949ab45c033db86bb",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "archflow.project.repository",
-            "project_runtime.binding",
-            "hub.shell"
-          ],
-          "write_scope": [
-            "docs/decisions/012-the-open-runtime-is-the-only-writer.md",
-            "docs/decisions/README.md",
-            "docs/decisions/008-one-tree-many-projections.md"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
