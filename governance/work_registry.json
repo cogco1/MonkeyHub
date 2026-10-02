@@ -1,4 +1,33 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-599",
+      "lanes": [
+        {
+          "id": "writer-lease",
+          "status": "active",
+          "branch": "codex/integration-599-gate",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-599-gate",
+          "base_ref": "d7bfabbec71fb0a31aa5a95acbbcd51c9d35efe6",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "archflow.project.repository",
+            "hub.shell",
+            "project_runtime.candidate",
+            "project_runtime.shell",
+            "tools.benchmarks.daily_benchmark",
+            "tools.benchmarks.projection_check"
+          ],
+          "write_scope": [
+            "tools/benchmarks/daily_benchmark.py",
+            "tools/benchmarks/projection_check.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
