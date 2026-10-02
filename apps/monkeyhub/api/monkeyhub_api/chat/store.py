@@ -1246,6 +1246,7 @@ class ChatStore:
                 only_library = (*(("--plugin-dir", str(skills)) if skills is not None else ()),
                                 "--setting-sources", "project,local", "--settings",
                                 skill_plugins.claude_settings(self.runtime_root, providers._claude_user_settings()))
+            denied = providers._claude_denied(session.projectDir)
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
                        "--include-partial-messages", "--permission-mode", "dontAsk", "--permission-prompts", "none",
                        # Two different questions, and both have to be answered.
@@ -1254,7 +1255,11 @@ class ChatStore:
                        # it with no prompt attached. Named rather than bypassed:
                        # reading, editing and running in the workspace above,
                        # plus this adapter's own tools and nothing else.
+                       # `--disallowedTools` then takes Write and Edit back in
+                       # the bound project, which is read here and changed only
+                       # through the Hub (ADR-012).
                        "--tools", "default", "--allowedTools", ",".join(providers._claude_approved(self.runtime_root)),
+                       *(("--disallowedTools", *denied) if denied else ()),
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
                        *only_library,
                        "--add-dir", str(scratch),
