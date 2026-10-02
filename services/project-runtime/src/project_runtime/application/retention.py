@@ -35,6 +35,13 @@ events name the runs, so a run once restored is never cleaned again.
 ``RetentionSweeps`` runs it on a thread of its own: at project open, once the
 project index has loaded, after purging expired entries; and after each
 Continue. Nothing here moves the Working Head, a design branch or HEAD.
+
+Every sweep also expires superseded local recovery (``prune_recovery``), and so
+does the Runtime's own 15-minute cadence while the project is open: Modeling's
+crash-recovery snapshots that are neither the current ``localDraftRef`` nor
+updated within 24 hours, by the repository's rule (``prune_working_draft``),
+never a run. The Hub did this on its own timer, from its own process, until
+ADR-012 made the open project's Runtime its only writer.
 """
 
 from __future__ import annotations
@@ -108,6 +115,11 @@ from .working_draft import lineage_of
 _LOG = logging.getLogger(__name__)
 
 RETENTION_DAYS = TRASH_RETENTION.days
+# How often an open project's superseded local recovery is expired besides each sweep: the Hub's old timer.
+RECOVERY_PRUNE_INTERVAL_S = 15 * 60
+# A sweep asked for while one runs is folded into one more: an open also purges and cleans, a Continue
+# cleans, and every sweep expires recovery, so the broader request stands for the narrower.
+_BREADTH = {"prune": 0, "continue": 1, "open": 2}
 RULE_SUPERSEDED = "superseded"
 RULE_REPLACED = "replaced-attempt"
 RULE_FAILED = "failed-attempt"
@@ -164,13 +176,15 @@ class CleaningPlan:
 
 @dataclass(frozen=True, slots=True)
 class Sweep:
-    """One automatic cleaning: what moved, what was purged, and why the rest stayed."""
+    """One automatic cleaning: what moved, what was purged, which recovery expired, and why the rest stayed."""
 
     trigger: str
     cleaned: tuple[TrashEntry, ...]
     purged: tuple[str, ...]
     kept: Mapping[str, str]
     warnings: tuple[str, ...]
+    # The superseded local recovery snapshots this sweep expired, project-relative.
+    expired: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -514,6 +528,22 @@ def purge_expired(binding: ProjectBinding, *, now: datetime) -> tuple[str, ...]:
     return binding.repository.purge_trash(now=_iso(now))
 
 
+def prune_recovery(binding: ProjectBinding, *, now: datetime) -> tuple[str, ...]:
+    """Expire superseded local recovery snapshots; the removed snapshots' project-relative paths.
+
+    The rule is the repository's (``prune_working_draft``), unchanged from when the
+    Hub applied it: a snapshot goes only when it is not the current ``localDraftRef``
+    and was not updated within 24 hours, one inconsistent snapshot refuses the
+    whole expiry, and no run ever goes. A project without a working position has
+    no recovery and is left as it was, without a lock file.
+    """
+
+    repository = binding.repository
+    if repository.read_working_draft()[1] is None:
+        return ()
+    return repository.prune_working_draft(now=_iso(now))
+
+
 def read_trash(binding: ProjectBinding) -> TrashView:
     """The project trash, oldest first; reading writes nothing."""
 
@@ -574,35 +604,51 @@ class RetentionSweeps:
     """One Runtime process's automatic cleaning: at project open and after each Continue, one sweep at a time.
 
     ``at_open`` waits for the project index's first load, purges expired trash entries and cleans;
-    ``after_continue`` cleans. A request made while a sweep runs is folded into one more sweep after
-    it. Every sweep runs on its own thread, so no request waits for it; ``wait`` is for tests.
+    ``after_continue`` cleans. Every sweep first expires superseded local recovery (``prune_recovery``),
+    and from the open on a sweep that does only that comes every ``prune_interval_s`` (15 minutes) too.
+    A request made while a sweep runs is folded into one more sweep after it. Every sweep runs on its
+    own thread, so no request waits for it; ``wait`` is for tests.
     """
 
-    def __init__(self, state: Any, *, clock: Callable[[], datetime] = _utc_now, index_wait_s: float = 60.0) -> None:
+    def __init__(self, state: Any, *, clock: Callable[[], datetime] = _utc_now, index_wait_s: float = 60.0,
+                 prune_interval_s: float = RECOVERY_PRUNE_INTERVAL_S) -> None:
         self._state = state
         self._clock = clock
         self._index_wait_s = index_wait_s
+        self._prune_interval_s = prune_interval_s
         self._lock = threading.Lock()
         self._wanted: str | None = None
         self._thread: threading.Thread | None = None
+        self._cadence: threading.Thread | None = None
         self._idle = threading.Event()
         self._idle.set()
         self._stopping = False
+        self._stopped = threading.Event()
         # The last sweep, for diagnostics.
         self.last: Sweep | None = None
 
     def at_open(self) -> None:
         self._request("open")
+        with self._lock:
+            if self._stopping or self._cadence is not None:
+                return
+            self._cadence = threading.Thread(target=self._every_interval, name="studio-recovery-expiry", daemon=True)
+            self._cadence.start()
 
     def after_continue(self) -> None:
         self._request("continue")
+
+    def _every_interval(self) -> None:
+        while not self._stopped.wait(self._prune_interval_s):
+            self._request("prune")
 
     def _request(self, trigger: str) -> None:
         with self._lock:
             if self._stopping:
                 return
-            # An open sweep also purges; it is never folded away into a plain one.
-            self._wanted = "open" if "open" in (trigger, self._wanted) else trigger
+            # The broader sweep stands for the narrower: an open also purges, and is never folded away.
+            if self._wanted is None or _BREADTH[trigger] > _BREADTH[self._wanted]:
+                self._wanted = trigger
             self._idle.clear()
             if self._thread is None:
                 self._thread = threading.Thread(target=self._run, name="studio-retention", daemon=True)
@@ -622,9 +668,16 @@ class RetentionSweeps:
                 _LOG.exception("the retention sweep (%s) failed", trigger)
 
     def sweep(self, trigger: str) -> Sweep:
-        """One sweep on the calling thread: after an open, the index first and the expired entries purged."""
+        """One sweep on the calling thread: superseded recovery expired first, then the trash.
+
+        After an open the index is waited for and the expired entries are purged
+        before cleaning; a ``prune`` (the cadence) expires recovery and nothing else.
+        """
 
         binding = bound_project(self._state)
+        expired, warnings = self._expire_recovery(binding)
+        if trigger == "prune":
+            return Sweep(trigger, (), (), {}, warnings, expired)
         purged: tuple[str, ...] = ()
         if trigger == "open":
             binding.await_index(self._index_wait_s)
@@ -634,7 +687,20 @@ class RetentionSweeps:
         if result.cleaned or purged:
             _LOG.info("project %s: %d runs moved to the trash, %d purged (%s)", binding.project_id,
                       len(result.cleaned), len(purged), trigger)
-        return Sweep(result.trigger, result.cleaned, purged, result.kept, result.warnings)
+        return Sweep(result.trigger, result.cleaned, purged, result.kept, warnings + result.warnings, expired)
+
+    def _expire_recovery(self, binding: ProjectBinding) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """``prune_recovery``, with a refusal kept as the sweep's warning: the project stays as it was."""
+
+        try:
+            expired = prune_recovery(binding, now=self._clock())
+        except _UNREADABLE as exc:
+            # One inconsistent snapshot refuses the whole expiry and removes nothing.
+            _LOG.warning("superseded local recovery of %s was not expired: %s", binding.project_id, exc)
+            return (), (f"Superseded local recovery was not expired: {_detail(exc)}",)
+        if expired:
+            _LOG.info("project %s: %d superseded local recovery snapshots expired", binding.project_id, len(expired))
+        return expired, ()
 
     def wait(self, timeout: float | None = None) -> bool:
         """Whether every requested sweep has ended within ``timeout``."""
@@ -646,6 +712,8 @@ class RetentionSweeps:
 
         with self._lock:
             self._stopping = True
-            thread = self._thread
-        if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout)
+            thread, cadence = self._thread, self._cadence
+        self._stopped.set()
+        for running in (cadence, thread):
+            if running is not None and running is not threading.current_thread():
+                running.join(timeout)

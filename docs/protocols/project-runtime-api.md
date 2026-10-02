@@ -1422,7 +1422,8 @@ project from any other process (a tool, a script, an agent's command) is refused
 project waits briefly for one that may be exiting, then exits with that code in its log instead of
 serving, and the Hub shows it as an exited worker. A runtime that holds no lease, because its
 folder held no project when it started, answers a write another process blocks with
-`409 PROJECT_WRITER_BUSY`.
+`409 PROJECT_WRITER_BUSY`. The Hub itself reads an open project through its binding and writes it
+only through its runtime (§4.1, expiring superseded local recovery).
 
 The local Hub exposes `GET /api/runtime` and `GET /api/runtime/projects/{runtime_id}` as one
 runtime view: exact project/path binding, published P036 version/digest, reachable design
@@ -1552,6 +1553,10 @@ reason) and each restore one `design.restored`, in the fixed `studio-retention` 
 events name is never cleaned again, so a draft a person restored stays. `GET /api/trash` lists the
 trash and `POST /api/trash/restore` brings one run back; shared objects (`objects/sha256`) never move
 and a purge does not reclaim them.
+Each sweep first expires superseded local recovery: Modeling's crash-recovery snapshots that are
+neither the current local draft nor updated within the last 24 hours, never a run. The Runtime also
+does that alone every 15 minutes while the project is open; the Hub, which ran this expiry on its own
+timer before ADR-012, writes no open project.
 
 The position's `revisionSha256` (from `GET /api/working-draft`, `/api/working-draft/revision` and
 `/api/working-source`) is the compare-and-swap token that `PUT /api/working-draft`, `POST

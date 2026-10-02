@@ -337,7 +337,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     From startup on, every commit of the project index queues the design
     tree's thumbnails that are not drawn yet (``_project_commits``). A
     process ``main`` started also cleans the project's superseded drafts into
-    its trash once the index has loaded (``RetentionSweeps``, #575).
+    its trash once the index has loaded (``RetentionSweeps``, #575), and
+    expires superseded local recovery then and every 15 minutes (ADR-012).
 
     A candidate run writes P036 records; killing its thread mid-run would
     leave a run directory nobody can account for. Shutting the worker down and
@@ -753,7 +754,8 @@ def _serve(args: argparse.Namespace, settings: StudioSettings) -> None:
     app.state.managed_instance_id = args.managed_instance_id
     app.state.prepare_first_reads = True
     if settings.service_role != SHARED_PROJECT_ROLE:
-        # The project's own process cleans what its line moved past (#575): at open and after each Continue.
+        # The project's own process cleans what its line moved past (#575): at open and after each Continue;
+        # it expires superseded local recovery in each sweep and every 15 minutes, as the Hub did (ADR-012).
         app.state.retention = RetentionSweeps(app.state)
     if not args.managed_stdin:
         uvicorn.run(app, host=settings.bind_host, port=args.port)
