@@ -1,4 +1,28 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-599",
+      "lanes": [
+        {
+          "id": "hub-idle",
+          "status": "active",
+          "branch": "codex/599-hub-idle",
+          "worktree": "/workspace/shared/monkeyhub-535-dev/workspace/worktrees/codex-599-hub-idle",
+          "base_ref": "45c6bd8b2a15dc377fc0d16c4532ddd0a8ef2f7d",
+          "contributor": "Codex",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
+            "apps/monkeyhub/api/tests/test_project_runtime.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
