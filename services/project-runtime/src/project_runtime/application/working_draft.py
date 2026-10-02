@@ -22,7 +22,7 @@ from archflow.contracts.canonical import canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import AUDIT_EVENT, RECORD_KINDS, STUDIO_LOCAL_DRAFT
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
-from archflow.project.repository import ProjectRepositoryError, StaleWorkingDraft
+from archflow.project.repository import LABEL_SAVED_BY, SAVED_BY_PERSON, ProjectRepositoryError, StaleWorkingDraft
 from archflow.state.design_portfolio import DesignBranch
 
 from .artifacts import (
@@ -105,6 +105,11 @@ def _entry(binding: ProjectBinding, run_id: str, *, branch_id: str | None = None
             "branchId": branch_id, "label": None, "automatic": False}
 
 
+def _name_of(row: Mapping[str, Any]) -> dict:
+    """A row's name and who saved it (#575), which the row keeps whenever it is written again."""
+    return {key: row[key] for key in ("label", LABEL_SAVED_BY) if key in row}
+
+
 def _entry_on_line(binding: ProjectBinding, run_id: str, line: str | None) -> dict:
     """The entry on a remembered line; the Stage's own line when that one no longer holds it."""
     try:
@@ -131,7 +136,9 @@ def read_working_draft(binding: ProjectBinding) -> WorkingDraftDto:
     the architect explicitly rejects or archives them (GH-234 Q3).
     """
     value, revision = binding.repository.read_working_draft()
-    entries = {run_id: WorkingDraftEntryDto(runId=run_id, **{key: item for key, item in row.items() if key != "automatic"})
+    # A name reads the same whoever saved it (#575): who saved it only decides whether it keeps its run.
+    entries = {run_id: WorkingDraftEntryDto(runId=run_id, **{key: item for key, item in row.items()
+                                                             if key not in ("automatic", LABEL_SAVED_BY)})
                for run_id, row in value["runs"].items()}
     local = None
     if value["localDraftRef"] is not None:
@@ -174,7 +181,7 @@ def select_working_draft(binding: ProjectBinding, run_id: str | None, revision: 
         row = (_entry(binding, run_id, branch_id=branch_id) if branch_id is not None
                else _entry_on_line(binding, run_id, (previous or {}).get("branchId")))
         if previous:
-            row.update(label=previous["label"], automatic=previous["automatic"])
+            row.update(_name_of(previous), automatic=previous["automatic"])
         value["runs"][run_id] = row
     value["current"] = run_id
     written = _write(binding, value, revision)
@@ -277,13 +284,24 @@ def _retain_continued(binding: ProjectBinding, payload: dict, *, undo: dict, wri
 
 
 @retained_sources
-def save_working_draft(binding: ProjectBinding, run_id: str, revision: str | None, label: str | None) -> WorkingDraftDto:
+def save_working_draft(binding: ProjectBinding, run_id: str, revision: str | None, label: str | None, *,
+                       saved_by: str | None = None) -> WorkingDraftDto:
+    """Name a run as a version; ``saved_by="person"`` is the person saving it in the Hub (#575).
+
+    The Hub page's own save says so, and the row records it. A name saved without it is that caller's
+    (an agent's or any other) and records no saver: it is listed and shown the same, but only a name a
+    person saved keeps a superseded draft out of the project trash. Saving again replaces both.
+    """
+    if saved_by not in (None, SAVED_BY_PERSON):
+        raise ValueError("only the person saving a name in the Hub is recorded as its saver")
     value, actual = binding.repository.read_working_draft()
     if actual != revision:
         raise StudioError(409, "WORKING_DRAFT_STALE", "The working draft changed; read it before saving a version.")
     previous = value["runs"].get(run_id)
     row = _entry(binding, run_id, branch_id=previous["branchId"] if previous else None)
     row.update(label=(label or "Saved version").strip() or "Saved version", automatic=previous["automatic"] if previous else False)
+    if saved_by == SAVED_BY_PERSON:
+        row[LABEL_SAVED_BY] = SAVED_BY_PERSON
     value["runs"][run_id] = row
     _write(binding, value, revision)
     return read_working_draft(binding)
@@ -309,9 +327,7 @@ def record_candidate_draft(binding: ProjectBinding, run_id: str, source_run_id: 
     for _ in range(8):
         value, revision = binding.repository.read_working_draft()
         previous = value["runs"].get(run_id)
-        if previous:
-            row["label"] = previous["label"]
-        value["runs"][run_id] = row
+        value["runs"][run_id] = {**row, **_name_of(previous)} if previous else row
         try:
             binding.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
             return
