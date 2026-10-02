@@ -89,26 +89,39 @@ class _LayoutCase(unittest.TestCase):
 
     @staticmethod
     def counting(below: Path):
-        """Count every ``stat`` and listing below ``below``, by path."""
+        """Count every ``stat`` and listing below ``below``, each named relative to it, however it is spelled.
 
-        root = os.path.normcase(os.fspath(below))
+        A temporary folder may be named by its 8.3 short name (``RUNNER~1``)
+        where the repository resolves it to the long one: the layout reads
+        below the spelling it was given, the repository below the resolved
+        one, and both count as the same place.
+        """
+
+        roots = sorted({os.path.normcase(os.fspath(below)), os.path.normcase(os.path.realpath(below))},
+                       key=len, reverse=True)
         seen: list[tuple[str, str]] = []
         real_stat, real_scandir = os.stat, os.scandir
 
-        def mine(path) -> bool:
+        def relative(path) -> str | None:
             try:
-                return os.path.normcase(os.fsdecode(path)).startswith(root)
+                spelled = os.path.normcase(os.fsdecode(path))
             except TypeError:
-                return False
+                return None
+            for root in roots:
+                if spelled == root:
+                    return "."
+                if spelled.startswith(root + os.sep):
+                    return spelled[len(root) + len(os.sep):]
+            return None
 
         def stat(path, *args, **kwargs):
-            if mine(path):
-                seen.append(("stat", os.path.normcase(os.fsdecode(path))))
+            if (name := relative(path)) is not None:
+                seen.append(("stat", name))
             return real_stat(path, *args, **kwargs)
 
         def scandir(path=".", *args, **kwargs):
-            if mine(path):
-                seen.append(("list", os.path.normcase(os.fsdecode(path))))
+            if (name := relative(path)) is not None:
+                seen.append(("list", name))
             return real_scandir(path, *args, **kwargs)
 
         return seen, mock.patch("os.stat", stat), mock.patch("os.scandir", scandir)
@@ -219,7 +232,7 @@ class OwnWriteTests(_LayoutCase):
             self.assertEqual(layout.readings, {"open": 1, "recheck": 0, "refresh": 0})
             seen.clear()
             self.assertTrue(until(lambda: layout.readings["recheck"] == 1, SETTLE_S))
-        records = os.path.normcase(str(self.records))
+        records = os.path.normcase(os.path.join("runs", "run-001", "records"))
         self.assertEqual(seen, [("stat", records), ("list", records)], "the re-check read only what was written")
         after = layout.latest()
         self.assertEqual(after.serial, written)

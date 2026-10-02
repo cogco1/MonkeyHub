@@ -595,8 +595,10 @@ class KnownLayout:
         """One reading: a whole walk at open or after a failure, else a re-check of what was written or young."""
 
         # Before anything is read: a write racing this reading then moves the
-        # serial past the one its fingerprint is filed under.
-        serial = write_serial(self.root)
+        # serial past the one its fingerprint is filed under. Asked by the
+        # root's key, so a root given in another spelling (an 8.3 short name)
+        # is not resolved again at every reading.
+        serial = write_serial(self.key)
         touched, everything = self._take_touched()
         scanned_at_ns = _time_ns()
         tree = self._tree
@@ -639,7 +641,7 @@ class KnownLayout:
                 if pointers:
                     tree.read_pointers()
             before, _, _ = tree.places()
-            serial = write_serial(self.root)
+            serial = write_serial(self.key)
             scanned_at_ns = _time_ns()
             tree.walk(self._is_closed)
             # This process's writes that landed during the walk are read again,
