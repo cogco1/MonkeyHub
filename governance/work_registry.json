@@ -1,33 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-280",
-      "lanes": [
-        {
-          "id": "board-terminology",
-          "status": "active",
-          "branch": "codex/280-board-terminology",
-          "worktree": "/workspace/shared/monkeyhub-535-dev/workspace/worktrees/codex-280-board-terminology",
-          "base_ref": "45c6bd8b2a15dc377fc0d16c4532ddd0a8ef2f7d",
-          "contributor": "Codex",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/workspaces/monkeyboard/Board.tsx",
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/test/catalogs.test.ts",
-            "apps/monkeyhub/web/test/boardLocale.browser.mjs",
-            "apps/monkeyhub/installer/README.md",
-            ".github/workflows/verify.yml"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
