@@ -191,7 +191,7 @@ async function openDrawingFromBoard(drawing, pageIndex = 0) {
 async function openVersions() {
   const toggle = page.locator('button[aria-controls="stage-versions-panel"]');
   if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
-  const retained = page.locator('#stage-versions-panel details').filter({ has: page.getByText("候选方案与已有历史", { exact: true }) });
+  const retained = page.locator('#stage-versions-panel details').filter({ has: page.getByText("Candidates and existing history", { exact: true }) });
   if (await retained.count() && await retained.getAttribute("open") === null) await retained.locator("summary").click();
 }
 
@@ -349,6 +349,8 @@ try {
         if (name === "/api/protocol") return await json({ protocol: "archflow/2", server: "fixture", serverVersion: "test", mode: "local",
           capabilities: ["working-copies", "model-annotations", "events", "operation-timing", ...(diagnosticsEnabled ? ["operation-diagnostics"] : []), ...(historyEnabled ? ["design-history", "drawing-elevations", "document-visual-input"] : []),
             ...(workingDraftEnabled ? ["working-draft"] : [])] });
+        // Modeling reads component-info cards from this project's existing Board.
+        if (name === "/api/board") return await json({ projectId, title: "", elements: [], seenDocuments: [], revisionSha256: null });
         if (name === "/api/working-draft") return await json(workingDraftDto());
         if (name === "/api/project") return await json(binding());
         if (name === "/api/drawings/styles") return await json({ styles: [] });
@@ -1250,7 +1252,7 @@ try {
 
   await step("S0 requires one explicit confirmation and cold reopen restores the committed head", async () => {
     assert.equal(stages.size, 0);
-    assert.equal(await page.getByText("已有模型与历史运行 · 尚未归入 Stage", { exact: true }).count(), 1);
+    assert.equal(await page.getByText("Existing models and past runs · not yet assigned to a Stage", { exact: true }).count(), 1);
     await page.getByRole("button", { name: "Accept as S0", exact: true }).click();
     await until(snapshot, (value) => value.history?.stages.length === 1, "S0 was not confirmed");
     s0 = [...stages.values()][0];
@@ -1265,7 +1267,7 @@ try {
     await launch(historyA); await complete(historyA); await diagnosticRendered(historyA);
     await continueFromViewed(historyA.candidateId);
     assert.equal((await snapshot()).sourceStageRef, s0.stageRef);
-    await stageAsBase("S0", "S0 · 当前提交", currentHome.runId);
+    await stageAsBase("S0", "S0 · Current commit", currentHome.runId);
     const continueReadStart = requests.length;
     await openVersions();
     await page.locator('[data-preview-candidate="history-a"]').getByRole("button", { name: "Continue from here", exact: true }).click();
@@ -1347,7 +1349,7 @@ try {
       Boolean, "The Board note was not submitted after Continue");
     assert.equal(intent.body.sourceStageRef, s0.stageRef);
     assert.deepEqual(intent.body.modelSource, s0.modelSource);
-    await stageAsBase("S1", "S1 · 当前提交", historyA.candidateId);
+    await stageAsBase("S1", "S1 · Current commit", historyA.candidateId);
   });
 
   await step("viewing a historical candidate labels its own source Stage without moving the editing base", async () => {
@@ -1372,9 +1374,9 @@ try {
     assert.equal(intent.body.sourceRunId, currentHome.runId); assert.equal(intent.body.sourceStageRef, s0.stageRef);
     assert.equal(branches.size, 1);
     await openVersions();
-    await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "从这里新建分支" }).click();
+    await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "New branch from here" }).click();
     await page.getByPlaceholder("alternate-layout").fill("alternate");
-    await page.getByRole("button", { name: "创建分支", exact: true }).click();
+    await page.getByRole("button", { name: "Create branch", exact: true }).click();
     await until(snapshot, (value) => value.history?.branchId === "alternate", "Named branch was not selected");
     assert.equal(branches.get("main").headStageRef, s1.stageRef);
     assert.equal(branches.get("alternate").headStageRef, s0.stageRef);
@@ -1423,7 +1425,7 @@ try {
     const checkB = page.locator('[data-preview-candidate="history-b"] input[type="checkbox"]');
     const checkC = page.locator('[data-preview-candidate="history-c"] input[type="checkbox"]');
     const checkOtherStage = page.locator('[data-preview-candidate="history-other-stage"] input[type="checkbox"]');
-    const combine = page.getByRole("button", { name: "合并选中候选并预览", exact: true });
+    const combine = page.getByRole("button", { name: "Combine selected candidates and preview", exact: true });
     await checkOtherStage.check();
     assert.equal(await checkB.isDisabled(), true, "Candidates from S0 cannot join a selected candidate from S1");
     assert.equal(await checkC.isDisabled(), true);
@@ -1568,7 +1570,7 @@ try {
       revisionRef: `${lastDrawing.revisionRef}-different-model`, generatedAt: "2026-09-09T10:00:00.000Z" };
     // The first row is older; the globally newest row belongs to another exact model.
     documents.splice(0, documents.length, old, latest, mismatched);
-    await stageAsBase("S1", "S1 · 当前提交", historyA.candidateId);
+    await stageAsBase("S1", "S1 · Current commit", historyA.candidateId);
     await page.locator('.document-viewport[data-ready="true"]').waitFor();
     assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), JSON.stringify([latest.runId, latest.assetSha256, latest.revisionRef]));
     assert.equal(requests.findLast((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).query.revisionRef, latest.revisionRef);
@@ -1578,7 +1580,7 @@ try {
     await stageAsBase("S0", "S0", currentHome.runId);
     documents.splice(0, documents.length, { ...lastDrawing, modelSource: { ...lastDrawing.modelSource, assetSha256: "e".repeat(64) }, generatedAt: "2026-09-09T11:00:00.000Z" });
     const before = requests.filter((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).length;
-    await stageAsBase("S1", "S1 · 当前提交", historyA.candidateId);
+    await stageAsBase("S1", "S1 · Current commit", historyA.candidateId);
     await page.getByRole("combobox", { name: "Source document", exact: true }).waitFor();
     assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), "");
     assert.equal(await page.locator(".document-viewport").count(), 0);
@@ -1586,7 +1588,7 @@ try {
     await stageAsBase("S0", "S0", currentHome.runId);
     documents.splice(0, documents.length, { ...lastDrawing, revisionRef: `${lastDrawing.revisionRef}-undated-a`, generatedAt: null },
       { ...lastDrawing, revisionRef: `${lastDrawing.revisionRef}-undated-b`, generatedAt: null });
-    await stageAsBase("S1", "S1 · 当前提交", historyA.candidateId);
+    await stageAsBase("S1", "S1 · Current commit", historyA.candidateId);
     await page.getByRole("combobox", { name: "Source document", exact: true }).waitFor();
     assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), "");
     assert.equal(await page.locator(".document-viewport").count(), 0);
@@ -1607,7 +1609,7 @@ try {
     await openVersions();
     await view(alternate);
     await openVersions();
-    const stageButton = page.locator('[data-design-stage="S1"]').getByRole("button", { name: "S1 · 当前提交", exact: true });
+    const stageButton = page.locator('[data-design-stage="S1"]').getByRole("button", { name: "S1 · Current commit", exact: true });
     assert.equal(await stageButton.getAttribute("aria-pressed"), "false", "Sharing the Stage run is insufficient to claim its pinned model is shown");
     await page.evaluate(() => window.__candidatePreview.changeBase(null)); await rendered(pinned.runId);
     assert.deepEqual((await snapshot()).loadedModelSource, pinned.modelSource);
@@ -1616,7 +1618,7 @@ try {
     assert.deepEqual((await snapshot()).editingModelSource, pinned.modelSource);
     await until(async () => page.locator('[data-preview-candidate="history-a"]').count(), (value) => value === 0,
       "Other files from an accepted candidate run must not become new candidates");
-    const legacy = page.locator("details").filter({ has: page.getByText("已有模型与历史运行 · 尚未归入 Stage", { exact: true }) });
+    const legacy = page.locator("details").filter({ has: page.getByText("Existing models and past runs · not yet assigned to a Stage", { exact: true }) });
     await legacy.locator("summary").first().click();
     assert.ok(await legacy.getByText(ungrouped.fileName, { exact: true }).count() > 0,
       "An ungrouped file sharing an accepted Stage's run must remain available as a legacy model");

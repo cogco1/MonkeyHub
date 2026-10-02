@@ -60,10 +60,11 @@ uvicorn.run(app,host='127.0.0.1',port=port,log_level='warning')
 `;
 const fixture = `
 import React,{useState} from 'react';import{createRoot}from'react-dom/client';
-import{ProjectWorkspace}from'/src/app/ProjectWorkspace';import{UserPreferencesProvider}from'/test/TestProviders';
+import{ProjectWorkspace}from'/src/app/ProjectWorkspace';import{UserPreferencesProvider,usePreferences}from'/test/TestProviders';
 import'/src/app/styles.css';import'/@fs/${path.resolve(repo, "packages/web-shared/src/base.css").replaceAll("\\", "/")}';
+function Diagnostics(){const p=usePreferences();return <button id="developer-mode" onClick={()=>p.setDeveloperMode(!p.developerMode)}>Developer mode</button>}
 function Project({id}){const[workspace,setWorkspace]=useState('publish');
-return <UserPreferencesProvider baseUrl={location.origin+'/'+id}><nav>{['publish','board','render'].map(w=><button key={w} onClick={()=>setWorkspace(w)}>{w}</button>)}</nav><main style={{height:'calc(100% - 40px)'}}><ProjectWorkspace expectedProjectId={id} workspace={workspace} onWorkspaceChange={setWorkspace}/></main></UserPreferencesProvider>}
+return <UserPreferencesProvider baseUrl={location.origin+'/'+id}><Diagnostics/><nav>{['publish','board','render'].map(w=><button key={w} onClick={()=>setWorkspace(w)}>{w}</button>)}</nav><main style={{height:'calc(100% - 40px)'}}><ProjectWorkspace expectedProjectId={id} workspace={workspace} onWorkspaceChange={setWorkspace}/></main></UserPreferencesProvider>}
 function App(){const[id,setId]=useState('pub-a');return <><button id="project-switch" onClick={()=>setId(id==='pub-a'?'pub-b':'pub-a')}>{id}</button><div style={{height:'calc(100% - 30px)'}}><Project key={id} id={id}/></div></>}
 createRoot(document.getElementById('root')).render(<App/>);
 `;
@@ -105,6 +106,45 @@ try {
     await bar().getByRole('button', { name: 'Add to Publish', exact: true }).click();
     await bar().getByLabel('Publication title').waitFor();
   }
+  async function assertFailure({ code, status, detail, reason, next, developer = false }) {
+    const panel = pub().locator('.error-panel');
+    assert.equal(await panel.count(), 1, 'Publish must present exactly one structured failure through ErrorPanel');
+    assert.equal(await pub().getByRole('alert').count(), 1, 'the same failure is not announced twice');
+    assert.match(await panel.locator('.error-panel__reason').innerText(), reason);
+    assert.match(await panel.locator('.error-panel__next').innerText(), next);
+    const details = panel.locator('details');
+    assert.equal(await details.evaluate((element) => element.open), developer, 'diagnostics follow developer mode');
+    assert.equal(await details.locator('[lang="en"]').isVisible(), developer, 'raw server detail is folded for ordinary use');
+    if (!developer) await details.locator('summary').click();
+    assert.equal(await details.locator('.error-panel__code').innerText(), code);
+    assert.equal(await details.locator('.error-panel__status').innerText(), `HTTP ${status}`);
+    assert.equal(await details.locator('[lang="en"]').innerText(), detail);
+    if (!developer) await details.locator('summary').click();
+  }
+  await step('failed initial publication read explains recovery in both languages and preserves technical details', async () => {
+    const detail = 'Publication record fixture-282 could not be read.';
+    const reading = (url) => url.pathname === '/pub-a/api/publication';
+    await page.route(reading, (route) => route.request().method() === 'GET'
+      ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'PUBLICATION_READ_FAILED', detail }) }) : route.continue());
+    for (const language of ['en', 'zh-CN']) {
+      await page.goto(vite.resolvedUrls.local[0] + '?lang=' + language);
+      await until(() => pub().innerText().catch(() => ''), (text) => text.includes(detail) || /Technical details|技术详情/.test(text), 'publication read refusal rendered');
+      await page.screenshot({ path: path.join(temporary, `publish-read-failure-${language}.png`), fullPage: true });
+      const refusal = { code: 'PUBLICATION_READ_FAILED', status: 503, detail,
+        reason: language === 'en' ? /ran into a problem/ : /项目服务出错/,
+        next: language === 'en' ? /restart MonkeyHub/ : /重启 MonkeyHub/ };
+      await assertFailure(refusal);
+      await page.locator('#developer-mode').click();
+      await assertFailure({ ...refusal, developer: true });
+      await page.locator('#developer-mode').click();
+      await assertFailure(refusal);
+    }
+    await page.unroute(reading);
+    await pub().getByRole('button', { name: '重试', exact: true }).click();
+    await bar().getByLabel('文件标题').waitFor();
+    assert.equal(await pub().getByRole('alert').count(), 0, 'successful read clears its error');
+    assert.deepEqual(await api('pub-a', '/fixture/head'), head);
+  });
   await page.goto(vite.resolvedUrls.local[0] + "?lang=en");
   await step("create native text and a real registered image page", async () => {
     await pub().getByRole("button", { name: "+ Page", exact: true }).click();
@@ -205,6 +245,28 @@ try {
     assert.deepEqual(await api('pub-a', '/fixture/head'), head);
     await page.unroute('**/pub-a/api/publication/export');
   });
+  await step('a live Board import failure is explained once and explicit retry does not duplicate pages', async () => {
+    const before = await api('pub-a', '/api/publication');
+    let attempts = 0;
+    await page.route('**/pub-a/api/publication/from-board', (route) => {
+      ++attempts;
+      return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'PUBLICATION_BOARD_SELECTION', detail: 'The selected Board objects are not in this saved revision.' }) });
+    });
+    await page.getByRole('button', { name: 'board', exact: true }).click();
+    await sendBoardSelection();
+    await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
+    await assertFailure({ code: 'PUBLICATION_BOARD_SELECTION', status: 409, detail: 'The selected Board objects are not in this saved revision.', reason: /conflicts with the project/, next: /latest state/ });
+    assert.equal(attempts, 1);
+    assert.deepEqual(await api('pub-a', '/api/publication'), before, 'refused import does not change retained pages');
+    await page.unroute('**/pub-a/api/publication/from-board');
+    const retried = page.waitForResponse((reply) => reply.url().endsWith('/api/publication/from-board') && reply.request().method() === 'POST');
+    await pub().getByRole('button', { name: 'Retry save', exact: true }).click();
+    assert.equal((await retried).status(), 200);
+    await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'live import retried');
+    assert.equal(await pub().getByRole('alert').count(), 0);
+    assert.deepEqual((await api('pub-a', '/api/publication')).pages, before.pages, 'retry keeps exactly one copy of every imported page');
+    assert.deepEqual(await api('pub-a', '/fixture/head'), head);
+  });
   await step('a failed autosave keeps the draft and does not reimport deleted Board pages', async () => {
     const before = await api('pub-a', '/api/publication');
     await pub().getByRole('button', { name: 'Delete page', exact: true }).click();
@@ -215,19 +277,47 @@ try {
     await page.route(savingPublication, async (route) => {
       if (route.request().method() !== 'PUT') return route.continue();
       failed = true;
-      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Temporary save failure' }) });
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'PUBLICATION_WRITE_FAILED', detail: 'Temporary save failure' }) });
     });
     await bar().getByLabel('Publication title').fill('Retain this after failure');
     await until(() => failed, Boolean, 'save refused');
     await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
     assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Retain this after failure');
+    await assertFailure({ code: 'PUBLICATION_WRITE_FAILED', status: 503, detail: 'Temporary save failure', reason: /could not be saved/, next: /project folder can be written to/ });
+    await bar().getByLabel('Publication title').fill('Newest draft after failure');
+    const dialog = page.waitForEvent('dialog');
+    const reloading = pub().getByRole('button', { name: 'Reload', exact: true }).click();
+    const confirmation = await dialog;
+    assert.equal(confirmation.message(), 'Discard unsaved changes and reload?');
+    await confirmation.dismiss(); await reloading;
+    assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Newest draft after failure');
+    assert.notEqual((await api('pub-a', '/api/publication')).title, 'Newest draft after failure');
     await page.unroute(savingPublication);
     await pub().getByRole('button', { name: 'Retry save', exact: true }).click();
     await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'retry acknowledged');
-    assert.equal((await api('pub-a', '/api/publication')).title, 'Retain this after failure');
+    assert.equal((await api('pub-a', '/api/publication')).title, 'Newest draft after failure');
+    assert.equal(await pub().getByRole('alert').count(), 0, 'successful retry clears its error');
     await delay(300);
     assert.deepEqual((await api('pub-a', '/api/publication')).pages, kept, 'retry must not replay the previous Board import');
     assert.deepEqual(await api('pub-a', '/fixture/head'), head);
+  });
+  await step('failed export creates no download and a repeated export recovers', async () => {
+    const before = await api('pub-a', '/api/publication');
+    const downloads = []; const onDownload = (download) => downloads.push(download);
+    page.on('download', onDownload);
+    await page.route('**/pub-a/api/publication/export', (route) => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'PUBLICATION_SOURCE_CONFLICT', detail: 'The export source no longer matches fixture-282.' }) }));
+    await bar().getByRole('button', { name: 'PDF', exact: true }).click();
+    await pub().getByRole('alert').waitFor();
+    await assertFailure({ code: 'PUBLICATION_SOURCE_CONFLICT', status: 409, detail: 'The export source no longer matches fixture-282.', reason: /conflicts with the project/, next: /latest state/ });
+    assert.equal(downloads.length, 0, 'failed export never presents a successful file');
+    assert.deepEqual(await api('pub-a', '/api/publication'), before, 'export failure leaves saved content unchanged');
+    await page.unroute('**/pub-a/api/publication/export');
+    const download = page.waitForEvent('download');
+    await bar().getByRole('button', { name: 'PDF', exact: true }).click();
+    assert.ok((await readFile(await (await download).path())).length > 1000);
+    assert.equal(downloads.length, 1);
+    assert.equal(await pub().getByRole('alert').count(), 0);
+    page.off('download', onDownload);
   });
   await step('typing during a delayed autosave keeps the newest text and survives project close/reopen', async () => {
     let release, captured = false, writes = 0;
@@ -285,6 +375,8 @@ try {
     assert.equal((await api('pub-a', '/api/publication')).title, 'Next edit has the correct saved base');
   });
   await step('failed autosave survives project close until it can be retried', async () => {
+    const other = await api('pub-b', '/api/publication');
+    const otherHead = await api('pub-b', '/fixture/head');
     const savingPublication = (url) => url.pathname === '/pub-a/api/publication';
     await page.route(savingPublication, (route) => route.request().method() === 'PUT'
       ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Offline for close' }) }) : route.continue());
@@ -292,12 +384,17 @@ try {
     await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
     await page.locator('#project-switch').click();
     await pub().getByRole('button', { name: '+ Page', exact: true }).waitFor();
+    assert.equal(await pub().getByRole('alert').count(), 0, 'the other project does not inherit this error');
+    assert.deepEqual(await api('pub-b', '/api/publication'), other);
+    assert.deepEqual(await api('pub-b', '/fixture/head'), otherHead);
     await page.locator('#project-switch').click();
     await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
     assert.equal(await bar().getByLabel('Publication title').inputValue(), 'Recover this after closing project');
     await page.unroute(savingPublication);
     await pub().getByRole('button', { name: 'Retry save', exact: true }).click();
     await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'reopened failure recovered');
+    assert.deepEqual(await api('pub-b', '/api/publication'), other);
+    assert.deepEqual(await api('pub-b', '/fixture/head'), otherHead);
   });
   await step('Board import completes across immediate project close/reopen without a stale editing base', async () => {
     let release, captured = false;
@@ -323,11 +420,13 @@ try {
     assert.deepEqual((await api('pub-a', '/api/publication')).pages, imported.pages);
   });
   await step('a Board import that fails after project close remains retryable on reopen', async () => {
+    const before = await api('pub-a', '/api/publication');
+    let imports = 0;
     let release, captured = false;
     const gate = new Promise((resolve) => { release = resolve; });
     await page.route('**/pub-a/api/publication/from-board', async (route) => {
-      captured = true; await gate;
-      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Delayed import failure' }) });
+      ++imports; captured = true; await gate;
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'PUBLICATION_BOARD_SELECTION', detail: 'Delayed import failure' }) });
     });
     await page.getByRole('button', { name: 'board', exact: true }).click();
     await sendBoardSelection(); await until(() => captured, Boolean, 'import pending before close');
@@ -336,12 +435,17 @@ try {
     await page.locator('#project-switch').click();
     await bar().getByLabel('Publication title').waitFor(); release();
     await pub().getByRole('button', { name: 'Retry save', exact: true }).waitFor();
+    await assertFailure({ code: 'PUBLICATION_BOARD_SELECTION', status: 503, detail: 'Delayed import failure', reason: /ran into a problem/, next: /restart MonkeyHub/ });
+    assert.equal(imports, 1, 'failed import is not automatically resubmitted');
+    assert.deepEqual(await api('pub-a', '/api/publication'), before);
     await page.unroute('**/pub-a/api/publication/from-board');
     const response = page.waitForResponse((reply) => reply.url().endsWith('/api/publication/from-board') && reply.request().method() === 'POST');
     await pub().getByRole('button', { name: 'Retry save', exact: true }).click();
     assert.equal((await response).status(), 200);
     await until(() => bar().locator('.publish-save-state').textContent(), (value) => value === 'Saved', 'retained Board command retried');
     assert.equal(await pub().getByRole('alert').count(), 0);
+    assert.deepEqual((await api('pub-a', '/api/publication')).pages, before.pages, 'retry of retained selection does not duplicate pages');
+    assert.deepEqual(await api('pub-a', '/fixture/head'), head);
   });
   await step('repeatable layout separates multiple text boxes from images and refuses overfull content', async () => {
     await pub().getByRole('button', { name: '+ Page', exact: true }).click();

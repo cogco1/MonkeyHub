@@ -161,10 +161,10 @@ jobs:
 
       - name: Install API dependencies
         run: >-
-          python -m pip install -e packages/archflow -e packages/monkeycad -e packages/monkeyarch -e packages/monkeydiagram
+          python -m pip install -e packages/archflow -e "packages/monkeycad[occt]" -e packages/monkeyarch -e packages/monkeydiagram
           -e packages/monkeymonitor -e packages/monkeycontrol
           -r services/project-runtime/requirements.txt
-          -r apps/monkeyhub/api/requirements.txt
+          -r apps/monkeyhub/api/requirements.txt httpx2
 
       - name: Install web dependencies
         working-directory: apps/monkeyhub/web
@@ -193,10 +193,30 @@ jobs:
           npm install --no-save --package-lock=false playwright
           npx playwright install --with-deps chrome
 
+      - name: Model history locale browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/versionsLocale.browser.mjs
+
       - name: Project usage browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
         run: node test/chatShell.browser.mjs
+
+      # Retained public-model suites own disposable real Project Runtimes (#355).
+      - name: Install retained-model fixture test dependencies
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        run: python -m pip install -e 'packages/monkeycad[inspection]' 'httpx2>=2.12'
+
+      - name: Retained model working-copy browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/workingCopy.browser.mjs
+
+      - name: Retained model notification browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/versionNotifications.browser.mjs
 
       - name: Workspace crash reload browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
@@ -213,11 +233,21 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node test/drawingCanvas.browser.mjs
 
+      - name: Board document page browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/boardDocumentOpen.browser.mjs
+
       # In-memory API fixtures, no project runtime (#355).
       - name: Board note handoff browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
         run: node test/boardIntentHandoff.browser.mjs
+
+      - name: Board locale browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/boardLocale.browser.mjs
 
       - name: Intent source browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
@@ -229,10 +259,41 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node test/workModelExport.browser.mjs
 
+      - name: Candidate preview history regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/candidatePreview.browser.mjs
+
+      - name: External model import history regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/externalModelImport.browser.mjs
+
+      - name: Retained model previews history regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/modelPreviews.browser.mjs
+
+      - name: Model recording history regression
+        env:
+          MONKEYARCH_AUTOSAVE: "1"
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/modelSync.browser.mjs
+
       - name: Elevation browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
         run: node test/elevation.browser.mjs
+
+      - name: Install Render fixture test dependencies
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        run: python -m pip install -e 'packages/monkeycad[occt]' 'httpx2>=2.12'
+
+      - name: Render workspace browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/renderWorkspace.browser.mjs
 
       # Stage interactions against in-memory fixtures, no project API (#355).
       - name: Push/Pull browser regression
@@ -254,6 +315,18 @@ jobs:
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
         run: node test/viewportSelection.browser.mjs
+
+      - name: Document canvas browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/documentCanvas.browser.mjs
+
+      - name: Publish error recovery browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: |
+          python -m pip install 'httpx2>=2.12'
+          node test/publishWorkspace.browser.mjs
 
   hub-first-run:
     name: Hub first-run (${{ matrix.os }})

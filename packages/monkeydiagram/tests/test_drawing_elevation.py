@@ -99,6 +99,25 @@ def _view(**overrides) -> ElevationView:
     return ElevationView(**{**values, **overrides})
 
 
+class DrawingValidationTests(unittest.TestCase):
+    def test_public_validation_helpers_preserve_drawing_and_section_refusals(self):
+        from monkeydiagram.projection.views import SectionPerspectiveError, finite_number, refuse_section
+        from monkeydiagram.sources import require_drawing
+
+        self.assertEqual(finite_number(3, "height"), 3.0)
+        for value in (True, "3", None, math.inf, -math.inf, math.nan):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(DrawingElevationError, "height must be a finite number"):
+                    finite_number(value, "height")
+        require_drawing(True, "unused")
+        with self.assertRaisesRegex(DrawingElevationError, "source did not verify"):
+            require_drawing(False, "source did not verify")
+        with self.assertRaises(SectionPerspectiveError) as caught:
+            refuse_section("SECTION_PLANE_MISSES_MODEL", "the section missed the model")
+        self.assertEqual(caught.exception.code, "SECTION_PLANE_MISSES_MODEL")
+        self.assertEqual(str(caught.exception), "the section missed the model")
+
+
 @NEEDS_OCCT
 class ProjectionValueTests(unittest.TestCase):
     """The in-memory projection: frame, crop, near/far and the hidden-line switch, with no repository."""

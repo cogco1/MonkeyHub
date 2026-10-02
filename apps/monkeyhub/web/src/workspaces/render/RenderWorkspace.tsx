@@ -162,6 +162,10 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
         source, references, direction: direction.trim(), output: { size: actualSize, aspectRatio: actualAspect } });
       if (job.projectId !== projectId || job.requestId !== requestId) throw new Error("The render response does not match this request.");
       if (!alive.current) return;
+      // Reads started during submission can predate admission or already include completion.
+      // Discard that snapshot, then let the active refresh catch up without another submission.
+      ++readEpoch.current;
+      if (reading.current) readAgain.current = true;
       setJobs((rows) => [job, ...rows.filter((row) => row.jobId !== job.jobId)]); setRecaptured(null);
       // Keep the previous result visible while a new task is running or fails.
       if (job.status === "succeeded") setSelectedId(job.jobId);

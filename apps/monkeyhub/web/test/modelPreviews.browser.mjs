@@ -84,7 +84,7 @@ async function versions() {
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
   const panel = surface().getByRole('region', { name: 'Model versions', exact: true });
   await panel.locator('.vcard__export[aria-pressed="true"]').first().waitFor({state:'attached'});
-  const summary = panel.locator('summary').filter({ hasText: '已有模型与历史运行' });
+  const summary = panel.locator('summary').filter({ hasText: 'Existing models and past runs' });
   await summary.waitFor();
   if (!(await summary.evaluate(el => el.parentElement.open))) await summary.click();
   return panel;
@@ -212,16 +212,16 @@ try {
       await page.locator('[data-project-surface="board"]:visible .monkeyboard-canvas canvas').first().waitFor();
       await page.locator('.monkeyboard-initializing').waitFor({ state: 'hidden' });
     };
-    const waitForDiscovery = async () => {
-      // Observe the real five-second discovery tick and its save debounce.
-      await page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === '/api/documents');
-      await delay(1000);
-    };
-    await page.goto(boardUrl); await waitForBoard();
+    // Board reads documents when opened or when its project index moves, not on a timer.
+    // Arm each wait before navigation so the initial read cannot finish before it is observed.
+    const waitForDiscovery = () => page.waitForResponse(response => response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === '/api/documents');
+    const discovered = waitForDiscovery();
+    await page.goto(boardUrl); await waitForBoard(); await discovered;
     await page.getByRole('button', { name: 'Project documents', exact: true }).click();
     const source = page.locator('.monkeyboard-source').filter({ hasText: image.fileName });
     await source.waitFor();
-    await waitForDiscovery();
+    await delay(1000); // Keep the existing save-debounce observation window.
     assert.deepEqual(await api('/api/board'), before, 'automatic preview discovery must preserve the saved scene and revision');
     assert.deepEqual(boardWrites, [], 'automatic previews must not trigger a Board save');
 
@@ -235,7 +235,8 @@ try {
     });
     assert.ok(boardWrites.length > 0);
     boardWrites.length = 0;
-    await page.reload(); await waitForBoard(); await waitForDiscovery();
+    const rediscovered = waitForDiscovery();
+    await page.reload(); await waitForBoard(); await rediscovered; await delay(1000);
     assert.deepEqual(await api('/api/board'), placed, 'reopening must retain the explicitly placed preview without adding other thumbnails');
     assert.deepEqual(boardWrites, [], 'reopening a saved preview must not produce another scene revision');
     assert.equal(await api('/fixture/head'), head);

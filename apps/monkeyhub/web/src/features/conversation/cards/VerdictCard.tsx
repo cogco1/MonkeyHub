@@ -92,6 +92,8 @@ export function VerdictCard({
   }
 
   const value = validation.value;
+  const noRelations = value.relationChecks.held === 0 &&
+    value.relationChecks.violated === 0 && value.relationChecks.unchecked === 0;
   const refused = new Set(value.blockedBy);
   const known = new Set<string>(REVIEW.flatMap((line) => line.clauses));
   const unresolved = value.blockedBy.filter((name) => !known.has(name));
@@ -117,6 +119,7 @@ export function VerdictCard({
                 key={line.id}
                 title={t(line.titleKey)}
                 ok={ok}
+                empty={line.id === "dependencies" && ok && noRelations}
                 clauses={line.clauses}
                 refusing={refusing}
                 developerMode={developerMode}
@@ -209,6 +212,7 @@ export function VerdictCard({
 function ReviewLine({
   title,
   ok,
+  empty,
   clauses,
   refusing,
   developerMode,
@@ -216,6 +220,7 @@ function ReviewLine({
 }: {
   title: string;
   ok: boolean;
+  empty: boolean;
   clauses: readonly string[];
   refusing: readonly string[];
   developerMode: boolean;
@@ -226,15 +231,19 @@ function ReviewLine({
     <>
       <dt>{title}</dt>
       <dd>
-        <span className={`mark ${ok ? "mark--ok" : "mark--no"}`}>
-          {ok ? "✓" : "△"}
-        </span>{" "}
-        {ok ? (
-          t("verdict.held")
+        {empty ? (
+          <span className="quiet">{t("verdict.noRelations")}</span>
         ) : (
           <>
-            {t("verdict.refused")}: {" "}
-            {developerMode && <span className="mono">{refusing.join(", ")}</span>}
+            <span className={`mark ${ok ? "mark--ok" : "mark--no"}`}>
+              {ok ? "✓" : "△"}
+            </span>{" "}
+            {ok ? t("verdict.held") : (
+              <>
+                {t("verdict.refused")}: {" "}
+                {developerMode && <span className="mono">{refusing.join(", ")}</span>}
+              </>
+            )}
           </>
         )}
         {developerMode && <span className="quiet mono review__clauses"> {clauses.join(" · ")}</span>}

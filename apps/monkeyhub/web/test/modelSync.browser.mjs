@@ -479,11 +479,11 @@ if (autosaveOnly) {
   assert.equal(await page.locator('.versions [data-design-stage], .versions [data-preview-candidate]').count(),0,'no second list of Stages or candidates beside the Design Tree');
   assert.equal(await page.locator('.stage__versions-current, .stage__versions-new').count(),0,'the footer leaves position and new options to the Stage chip');
   assert.equal(await page.getByRole('button',{name:'Open in Design tree',exact:true}).count(),2,'the footer and Versions each offer the one link');
-  const recovery=page.locator('.versions details').filter({has:page.locator('summary').filter({hasText:'自动恢复点'})});
+  const recovery=page.locator('.versions details').filter({has:page.locator('summary').filter({hasText:'Automatic recovery points'})});
   assert.equal(await recovery.evaluate(node=>node.open),false,'automatic recovery starts collapsed');
   assert.equal(await page.locator('[data-working-draft]:visible').count(),1,'only current is expanded before saving a milestone');
-  await page.getByRole('textbox',{name:'重点版本名称',exact:true}).fill('Autosave milestone');
-  await page.getByRole('button',{name:'保存重点版本',exact:true}).click();
+  await page.getByRole('textbox',{name:'Milestone name',exact:true}).fill('Autosave milestone');
+  await page.getByRole('button',{name:'Save milestone',exact:true}).click();
   await savedDraft(d=>d.saved.some(row=>row.runId===current&&row.label==='Autosave milestone'),'manual milestone was not saved');
   await page.getByText('Autosave milestone',{exact:true}).waitFor();
   assert.equal(await page.locator('[data-working-draft]:visible').count(),2,'current and the explicit milestone stay visible');

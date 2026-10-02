@@ -30,7 +30,7 @@ from .artifacts import (
 )
 from ..authentication import ActorAttribution, LOCAL_ACTOR_ID, ORIGIN_HUB, ORIGIN_HUB_AGENT, ORIGIN_STUDIO
 from ..binding import retained_sources
-from ..binding import ProjectBinding
+from ..binding import ProjectBinding, RunChanges
 from .projection import StateProjection, project_state
 from ..errors import StudioError
 
@@ -418,14 +418,17 @@ def _detail(exc: Exception) -> str:
     return exc.detail if isinstance(exc, StudioError) else str(exc) or type(exc).__name__
 
 
-def _parents(binding: ProjectBinding, run_id: str) -> tuple[str, ...]:
-    """The exact runs one candidate continued: its source, then any results it combined."""
+def _parents(binding: ProjectBinding, run_id: str, changes: RunChanges | None = None) -> tuple[str, ...]:
+    """The exact runs one candidate continued: its source, then any results it combined.
+
+    ``changes`` is the caller's own reading of the runs' changes, when it keeps one.
+    """
 
     key = (str(binding.repository.layout.root), run_id)
     known = _PARENTS.get(key)
     if known is not None:
         return known
-    delta = binding.candidate_delta(run_id)
+    delta = (binding.candidate_delta if changes is None else changes)(run_id)
     if delta is None:
         # Not remembered: a run's change may still be being retained.
         return ()
@@ -437,12 +440,16 @@ def _parents(binding: ProjectBinding, run_id: str) -> tuple[str, ...]:
 
 
 def lineage_of(binding: ProjectBinding, run_id: str, *,
-               known: dict[str, tuple[str, ...]] | None = None) -> tuple[str, ...]:
+               known: dict[str, tuple[str, ...]] | None = None,
+               changes: RunChanges | None = None) -> tuple[str, ...]:
     """The run and the exact retained runs it continued or combined, nearest first.
 
     ``known`` lets one caller that walks many lineages read each run's change
     at most once, a root without one included; the process memo keeps only
     changes that exist, because a run's change may still be being retained.
+    ``changes`` is the caller's own reading of the runs' changes
+    (``RunChanges``): the walk reads through it, so nothing else the caller
+    does reads a run's change again.
     """
 
     runs = [run_id]
@@ -453,7 +460,7 @@ def lineage_of(binding: ProjectBinding, run_id: str, *,
             parents = known[current]
         else:
             try:
-                parents = _parents(binding, current)
+                parents = _parents(binding, current, changes)
             except _UNREADABLE:
                 parents = ()
             if known is not None:
@@ -487,7 +494,7 @@ def _complete_model(binding: ProjectBinding, projection: StateProjection, stage)
 
 
 def _head_at(binding: ProjectBinding, run_id: str, *, branch_id: str | None, origin: str,
-             label: str | None) -> WorkingHead:
+             label: str | None, changes: RunChanges | None = None) -> WorkingHead:
     stage_ref, history = None, ()
     if branch_id is not None and branch_id in binding.repository.read_design_branches():
         history = tuple(binding.design_history(branch_id))
@@ -508,11 +515,12 @@ def _head_at(binding: ProjectBinding, run_id: str, *, branch_id: str | None, ori
         branch_id=branch_id, accepted=accepted, origin=origin,
         label=label or (stage.label if accepted else None),
         model_source=_complete_model(binding, projection, stage if accepted else None),
-        lineage=lineage_of(binding, run_id),
+        lineage=lineage_of(binding, run_id, changes=changes),
     )
 
 
-def _fallback_head(binding: ProjectBinding, warnings: list[str]) -> WorkingHead | None:
+def _fallback_head(binding: ProjectBinding, warnings: list[str],
+                   changes: RunChanges | None = None) -> WorkingHead | None:
     """Without a readable position: the main line's accepted head, then the reference run."""
 
     try:
@@ -520,14 +528,16 @@ def _fallback_head(binding: ProjectBinding, warnings: list[str]) -> WorkingHead 
         if branches:
             branch_id = "main" if "main" in branches else sorted(branches)[0]
             stage = binding.design_stage(DesignBranch.from_dict(branches[branch_id]).head_stage)
-            return _head_at(binding, stage.candidate_id, branch_id=branch_id, origin="branch-head", label=None)
+            return _head_at(binding, stage.candidate_id, branch_id=branch_id, origin="branch-head", label=None,
+                            changes=changes)
     except _UNREADABLE as exc:
         warnings.append(f"The accepted design head could not be read: {_detail(exc)}")
     try:
         reference = binding.reference_run()
         if reference.source == "none":
             return None
-        return _head_at(binding, reference.run.run_id, branch_id=None, origin="reference", label=None)
+        return _head_at(binding, reference.run.run_id, branch_id=None, origin="reference", label=None,
+                        changes=changes)
     except _UNREADABLE as exc:
         warnings.append(f"The project's reference run could not be read: {_detail(exc)}")
     return None
@@ -597,13 +607,14 @@ def working_revision(binding: ProjectBinding) -> str | None:
 
 
 def resolve_working_source(binding: ProjectBinding, workspace: str = "modeling", *, policy: str = LIVE,
-                           pinned: ModelSource | None = None) -> WorkingSource:
+                           pinned: ModelSource | None = None, changes: RunChanges | None = None) -> WorkingSource:
     """Resolve the current working source for one workspace from retained facts only.
 
     LIVE answers the head's compatible exact source; FROZEN keeps an exact pinned
     model and says whether the head has moved past it. Nothing is written or
     retained, so it takes no project guard: a reader never waits for a writer
-    and never holds a lock a writer needs.
+    and never holds a lock a writer needs. ``changes`` is the caller's own
+    reading of the runs' changes, which the head's lineage then reads through.
     """
 
     if workspace not in WORKSPACES:
@@ -617,7 +628,8 @@ def resolve_working_source(binding: ProjectBinding, workspace: str = "modeling",
     if current is not None:
         row = value["runs"][current]
         try:
-            head = _head_at(binding, current, branch_id=row["branchId"], origin="working-position", label=row["label"])
+            head = _head_at(binding, current, branch_id=row["branchId"], origin="working-position",
+                            label=row["label"], changes=changes)
         except _UNREADABLE as exc:
             warnings.append(f"The saved working position {current} could not be read: {_detail(exc)}")
         # Reported, never acted on: only an explicit Continue moves the head (Q2).
@@ -631,7 +643,7 @@ def resolve_working_source(binding: ProjectBinding, workspace: str = "modeling",
             warnings.append(f"The current working version {current} was rejected ({rejection}). It stays the "
                             "editing base until another result is continued.")
     if head is None:
-        head = _fallback_head(binding, warnings)
+        head = _fallback_head(binding, warnings, changes)
 
     def answer(compatible, source, stage_ref, reason):
         return WorkingSource(binding.project_id, workspace, policy, revision, head, compatible, source, stage_ref,
@@ -659,16 +671,18 @@ class WorkingSources:
     """One request's resolutions of the Working Head, each workspace read at most once.
 
     A listing that judges many results against one head reads it once. The head does
-    not depend on the workspace; only its compatible source does.
+    not depend on the workspace; only its compatible source does. ``changes`` is the
+    request's own reading of the runs' changes, when it keeps one (``RunChanges``).
     """
 
-    def __init__(self, binding: ProjectBinding) -> None:
+    def __init__(self, binding: ProjectBinding, *, changes: RunChanges | None = None) -> None:
         self._binding = binding
+        self._changes = changes
         self._resolved: dict[str, WorkingSource] = {}
 
     def __call__(self, workspace: str = "modeling") -> WorkingSource:
         if workspace not in self._resolved:
-            self._resolved[workspace] = resolve_working_source(self._binding, workspace)
+            self._resolved[workspace] = resolve_working_source(self._binding, workspace, changes=self._changes)
         return self._resolved[workspace]
 
     @property

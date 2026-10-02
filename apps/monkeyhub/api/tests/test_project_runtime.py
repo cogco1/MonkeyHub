@@ -23,8 +23,9 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, project_fixture, wait_for
-from archflow.project.repository import FilesystemProjectRepository
-from project_runtime.binding import ProjectBinding
+from archflow.project.repository import FilesystemProjectRepository, project_root_key
+from archflow.project.watch import running_watches
+from project_runtime.binding import ProjectBinding, ReadToken
 from project_runtime.settings import StudioSettings
 from monkeyhub_api.runtime import manager as runtime_module, worker_http
 from monkeyhub_api.models import ChatSummary, HubError, HubFailure
@@ -922,37 +923,65 @@ for _ in range(5):
                 self.assertFalse(any(call.args[1] == "/api/state" for call in reads.call_args_list))
             self.assertEqual(self.project_bytes(self.project), before)
 
-    def test_idle_watcher_rederives_work_copies_only_when_their_inputs_move(self):
+    def test_a_work_copy_is_bound_on_its_wake_or_once_the_project_moved_never_by_the_clock(self):
         with self.hub() as client:
             runtime_id = self.open_project(client)
             manager = client.app.state.runtimes
             runtime = manager.get(runtime_id)
             wait_for(lambda: runtime.work_copy_key is not None, "The opening pass did not bind work copies", timeout=10)
-            with patch("monkeyhub_api.runtime.manager._WORK_COPY_CHECK_S", 0.2), \
-                    patch("monkeyhub_api.runtime.manager._IDLE_HEARTBEAT_S", 0.2),                     patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as checks,                     patch.object(manager, "bind_work_copies", wraps=manager.bind_work_copies) as binds:
-                # Deriving the list reads every record of every run (#314), so
-                # an idle watcher compares what decides it and derives nothing.
-                runtime.wake.set()
-                wait_for(lambda: checks.call_count >= 3, "The idle watcher stopped comparing its inputs", timeout=10)
-                self.assertEqual(binds.call_count, 0, "An idle pass re-derived unchanged work copies")
 
-                with patch.object(runtime.wake, "set", wraps=runtime.wake.set) as wakes:
-                    # A read changes nothing retained and wakes nobody.
-                    listed = self.proxy(client, runtime_id, "/api/documents")
-                    self.assertEqual(listed.status_code, 200, listed.text)
-                    self.assertEqual(wakes.call_count, 0, "A forwarded read woke the project watcher")
-                    # A registered document is a new input, taken on the wake.
-                    original = self.upload_image(client, runtime_id, self.png_bytes("white"))
-                    self.assertGreater(wakes.call_count, 0)
-                wait_for(lambda: binds.call_count >= 1, "A registered document was not re-derived", timeout=10)
-                self.assertEqual(manager.bind_work_copies(runtime), {})
-                derived = binds.call_count
+            def bound(work):
+                return str(work) in {str(row.copy.path) for row in runtime.work_copies.values()}
 
-                # So is the file the Studio writes when a copy is asked for.
-                _, work = self.open_work_copy(client, runtime_id, original)
-                wait_for(lambda: str(work) in {str(row.copy.path) for row in runtime.work_copies.values()},
-                         "An opened work copy was not bound", timeout=10)
-                self.assertGreater(binds.call_count, derived)
+            with patch("monkeyhub_api.runtime.manager._IDLE_HEARTBEAT_S", 0.2), \
+                    patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as inputs, \
+                    patch.object(manager, "bind_work_copies", wraps=manager.bind_work_copies) as binds:
+                with patch("monkeyhub_api.runtime.manager._WORK_COPY_CHECK_S", 3600):
+                    # A wake derives at once and puts the next idle question an
+                    # hour away: whatever is derived below is derived because a
+                    # request woke the observer, never because time passed.
+                    runtime.wake.set()
+                    wait_for(lambda: inputs.call_count >= 1, "A wake did not derive the work copies", timeout=10)
+                    with patch.object(runtime.wake, "set", wraps=runtime.wake.set) as wakes:
+                        # A read changes nothing retained and wakes nobody.
+                        listed = self.proxy(client, runtime_id, "/api/documents")
+                        self.assertEqual(listed.status_code, 200, listed.text)
+                        self.assertEqual(wakes.call_count, 0, "A forwarded read woke the project watcher")
+                        # A registered document is a new input, taken on the wake.
+                        original = self.upload_image(client, runtime_id, self.png_bytes("white"))
+                        self.assertGreater(wakes.call_count, 0)
+                    wait_for(lambda: binds.call_count >= 1, "A registered document was not re-derived", timeout=10)
+                    self.assertEqual(manager.bind_work_copies(runtime), {})
+                    derived = binds.call_count
+
+                    # So is the file the Studio writes when the Board asks for a
+                    # copy through the Hub: bound on that request's wake.
+                    _, work = self.open_work_copy(client, runtime_id, original)
+                    wait_for(lambda: bound(work), "A copy opened through the Hub was not bound on its wake", timeout=10)
+                    self.assertGreater(binds.call_count, derived)
+
+                with patch("monkeyhub_api.runtime.manager._WORK_COPY_CHECK_S", 0.2):
+                    # From this request's wake on, the idle question comes often.
+                    asked = inputs.call_count
+                    other = self.upload_image(client, runtime_id, self.png_bytes("black"))
+                    wait_for(lambda: inputs.call_count > asked, "A registered document was not re-derived", timeout=10)
+                    worker = client.app.state.applications.worker_snapshots(project_dir=str(self.project))[0]
+                    with patch.object(runtime.wake, "set", wraps=runtime.wake.set) as wakes, \
+                            patch.object(runtime.wake, "check", wraps=runtime.wake.check) as checks:
+                        # A client that asks the worker itself wakes nothing in
+                        # the Hub. The binding's layout watch sees the file the
+                        # worker writes, the read token moves, and the next idle
+                        # question binds the copy.
+                        made = worker_http.request_http(
+                            worker.url, f"/api/documents/{other['assetSha256']}/work-copy", "POST",
+                            json.dumps({"projectId": self.project_id, "runId": other["runId"],
+                                        "revisionRef": other["revisionRef"]}).encode("utf-8"),
+                            {"content-type": "application/json"}, timeout=30)
+                        self.assertEqual(made.status, 201, made.body)
+                        written = self.project / Path(*made.json()["relativePath"].split("/"))
+                        wait_for(lambda: bound(written), "A copy written past the Hub was not bound once the project moved",
+                                 timeout=10)
+                        self.assertEqual((wakes.call_count, checks.call_count), (0, 0))
 
     def test_idle_runtime_skips_history_scans_but_refreshes_on_request_and_crash(self):
         with self.hub() as client:
@@ -1389,9 +1418,155 @@ class RuntimeCostTests(unittest.TestCase):
         self.assertLessEqual(len(passes), 60 / runtime_module._IDLE_HEARTBEAT_S)
         self.assertEqual(set(passes), {runtime_module._IDLE_HEARTBEAT_S})
         # The retained history is read once, not on every idle fallback, and
-        # the work-copy inputs are compared on their own cadence only.
+        # so are the work-copy inputs: nothing moved after the opening pass.
         self.assertEqual(refresh.call_count, 1)
-        self.assertLessEqual(inputs.call_count, 1 + 60 / runtime_module._WORK_COPY_CHECK_S)
+        self.assertEqual(inputs.call_count, 1)
+
+    def test_an_idle_observer_never_derives_the_work_copies_of_an_unchanged_project(self):
+        # Which work copies exist is derived from the document records of every
+        # run and a walk of each run's copy folder. On 150 runs that was a tenth
+        # of a second of CPU or more, every 30 s, and the idle Hub's largest
+        # cost (#599). The opening pass derives them; ten idle minutes of an
+        # unchanged project then read no record of any run.
+        repository = self.project()
+        manager = self.manager()
+        runtime = self.runtime(manager, repository)
+        _settle(repository.layout.root)
+        runtime.binding.layout_watch().sync()
+        now, opened = [0.0], []
+
+        def heartbeat(timeout):
+            if not opened:
+                opened.append((inputs.call_count, records.call_count))
+            now[0] += timeout
+            if now[0] >= 600:
+                manager._closing.set()
+            return False
+
+        runtime.wake.set()  # what open() asks of its observer
+        with patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as inputs, \
+             patch.object(runtime.binding, "record_refs", wraps=runtime.binding.record_refs) as records, \
+             patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
+            manager._watch(runtime)
+        self.assertEqual(opened[0][0], 1, "the opening pass did not derive the work copies")
+        self.assertGreater(opened[0][1], 0)
+        self.assertEqual(inputs.call_count, 1, "an idle pass derived the work copies of an unchanged project")
+        self.assertEqual(records.call_count, opened[0][1], "an idle pass read the records of the project's runs")
+
+    def test_the_observer_derives_the_work_copies_again_once_the_project_moved_or_on_a_wake(self):
+        repository = self.project()
+        manager = self.manager()
+        runtime = self.runtime(manager, repository)
+        _settle(repository.layout.root)
+        runtime.binding.layout_watch().sync()
+        now, derived = [0.0], []
+
+        def write(run_id):
+            # A separate client adds a run; the watch is let see it settled.
+            repository.create_run(run_id)
+            _settle(repository.layout.root)
+            runtime.binding.layout_watch().sync()
+
+        def heartbeat(_timeout):
+            derived.append(inputs.call_count)
+            step = len(derived)
+            if step == 1:
+                now[0] = 30.0  # the idle question is due; nothing moved
+            elif step == 2:
+                write("external-run")
+                now[0] = 60.0  # due again, and the project moved
+            elif step == 3:
+                now[0] = 90.0  # unchanged since that derivation
+            elif step == 4:
+                runtime.wake.set()  # a Hub mutation derives at once, the question not yet due
+            elif step == 5:
+                runtime.wake.check()  # a page opens the project again; nothing moved
+            elif step == 6:
+                write("reopened-run")
+                runtime.wake.check()  # it moved, so the check derives at once
+            elif step == 7:
+                now[0] = 150.0
+            else:
+                manager._closing.set()
+
+        runtime.wake.set()  # what open() asks of its observer
+        with patch.object(manager, "refresh"), \
+             patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as inputs, \
+             patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
+            manager._watch(runtime)
+        # Derivations after each pass: opening, unchanged, moved, unchanged,
+        # woken, checked and unchanged, checked after a write, unchanged.
+        self.assertEqual(derived, [1, 1, 2, 2, 3, 3, 4, 4])
+        derived_runs = [row[0] for row in runtime.work_copy_key]
+        self.assertIn("external-run", derived_runs)
+        self.assertIn("reopened-run", derived_runs)
+
+    def test_the_first_idle_question_after_an_open_derives_nothing_when_nothing_moved(self):
+        # Nothing had read the binding before its observer started, and the
+        # binding's layout watch started on the first idle fallback. The
+        # opening derivation then had no token to record, so the first idle
+        # question after every open derived everything once more. The observer
+        # now takes the watch as it starts; the watch walks the project while
+        # the opening pass reads it.
+        repository = self.project()
+        manager = self.manager()
+        runtime = self.runtime(manager, repository)
+        _settle(repository.layout.root)
+        now = [0.0]
+
+        def opening_read(row, cold=False):
+            # The retained read takes at least as long as one walk of the
+            # project by a watch that is running.
+            watch = running_watches().get(project_root_key(row.project_dir))
+            if watch is not None:
+                watch.latest()
+
+        def heartbeat(timeout):
+            now[0] += timeout
+            if now[0] >= 120:
+                manager._closing.set()
+            return False
+
+        runtime.wake.set()  # what open() asks of its observer
+        with patch.object(manager, "refresh", side_effect=opening_read), \
+             patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as inputs, \
+             patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
+            manager._watch(runtime)
+        self.assertEqual(inputs.call_count, 1, "the first idle question after an open derived the work copies again")
+
+    def test_work_copies_derived_under_an_unsettled_token_are_derived_again(self):
+        # A token taken while the project was still settling does not prove
+        # that nothing moved: a write as recent as the derivation may be missing
+        # from it. That derivation is repeated on the next idle question, and
+        # once the token has settled the questions stop deriving.
+        repository = self.project()
+        manager = self.manager()
+        runtime = self.runtime(manager, repository)
+        unsettled = ReadToken("epoch", 1, "layout", False)
+        current, now, derived = [unsettled], [0.0], []
+
+        def heartbeat(_timeout):
+            derived.append(inputs.call_count)
+            if len(derived) == 2:
+                current[0] = replace(unsettled, stable=True)  # the same layout, now old enough to trust
+            elif len(derived) == 5:
+                manager._closing.set()
+            now[0] += 30.0
+            return False
+
+        runtime.wake.set()  # what open() asks of its observer
+        with patch.object(manager, "refresh"), \
+             patch.object(manager, "_work_copy_inputs", wraps=manager._work_copy_inputs) as inputs, \
+             patch.object(runtime.binding, "read_token", side_effect=lambda wait=True: current[0]), \
+             patch.object(runtime.wake, "wait", side_effect=heartbeat), \
+             patch("monkeyhub_api.runtime.manager.time.monotonic", side_effect=lambda: now[0]):
+            manager._watch(runtime)
+        # Opening and the question after it under the unsettled token, the
+        # question once it settled, then nothing more.
+        self.assertEqual(derived, [1, 2, 3, 3, 3])
 
     def test_a_status_change_ends_the_idle_wait_without_asking_for_a_read(self):
         manager = self.manager()
