@@ -57,8 +57,9 @@ import {UserPreferencesProvider,useStudio,usePreferences} from '/test/TestProvid
 import '/src/app/styles.css';
 import '/@fs/${root}/../../../packages/web-shared/src/base.css';
 const modelA=${JSON.stringify(modelA)},modelB=${JSON.stringify(modelB)};
-const metrics=window.drawingFixture={requests:[],documents:[${JSON.stringify(legacyDocument)}],artifacts:[${JSON.stringify(externalArtifact)},${JSON.stringify(unsupportedExact)}],uploads:[],handoffs:[],head:'stage-A',revision:0,headDrawable:true,recipe:{hatchSpacingMm:3}};
-const stages=[{stageRef:'stage-A',label:'Accepted A',branchId:'main',modelSource:modelA}, {stageRef:'stage-B',label:'Accepted B',branchId:'main',modelSource:modelB}];
+const zeroStage=new URLSearchParams(location.search).has('zeroStage');
+const metrics=window.drawingFixture={requests:[],historyReads:[],workingReads:[],documents:zeroStage?[]:[${JSON.stringify(legacyDocument)}],artifacts:zeroStage?[]:[${JSON.stringify(externalArtifact)},${JSON.stringify(unsupportedExact)}],uploads:[],handoffs:[],head:zeroStage?null:'stage-A',revision:0,headDrawable:true,recipe:{hatchSpacingMm:3}};
+const stages=zeroStage?[]:[{stageRef:'stage-A',label:'Accepted A',branchId:'main',modelSource:modelA}, {stageRef:'stage-B',label:'Accepted B',branchId:'main',modelSource:modelB}];
 function App(){
  const studio=useStudio(),[active,setActive]=useState(true),[projectId,setProjectId]=useState('drawing-project');
  const preferences=usePreferences();
@@ -66,10 +67,11 @@ function App(){
   studio.documents=async()=>({projectId:metrics.projectId,runId:null,documents:metrics.documents.filter(d=>d.projectId===metrics.projectId)});
   studio.artifacts=async()=>({projectId:metrics.projectId,artifacts:metrics.artifacts.filter(a=>a.projectId===metrics.projectId),skippedRuns:[]});
   studio.uploadModel=async(projectId,file)=>{ metrics.uploads.push(file.name); const artifact={...metrics.artifacts[0],projectId,fileName:'house.3dm',runId:'uploaded-skp',sha256:'f'.repeat(64),sourceImport:{...metrics.artifacts[0].sourceImport,sourceFileName:file.name}}; metrics.artifacts.push(artifact); return artifact; };
-  studio.designHistory=async()=>({projectId:metrics.projectId,branchId:'main',branches:[{branchId:'main',headStageRef:metrics.head}],stages});
+  studio.designHistory=async()=>{const history={projectId:metrics.projectId,branchId:'main',branches:zeroStage?[]:[{branchId:'main',headStageRef:metrics.head}],stages}; metrics.historyReads.push(history); return history;};
   studio.workingSource=async(workspace)=>{
    const model=metrics.head==='stage-B'?modelB:modelA;
-   const head={runId:model.runId,stateDigest:model.stateDigest,recordDigest:'r',sourceStageRef:metrics.head,branchId:'main',accepted:true,origin:'working-position',label:null,modelSource:model,lineage:[model.runId]};
+   const head={runId:model.runId,stateDigest:model.stateDigest,recordDigest:'r',sourceStageRef:metrics.head,branchId:zeroStage?null:'main',accepted:!zeroStage,origin:'working-position',label:null,modelSource:model,lineage:[model.runId]};
+   metrics.workingReads.push(head);
    return metrics.headDrawable?{projectId:metrics.projectId,workspace,policy:'live',revisionSha256:String(metrics.revision),head,compatible:true,source:model,stageRef:metrics.head,reason:null,warnings:[]}
     :{projectId:metrics.projectId,workspace,policy:'live',revisionSha256:String(metrics.revision),head,compatible:false,source:null,stageRef:null,reason:'The current working version has no complete model to draw from yet.',warnings:[]};
   };
@@ -104,7 +106,7 @@ let browser, page, hold = false, release, broken = false, refuseNext = false, cu
 // A status answer held back, to look at the drawing while its source is checked again.
 let holdStatus = false, releaseStatus = null;
 
-const requests = [], statusRequests = [], dimensionQueries = [], drives = [], errors = [], passed = [], vectorBytes = new Map();
+const requests = [], statusRequests = [], dimensionQueries = [], drives = [], errors = [], dialogs = [], passed = [], vectorBytes = new Map();
 const sectionRequests = [], planOnlyCalls = [];
 // 05-S4: the runtime's offers, the decisions this page writes, and the ones retained.
 let offers = [];
@@ -144,8 +146,10 @@ try {
   await server.listen();
   browser = await chromium.launch({ headless: true, channel: "chrome" });
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await page.clock.install();
   page.setDefaultTimeout(12000);
   page.on("pageerror", error => errors.push(String(error)));
+  page.on("dialog", dialog => { dialogs.push(dialog.message()); void dialog.dismiss(); });
   await page.route("**/api/drawings/plans/dimensions?*", route => {
     dimensionQueries.push(Object.fromEntries(new URL(route.request().url()).searchParams));
     return route.fulfill({ json: { lengthUnit: "meter", dimensions: [
@@ -454,6 +458,83 @@ try {
     assert.equal(requests.length, generationCount + 1, "a refused save is not retried on return");
     await saveButton().click();
     await until(() => revision().inputValue(), value => value !== before, "an explicit retry saves the retained edit");
+  });
+  await step("switching revisions saves dirty appearance before opening the requested revision", async () => {
+    const before = await revision().inputValue(), generationCount = requests.length;
+    const [runId, , previousRevisionRef] = JSON.parse(before);
+    const scale = page.getByLabel("Scale denominator (1 : n)", { exact: true });
+    const editedScale = await scale.inputValue() === "115" ? "120" : "115";
+    const readsBefore = await page.evaluate(() => window.drawingFixture.requests.length);
+    // Freeze only the debounce clock so this is definitely navigation with dirty edits,
+    // rather than an autosave which happened to finish before the selection.
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+    hold = true;
+    await scale.fill(editedScale);
+    assert.equal(requests.length, generationCount);
+    await revision().selectOption(legacyKey);
+    await until(() => Promise.resolve(Boolean(release)), Boolean, "navigation save held before its response");
+    assert.equal(await revision().inputValue(), before, "the old revision stays selected until saving succeeds");
+    assert.equal(await scale.inputValue(), editedScale);
+    assert.equal(await revision().isDisabled(), true);
+    assert.equal(requests.length, generationCount + 1);
+    assert.equal(requests.at(-1).previousRevisionRef, previousRevisionRef);
+    assert.equal(requests.at(-1).modelSource.runId, runId);
+    assert.equal(requests.at(-1).scaleDenominator, Number(editedScale));
+    assert.deepEqual(await page.evaluate(start => window.drawingFixture.requests.slice(start), readsBefore), [],
+      "the requested revision's bytes are not read while saving the old revision");
+    release();
+    await until(() => revision().inputValue(), value => value === legacyKey, "requested revision opens after save");
+    assert.equal(await scale.inputValue(), "100", "the target revision shows its own appearance");
+    await page.clock.resume();
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    assert.equal(requests.length, generationCount + 1, "the pending debounce does not write twice");
+    const saved = await page.evaluate(ref => window.drawingFixture.documents.find(d => d.revisionRef === ref), `revision-${generationCount + 1}`);
+    const savedKey = JSON.stringify([saved.runId, saved.assetSha256, saved.revisionRef]);
+    await revision().selectOption(savedKey);
+    await until(() => scale.inputValue(), value => value === editedScale, "saved appearance reopens on its own revision");
+    assert.equal(await saveButton().count(), 0);
+    assert.deepEqual(dialogs, [], "revision navigation needs no confirmation dialog");
+  });
+  await step("a refused revision-switch save keeps the old revision and edits until an explicit retry", async () => {
+    const before = await revision().inputValue(), generationCount = requests.length;
+    const previousRevisionRef = JSON.parse(before)[2];
+    const scale = page.getByLabel("Scale denominator (1 : n)", { exact: true });
+    const originalScale = await scale.inputValue(), editedScale = originalScale === "125" ? "130" : "125";
+    const documentsBefore = await page.evaluate(() => window.drawingFixture.documents);
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+    hold = true; refuseNext = true;
+    await scale.fill(editedScale);
+    assert.equal(requests.length, generationCount);
+    await revision().selectOption(legacyKey);
+    await until(() => Promise.resolve(Boolean(release)), Boolean, "revision-switch refusal held");
+    assert.equal(await revision().inputValue(), before);
+    release();
+    await saveButton().waitFor();
+    await page.clock.resume();
+    await page.locator(".drawing-held").getByText("Appearance changes are not saved yet; fix the marked field or retry.", { exact: true }).waitFor();
+    const details = page.locator("details.error-panel__details");
+    if (!await details.evaluate(node => node.open)) await details.locator("summary").click();
+    await page.getByText("Fixture refused this drawing revision.", { exact: true }).waitFor();
+    assert.equal(await revision().inputValue(), before, "refusal never silently opens the requested revision");
+    assert.equal(await scale.inputValue(), editedScale, "the unsaved edit is still visible");
+    assert.deepEqual(await page.evaluate(() => window.drawingFixture.documents), documentsBefore,
+      "a refused revision leaves every retained drawing unchanged");
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    assert.equal(requests.length, generationCount + 1, "the refusal waits instead of retrying itself");
+    await saveButton().click();
+    const savedKey = await until(() => revision().inputValue(), value => value !== before, "explicit retry opens the saved appearance");
+    assert.notEqual(savedKey, legacyKey, "retry saves the edit, not the previously refused navigation");
+    assert.equal(await scale.inputValue(), editedScale);
+    assert.deepEqual(requests.slice(generationCount).map(request => [request.previousRevisionRef, request.scaleDenominator]),
+      [[previousRevisionRef, Number(editedScale)], [previousRevisionRef, Number(editedScale)]]);
+    assert.equal(await saveButton().count(), 0);
+    await revision().selectOption(legacyKey);
+    await until(() => revision().inputValue(), value => value === legacyKey, "a fresh navigation succeeds after retry");
+    await revision().selectOption(savedKey);
+    await until(() => scale.inputValue(), value => value === editedScale, "retried edit is retained on reopen");
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    assert.equal(requests.length, generationCount + 2);
+    assert.deepEqual(dialogs, []);
   });
   await step("a late save cannot write into another project context", async () => {
     const generationCount = requests.length; hold = true;
@@ -955,6 +1036,44 @@ try {
     assert.deepEqual([saved.viewRecipe.frame.up, saved.viewRecipe.frame.far_depth, saved.viewRecipe.graphics.cutLineMm], [[0, 0, 1], 4.5, .5]);
     assert.equal(requests.length, before + 3);
     await page.screenshot({ path: join(screenshots, "drawing-vertical-section.png"), fullPage: true });
+  });
+  await step("a genuinely zero-Stage project draws its retained unaccepted Working Head", async () => {
+    const before = requests.length;
+    await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/?lang=en&zeroStage=1`);
+    const generate = page.getByRole("button", { name: "Generate cut plan", exact: true });
+    await until(() => generate.isEnabled(), Boolean, "retained Working Head enables drawing without Stages");
+    assert.equal(await revision().inputValue(), "");
+    assert.equal(await revision().locator("option").count(), 1);
+    const initial = await page.evaluate(() => ({ histories: window.drawingFixture.historyReads,
+      heads: window.drawingFixture.workingReads, documents: window.drawingFixture.documents, artifacts: window.drawingFixture.artifacts }));
+    assert.ok(initial.histories.length > 0);
+    assert.ok(initial.heads.length > 0);
+    for (const history of initial.histories) assert.deepEqual([history.stages, history.branches], [[], []]);
+    for (const head of initial.heads) {
+      assert.equal(head.accepted, false); assert.equal(head.sourceStageRef, null);
+      assert.equal(head.origin, "working-position"); assert.deepEqual(head.modelSource, modelA);
+    }
+    assert.deepEqual([initial.documents, initial.artifacts], [[], []]);
+    assert.equal(requests.length, before, "an empty project has not implicitly generated a drawing");
+    await generate.click();
+    await page.locator('.drawing-preview__viewport[data-ready="true"]').waitFor();
+    await sourceWord('[data-follow="live"][data-status="current"]' + settled).waitFor();
+    assert.equal(requests.length, before + 1);
+    assert.deepEqual(requests.at(-1).modelSource, modelA);
+    assert.equal(requests.at(-1).sourceStageRef, null, "the new drawing names no invented Stage");
+    const savedKey = await revision().inputValue();
+    const retained = await page.evaluate(() => window.drawingFixture.documents);
+    assert.equal(retained.length, 1); assert.deepEqual(retained[0].modelSource, modelA);
+    assert.equal(retained[0].sourceStageRef, null);
+    await page.evaluate(() => window.drawingFixture.setActive(false));
+    await page.evaluate(() => window.drawingFixture.setActive(true));
+    await until(() => revision().isEnabled(), Boolean, "the unstaged drawing reopens");
+    assert.equal(await revision().inputValue(), savedKey);
+    assert.equal(await saveButton().count(), 0);
+    for (const history of await page.evaluate(() => window.drawingFixture.historyReads))
+      assert.deepEqual([history.stages, history.branches], [[], []]);
+    assert.deepEqual(dialogs, []);
+    await page.screenshot({ path: join(screenshots, "drawing-zero-stage.png"), fullPage: true });
   });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed, screenshots, generationRequests: requests.length, dimensionProposals: drives.length }));
