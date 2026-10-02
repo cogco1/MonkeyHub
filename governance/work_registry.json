@@ -1,4 +1,28 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-575",
+      "lanes": [
+        {
+          "id": "cleanup",
+          "status": "active",
+          "branch": "codex/575-trash-locks",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-575-trash-locks",
+          "base_ref": "151ed88e12b71e8328906685d4342946fa256127",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "archflow.project"
+          ],
+          "write_scope": [
+            "packages/archflow/src/archflow/project/repository.py",
+            "packages/archflow/tests/test_project_trash.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
