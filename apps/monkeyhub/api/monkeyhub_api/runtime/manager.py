@@ -1,13 +1,15 @@
 """Live project attachments and observed operations over the existing Studio/P036.
 
 No operation is replayed by a watcher or by recovery. A lost HTTP response is
-reconciled against retained results; absence of proof remains visible.
+reconciled against retained results; absence of proof remains visible. The Hub
+reads an open project through its binding and writes nothing to it: the open
+project's runtime is its only writer (ADR-012), and a change goes through it.
 """
 
 from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from http.client import HTTPException
 import base64
 import hashlib
@@ -50,7 +52,6 @@ _ACTIVE_HEARTBEAT_S = 1
 _IDLE_HEARTBEAT_S = 5
 # Worker states that stay put until the supervisor says otherwise.
 _SETTLED_WORKER_STATES = {"ready", "stopped", "crashed", "unavailable"}
-_WORKING_CLEANUP_INTERVAL_S = 15 * 60
 # A sample must remain unchanged for this interval before bytes are read.
 # File timestamps alone cannot measure that wait: producers can preserve them.
 _WORK_COPY_SETTLED_NS = 2_000_000_000
@@ -181,7 +182,6 @@ class ProjectRuntime:
     work_copy_error: HubError | None = None
     # What the last successful derivation of ``work_copies`` was read from.
     work_copy_key: tuple | None = None
-    next_working_cleanup: float = 0.0
     # ``binding_signature`` when the binding was last verified. ``get`` checks
     # the project again only once these two stats move (#363).
     binding_signature: tuple | None = None
@@ -762,18 +762,6 @@ class ProjectRuntimeManager:
             self.emit("artifact/updated", runtime.runtime_id)
         return registered
 
-    def _clean_working_draft(self, runtime: ProjectRuntime) -> tuple[str, ...]:
-        """The Hub schedules maintenance; only P036 can remove project files.
-
-        What P036 removes is superseded local recovery: crash-recovery copies
-        of unsynced edits that nothing reads back. It never removes a run, so
-        no operation or conversation has to protect a candidate from it.
-        """
-        repository = runtime.binding.repository
-        if repository.read_working_draft()[1] is None:
-            return ()
-        return repository.prune_working_draft(now=datetime.now(timezone.utc).isoformat())
-
     def _watch(self, runtime: ProjectRuntime):
         try:
             self._watch_project(runtime)
@@ -883,17 +871,6 @@ class ProjectRuntimeManager:
             else:
                 with runtime.lock:
                     runtime.work_copy_error = None
-            if time.monotonic() >= runtime.next_working_cleanup:
-                runtime.next_working_cleanup = time.monotonic() + _WORKING_CLEANUP_INTERVAL_S
-                try:
-                    # No client lists superseded recovery, so removing it is
-                    # not an artifact change and wakes nobody.
-                    self._clean_working_draft(runtime)
-                except (ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:
-                    # An inconsistent recovery snapshot refuses expiry while the
-                    # existing project remains available for inspection.
-                    with runtime.lock:
-                        runtime.error = HubError(code="WORKING_CLEANUP_REFUSED", detail=str(exc)[:1200])
             with self._lock:
                 chat_changed = project_key(runtime.project_dir) in self._chat_changed
                 self._chat_changed.discard(project_key(runtime.project_dir))

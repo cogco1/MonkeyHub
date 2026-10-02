@@ -800,13 +800,13 @@ class ProjectFormatPlannerTests(ProjectFormatFixture):
         ])
         self.assertEqual(len(renamed), 4, sorted(renamed))
         # Everything else the source retains, except the envelope, the two
-        # advisory locks and the interrupted writer's leftover, is copied byte
-        # for byte to the same name.
+        # advisory locks, the writer lease's lock and the interrupted writer's
+        # leftover, is copied byte for byte to the same name.
         copied = {
             path.relative_to(source).as_posix()
             for path in sorted(source.rglob("*")) if path.is_file()
         }
-        skipped = {"project.json", "HEAD", "HEAD.lock", "design/branches.lock",
+        skipped = {"project.json", "HEAD", "HEAD.lock", "design/branches.lock", "writer.lock",
                    leftover.relative_to(source).as_posix()}
         touched = set(in_place) | {row.split(" -> ")[0] for row in renamed}
         expected = {

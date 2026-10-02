@@ -15,7 +15,7 @@ import threading
 import tempfile
 import time
 from collections.abc import Callable, Iterable, Mapping
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -752,6 +752,62 @@ class _HeadFileLock:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         finally:
             handle.close()
+
+
+# ---- the writer lease (ADR-012, ``archflow.project.writer_lease``)
+#
+# While a project is open, its Project Runtime holds an OS lock on this file in
+# the project folder. Every write below takes that lease before anything else,
+# and a process that does not hold it while another does is refused; reads
+# never take it. The thread lock, ``HEAD.lock`` and ``design/branches.lock``
+# keep their jobs inside it, taken in that order after it.
+WRITER_LOCK = "writer.lock"
+
+
+class ProjectWriterBusy(ProjectRepositoryError):
+    """Another process holds the project's writer lease: nothing was written (ADR-012).
+
+    The project is open in its Project Runtime, which writes it, or another
+    tool is writing it right now. Write through the runtime that has it open.
+    """
+
+    code = "PROJECT_WRITER_BUSY"
+
+
+def _open_lock_file(path: Path) -> BinaryIO:
+    """Open a lock file of a project, making it and its folder when absent.
+
+    Opening an existing one changes nothing on disk; creating one adds a
+    directory entry, and that alone is counted as a write. The file is never
+    removed: another process could lock a replacement while one still held it.
+    """
+
+    _make_directory(path.parent)
+    created = not path.exists()
+    handle = path.open("a+b")
+    if created:
+        _note_write(path)
+    return handle
+
+
+def _writing(root: Path):
+    """The project's writer lease for the length of one write, taken before any other lock."""
+
+    # The lease builds on this module, so it is imported where it is used.
+    from archflow.project.writer_lease import writing
+
+    return writing(root)
+
+
+def _writes(method):
+    """Run a write method under the project's writer lease; refused, it has touched nothing."""
+
+    @functools.wraps(method)
+    def write(self, *args, **kwargs):
+        with _writing(self.layout.root):
+            return method(self, *args, **kwargs)
+
+    return write
 
 
 def _json_bytes(payload: Mapping[str, Any]) -> bytes:
@@ -1724,7 +1780,8 @@ def _copy_retained_closure(
 
     report = _CopiedClosure([], 0, [], [], [], [])
     orphans = set(legacy.verify().orphan_paths)
-    locks = {path.relative_to(staging).as_posix() for path in legacy.lock_paths()}
+    # Lock files are never project content, the writer lease's included.
+    locks = {path.relative_to(staging).as_posix() for path in legacy.lock_paths()} | {WRITER_LOCK}
     written = {
         path: _json_bytes(payload) for path, payload in cascade.payloads.items()
     }
@@ -2036,7 +2093,7 @@ class FilesystemProjectRepository:
         # OS-level lock compare_and_swap uses, or a stalled duplicate
         # initialize from another process can reset a promoted HEAD to v0.
         head_lock = _HeadFileLock(layout.root / "HEAD.lock")
-        with _project_lock(layout.root), head_lock:
+        with _writing(layout.root), _project_lock(layout.root), head_lock:
             if layout.manifest.exists() or layout.head.exists():
                 raise ProjectAlreadyExists(f"project already exists: {project_id}")
             for path, _ in authored_files:
@@ -2113,6 +2170,7 @@ class FilesystemProjectRepository:
         repository.verify()
         return repository
 
+    @_writes
     def initialize_authored_inputs(
         self,
         *,
@@ -2193,6 +2251,7 @@ class FilesystemProjectRepository:
             raise ProjectIntegrityError("canonical snapshot state is not an object")
         return state
 
+    @_writes
     def create_run(
         self,
         run_id: str,
@@ -2217,6 +2276,7 @@ class FilesystemProjectRepository:
                 _complete_run_in_place(run_layout, manifest)
         return run
 
+    @_writes
     def create_run_batch(
         self,
         run_ids: tuple[str, ...],
@@ -2389,6 +2449,7 @@ class FilesystemProjectRepository:
         self._validate_run(run, payload)
         return run
 
+    @_writes
     def put_json(
         self,
         *,
@@ -2423,6 +2484,7 @@ class FilesystemProjectRepository:
             _write_immutable(path, data)
         return self._record_ref(path, digest, "application/json")
 
+    @_writes
     def ingest(
         self,
         *,
@@ -2454,6 +2516,7 @@ class FilesystemProjectRepository:
             media_type=media_type,
         )
 
+    @_writes
     def put_workspace_file(
         self,
         *,
@@ -2603,8 +2666,9 @@ class FilesystemProjectRepository:
         HEAD already exists for every project. Do not create a design lock merely
         to validate a first request that may be refused without a project write.
         Nested position writes acquire the design lock after this HEAD lock.
+        The guard is a write's: it takes the writer lease first (ADR-012).
         """
-        with self._lock, self._head_lock:
+        with _writing(self.layout.root), self._lock, self._head_lock:
             yield
 
     def read_working_draft(self) -> tuple[dict[str, Any], str | None]:
@@ -2657,6 +2721,7 @@ class FilesystemProjectRepository:
         except (TypeError, ValueError) as exc:
             raise ProjectIntegrityError("working draft timestamp is invalid") from exc
 
+    @_writes
     def compare_and_swap_working_draft(
         self, *, expected_revision: str | None, value: Mapping[str, Any], ledger: bool = False,
     ) -> tuple[dict[str, Any], str]:
@@ -2679,6 +2744,7 @@ class FilesystemProjectRepository:
             written = _parse_json_document(data, "working draft")
             return written, _position_revision(written)
 
+    @_writes
     def protect_working_run(self, run_id: str, source_run_id: str | None, *, dependencies: tuple[str, ...] = ()) -> None:
         """Record a candidate's execution and exact inputs before they are read, without serializing workers."""
         require_identifier(run_id, "active run_id")
@@ -2692,6 +2758,7 @@ class FilesystemProjectRepository:
             value["active"][run_id] = sources
             self.compare_and_swap_working_draft(expected_revision=revision, value=value, ledger=True)
 
+    @_writes
     def release_working_run(self, run_id: str) -> None:
         with self._lock, self._design_lock:
             value, revision = self.read_working_draft()
@@ -2699,6 +2766,7 @@ class FilesystemProjectRepository:
                 del value["active"][run_id]
                 self.compare_and_swap_working_draft(expected_revision=revision, value=value, ledger=True)
 
+    @_writes
     def prune_working_draft(self, *, now: str) -> tuple[str, ...]:
         """Expire superseded local recovery snapshots; never remove a run.
 
@@ -2748,6 +2816,7 @@ class FilesystemProjectRepository:
     # (or already purged): ``_recover_trash`` puts a missing row back and
     # removes that manifest before the next trash, restore or purge.
 
+    @_writes
     def trash_run(
         self, run_id: str, *, now: str, rule: str, reason: str, state_digest: str | None = None,
         superseded_by: str | None = None, base_run_id: str | None = None, label: str | None = None,
@@ -2839,6 +2908,7 @@ class FilesystemProjectRepository:
                 _LOG.warning("a project trash manifest could not be read: %s: %s", path.name, exc)
         return tuple(sorted(entries, key=lambda entry: (self._working_time(entry.trashed_at), entry.run_id)))
 
+    @_writes
     def restore_trashed_run(self, run_id: str) -> TrashEntry:
         """Move a trashed run back into ``runs/`` exactly as it left, with its working row.
 
@@ -2879,9 +2949,9 @@ class FilesystemProjectRepository:
         purged: list[str] = []
         if not self._trash_holds_anything():
             # Nothing to purge or recover: take no lock, so a project opened with an empty trash
-            # is left exactly as it was, without even a lock file (#575).
+            # is left exactly as it was, without even a lock file (#575). Nor the writer lease.
             return ()
-        with self._lock, self._head_lock, self._design_lock:
+        with _writing(self.layout.root), self._lock, self._head_lock, self._design_lock:
             self._recover_trash()
             for entry in self.trash_entries():
                 if self._working_time(entry.trashed_at) >= cutoff:
@@ -3095,6 +3165,7 @@ class FilesystemProjectRepository:
             _keep_listing(key, stamp, stat.st_mtime_ns, scanned_at, _copy_branches(branches))
         return branches
 
+    @_writes
     def compare_and_swap_design_branch(
         self,
         *,
@@ -3255,6 +3326,7 @@ class FilesystemProjectRepository:
         _remember_verified((self._root_key, ref.relative_path, ref.sha256), ref, resolved, read, keep_bytes=False)
         return ref
 
+    @_writes
     def prepare_transition(
         self,
         *,
@@ -3419,6 +3491,7 @@ class FilesystemProjectRepository:
         )
         return PreparedTransition(previous, event, snapshot)
 
+    @_writes
     def compare_and_swap(
         self,
         *,
@@ -3989,7 +4062,7 @@ class FilesystemProjectRepository:
                 raise ProjectAlreadyExists("bootstrap destination already has a published position")
             for path in root.rglob("*"):
                 relative = path.relative_to(root).as_posix()
-                if relative == "HEAD.lock":
+                if relative in ("HEAD.lock", WRITER_LOCK):
                     continue
                 if path.is_symlink() or not path.resolve().is_relative_to(root):
                     raise ProjectAlreadyExists("bootstrap destination contains a redirected path")
@@ -3999,7 +4072,7 @@ class FilesystemProjectRepository:
                     raise ProjectAlreadyExists("bootstrap destination contains unrelated or conflicting content")
 
         require_resume_target()
-        with _project_lock(root), _HeadFileLock(root / "HEAD.lock"):
+        with _writing(root), _project_lock(root), _HeadFileLock(root / "HEAD.lock"):
             require_resume_target()
             for directory in project_directories:
                 _make_directory(root / directory)
@@ -4077,9 +4150,11 @@ class FilesystemProjectRepository:
         # volume boundary that staging silently introduced.
         _make_directory(target_root.parent)
         try:
+            # ``lease`` holds the target's writer lease from its first byte until
+            # this ends, and gives it back before a failure empties the target.
             with tempfile.TemporaryDirectory(
                 prefix=".archflow-migrate-", dir=target_root.parent,
-            ) as temporary:
+            ) as temporary, ExitStack() as lease:
                 staging = Path(temporary) / project_id
                 shutil.copytree(
                     source_root, staging, symlinks=False,
@@ -4190,6 +4265,7 @@ class FilesystemProjectRepository:
                 # HEAD before it verifies its own work, so the target is this
                 # migration's from before that call, not after it returns.
                 created = target_root
+                lease.enter_context(_writing(target_root))
                 target = cls.initialize(
                     target_root, project_id=project_id, initial_state=lineage[0][2],
                 )
@@ -4346,6 +4422,7 @@ class FilesystemProjectRepository:
             payload=result.to_dict(),
         )
 
+    @_writes
     def import_candidate_transfer(self, transfer: Mapping[str, Any]) -> None:
         """Import immutable candidate evidence; never accept, branch or issue."""
         if transfer.get("mode") != "candidate":
@@ -4357,6 +4434,7 @@ class FilesystemProjectRepository:
                 raise StaleProjectHead("TRANSFER_PUBLISHED_HEAD_CHANGED: synchronize the published base before upload")
             self._install_transfer_files(files)
 
+    @_writes
     def pull_transfer(
         self, transfer: Mapping[str, Any], *, expected_head: ProjectVersionRef,
         expected_branches: Mapping[str, Any],
