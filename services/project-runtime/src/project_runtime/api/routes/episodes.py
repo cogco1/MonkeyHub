@@ -63,7 +63,7 @@ def read_committed_design_history(request: Request, branch_id: str = Query(defau
                                   include: Literal["rejected"] | None = _INCLUDE) -> DesignHistoryDto:
     """Committed Stages of one line, and the project's admitted Candidates and Studies."""
     return history_dto(read_design_history(bound_project(request.app.state), branch_id,
-                                           include_rejected=include == "rejected"))
+                                           include_rejected=include == "rejected", indexed=True))
 
 
 @router.post("/candidate-reviews", response_model=ReviewJudgementDto, response_model_by_alias=True, status_code=201)
