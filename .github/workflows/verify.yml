@@ -219,6 +219,11 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node test/boardIntentHandoff.browser.mjs
 
+      - name: Board locale browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/boardLocale.browser.mjs
+
       - name: Intent source browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
