@@ -306,10 +306,11 @@ class _GraphReads:
     """What one Worktree Graph reads more than once, read once for the whole graph (#575).
 
     A graph compares many lines with the head's, and each comparison walks
-    the same runs again. ``changes`` answers each run's retained change,
-    ``parents`` is the one parent map every walk of the graph shares
-    (``lineage_of``'s ``known``), and ``records`` holds each run's exact State
-    Record. Nothing read here answers the next graph.
+    the same runs again. ``changes`` answers each run's retained change, for
+    the Working Head's own lineage too; ``parents`` is the one parent map
+    every walk of the graph shares (``lineage_of``'s ``known``), and
+    ``records`` holds each run's exact State Record. Nothing read here
+    answers the next graph.
     """
 
     __slots__ = ("binding", "changes", "parents", "records")
@@ -325,7 +326,7 @@ class _GraphReads:
 
         if run_id not in self.parents:
             try:
-                self.parents[run_id] = _parents(self.binding, run_id)
+                self.parents[run_id] = _parents(self.binding, run_id, self.changes)
             except _UNREADABLE:
                 self.parents[run_id] = ()
         return self.parents[run_id]
@@ -333,7 +334,7 @@ class _GraphReads:
     def lineage(self, run_id: str) -> tuple[str, ...]:
         """The run and the runs it continued or combined, nearest first, walked over the graph's map."""
 
-        return lineage_of(self.binding, run_id, known=self.parents)
+        return lineage_of(self.binding, run_id, known=self.parents, changes=self.changes)
 
     def record(self, run_id: str) -> StateRecord:
         """The State Record the run's newest runner receipt names, checked exactly."""
@@ -764,17 +765,19 @@ def _representations(binding: ProjectBinding, render_jobs, warnings: list[str],
 def worktree_graph(binding: ProjectBinding, *, jobs: JobRegistry | None = None, render_jobs=None) -> WorktreeGraph:
     """Derive the project's current head, its line, active work and other lines without writing.
 
-    One build reads each run's retained change through one ``RunChanges``,
-    walks every lineage over one parent map and keeps each exact State Record
-    once (``_GraphReads``), for all its lines and steps. It resolves the
-    Working Head once, for itself and for its representation rows.
+    One build reads each run's retained change once, through one
+    ``RunChanges`` that the Working Head's own lineage reads through too
+    (the head's projection still reads the head's change for itself). It
+    walks every lineage of its own over one parent map and keeps each exact
+    State Record once (``_GraphReads``). It resolves the Working Head once,
+    for itself and for its representation rows.
     """
 
-    working = WorkingSources(binding)
+    reads = _GraphReads(binding)
+    working = WorkingSources(binding, changes=reads.changes)
     resolved = working()
     head, warnings = resolved.head, list(resolved.warnings)
     value, _ = binding.repository.read_working_draft()
-    reads = _GraphReads(binding)
     admissions = _admissions(binding, warnings)
     words = None if head is None else _line_words(binding, warnings)
     line = _head_line(reads, head, value, words)
