@@ -1,4 +1,30 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-599",
+      "lanes": [
+        {
+          "id": "index-reads",
+          "status": "active",
+          "branch": "codex/integration-599-gate",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-599-gate",
+          "base_ref": "d7bfabbec71fb0a31aa5a95acbbcd51c9d35efe6",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "project_runtime.binding",
+            "project_runtime.candidate",
+            "project_runtime.intent",
+            "project_runtime.shell"
+          ],
+          "write_scope": [
+            "docs/decisions/008-one-tree-many-projections.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
