@@ -94,8 +94,9 @@ decision tree comes from two derived stores. Either store can be deleted at any 
 - `/api/artifacts`, `/api/documents` and the byte routes' lookups read the index; they keep no whole-page memo once an
   index answers, and their tag adds the index's epoch and revision to the process's token. It is stable only when the
   index was projected under the token's own fingerprint and holds the token's writes. The process's `READ_EPOCH` stays
-  in every tag: the index's epoch survives a restart, the process's counters do not. Design history, worktrees,
-  working source and the board keep their phase-0a memo until they read the index.
+  in every tag: the index's epoch survives a restart, the process's counters do not. Since #599, design history,
+  worktrees and working source read every run's change, survey part and newest receipt from one snapshot, and keep
+  no memo once an index answers; the board keeps its phase-0a memo until it reads the index.
 - Known limit: a file rewritten in place without a directory entry changing is seen only where a notification
   (Windows) or this process's write names it. Byte routes still re-hash what they serve.
 

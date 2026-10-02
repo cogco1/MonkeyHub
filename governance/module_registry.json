@@ -4464,7 +4464,7 @@
         "The current project working position (moved only by an explicit selection, never by recording a generated candidate), the automatic recovery listing of every unlabelled generated candidate however old, independent explicit saved versions (POST /api/working-draft/save; savedBy \"person\" only from the Hub page's history panel, recorded on the row, replaced by the next save of that run and kept by a Continue, #575) and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request; every selection onto a run retains who made it as an AuditEvent@1 design.continued beside that run, ids only (actor, origin, previous head run, target run, chat message ids), and a selection whose event cannot be retained is undone.",
         "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing; a live rejection of the working position is reported as a warning and never moves it",
         "The representation-status projection (#223): for one exact registered page, current, outdated, frozen or unavailable, the exact retained refs it was made from and its newest registered replacement, derived on every read by asking the page's owner (a cut plan's read set through plan_status, an AI render's retained request through Render's freshness, a page bound to one model state through model_is_current, a page bound to nothing through its replacements alone); it writes nothing and stores no status or dependency edge: the project-level dependency is this projection, not a second state; GET /api/representation-status answers it for one exact page in the projection's own words (#288)",
-        "the Studio projector of the project index (StudioProjector): each run's records, artifacts, documents and candidate source and the committed stages, read through the same readers the routes use; attaching the index in StudioSettings.project_index_dir (the index subdirectory of the Hub's project cache directory) to the one binding, kept current by its keeper; which listing reads the index (only when it holds every write this process made) and the read-only agent query route GET /api/index/{table}; the client stores' catch-up route GET /api/index?since=&epoch= (#366): empty when current, the changes while the change log reaches back, otherwise a reset snapshot, tagged \"<epoch>:<revision>\""
+        "the Studio projector of the project index (StudioProjector): each run's records, artifacts, documents and candidate source, the parts of its change the tree reads (change_parts), its part of the reference survey and its newest runner receipt, and the committed stages, read through the same readers the routes use; attaching the index in StudioSettings.project_index_dir (the index subdirectory of the Hub's project cache directory) to the one binding, kept current by its keeper; which reads use the index (only when it holds every write this process made): the artifact and document listings and, since #599, the design tree's views, which read every run from one snapshot (indexed_runs); the read-only agent query route GET /api/index/{table}; the client stores' catch-up route GET /api/index?since=&epoch= (#366): empty when current, the changes while the change log reaches back, otherwise a reset snapshot, tagged \"<epoch>:<revision>\""
       ],
       "does_not_own": [
         "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use archflow.project.repository ports; monkeyarch.application.project_runner is the writer of a modeling run and archflow.project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through archflow.project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
@@ -4588,7 +4588,13 @@
         "attach_project_index",
         "StudioProjector",
         "INDEX_CATCH_UP_S",
-        "RunChanges"
+        "RunChanges",
+        "change_parts",
+        "KeptRuns",
+        "ProjectBinding.indexed_reading",
+        "ProjectBinding.survey_part",
+        "indexed_runs",
+        "IndexedRuns"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -4630,7 +4636,8 @@
         "the drawing context publishes every wall's <id>-top from the producer itself, in production order, so a drawn shape standing on a wall keeps its drawing controls",
         "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)",
         "ProjectBinding and ReadToken are the Runtime's public read API: MonkeyHub opens a project in process with ProjectBinding.unconfigured (no configured reference run, nothing exported), and binding.py imports no web framework; the app-state glue beside it reads its state object structurally (ProcessState) (#519)",
-        "RunChanges is one reader's reading of runs' retained changes (candidate_delta), for a request's Worktree Graph or one projector pass: each run's change, or its refusal, is read once and answered again to that reader only; nothing it read outlives the reader, because a run's change may still be being retained or move to the project trash and back, and nobody changes what it answers (#575)"
+        "RunChanges is one reader's reading of runs' retained changes (candidate_delta), for a request's Worktree Graph or one projector pass: each run's change, or its refusal, is read once and answered again to that reader only; nothing it read outlives the reader, because a run's change may still be being retained or move to the project trash and back, and nobody changes what it answers (#575). Built on one snapshot of the project index (#599), it answers each run that snapshot read whole with the parts of its change the tree reads (change_parts), in the change's own shape so a reader refuses them as it refused the change, and reads every other run",
+        "the design tree's views read the project index only when it holds every write this process made, and then from one snapshot (indexed_runs, #599): inside that read (ProjectBinding.indexed_reading), on the reading thread only, the reference survey, a run's newest runner receipt and the runs that may hold the frozen stage workflow answer from the snapshot; a write never opens one, every other thread reads the runs, and whenever the index cannot answer, or a run was not read whole when it was projected, the runs are read so every refusal stays their own"
       ],
       "status": "canonical",
       "tests": [
@@ -4833,7 +4840,8 @@
         "a Worktree Graph drawing row is the representation-status projection of the drawing's latest page, so a change outside the plan's read set leaves it current; the graph says stale for outdated and keeps its other words",
         "cleaning never moves the Working Head, a design branch, HEAD, a line step, a Stage or an admitted result; an unreadable working position, admission or design branch cleans nothing; a run some kept run names stays, and a run that names another moves before it; each sweep that moved runs retains one design.cleaned AuditEvent@1 and each restore one design.restored in the fixed studio-retention run, and a run those events name is never cleaned again; a restore brings back every trashed run the restored run names",
         "expiring recovery removes only a local recovery snapshot that is neither the current localDraftRef nor updated within 24 hours, never a run; one inconsistent snapshot refuses the whole expiry, which the sweep keeps as a warning and logs; a project without a working position is not touched; nothing expires once the runtime stops",
-        "every composed candidate wears what its run's exact retained record declares, whether or not geometry changed, and its final bytes are read back (GUIDs, encoded geometry, non-material user strings and materials) before registration; a model that does not read back fails the candidate and registers nothing, and retained composed models are never rewritten"
+        "every composed candidate wears what its run's exact retained record declares, whether or not geometry changed, and its final bytes are read back (GUIDs, encoded geometry, non-material user strings and materials) before registration; a model that does not read back fails the candidate and registers nothing, and retained composed models are never rewritten",
+        "GET /api/worktrees reads one snapshot of the project index when it holds every write this process made (#599): every run's change, the reference survey, each run's newest receipt, which runs to read for request words and Continue events, and the documents; the working position, branches, Stages, admissions and the State Records compared are read from the project, and without an answering index everything is, giving the same bytes"
       ],
       "status": "canonical",
       "tests": [
@@ -4850,7 +4858,8 @@
         "apps/monkeyhub/web/test/candidatePreview.browser.mjs",
         "services/project-runtime/tests/test_runtime.py",
         "services/project-runtime/tests/test_worktrees.py",
-        "services/project-runtime/tests/test_retention.py"
+        "services/project-runtime/tests/test_retention.py",
+        "services/project-runtime/tests/test_indexed_reads.py"
       ],
       "notes": "The whole module is arrangement: the kernel runner does the work, this decides when and with what.",
       "files": [
@@ -5239,7 +5248,8 @@
         "a person (ui or retroactive) may admit a result that is not review-ready as a comparison option, retaining the failing clauses as its marker; an Agent (hub-chat) admission is review-ready, needs the Hub-managed boundary and a bound message, and rejects only on the user's bound words; Stage acceptance still requires review readiness and refuses a run with a live rejection",
         "admission accepts no Stage, advances no branch, moves no Working Head and writes no working position; a Runtime connected to a shared project refuses admissions until they synchronize",
         "an elevation edit on a record whose rows cannot be read answers 422 ELEVATION_EDIT_INVALID, never a 500",
-        "the record's keep resolution protects what a keep names: each resolved ref, and for a kept geometry id its own parts and its child components' parts, never a shape a script placed under it (made_by_construction), so every route that takes keep, bare ids included, protects a geometry's form"
+        "the record's keep resolution protects what a keep names: each resolved ref, and for a kept geometry id its own parts and its child components' parts, never a shape a script placed under it (made_by_construction), so every route that takes keep, bare ids included, protects a geometry's form",
+        "GET /api/design-history reads the Candidate Pool's lineage, which runs hold legacy admission evidence and the Working Head's survey from one snapshot of the project index when it holds every write this process made (#599); the Stages, their sources and acceptance, the reviews and the admissions are read from the project, and without an answering index everything is, giving the same bytes"
       ],
       "status": "canonical",
       "tests": [
@@ -5281,7 +5291,8 @@
         "services/project-runtime/tests/test_candidate_admission.py",
         "tools/tests/test_benchmark_visual_observation.py",
         "services/project-runtime/tests/test_recipe_export.py",
-        "tools/tests/test_export_drawing_recipe.py"
+        "tools/tests/test_export_drawing_recipe.py",
+        "services/project-runtime/tests/test_indexed_reads.py"
       ],
       "notes": "ADR-001's record, section 2.1, makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -5622,6 +5633,7 @@
         "MonitoredCompiler.invoke_structured",
         "ConditionalReads",
         "CONDITIONAL_READS",
+        "INDEXED_READS",
         "IndexRevisionHeader: X-Monkey-Index <epoch>:<revision> on a successful write once the project index holds it (#366)",
         "OWNER_REFUSALS"
       ],
@@ -5654,7 +5666,7 @@
         "One process binds one project directory, keyed and supervised by MonkeyHub; in production it is reached only through the Hub's forwarding path, and it never grows a persistent user-settings file, a launcher, a tray or a UI of its own",
         "The Runtime parameter-lock proposal route uses the existing accept actor grant; local unauthenticated attribution identifies only the process boundary and does not prove a human caller",
         "POST /api/admissions uses the existing accept grant on a local-role Runtime; a shared project service does not expose it",
-        "only the exact GET paths in CONDITIONAL_READS carry an ETag, answer If-None-Match with 304 and are answered from the binding's memo, and only for a 200 read under a stable token; every other method, path and status passes through unchanged",
+        "only the exact GET paths in CONDITIONAL_READS carry an ETag, answer If-None-Match with 304 and are answered from the binding's memo, and only for a 200 read under a stable token; a path in INDEXED_READS (the artifact and document listings and, since #599, the design history, the worktrees and the working source) keeps no answer once an index answers and its tag also names the index's epoch and revision; every other method, path and status passes through unchanged",
         "shutdown closes the bound project's binding after draining work, which stops its layout watch and lets go of the project folder",
         "main holds the project's writer lease before it serves and gives it up only after serving has stopped and accepted work has drained; a process that dies loses it with its process. One whose lease another process keeps past the bounded wait exits non-zero with one PROJECT_WRITER_BUSY line and serves and writes nothing; a folder holding no project.json takes no lease and gains no file",
         "an owner package's refusal (monkeyarch.authoring.frame.FrameError, ...) carries its own wire code and sentence; OWNER_REFUSALS is the one place that gives each kind its status, and create_app answers it in the same {code, detail} body a StudioError has (#519)",

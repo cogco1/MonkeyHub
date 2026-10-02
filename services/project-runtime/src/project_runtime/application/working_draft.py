@@ -33,6 +33,7 @@ from ..binding import retained_sources
 from ..binding import ProjectBinding, RunChanges
 from .projection import StateProjection, project_state
 from ..errors import StudioError
+from ..index import indexed_runs
 
 
 # The retained working position's own shapes. Each entry of the position and the
@@ -607,7 +608,8 @@ def working_revision(binding: ProjectBinding) -> str | None:
 
 
 def resolve_working_source(binding: ProjectBinding, workspace: str = "modeling", *, policy: str = LIVE,
-                           pinned: ModelSource | None = None, changes: RunChanges | None = None) -> WorkingSource:
+                           pinned: ModelSource | None = None, changes: RunChanges | None = None,
+                           indexed: bool = False) -> WorkingSource:
     """Resolve the current working source for one workspace from retained facts only.
 
     LIVE answers the head's compatible exact source; FROZEN keeps an exact pinned
@@ -615,12 +617,27 @@ def resolve_working_source(binding: ProjectBinding, workspace: str = "modeling",
     retained, so it takes no project guard: a reader never waits for a writer
     and never holds a lock a writer needs. ``changes`` is the caller's own
     reading of the runs' changes, which the head's lineage then reads through.
+
+    ``indexed`` is a route's read (#599): when one snapshot of the project
+    index holds this process's writes, the head's lineage reads each run's
+    change from it, and the head's projection surveys it instead of every run
+    (``indexed_runs``); otherwise the runs are read. The working position
+    itself is always read from its file.
     """
 
     if workspace not in WORKSPACES:
         raise StudioError(422, "WORKSPACE_INVALID", f"Choose one of {', '.join(WORKSPACES)}.")
     if policy not in (LIVE, FROZEN) or (policy == FROZEN) != (pinned is not None):
         raise StudioError(422, "SOURCE_POLICY_INVALID", "Use live, or frozen with one exact pinned model.")
+    rows = indexed_runs(binding) if indexed and changes is None else None
+    if rows is not None:
+        with rows.reading(binding):
+            return _resolved(binding, workspace, policy, pinned, RunChanges(binding, kept=rows.changes))
+    return _resolved(binding, workspace, policy, pinned, changes)
+
+
+def _resolved(binding: ProjectBinding, workspace: str, policy: str, pinned: ModelSource | None,
+              changes: RunChanges | None) -> WorkingSource:
     value, revision = binding.repository.read_working_draft()
     warnings: list[str] = []
     head = None

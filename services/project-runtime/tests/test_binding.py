@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -15,7 +16,7 @@ from archflow.project.record_kinds import PROJECT_STAGE_WORKFLOW, STATE_RECORD
 from archflow.project.refs import record_ref_from_uri
 from archflow.state.stage_workflow import DesignPhase
 
-from project_runtime.binding import ProjectBinding, RunChanges
+from project_runtime.binding import KeptRuns, ProjectBinding, RunChanges, change_parts
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from project_runtime.errors import StudioError
@@ -244,6 +245,96 @@ class BoundProjectTests(unittest.TestCase):
             # The next reader reads again: a run's change may still be being retained.
             self.assertIsNone(RunChanges(binding)(REFERENCE_RUN_ID))
         self.assertEqual(reads, [REFERENCE_RUN_ID, "run-nowhere", REFERENCE_RUN_ID])
+
+    def test_the_parts_of_a_change_the_tree_reads_keep_its_shape(self) -> None:
+        """#599: what the index keeps of a run's change is that change, cut to what the tree's readers read."""
+
+        change = {
+            "schema": "StudioCandidateDelta@1", "project_id": PROJECT_ID, "run_id": "run-b",
+            "source_run_ref": {"project_id": PROJECT_ID, "run_id": "run-a", "base": {"version": 0}},
+            "combined_candidate_ids": ["run-c"], "request": "make the portico taller",
+            "operator": {"kind": "set_scalar", "protected": ["entity:portico"], "entities": [{"big": "x"}]},
+            "result_record_digest": "f" * 64, "source_stage_ref": {"relative_path": "runs/run-a/reviews/x.json"},
+        }
+        self.assertEqual(change_parts(change), {
+            "source_run_ref": {"run_id": "run-a"}, "combined_candidate_ids": ["run-c"],
+            "operator": {"protected": ["entity:portico"]}, "request": "make the portico taller",
+        })
+        # What a change lacks stays absent and what has another type stays it, so a
+        # reader that refused the change refuses its parts with the same error.
+        lacking = {"source_run_ref": "run-a", "operator": {"kind": "set_scalar"}}
+        self.assertEqual(change_parts(lacking), {"source_run_ref": "run-a", "operator": {}})
+        for read in (lambda delta: delta["operator"]["protected"], lambda delta: delta["source_run_ref"]["run_id"],
+                     lambda delta: delta["combined_candidate_ids"]):
+            with self.assertRaises(Exception) as whole:
+                read(lacking)
+            with self.assertRaises(type(whole.exception)) as parts:
+                read(change_parts(lacking))
+            self.assertEqual(str(parts.exception), str(whole.exception))
+
+    def test_a_reader_on_a_snapshot_answers_the_runs_it_holds_and_reads_the_rest(self) -> None:
+        binding = ProjectBinding.open(self.settings)
+        self.addCleanup(binding.close)
+        reads: list[str] = []
+        original = ProjectBinding.candidate_delta
+
+        def counted(this: ProjectBinding, run_id: str):
+            reads.append(run_id)
+            return original(this, run_id)
+
+        kept = {"run-b": {"source_run_ref": {"run_id": "run-a"}, "operator": {"protected": []}}, "run-a": None}
+        with patch.object(ProjectBinding, "candidate_delta", counted):
+            changes = RunChanges(binding, kept=kept)
+            self.assertIs(changes("run-b"), kept["run-b"])
+            self.assertIsNone(changes("run-a"))
+            self.assertIsNone(changes(REFERENCE_RUN_ID), "a run the snapshot does not hold is read")
+        self.assertEqual(reads, [REFERENCE_RUN_ID])
+
+    def test_inside_an_indexed_read_the_runs_choices_answer_from_the_snapshot_on_its_thread_only(self) -> None:
+        """#599: the survey, a run's newest receipt and the frozen workflow's runs come from the snapshot."""
+
+        binding = ProjectBinding.open(self.settings)
+        self.addCleanup(binding.close)
+        part, _ = binding.survey_part(REFERENCE_RUN_ID)
+        newest = binding.newest_runner_receipt(REFERENCE_RUN_ID)
+        self.assertIsNotNone(newest)
+        on_disk = binding._survey()
+        kept = KeptRuns({REFERENCE_RUN_ID: tuple(map(tuple, part)), "run-unreadable": None},
+                        {REFERENCE_RUN_ID: newest[0].uri}, frozenset())
+        read: list[str] = []
+
+        def refused(name):
+            def reader(*args, **kwargs):
+                read.append(name)
+                raise AssertionError(f"{name} read the runs")
+            return reader
+
+        elsewhere: dict[str, object] = {}
+        with patch.object(ProjectBinding, "_survey_run", refused("_survey_run")), \
+                patch.object(ProjectBinding, "_receipts_of", refused("_receipts_of")), \
+                patch.object(ProjectBinding, "record_refs", refused("record_refs")):
+            with binding.indexed_reading(kept):
+                chosen, skipped = binding._survey()
+                answered = binding.newest_runner_receipt(REFERENCE_RUN_ID)
+                phase = binding.frozen_workflow_first_phase()
+
+                def other_thread() -> None:
+                    try:
+                        binding._survey()
+                    except AssertionError as exc:
+                        elsewhere["refused"] = str(exc)
+
+                thread = threading.Thread(target=other_thread)
+                thread.start()
+                thread.join(30)
+        self.assertEqual((chosen[0], chosen[1], skipped), (on_disk[0][0], on_disk[0][1], ("run-unreadable",)))
+        self.assertEqual(chosen[2], on_disk[0][2])
+        self.assertEqual(answered, newest)
+        self.assertIsNone(phase, "no run of the snapshot may hold a frozen workflow")
+        self.assertEqual(elsewhere, {"refused": "_survey_run read the runs"}, "another thread reads the runs")
+        self.assertEqual(read, ["_survey_run"])
+        # Outside the block the runs answer again.
+        self.assertEqual(binding._survey(), on_disk)
 
     def test_the_binding_lists_the_runs_on_disk(self) -> None:
         add_harness_run(self.repository)

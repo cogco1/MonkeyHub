@@ -77,7 +77,7 @@ def read_working_source(
     pin = (runId, stateDigest, assetSha256)
     pinned = ModelSource(*pin) if all(pin) else None
     return working_source_dto(resolve_working_source(bound_project(request.app.state), workspace,
-                                                     policy=policy, pinned=pinned))
+                                                     policy=policy, pinned=pinned, indexed=True))
 
 
 @router.get("/representation-status", response_model=RepresentationStatusDto)
