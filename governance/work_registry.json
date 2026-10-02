@@ -1,28 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-66",
-      "lanes": [
-        {
-          "id": "board-selection-null",
-          "status": "active",
-          "branch": "codex/66-board-selection-null",
-          "worktree": "/workspace/shared/monkeyhub-535-dev/workspace/worktrees/codex-66-board-selection-null",
-          "base_ref": "45c6bd8b2a15dc377fc0d16c4532ddd0a8ef2f7d",
-          "contributor": "codex",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "project_runtime.publication"
-          ],
-          "write_scope": [
-            "services/project-runtime/src/project_runtime/application/publications.py",
-            "services/project-runtime/tests/test_publications.py"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
