@@ -806,7 +806,10 @@ try {
     await hubPage.getByRole('button', { name: 'Render', exact: true }).click();
     await hubPage.getByRole('button', { name: 'Modeling', exact: true }).click();
     assert.equal(posts.filter((url) => url.includes('/api/project/modeling')).length, 1, 'shared readiness does not repeat Arch seed');
-    await hubPage.getByRole('button', { name: 'cold-arch', exact: true }).first().click();
+    // Beside an open workspace an unpinned projects list folds (#564): open it the way a person would.
+    const coldArch = hubPage.getByRole('button', { name: 'cold-arch', exact: true }).first();
+    if (!(await coldArch.isVisible())) await hubPage.getByRole('button', { name: 'Show projects', exact: true }).first().click();
+    await coldArch.click();
     await hubPage.getByRole('button', { name: 'Modeling', exact: true }).click();
     metrics = await until(read, (m) => JSON.stringify(m.current['cold-arch']) !== JSON.stringify(m.baseline['cold-arch']), 'Arch-first still seeds author inputs');
     assert.ok(Object.keys(metrics.current['cold-arch']).some((name) => name.startsWith('input/')));
