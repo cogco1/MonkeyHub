@@ -14,7 +14,7 @@
           "reviewer": null,
           "handoff": null,
           "modules": [
-            "archflow.project"
+            "archflow.project.repository"
           ],
           "write_scope": [
             "packages/archflow/src/archflow/project/repository.py",
