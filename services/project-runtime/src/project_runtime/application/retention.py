@@ -21,8 +21,8 @@ and only when all of these hold:
 - it is no version a person saved, no working position a person chose, and
   no execution's input. A name keeps a draft only when the person saved it in
   the Hub (the history panel's save, which says so); a name an agent or any
-  other caller saved, and every name saved before saving recorded who saved
-  it, keeps nothing: the trash keeps that name with the draft.
+  other caller saved, and any name on a row written before rows recorded who
+  saved it, keeps nothing: the trash keeps that name with the draft.
 
 When unsure, nothing goes: an unreadable working position, admission or design
 branch stops the whole sweep, and a run whose reading fails stays. The trash is

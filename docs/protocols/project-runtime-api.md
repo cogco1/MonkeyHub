@@ -1521,9 +1521,9 @@ baseRevisionSha256, label?, savedBy?}`, under the position's compare-and-swap. E
 it. The Hub page's history panel sends `savedBy: "person"` when the person saves a name there, and
 the run's row in `design/working.json` then records `labelSavedBy: "person"`; only such a name keeps
 a superseded draft. A name saved without it, by an outside agent or any other caller, records no
-saver and keeps nothing: the draft goes to the trash with its name, restorable for 30 days. Rows
-saved before saving recorded a saver record none and read as before. Saving a name again replaces
-the name and who saved it; a Continue keeps both. `savedBy` is the caller's own statement in a
+saver and keeps nothing: the draft goes to the trash with its name, restorable for 30 days. A row
+written before rows recorded a saver has none and reads as before. Saving a name again replaces the
+name and who saved it; a Continue keeps both. `savedBy` is the caller's own statement in a
 single-user local tool, not a credential, and agents leave it out.
 
 What may go moves, whole and unchanged, into the project's `trash/` (`trash/runs/<runId>/`, beside a
