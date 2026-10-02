@@ -17,13 +17,14 @@ they read structurally (``ProcessState``).
 from __future__ import annotations
 
 from collections import OrderedDict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import wraps
 import logging
 import os
 from pathlib import Path, PurePosixPath
 import threading
-from typing import Any, Callable, Mapping, Protocol, TypeVar
+from typing import Any, Callable, Iterator, Mapping, Protocol, TypeVar
 from uuid import uuid4
 import weakref
 
@@ -148,6 +149,24 @@ class ReferenceRun:
     workflow_unresolved: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class KeptRuns:
+    """What one snapshot of the project index says of each run, for a binding's own readings (#599).
+
+    Inside an indexed read (``ProjectBinding.indexed_reading``) these answer
+    in place of reading every run: ``survey`` is every run's part of the
+    reference survey as ``_survey_run`` answers it, each receipt named by its
+    URI (None: the survey skips the run); ``newest`` the URI of the receipt
+    ``newest_runner_receipt`` chose for each run the index read whole (None:
+    it has none); ``workflows`` the runs that may hold a
+    ``project-stage-workflow`` record. A run ``newest`` does not name is read.
+    """
+
+    survey: Mapping[str, tuple[tuple[float, str], ...] | None]
+    newest: Mapping[str, str | None]
+    workflows: frozenset[str]
+
+
 def record_kind(ref: ProjectRecordRef) -> str | None:
     """The record kind in a P036 record name, or None if it is not one.
 
@@ -202,6 +221,9 @@ class ProjectBinding:
         # stopped by ``close`` or once nobody holds the binding any more.
         self._index_keeper: IndexKeeper | None = None
         self._index_finalizer: weakref.finalize | None = None
+        # What an indexed read answers from its snapshot, on its own thread
+        # only (``indexed_reading``, #599).
+        self._indexed = threading.local()
 
     def read_token(self, *, wait: bool = True) -> ReadToken | None:
         """The token an answer read from the project's files now is derived under.
@@ -306,6 +328,31 @@ class ProjectBinding:
         if keeper is None or keeper.wait_readable(wait) is None:
             return None
         return keeper.index
+
+    @contextmanager
+    def indexed_reading(self, kept: KeptRuns) -> Iterator[None]:
+        """While this block runs, on this thread only, answer the per-run readings ``kept`` holds (#599).
+
+        ``kept`` is what one snapshot of the project index says of every run:
+        its part of the reference survey, its newest runner receipt and
+        whether it may hold the project's frozen workflow. A route's read that
+        took that snapshot opens this around its reading, so a projection it
+        makes - the Working Head's, a Stage's - asks the snapshot instead of
+        reading every run; a write never opens it. Every other thread, and
+        every call outside the block, reads the runs.
+        """
+
+        previous = getattr(self._indexed, "kept", None)
+        self._indexed.kept = kept
+        try:
+            yield
+        finally:
+            self._indexed.kept = previous
+
+    def _kept(self) -> KeptRuns | None:
+        """What the indexed read this thread is in keeps, if it is in one (``indexed_reading``)."""
+
+        return getattr(self._indexed, "kept", None)
 
     def close(self) -> None:
         """Stop the index's keeper and give back this binding's share of the layout watch.
@@ -602,9 +649,22 @@ class ProjectBinding:
 
         This is the one place a run's receipt is chosen. Everything that asks
         "which receipt does this run answer with" asks here, so a second reader
-        cannot start preferring a different one.
+        cannot start preferring a different one. Inside an indexed read
+        (``indexed_reading``), the receipt this chose when the run was
+        projected is the one read, for every run the snapshot read whole.
         """
 
+        kept = self._kept()
+        if kept is not None and run_id in kept.newest:
+            uri = kept.newest[run_id]
+            if uri is None:
+                return None
+            try:
+                ref = record_ref_from_uri(uri, self.project_id)
+            except (TypeError, ValueError):
+                ref = None  # not a receipt this projector named: read the run
+            if ref is not None:
+                return ref, self.repository.load_json(ref)
         newest: tuple[float, ProjectRecordRef, Mapping[str, Any]] | None = None
         for ref, payload in self._receipts_of(run_id):
             try:
@@ -735,14 +795,17 @@ class ProjectBinding:
         must not cost the client every other answer in the project. Such a run
         is skipped and named, and the projection says how many were skipped.
 
-        Each run's part of the survey is kept per run (``_survey_run``); the
-        chosen receipt is loaded for the caller.
+        Each run's part of the survey is kept per run (``_survey_run``);
+        inside an indexed read (``indexed_reading``) the snapshot answers every
+        run's part instead. The chosen receipt is loaded for the caller.
         """
 
-        newest: tuple[float, str, ProjectRecordRef] | None = None
+        kept = self._kept()
+        parts = (((run_id, self._survey_run(run_id)) for run_id in self.run_ids()) if kept is None
+                 else ((run_id, kept.survey[run_id]) for run_id in sorted(kept.survey)))
+        newest: tuple[float, str, Any] | None = None
         skipped: list[str] = []
-        for run_id in self.run_ids():
-            offered = self._survey_run(run_id)
+        for run_id, offered in parts:
             if offered is None:
                 skipped.append(run_id)
                 continue
@@ -751,12 +814,19 @@ class ProjectBinding:
                     newest = (mtime, run_id, ref)
         if newest is None:
             return None, tuple(skipped)
+        ref = newest[2]
+        if kept is not None:
+            # A kept part names each receipt by its URI: only the chosen one is read back.
+            try:
+                ref = record_ref_from_uri(ref, self.project_id)
+            except (TypeError, ValueError):
+                return self._survey_runs_uncached()
         try:
-            payload = self.repository.load_json(newest[2])
+            payload = self.repository.load_json(ref)
         except (ProjectRepositoryError, ValueError, OSError):
             # Read in the survey, gone now: survey again, reading every run.
             return self._survey_runs_uncached()
-        return (newest[1], newest[2], payload), tuple(skipped)
+        return (newest[1], ref, payload), tuple(skipped)
 
     def _survey_runs_uncached(
         self,
@@ -812,6 +882,22 @@ class ProjectBinding:
             if opened_stamp is not None:
                 _SURVEY_RUNS.put(key, (stamp, opened, opened_stamp, part))
         return part
+
+    def survey_part(self, run_id: str) -> tuple[list[list[Any]] | None, tuple[Path, ...]]:
+        """One run's part of the reference survey as the project index keeps it, and the files it opened (#599).
+
+        ``[[mtime, uri], ...]``: what ``_survey_run`` answers, read afresh,
+        each receipt named by its URI. None when the run could not be read,
+        as ``_survey_run`` answers then, so the index's survey names the run
+        skipped as the runs' does. The files it opened are the run's receipts
+        and the workflows they name, which may live in another run.
+        """
+
+        try:
+            offered, opened = self._read_survey_run(run_id)
+        except _SURVEY_UNREADABLE:
+            return None, ()
+        return [[mtime, ref.uri] for mtime, ref, _payload in offered], opened
 
     def _read_survey_run(
         self, run_id: str,
@@ -1013,10 +1099,13 @@ class ProjectBinding:
         not one and are skipped. ``None`` when no such workflow is retained,
         or when the project froze more than one distinct ladder - which is a
         question for whoever froze them, not something to pick between here.
+        Inside an indexed read (``indexed_reading``), only the runs the
+        snapshot says may hold one are read.
         """
 
+        kept = self._kept()
         phases: set[str] = set()
-        for run_id in self.run_ids():
+        for run_id in self.run_ids() if kept is None else sorted(kept.workflows):
             try:
                 refs = self.record_refs(run_id, kind=PROJECT_STAGE_WORKFLOW)
             except (StudioError, ProjectRepositoryError, ValueError, OSError):
@@ -1060,6 +1149,39 @@ class ProjectBinding:
             return None
 
 
+# The parts of a run's retained change (``StudioCandidateDelta@1``) the tree's
+# readers read (#599): the run it was made from, the results it combined, the
+# keep conditions it declared and the request words it kept. Each top-level key,
+# with the keys read inside it where only some are.
+CHANGE_PARTS: Mapping[str, tuple[str, ...] | None] = {
+    "source_run_ref": ("run_id",),
+    "combined_candidate_ids": None,
+    "operator": ("protected",),
+    "request": None,
+}
+
+
+def change_parts(change: Mapping[str, Any]) -> dict[str, Any]:
+    """The parts of a retained change its readers read (``CHANGE_PARTS``), in the change's own shape.
+
+    What the change holds there is copied as it is, and nothing else: a part
+    it lacks stays absent and a value of another type stays that value, so a
+    reader that would have refused the change refuses these parts the same
+    way. The project index keeps them per run, and a ``RunChanges`` built on a
+    snapshot of it answers them in place of the change.
+    """
+
+    parts: dict[str, Any] = {}
+    for key, inner in CHANGE_PARTS.items():
+        if key not in change:
+            continue
+        value = change[key]
+        if inner is not None and isinstance(value, Mapping):
+            value = {name: value[name] for name in inner if name in value}
+        parts[key] = value
+    return parts
+
+
 class RunChanges:
     """Runs' retained changes as one reader read them: each run's ``candidate_delta``, at most once.
 
@@ -1070,21 +1192,37 @@ class RunChanges:
     to one such reader - a request, or one pass of a projector - and answers
     each run's change, or raises its refusal again, as it was first read.
 
+    A reader that took a snapshot of the project index (``kept``, #599) is
+    answered, for every run that snapshot holds, with the parts of its change
+    the index keeps (``change_parts``) - only the parts the tree's readers read
+    - or None for a run without a change, and nothing is read. Any other run
+    is read.
+
     It keeps nothing past its reader. A run's change may still be being
     retained, and a run can move to the project trash and back, so the next
     reader reads again. What it answers is shared by its reader's asks, so
     nobody may change it.
     """
 
-    __slots__ = ("_binding", "_read")
+    __slots__ = ("_binding", "_read", "_kept")
 
-    def __init__(self, binding: ProjectBinding) -> None:
+    def __init__(
+        self, binding: ProjectBinding, *, kept: Mapping[str, Mapping[str, Any] | None] | None = None,
+    ) -> None:
         self._binding = binding
         self._read: dict[str, Any] = {}
+        self._kept = kept
 
     def __call__(self, run_id: str) -> dict[str, Any] | None:
-        """``ProjectBinding.candidate_delta(run_id)``, read on this reader's first ask only."""
+        """``ProjectBinding.candidate_delta(run_id)``, read on this reader's first ask only.
 
+        A run the reader's snapshot holds answers what that snapshot kept of
+        its change instead.
+        """
+
+        kept = self._kept
+        if kept is not None and run_id in kept:
+            return kept[run_id]
         found = self._read.get(run_id, _MISSING)
         if found is _MISSING:
             try:
@@ -1123,8 +1261,9 @@ def prepare_bound_project(state: ProcessState) -> ProjectBinding:
     and design history a workspace asks for together - each list the same
     runs' records and survey the same receipts while the in-memory memos are
     still empty, and on one interpreter they queue behind each other doing
-    it. Here that is done once, with or without a project index: the design
-    history and the worktrees read the runs, not the index. The binding is
+    it. Here that is done once, with or without a project index: until the
+    index has loaded, and wherever it cannot answer, the design history and
+    the worktrees read the runs (#599). The binding is
     kept first, so a request that only needs it (the health check) does not
     wait for the runs; the caller holds back the views that would walk them
     beside this (``main.FirstReads``). The memos stay keyed by the files'
