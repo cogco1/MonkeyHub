@@ -90,7 +90,8 @@ def _lease_of(root: Path | str) -> _Lease:
     with _GUARD:
         lease = _LEASES.get(key)
         if lease is None:
-            lease = _LEASES[key] = _Lease(Path(root) / WRITER_LOCK)
+            # Absolute, so taking it again later does not depend on the working directory.
+            lease = _LEASES[key] = _Lease(Path(root).absolute() / WRITER_LOCK)
         return lease
 
 

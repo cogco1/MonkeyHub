@@ -37,6 +37,11 @@ lease.release()
 print('released', flush=True)
 sys.stdin.readline()
 """
+# Creates a project at argv[1].
+CREATE = """import sys
+from archflow.project.repository import FilesystemProjectRepository
+FilesystemProjectRepository.initialize(sys.argv[1], project_id='fresh', initial_state={})
+"""
 # Tries one write of the project at argv[1] and says how it ended.
 WRITER = """import sys
 from archflow.project import writer_lease
@@ -197,6 +202,21 @@ class WriterLeaseTests(unittest.TestCase):
         holder.stdin.flush()
         self.repo.create_run("waited")
         self.assertIn("waited", self.repo.run_ids())
+
+    def test_a_lease_first_named_by_a_relative_path_stays_on_its_project(self) -> None:
+        # A project this process has never written, so its first lease here is the relative one.
+        fresh = self.temporary / "fresh"
+        subprocess.run([sys.executable, "-c", CREATE, str(fresh)], env=CHILD_ENV, check=True, timeout=60)
+        elsewhere = self.temporary / "elsewhere"
+        elsewhere.mkdir()
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(fresh.parent)
+        hold_writer_lease(Path(fresh.name), wait_s=0).release()
+        os.chdir(elsewhere)
+        repository = FilesystemProjectRepository.open(fresh)
+        repository.create_run("after-a-move")
+        self.assertIn("after-a-move", repository.run_ids())
+        self.assertEqual(list(elsewhere.iterdir()), [], "the lease was taken again in the working directory")
 
     def test_a_held_lease_leaves_the_project_folder_readable_and_copyable(self) -> None:
         self.hold_elsewhere()
