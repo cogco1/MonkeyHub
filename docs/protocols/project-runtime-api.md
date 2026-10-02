@@ -1504,21 +1504,33 @@ version made on the way (Kaiwen, 2026-10-01). Only these may be cleaned: a draft
 attempts that result replaced; and a failed attempt, a design change whose run never finished. Each
 is cleaned only when all of these hold: it is on no kept line (the Working Head's, a design branch
 Stage's or an admitted result's); nobody continued, admitted or rejected it, and nothing built on it
-stays; it is no saved version, no working position a person chose and no execution's input; its own
+stays; it is no version a person saved, no working position a person chose and no execution's input; its own
 run holds only what its execution wrote (no drawing page, render, annotation, Board scene, working
 copy, review, Stage or attributed act); and no retained record outside it names it, except the
 admission that replaced or withdrew it. The search for its id covers every run's records (Board
 component-info datasets' `appliesTo.runId`, registered drawing pages and their model sources, render
-attempts and model-source pins, document annotations, admissions and Studies, saved versions, Stages,
+attempts and model-source pins, document annotations, admissions and Studies, Stages,
 working copies), `design/branches.json`, `events/`, `canonical/` and `input/`; the project index is
 derived from those records and adds nothing. A run another cleaned run names goes after it, and one
 a kept run names stays. When anything that could keep a run cannot be read - the working position,
 the admissions, a design branch - nothing is cleaned.
 
+**Saved names (#575).** `POST /api/working-draft/save` names a run as a version, `{projectId, runId,
+baseRevisionSha256, label?, savedBy?}`, under the position's compare-and-swap. Every name is listed
+(`saved` in `GET /api/working-draft`) and names its run in the graph and in the trash, whoever saved
+it. The Hub page's history panel sends `savedBy: "person"` when the person saves a name there, and
+the run's row in `design/working.json` then records `labelSavedBy: "person"`; only such a name keeps
+a superseded draft. A name saved without it, by an outside agent or any other caller, records no
+saver and keeps nothing: the draft goes to the trash with its name, restorable for 30 days. A row
+written before rows recorded a saver has none and reads as before. Saving a name again replaces the
+name and who saved it; a Continue keeps both. `savedBy` is the caller's own statement in a
+single-user local tool, not a credential, and agents leave it out.
+
 What may go moves, whole and unchanged, into the project's `trash/` (`trash/runs/<runId>/`, beside a
 `ProjectTrashEntry@1` manifest in `trash/entries/`), taking its working-draft row with it; the
-repository refuses the Working Head, a run in an execution's ledger, a saved or chosen row, the local
-recovery, a run keeping a review, Stage or attributed act, a branch Stage and the published history.
+repository refuses the Working Head, a run in an execution's ledger, a row a person chose or whose
+name a person saved, the local recovery, a run keeping a review, Stage or attributed act, a branch
+Stage and the published history.
 The project index forgets a trashed run and sees a restored one again. The project's own Runtime
 cleans on a thread of its own at project open, once the index has loaded and entries older than 30
 days are purged, and after each Continue; each sweep that moved runs retains one `AuditEvent@1`

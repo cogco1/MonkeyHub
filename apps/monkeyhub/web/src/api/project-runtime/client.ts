@@ -326,8 +326,14 @@ export const createStudioClient = (connection: ServerConnection) => ({
   selectWorkingDraft(body: WorkingDraftSelectionDto): Promise<WorkingDraftDto> {
     return call("PUT /api/working-draft", selectCurrentWorkingDraftApiWorkingDraftPut({ client: connection.client, body }));
   },
-  saveWorkingDraft(body: WorkingDraftSaveDto): Promise<WorkingDraftDto> {
-    return call("POST /api/working-draft/save", saveCurrentWorkingDraftApiWorkingDraftSavePost({ client: connection.client, body }));
+  /**
+   * The person's own 保存 in the history panel: it says the person saved the name (`savedBy: "person"`).
+   * Only a name a person saved keeps a superseded draft out of the project trash (#575); agents and other
+   * callers save names without it.
+   */
+  savePersonsVersion(body: Omit<WorkingDraftSaveDto, "savedBy">): Promise<WorkingDraftDto> {
+    return call("POST /api/working-draft/save", saveCurrentWorkingDraftApiWorkingDraftSavePost({
+      client: connection.client, body: { ...body, savedBy: "person" } }));
   },
   retainLocalDraft(body: LocalDraftRequestDto): Promise<WorkingDraftDto> {
     return call("PUT /api/working-draft/local", retainLocalWorkingDraftApiWorkingDraftLocalPut({ client: connection.client, body }));

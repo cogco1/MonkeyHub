@@ -28,6 +28,7 @@ from archflow.project.record_kinds import AUDIT_EVENT, PROMOTION_DECISION, STATE
 from archflow.project.repository import (
     TRASH_ENTRY_SCHEMA,
     FilesystemProjectRepository,
+    ProjectIntegrityError,
     RunNotRestored,
     RunNotTrashed,
     TrashEntryNotFound,
@@ -54,8 +55,13 @@ class _TrashCase(unittest.TestCase):
         self.root = temporary / PROJECT_ID
         self.repo = FilesystemProjectRepository.initialize(self.root, project_id=PROJECT_ID, initial_state={})
 
-    def draft(self, run_id: str, *, automatic: bool = True, label: str | None = None, row: bool = True) -> None:
-        """A finished run with records, a model file and, unless told otherwise, its automatic working row."""
+    def draft(self, run_id: str, *, automatic: bool = True, label: str | None = None, saved_by: str | None = None,
+              row: bool = True) -> None:
+        """A finished run with records, a model file and, unless told otherwise, its automatic working row.
+
+        ``saved_by="person"`` records that the person saved its label in the Hub; without it the row is
+        written as every row was before (#575), with no saver.
+        """
 
         run = self.repo.create_run(run_id)
         self.put(run_id, STATE_RECORD, {"run_id": run_id, "entities": []})
@@ -69,6 +75,8 @@ class _TrashCase(unittest.TestCase):
             value, revision = self.repo.read_working_draft()
             value["runs"][run_id] = {"updatedAt": TRASHED, "sourceStageRef": None, "branchId": None,
                                      "label": label, "automatic": automatic}
+            if saved_by is not None:
+                value["runs"][run_id]["labelSavedBy"] = saved_by
             self.repo.compare_and_swap_working_draft(expected_revision=revision, value=value)
 
     def put(self, run_id: str, kind: str, payload: dict, area: PersistenceArea = PersistenceArea.RUN_RECORD):
@@ -136,6 +144,42 @@ class TrashRoundTripTests(_TrashCase):
         self.assertFalse(self.repo.layout.trash_manifest("draft").exists())
         self.assertEqual(self.repo.load_run("draft").run_id, "draft")
         FilesystemProjectRepository.open(self.root)
+
+    def test_a_name_no_person_saved_moves_with_its_run_and_comes_back(self) -> None:
+        # #575: a name an agent or any other caller saved keeps nothing; the trash keeps it with the run.
+        self.draft("named", label="V3 - closed wall and simple mono-pitch roof")
+        files = self.tree(self.repo.layout.run("named").root)
+        row = self.row("named")
+        self.assertNotIn("labelSavedBy", row)
+        entry = self.trash("named", label="V3 - closed wall and simple mono-pitch roof")
+        self.assertEqual((entry.label, entry.working_row), ("V3 - closed wall and simple mono-pitch roof", row))
+        self.assertEqual(self.in_one_place("named", files), "trash")
+        self.assertIsNone(self.row("named"))
+        self.repo.restore_trashed_run("named")
+        self.assertEqual(self.in_one_place("named", files), "runs")
+        self.assertEqual(self.row("named"), row, "its name comes back, still saved by no person")
+
+    def test_a_row_from_before_reads_as_it_is_and_a_person_mark_needs_a_name(self) -> None:
+        # A working position an earlier version wrote: every row names no saver, and it reads unchanged.
+        self.draft("older", label="V3 - ribbed roof")
+        self.draft("plain")
+        written = self.repo.layout.working_draft.read_bytes()
+        self.assertNotIn(b"labelSavedBy", written)
+        rows = FilesystemProjectRepository.open(self.root).read_working_draft()[0]["runs"]
+        self.assertEqual({run_id: sorted(row) for run_id, row in rows.items()},
+                         dict.fromkeys(("older", "plain"), ["automatic", "branchId", "label", "sourceStageRef", "updatedAt"]))
+        # Only the person marks a name, and only a name: anything else is refused before it is written.
+        value, revision = self.repo.read_working_draft()
+        for run_id, mark in (("older", "agent"), ("older", None), ("plain", "person")):
+            row = {**value["runs"][run_id], "labelSavedBy": mark}
+            with self.assertRaises(ProjectIntegrityError, msg=f"{run_id} marked {mark}"):
+                self.repo.compare_and_swap_working_draft(
+                    expected_revision=revision, value={**value, "runs": {**value["runs"], run_id: row}})
+        self.assertEqual(self.repo.layout.working_draft.read_bytes(), written)
+        marked = {**value["runs"]["older"], "labelSavedBy": "person"}
+        self.repo.compare_and_swap_working_draft(expected_revision=revision,
+                                                 value={**value, "runs": {**value["runs"], "older": marked}})
+        self.assertEqual(FilesystemProjectRepository.open(self.root).read_working_draft()[0]["runs"]["older"], marked)
 
     def test_a_run_without_a_row_moves_and_returns_without_one(self) -> None:
         self.draft("attempt", row=False)
@@ -215,8 +259,8 @@ class TrashRefusalTests(_TrashCase):
         self.repo.compare_and_swap_working_draft(expected_revision=revision, value={**value, "current": "head"})
         self.assert_stays("head", "Working Head")
 
-        self.draft("saved", label="V3")
-        self.assert_stays("saved", "saved version")
+        self.draft("saved", label="V3", saved_by="person")
+        self.assert_stays("saved", "a person saved it as a version")
         self.draft("chosen", automatic=False)
         self.assert_stays("chosen", "chose it")
 

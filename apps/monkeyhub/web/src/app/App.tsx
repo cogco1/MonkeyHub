@@ -3902,7 +3902,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               onSaveDraft: (runId, label) => {
                 if (!project) return;
                 setHistoryBusy(true); setHistoryError(null);
-                void studio.workingDraft().then((current) => studio.saveWorkingDraft({ projectId: project.projectId,
+                // The person names this version here, so the save says they did (#575).
+                void studio.workingDraft().then((current) => studio.savePersonsVersion({ projectId: project.projectId,
                   runId, label: label || undefined, baseRevisionSha256: current.revisionSha256 ?? null }))
                   .then(() => refreshWorkingDraft()).catch((cause) => setHistoryError(asStudioApiError(cause).detail))
                   .finally(() => setHistoryBusy(false));
