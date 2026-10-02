@@ -32,6 +32,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 import uvicorn
 
 from archflow.project.index import IndexCommit, add_commit_listener
+from archflow.project.repository import ProjectWriterBusy
+from archflow.project.writer_lease import WriterLease, hold_writer_lease
 from monkeyarch.authoring.frame import FrameError
 from monkeyarch.domain.massing_transforms import MassingTransformError
 from monkeydiagram.documentation.sheet_layout import SheetLayoutError
@@ -88,9 +90,13 @@ async def _handle_studio_error(request: Request, exc: StudioError) -> JSONRespon
 # says its own sentence; the status it answers with is this server's, and this
 # table is the one place that says it. A route lets them through, and they
 # arrive in the same ``{code, detail}`` body as a ``StudioError``.
+# ``ProjectWriterBusy`` reaches a route only in a process that holds no writer
+# lease (its folder held no project when it started) while another process
+# writes the project (ADR-012).
 OWNER_REFUSALS: Mapping[type[Exception], int] = MappingProxyType({
     FrameError: 422,
     MassingTransformError: 422,
+    ProjectWriterBusy: 409,
     SheetLayoutError: 422,
     StudyEvidenceError: 422,
 })
@@ -568,6 +574,23 @@ def _source_revision(root: Path = REPOSITORY_ROOT) -> str | None:
     return revision if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", revision) else None
 
 
+def _hold_project(settings: StudioSettings) -> WriterLease | None:
+    """The project's writer lease, held from before this process serves until it has stopped (ADR-012).
+
+    The open project's runtime is its only writer: while this holds the lease,
+    every other process's write is refused (``PROJECT_WRITER_BUSY``). A runtime
+    of the same project that is still exiting is waited for (``HOLD_WAIT_S``);
+    one that keeps it raises ``ProjectWriterBusy``. A folder that holds no
+    project takes no lease and gains no file: this process then serves unbound,
+    as before.
+    """
+
+    root = Path(settings.project_dir)
+    if not (root / "project.json").is_file():
+        return None
+    return hold_writer_lease(root)
+
+
 def _watch_managed_stdin(server: uvicorn.Server, jobs: JobRegistry, stream: TextIO, render_jobs=None) -> None:
     """Only the owning parent's pipe requests a managed shutdown."""
 
@@ -708,6 +731,20 @@ def main(argv: list[str] | None = None) -> None:
     if args.host is not None:
         os.environ[BIND_ENV] = args.host
     settings = StudioSettings.from_env()
+    try:
+        lease = _hold_project(settings)
+    except ProjectWriterBusy as exc:
+        # One line for the owner's log: this process serves nothing and wrote nothing.
+        raise SystemExit(f"{exc.code}: {exc} This Project Runtime did not start for {settings.project_dir}.") from None
+    try:
+        _serve(args, settings)
+    finally:
+        # Given back once serving has stopped and accepted work has drained.
+        if lease is not None:
+            lease.release()
+
+
+def _serve(args: argparse.Namespace, settings: StudioSettings) -> None:
     app = create_app(settings)
     app.state.server_version = SERVER_VERSION
     app.state.process_id = os.getpid()

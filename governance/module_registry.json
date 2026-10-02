@@ -5549,7 +5549,8 @@
         "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity",
         "Reading the positive application-text intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter",
         "operator-configured actor authentication with explicit project read/propose/accept/release grants; shared-project service role excludes local computation; Runtime upstream settings contain no project authority",
-        "ActorAttribution and request_attribution: who caused one request and through which surface (studio, or a Hub-managed process), read from the middleware's resolved actor and this process's own launch settings and never from a request body or header"
+        "ActorAttribution and request_attribution: who caused one request and through which surface (studio, or a Hub-managed process), read from the middleware's resolved actor and this process's own launch settings and never from a request body or header",
+        "holding the open project's writer lease from before the process serves until it has stopped and drained (ADR-012, _hold_project over archflow.project.repository's hold_writer_lease): the runtime is the project's only writer, and a second runtime for the same project stops with PROJECT_WRITER_BUSY"
       ],
       "does_not_own": [
         "any design question or kernel call",
@@ -5622,6 +5623,7 @@
       ],
       "depends_on": [
         "archflow.project.index",
+        "archflow.project.repository",
         "monkeyarch.authoring.element_reindex",
         "monkeyarch.domain.massing_metrics",
         "monkeydiagram.documentation.styles",
@@ -5650,6 +5652,7 @@
         "POST /api/admissions uses the existing accept grant on a local-role Runtime; a shared project service does not expose it",
         "only the exact GET paths in CONDITIONAL_READS carry an ETag, answer If-None-Match with 304 and are answered from the binding's memo, and only for a 200 read under a stable token; every other method, path and status passes through unchanged",
         "shutdown closes the bound project's binding after draining work, which stops its layout watch and lets go of the project folder",
+        "main holds the project's writer lease before it serves and gives it up only after serving has stopped and accepted work has drained; a process that dies loses it with its process. One whose lease another process keeps past the bounded wait exits non-zero with one PROJECT_WRITER_BUSY line and serves and writes nothing; a folder holding no project.json takes no lease and gains no file",
         "an owner package's refusal (monkeyarch.authoring.frame.FrameError, ...) carries its own wire code and sentence; OWNER_REFUSALS is the one place that gives each kind its status, and create_app answers it in the same {code, detail} body a StudioError has (#519)",
         "MonkeyHub (apps/monkeyhub/api/monkeyhub_api) imports from project_runtime only main, errors, api.dto and the declared read API - binding.ProjectBinding and ReadToken, events, status, the document and work-copy readers (application.artifacts list_documents, document_bytes, list_document_work_copies, DocumentWorkCopy, WORK_COPY_WORKSPACE) and application.boards export_board_pages with BoardExportPage - and archcheck refuses any other import (architecture_policy forbidden_layer_imports, allowed; #519)"
       ],
@@ -5662,7 +5665,8 @@
         "services/project-runtime/tests/test_monitoring.py",
         "services/project-runtime/tests/test_collaboration_auth.py",
         "services/project-runtime/tests/test_study_model.py",
-        "services/project-runtime/tests/test_conditional_reads.py"
+        "services/project-runtime/tests/test_conditional_reads.py",
+        "services/project-runtime/tests/test_writer_lease.py"
       ],
       "notes": "Project Runtime contract: docs/architecture/project-runtime.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. api/dto/* carries wire shapes, so a DTO change is a shell change. docs/protocols/project-runtime-api.md records protocol.py; apps/monkeyhub/web/src/api/project-runtime/connection.ts is the client boundary. User preferences and the Hub's application settings - their files, DTOs and routes - belong to hub.shell, as do browser appearance, language catalogs and workspace composition; this process serves APIs only.",
       "files": [

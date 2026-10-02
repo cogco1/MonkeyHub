@@ -1414,6 +1414,16 @@ for Arch/Board points to `/?runtimeId=...&view=arch|board`; `apiUrl` names the a
 runtime API for agent access. Each project workspace has its own client, token and connection
 identity. Navigating between workspaces does not change a model editing base.
 
+The open project's runtime is its only writer (ADR-012). From before it serves until it has
+stopped and drained its work, it holds the project's writer lease: an OS lock on `writer.lock` in
+the project folder, which ends with the process however the process ends. Meanwhile a write of the
+project from any other process (a tool, a script, an agent's command) is refused with
+`PROJECT_WRITER_BUSY` and writes nothing; reads are never refused. A second runtime for the same
+project waits briefly for one that may be exiting, then exits with that code in its log instead of
+serving, and the Hub shows it as an exited worker. A runtime that holds no lease, because its
+folder held no project when it started, answers a write another process blocks with
+`409 PROJECT_WRITER_BUSY`.
+
 The local Hub exposes `GET /api/runtime` and `GET /api/runtime/projects/{runtime_id}` as one
 runtime view: exact project/path binding, published P036 version/digest, reachable design
 Stages, owned worker identity/health, chats and operation status. `POST /api/runtime/projects/open`
