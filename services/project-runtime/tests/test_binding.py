@@ -15,7 +15,7 @@ from archflow.project.record_kinds import PROJECT_STAGE_WORKFLOW, STATE_RECORD
 from archflow.project.refs import record_ref_from_uri
 from archflow.state.stage_workflow import DesignPhase
 
-from project_runtime.binding import ProjectBinding
+from project_runtime.binding import ProjectBinding, RunChanges
 from project_runtime.main import create_app
 from project_runtime.settings import StudioSettings
 from project_runtime.errors import StudioError
@@ -219,6 +219,31 @@ class BoundProjectTests(unittest.TestCase):
         self.assertEqual(raised.exception.status, 404)
         self.assertEqual(raised.exception.code, "RUN_NOT_FOUND")
         self.assertIn("run-nowhere", raised.exception.detail)
+
+    def test_one_reader_reads_each_runs_change_once_and_keeps_nothing_past_itself(self) -> None:
+        binding = ProjectBinding.open(self.settings)
+        self.addCleanup(binding.close)
+        reads: list[str] = []
+        original = ProjectBinding.candidate_delta
+
+        def counted(this: ProjectBinding, run_id: str):
+            reads.append(run_id)
+            return original(this, run_id)
+
+        with patch.object(ProjectBinding, "candidate_delta", counted):
+            changes = RunChanges(binding)
+            # A run that retained no change, asked twice, is read once.
+            self.assertIsNone(changes(REFERENCE_RUN_ID))
+            self.assertIsNone(changes(REFERENCE_RUN_ID))
+            # A refusal is raised again on every ask, from its one reading.
+            for _ in range(2):
+                with self.assertRaises(StudioError) as raised:
+                    changes("run-nowhere")
+                self.assertEqual((raised.exception.status, raised.exception.code), (404, "RUN_NOT_FOUND"))
+            self.assertEqual(reads, [REFERENCE_RUN_ID, "run-nowhere"])
+            # The next reader reads again: a run's change may still be being retained.
+            self.assertIsNone(RunChanges(binding)(REFERENCE_RUN_ID))
+        self.assertEqual(reads, [REFERENCE_RUN_ID, "run-nowhere", REFERENCE_RUN_ID])
 
     def test_the_binding_lists_the_runs_on_disk(self) -> None:
         add_harness_run(self.repository)

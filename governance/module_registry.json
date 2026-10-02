@@ -4562,7 +4562,8 @@
         "IndexRowsDto",
         "attach_project_index",
         "StudioProjector",
-        "INDEX_CATCH_UP_S"
+        "INDEX_CATCH_UP_S",
+        "RunChanges"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -4603,7 +4604,8 @@
         "a State Record is parsed once per content digest and shared by every binding in the process, and nobody changes it; state_record still checks the ref's file on every call. A design branch's Stage chain is kept by the head and fork refs that fix it, each Stage file still checked; each run's part of the reference-run survey is kept under the stamps of its manifest, records directory and the receipt and workflow files it read; a bound view's state digest is taken once per view",
         "the drawing context publishes every wall's <id>-top from the producer itself, in production order, so a drawn shape standing on a wall keeps its drawing controls",
         "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)",
-        "ProjectBinding and ReadToken are the Runtime's public read API: MonkeyHub opens a project in process with ProjectBinding.unconfigured (no configured reference run, nothing exported), and binding.py imports no web framework; the app-state glue beside it reads its state object structurally (ProcessState) (#519)"
+        "ProjectBinding and ReadToken are the Runtime's public read API: MonkeyHub opens a project in process with ProjectBinding.unconfigured (no configured reference run, nothing exported), and binding.py imports no web framework; the app-state glue beside it reads its state object structurally (ProcessState) (#519)",
+        "RunChanges is one reader's reading of runs' retained changes (candidate_delta), for a request's Worktree Graph or one projector pass: each run's change, or its refusal, is read once and answered again to that reader only; nothing it read outlives the reader, because a run's change may still be being retained or move to the project trash and back, and nobody changes what it answers (#575)"
       ],
       "status": "canonical",
       "tests": [
