@@ -1,45 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-599",
-      "lanes": [
-        {
-          "id": "writer-lease",
-          "status": "active",
-          "branch": "codex/599-writer-lease",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-599-writer-lease",
-          "base_ref": "5beffce220e5eb02deed6a4e7f74b73d40f2873d",
-          "contributor": "Claude",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "archflow.project.repository",
-            "project_runtime.shell",
-            "project_runtime.candidate",
-            "hub.shell"
-          ],
-          "write_scope": [
-            "packages/archflow/src/archflow/project/repository.py",
-            "packages/archflow/src/archflow/project/writer_lease.py",
-            "services/project-runtime/src/project_runtime/main.py",
-            "services/project-runtime/src/project_runtime/application/retention.py",
-            "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
-            "apps/monkeyhub/api/tests/test_project_runtime.py",
-            "apps/monkeyhub/api/tests/test_working_draft_cleanup.py",
-            "apps/monkeyhub/web/test/retainedModelFixture.mjs",
-            "packages/archflow/tests/test_project_writer_lease.py",
-            "services/project-runtime/tests/test_writer_lease.py",
-            "services/project-runtime/tests/test_retention.py",
-            "services/project-runtime/tests/test_errors.py",
-            "tests/integration/test_project_format_migration.py",
-            "governance/module_registry.json",
-            "docs/architecture/system-map.md",
-            "docs/protocols/project-runtime-api.md"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
