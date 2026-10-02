@@ -1326,8 +1326,12 @@ class RuntimeCostTests(unittest.TestCase):
             elif step == 5:
                 now[0] = 120.0  # that read counted the commits too: nothing to read (#435)
             elif step == 6:
-                # A thumbnail drawn moves nothing the Hub reads.
+                # A thumbnail drawn, the index loaded again, or a stream that
+                # attached or restarted: none says the project moved (the
+                # first attachment came after the opening read).
                 manager.index_hint(runtime.runtime_id, {"epoch": "e", "revision": 3, "domains": ["projections"]})
+                manager.index_hint(runtime.runtime_id, {"epoch": "f", "revision": 1, "domains": ["reset"]})
+                manager.index_hint(runtime.runtime_id, None)
                 now[0] = 150.0
             else:
                 manager._closing.set()

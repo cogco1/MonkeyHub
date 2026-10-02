@@ -1451,7 +1451,8 @@ Worker/session observation continues each second. Retained history is refreshed 
 jobs/operations, mutation or attachment wakeups and worker changes; an idle runtime reuses
 its projection and, every 30 seconds, reads it again only when the runtime has committed to the
 project's index since the last read (the Hub hears each commit on the worker's event stream and
-counts all but the projection queue's own). These reads verify existing receipt/source facts
+counts those that say the project moved: not a thumbnail drawn, not the index loaded or rebuilt,
+not a hint without a revision). These reads verify existing receipt/source facts
 without rebuilding candidate previews or recalculating viability. A forwarded read (GET/HEAD,
 or a read-only POST such as `/api/state/closure`) does not wake the runtime, and admits no
 operation; `POST /api/project/refresh` admits none either, and then has the Hub read the

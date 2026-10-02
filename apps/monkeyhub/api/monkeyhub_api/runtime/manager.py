@@ -76,6 +76,9 @@ _STUDIO_REPLAY = 200
 _READ_POSTS = frozenset({"/api/state/closure", "/api/pick/resolve", "/api/project/refresh"})
 # Reading the project again (ADR-012): the Hub reads it again too, whole.
 _REFRESH_PATH = "/api/project/refresh"
+# The domains of an index commit that do not say the project moved: a thumbnail
+# drawn, or the index loaded or rebuilt from the project as it was.
+_UNMOVED_DOMAINS = frozenset({"projections", "reset"})
 
 
 def binding_signature(project_dir: str) -> tuple[int, int, int, bool] | None:
@@ -193,8 +196,8 @@ class ProjectRuntime:
     # the project again only once these two stats move (#363).
     binding_signature: tuple | None = None
     # How many of the worker's index commits the Hub has heard for this
-    # project, other than the projection queue's alone (``index_hint``): the
-    # observer's idle reads compare it, since nothing watches the project (ADR-012).
+    # project that say it moved (``index_hint``): the observer's idle reads
+    # compare it, since nothing watches the project (ADR-012).
     index_moves: int = 0
 
 
@@ -264,14 +267,16 @@ class ProjectRuntimeManager:
     def index_hint(self, runtime_id: str, index: dict | None) -> None:
         """Tell attached clients that a project's index moved (``index``), or may have (None): read it again.
 
-        The project's observer counts it too (``ProjectRuntime.index_moves``):
-        its idle reads follow the runtime's commits, since nothing watches the
-        project (ADR-012). A commit of the projection queue alone (a thumbnail
-        drawn) changes nothing the Hub reads and is not counted.
+        The project's observer counts a commit that says the project moved
+        (``ProjectRuntime.index_moves``): its idle reads follow the runtime's
+        commits, since nothing watches the project (ADR-012). A thumbnail drawn
+        (``projections``), the index loaded or rebuilt from the project as it
+        was (``reset``), and a hint without a revision (a first attachment, a
+        worker stream that restarted) are not counted: a worker that started or
+        restarted is read again on its own state change.
         """
 
-        domains = set((index or {}).get("domains") or ())
-        if index is None or not domains or not domains <= {"projections"}:
+        if index is not None and set(index.get("domains") or ()) - _UNMOVED_DOMAINS:
             with self._lock:
                 runtime = self._projects.get(runtime_id)
             if runtime is not None:

@@ -149,8 +149,10 @@ decision tree comes from two derived stores. Either store can be deleted at any 
   the snapshot does not hold them. A Hub page therefore holds one event stream, whatever it shows; the per-page
   proxy of the worker stream (`/api/runtime/projects/{id}/studio/api/events`) is retired and answers 404.
   Since #599 (ADR-012) these hints are also how the Hub's own project observer learns that the project moved: it
-  counts each commit other than the projection queue's alone, and its idle reads and its work-copy derivation run
-  again only when that count moved since their last success. It keeps no watch and asks no fingerprint.
+  counts each commit that says so - not a thumbnail drawn (`projections`), not the index loaded or rebuilt
+  (`reset`), not a hint without a revision, since a worker that started or restarted is read again on its state
+  change - and its idle reads and its work-copy derivation run again only when that count moved since their last
+  success. It keeps no watch and asks no fingerprint.
 - Each open project has one client store (`src/api/project-runtime/projectStore.ts`) at the ChatShell level, shared by
   its surfaces and released by count: `{epoch, revision, byId}`, one request in flight, `wanted = max(wanted,
   hint.revision)`, a delta applied only onto its `from`, answers that are not newer dropped, another epoch reset.
