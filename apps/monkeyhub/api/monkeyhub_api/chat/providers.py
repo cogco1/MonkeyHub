@@ -1,9 +1,9 @@
 """The installed coding CLIs a conversation runs on, and the environment a turn gives them.
 
-Where each CLI is, what a headless Claude turn may do without a prompt, the
-Claude and Coding Plan configuration, the Codex ACP adapter this application
-locks, each CLI's own sign-in console, and the read-only checks of who a CLI is
-signed in as and which models it lists. ``_redact`` keeps provider credentials
+Where each CLI is, what a headless Claude turn may do without a prompt and
+where it may not write, the Claude and Coding Plan configuration, the Codex
+ACP adapter this application locks, each CLI's own sign-in console, and the
+read-only checks of who a CLI is signed in as and which models it lists. ``_redact`` keeps provider credentials
 out of every text the Hub keeps or shows.
 """
 
@@ -60,6 +60,38 @@ def _claude_approved(runtime_root: Path) -> tuple[str, ...]:
     return _CLAUDE_APPROVED + tuple(
         f"mcp__monkeyhub__{name}" for name in computer_tools.TOOL_NAMES
     )
+
+
+# The CLI reads a rule's path as a gitignore pattern. A folder name that
+# carries one of these is matched literally only once they are escaped.
+_RULE_PATTERN = re.compile(r"([\\*?\[\]])")
+
+
+def _claude_denied(project_dir: str) -> tuple[str, ...]:
+    """What a headless turn may not do although its tools are approved: write the bound project.
+
+    The agent reads the project where it is, and its design changes go
+    studio_request -> Hub -> runtime (ADR-012). One Edit rule denies every
+    built-in tool that writes a file there, Write included. Measured with the
+    installed CLI 2.1.283 (#599): a Write rule gates no path at all, an
+    absolute Windows path is matched as //<drive letter>/<path>, and
+    //D:/<path> silently matches nothing. Bash is not a file tool, so this
+    does not confine it.
+    """
+    text = str(project_dir)
+    if text.startswith("\\\\?\\UNC\\"):
+        text = "\\\\" + text[8:]
+    elif text.startswith("\\\\?\\"):
+        text = text[4:]
+    drive = re.match(r"([A-Za-z]):(?:[\\/]|$)", text)
+    if drive:
+        root, path = "//" + drive.group(1).lower(), text[2:].replace("\\", "/")
+    elif text.startswith(("\\\\", "//")):
+        root, path = "//", text[2:].replace("\\", "/")
+    else:
+        root, path = "/", text
+    escaped = _RULE_PATTERN.sub(r"\\\1", path).rstrip("/")
+    return (f"Edit({root}{escaped}/**)",)
 
 
 def _source_checkout() -> Path | None:
