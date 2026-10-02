@@ -21,6 +21,7 @@
             "apps/monkeyhub/api/monkeyhub_api/runtime/manager.py",
             "apps/monkeyhub/api/tests/test_project_runtime.py",
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "packages/archflow/src/archflow/project/watch.py",
             "packages/archflow/tests/test_project_watch.py"
           ],
           "depends_on": []
