@@ -1,30 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-613",
-      "status": "active",
-      "branch": "codex/613-native-windows-validation",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-613-native-windows-validation",
-      "base_ref": "bbe6ca89f6b0ce675cb2c3d56614b9657384d1a8",
-      "contributor": "Codex Windows verification",
-      "reviewer": null,
-      "handoff": null,
-      "modules": ["hub.shell"],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/chat/acp_session.py",
-        "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
-        "apps/monkeyhub/api/monkeyhub_api/chat/continuation.py",
-        "apps/monkeyhub/api/tests/test_acp_session.py",
-        "apps/monkeyhub/api/tests/test_acp_chat.py",
-        "apps/monkeyhub/api/tests/test_chat_continuation.py",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs",
-        "apps/monkeyhub/README.md",
-        "docs/development/work-environment.md",
-        "governance/module_registry.json",
-        "docs/architecture/system-map.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
