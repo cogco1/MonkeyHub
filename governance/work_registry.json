@@ -1,4 +1,27 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-615",
+      "lanes": [
+        {
+          "id": "board-snap",
+          "status": "active",
+          "branch": "codex/615-board-snap",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-615-board-snap",
+          "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
+          "contributor": "Claude",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/test/boardScene.test.ts"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
