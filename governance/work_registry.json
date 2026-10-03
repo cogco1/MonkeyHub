@@ -1,30 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-145",
-      "lanes": [
-        {
-          "id": "escape",
-          "status": "active",
-          "branch": "codex/145-tracing-escape",
-          "worktree": "/workspace/scratch/bfe17b24d3e1/monkeyhub-dev/workspace/worktrees/codex-145-tracing-escape",
-          "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
-          "contributor": "OpenAI Codex",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/features/stage/Stage.tsx",
-            "apps/monkeyhub/web/src/workspaces/monkeyarch/Annotate.tsx",
-            "apps/monkeyhub/web/test/intentViewSource.browser.mjs",
-            "apps/monkeyhub/web/test/annotate.browser.mjs"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
