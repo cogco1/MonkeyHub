@@ -116,6 +116,33 @@ class NativeContinuationTests(unittest.TestCase):
         binding = self.store.bind_presentation(ChatPresentationBindRequest(projectDir=str(self.project), sourceSessionId="native-1"))
         self.assertEqual(binding.chatId, native.id)
 
+    def test_mapped_repeat_refuses_recreated_project_identity_without_adapter_or_record_changes(self):
+        source = self.store._sessions[self.id]
+        target = source.model_copy(deep=True)
+        target.id, target.sourceSessionId, target.acpSessionId, target.transport = str(uuid4()), None, "native-1", "acp"
+        target.nativePublicTimeline = True
+        self.store._sessions[target.id] = target
+        self.store._save(target)
+        project_dir = str(self.project.resolve())
+        cases = [
+            ("replaced-project", [("replaced-project", project_dir)]),
+            ("continuation-project", [("continuation-project", project_dir), ("replaced-project", project_dir)]),
+        ]
+        for project_id, lookups in cases:
+            with self.subTest(project_id=project_id):
+                source.projectId = project_id
+                self.store._save(source)
+                before = {row.id: (self.store.root / f"{row.id}.json").read_bytes() for row in (source, target)}
+                tokens = dict(self.store._presentation_tokens)
+                with patch("monkeyhub_api.chat.store.projects._project", side_effect=lookups), \
+                        patch.object(self.store, "_new_acp_client") as make, self.assertRaises(HubFailure) as caught:
+                    self.store.continue_native(source.id)
+                self.assertEqual(caught.exception.error.code, "CHAT_CONTINUATION_MISMATCH")
+                make.assert_not_called()
+                self.assertEqual(self.store._presentation_tokens, tokens)
+                for identifier, raw in before.items():
+                    self.assertEqual((self.store.root / f"{identifier}.json").read_bytes(), raw)
+
     def test_release_after_provider_rotation_binds_current_thread_not_historical_source(self):
         self.restore()
         with self.store._lock:

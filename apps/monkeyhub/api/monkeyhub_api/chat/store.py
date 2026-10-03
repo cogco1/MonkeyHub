@@ -596,7 +596,7 @@ class ChatStore:
                 raise HubFailure(409, "CHAT_CONTINUATION_HISTORY", "This thread belongs to an earlier Hub context. Open the current Hub conversation; its records and files are retained.")
             matches = [row for row in self._sessions.values() if row.provider == "codex"
                        and native_id in {row.acpSessionId, row.nativeSessionId}]
-            if any(row.projectDir != source.projectDir for row in matches) or len(matches) > 1:
+            if any((row.projectId, row.projectDir) != (source.projectId, source.projectDir) for row in matches) or len(matches) > 1:
                 raise HubFailure(409, "CHAT_CONTINUATION_MISMATCH", "This native session has a conflicting Hub project binding.")
             target = matches[0] if matches else source
             ids = {source.id, target.id}
@@ -607,6 +607,8 @@ class ChatStore:
                 if row.nativeReleasePending or row.id in self._fenced_handoffs:
                     raise HubFailure(409, "CHAT_CONTINUATION_INCOMPLETE", "The previous handoff could not confirm that Hub released its writer. Records and files are retained; finish closing the connection before continuing.")
             if matches and not target.sourceSessionId and (target.nativeReleaseBoundary is not None or target.nativePublicTimeline):
+                if projects._project(target.projectDir) != (target.projectId, target.projectDir):
+                    raise HubFailure(409, "CHAT_CONTINUATION_MISMATCH", "The original project binding changed before returning this Hub conversation.")
                 return self.get(target.id)
             if not source.sourceSessionId:
                 if target.nativeReleaseBoundary is not None or target.nativePublicTimeline:
