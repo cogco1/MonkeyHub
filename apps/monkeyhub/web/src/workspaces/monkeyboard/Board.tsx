@@ -15,7 +15,7 @@ import { BoardFeedbackError, prepareBoardDesignRequest, type BoardDesignRequest 
 import { BoardFeedbackGeometryError, createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
 import { boardViewAppState, captureBoardView, pageSourceAt, type BoardDocumentOpen, type BoardViewState } from "./boardNavigation";
 import { BoardRenderError, handOverBoardRender, RENDER_REFERENCE_LIMIT, renderReferenceChoices, selectedRenderPages, type BoardRenderChatRequest } from "./boardRender";
-import { boardDocumentFrameName, documentKey, documentMime, findSource, imageSource, isTracingPaperReview, nextDocumentPosition, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
+import { boardDocumentFrameName, documentKey, documentMime, findSource, imageSource, isTracingPaperReview, nextDocumentPosition, nextPagePlacement, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
 import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchFrameIds, sketchSummary, type BoardSketchRequest, type SketchFrameData, type SketchSkipReason } from "./boardSketch";
 import { pageSourceDetails, pageSourceReason, pageSourceState, pageStageLabel, pageStatusShows, readStageLabels, type PageStatusRead } from "./boardSourceStatus";
 import "./board.css";
@@ -745,12 +745,15 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const api = canvas.current;
     if (!alive.current || !api || !initialized.current || queue.getState().conflict) return;
     if (automatic && seen.current.has(documentKey(document))) return;
-    const position = nextDocumentPosition(records(api.getSceneElements()));
+    // A new page joins the row of the selected page, or of the page placed last, at its top and height (#615).
+    const elementsNow = records(api.getSceneElements());
     const scale = Math.min(1, 1000 / Math.max(rendered.width, rendered.height));
+    const placement = nextPagePlacement(elementsNow, api.getAppState().selectedElementIds, rendered.width / rendered.height)
+      ?? { ...nextDocumentPosition(elementsNow), width: rendered.width * scale, height: rendered.height * scale };
     const imageId = crypto.randomUUID();
     const fileId = crypto.randomUUID() as FileId;
     const additions = convertToExcalidrawElements([
-      { type: "image", id: imageId, fileId, ...position, width: rendered.width * scale, height: rendered.height * scale, status: "saved", customData: { sourceDocument: pageSource(document, pageIndex) } },
+      { type: "image", id: imageId, fileId, ...placement, status: "saved", customData: { sourceDocument: pageSource(document, pageIndex) } },
       { type: "frame", children: [imageId], name: boardDocumentFrameName(document, pageIndex) },
     ], { regenerateIds: false });
     api.addFiles([{ id: fileId, dataURL: rendered.dataURL, mimeType: "image/png", created: Date.now() }]);

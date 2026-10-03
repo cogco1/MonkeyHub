@@ -154,6 +154,34 @@ test("a new drawing is placed beyond existing visible work without repositioning
   assert.deepEqual(nextDocumentPosition([]), { x: 80, y: 80 });
 });
 
+test("a new page joins the row of the selected page, or of the page placed last, at its top and height (#615)", async (t) => {
+  const { nextPagePlacement, pageSource } = await harness(t);
+  const source = (pageIndex: number) => ({ sourceDocument: pageSource(document(), pageIndex) });
+  const elements = [
+    { id: "frame-a", type: "frame", x: 90, y: 190, width: 420, height: 320 },
+    { id: "page-a", type: "image", frameId: "frame-a", x: 100, y: 200, width: 400, height: 300, customData: source(0) },
+    { id: "frame-b", type: "frame", x: 590, y: -10, width: 220, height: 170 },
+    { id: "page-b", type: "image", frameId: "frame-b", x: 600, y: 0, width: 200, height: 150, customData: source(1) },
+    { id: "note", type: "rectangle", x: 700, y: 250, width: 100, height: 40 },
+    { id: "raw", type: "image", x: 3000, y: 3000, width: 100, height: 100 },
+    { id: "gone", type: "image", x: 5000, y: 5000, width: 999, height: 999, isDeleted: true, customData: source(0) },
+  ];
+  const before = structuredClone(elements);
+  const afterLast = { x: 810 + 96 + 10, y: 0, width: 100, height: 150 };
+  assert.deepEqual(nextPagePlacement(elements, {}, 2 / 3), afterLast, "the page placed last, at its top and height");
+  assert.deepEqual(nextPagePlacement(elements, { note: true, raw: true }, 2 / 3), afterLast,
+    "a selection without a registered page anchors nothing");
+  assert.deepEqual(nextPagePlacement(elements, { "page-a": false }, 2 / 3), afterLast);
+  const besideA = { x: 800 + 96 + 10, y: 200, width: 400, height: 300 };
+  assert.deepEqual(nextPagePlacement(elements, { "page-a": true }, 4 / 3), besideA,
+    "the selected page anchors, and the note already in its row is passed, never covered");
+  assert.deepEqual(nextPagePlacement(elements, { "frame-a": true }, 4 / 3), besideA, "a selected frame anchors its page");
+  assert.equal(nextPagePlacement(elements.filter((element) => !String(element.id).startsWith("page")), {}, 1), null,
+    "with no page on the board the caller places it as before");
+  for (const aspect of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) assert.equal(nextPagePlacement(elements, {}, aspect), null);
+  assert.deepEqual(elements, before, "nothing already on the board moves");
+});
+
 
 test("Tracing Paper reviews are named as review items on Board", async (t) => {
   const { boardDocumentFrameName } = await harness(t);
