@@ -128,6 +128,31 @@ function boxOf(element: Record<string, unknown>): Box | null {
 }
 
 /**
+ * The area an element covers on the board. Excalidraw keeps a line, an arrow or a freehand
+ * stroke at its first point, with ``points`` relative to it, so one drawn leftwards or upwards
+ * reaches past ``x``/``y``; a rotated element turns about its centre. Both are measured here.
+ */
+function extentOf(element: Record<string, unknown>): Box | null {
+  let box = boxOf(element);
+  if (!box) return null;
+  const points = element.points;
+  if (Array.isArray(points) && points.length && points.every((point) => Array.isArray(point)
+      && point.length >= 2 && Number.isFinite(point[0]) && Number.isFinite(point[1]))) {
+    const xs = points.map((point) => Number(element.x) + Number(point[0]));
+    const ys = points.map((point) => Number(element.y) + Number(point[1]));
+    box = { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
+  }
+  const angle = Number(element.angle);
+  if (!angle || !Number.isFinite(angle)) return box;
+  const [cx, cy] = [(box.left + box.right) / 2, (box.top + box.bottom) / 2];
+  const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
+  const corners = [[box.left, box.top], [box.right, box.top], [box.right, box.bottom], [box.left, box.bottom]]
+    .map(([px, py]) => [cx + (px - cx) * cos - (py - cy) * sin, cy + (px - cx) * sin + (py - cy) * cos]);
+  return { left: Math.min(...corners.map(([px]) => px)), top: Math.min(...corners.map(([, py]) => py)),
+    right: Math.max(...corners.map(([px]) => px)), bottom: Math.max(...corners.map(([, py]) => py)) };
+}
+
+/**
  * Where a new page goes so it lines up with the pages already on the board (#615), or null when there is none.
  *
  * The anchor is the page the person has selected (its image, or the frame holding it) or, with none
@@ -155,7 +180,7 @@ export function nextPagePlacement(
   const outer = (frame && boxOf(frame)) || image;
   const height = image.bottom - image.top;
   const width = height * aspect;
-  const others = visible.map(boxOf).filter((box): box is Box => box !== null);
+  const others = visible.map(extentOf).filter((box): box is Box => box !== null);
   let x = outer.right + PAGE_GAP + PAGE_FRAME_PADDING;
   // Each pass moves past every element the new frame would cover, so it ends within one pass per element.
   for (let pass = 0; pass <= others.length; pass++) {

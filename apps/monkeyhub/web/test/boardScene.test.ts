@@ -182,6 +182,20 @@ test("a new page joins the row of the selected page, or of the page placed last,
   assert.deepEqual(elements, before, "nothing already on the board moves");
 });
 
+test("a new page passes strokes drawn leftwards and rotated marks by where they actually are (#615)", async (t) => {
+  const { nextPagePlacement, pageSource } = await harness(t);
+  const page = { id: "page", type: "image", x: 0, y: 0, width: 400, height: 300,
+    customData: { sourceDocument: pageSource(document(), 0) } };
+  // Stored at its first point, x 1000; drawn leftwards to x 900, where the new page would otherwise start.
+  const stroke = { id: "stroke", type: "freedraw", x: 1000, y: 100, width: 100, height: 4, points: [[0, 0], [-50, 4], [-100, 0]] };
+  assert.equal(nextPagePlacement([page, stroke], {}, 1 / 3)!.x, 1000 + 96 + 10, "the stroke's real extent, 900 to 1000, is passed");
+  // A long bar stored at x 500 to 700, turned a quarter: it really spans y -100 to 100 and x 590 to 610.
+  const bar = { id: "bar", type: "rectangle", x: 500, y: -10, width: 200, height: 20, angle: Math.PI / 2 };
+  assert.equal(nextPagePlacement([page, bar], {}, 1 / 3)!.x, 400 + 96 + 10, "a turned bar left of the new page is not in the way");
+  const turnedInto = { ...bar, x: 410, y: 140 };
+  assert.equal(nextPagePlacement([page, turnedInto], {}, 1 / 3)!.x, 520 + 96 + 10, "a turned bar inside the row is passed by its turned extent");
+});
+
 
 test("Tracing Paper reviews are named as review items on Board", async (t) => {
   const { boardDocumentFrameName } = await harness(t);
