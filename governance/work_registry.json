@@ -1,22 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-613",
-      "status": "active",
-      "branch": "codex/613-codex-roundtrip",
-      "worktree": "/workspace/scratch/bfe17b24d3e1/monkeyhub-dev/workspace/worktrees/codex-613-codex-roundtrip",
-      "base_ref": "8f86c6219c73774d3c93274897a9c2f8072a25cc",
-      "contributor": "cogco1",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/web/test/chatShell.browser.mjs"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
