@@ -28,7 +28,7 @@ from pathlib import Path
 from acp import PROTOCOL_VERSION, RequestError, run_agent
 from acp.schema import (
     AgentCapabilities, AgentMessageChunk, InitializeResponse, LoadSessionResponse,
-    NewSessionResponse, PermissionOption, PromptCapabilities, PromptResponse, SetSessionConfigOptionResponse,
+    NewSessionResponse, ListSessionsResponse, SessionInfo, PermissionOption, PromptCapabilities, PromptResponse, SetSessionConfigOptionResponse,
     SessionConfigOptionSelect, TextContentBlock, ToolCallProgress, ToolCallStart, ToolCallUpdate, UsageUpdate,
 )
 
@@ -85,10 +85,18 @@ class FakeAgent:
         self.save()
         return NewSessionResponse(session_id=self.session_id, config_options=self.options())
 
+    async def list_sessions(self, cwd=None, cursor=None, **kwargs):
+        log("list", cwd=cwd, cursor=cursor)
+        if os.environ.get("ACP_LIST_PAGES") == "1" and cursor is None:
+            return ListSessionsResponse(sessions=[], next_cursor="page-2")
+        return ListSessionsResponse(sessions=[SessionInfo(session_id=self.session_id, cwd=str(root))])
+
     async def load_session(self, cwd, session_id, mcp_servers=None, **kwargs):
         log("load", sessionId=session_id, cwd=cwd)
         if not state_path.exists() or session_id != json.loads(state_path.read_text())["sessionId"]:
             raise RequestError.invalid_params({"details": "Unknown fixture session"})
+        if os.environ.get("ACP_WRITER_BUSY") == "1":
+            raise RequestError.invalid_request("already has an active writer")
         self.model = json.loads(state_path.read_text())["model"]
         for message in ("old user message", "old agent message"):
             await self.emit(message)
@@ -104,7 +112,7 @@ class FakeAgent:
     async def emit(self, text):
         await self.client.session_update(
             session_id=self.session_id,
-            update=AgentMessageChunk(session_update="agent_message_chunk", content=TextContentBlock(type="text", text=text)),
+            update=AgentMessageChunk(session_update="agent_message_chunk", message_id=text, content=TextContentBlock(type="text", text=text)),
         )
 
     async def prompt(self, session_id, prompt, **kwargs):
@@ -225,6 +233,41 @@ class AcpSessionTests(unittest.TestCase):
             return []
         return [value for line in path.read_text(encoding="utf-8").splitlines()
                 if (value := json.loads(line))["event"] == event]
+
+    def test_explicit_restore_lists_then_loads_without_prompt_and_returns_public_history(self):
+        original = self.make_session()
+        self.prompt(original)
+        original.close()
+        before = len(self.calls("prompt"))
+        restored = self.make_session(ACP_LIST_PAGES="1")
+        history = restored.restore(self.ids[0], str(self.root), 10)
+        self.assertEqual(len(self.calls("prompt")), before)
+        self.assertEqual([row["update"]["content"]["text"] for row in history], ["old user message", "old agent message"])
+        self.assertEqual([row["cursor"] for row in self.calls("list")], [None, "page-2"])
+        self.prompt(restored, "continued", session_id=self.ids[0])
+        self.assertEqual(len(self.calls("new")), 1)
+        self.assertEqual(len(self.calls("load")), 1)
+        self.assertEqual(self.calls("prompt")[-1]["sessionId"], self.ids[0])
+
+    def test_explicit_restore_refuses_unknown_or_wrong_cwd_without_load(self):
+        for identifier, cwd in [("unknown", str(self.root)), ("fixture/session:not-a-uuid", str(self.root.parent))]:
+            with self.subTest(identifier=identifier, cwd=cwd):
+                session = self.make_session()
+                with self.assertRaises(AcpSessionError):
+                    session.restore(identifier, cwd, 10)
+                session.close()
+        self.assertEqual(self.calls("load"), [])
+        self.assertEqual(self.calls("prompt"), [])
+        self.assertEqual(self.calls("new"), [])
+
+    def test_explicit_restore_preserves_native_writer_conflict_and_never_prompts(self):
+        original = self.make_session()
+        self.prompt(original)
+        original.close()
+        session = self.make_session(ACP_WRITER_BUSY="1")
+        with self.assertRaisesRegex(AcpSessionError, "active writer"):
+            session.restore(self.ids[0], str(self.root), 10)
+        self.assertEqual(len(self.calls("prompt")), 1)
 
     def test_one_process_multiple_turns_and_model_returns_to_default(self):
         session = self.make_session()

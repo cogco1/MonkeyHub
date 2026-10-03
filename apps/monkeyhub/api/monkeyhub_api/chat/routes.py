@@ -100,6 +100,14 @@ def sessions_router(chats) -> APIRouter:
     def read_chat(session_id: str):
         return chats.get(session_id)
 
+    @routes.post("/api/chat/sessions/{session_id}/continue-native", response_model=ChatDetail)
+    def continue_native_chat(session_id: str):
+        return chats.continue_native(session_id)
+
+    @routes.post("/api/chat/sessions/{session_id}/release-native", response_model=ChatDetail)
+    def release_native_chat(session_id: str):
+        return chats.release_native(session_id)
+
     @routes.post("/api/chat/sessions/{session_id}/messages", response_model=ChatDetail, status_code=202)
     def post_chat(session_id: str, body: ChatPostRequest):
         return chats.post(session_id, body)

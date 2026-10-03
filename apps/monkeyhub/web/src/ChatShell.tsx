@@ -582,6 +582,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   const [runtime, setRuntime] = useState<HubRuntimeDto | null>(null);
   const [eventsConnected, setEventsConnected] = useState(true);
   const [recovering, setRecovering] = useState(false);
+  const [handoffBusy, setHandoffBusy] = useState(false);
   // ADR-012: reading the project again (File menu), and the folder whose read found it changed outside MonkeyHub.
   const [reloading, setReloading] = useState(false);
   const [changedOutside, setChangedOutside] = useState<string | null>(null);
@@ -1173,6 +1174,22 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     if (item.projectDir !== projectDir) { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
     setArchivedView(Boolean(item.archived)); setProjectDir(item.projectDir); setChatId(item.id); setFocus(false);
   };
+  const handoffNative = async (direction: "continue" | "release") => {
+    if (!chat || chat.id !== chatId || actionLock.current || handoffBusy || running || archived) return;
+    const target = chat;
+    actionLock.current = true; setHandoffBusy(true); setError(null);
+    try {
+      const updated = await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(target.id)}/${direction}-native`, {});
+      // A late handoff must never navigate away from a newer user selection.
+      if (selection.current.chatId === target.id && selection.current.projectDir === target.projectDir) {
+        selectChat(updated); setChat(updated);
+      }
+      await refresh();
+    } catch (cause) {
+      if (selection.current.chatId === target.id) setError(asFailure(cause));
+    } finally { actionLock.current = false; setHandoffBusy(false); }
+  };
+
   // GH-300: a notice's 查看 opens its chat here, in place (src/notifications/openChat.ts).
   const openFromNotice = useRef<(chatId: string, projectDir: string) => void>(() => undefined);
   openFromNotice.current = (chatId, projectDir) =>
@@ -2074,6 +2091,9 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             project surface, whose bar has the chip, is on screen, so exactly one chip shows. */}
         {headerChip && <button type="button" className="chat-header__chip" aria-description={t.openInTree} title={t.openInTree}
           onClick={() => void openTool("tree")}><Icon name="tree" /><span>{headerChip}</span></button>}
+        {shownChat?.provider === "codex" && shownChat.continuationSessionId && !external && !archived &&
+          <button type="button" className="chat-activity__open" disabled={running || busy || handoffBusy || Boolean(draft.trim()) || attachments.length > 0}
+            title={t.continuationReleaseHint} onClick={() => void handoffNative("release")}>{t.continuationRelease}</button>}
         {workspaceShown && <button type="button" ref={focusToggle} className="chat-focus" aria-description={t.focusHint} title={t.focusHint}
           onClick={toggleFocus}><Icon name="focus" /><span>{t.focus}</span></button>}</header>
       {(!eventsConnected || crashed || recovering || workCopyRefusal || folderChanged) && <div className="chat-runtime" role="status" aria-live="polite">
@@ -2109,6 +2129,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       })()}
       <div className="chat-messages" ref={messages} role="log" aria-live="polite" aria-relevant="additions text" onScroll={readPosition}
         onWheel={() => { jumping.current = false; }} onTouchStart={() => { jumping.current = false; }}>
+        {chat?.id === chatId && Boolean(chat.priorMessages?.length) && <details className="chat-card-details">
+          <summary>{t.continuationPrior}</summary>
+          <p className="chat-muted">{t.continuationPriorHint}</p>
+          {chat.priorMessages!.map((message) => <article className={`chat-message chat-message--${message.role}`} key={message.id}>
+            <ChatMarkdown text={message.content} />
+            <ChatMessageFiles sessionId={chat.id} messageId={message.id} attachments={message.attachments} documents={message.documents} labels={t} />
+          </article>)}
+        </details>}
         {!shownMessages?.length ? <div className="chat-welcome"><div className="chat-welcome__mark"><Icon name="chat" /></div><h2>{project ? t.empty : t.noProject}</h2><p>{t.emptyHint}</p>{!project && <div className="chat-welcome__actions"><button className="btn btn--primary" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}>{t.newProject}</button><button className="btn" onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}>{t.addExisting}</button></div>}</div>
           : <div className="chat-message-list">{turns.map((turn, index) => <Fragment key={turn.key}>
             {turn.user && messageEntry(turn.user)}
@@ -2174,7 +2202,14 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         {archived ? <div className="chat-archived-notice">
           <p>{t.archivedNotice}</p>
           <button className="chat-activity__open" disabled={archiveBusy !== null} onClick={() => void setArchived(chat!, false)}><Icon name="restore" /><span>{t.restoreChat}</span></button>
-        </div> : external ? <p className="chat-external-notice" role="status"><strong>{t.externalChat}</strong><span>{t.externalNotice}</span></p> : <form className="chat-composer" data-dragging={draggingFiles} onSubmit={(event) => void send(event)}
+        </div> : external ? <div className="chat-external-notice" role="status"><strong>{t.externalChat}</strong><span>{t.externalNotice}</span>
+          {shownChat?.provider === "codex" && <>
+            <span>{t.continuationHint}</span>
+            {shownChat.continuationSessionId && <code>{`codex resume ${shownChat.continuationSessionId}`}</code>}
+            <button type="button" className="chat-activity__open" disabled={handoffBusy || running || busy}
+              onClick={() => void handoffNative("continue")}>{handoffBusy ? t.continuationLoading : t.continuationReturn}</button>
+          </>}
+        </div> : <form className="chat-composer" data-dragging={draggingFiles} onSubmit={(event) => void send(event)}
           data-context={designContext ? "ready" : workspaceContext?.projectId === project?.projectId ? workspaceContext?.unavailableReason ?? "none" : "none"}
           onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = !project || busy ? "none" : "copy"; setDraggingFiles(Boolean(project) && !busy); } }}
           onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFiles(false); }}

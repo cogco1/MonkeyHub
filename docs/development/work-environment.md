@@ -22,6 +22,13 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 底层调用本机 Codex / Claude CLI，并以原生 session 继续对话；Coding Plan 沿用 Claude CLI
 已有的兼容端点配置。用户不再先选择“进入工作区”。项目与运行配置仍由现有 owner 保存。
 新 Codex 对话通过锁定版本的 ACP SDK 与上游适配器保持连接，旧 CLI 对话仍可续接。
+空闲 Codex 对话可用「转到 Codex 继续」释放 Hub 连接，界面显示同一原生会话的 resume 命令；
+在 Codex 结束并关闭该会话后，用「从 Codex 接回这里继续」核验原生身份并重读公开历史。
+原 Hub 展示和附件保留在折叠区，不靠文本相似度猜测消息身份；不导入原生媒体路径或回放工具。
+需要同机、同一 Codex 会话存储及 CLI 0.153.4 以上。外部 source id 未经 provider 核验不会获得输入框；
+已有 Hub 映射复用原对话，否则只接受 provider cwd 与项目匹配的外部会话。源代码／scratch cwd 不能冒充项目身份。
+原生 provider 拒绝已有 writer 时须正常关闭源应用后再试，不能删除锁；这里不提供跨主机同步或全局锁。
+这不修复 #612 的已安装 Codex cwd／沙箱限制，也不改变 P036 项目写入归属。
 源码环境的一次依赖安装见 [Hub README](../../apps/monkeyhub/README.md#python-entry-and-development)；
 权限请求直接呈现在工具活动中，停止会取消仍待回答的请求。
 Claude / Coding Plan 聊天的计算脚本和临时文件放在 Hub 提供的 `runtime/chats/<chatId>/scratch`；启动参数明确授权该目录，提示提供准确路径。不要写入 Claude 受保护的 `.claude` 配置目录；scratch 不是项目状态，设计结果仍通过连接工具和 P036 保存。

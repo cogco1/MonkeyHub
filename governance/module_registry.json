@@ -7095,7 +7095,8 @@
         "Render provider/model/timeout preferences remain in UserSettingsDto; explicit launch environment supplies the secret only to the configured Runtime adapter, with no project or HTTP key field",
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement (monkeyhub_api/settings); the resolved values reach a Project Runtime only through its launch environment",
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
-        "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing"
+        "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing",
+        "Explicit idle same-machine Codex handoff: provider metadata resolves native identity before session/load, existing Hub bindings preserve project identity independently of provider cwd, native public history refreshes without prompt/tool replay, and original Hub messages/media remain inspectable."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7212,7 +7213,9 @@
         "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source",
         "GET /api/integrations",
         "ChatSuggestion via chat_present / ChatPresentationRequest; ChatPostRequest.suggestionSelection resolves one retained card into the existing native user-turn admission",
-        "src/api/project-runtime/projectStore.ts: ProjectStore and projectStores, one ref-counted client store per open project fed by the Hub's one stream (#366), with each entity's last move (moved, movedAt) and each project's kept Studio events known by <stream>:<seq>; useProjectStore / useProjectRevision / useProjectMoved / useProjectStoreInstance / useRuntimeKey"
+        "src/api/project-runtime/projectStore.ts: ProjectStore and projectStores, one ref-counted client store per open project fed by the Hub's one stream (#366), with each entity's last move (moved, movedAt) and each project's kept Studio events known by <stream>:<seq>; useProjectStore / useProjectRevision / useProjectMoved / useProjectStoreInstance / useRuntimeKey",
+        "POST /api/chat/sessions/{session_id}/continue-native",
+        "POST /api/chat/sessions/{session_id}/release-native"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -7259,7 +7262,8 @@
         "A chat render request names a provider the Runtime reports available, or is refused before admission: with none configured the answer says image generation is not configured and nothing is submitted; one requestId is one Runtime dispatch",
         "saving preferences never changes a running Project Runtime, its compiler or its project, and null clears a saved override",
         "Hub application launch choices do not replace user appearance or provider preferences, and never write project state",
-        "Beside a project workspace the projects list folds to its icons unless pinned (#283): the pin is UserSettingsDto.sidebarPinned, written only while pinned so a version older than it still reads the file; the folding, Focus and the conversation's width are this window's view state and reach no Project Runtime or project"
+        "Beside a project workspace the projects list folds to its icons unless pinned (#283): the pin is UserSettingsDto.sidebarPinned, written only while pinned so a version older than it still reads the file; the folding, Focus and the conversation's width are this window's view state and reach no Project Runtime or project",
+        "Native continuation never treats an arbitrary external source ID as verified: unmatched sessions require provider-reported project cwd; mapped sessions use their existing exact Hub project binding. Failed/busy/unsupported restoration retains external admission guards. Source provenance and original media persist, external presentation tokens are revoked on successful transfer, and local provider writer admission is not a cross-host lock."
       ],
       "files": [
         "apps/monkeyhub/api/monkeyhub_api/__init__.py",
@@ -7381,7 +7385,8 @@
         "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
         "apps/monkeyhub/web/src/ChatSuggestionCard.css",
         "apps/monkeyhub/web/src/features/componentInfo/",
-        "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx"
+        "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx",
+        "apps/monkeyhub/api/monkeyhub_api/chat/continuation.py"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -7440,7 +7445,8 @@
         "apps/monkeyhub/api/tests/test_chat_render.py",
         "apps/monkeyhub/api/tests/test_chat_progress.py",
         "apps/monkeyhub/web/test/componentInfo.test.ts",
-        "apps/monkeyhub/web/test/workspaceWidth.test.ts"
+        "apps/monkeyhub/web/test/workspaceWidth.test.ts",
+        "apps/monkeyhub/api/tests/test_chat_continuation.py"
       ],
       "depends_on": [
         "archflow.contracts.canonical",

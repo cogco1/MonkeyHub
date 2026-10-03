@@ -79,7 +79,8 @@ const server = createServer(async (req, res) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 const { chromium } = await import((process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright"));
-const browser = await chromium.launch({ headless: true, channel: "chrome" });
+const browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+  ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : { channel: "chrome" }) });
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 page.setDefaultTimeout(12000);
 // Keep chooser interception installed across keyboard passes. Repeatedly
@@ -1958,8 +1959,81 @@ async function externalConversation() {
   await page.locator(".chat-external-notice").waitFor();
   assert.equal(writes.filter(([, name]) => /\/(messages|stop|model)$/.test(name)).length, beforeExternalTurns);
 }
+/** Same native identity is restored explicitly; a late response never changes newer navigation. */
+async function nativeContinuation() {
+  const originalMessageWrites = writes.filter(([, name]) => name.endsWith("/messages")).length;
+  preferences = { ...preferences, language: "en" };
+  const native = { id: "native-613", projectId: "B", projectDir: "D:\\fixture\\B", title: "Original Hub conversation",
+    provider: "codex", continuationSessionId: "thread-613", status: "idle", archived: false,
+    createdAt: "2026-10-03", updatedAt: "2026-10-03", messages: [
+      { id: "old", role: "assistant", content: "Retained Hub-only presentation", status: "complete", createdAt: "2026-10-03" }] };
+  const external = { ...native, id: "external-613", title: "External Codex presentation", sourceSessionId: "thread-613" };
+  const other = { ...native, id: "other-613", title: "Another conversation", continuationSessionId: null, projectId: "A", projectDir: "D:\\fixture\\A", messages: [] };
+  sessions.unshift(native, external, other);
+  let fail = true, gate = null, restores = 0, releases = 0;
+  await page.route(/\/api\/chat\/sessions\/[^/]+\/(continue|release)-native$/, async (route) => {
+    assert.equal(route.request().method(), "POST");
+    const releasing = new URL(route.request().url()).pathname.endsWith("/release-native");
+    if (releasing) { releases++; native.sourceSessionId = "thread-613"; }
+    else {
+      restores++;
+      if (gate) await gate;
+      if (fail) return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ code: "CHAT_CONTINUATION_FAILED", detail: "already has an active writer" }) });
+      native.sourceSessionId = null;
+      native.priorMessages ??= native.messages;
+      native.messages = [{ id: "native:thread-613:u", role: "user", content: "Asked in Codex", createdAt: "2026-10-03", status: "complete" },
+        { id: "native:thread-613:a", role: "assistant", content: "Latest native answer", createdAt: "2026-10-03", status: "complete" }];
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(native) });
+  });
+  await page.goto(`${origin}/?chatId=${external.id}`);
+  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).waitFor();
+  assert.equal(await page.locator("#chat-input").count(), 0);
+  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).click();
+  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).waitFor();
+  assert.equal(await page.locator("#chat-input").count(), 0, "provider refusal leaves external composer guard intact");
+  fail = false;
+  let unblock;
+  gate = new Promise((resolve) => { unblock = resolve; });
+  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).click();
+  await page.getByRole("button", { name: "Loading native conversation…", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Loading native conversation…", exact: true }).isDisabled(), true);
+  await page.getByRole("button", { name: "Loading native conversation…", exact: true }).evaluate((button) => button.click());
+  await page.getByRole("button", { name: "Another conversation", exact: true }).click();
+  unblock(); gate = null;
+  await page.locator(".chat-header h1").filter({ hasText: "Another conversation" }).waitFor();
+  await page.waitForTimeout(100);
+  assert.match(await page.locator(".chat-header h1").innerText(), /Another conversation/);
+  assert.equal(restores, 2, "repeated disabled click sent no second transfer");
+  await page.getByRole("button", { name: /External Codex presentation/ }).click();
+  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).click();
+  await page.locator(".chat-header h1").filter({ hasText: "Original Hub conversation" }).waitFor();
+  await page.locator("#chat-input").waitFor();
+  assert.equal(await page.getByText("Latest native answer", { exact: true }).count(), 1);
+  await page.getByText("Earlier Hub presentation and attachments", { exact: true }).click();
+  await page.getByText("Retained Hub-only presentation", { exact: true }).waitFor();
+  await page.locator("#chat-input").fill("Unsent draft");
+  assert.equal(await page.getByRole("button", { name: "Continue in Codex", exact: true }).isDisabled(), true);
+  await page.locator("#chat-input").fill("");
+  await page.getByRole("button", { name: "Continue in Codex", exact: true }).click();
+  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).waitFor();
+  assert.equal(await page.locator("#chat-input").count(), 0);
+  assert.equal(releases, 1);
+  await page.getByText("codex resume thread-613", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).click();
+  await page.locator("#chat-input").waitFor();
+  await page.reload();
+  await page.locator("#chat-input").waitFor();
+  assert.equal(await page.getByText("Latest native answer", { exact: true }).count(), 1);
+  assert.equal(writes.filter(([, name]) => name.endsWith("/messages")).length, originalMessageWrites, "handoff/history reads never send a prompt");
+  await page.screenshot({ path: path.join(temporary, "native-continuation.png") });
+  console.log(JSON.stringify({ nativeContinuation: "passed", restores, releases }));
+}
+
 try {
-  if (process.env.MONKEYHUB_UI_FOCUS === "suggestions") {
+  if (process.env.MONKEYHUB_UI_FOCUS === "continuation") {
+    await nativeContinuation();
+  } else if (process.env.MONKEYHUB_UI_FOCUS === "suggestions") {
     await suggestionCards();
   } else if (process.env.MONKEYHUB_UI_FOCUS === "cards") {
     await conversationCards();
@@ -4779,6 +4853,7 @@ try {
   await idleMinute();
   if (!process.env.MONKEYHUB_UI_FOCUS) await requestedChangeLands();
   }
+  if (!process.env.MONKEYHUB_UI_FOCUS) await nativeContinuation();
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));
 } catch (error) { console.error(JSON.stringify({ screenshots: temporary, errors, workspaceRequests: workspaceFixture.requests.slice(-15),
