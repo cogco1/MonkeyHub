@@ -1,4 +1,37 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-613",
+      "status": "active",
+      "branch": "codex/613-codex-roundtrip",
+      "worktree": "/workspace/scratch/bfe17b24d3e1/monkeyhub-dev/workspace/worktrees/codex-613-codex-roundtrip",
+      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
+      "contributor": "cogco1",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "hub.shell"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/chat/acp_session.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/store.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/continuation.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/routes.py",
+        "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/tests/test_acp_session.py",
+        "apps/monkeyhub/api/tests/test_chat_continuation.py",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/src/api/generated/",
+        "apps/monkeyhub/web/test/chatContinuation.test.ts",
+        "apps/monkeyhub/README.md",
+        "docs/development/work-environment.md",
+        "governance/module_registry.json",
+        "docs/architecture/system-map.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
