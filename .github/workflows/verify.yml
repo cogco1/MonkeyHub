@@ -249,6 +249,11 @@ jobs:
         working-directory: apps/monkeyhub/web
         run: node test/boardLocale.browser.mjs
 
+      - name: Board smart alignment browser regression
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        working-directory: apps/monkeyhub/web
+        run: node test/boardAlign.browser.mjs
+
       - name: Intent source browser regression
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         working-directory: apps/monkeyhub/web
