@@ -2005,7 +2005,7 @@ async function nativeContinuation() {
   await page.waitForTimeout(100);
   assert.match(await page.locator(".chat-header h1").innerText(), /Another conversation/);
   assert.equal(restores, 2, "repeated disabled click sent no second transfer");
-  await page.getByRole("button", { name: /External Codex presentation/ }).click();
+  await page.locator(".chat-thread").filter({ hasText: external.title }).click();
   await page.getByRole("button", { name: "Continue here from Codex", exact: true }).click();
   await page.locator(".chat-header h1").filter({ hasText: "Original Hub conversation" }).waitFor();
   await page.locator("#chat-input").waitFor();
