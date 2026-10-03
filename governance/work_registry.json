@@ -1,19 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-613",
-      "status": "active",
-      "branch": "codex/613-native-windows-validation",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-613-native-windows-validation",
-      "base_ref": "3a52551f47bd5bb00a0c39a0aca37a6683ee683a",
-      "contributor": "Codex Windows verification",
-      "reviewer": null,
-      "handoff": null,
-      "modules": ["hub.shell"],
-      "write_scope": ["apps/monkeyhub/web/test/chatShell.browser.mjs"],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
-
