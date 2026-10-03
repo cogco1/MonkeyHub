@@ -71,6 +71,30 @@ export type AcceptanceEvidenceDto = {
 };
 
 /**
+ * ActorHeadDto
+ *
+ * A person's retained line; displayName is presentation, actorId is identity.
+ */
+export type ActorHeadDto = {
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Displayname
+     */
+    displayName: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Label
+     */
+    label?: string | null;
+};
+
+/**
  * AdmissionActorDto
  *
  * Who closed a loop and through which surface, as the boundary resolved it.
@@ -13645,6 +13669,10 @@ export type WorktreeGraphDto = {
      * After a return to an earlier step: the steps the head moved back past, oldest first, from the one made from the head to the last one it stood on, along the branch it moved onto most recently where the line forked (#575). Each can be continued again. Empty while no run the head once stood on continues it.
      */
     later: Array<LineStepDto>;
+    /**
+     * Actorheads
+     */
+    actorHeads?: Array<ActorHeadDto>;
     /**
      * Lines
      */

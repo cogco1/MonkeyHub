@@ -375,6 +375,14 @@ def plan_cleaning(binding: ProjectBinding, *, jobs: JobRegistry | None = None) -
     if store.problems:
         return nothing("Admissions could not be read; nothing is cleaned.", *store.problems)
     kept_lines = set(head.lineage)
+    # Every person's head and ancestry is live, even when the sweep was
+    # triggered by someone else moving their own line. Fail closed on damage.
+    try:
+        for position in working.get("positions", {}).values():
+            if position["current"] is not None:
+                kept_lines.update(lineage_of(binding, position["current"]))
+    except _UNREADABLE as exc:
+        return nothing(f"A person's working line could not be read; nothing is cleaned: {_detail(exc)}")
     try:
         for branch_id in sorted(binding.repository.read_design_branches()):
             for _ref, stage in binding.design_history(branch_id):

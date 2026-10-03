@@ -314,7 +314,8 @@ try {
     await new Promise(() => {});
   }
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
-  browser = await chromium.launch({ headless: true, channel: "chrome" });
+  browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_EXECUTABLE
+    ? { executablePath: process.env.CHROMIUM_EXECUTABLE } : { channel: "chrome" }) });
   if (shots) await mkdir(shots, { recursive: true });
   // A toast is shot once it has faded in.
   const settled = (target) => target.evaluate(() => Promise.all(document.getAnimations()
@@ -363,6 +364,19 @@ try {
   await tab.locator('[data-project-surface="tree"] .design-tree-inspector[data-node="candidate:run-entrance-a"]').waitFor();
   assert.equal(await chip.getAttribute("aria-pressed"), "true");
   await shoot(tab, "01b-ready-notice-opens-study");
+  const people = tab.getByRole("navigation", { name: "People’s working lines" });
+  await people.getByRole("button", { name: "Alice · Alice's study" }).waitFor();
+  await people.getByRole("button", { name: "Bob · Courtyard study" }).waitFor();
+  const beforePeerView = writes.length;
+  await people.getByRole("button", { name: "Bob · Courtyard study" }).click();
+  await tab.getByTestId("arch-stub").waitFor();
+  assert.equal(writes.length, beforePeerView, "viewing another person's line never moves a head or writes a project");
+  await tab.getByRole("button", { name: "Back to Current", exact: true }).click();
+  assert.equal(writes.length, beforePeerView, "returning from a peer view is also read-only");
+  await chip.click();
+  await people.waitFor();
+  await shoot(tab, "01d-actor-working-heads");
+
   if (shots) await inChinese("01c-ready-notice-opens-study-zh");
   // #337: the tree's menus sit in the project bar, over whichever surface is open.
   const bar = tab.locator(".project-bar");

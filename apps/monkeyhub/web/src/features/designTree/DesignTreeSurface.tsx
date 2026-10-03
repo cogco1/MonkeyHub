@@ -22,6 +22,11 @@ import type { DesignTreeData } from "./useDesignTree";
 import { treeWords, type SurfaceName } from "./words";
 
 // #337: the bar's quiet count; the Stage position beside it already counts running work.
+const actorWords = {
+  "zh-CN": { title: "每个人的工作线", unnamed: "未命名版本", owner: "项目所有者" },
+  en: { title: "People’s working lines", unnamed: "Unnamed version", owner: "Project owner" },
+} as const;
+
 const countWords = {
   "zh-CN": (options: number) => `${options} 个方案`,
   en: (options: number) => `${options} ${options === 1 ? "option" : "options"}`,
@@ -117,6 +122,13 @@ export default function DesignTreeSurface({ data, markSeen, active, returnTo, on
           ? t("designTree.drafts.hide") : t("designTree.drafts.show", { count: tree.drafts.count })}</MenuCommand></>}
       {mode === "canvas" && tree && <><MenuSeparator /><MenuCommand onClick={() => setFitRequest((value) => value + 1)}>{t("designTree.fit")}</MenuCommand></>}
     </SurfaceMenus>
+    {!!data.source?.worktrees?.actorHeads?.length && <nav className="design-tree__actor-heads" aria-label={actorWords[language].title}>
+      <span>{actorWords[language].title}</span>
+      {data.source.worktrees.actorHeads.map((head) => <button type="button" key={head.actorId} className="btn btn--small"
+        onClick={() => onView({ runId: head.runId, name: head.label || actorWords[language].unnamed, back: false })}>
+        {head.actorId === "studio:explicit-user-action" ? actorWords[language].owner : head.displayName} · {head.label || actorWords[language].unnamed}
+      </button>)}
+    </nav>}
     {data.source && !data.admissions && <p className="design-tree__notice">{t("designTree.noAdmissions")}</p>}
     {data.source && data.admissions && (data.source.history.warnings?.length ?? 0) > 0 &&
       <p className="design-tree__notice">{t("designTree.admissionWarnings")}</p>}

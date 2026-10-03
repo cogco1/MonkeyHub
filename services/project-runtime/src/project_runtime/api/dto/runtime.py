@@ -128,6 +128,15 @@ class RepresentationStateDto(BaseModel):
     detail: str | None
 
 
+class ActorHeadDto(BaseModel):
+    """A person's retained line; displayName is presentation, actorId is identity."""
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    actor_id: str = Field(alias="actorId")
+    display_name: str = Field(alias="displayName")
+    run_id: str = Field(alias="runId")
+    label: str | None = None
+
+
 class WorktreeGraphDto(BaseModel):
     """A read-only view of the project's current head, active work and other lines."""
 
@@ -142,6 +151,7 @@ class WorktreeGraphDto(BaseModel):
         "After a return to an earlier step: the steps the head moved back past, oldest first, from the one made from "
         "the head to the last one it stood on, along the branch it moved onto most recently where the line forked "
         "(#575). Each can be continued again. Empty while no run the head once stood on continues it.")
+    actor_heads: list[ActorHeadDto] = Field(default_factory=list, alias="actorHeads")
     lines: list[WorktreeLineDto]
     representations: list[RepresentationStateDto]
     warnings: list[str]
@@ -159,6 +169,8 @@ def worktree_graph_dto(value: WorktreeGraph) -> WorktreeGraphDto:
         project_id=value.project_id, head=working_head_dto(value.head), revision_sha256=value.revision_sha256,
         line=[_step_dto(step) for step in value.line],
         later=[_step_dto(step) for step in value.later],
+        actor_heads=[ActorHeadDto(actor_id=head.actor_id, display_name=head.display_name,
+                                 run_id=head.run_id, label=head.label) for head in value.actor_heads],
         lines=[WorktreeLineDto(
             line_id=line.line_id, kind=line.kind, run_id=line.run_id, job_id=line.job_id, label=line.label,
             base_run_id=line.base_run_id, base_stage_ref=line.base_stage_ref, branch_id=line.branch_id,

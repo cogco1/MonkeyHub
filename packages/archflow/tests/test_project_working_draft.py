@@ -204,3 +204,204 @@ print('saved')
         self.assertEqual(child.returncode, 0, err)
         self.assertEqual(out.strip(), "saved")
         self.assertTrue(self.repo.layout.run("expired").root.exists())
+
+
+class ActorWorkingDraftRepositoryTests(unittest.TestCase):
+    setUp = WorkingDraftRepositoryTests.setUp
+    create = WorkingDraftRepositoryTests.create
+    put = WorkingDraftRepositoryTests.put
+    snapshot = WorkingDraftRepositoryTests.snapshot
+
+    def select_actor(self, actor, run_id, *, owner="studio:explicit-user-action", local=None):
+        value, revision = self.repo.read_actor_working_draft(actor, owner_actor_id=owner)
+        value.update(current=run_id, localDraftRef=local)
+        return self.repo.compare_and_swap_actor_working_draft(
+            actor, expected_revision=revision, value=value, owner_actor_id=owner)
+
+    def test_legacy_position_is_only_the_configured_owner_and_reads_do_not_migrate(self):
+        self.create("legacy")
+        value, revision = self.repo.read_working_draft()
+        value["current"] = "legacy"
+        value["runs"]["legacy"]["branchId"] = "owner-line"
+        self.repo.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        before = self.repo.layout.working_draft.read_bytes()
+        owner, owner_revision = self.repo.read_actor_working_draft("alice", owner_actor_id="alice")
+        other, other_revision = self.repo.read_actor_working_draft("bob", owner_actor_id="alice")
+        self.assertEqual(owner["current"], "legacy")
+        self.assertIsNotNone(owner_revision)
+        self.assertIsNone(other["current"])
+        self.assertIsNone(other_revision)
+        self.assertEqual(self.repo.layout.working_draft.read_bytes(), before)
+        self.select_actor("bob", "legacy", owner="alice")
+        full, _ = self.repo.read_working_draft()
+        self.assertEqual(full["schema"], "ProjectWorkingDraft@2")
+        self.assertEqual(full["ownerActorId"], "alice")
+        self.assertEqual(full["positions"]["alice"]["current"], "legacy")
+        self.assertEqual(full["positions"]["alice"]["branchId"], "owner-line")
+        self.assertEqual(self.repo.read_actor_working_draft("alice")[0]["runs"]["legacy"]["branchId"], "owner-line")
+        self.assertEqual(self.repo.read_actor_working_draft("alice")[1], owner_revision)
+        self.assertIsNone(self.repo.read_actor_working_draft("studio:explicit-user-action")[0]["current"])
+
+    def test_other_actor_moves_do_not_stale_position_and_same_actor_moves_do(self):
+        self.create("a")
+        self.create("b")
+        before, revision = self.repo.read_actor_working_draft("alice")
+        before["current"] = "a"
+        self.select_actor("bob", "b")
+        self.assertEqual(self.repo.read_actor_working_draft("alice")[1], revision)
+        written, first = self.repo.compare_and_swap_actor_working_draft(
+            "alice", expected_revision=revision, value=before)
+        self.assertEqual(written["current"], "a")
+        self.select_actor("bob", "a")
+        self.assertEqual(self.repo.read_actor_working_draft("alice")[1], first)
+        with self.assertRaises(StaleWorkingDraft):
+            self.repo.compare_and_swap_actor_working_draft("alice", expected_revision=revision, value=before)
+        reopened = FilesystemProjectRepository.open(self.repo.layout.root)
+        self.assertEqual(reopened.read_actor_working_draft("alice"), (written, first))
+        self.assertNotEqual(reopened.read_actor_working_draft("bob")[1], first)
+
+    def test_first_nonowner_write_does_not_create_an_owner_position(self):
+        owner, revision = self.repo.read_actor_working_draft("studio:explicit-user-action")
+        self.select_actor("bob", None)
+        self.assertEqual(self.repo.read_actor_working_draft("studio:explicit-user-action")[1], revision)
+        self.repo.compare_and_swap_actor_working_draft(
+            "studio:explicit-user-action", expected_revision=revision, value=owner)
+        full, _ = self.repo.read_working_draft()
+        self.assertEqual(set(full["positions"]), {"bob", "studio:explicit-user-action"})
+
+    def test_actor_write_merges_new_runs_and_preserves_global_rename_and_execution(self):
+        self.create("a")
+        stale, revision = self.repo.read_actor_working_draft("alice")
+        self.create("b", label="Shared name")
+        full, global_revision = self.repo.read_working_draft()
+        full["runs"]["a"]["label"] = "Renamed"
+        self.repo.compare_and_swap_working_draft(expected_revision=global_revision, value=full)
+        self.repo.protect_working_run("running", "a")
+        self.repo.create_run("c")
+        stale["runs"]["c"] = dict(stale["runs"]["a"])
+        stale["current"] = "c"
+        written, _ = self.repo.compare_and_swap_actor_working_draft(
+            "alice", expected_revision=revision, value=stale)
+        self.assertEqual(set(written["runs"]), {"a", "b", "c"})
+        self.assertEqual(written["runs"]["a"]["label"], "Renamed")
+        self.assertEqual(written["runs"]["b"]["label"], "Shared name")
+        self.assertEqual(written["active"], {"running": ["a"]})
+        self.repo.release_working_run("running")
+        self.assertEqual(self.repo.read_actor_working_draft("alice")[0]["current"], "c")
+
+    def test_legacy_full_document_write_cannot_move_or_drop_any_actor_position(self):
+        self.create("a")
+        self.create("b")
+        self.select_actor("studio:explicit-user-action", "a")
+        self.select_actor("bob", "b")
+        before, revision = self.repo.read_working_draft()
+        legacy = {key: item for key, item in before.items() if key not in ("positions", "ownerActorId")}
+        legacy.update(schema="ProjectWorkingDraft@1", current="b")
+        legacy["runs"]["a"]["label"] = "Shared rename"
+        self.repo.compare_and_swap_working_draft(expected_revision=revision, value=legacy)
+        after, _ = self.repo.read_working_draft()
+        self.assertEqual(after["positions"], before["positions"])
+        self.assertEqual(after["current"], "a")
+        self.assertEqual(after["runs"]["a"]["label"], "Shared rename")
+
+    def test_all_actor_recovery_survives_prune_verify_archive_and_trash_checks(self):
+        from archflow.project.repository import RunNotTrashed
+        self.create("a")
+        self.create("b")
+        self.create("unused")
+        drafts = self.repo.create_run("studio-working-draft")
+        a, b, old = (self.snapshot(drafts, name) for name in ("a", "b", "unused"))
+        self.select_actor("alice", "a", local=a.to_dict())
+        self.select_actor("bob", "b", local=b.to_dict())
+        self.assertEqual(self.repo.prune_working_draft(now=NOW), (old.relative_path,))
+        report = self.repo.verify()
+        self.assertIn(a.relative_path, report.reachable_paths)
+        self.assertIn(b.relative_path, report.reachable_paths)
+        for name in ("a", "b"):
+            with self.assertRaises(RunNotTrashed):
+                self.repo.trash_run(name, now=NOW, rule="test", reason="Actor head stays")
+        # Recovery source also holds a run even after this actor clears its head.
+        self.select_actor("bob", None, local=b.to_dict())
+        with self.assertRaises(RunNotTrashed):
+            self.repo.trash_run("b", now=NOW, rule="test", reason="Recovery source stays")
+        archive = self.root / "actors.zip"
+        write_project_archive(self.repo, archive)
+        restore_project_archive(self.root / "restored" / "building", archive)
+        reopened = FilesystemProjectRepository.open(self.root / "restored" / "building")
+        self.assertEqual(reopened.read_working_draft(), self.repo.read_working_draft())
+        self.assertEqual(reopened.load_json(a), self.repo.load_json(a))
+        self.assertEqual(reopened.load_json(b), self.repo.load_json(b))
+        reopened.verify()
+
+    def test_actor_ids_and_owner_alias_integrity_are_checked(self):
+        for actor in ("", "../alice", "studio:arbitrary", "a/b", "a" * 129):
+            with self.assertRaises(ProjectIntegrityError):
+                self.repo.read_actor_working_draft(actor)
+        self.create("a")
+        self.select_actor("alice@example.com", "a")
+        full, _ = self.repo.read_working_draft()
+        full["current"] = "a"
+        self.repo.layout.working_draft.write_text(json.dumps(full))
+        with self.assertRaises(ProjectIntegrityError):
+            self.repo.read_working_draft()
+
+    def test_cross_process_actor_write_preserves_the_other_process_position(self):
+        self.create("a")
+        self.create("b")
+        alice, revision = self.repo.read_actor_working_draft("alice")
+        code = """import sys
+from archflow.project.repository import FilesystemProjectRepository
+r = FilesystemProjectRepository.open(sys.argv[1])
+v, rev = r.read_actor_working_draft('bob')
+v['current'] = 'b'
+r.compare_and_swap_actor_working_draft('bob', expected_revision=rev, value=v)
+"""
+        child = subprocess.run([sys.executable, "-c", code, str(self.repo.layout.root)],
+                               capture_output=True, text=True, env=CHILD_ENV, timeout=20)
+        self.assertEqual(child.returncode, 0, child.stderr)
+        alice["current"] = "a"
+        self.repo.compare_and_swap_actor_working_draft("alice", expected_revision=revision, value=alice)
+        reopened = FilesystemProjectRepository.open(self.repo.layout.root)
+        self.assertEqual(reopened.read_actor_working_draft("alice")[0]["current"], "a")
+        self.assertEqual(reopened.read_actor_working_draft("bob")[0]["current"], "b")
+
+    def test_trash_and_restore_shared_row_preserve_positions_and_refuse_stale_resurrection(self):
+        self.create("a")
+        self.create("b")
+        self.create("unused")
+        self.select_actor("alice", "a")
+        self.select_actor("bob", "b")
+        before, _ = self.repo.read_working_draft()
+        stale, revision = self.repo.read_actor_working_draft("alice")
+        self.repo.trash_run("unused", now=NOW, rule="test", reason="Unused candidate")
+        with self.assertRaises(ProjectIntegrityError):
+            self.repo.compare_and_swap_actor_working_draft("alice", expected_revision=revision, value=stale)
+        self.assertNotIn("unused", self.repo.read_working_draft()[0]["runs"])
+        self.repo.restore_trashed_run("unused")
+        after, _ = self.repo.read_working_draft()
+        self.assertEqual(after, before)
+        self.repo.verify()
+
+    def test_two_actors_keep_different_branch_contexts_for_the_same_run(self):
+        self.create("shared")
+        alice, revision = self.repo.read_actor_working_draft("alice")
+        alice["current"] = "shared"
+        alice["runs"]["shared"]["branchId"] = "alice-line"
+        _, alice_revision = self.repo.compare_and_swap_actor_working_draft(
+            "alice", expected_revision=revision, value=alice)
+        bob, revision = self.repo.read_actor_working_draft("bob")
+        bob["current"] = "shared"
+        bob["runs"]["shared"]["branchId"] = "bob-line"
+        self.repo.compare_and_swap_actor_working_draft("bob", expected_revision=revision, value=bob)
+        reopened = FilesystemProjectRepository.open(self.repo.layout.root)
+        self.assertEqual(reopened.read_actor_working_draft("alice")[1], alice_revision)
+        self.assertEqual(reopened.read_actor_working_draft("alice")[0]["runs"]["shared"]["branchId"], "alice-line")
+        self.assertEqual(reopened.read_actor_working_draft("bob")[0]["runs"]["shared"]["branchId"], "bob-line")
+        self.assertIsNone(reopened.read_working_draft()[0]["runs"]["shared"]["branchId"])
+        alice, revision = reopened.read_actor_working_draft("alice")
+        alice["runs"]["shared"]["branchId"] = "another-line"
+        _, changed = reopened.compare_and_swap_actor_working_draft("alice", expected_revision=revision, value=alice)
+        self.assertNotEqual(changed, revision)
+        self.assertEqual(reopened.read_actor_working_draft("bob")[0]["runs"]["shared"]["branchId"], "bob-line")
+        self.select_actor("alice", None)
+        self.assertIsNone(self.repo.read_working_draft()[0]["positions"]["alice"]["branchId"])

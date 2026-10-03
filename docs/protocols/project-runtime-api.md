@@ -2119,3 +2119,22 @@ uses the existing CAD/SDK/projection executors and their saved-output checks.
 `ready` and `checkedAt` describe the last qualification in this Hub session,
 not an authorization or guarantee for a later execution. See
 [Integration packs](integration-packs.md) for the contract and Revit design case.
+
+## Personal working heads (GH-619)
+
+With configured actor authentication, working-draft, working-source and worktree
+reads select the authenticated actor's own position. Continue and local recovery
+writes use an actor-scoped `baseRevisionSha256`: another person's Continue does
+not make this position stale. A caller cannot select an actor through the body.
+`GET /api/worktrees` additionally returns `actorHeads` entries with `actorId`,
+`displayName`, `runId` and `label` for read-only navigation. Changing a display
+name does not change identity or grants. Conditional tags include actor identity.
+
+For retained @1 projects, `ARCHFLOW_STUDIO_PROJECT_OWNER_ACTOR_ID` explicitly
+identifies the legacy owner (default: the existing local boundary identity).
+Reading does not write or migrate. @2 retains its owner and individual positions.
+A team actor without a selected position starts at the shared accepted Stage;
+when none exists, the source states it is unavailable until explicitly selected.
+Actor configuration may supply `display_name`; this is presentation only.
+See [ADR-013](../decisions/013-actor-working-heads.md). This slice does not enable
+Share/Join or replicate personal pointers over the existing candidate-transfer API.
