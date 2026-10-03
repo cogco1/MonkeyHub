@@ -1968,7 +1968,7 @@ async function nativeContinuation() {
     createdAt: "2026-10-03", updatedAt: "2026-10-03", messages: [
       { id: "old", role: "assistant", content: "Retained Hub-only presentation", status: "complete", createdAt: "2026-10-03" }] };
   const external = { ...native, id: "external-613", title: "External Codex presentation", sourceSessionId: "thread-613" };
-  const other = { ...native, id: "other-613", title: "Another conversation", continuationSessionId: null, projectId: "A", projectDir: "D:\\fixture\\A", messages: [] };
+  const other = { ...native, id: "other-613", title: "Another conversation", continuationSessionId: "other-thread-613", projectId: "A", projectDir: "D:\\fixture\\A", messages: [] };
   sessions.unshift(native, external, other);
   let fail = true, gate = null, restores = 0, releases = 0;
   await page.route(/\/api\/chat\/sessions\/[^/]+\/(continue|release)-native$/, async (route) => {
@@ -1990,7 +1990,7 @@ async function nativeContinuation() {
   await page.getByRole("button", { name: "Continue here from Codex", exact: true }).waitFor();
   assert.equal(await page.locator("#chat-input").count(), 0);
   await page.getByRole("button", { name: "Continue here from Codex", exact: true }).click();
-  await page.getByRole("button", { name: "Continue here from Codex", exact: true }).waitFor();
+  await page.locator(".chat-error").filter({ hasText: "already has an active writer" }).waitFor();
   assert.equal(await page.locator("#chat-input").count(), 0, "provider refusal leaves external composer guard intact");
   fail = false;
   let unblock;
@@ -2000,15 +2000,21 @@ async function nativeContinuation() {
   assert.equal(await page.getByRole("button", { name: "Loading native conversation…", exact: true }).isDisabled(), true);
   await page.getByRole("button", { name: "Loading native conversation…", exact: true }).evaluate((button) => button.click());
   await page.getByRole("button", { name: "Another conversation", exact: true }).click();
-  unblock(); gate = null;
   await page.locator(".chat-header h1").filter({ hasText: "Another conversation" }).waitFor();
-  await page.waitForTimeout(100);
+  assert.equal(await page.getByRole("button", { name: "Continue in Codex", exact: true }).isDisabled(), true);
+  const delayedRestore = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/chat/sessions/${external.id}/continue-native`
+    && response.request().method() === "POST");
+  unblock(); gate = null;
+  await (await delayedRestore).finished();
+  // Enabled again only after handoffNative's response, refresh and finally.
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Continue in Codex" && !button.disabled));
   assert.match(await page.locator(".chat-header h1").innerText(), /Another conversation/);
   assert.equal(restores, 2, "repeated disabled click sent no second transfer");
   await page.locator(".chat-thread").filter({ hasText: external.title }).click();
   await page.getByRole("button", { name: "Continue here from Codex", exact: true }).click();
   await page.locator(".chat-header h1").filter({ hasText: "Original Hub conversation" }).waitFor();
   await page.locator("#chat-input").waitFor();
+  await page.getByText("Latest native answer", { exact: true }).waitFor();
   assert.equal(await page.getByText("Latest native answer", { exact: true }).count(), 1);
   await page.getByText("Earlier Hub presentation and attachments", { exact: true }).click();
   await page.getByText("Retained Hub-only presentation", { exact: true }).waitFor();
@@ -2022,9 +2028,29 @@ async function nativeContinuation() {
   await page.getByText("codex resume thread-613", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Continue here from Codex", exact: true }).click();
   await page.locator("#chat-input").waitFor();
-  await page.reload();
-  await page.locator("#chat-input").waitFor();
-  assert.equal(await page.getByText("Latest native answer", { exact: true }).count(), 1);
+  let releaseHistory, historyRequested;
+  const historyGate = new Promise((resolve) => { releaseHistory = resolve; });
+  const historyRead = new Promise((resolve) => { historyRequested = resolve; });
+  const detailUrl = `${origin}/api/chat/sessions/${native.id}`;
+  const delayedDetail = async (route) => {
+    historyRequested();
+    await historyGate;
+    await route.fallback();
+  };
+  await page.route(detailUrl, delayedDetail);
+  try {
+    await page.reload();
+    await historyRead;
+    // A summary can render the composer while its full history is still loading.
+    await page.locator("#chat-input").waitFor();
+    assert.equal(await page.getByText("Latest native answer", { exact: true }).count(), 0, "delayed detail has not rendered history yet");
+    releaseHistory();
+    await page.getByText("Latest native answer", { exact: true }).waitFor();
+    assert.equal(await page.getByText("Latest native answer", { exact: true }).count(), 1);
+  } finally {
+    releaseHistory();
+    await page.unroute(detailUrl, delayedDetail);
+  }
   assert.equal(writes.filter(([, name]) => name.endsWith("/messages")).length, originalMessageWrites, "handoff/history reads never send a prompt");
   await page.screenshot({ path: path.join(temporary, "native-continuation.png") });
   console.log(JSON.stringify({ nativeContinuation: "passed", restores, releases }));
