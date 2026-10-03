@@ -505,7 +505,6 @@ export function Annotate({
       if (canvasRef.current?.closest("[inert], [aria-hidden='true']")) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
-      if (event.key === "Escape") cancel();
       // Only ink in hand owns temporary orbit. An idle annotation overlay
       // must leave Space to the modeling workspace's selection tool.
       if (event.code === "Space" && !event.repeat && (tool !== null || eraser)) {
