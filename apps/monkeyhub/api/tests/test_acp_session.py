@@ -1,6 +1,7 @@
 """Real SDK stdio conversations with a local fake agent; no model or CAD calls."""
 
 from concurrent.futures import Future, ThreadPoolExecutor
+import asyncio
 import base64
 import json
 import os
@@ -11,6 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 API_ROOT = Path(__file__).resolve().parents[1]
 if str(API_ROOT) not in sys.path:
@@ -29,7 +31,8 @@ from acp import PROTOCOL_VERSION, RequestError, run_agent
 from acp.schema import (
     AgentCapabilities, AgentMessageChunk, InitializeResponse, LoadSessionResponse,
     NewSessionResponse, ListSessionsResponse, SessionInfo, PermissionOption, PromptCapabilities, PromptResponse, SetSessionConfigOptionResponse,
-    SessionConfigOptionSelect, TextContentBlock, ToolCallProgress, ToolCallStart, ToolCallUpdate, UsageUpdate,
+    SessionConfigOptionSelect, TextContentBlock, ImageContentBlock, UserMessageChunk,
+    ToolCallProgress, ToolCallStart, ToolCallUpdate, UsageUpdate,
 )
 
 root = Path(os.environ["ACP_FIXTURE_ROOT"])
@@ -97,7 +100,29 @@ class FakeAgent:
             raise RequestError.invalid_params({"details": "Unknown fixture session"})
         if os.environ.get("ACP_WRITER_BUSY") == "1":
             raise RequestError.invalid_request("already has an active writer")
+        await asyncio.sleep(float(os.environ.get("ACP_LOAD_DELAY", "0")))
+        if os.environ.get("ACP_LOAD_ERROR") == "1":
+            raise RequestError.invalid_request("Fixture load lost its native subscription")
         self.model = json.loads(state_path.read_text())["model"]
+        case = os.environ.get("ACP_HISTORY_CASE")
+        if case in {"foreign", "missing", "long-id", "raw-limit"}:
+            await self.client.session_update(
+                session_id="foreign-native-session" if case == "foreign" else self.session_id,
+                update=AgentMessageChunk(session_update="agent_message_chunk",
+                    message_id=None if case == "missing" else "x" * 501 if case == "long-id" else "case-message",
+                    content=TextContentBlock(type="text", text="x" * 8_000_001 if case == "raw-limit" else "bad public chunk")),
+            )
+        if case == "role-reuse":
+            await self.client.session_update(session_id=self.session_id,
+                update=UserMessageChunk(session_update="user_message_chunk", message_id="old agent message",
+                    content=TextContentBlock(type="text", text="wrong role")))
+        if case == "ignored":
+            await self.client.session_update(session_id=self.session_id,
+                update=AgentMessageChunk(session_update="agent_message_chunk", message_id="media",
+                    content=ImageContentBlock(type="image", mime_type="image/png", data="AA==")))
+            await self.client.session_update(session_id=self.session_id,
+                update=ToolCallStart(session_update="tool_call", tool_call_id="history-tool", title="Retained tool",
+                    kind="read", status="completed", raw_output={"secret-like fixture": "not public history"}))
         for message in ("old user message", "old agent message"):
             await self.emit(message)
         return LoadSessionResponse(config_options=self.options())
@@ -268,6 +293,320 @@ class AcpSessionTests(unittest.TestCase):
         with self.assertRaisesRegex(AcpSessionError, "active writer"):
             session.restore(self.ids[0], str(self.root), 10)
         self.assertEqual(len(self.calls("prompt")), 1)
+
+
+    def test_owned_idle_snapshot_uses_same_adapter_without_listing_or_prompt(self):
+        session = self.make_session(ACP_HISTORY_CASE="ignored")
+        self.prompt(session)
+        session_id = self.ids[0]
+        self.assertTrue(session.history_verified)
+        process = session._process
+        before_updates = list(self.updates)
+        history = session.snapshot(session_id, 10)
+        self.assertEqual([row["update"]["content"]["text"] for row in history], ["old user message", "old agent message"])
+        self.assertEqual(self.updates, before_updates)
+        self.assertIs(session._process, process)
+        self.assertEqual(len(self.calls("start")), 1)
+        self.assertEqual(len(self.calls("new")), 1)
+        self.assertEqual(len(self.calls("prompt")), 1)
+        self.assertEqual(self.calls("list"), [])
+        self.assertEqual(self.calls("load")[0]["sessionId"], session_id)
+        self.assertFalse(session.ownership_uncertain)
+
+    def test_restored_history_requires_store_confirmation_before_snapshot(self):
+        original = self.make_session()
+        self.prompt(original)
+        original.close()
+        session_id = self.ids[0]
+        restored = self.make_session()
+        restored.restore(session_id, str(self.root), 10)
+        self.assertFalse(restored.history_verified)
+        loads = len(self.calls("load"))
+        with self.assertRaisesRegex(AcpSessionError, "history-verified"):
+            restored.snapshot(session_id, 10)
+        self.assertEqual(len(self.calls("load")), loads)
+        with self.assertRaisesRegex(AcpSessionError, "no restored public history"):
+            restored.confirm_history("wrong-session")
+        restored.confirm_history(session_id)
+        self.assertTrue(restored.history_verified)
+        with self.assertRaisesRegex(AcpSessionError, "same continuously owned"):
+            restored.snapshot("wrong-session", 10)
+        self.assertTrue(restored.history_verified)
+        self.assertEqual(len(restored.snapshot(session_id, 10)), 2)
+
+    def test_prompt_reconstruction_does_not_claim_verified_discarded_history(self):
+        original = self.make_session()
+        self.prompt(original)
+        original.close()
+        session_id = self.ids[0]
+        reconstructed = self.make_session()
+        self.prompt(reconstructed, "continued", session_id=session_id)
+        self.assertFalse(reconstructed.history_verified)
+        with self.assertRaisesRegex(AcpSessionError, "history-verified"):
+            reconstructed.snapshot(session_id, 10)
+        with self.assertRaisesRegex(AcpSessionError, "no restored public history"):
+            reconstructed.confirm_history(session_id)
+        self.assertEqual(len(self.calls("load")), 1)
+
+    def test_snapshot_rejects_bad_public_identities_without_losing_old_ownership(self):
+        for case, error in [("foreign", "different native session"), ("missing", "stable public message"),
+                            ("long-id", "stable public message"), ("role-reuse", "different roles")]:
+            with self.subTest(case=case):
+                session = self.make_session(ACP_HISTORY_CASE=case)
+                self.prompt(session)
+                process = session._process
+                with self.assertRaisesRegex(AcpSessionError, error):
+                    session.snapshot(self.ids[-1], 10)
+                self.assertTrue(session.history_verified)
+                self.assertFalse(session.ownership_uncertain)
+                self.assertIs(session._process, process)
+                self.assertIsNone(process.returncode)
+                session.close()
+
+    def test_snapshot_chunk_limit_fails_whole_read_without_silent_truncation(self):
+        session = self.make_session()
+        self.prompt(session)
+        session_id = self.ids[0]
+        with patch("monkeyhub_api.chat.acp_session._MAX_HISTORY_CHUNKS", 2):
+            self.assertEqual(len(session.snapshot(session_id, 10)), 2)
+        with patch("monkeyhub_api.chat.acp_session._MAX_HISTORY_CHUNKS", 1):
+            with self.assertRaisesRegex(AcpSessionError, "too large"):
+                session.snapshot(session_id, 10)
+        self.assertTrue(session.history_verified)
+        self.assertFalse(session.ownership_uncertain)
+        self.assertEqual(len(session.snapshot(session_id, 10)), 2)
+        self.assertEqual(len(self.calls("start")), 1)
+        self.assertEqual(len(self.calls("new")), 1)
+
+    def test_snapshot_raw_character_limit_is_checked_before_projection(self):
+        session = self.make_session(ACP_HISTORY_CASE="raw-limit")
+        self.prompt(session)
+        with self.assertRaisesRegex(AcpSessionError, "too large"):
+            session.snapshot(self.ids[0], 10)
+        self.assertTrue(session.history_verified)
+        self.assertFalse(session.ownership_uncertain)
+
+    def test_fresh_restore_collector_failure_keeps_owner_without_confirmation(self):
+        original = self.make_session()
+        self.prompt(original)
+        original.close()
+        restored = self.make_session(ACP_HISTORY_CASE="missing")
+        with self.assertRaisesRegex(AcpSessionError, "stable public message"):
+            restored.restore(self.ids[0], str(self.root), 10)
+        self.assertIsNotNone(restored._process)
+        self.assertIsNone(restored._process.returncode)
+        self.assertFalse(restored.history_verified)
+        self.assertFalse(restored.ownership_uncertain)
+        with self.assertRaisesRegex(AcpSessionError, "no restored public history"):
+            restored.confirm_history(self.ids[0])
+
+    def test_load_rpc_failure_marks_uncertain_even_when_adapter_remains_alive(self):
+        for environment, timeout, error in [({"ACP_LOAD_ERROR": "1"}, 10, "lost its native subscription"),
+                                            ({"ACP_LOAD_DELAY": "1"}, 0.05, "in time")]:
+            with self.subTest(environment=environment):
+                session = self.make_session(**environment)
+                self.prompt(session)
+                session_id = self.ids[-1]
+                process = session._process
+                with self.assertRaisesRegex(AcpSessionError, error):
+                    session.snapshot(session_id, timeout)
+                self.assertTrue(session.ownership_uncertain)
+                self.assertFalse(session.history_verified)
+                self.assertIsNone(process.returncode)
+                loads, turns = len(self.calls("load")), len(self.calls("prompt"))
+                with self.assertRaisesRegex(AcpSessionError, "ownership is uncertain"):
+                    session.snapshot(session_id, 10)
+                with self.assertRaisesRegex(AcpSessionError, "ownership is uncertain"):
+                    self.prompt(session, "must not be sent", session_id=session_id)
+                with self.assertRaisesRegex(AcpSessionError, "no restored public history"):
+                    session.confirm_history(session_id)
+                self.assertEqual(len(self.calls("load")), loads)
+                self.assertEqual(len(self.calls("prompt")), turns)
+                session.close()
+
+    def test_idle_snapshot_admission_blocks_prompt_steer_and_cancel(self):
+        session = self.make_session()
+        self.prompt(session)
+        session_id = self.ids[0]
+        entered, release = threading.Event(), asyncio.Event()
+        load = session._connection.load_session
+
+        async def held_load(**kwargs):
+            entered.set()
+            await release.wait()
+            return await load(**kwargs)
+
+        with patch.object(session._connection, "load_session", held_load), ThreadPoolExecutor(max_workers=1) as pool:
+            snapshot = pool.submit(session.snapshot, session_id, 10)
+            try:
+                self.assertTrue(entered.wait(5))
+                with self.assertRaisesRegex(AcpSessionError, "already running"):
+                    self.prompt(session, "must not be sent", session_id=session_id)
+                sending = []
+                self.assertEqual(session.steer("must not be sent", lambda: sending.append(True)), "idle")
+                session.cancel()
+                session.cancel_turn()
+                self.assertEqual(sending, [])
+                self.assertEqual(self.calls("cancel"), [])
+                self.assertTrue(session.history_verified)
+            finally:
+                session._loop.call_soon_threadsafe(release.set)
+            self.assertEqual(len(snapshot.result(timeout=5)), 2)
+
+    def test_pending_steer_tail_blocks_snapshot_after_prompt_has_ended(self):
+        session = self.make_session()
+        self.prompt(session)
+        session_id = self.ids[0]
+        entered, release = threading.Event(), asyncio.Event()
+        session._can_steer = True
+
+        async def held_steer(method, body):
+            self.assertEqual(method, "session/steering")
+            entered.set()
+            await release.wait()
+            return {"outcome": "injected"}
+
+        with patch.object(session._connection, "ext_method", held_steer), ThreadPoolExecutor(max_workers=2) as pool:
+            turn = pool.submit(self.prompt, session, "stall", session_id=session_id)
+            try:
+                self.assertTrue(self.waiting.wait(5))
+                steer = pool.submit(session.steer, "tail")
+                self.assertTrue(entered.wait(5))
+                session.cancel()
+                with self.assertRaises(AcpCancelled):
+                    turn.result(timeout=5)
+                self.assertEqual(session.pending_steers, 1)
+                with self.assertRaisesRegex(AcpSessionError, "already running"):
+                    session.snapshot(session_id, 10)
+                with self.assertRaisesRegex(AcpSessionError, "already running"):
+                    self.prompt(session, "late prompt", session_id=session_id)
+            finally:
+                session._loop.call_soon_threadsafe(release.set)
+            self.assertEqual(steer.result(timeout=5), "injected")
+            self.assertEqual(session.pending_steers, 0)
+
+    def test_pending_cancel_tail_blocks_snapshot_after_cancelled_prompt_ended(self):
+        session = self.make_session()
+        self.prompt(session)
+        session_id = self.ids[0]
+        entered, release = threading.Event(), asyncio.Event()
+        cancel = session._connection.cancel
+
+        async def held_cancel(**kwargs):
+            await cancel(**kwargs)
+            entered.set()
+            await release.wait()
+
+        with patch.object(session._connection, "cancel", held_cancel), ThreadPoolExecutor(max_workers=1) as pool:
+            turn = pool.submit(self.prompt, session, "stall", session_id=session_id)
+            try:
+                self.assertTrue(self.waiting.wait(5))
+                session.cancel()
+                self.assertTrue(entered.wait(5))
+                with self.assertRaises(AcpCancelled):
+                    turn.result(timeout=5)
+                self.assertGreater(session.pending_controls, 0)
+                with self.assertRaisesRegex(AcpSessionError, "already running"):
+                    session.snapshot(session_id, 10)
+            finally:
+                session._loop.call_soon_threadsafe(release.set)
+
+    def test_close_failure_is_reported_again_instead_of_apparent_success(self):
+        session = self.make_session()
+
+        async def failed_close():
+            raise OSError("Fixture cleanup failure")
+
+        with patch.object(session, "_close", failed_close):
+            with self.assertRaisesRegex(AcpSessionError, "shutdown failed.*Fixture cleanup failure"):
+                session.close()
+        self.assertFalse(session._thread.is_alive())
+        self.assertTrue(session.ownership_uncertain)
+        with self.assertRaisesRegex(AcpSessionError, "shutdown failed"):
+            session.close()
+        self.sessions.remove(session)
+
+    def test_close_cannot_report_success_when_its_loop_has_already_closed(self):
+        session = self.make_session()
+        session._loop.call_soon_threadsafe(session._loop.stop)
+        session._thread.join(timeout=5)
+        self.assertFalse(session._thread.is_alive())
+        with self.assertRaisesRegex(AcpSessionError, "shutdown failed.*closed"):
+            session.close()
+        self.assertTrue(session.ownership_uncertain)
+        with self.assertRaisesRegex(AcpSessionError, "shutdown failed"):
+            session.close()
+        self.sessions.remove(session)
+
+    def test_pending_cancel_turn_rpc_blocks_snapshot_until_it_completes(self):
+        session = self.make_session()
+        self.prompt(session)
+        entered, release = threading.Event(), asyncio.Event()
+
+        async def held_cancel():
+            entered.set()
+            await release.wait()
+
+        with patch.object(session, "_send_cancel", held_cancel), ThreadPoolExecutor(max_workers=1) as pool:
+            cancelling = pool.submit(session.cancel_turn)
+            try:
+                self.assertTrue(entered.wait(5))
+                self.assertGreater(session.pending_controls, 0)
+                with self.assertRaisesRegex(AcpSessionError, "already running"):
+                    session.snapshot(self.ids[0], 10)
+                self.assertTrue(session.history_verified)
+            finally:
+                session._loop.call_soon_threadsafe(release.set)
+            cancelling.result(timeout=5)
+
+    def test_failed_process_cleanup_prevents_automatic_new_adapter(self):
+        session = self.make_session()
+
+        async def failed_disposal():
+            raise OSError("Fixture process cleanup failure")
+
+        with patch.object(session, "_dispose_process", failed_disposal):
+            cleanup = asyncio.run_coroutine_threadsafe(session._stop_process(), session._loop)
+            with self.assertRaisesRegex(OSError, "process cleanup failure"):
+                cleanup.result(timeout=5)
+        self.assertTrue(session.ownership_uncertain)
+        with self.assertRaisesRegex(AcpSessionError, "ownership is uncertain"):
+            self.prompt(session, "must not start a replacement")
+        self.assertEqual(self.calls("start"), [])
+
+    def test_snapshot_cannot_return_history_after_close_has_started(self):
+        session = self.make_session()
+        self.prompt(session)
+        session_id = self.ids[0]
+        load_entered, close_entered = threading.Event(), threading.Event()
+        release_load, release_close = asyncio.Event(), asyncio.Event()
+        load, close = session._connection.load_session, session._close
+
+        async def held_load(**kwargs):
+            load_entered.set()
+            await release_load.wait()
+            return await load(**kwargs)
+
+        async def held_close():
+            close_entered.set()
+            await release_close.wait()
+            await close()
+
+        with patch.object(session._connection, "load_session", held_load), patch.object(session, "_close", held_close), ThreadPoolExecutor(max_workers=2) as pool:
+            snapshot = pool.submit(session.snapshot, session_id, 10)
+            try:
+                self.assertTrue(load_entered.wait(5))
+                closing = pool.submit(session.close)
+                self.assertTrue(close_entered.wait(5))
+                session._loop.call_soon_threadsafe(release_load.set)
+                with self.assertRaisesRegex(AcpSessionError, "closed or lost ownership"):
+                    snapshot.result(timeout=5)
+                self.assertFalse(session.history_verified)
+            finally:
+                session._loop.call_soon_threadsafe(release_load.set)
+                session._loop.call_soon_threadsafe(release_close.set)
+            closing.result(timeout=5)
+        self.assertFalse(session._thread.is_alive())
 
     def test_one_process_multiple_turns_and_model_returns_to_default(self):
         session = self.make_session()

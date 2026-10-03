@@ -1980,8 +1980,9 @@ async function nativeContinuation() {
       if (gate) await gate;
       if (fail) return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ code: "CHAT_CONTINUATION_FAILED", detail: "already has an active writer" }) });
       native.sourceSessionId = null;
-      native.priorMessages ??= native.messages;
-      native.messages = [{ id: "native:thread-613:u", role: "user", content: "Asked in Codex", createdAt: "2026-10-03", status: "complete" },
+      const retained = native.messages.find((message) => message.id === "old");
+      native.priorMessages = [];
+      native.messages = [...(retained ? [retained] : []), { id: "native:thread-613:u", role: "user", content: "Asked in Codex", createdAt: "2026-10-03", status: "complete" },
         { id: "native:thread-613:a", role: "assistant", content: "Latest native answer", createdAt: "2026-10-03", status: "complete" }];
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(native) });
@@ -2016,8 +2017,9 @@ async function nativeContinuation() {
   await page.locator("#chat-input").waitFor();
   await page.getByText("Latest native answer", { exact: true }).waitFor();
   assert.equal(await page.getByText("Latest native answer", { exact: true }).count(), 1);
-  await page.getByText("Earlier Hub presentation and attachments", { exact: true }).click();
   await page.getByText("Retained Hub-only presentation", { exact: true }).waitFor();
+  assert.equal(await page.getByText("Retained Hub-only presentation", { exact: true }).count(), 1);
+  assert.equal(await page.getByText("Earlier Hub presentation and attachments", { exact: true }).count(), 0, "original Hub rows stay in the active timeline");
   await page.locator("#chat-input").fill("Unsent draft");
   assert.equal(await page.getByRole("button", { name: "Continue in Codex", exact: true }).isDisabled(), true);
   await page.locator("#chat-input").fill("");
