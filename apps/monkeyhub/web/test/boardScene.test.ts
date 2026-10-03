@@ -186,14 +186,16 @@ test("a new page passes strokes drawn leftwards and rotated marks by where they 
   const { nextPagePlacement, pageSource } = await harness(t);
   const page = { id: "page", type: "image", x: 0, y: 0, width: 400, height: 300,
     customData: { sourceDocument: pageSource(document(), 0) } };
-  // Stored at its first point, x 1000; drawn leftwards to x 900, where the new page would otherwise start.
-  const stroke = { id: "stroke", type: "freedraw", x: 1000, y: 100, width: 100, height: 4, points: [[0, 0], [-50, 4], [-100, 0]] };
-  assert.equal(nextPagePlacement([page, stroke], {}, 1 / 3)!.x, 1000 + 96 + 10, "the stroke's real extent, 900 to 1000, is passed");
-  // A long bar stored at x 500 to 700, turned a quarter: it really spans y -100 to 100 and x 590 to 610.
-  const bar = { id: "bar", type: "rectangle", x: 500, y: -10, width: 200, height: 20, angle: Math.PI / 2 };
-  assert.equal(nextPagePlacement([page, bar], {}, 1 / 3)!.x, 400 + 96 + 10, "a turned bar left of the new page is not in the way");
-  const turnedInto = { ...bar, x: 410, y: 140 };
-  assert.equal(nextPagePlacement([page, turnedInto], {}, 1 / 3)!.x, 520 + 96 + 10, "a turned bar inside the row is passed by its turned extent");
+  // The new page's frame would span x 496 to 616. Stored at its first point, x 680, this stroke is drawn
+  // leftwards to x 580: measured from x and width it misses the frame, measured by its points it is in the way.
+  const stroke = { id: "stroke", type: "freedraw", x: 680, y: 100, width: 100, height: 4, points: [[0, 0], [-50, 4], [-100, 0]] };
+  assert.equal(nextPagePlacement([page, stroke], {}, 1 / 3)!.x, 680 + 96 + 10, "the stroke is passed by where it really is");
+  // A bar lying below the row is not in the way; turned a quarter about its centre (600, 410) it spans y 260 to 560
+  // and x 590 to 610, across the new page.
+  const bar = { id: "bar", type: "rectangle", x: 450, y: 400, width: 300, height: 20, angle: 0 };
+  assert.equal(nextPagePlacement([page, bar], {}, 1 / 3)!.x, 400 + 96 + 10, "unturned, the bar is below the row");
+  assert.equal(nextPagePlacement([page, { ...bar, angle: Math.PI / 2 }], {}, 1 / 3)!.x, 610 + 96 + 10,
+    "turned, the bar crosses the row and is passed");
 });
 
 
