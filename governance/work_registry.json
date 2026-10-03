@@ -1,32 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-619",
-      "lanes": [
-        {
-          "id": "actor-working-head",
-          "status": "active",
-          "branch": "codex/619-actor-working-head",
-          "worktree": "/workspace/scratch/bfe17b24d3e1/monkeyhub-dev/workspace/worktrees/codex-619-actor-working-head",
-          "base_ref": "59a415867e64600035cb19b0a953f6c1fc751bb0",
-          "contributor": "Codex",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "archflow.project.repository",
-            "project_runtime.binding",
-            "project_runtime.shell",
-            "hub.shell"
-          ],
-          "write_scope": [
-            "services/project-runtime/src/project_runtime/status.py",
-            "services/project-runtime/src/project_runtime/api/dto/runtime.py",
-            "services/project-runtime/tests/test_actor_working_heads.py"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
