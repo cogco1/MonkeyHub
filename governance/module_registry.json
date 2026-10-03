@@ -2698,7 +2698,9 @@
         "WRITER_LOCK",
         "WriterLease",
         "hold_writer_lease",
-        "holds_writer_lease"
+        "holds_writer_lease",
+        "FilesystemProjectRepository.read_actor_working_draft",
+        "FilesystemProjectRepository.compare_and_swap_actor_working_draft"
       ],
       "depends_on": [
         "archflow.project.digests",
@@ -2730,7 +2732,8 @@
         "a run is published whole: create_run, create_run_batch and a transfer bringing a run not yet present stage its run.json and areas (or its transferred files) in a dot-named directory beside the runs and rename that into runs/<run_id> in one step, never replacing an existing directory; one whose staging directory something outside the process keeps busy past every retry is completed in place, as before; no run id begins with a dot, so run_ids never lists a run still being staged, nor a staging directory an interrupted writer left behind; adding to an existing run stays one immutable file at a time",
         "the trash moves, never copies: a run is renamed whole into trash/runs/<run_id> and back, or stays where it is (RunNotTrashed, RunNotRestored); its files are never rewritten and shared objects never move. trash_run refuses the Working Head, a run an execution's ledger names (as run or source), a working row a person chose or whose label a person saved (saved_by_person: labelSavedBy \"person\"), the local recovery and its source, a run keeping any review, Stage, attributed act or local recovery record, a design branch's Stage run and every run the published event chain names; it takes the project, HEAD and design locks, and an automatic working row moves with the run into the manifest, with any label no person saved",
         "trash crash order: trashing writes the manifest, then drops the run's working row, then renames the run; restoring renames it back, then puts the row back, then removes the manifest; purging renames the entry to a dot name, removes its manifest, then its files. A manifest without its trashed run is settled by the next trash, restore or purge (the row back if the run is in runs/, then no manifest), so reopening never meets a working row without its run and a run is never in two places or part of one; an unreadable manifest is left alone and never purged or restored",
-        "every write - a record, an object, a workspace file, a run, HEAD, a design branch, the working position, the trash, a transfer's install, initialize, bootstrap and a migration's target - takes the project's writer lease before it touches anything, so one refused with ProjectWriterBusy has written nothing, not even a lock file; reads (load, list, verify, export_transfer, trash_entries, run_mentions) never take it and never wait for it. The lease is never a marker file: on Windows it locks one byte far past the end of the empty writer.lock, so the folder stays readable and copyable, on POSIX flock; the file is never removed and is never project content (a migration and a transfer leave it out)"
+        "every write - a record, an object, a workspace file, a run, HEAD, a design branch, the working position, the trash, a transfer's install, initialize, bootstrap and a migration's target - takes the project's writer lease before it touches anything, so one refused with ProjectWriterBusy has written nothing, not even a lock file; reads (load, list, verify, export_transfer, trash_entries, run_mentions) never take it and never wait for it. The lease is never a marker file: on Windows it locks one byte far past the end of the empty writer.lock, so the folder stays readable and copyable, on POSIX flock; the file is never removed and is never project content (a migration and a transfer leave it out)",
+        "ProjectWorkingDraft@2 scopes current run, branch context and recovery by actor; explicit @1 reads preserve bytes and belong only to the configured legacy owner; scoped CAS preserves other actors and shared ledgers; retention protects every actor head and current recovery."
       ],
       "status": "canonical",
       "tests": [
@@ -4641,7 +4644,8 @@
         "a row no producer can read leaves its element without drawing controls and never fails a state read: the drawing context and the state read catch what reading drawing inputs may raise (DRAWING_INPUT_ERRORS, the set construction reads a record with)",
         "ProjectBinding and ReadToken are the Runtime's public read API: MonkeyHub opens a project in process with ProjectBinding.unconfigured (no configured reference run, nothing exported), and binding.py imports no web framework; the app-state glue beside it reads its state object structurally (ProcessState) (#519)",
         "RunChanges is one reader's reading of runs' retained changes (candidate_delta), for a request's Worktree Graph or one projector pass: each run's change, or its refusal, is read once and answered again to that reader only; nothing it read outlives the reader, because a run's change may still be being retained or move to the project trash and back, and nobody changes what it answers (#575). Built on one snapshot of the project index (#599), it answers each run that snapshot read whole with the parts of its change the tree reads (change_parts), in the change's own shape so a reader refuses them as it refused the change, and reads every other run",
-        "the design tree's views read the project index only when it holds every write this process made, and then from one snapshot (indexed_runs, #599): inside that read (ProjectBinding.indexed_reading), on the reading thread only, the reference survey, a run's newest runner receipt and the runs that may hold the frozen stage workflow answer from the snapshot; a write never opens one, every other thread reads the runs, and whenever the index cannot answer, or a run was not read whole when it was projected, the runs are read so every refusal stays their own"
+        "the design tree's views read the project index only when it holds every write this process made, and then from one snapshot (indexed_runs, #599): inside that read (ProjectBinding.indexed_reading), on the reading thread only, the reference survey, a run's newest runner receipt and the runs that may hold the frozen stage workflow answer from the snapshot; a write never opens one, every other thread reads the runs, and whenever the index cannot answer, or a run was not read whole when it was projected, the runs are read so every refusal stays their own",
+        "Authenticated working sources and status resolve the caller's personal head; peer heads are read-only tree projections and new actors default to an accepted shared Stage."
       ],
       "status": "canonical",
       "tests": [
@@ -4661,7 +4665,8 @@
         "services/project-runtime/tests/test_derivation_memo.py",
         "services/project-runtime/tests/test_indexed_reads.py",
         "services/project-runtime/tests/test_index_changes.py",
-        "services/project-runtime/tests/test_hosted_opening.py"
+        "services/project-runtime/tests/test_hosted_opening.py",
+        "services/project-runtime/tests/test_actor_working_heads.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -5674,7 +5679,8 @@
         "shutdown closes the bound project's binding after draining work, which stops its index keeper and cancels its layout's pending re-check",
         "main holds the project's writer lease before it serves and gives it up only after serving has stopped and accepted work has drained; a process that dies loses it with its process. One whose lease another process keeps past the bounded wait exits non-zero with one PROJECT_WRITER_BUSY line and serves and writes nothing; a folder holding no project.json takes no lease and gains no file",
         "an owner package's refusal (monkeyarch.authoring.frame.FrameError, ...) carries its own wire code and sentence; OWNER_REFUSALS is the one place that gives each kind its status, and create_app answers it in the same {code, detail} body a StudioError has (#519)",
-        "MonkeyHub (apps/monkeyhub/api/monkeyhub_api) imports from project_runtime only main, errors, api.dto and the declared read API - binding.ProjectBinding and ReadToken, events, status, the document and work-copy readers (application.artifacts list_documents, document_bytes, list_document_work_copies, DocumentWorkCopy, WORK_COPY_WORKSPACE) and application.boards export_board_pages with BoardExportPage - and archcheck refuses any other import (architecture_policy forbidden_layer_imports, allowed; #519)"
+        "MonkeyHub (apps/monkeyhub/api/monkeyhub_api) imports from project_runtime only main, errors, api.dto and the declared read API - binding.ProjectBinding and ReadToken, events, status, the document and work-copy readers (application.artifacts list_documents, document_bytes, list_document_work_copies, DocumentWorkCopy, WORK_COPY_WORKSPACE) and application.boards export_board_pages with BoardExportPage - and archcheck refuses any other import (architecture_policy forbidden_layer_imports, allowed; #519)",
+        "Authenticated actor request context is isolated across concurrent requests and conditional read cache identities; display names never grant authority."
       ],
       "status": "canonical",
       "tests": [
@@ -5686,7 +5692,8 @@
         "services/project-runtime/tests/test_collaboration_auth.py",
         "services/project-runtime/tests/test_study_model.py",
         "services/project-runtime/tests/test_conditional_reads.py",
-        "services/project-runtime/tests/test_writer_lease.py"
+        "services/project-runtime/tests/test_writer_lease.py",
+        "services/project-runtime/tests/test_actor_working_heads.py"
       ],
       "notes": "Project Runtime contract: docs/architecture/project-runtime.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. api/dto/* carries wire shapes, so a DTO change is a shell change. docs/protocols/project-runtime-api.md records protocol.py; apps/monkeyhub/web/src/api/project-runtime/connection.ts is the client boundary. User preferences and the Hub's application settings - their files, DTOs and routes - belong to hub.shell, as do browser appearance, language catalogs and workspace composition; this process serves APIs only.",
       "files": [

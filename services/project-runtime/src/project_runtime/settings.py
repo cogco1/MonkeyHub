@@ -12,6 +12,7 @@ import hashlib
 from ipaddress import ip_address
 import os
 import math
+import re
 import shutil
 from pathlib import Path
 import tempfile
@@ -59,6 +60,7 @@ ACTORS_FILE_ENV = "ARCHFLOW_STUDIO_ACTORS_FILE"
 SYNC_URL_ENV = "ARCHFLOW_STUDIO_SYNC_URL"
 SYNC_TOKEN_ENV = "ARCHFLOW_STUDIO_SYNC_TOKEN"
 SYNC_PROJECT_ID_ENV = "ARCHFLOW_STUDIO_SYNC_PROJECT_ID"
+PROJECT_OWNER_ACTOR_ENV = "ARCHFLOW_STUDIO_PROJECT_OWNER_ACTOR_ID"
 RUNTIME_ROLE = "runtime"
 SHARED_PROJECT_ROLE = "shared_project"
 
@@ -141,6 +143,8 @@ class StudioSettings:
     # to an operator-controlled file outside the project and are loaded once.
     service_role: str = RUNTIME_ROLE
     actors_file: Path | None = None
+    # Explicit legacy attribution; absence never guesses an authenticated person.
+    project_owner_actor_id: str = "studio:explicit-user-action"
     sync_url: str | None = None
     sync_token: str | None = field(default=None, repr=False)
     sync_project_id: str | None = None
@@ -178,6 +182,11 @@ class StudioSettings:
                 f"{MODE_ENV} must be one of {', '.join(MODES)}, not "
                 f"{self.mode!r}."
             )
+        if self.project_owner_actor_id != "studio:explicit-user-action" and (
+            not isinstance(self.project_owner_actor_id, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}", self.project_owner_actor_id)
+        ):
+            raise SettingsError("Project owner must be a stable actor id.")
         if self.service_role not in (RUNTIME_ROLE, SHARED_PROJECT_ROLE):
             raise SettingsError(f"{SERVICE_ROLE_ENV} must be runtime or shared_project.")
         if self.actors_file is not None and self.mode != REMOTE_MODE:
@@ -332,6 +341,7 @@ class StudioSettings:
             sync_url=os.environ.get(SYNC_URL_ENV, "").strip() or None,
             sync_token=os.environ.get(SYNC_TOKEN_ENV, "").strip() or None,
             sync_project_id=os.environ.get(SYNC_PROJECT_ID_ENV, "").strip() or None,
+            project_owner_actor_id=os.environ.get(PROJECT_OWNER_ACTOR_ENV, "").strip() or "studio:explicit-user-action",
             monitor_dir=Path(os.environ[MONITOR_DIR_ENV]) if os.environ.get(MONITOR_DIR_ENV, "").strip() else None,
             cache_dir=Path(os.environ[CACHE_DIR_ENV]) if os.environ.get(CACHE_DIR_ENV, "").strip() else None,
             origins=tuple(

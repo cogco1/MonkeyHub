@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from contextvars import ContextVar
 import json
 from pathlib import Path
 import re
@@ -60,11 +61,28 @@ ORIGIN_HUB_AGENT = "hub-agent"
 # stated as such rather than borrowed from a person who was never identified.
 LOCAL_ACTOR_ID = "studio:explicit-user-action"
 
+# Request-local identity, resolved by authentication before application work.
+# ContextVars follow ASGI tasks and their threadpool calls, never another request.
+_REQUEST_ACTOR: ContextVar[str | None] = ContextVar("project_request_actor", default=None)
+_ACTOR_NAMES: ContextVar[dict[str, str]] = ContextVar("project_actor_names", default={})
+
+
+def working_actor_id() -> str | None:
+    """The authenticated caller for actor-scoped reads; None preserves local legacy behavior."""
+    return _REQUEST_ACTOR.get()
+
+
+def actor_display_name(actor_id: str) -> str:
+    """Presentation only; changing a name never changes grants or line ownership."""
+    return _ACTOR_NAMES.get().get(actor_id, actor_id)
+
+
 
 @dataclass(frozen=True, slots=True)
 class AuthenticatedActor:
     actor_id: str
     project_actions: tuple[tuple[str, frozenset[str]], ...]
+    display_name: str | None = None
 
     def allows(self, project_id: str, action: str) -> bool:
         return any(project == project_id and action in actions for project, actions in self.project_actions)
@@ -115,7 +133,10 @@ def read_actor_credentials(path: Path, project_dir: Path) -> ActorCredentials:
                 if not isinstance(actions, list) or not actions or any(not isinstance(action, str) or action not in _ACTIONS for action in actions):
                     raise ValueError
                 scopes.append((project_id, frozenset(actions)))
-            entries.append((secret, AuthenticatedActor(actor_id, tuple(scopes))))
+            name = row.get("display_name")
+            if name is not None and (not isinstance(name, str) or not name.strip() or len(name) > 128):
+                raise ValueError
+            entries.append((secret, AuthenticatedActor(actor_id, tuple(scopes), name)))
             actors.add(actor_id)
             tokens.add(secret)
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
@@ -229,4 +250,11 @@ class ActorAuthorizationMiddleware:
         except StudioError as exc:
             await JSONResponse(exc.body(), status_code=exc.status)(scope, receive, send)
             return
-        await self.app(scope, receive, send)
+        token = _REQUEST_ACTOR.set(actor.actor_id)
+        names = _ACTOR_NAMES.set({entry.actor_id: entry.display_name or entry.actor_id
+                                  for _, entry in self.credentials.entries})
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            _ACTOR_NAMES.reset(names)
+            _REQUEST_ACTOR.reset(token)

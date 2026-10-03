@@ -179,3 +179,5 @@
 .design-tree-list__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .design-tree-list__status { margin-left: auto; padding-left: 12px; color: var(--muted); font-size: var(--text-caption, 12px); white-space: nowrap; }
 @media (max-width: 640px) { .design-tree-list__status { display: none; } }
+
+.design-tree__actor-heads { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.5rem 0.75rem; }

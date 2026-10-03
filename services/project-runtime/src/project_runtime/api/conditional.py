@@ -44,6 +44,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from archflow.project.index import IndexState
 
 from ..binding import ProjectBinding, ReadToken, bound_project
+from ..authentication import working_actor_id
 
 # The in-process state a listed route reads beside the project's files.
 VERSIONS: dict[str, Callable[[State], Any]] = {
@@ -146,6 +147,9 @@ class ConditionalReads:
         try:
             binding, token = _token_at_hand(self.state) or await run_in_threadpool(_token, self.state)
             versions = [(name, VERSIONS[name](self.state)) for name in listed]
+            actor_id = working_actor_id()
+            if actor_id is not None:
+                versions.append(("actor", actor_id))
         except Exception:  # noqa: BLE001 - the route states a binding failure itself
             await self.app(scope, receive, send)
             return

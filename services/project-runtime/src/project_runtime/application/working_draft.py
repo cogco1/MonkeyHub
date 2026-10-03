@@ -28,7 +28,7 @@ from archflow.state.design_portfolio import DesignBranch
 from .artifacts import (
     FORMAT_3DM, ModelSource, artifact_model_source, list_artifacts, require_complete_model, require_model_source,
 )
-from ..authentication import ActorAttribution, LOCAL_ACTOR_ID, ORIGIN_HUB, ORIGIN_HUB_AGENT, ORIGIN_STUDIO
+from ..authentication import ActorAttribution, LOCAL_ACTOR_ID, ORIGIN_HUB, ORIGIN_HUB_AGENT, ORIGIN_STUDIO, working_actor_id
 from ..binding import retained_sources
 from ..binding import ProjectBinding, RunChanges
 from .projection import StateProjection, project_state
@@ -82,10 +82,32 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def read_working_position(binding: ProjectBinding) -> tuple[dict, str | None]:
+    """Select a personal position using the authenticated request, never caller data."""
+    actor = working_actor_id()
+    if actor is None:
+        value, revision = binding.repository.read_working_draft()
+        if value["schema"] == "ProjectWorkingDraft@1":
+            return value, revision
+        actor = value["ownerActorId"]
+    return binding.repository.read_actor_working_draft(actor, owner_actor_id=binding.settings.project_owner_actor_id)
+
+
+def _position_write(binding: ProjectBinding, value: dict, revision: str | None):
+    actor = working_actor_id()
+    if actor is None:
+        current, _ = binding.repository.read_working_draft()
+        if current["schema"] == "ProjectWorkingDraft@1":
+            return binding.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        actor = current["ownerActorId"]
+    return binding.repository.compare_and_swap_actor_working_draft(
+        actor, expected_revision=revision, value=value, owner_actor_id=binding.settings.project_owner_actor_id)
+
+
 def _write(binding: ProjectBinding, value: dict, revision: str | None) -> str:
     """Compare-and-swap the whole position; the revision it now has."""
     try:
-        return binding.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)[1]
+        return _position_write(binding, value, revision)[1]
     except StaleWorkingDraft as exc:
         raise StudioError(409, "WORKING_DRAFT_STALE", str(exc)) from exc
 
@@ -136,7 +158,7 @@ def read_working_draft(binding: ProjectBinding) -> WorkingDraftDto:
     Generated candidates stay listed, newest first, however old they are, until
     the architect explicitly rejects or archives them (GH-234 Q3).
     """
-    value, revision = binding.repository.read_working_draft()
+    value, revision = read_working_position(binding)
     # A name reads the same whoever saved it (#575): who saved it only decides whether it keeps its run.
     entries = {run_id: WorkingDraftEntryDto(runId=run_id, **{key: item for key, item in row.items()
                                                              if key not in ("automatic", LABEL_SAVED_BY)})
@@ -171,7 +193,7 @@ def select_working_draft(binding: ProjectBinding, run_id: str | None, revision: 
     """
 
     origin = _continue_origin(attribution, run_id, message_source, raw_language)
-    value, actual = binding.repository.read_working_draft()
+    value, actual = read_working_position(binding)
     if actual != revision:
         raise StudioError(409, "WORKING_DRAFT_STALE", "The working position changed; read it before selecting another source.")
     before = deepcopy(value)
@@ -276,7 +298,7 @@ def _retain_continued(binding: ProjectBinding, payload: dict, *, undo: dict, wri
     except (StudioError, ProjectRepositoryError, OSError, ValueError) as exc:
         failure = exc
     try:
-        binding.repository.compare_and_swap_working_draft(expected_revision=written, value=undo)
+        _position_write(binding, undo, written)
     except (ProjectRepositoryError, OSError, ValueError) as exc:
         raise StudioError(500, "CONTINUE_NOT_RETAINED", f"The Working Head moved to {run_id}, but who continued it "
                           "could not be retained; continue on it again to record that.") from exc
@@ -295,16 +317,17 @@ def save_working_draft(binding: ProjectBinding, run_id: str, revision: str | Non
     """
     if saved_by not in (None, SAVED_BY_PERSON):
         raise ValueError("only the person saving a name in the Hub is recorded as its saver")
-    value, actual = binding.repository.read_working_draft()
+    value, actual = read_working_position(binding)
     if actual != revision:
         raise StudioError(409, "WORKING_DRAFT_STALE", "The working draft changed; read it before saving a version.")
+    value, global_revision = binding.repository.read_working_draft()
     previous = value["runs"].get(run_id)
     row = _entry(binding, run_id, branch_id=previous["branchId"] if previous else None)
     row.update(label=(label or "Saved version").strip() or "Saved version", automatic=previous["automatic"] if previous else False)
     if saved_by == SAVED_BY_PERSON:
         row[LABEL_SAVED_BY] = SAVED_BY_PERSON
     value["runs"][run_id] = row
-    _write(binding, value, revision)
+    binding.repository.compare_and_swap_working_draft(expected_revision=global_revision, value=value)
     return read_working_draft(binding)
 
 
@@ -341,7 +364,7 @@ def record_candidate_draft(binding: ProjectBinding, run_id: str, source_run_id: 
 @retained_sources
 def retain_local_draft(binding: ProjectBinding, draft: LocalDraftInputDto | None, revision: str | None,
                        expected_source: LocalDraftSourceDto | None = None) -> WorkingDraftDto:
-    value, actual = binding.repository.read_working_draft()
+    value, actual = read_working_position(binding)
     if actual != revision:
         raise StudioError(409, "WORKING_DRAFT_STALE", "The working draft changed before these local commands were saved.")
     if expected_source is not None and value["localDraftRef"] is not None:
@@ -533,6 +556,11 @@ def _fallback_head(binding: ProjectBinding, warnings: list[str],
                             changes=changes)
     except _UNREADABLE as exc:
         warnings.append(f"The accepted design head could not be read: {_detail(exc)}")
+    if working_actor_id() is not None:
+        # A new team member starts at a verified shared Stage, not another
+        # person's newest unaccepted run. Local legacy behavior remains below.
+        warnings.append("No verified shared Stage is available yet; choose a retained result explicitly to continue.")
+        return None
     try:
         reference = binding.reference_run()
         if reference.source == "none":
@@ -604,7 +632,7 @@ def model_is_current(binding: ProjectBinding, run_id: str, state_digest: str, *,
 def working_revision(binding: ProjectBinding) -> str | None:
     """The retained position's revision alone; it changes whenever the head can have moved."""
 
-    return binding.repository.read_working_draft()[1]
+    return read_working_position(binding)[1]
 
 
 def resolve_working_source(binding: ProjectBinding, workspace: str = "modeling", *, policy: str = LIVE,
@@ -638,7 +666,7 @@ def resolve_working_source(binding: ProjectBinding, workspace: str = "modeling",
 
 def _resolved(binding: ProjectBinding, workspace: str, policy: str, pinned: ModelSource | None,
               changes: RunChanges | None) -> WorkingSource:
-    value, revision = binding.repository.read_working_draft()
+    value, revision = read_working_position(binding)
     warnings: list[str] = []
     head = None
     current = value["current"]
