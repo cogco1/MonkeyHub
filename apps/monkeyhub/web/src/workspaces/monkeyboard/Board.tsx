@@ -687,7 +687,9 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const restored = restoreView === null ? null : boardViewAppState(restoreView, board.elements);
     return {
       elements: board.elements as unknown as ExcalidrawElement[], files, scrollToContent: restored === null,
-      appState: { ...CANVAS_APP_STATE,
+      // Moving or resizing snaps to other elements' edges, centres and gaps (#615); Alt+S turns it off for
+      // the session, and holding Ctrl places freely while it is on.
+      appState: { ...CANVAS_APP_STATE, objectsSnapModeEnabled: true,
         ...(restored === null ? {} : { ...restored, zoom: { value: restored.zoom.value as AppState["zoom"]["value"] } }) },
     };
   });
