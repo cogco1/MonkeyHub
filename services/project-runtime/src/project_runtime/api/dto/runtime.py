@@ -151,7 +151,7 @@ class WorktreeGraphDto(BaseModel):
         "After a return to an earlier step: the steps the head moved back past, oldest first, from the one made from "
         "the head to the last one it stood on, along the branch it moved onto most recently where the line forked "
         "(#575). Each can be continued again. Empty while no run the head once stood on continues it.")
-    actor_heads: list[ActorHeadDto] = Field(default_factory=list, alias="actorHeads")
+    actor_heads: list[ActorHeadDto] = Field(default_factory=list, alias="actorHeads", exclude_if=lambda value: not value)
     lines: list[WorktreeLineDto]
     representations: list[RepresentationStateDto]
     warnings: list[str]

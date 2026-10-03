@@ -905,6 +905,10 @@ def _worktree_graph(binding: ProjectBinding, jobs: JobRegistry | None, render_jo
 
 def _actor_heads(binding: ProjectBinding) -> tuple[ActorHead, ...]:
     value, _ = binding.repository.read_working_draft()
+    if value["schema"] == "ProjectWorkingDraft@1" and working_actor_id() is None:
+        # Preserve the exact legacy local projection. Team metadata appears
+        # only for authenticated callers or a project with personal positions.
+        return ()
     positions = value.get("positions", {binding.settings.project_owner_actor_id: value})
     return tuple(ActorHead(actor, actor_display_name(actor), position["current"],
                            value["runs"][position["current"]].get("label"))

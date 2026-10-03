@@ -343,3 +343,14 @@ class ActorWorkingHeadTests(CandidateTestCase):
         self.assertEqual(bob.status_code, 200, bob.text)
         with TestClient(create_app(self.settings)) as reopened:
             check_owner_history(reopened)
+
+    def test_legacy_local_worktree_wire_omits_team_metadata(self):
+        with TestClient(create_app(StudioSettings(project_dir=self.repository.layout.root, cad_export="off"))) as local:
+            body = local.get("/api/worktrees")
+            self.assertEqual(body.status_code, 200, body.text)
+            self.assertNotIn("actorHeads", body.json())
+        self.split_heads()
+        with TestClient(create_app(StudioSettings(project_dir=self.repository.layout.root, cad_export="off"))) as local:
+            body = local.get("/api/worktrees")
+            self.assertEqual(body.status_code, 200, body.text)
+            self.assertEqual({head["actorId"] for head in body.json()["actorHeads"]}, {"alice", "bob"})
