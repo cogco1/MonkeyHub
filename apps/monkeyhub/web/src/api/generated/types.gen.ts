@@ -342,6 +342,10 @@ export type ChatDetail = {
      */
     sourceSessionId?: string | null;
     /**
+     * Continuationsessionid
+     */
+    continuationSessionId?: string | null;
+    /**
      * Attention
      */
     attention?: 'permission' | null;
@@ -349,6 +353,10 @@ export type ChatDetail = {
      * Messages
      */
     messages?: Array<ChatMessage>;
+    /**
+     * Priormessages
+     */
+    priorMessages?: Array<ChatMessage>;
 };
 
 /**
@@ -893,6 +901,10 @@ export type ChatSummary = {
      * Sourcesessionid
      */
     sourceSessionId?: string | null;
+    /**
+     * Continuationsessionid
+     */
+    continuationSessionId?: string | null;
     /**
      * Attention
      */
@@ -3287,6 +3299,66 @@ export type ReadChatApiChatSessionsSessionIdGetResponses = {
 };
 
 export type ReadChatApiChatSessionsSessionIdGetResponse = ReadChatApiChatSessionsSessionIdGetResponses[keyof ReadChatApiChatSessionsSessionIdGetResponses];
+
+export type ContinueNativeChatApiChatSessionsSessionIdContinueNativePostData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/continue-native';
+};
+
+export type ContinueNativeChatApiChatSessionsSessionIdContinueNativePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ContinueNativeChatApiChatSessionsSessionIdContinueNativePostError = ContinueNativeChatApiChatSessionsSessionIdContinueNativePostErrors[keyof ContinueNativeChatApiChatSessionsSessionIdContinueNativePostErrors];
+
+export type ContinueNativeChatApiChatSessionsSessionIdContinueNativePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatDetail;
+};
+
+export type ContinueNativeChatApiChatSessionsSessionIdContinueNativePostResponse = ContinueNativeChatApiChatSessionsSessionIdContinueNativePostResponses[keyof ContinueNativeChatApiChatSessionsSessionIdContinueNativePostResponses];
+
+export type ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/release-native';
+};
+
+export type ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostError = ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostErrors[keyof ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostErrors];
+
+export type ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatDetail;
+};
+
+export type ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostResponse = ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostResponses[keyof ReleaseNativeChatApiChatSessionsSessionIdReleaseNativePostResponses];
 
 export type PostChatApiChatSessionsSessionIdMessagesPostData = {
     body: ChatPostRequest;

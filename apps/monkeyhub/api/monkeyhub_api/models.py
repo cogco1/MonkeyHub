@@ -339,6 +339,8 @@ class ChatSummary(BaseModel):
     error: HubError | None = None
     # External conversations are displayed here; their provider runs in the source host.
     sourceSessionId: str | None = None
+    # Native identity is projected only from a negotiated or explicitly restored binding.
+    continuationSessionId: str | None = None
     # "permission" while a permission request in this conversation waits for a
     # decision: the same request the conversation shows with its options.
     # Derived on every read and never stored, so a record cannot go stale.
@@ -347,6 +349,8 @@ class ChatSummary(BaseModel):
 
 class ChatDetail(ChatSummary):
     messages: list[ChatMessage] = Field(default_factory=list)
+    # Original Hub presentation retained separately after a native-history refresh.
+    priorMessages: list[ChatMessage] = Field(default_factory=list)
 
 
 class ChatUsageSource(BaseModel):

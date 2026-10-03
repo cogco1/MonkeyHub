@@ -77,6 +77,17 @@ Use Python 3.12 or later with services/project-runtime/requirements.txt and apps
 
 For new Codex chats in a source checkout, install the pinned ACP adapter once with `npm ci --prefix apps/monkeyhub`. Hub uses `agent-client-protocol==0.12.1` and `@agentclientprotocol/codex-acp==1.11.0`, passing the installed native Codex executable through `CODEX_PATH` instead of choosing the adapter's bundled Codex. The compatibility check uses Codex 0.153.4. Node must be on PATH. A missing dependency is shown as unavailable; sending a message never downloads an adapter. This source integration does not update an already installed Hub package.
 
+### Continuing the same Codex session in either application
+
+An idle native Codex conversation offers **Continue in Codex**. Save or clear the composer first. Hub closes its owned adapter, keeps the native identity, and shows `codex resume <id>`; no new thread or prompt is created. Finish and close that session in Codex before choosing **Continue here from Codex** in Hub. If the provider still reports an active writer, close the source Codex window/process normally and retry; never delete its lock files.
+
+Returning uses the installed provider's session list and `session/load`, requires Codex CLI 0.153.4 or newer, and restores the same native session. A mapped Hub conversation is reused. An otherwise unbound external row is adopted only when its source ID is actually listed by the local provider and its original execution cwd matches the selected project. A known Hub project binding is independent of execution cwd, which can instead be a source checkout or scratch. Unknown IDs, unavailable directories, incompatible providers, active turns and writer conflicts leave the external guard intact.
+
+Public text history becomes the main timeline; original Hub presentation and attachments remain available in **Earlier Hub presentation and attachments**. An older separate external projection remains available in its original row. Provider media paths, tools and reasoning are not imported or executed. Repeated restoration does not append another copy of native history. Closing a project cancels an in-flight handoff before it can commit a connection.
+
+This is same-machine continuity through the same Codex account/session store, not cross-host synchronization or a Hub global lock. Native Codex owns local writer admission. Existing execution and sandbox limits, including #612's installed-layout cwd limitation, remain unchanged. The feature has fixture transport/store coverage; a real installed-app round trip still needs validation on the target machine.
+
+
 Each new Codex chat keeps one adapter process between turns. Hub saves its opaque ACP session ID separately from old CLI IDs and restores it after reopening; a failed restore is reported without creating another chat or resending the turn. Existing Codex CLI chats and Claude chats continue through their original transport. Model choices still apply to that conversation and use the installed native configuration. Permission requests appear in the conversation, outside the folded process, with the adapter's own options; only a submitted choice responds, and stop or shutdown cancels pending requests.
 
 ```powershell
