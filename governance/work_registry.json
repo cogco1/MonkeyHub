@@ -1,4 +1,50 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-619",
+      "lanes": [
+        {
+          "id": "actor-working-head",
+          "status": "active",
+          "branch": "codex/619-actor-working-head",
+          "worktree": "/workspace/scratch/bfe17b24d3e1/monkeyhub-dev/workspace/worktrees/codex-619-actor-working-head",
+          "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
+          "contributor": "Codex",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "archflow.project.repository",
+            "project_runtime.binding",
+            "project_runtime.shell",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "packages/archflow/src/archflow/project/repository.py",
+            "packages/archflow/tests/",
+            "services/project-runtime/src/project_runtime/application/working_draft.py",
+            "services/project-runtime/src/project_runtime/application/retention.py",
+            "services/project-runtime/src/project_runtime/application/design_history.py",
+            "services/project-runtime/src/project_runtime/api/routes/working_draft.py",
+            "services/project-runtime/src/project_runtime/api/routes/runtime.py",
+            "services/project-runtime/src/project_runtime/api/dto/runtime.py",
+            "services/project-runtime/src/project_runtime/api/dto/working_draft.py",
+            "services/project-runtime/src/project_runtime/authentication.py",
+            "services/project-runtime/src/project_runtime/settings.py",
+            "services/project-runtime/src/project_runtime/status.py",
+            "services/project-runtime/tests/",
+            "apps/monkeyhub/web/src/features/designTree/",
+            "apps/monkeyhub/web/src/api/project-runtime/generated/",
+            "docs/decisions/013-actor-working-heads.md",
+            "docs/protocols/project-runtime-api.md",
+            "services/project-runtime/src/project_runtime/api/conditional.py",
+            "services/project-runtime/src/project_runtime/index.py",
+            "apps/monkeyhub/web/test/designTree.browser.mjs",
+            "docs/decisions/README.md"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
