@@ -11,6 +11,7 @@ class StudioHealth(BaseModel):
     status: str
     service: str = "archflow-studio-api"
     project_bound: bool = Field(alias="projectBound")
+    replica_initializing: bool | None = Field(default=None, alias="replicaInitializing")
     project_id: str | None = Field(default=None, alias="projectId")
     project_dir: str | None = Field(default=None, alias="projectDir")
     server_version: str | None = Field(default=None, alias="serverVersion")

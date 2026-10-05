@@ -3018,7 +3018,7 @@ try {
   const fileMenu = page.getByRole("menu", { name: "File", exact: true });
   assert.deepEqual((await fileMenu.getByRole("menuitem").allInnerTexts()).map((text) => text.trim()),
     ["New chat", "New project…", "Add existing project…", "Reload project from disk", "Export project archive…",
-      "Restore project archive…", "Settings…"]);
+      "Restore project archive…", "Project team…", "Settings…"]);
   await page.keyboard.press("Escape");
   await fileMenu.waitFor({ state: "detached" });
   await page.waitForFunction(() => document.activeElement?.id === "hub-menu-file"); // Escape returns to the menu's word

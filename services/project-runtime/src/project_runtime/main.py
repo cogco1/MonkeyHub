@@ -43,7 +43,7 @@ from .api import routes
 from .api.routes import memory as memory_routes
 from .api.routes import projections as projection_routes
 from .api.routes import skills as skill_routes
-from .authentication import ActorAuthorizationMiddleware, read_actor_credentials, request_action
+from .authentication import LocalTeamAuthorizationMiddleware, ActorAuthorizationMiddleware, read_actor_credentials, request_action
 from .application.clarification import PendingIntentStore
 from .application.episodes import EpisodeStore
 from .events import StudioEvents
@@ -365,7 +365,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if retention is not None:
         retention.at_open()
 
+    team_sync = None
+    if app.state.settings.sync_automatic:
+        from .synchronization import TeamSynchronization
+        team_sync = TeamSynchronization(app.state)
+        app.state.team_sync = team_sync
+        team_sync.start()
     yield
+    if team_sync is not None:
+        await run_in_threadpool(team_sync.stop)
     if retention is not None:
         await run_in_threadpool(retention.stop)
     app.state.stop_index_events()
@@ -385,6 +393,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # may have a re-check to come: let go of both with the project, not
         # whenever the process happens to exit.
         await run_in_threadpool(binding.close)
+    replica_lease = getattr(app.state, "replica_writer_lease", None)
+    if replica_lease is not None:
+        replica_lease.release()
 
 
 async def _diagnostic_request(request: Request,
@@ -431,6 +442,8 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
         dependencies=[Depends(_diagnostic_request)],
     )
     app.state.settings = settings
+    from .sync_cache import SyncDownloadCache
+    app.state.sync_cache = SyncDownloadCache(settings.project_cache_dir / "sync")
     from monkeymonitor.store import UsageLog
 
     app.state.monitor = StudioMonitor(UsageLog(settings.monitor_dir) if settings.monitor_dir is not None else None)
@@ -534,6 +547,10 @@ def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
     # no origins, so there is nothing left to check here. CORS is added last
     # and therefore sits outermost, which is what lets a browser read the 401
     # the token gate answers with instead of a bare network failure.
+    if settings.team_actor_id:
+        app.add_middleware(LocalTeamAuthorizationMiddleware, state=app.state)
+    if settings.team_owner:
+        app.add_middleware(ActorAuthorizationMiddleware, credentials=credentials, service_role=settings.service_role, local_owner=True)
     if settings.mode == REMOTE_MODE:
         if credentials is not None:
             app.add_middleware(ActorAuthorizationMiddleware, credentials=credentials, service_role=settings.service_role)

@@ -33,6 +33,8 @@ from ..chat.store import ChatStore
 from ..computer_tools import ComputerService
 from ..fabrication import Fabrication
 from ..runtime.applications import Applications
+from ..team.service import Teams
+from ..team.routes import team_router
 from ..runtime.manager import ProjectRuntimeManager
 from ..runtime.routes import apps_and_modeling_routers, runtime_router
 from ..settings.routes import app_settings_router, credentials_router, router as preferences_router
@@ -83,6 +85,8 @@ class HubSettings:
 
 def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> FastAPI:
     applications = Applications(source_root, settings.runtime_root, settings.port)
+    teams = Teams(applications)
+    applications.teams = teams
     fabrication = Fabrication(source_root)
     chats = ChatStore(settings.runtime_root, f"http://127.0.0.1:{settings.port}", applications=applications)
     runtimes = ProjectRuntimeManager(applications, chats)
@@ -113,7 +117,9 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         # Packaged desktop only: finish this version's own next-launch
         # activation once it answers health, and check for updates.
         updates.start(settings.port, settings.managed_instance_id)
+        await asyncio.to_thread(teams.restore)
         yield
+        await asyncio.to_thread(teams.close)
         await asyncio.to_thread(updates.shutdown)
         await asyncio.to_thread(chats.shutdown)
         await asyncio.to_thread(applications.shutdown)
@@ -123,6 +129,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     app = FastAPI(title="MonkeyHub API", version="0.1.0", lifespan=lifespan, servers=[{"url": "/"}])
     app.state.settings = settings
     app.state.applications = applications
+    app.state.teams = teams
     app.state.chats = chats
     app.state.runtimes = runtimes
     app.state.updates = updates
@@ -138,6 +145,8 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/team/"):
+            return JSONResponse({"code": "TEAM_REQUEST_INVALID", "detail": "Check the invitation, name, role and local folder."}, status_code=422)
         if request.url.path.startswith("/api/chat/"):
             return JSONResponse(
                 {"code": "CHAT_REQUEST_INVALID", "detail": "Invalid chat request. Check the project, provider and message fields."},
@@ -230,6 +239,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         """Local diagnostic snapshot; rescan is bounded and never qualifies a host."""
         return app.state.integrations.status(rescan=rescan)
 
+    app.include_router(team_router(teams))
     app.include_router(updates_router(updates))
     apps_routes, modeling_routes = apps_and_modeling_routers(settings, applications, chats, runtimes)
     app.include_router(apps_routes)

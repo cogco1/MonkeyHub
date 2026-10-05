@@ -255,7 +255,12 @@ class StudioProjector:
             value, _ = self.binding.repository.read_working_draft()
         except _UNREADABLE:
             return {"working_unreadable": True}
-        return {"current": value["current"], "active": value["active"], "runsDigest": canonical_digest(value["runs"])}
+        result = {"current": value["current"], "active": value["active"], "runsDigest": canonical_digest(value["runs"])}
+        if "positions" in value:
+            # Peer moves invalidate the tree; private recovery-only writes do not.
+            result["actorHeads"] = {actor: {"current": row["current"], "branchId": row["branchId"]}
+                                    for actor, row in sorted(value["positions"].items())}
+        return result
 
 
 # What the tree's readers ask the index about before they read a run for it (#599):

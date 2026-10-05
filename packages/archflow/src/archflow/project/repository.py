@@ -839,6 +839,24 @@ def _position_revision(value: Mapping[str, Any]) -> str:
     return _sha256(_json_bytes({key: item for key, item in value.items() if key != "active"}))
 
 
+_LEGACY_WORKING_OWNER = "studio:explicit-user-action"
+
+
+def _require_working_actor(actor_id: str) -> None:
+    # Stable identities share the Runtime authentication contract; the local
+    # owner predates authenticated ids and is the only reserved colon form.
+    if actor_id != _LEGACY_WORKING_OWNER and (
+        not isinstance(actor_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}", actor_id)
+    ):
+        raise ProjectIntegrityError("working actor identity is invalid")
+
+
+def _working_positions(value: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
+    if value["schema"] == "ProjectWorkingDraft@2":
+        return value["positions"].values()
+    return ({"current": value["current"], "localDraftRef": value["localDraftRef"]},)
+
+
 def _read_bytes(path: Path) -> bytes:
     try:
         return path.read_bytes()
@@ -2682,14 +2700,43 @@ class FilesystemProjectRepository:
         return value, _position_revision(value)
 
     def _require_working_draft(self, value: Mapping[str, Any]) -> None:
-        if (not isinstance(value, Mapping) or set(value) != {
-                "schema", "projectId", "current", "runs", "active", "localDraftRef"}
-                or value.get("schema") != "ProjectWorkingDraft@1"
+        fields = {"schema", "projectId", "current", "runs", "active", "localDraftRef"}
+        if isinstance(value, Mapping) and value.get("schema") == "ProjectWorkingDraft@2":
+            fields |= {"ownerActorId", "positions"}
+        if (not isinstance(value, Mapping) or set(value) != fields
+                or value.get("schema") not in ("ProjectWorkingDraft@1", "ProjectWorkingDraft@2")
                 or value.get("projectId") != self.layout.project_id
                 or not isinstance(value.get("runs"), dict) or not isinstance(value.get("active"), dict)):
             raise ProjectIntegrityError("working draft metadata is invalid")
-        if value["current"] is not None and (not isinstance(value["current"], str) or value["current"] not in value["runs"]):
-            raise ProjectIntegrityError("working draft current position is not retained")
+        if value["schema"] == "ProjectWorkingDraft@2":
+            _require_working_actor(value["ownerActorId"])
+            if not isinstance(value["positions"], dict):
+                raise ProjectIntegrityError("working actor positions are invalid")
+            for actor_id in value["positions"]:
+                _require_working_actor(actor_id)
+            owner = value["positions"].get(value["ownerActorId"], {"current": None, "localDraftRef": None})
+            if not isinstance(owner, dict) or any(owner.get(key) != value[key] for key in ("current", "localDraftRef")):
+                raise ProjectIntegrityError("working owner position aliases disagree")
+        for position in _working_positions(value):
+            position_fields = {"current", "localDraftRef"}
+            if value["schema"] == "ProjectWorkingDraft@2":
+                position_fields.add("branchId")
+            if not isinstance(position, dict) or set(position) != position_fields:
+                raise ProjectIntegrityError("working actor position is invalid")
+            if value["schema"] == "ProjectWorkingDraft@2" and (
+                position["branchId"] is not None and (
+                    not isinstance(position["branchId"], str) or position["current"] is None
+                )
+            ):
+                raise ProjectIntegrityError("working actor branch is invalid")
+            if position["current"] is not None and (
+                not isinstance(position["current"], str) or position["current"] not in value["runs"]
+            ):
+                raise ProjectIntegrityError("working draft current position is not retained")
+            if position["localDraftRef"] is not None:
+                ref = ProjectRecordRef.from_dict(position["localDraftRef"])
+                if ref.project_id != self.layout.project_id or ref.record_kind != STUDIO_LOCAL_DRAFT:
+                    raise ProjectIntegrityError("working recovery must name this project's local draft")
         for run_id, row in value["runs"].items():
             require_identifier(run_id, "working run_id")
             # ``labelSavedBy`` is optional: a row from before it, or one no person named, has none (#575).
@@ -2706,10 +2753,6 @@ class FilesystemProjectRepository:
                 raise ProjectIntegrityError("active sources must be retained run ids")
             for source in sources:
                 require_identifier(source, "active source run_id")
-        if value["localDraftRef"] is not None:
-            ref = ProjectRecordRef.from_dict(value["localDraftRef"])
-            if ref.project_id != self.layout.project_id or ref.record_kind != STUDIO_LOCAL_DRAFT:
-                raise ProjectIntegrityError("working recovery must name this project's local draft")
 
     @staticmethod
     def _working_time(value: str) -> datetime:
@@ -2720,6 +2763,87 @@ class FilesystemProjectRepository:
             return result
         except (TypeError, ValueError) as exc:
             raise ProjectIntegrityError("working draft timestamp is invalid") from exc
+
+    def _actor_working_view(
+        self, value: Mapping[str, Any], actor_id: str, owner_actor_id: str, *, exists: bool,
+    ) -> tuple[dict[str, Any], str | None]:
+        _require_working_actor(actor_id)
+        _require_working_actor(owner_actor_id)
+        if value["schema"] == "ProjectWorkingDraft@2":
+            position = value["positions"].get(actor_id)
+        else:
+            position = (self._position_from_working_view(value)
+                        if exists and actor_id == owner_actor_id else None)
+        revision = None if position is None else _sha256(_json_bytes({
+            "projectId": self.layout.project_id, "actorId": actor_id, **position,
+        }))
+        selected = position or {"current": None, "localDraftRef": None, "branchId": None}
+        runs = dict(value["runs"])
+        if selected["current"] is not None:
+            run_id = selected["current"]
+            runs[run_id] = {**runs[run_id], "branchId": selected["branchId"]}
+        view = {"schema": "ProjectWorkingDraft@1", "projectId": self.layout.project_id,
+                "runs": runs, "active": value["active"],
+                "current": selected["current"], "localDraftRef": selected["localDraftRef"]}
+        return view, revision
+
+    @staticmethod
+    def _position_from_working_view(value: Mapping[str, Any]) -> dict[str, Any]:
+        return {"current": value["current"], "localDraftRef": value["localDraftRef"],
+                "branchId": None if value["current"] is None else value["runs"][value["current"]]["branchId"]}
+
+    def read_actor_working_draft(
+        self, actor_id: str, *, owner_actor_id: str = _LEGACY_WORKING_OWNER,
+    ) -> tuple[dict[str, Any], str | None]:
+        """Read one actor's position and the shared run ledger, without migrating.
+
+        A legacy position belongs only to the configured owner. An actor with
+        no position gets None and a null revision, never another actor's head.
+        """
+        value, revision = self.read_working_draft()
+        return self._actor_working_view(value, actor_id, owner_actor_id, exists=revision is not None)
+
+    @_writes
+    def compare_and_swap_actor_working_draft(
+        self, actor_id: str, *, expected_revision: str | None, value: Mapping[str, Any],
+        owner_actor_id: str = _LEGACY_WORKING_OWNER,
+    ) -> tuple[dict[str, Any], str]:
+        """Change only this actor's position and register previously unseen runs.
+
+        The selected branch is retained in this actor's position; actor reads
+        overlay it on the selected row without changing shared run metadata.
+        Existing shared rows and the execution ledger are kept, never replaced
+        or removed from an actor's stale view. Shared naming/retention changes
+        use the full-document CAS. Other actors do not invalidate this CAS.
+        The first explicit actor write upgrades legacy metadata in place.
+        """
+        with self._lock, self._design_lock:
+            current, revision = self.read_working_draft()
+            _, actual = self._actor_working_view(current, actor_id, owner_actor_id, exists=revision is not None)
+            if actual != expected_revision:
+                raise StaleWorkingDraft("this actor's working position changed; read it before updating")
+            self._require_working_draft(value)
+            if value["schema"] != "ProjectWorkingDraft@1":
+                raise ProjectIntegrityError("actor writes require an actor working view")
+            if current["schema"] == "ProjectWorkingDraft@1":
+                current = {**current, "schema": "ProjectWorkingDraft@2", "ownerActorId": owner_actor_id,
+                           "positions": ({owner_actor_id: self._position_from_working_view(current)}
+                                         if revision is not None else {})}
+            # A stale view cannot resurrect a row whose run has since moved
+            # into the trash. New registrations must still name live runs.
+            for run_id in value["runs"].keys() - current["runs"].keys():
+                self.load_run(run_id)
+            positions = {**current["positions"], actor_id: self._position_from_working_view(value)}
+            owner = positions.get(current["ownerActorId"], {"current": None, "localDraftRef": None})
+            merged = {**current, "positions": positions, "runs": {**value["runs"], **current["runs"]},
+                      "current": owner["current"], "localDraftRef": owner["localDraftRef"]}
+            self._require_working_draft(merged)
+            data = _json_bytes(merged)
+            _replace_atomic(self.layout.working_draft, data)
+            result, result_revision = self._actor_working_view(
+                _parse_json_document(data, "working draft"), actor_id, owner_actor_id, exists=True)
+            assert result_revision is not None
+            return result, result_revision
 
     @_writes
     def compare_and_swap_working_draft(
@@ -2738,6 +2862,12 @@ class FilesystemProjectRepository:
                 raise StaleWorkingDraft("the working draft changed; read it before updating this position")
             if not ledger:
                 value = {**value, "active": current["active"]}
+            if current["schema"] == "ProjectWorkingDraft@2":
+                # Legacy/full-document writers own shared rows, not personal
+                # positions. Only the actor CAS can move a migrated head.
+                value = {**value, "schema": "ProjectWorkingDraft@2",
+                         "ownerActorId": current["ownerActorId"], "positions": current["positions"],
+                         "current": current["current"], "localDraftRef": current["localDraftRef"]}
             self._require_working_draft(value)
             data = _json_bytes(value)
             _replace_atomic(self.layout.working_draft, data)
@@ -2775,20 +2905,21 @@ class FilesystemProjectRepository:
         (``trash_run``, #575), whole and restorable, under the rules its caller
         owns, never on this timer.
         A snapshot is a crash-recovery copy of unsynced local commands and only
-        the one ``localDraftRef`` names is ever read back, so that one is kept
-        however old it is; any other snapshot expires 24 hours after its
+        snapshots named by any actor's ``localDraftRef`` are kept however old
+        they are; any other snapshot expires 24 hours after its
         ``updatedAt``. Returns the removed snapshots' project-relative paths.
         """
         cutoff = self._working_time(now) - timedelta(hours=24)
         with self._lock, self._head_lock, self._design_lock:
             value, _ = self.read_working_draft()
-            current = None if value["localDraftRef"] is None else value["localDraftRef"]["relative_path"]
+            current = {position["localDraftRef"]["relative_path"] for position in _working_positions(value)
+                       if position["localDraftRef"] is not None}
             expired: list[Path] = []
             for path in sorted(self.layout.runs.glob(f"*/recovery/{STUDIO_LOCAL_DRAFT}-*.json")):
                 payload = _parse_json_document(_read_bytes(path), path.name)
                 if payload.get("schema") != "StudioLocalDraft@1" or payload.get("projectId") != self.layout.project_id:
                     raise ProjectIntegrityError("local recovery has an inconsistent project binding")
-                if path.relative_to(self.layout.root).as_posix() != current and self._working_time(payload["updatedAt"]) < cutoff:
+                if path.relative_to(self.layout.root).as_posix() not in current and self._working_time(payload["updatedAt"]) < cutoff:
                     expired.append(path)
             runs = self.layout.runs.resolve()
             for path in expired:
@@ -3028,7 +3159,7 @@ class FilesystemProjectRepository:
     def _trash_holds(self, run_id: str, working: Mapping[str, Any]) -> str | None:
         """What keeps a run out of the trash, in words, or None. The caller holds every lock."""
 
-        if working["current"] == run_id:
+        if any(position["current"] == run_id for position in _working_positions(working)):
             return "it is the Working Head"
         if run_id in working["active"] or any(run_id in sources for sources in working["active"].values()):
             return "an execution is using it"
@@ -3037,8 +3168,10 @@ class FilesystemProjectRepository:
             return "a person saved it as a version"
         if row is not None and not row["automatic"]:
             return "a person chose it as the working position"
-        local = working["localDraftRef"]
-        if local is not None:
+        for position in _working_positions(working):
+            local = position["localDraftRef"]
+            if local is None:
+                continue
             if PurePosixPath(local["relative_path"]).parts[:2] == ("runs", run_id):
                 return "it holds the local recovery"
             draft = self.load_json(ProjectRecordRef.from_dict(local))
@@ -3634,6 +3767,7 @@ class FilesystemProjectRepository:
         known_files: Mapping[str, str] | None = None,
         include_contents: bool = True,
         include_all_runs: bool = False,
+        candidate_roots: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         """Read a retained design snapshot or one candidate and its dependencies.
 
@@ -3808,6 +3942,8 @@ class FilesystemProjectRepository:
                             add_run(listed)
             else:
                 add_run(run_id)
+            for candidate_root in candidate_roots:
+                add_run(candidate_root)
             while pending:
                 path, expected_digest = pending.pop()
                 if path in files:
@@ -3851,6 +3987,61 @@ class FilesystemProjectRepository:
                           for path, (digest, size) in sorted(files.items())],
                 "contents": contents,
             }
+
+    def export_sync_transfer(self, *, include_contents: bool = False,
+                             known_files: Mapping[str, str] | None = None,
+                             all_candidates: bool = False) -> dict[str, Any]:
+        """Retained candidate union, without private recovery or working-pointer files.
+
+        The shared Runtime has only admitted retained candidates. A local initial
+        share exports its retained candidate ledger and complete lineage, not
+        speculative workspace files, recovery commands or an active run.
+        """
+        working, _ = self.read_working_draft()
+        roots = tuple(self.run_ids()) if all_candidates else tuple(sorted(
+            set(working["runs"]) - set(working["active"])
+        ))
+        return self.export_transfer(include_contents=include_contents, known_files=known_files,
+                                    candidate_roots=roots)
+
+    def sync_actor_line(self, actor_id: str, *, owner_actor_id: str) -> dict[str, Any]:
+        """Public position only. Never expose local recovery or another actor's authority."""
+        view, revision = self.read_actor_working_draft(actor_id, owner_actor_id=owner_actor_id)
+        current = view["current"]
+        row = view["runs"].get(current) if current is not None else None
+        return {"actorId": actor_id, "current": current,
+                "row": dict(row) if row is not None else None, "revision": revision}
+
+    @_writes
+    def receive_sync_actor_line(self, actor_id: str, line: Mapping[str, Any], *,
+                                expected_revision: str | None, owner_actor_id: str) -> dict[str, Any]:
+        """CAS one authenticated actor's pointer after its candidate was admitted.
+
+        The caller supplies actor_id from its authenticated boundary, never from
+        line data. Local recovery of any actor and every other actor are preserved.
+        An identical retry is idempotent, including after the reply was lost.
+        """
+        with self.working_draft_guard():
+            view, revision = self.read_actor_working_draft(actor_id, owner_actor_id=owner_actor_id)
+            if set(line) != {"current", "row"}:
+                raise ProjectIntegrityError("TRANSFER_LINE_INVALID: invalid line fields")
+            current, row = line["current"], line["row"]
+            if current is not None:
+                self.load_run(current)
+                if not isinstance(row, Mapping):
+                    raise ProjectIntegrityError("TRANSFER_LINE_INVALID: missing retained row")
+            elif row is not None:
+                raise ProjectIntegrityError("TRANSFER_LINE_INVALID: empty position has a row")
+            if view["current"] == current and (current is None or view["runs"].get(current) == row):
+                return self.sync_actor_line(actor_id, owner_actor_id=owner_actor_id)
+            if revision != expected_revision:
+                raise StaleWorkingDraft("this actor's shared line changed")
+            updated = {**view, "current": current, "runs": dict(view["runs"])}
+            if current is not None:
+                updated["runs"][current] = dict(row)
+            self.compare_and_swap_actor_working_draft(actor_id, expected_revision=revision,
+                                                     value=updated, owner_actor_id=owner_actor_id)
+            return self.sync_actor_line(actor_id, owner_actor_id=owner_actor_id)
 
     def read_transfer_file(self, path: str, sha256: str) -> bytes:
         """Read one retained file by identity without rescanning other binaries."""
@@ -4423,8 +4614,8 @@ class FilesystemProjectRepository:
         )
 
     @_writes
-    def import_candidate_transfer(self, transfer: Mapping[str, Any]) -> None:
-        """Import immutable candidate evidence; never accept, branch or issue."""
+    def import_candidate_transfer(self, transfer: Mapping[str, Any], *, retained_row: Mapping[str, Any] | None = None) -> None:
+        """Import evidence and optionally retain its root; never move an actor, accept, branch or issue."""
         if transfer.get("mode") != "candidate":
             raise ProjectIntegrityError("TRANSFER_INVALID: candidate upload requires a candidate transfer")
         files = self._validate_transfer(transfer, expected_project_id=self._manifest.project_id,
@@ -4432,7 +4623,15 @@ class FilesystemProjectRepository:
         with self._lock, self._head_lock, self._design_lock:
             if self.read_head().to_dict() != transfer["head"]:
                 raise StaleProjectHead("TRANSFER_PUBLISHED_HEAD_CHANGED: synchronize the published base before upload")
+            working, revision = self.read_working_draft()
+            updated = None
+            if retained_row is not None and transfer["root_run_id"] not in working["runs"]:
+                updated = {**working, "runs": {**working["runs"], transfer["root_run_id"]: dict(retained_row)}}
+                # Validate the public retention row before any incoming byte is installed.
+                self._require_working_draft(updated)
             self._install_transfer_files(files)
+            if updated is not None:
+                self.compare_and_swap_working_draft(expected_revision=revision, value=updated)
 
     @_writes
     def pull_transfer(
@@ -4615,8 +4814,10 @@ class FilesystemProjectRepository:
             for run_id in working["runs"]:
                 self.load_run(run_id)
                 reachable.add(f"runs/{run_id}/run.json")
-            if working["localDraftRef"] is not None:
-                ref = ProjectRecordRef.from_dict(working["localDraftRef"])
+            for position in _working_positions(working):
+                if position["localDraftRef"] is None:
+                    continue
+                ref = ProjectRecordRef.from_dict(position["localDraftRef"])
                 local = self.load_json(ref)
                 if local.get("schema") != "StudioLocalDraft@1" or local.get("projectId") != self.layout.project_id:
                     raise ProjectIntegrityError("working recovery binding is invalid")

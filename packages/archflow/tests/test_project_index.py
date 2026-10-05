@@ -595,9 +595,13 @@ class KeeperTests(_IndexCase):
         self.assertEqual(heard[1].domains, frozenset({"run"}))
 
     def test_another_process_write_is_applied_on_refresh_and_not_before(self) -> None:
+        # This is a settled-reading contract. A fresh fixture legitimately schedules
+        # one race re-check, which can overlap the external write on a slower host.
+        settle(self.root)
         layout = self.known()
         keeper, _ = self.keeper(layout=layout)
         before = keeper.state
+        self.assertTrue(layout.latest().fingerprint.stable)
         (self.root / "runs" / "run-outside" / "records").mkdir(parents=True)
         # Nothing watches the project: the index holds what it held.
         time.sleep(1.0)
@@ -611,6 +615,23 @@ class KeeperTests(_IndexCase):
         self.assertEqual(state.digest, refreshed.layout.fingerprint.digest)
         self.assertGreater(state.token.revision, before.token.revision)
         self.assertEqual([row["run_id"] for row in keeper.index.query("run")], ["run-001", "run-outside"])
+
+    def test_external_write_waits_for_refresh_after_a_slow_initial_projection(self) -> None:
+        original_keeper = self.keeper
+        def slow_initial(projector=None, layout=None):
+            projector = projector or RecordingProjector(self.repository)
+            projector.delay = 1.4
+            original_run = projector.project_run
+            def first_only(run_id):
+                result = original_run(run_id)
+                projector.delay = 0
+                return result
+            projector.project_run = first_only
+            return original_keeper(projector=projector, layout=layout)
+        # Reproduce the slow first-load window observed on Windows CI while
+        # keeping every assertion of the external-write/explicit-refresh contract.
+        with mock.patch.object(self, "keeper", side_effect=slow_initial):
+            self.test_another_process_write_is_applied_on_refresh_and_not_before()
 
     def test_the_keeper_opens_the_layout_when_nobody_has(self) -> None:
         layout = self.known()

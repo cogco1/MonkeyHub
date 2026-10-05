@@ -27,10 +27,12 @@ def read_health(request: Request) -> StudioHealth:
     # The owned local worker reports its already-open binding, without selecting
     # a reference run. Remote health is anonymous and must not expose its path.
     identity = binding if request.app.state.settings.mode == LOCAL_MODE else None
+    initializing = binding is None and request.app.state.settings.sync_automatic
     return StudioHealth(
+        replica_initializing=True if initializing else None,
         status="ok", project_bound=binding is not None,
-        project_id=identity.project_id if identity is not None else None,
-        project_dir=str(identity.project_dir) if identity is not None else None,
+        project_id=identity.project_id if identity is not None else request.app.state.settings.sync_project_id if initializing else None,
+        project_dir=str(identity.project_dir) if identity is not None else str(request.app.state.settings.project_dir) if initializing else None,
         server_version=getattr(request.app.state, "server_version", None),
         managed_instance_id=getattr(request.app.state, "managed_instance_id", None),
         process_id=getattr(request.app.state, "process_id", None),

@@ -89,6 +89,8 @@ def server_capabilities(settings: StudioSettings) -> tuple[str, ...]:
     if settings.service_role == SHARED_PROJECT_ROLE:
         return ("artifacts", "candidates", "design-history", "events", "project-sync", "shared-project")
     capabilities = list(BASE_CAPABILITIES)
+    if settings.team_owner:
+        capabilities.extend(["project-sync", "shared-project"])
     if settings.sync_url:
         capabilities.append("project-sync")
     if settings.exports:

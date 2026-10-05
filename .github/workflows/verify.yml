@@ -78,6 +78,15 @@ jobs:
           -r apps/monkeyhub/api/requirements.txt
           httpx2 pytest
 
+      - name: Build pinned project transport
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal
+          cargo +1.98.1 build --locked --manifest-path packages/monkeymesh/native/Cargo.toml
+          test -x packages/monkeymesh/native/target/debug/monkeymesh-tcp
+
+      - name: Project transport streams and reconnect
+        run: python -m pytest packages/monkeymesh/tests -q
+
       # The OCCT suites skip themselves when the kernel is missing (occt_available),
       # so a lost extra would pass as a run of skips: fail here instead.
       - name: CAD kernels import

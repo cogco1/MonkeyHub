@@ -24,6 +24,7 @@ import { clock, currentStep, describeCall, describeStep, dismissible, operationS
 import { recentUsage, serialMonitorRead, type MonitorEvent, type RecentUsage } from "./monitorData";
 import { activeWork, newSchemes, sidebarTasks, type SidebarTask } from "./sidebarTasks";
 import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
+import { TeamPanel } from "./app/TeamPanel";
 import { editFocused, HubMenuBar, type HubMenu, type HubMenuItem } from "./HubMenu";
 import "./ChatShell.css";
 
@@ -691,6 +692,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
   // #271: the read-only Worktree Graph the project card's status is read from.
   const [worktrees, setWorktrees] = useState<{ runtimeId: string; graph: WorktreeGraphDto } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [teamOpen, setTeamOpen] = useState(false);
+  const teamDialog = useRef<HTMLDialogElement>(null);
   const [updateRestarting, setUpdateRestarting] = useState(false);
   // The model this conversation will use next. An existing chat keeps its own;
   // a new one starts from the saved default until it is sent.
@@ -1962,6 +1965,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       { kind: "command", id: "restore", label: mw.restoreArchive,
         onSelect: () => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); setRestoreTarget(workspace?.workspaceDir ?? ""); restoreDialog.current?.showModal(); } },
       { kind: "separator", id: "hub" },
+      { kind: "command", id: "team", label: preferences.language === "zh-CN" ? "项目协作…" : "Project team…", onSelect: () => { setTeamOpen(true); teamDialog.current?.showModal(); } },
       { kind: "command", id: "settings", label: mw.settings, onSelect: openSettings },
     ] },
     { id: "edit", label: mw.edit, items: [
@@ -2429,6 +2433,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       <div className="chat-dialog__actions"><button type="button" className="btn" onClick={() => restoreDialog.current?.close()}>{t.close}</button>
         <button type="submit" className="btn btn--primary" disabled={busy || !restorePath.trim()}>{busy ? t.restoring : t.restoreRun}</button></div>
     </form></dialog>
+    <dialog ref={teamDialog} className="chat-dialog" aria-labelledby="team-heading" onClose={() => setTeamOpen(false)}>
+      {teamOpen && <TeamPanel projectDir={projectDir} language={preferences.language} close={() => teamDialog.current?.close()}
+        openProject={(projectId, path) => { teamDialog.current?.close(); selectProject({ projectId, projectDir: path, name: projectId, chatCount: 0, version: null, stage: null }); void refresh(); }} />}
+    </dialog>
     <dialog ref={settingsDialog} className="chat-dialog chat-dialog--settings" aria-labelledby="settings-heading" closedby={updateRestarting ? "none" : "closerequest"}
       onClose={() => setSettingsOpen(false)} onCancel={(event) => { if (updateRestarting) event.preventDefault(); }}>
       <button className="chat-icon settings-close" aria-label={t.close} disabled={updateRestarting} onClick={() => settingsDialog.current?.close()}><Icon name="close" /></button>

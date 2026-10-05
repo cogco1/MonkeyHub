@@ -461,7 +461,9 @@ class ChatStore:
             except OSError:
                 continue
         current = read_application_settings(self.runtime_root).project_dir
-        for path in dict.fromkeys([*discovered, *([current] if current else [])]):
+        team_paths = ([row["projectDir"] for row in self.applications.teams.settings.read()["projects"].values()]
+                      if getattr(getattr(self, "applications", None), "teams", None) else [])
+        for path in dict.fromkeys([*discovered, *team_paths, *([current] if current else [])]):
             try:
                 (project_id, project_dir), (version, stage) = projects._listed_project(path, identify=True)
             except HubFailure:

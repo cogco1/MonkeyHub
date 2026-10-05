@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from contextvars import ContextVar
 import json
+import hashlib
 from pathlib import Path
 import re
 import secrets
@@ -39,7 +41,7 @@ _SHARED_READ_PATHS = (
     r"/api/candidates/[^/]+(?:/validation|/compare)?",
     r"/api/working-copies(?:/[^/]+)?",
     r"/api/episodes(?:/[^/]+)?",
-    r"/api/sync/(?:manifest|files)",
+    r"/api/sync/(?:manifest|files|lines|identity)",
     r"/api/decisions(?:/[^/]+)?",
     r"/api/memory(?:/[^/]+)?",
 )
@@ -60,11 +62,28 @@ ORIGIN_HUB_AGENT = "hub-agent"
 # stated as such rather than borrowed from a person who was never identified.
 LOCAL_ACTOR_ID = "studio:explicit-user-action"
 
+# Request-local identity, resolved by authentication before application work.
+# ContextVars follow ASGI tasks and their threadpool calls, never another request.
+_REQUEST_ACTOR: ContextVar[str | None] = ContextVar("project_request_actor", default=None)
+_ACTOR_NAMES: ContextVar[dict[str, str]] = ContextVar("project_actor_names", default={})
+
+
+def working_actor_id() -> str | None:
+    """The authenticated caller for actor-scoped reads; None preserves local legacy behavior."""
+    return _REQUEST_ACTOR.get()
+
+
+def actor_display_name(actor_id: str) -> str:
+    """Presentation only; changing a name never changes grants or line ownership."""
+    return _ACTOR_NAMES.get().get(actor_id, actor_id)
+
+
 
 @dataclass(frozen=True, slots=True)
 class AuthenticatedActor:
     actor_id: str
     project_actions: tuple[tuple[str, frozenset[str]], ...]
+    display_name: str | None = None
 
     def allows(self, project_id: str, action: str) -> bool:
         return any(project == project_id and action in actions for project, actions in self.project_actions)
@@ -75,11 +94,19 @@ class ActorCredentials:
     """Loaded only from service configuration; never attached to a request."""
 
     entries: tuple[tuple[bytes, AuthenticatedActor], ...] = field(repr=False)
+    hashed: bool = False
+    source: Path | None = field(default=None, repr=False)
+    project_dir: Path | None = field(default=None, repr=False)
+
+    def current(self) -> ActorCredentials:
+        return read_actor_credentials(self.source, self.project_dir) if self.source else self
 
     def authenticate(self, header: str) -> AuthenticatedActor | None:
         if not header.startswith("Bearer "):
             return None
         supplied = header[len("Bearer "):].strip().encode("utf-8")
+        if self.hashed:
+            supplied = hashlib.sha256(supplied).hexdigest().encode("ascii")
         for token, actor in self.entries:
             if secrets.compare_digest(token, supplied):
                 return actor
@@ -93,6 +120,7 @@ def read_actor_credentials(path: Path, project_dir: Path) -> ActorCredentials:
         raise SettingsError("Actor credentials must be configured outside the project directory.")
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
+        hashed = payload.get("format") == "sha256"
         rows = payload["actors"]
         if not isinstance(rows, list) or not rows:
             raise ValueError
@@ -100,10 +128,12 @@ def read_actor_credentials(path: Path, project_dir: Path) -> ActorCredentials:
         tokens: set[bytes] = set()
         entries = []
         for row in rows:
-            actor_id, token, projects = row["actor_id"], row["token"], row["projects"]
+            actor_id, token, projects = row["actor_id"], row["token_sha256" if hashed else "token"], row["projects"]
             if not isinstance(actor_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}", actor_id):
                 raise ValueError
             if not isinstance(token, str) or not token.strip() or token != token.strip():
+                raise ValueError
+            if hashed and not re.fullmatch(r"[0-9a-f]{64}", token):
                 raise ValueError
             secret = token.encode("utf-8")
             if actor_id in actors or secret in tokens or not isinstance(projects, dict) or not projects:
@@ -115,12 +145,15 @@ def read_actor_credentials(path: Path, project_dir: Path) -> ActorCredentials:
                 if not isinstance(actions, list) or not actions or any(not isinstance(action, str) or action not in _ACTIONS for action in actions):
                     raise ValueError
                 scopes.append((project_id, frozenset(actions)))
-            entries.append((secret, AuthenticatedActor(actor_id, tuple(scopes))))
+            name = row.get("display_name")
+            if name is not None and (not isinstance(name, str) or not name.strip() or len(name) > 128):
+                raise ValueError
+            entries.append((secret, AuthenticatedActor(actor_id, tuple(scopes), name)))
             actors.add(actor_id)
             tokens.add(secret)
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         raise SettingsError("Actor configuration could not be read: expected actors with unique actor_id/token and explicit project actions.") from None
-    return ActorCredentials(tuple(entries))
+    return ActorCredentials(tuple(entries), hashed, path if hashed else None, project_dir if hashed else None)
 
 
 def authenticated_actor(request: Request) -> AuthenticatedActor | None:
@@ -196,7 +229,11 @@ def request_action(method: str, path: str, *, shared_project: bool) -> str | Non
             return "read"
     if method == "POST" and any(re.fullmatch(pattern, path) for pattern in _ACCEPT_PATHS):
         return "accept"
-    if method == "POST" and path == "/api/sync/candidates":
+    if method == "POST" and path in {"/api/sync/files/batch", "/api/sync/files/missing"}:
+        return "read"
+    if method == "PUT" and path == "/api/sync/line":
+        return "propose"
+    if method == "POST" and path in {"/api/sync/candidates", "/api/sync/files/upload"}:
         return "propose"
     if not shared_project and method in {"POST", "PUT", "PATCH", "DELETE"}:
         return "propose"
@@ -204,10 +241,11 @@ def request_action(method: str, path: str, *, shared_project: bool) -> str | Non
 
 
 class ActorAuthorizationMiddleware:
-    def __init__(self, app: ASGIApp, *, credentials: ActorCredentials, service_role: str) -> None:
+    def __init__(self, app: ASGIApp, *, credentials: ActorCredentials, service_role: str, local_owner: bool = False) -> None:
         self.app = app
         self.credentials = credentials
-        self.shared_project = service_role == SHARED_PROJECT_ROLE
+        self.shared_project = service_role == SHARED_PROJECT_ROLE or local_owner
+        self.local_owner = local_owner
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
@@ -215,7 +253,14 @@ class ActorAuthorizationMiddleware:
             await self.app(scope, receive, send)
             return
         request = Request(scope)
-        actor = self.credentials.authenticate(request.headers.get("authorization", ""))
+        if self.local_owner and not request.headers.get("authorization"):
+            await self.app(scope, receive, send)
+            return
+        try:
+            credentials = self.credentials.current()
+            actor = credentials.authenticate(request.headers.get("authorization", ""))
+        except SettingsError:
+            actor = None
         if actor is None:
             await JSONResponse({"code": "UNAUTHENTICATED", "detail": "A configured actor bearer token is required."}, status_code=401, headers={"WWW-Authenticate": "Bearer"})(scope, receive, send)
             return
@@ -229,4 +274,55 @@ class ActorAuthorizationMiddleware:
         except StudioError as exc:
             await JSONResponse(exc.body(), status_code=exc.status)(scope, receive, send)
             return
-        await self.app(scope, receive, send)
+        token = _REQUEST_ACTOR.set(actor.actor_id)
+        names = _ACTOR_NAMES.set({entry.actor_id: entry.display_name or entry.actor_id
+                                  for _, entry in credentials.entries})
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            _ACTOR_NAMES.reset(names)
+            _REQUEST_ACTOR.reset(token)
+
+
+class LocalTeamAuthorizationMiddleware:
+    """Trusted launch identity on a member's own loopback Runtime, never request-supplied.
+
+    Viewer restrictions apply to the actual local APIs, including agent calls.
+    Remote revocation remains read-only until an authoritative recheck restores a role.
+    """
+    def __init__(self, app: ASGIApp, *, state):
+        self.app, self.state = app, state
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        path = scope.get("path", "")
+        if scope["type"] != "http" or not path.startswith("/api/") or path in _OPEN_PATHS:
+            await self.app(scope, receive, send)
+            return
+        if scope.get("state", {}).get("actor") is not None:
+            await self.app(scope, receive, send)
+            return
+        settings = self.state.settings
+        sync = getattr(self.state, "team_sync", None)
+        from .sync_state import local_team_role
+        role = sync.role if sync is not None else local_team_role(settings)
+        actions = frozenset({"read"}) if role in {"viewer", "revoked"} else frozenset({"read", "propose", "accept"} if role == "moderator" else {"read", "propose"})
+        actor = AuthenticatedActor(settings.team_actor_id, ((settings.sync_project_id or bound_project(self.state).project_id, actions),), settings.team_actor_name)
+        action = request_action(scope.get("method", ""), path, shared_project=False)
+        if action not in actions:
+            await JSONResponse({"code":"ACTION_FORBIDDEN", "detail":"This project is read-only for your membership."}, status_code=403)(scope, receive, send)
+            return
+        scope.setdefault("state", {})["actor"] = actor
+        token = _REQUEST_ACTOR.set(actor.actor_id)
+        display_names = dict(getattr(sync, "actor_names", {}))
+        if settings.team_owner:
+            try:
+                display_names.update({entry.actor_id: entry.display_name or entry.actor_id
+                    for _, entry in read_actor_credentials(settings.actors_file, settings.project_dir).entries})
+            except SettingsError:
+                pass
+        names = _ACTOR_NAMES.set({**display_names, actor.actor_id: actor.display_name or actor.actor_id})
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            _ACTOR_NAMES.reset(names)
+            _REQUEST_ACTOR.reset(token)

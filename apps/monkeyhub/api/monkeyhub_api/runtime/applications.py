@@ -60,6 +60,7 @@ class Applications:
         self.supervisor = WorkerSupervisor()
         self._lock = threading.RLock()
         self._closing = False
+        self.teams = None
 
     def statuses(self, *, project_dir: str | None = None) -> list[AppStatus]:
         return [self.status(app_id, project_dir=project_dir) for app_id in APPS]
@@ -181,7 +182,10 @@ class Applications:
                 try:
                     project_id = ProjectManifest.from_dict(json.loads((Path(selected_project) / "project.json").read_text(encoding="utf-8-sig"))).project_id
                 except (OSError, ValueError, TypeError) as exc:
-                    raise HubFailure(409, "PROJECT_REQUIRED", "The selected folder does not contain a valid project manifest.") from exc
+                    team = self.teams.settings.by_path(selected_project) if self.teams else None
+                    if team is None or team["kind"] != "member":
+                        raise HubFailure(409, "PROJECT_REQUIRED", "The selected folder does not contain a valid project manifest.") from exc
+                    project_id = team["projectId"]
                 environ["ARCHFLOW_STUDIO_CACHE_DIR"] = str(self.project_cache_dir(project_id, selected_project))
             self.supervisor.start(WorkerLaunch(
                 worker_id=key, service_id=service, project_id=project_id, project_dir=selected_project,
@@ -204,7 +208,7 @@ class Applications:
         if settings.project_dir is None:
             raise HubFailure(409, "PROJECT_REQUIRED", "Choose a complete project folder before opening a project workspace.")
         project = Path(settings.project_dir)
-        if not (project / "project.json").is_file():
+        if not (project / "project.json").is_file() and not (self.teams and self.teams.settings.by_path(str(project))):
             raise HubFailure(409, "PROJECT_REQUIRED", "The selected folder does not contain project.json. Choose a complete project folder.")
         preferences = read_user_settings()
         # The same preference owner supplies defaults; unrelated shell environment
@@ -233,6 +237,8 @@ class Applications:
                 environ["ARCHFLOW_STUDIO_RENDER_TIMEOUT_S"] = str(preferences.render_timeout_s)
             if render_key:
                 environ["ARCHFLOW_STUDIO_RENDER_API_KEY"] = render_key
+        if self.teams:
+            environ.update(self.teams.environment(str(project)))
         return args + ["--host", "127.0.0.1"], environ
 
     def stop(self, app_id: AppId, *, project_dir: str | None = None) -> AppStatus:

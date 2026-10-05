@@ -345,3 +345,16 @@ Git 跟踪的路径，不论谁写的文件，放错就失败（#553）：
 每次搬迁的完成标准是新位置能独立测试、宿主经明确入口调用、原使用流程仍可运行，不是新目录已经出现。
 
 第一轮没有留下兼容层：没有 shim、别名包、转发存根或占位文档，也没有按旧布局运行的代码路径。旧路径只作为历史出现：7.1 的映射、注明日期或基线的决定记录、设计、审计与探针文字、钉在具体提交上的永久链接、archcheck 为 #358 之前的提交保留的 `LEGACY_*` 读法、按 sha 核对的检索语料、在旧提交上运行旧布局的跨版本记忆测试，以及 6.2 所列安装包里的位置。`tools/tests` 在临时仓库里搭的合成目录树不指向本仓库，其中不少沿用搬迁前的根布局。
+
+### Project peer transport (M1, #618)
+
+`packages/monkeymesh/` owns only the Hub-started Iroh TCP helper and its Python
+process adapter. It does not parse HTTP, own membership, or persist project
+state. This is a new owner because no existing package owns peer transport.
+`hub.shell` owns `settings/team.py` and `team/`: device identity, invitations,
+roles, the restricted member ingress, and connections to each local Runtime.
+The transport forwards into this limited ingress, never the general Hub API.
+`project_runtime.binding` owns synchronization and the external resumable cache;
+P036 exports and validates retained closures and owns every replica write.
+The package builder compiles the locked native source and bundles its executable
+at `packages/monkeymesh/bin`; Python ships at the existing bundle package root.

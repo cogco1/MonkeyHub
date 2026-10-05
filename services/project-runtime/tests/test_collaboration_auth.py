@@ -77,7 +77,7 @@ class CollaborationAuthTests(unittest.TestCase):
                 if not path.startswith("/api/"):
                     continue
                 if method == "post" and path in {"/api/drawings/plans/status", "/api/drawing-recipes/inspect",
-                                                 "/api/memory/about"}:
+                                                 "/api/memory/about", "/api/sync/files/batch", "/api/sync/files/missing"}:
                     continue  # A body-carrying read, exercised with real actor grants below.
                 checked += 1
                 with self.subTest(method=method, path=path):

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 import gc
 import hashlib
 import os
@@ -455,6 +456,46 @@ class IndexedReadTests(WorkingSourceFixture):
         self.assertIsNotNone(keeper.index._lease)
         with self.assertRaises(IndexLocked, msg="index.lock is held"):
             _WriterLease(self.index_dir)
+        self.assertEqual(self.indexed.get("/api/artifacts").content, self.client.get("/api/artifacts").content)
+
+    def test_automatic_pull_keeps_the_binding_held_by_an_active_candidate_job(self) -> None:
+        state = self.indexed_app.state
+        state.settings = replace(state.settings, sync_automatic=True,
+                                 sync_url="http://127.0.0.1:1", sync_token="fixture-only",
+                                 sync_project_id=PROJECT_ID, team_actor_id="member-fixture",
+                                 team_role="designer", team_state_file=self.cache_dir.parent / "role.json")
+        old = self.binding()
+        keeper = old.await_index(30)
+        lease, layout = keeper.index._lease, old.known_layout()
+        started, resume = threading.Event(), threading.Event()
+
+        def active_job():
+            # A candidate job holds its binding across an automatic pull.
+            held = bound_project(state)
+            started.set()
+            self.assertTrue(resume.wait(30))
+            return held, held.repository.load_run(REFERENCE_RUN_ID), held.known_layout()
+
+        with ThreadPoolExecutor(1) as pool:
+            job = pool.submit(active_job)
+            try:
+                self.assertTrue(started.wait(30))
+                pulled = pull_shared_project(state, client=_SharedProject(self.repository))
+                self.assertEqual(pulled.project_id, PROJECT_ID)
+                self.assertIs(bound_project(state), old)
+                self.assertIs(old.await_index(30), keeper)
+                self.assertTrue(keeper._thread.is_alive())
+                self.assertIs(keeper.index._lease, lease)
+                with self.assertRaises(IndexLocked):
+                    _WriterLease(self.index_dir)
+            finally:
+                resume.set()
+            held, run, held_layout = job.result(30)
+        self.assertIs(held, old)
+        self.assertIs(held_layout, layout)
+        self.assertIsNotNone(run)
+        self.assertEqual([thread for thread in threading.enumerate() if thread.name.startswith("project-index:")],
+                         [keeper._thread], "automatic pull keeps exactly one keeper")
         self.assertEqual(self.indexed.get("/api/artifacts").content, self.client.get("/api/artifacts").content)
 
     def test_a_binding_nobody_holds_stops_its_keeper(self) -> None:

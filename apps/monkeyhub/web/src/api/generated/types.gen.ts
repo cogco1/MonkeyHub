@@ -1419,6 +1419,24 @@ export type JobDto = {
 };
 
 /**
+ * JoinRequest
+ */
+export type JoinRequest = {
+    /**
+     * Invitation
+     */
+    invitation: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
  * ModelSourceDto
  */
 export type ModelSourceDto = {
@@ -1841,6 +1859,16 @@ export type ReviewJudgementDto = {
 };
 
 /**
+ * RoleRequest
+ */
+export type RoleRequest = {
+    /**
+     * Role
+     */
+    role: 'viewer' | 'designer' | 'moderator' | 'revoked';
+};
+
+/**
  * RollbackUpdate
  */
 export type RollbackUpdate = {
@@ -1981,6 +2009,24 @@ export type RuntimeProjectRequest = {
      * Projectid
      */
     projectId: string;
+};
+
+/**
+ * ShareRequest
+ */
+export type ShareRequest = {
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Role
+     */
+    role?: 'viewer' | 'designer' | 'moderator';
 };
 
 /**
@@ -2292,6 +2338,154 @@ export type IntegrationStatusApiIntegrationsGetResponses = {
 };
 
 export type IntegrationStatusApiIntegrationsGetResponse = IntegrationStatusApiIntegrationsGetResponses[keyof IntegrationStatusApiIntegrationsGetResponses];
+
+export type ShareApiTeamSharePostData = {
+    body: ShareRequest;
+    path?: never;
+    query?: never;
+    url: '/api/team/share';
+};
+
+export type ShareApiTeamSharePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ShareApiTeamSharePostError = ShareApiTeamSharePostErrors[keyof ShareApiTeamSharePostErrors];
+
+export type ShareApiTeamSharePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type JoinApiTeamJoinPostData = {
+    body: JoinRequest;
+    path?: never;
+    query?: never;
+    url: '/api/team/join';
+};
+
+export type JoinApiTeamJoinPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type JoinApiTeamJoinPostError = JoinApiTeamJoinPostErrors[keyof JoinApiTeamJoinPostErrors];
+
+export type JoinApiTeamJoinPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type ProjectsApiTeamProjectsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/team/projects';
+};
+
+export type ProjectsApiTeamProjectsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type StatusApiTeamProjectsProjectIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: never;
+    url: '/api/team/projects/{project_id}';
+};
+
+export type StatusApiTeamProjectsProjectIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type StatusApiTeamProjectsProjectIdGetError = StatusApiTeamProjectsProjectIdGetErrors[keyof StatusApiTeamProjectsProjectIdGetErrors];
+
+export type StatusApiTeamProjectsProjectIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type ResumeApiTeamProjectsProjectIdResumePostData = {
+    body?: never;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+    };
+    query?: never;
+    url: '/api/team/projects/{project_id}/resume';
+};
+
+export type ResumeApiTeamProjectsProjectIdResumePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ResumeApiTeamProjectsProjectIdResumePostError = ResumeApiTeamProjectsProjectIdResumePostErrors[keyof ResumeApiTeamProjectsProjectIdResumePostErrors];
+
+export type ResumeApiTeamProjectsProjectIdResumePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type RoleApiTeamProjectsProjectIdMembersActorIdPutData = {
+    body: RoleRequest;
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: string;
+        /**
+         * Actor Id
+         */
+        actor_id: string;
+    };
+    query?: never;
+    url: '/api/team/projects/{project_id}/members/{actor_id}';
+};
+
+export type RoleApiTeamProjectsProjectIdMembersActorIdPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RoleApiTeamProjectsProjectIdMembersActorIdPutError = RoleApiTeamProjectsProjectIdMembersActorIdPutErrors[keyof RoleApiTeamProjectsProjectIdMembersActorIdPutErrors];
+
+export type RoleApiTeamProjectsProjectIdMembersActorIdPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type UpdateStatusApiUpdatesStatusGetData = {
     body?: never;
