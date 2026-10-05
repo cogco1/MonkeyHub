@@ -277,12 +277,14 @@ class NativeHistoryBoundaryTests(unittest.TestCase):
         from monkeyhub_api.chat.continuation import NativeHistoryBoundary
         before = deepcopy(self.prefix)
         boundary = self.release_boundary(self.prefix, "native-1", 7)
-        expected = {"sessionId": "native-1", "generation": 7, "items": [
+        expected = {"sessionId": "native-1", "generation": 7, "contentMode": "text", "items": [
             {"id": "u1", "role": "user", "contentDigest": canonical_digest(self.prefix[0]["update"]["content"]["text"])},
             {"id": "a1", "role": "assistant", "contentDigest": canonical_digest("Earlier answer")}]}
         self.assertEqual(boundary.model_dump(), expected)
         self.assertNotIn("Internal Hub wrapper", boundary.model_dump_json())
         self.assertEqual(NativeHistoryBoundary.model_validate_json(boundary.model_dump_json()), boundary)
+        legacy = {key: value for key, value in expected.items() if key != "contentMode"}
+        self.assertEqual(NativeHistoryBoundary.model_validate(legacy), boundary)
         self.assertEqual(public_history(self.prefix, "native-1", "now", {}, boundary), [])
         self.assertEqual(self.prefix, before)
         self.assertEqual(boundary.model_dump(), expected)

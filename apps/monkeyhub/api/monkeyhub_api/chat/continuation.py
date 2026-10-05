@@ -41,6 +41,9 @@ class NativeHistoryBoundary(BaseModel):
 
     sessionId: str = Field(min_length=1, max_length=200)
     generation: int = Field(ge=1)
+    # Old retained boundaries continue to verify their text projection exactly.
+    # Confirmed first imports retain and verify every public content block.
+    contentMode: Literal["text", "blocks"] = "text"
     items: list[_NativeHistoryBoundaryItem] = Field(max_length=_MAX_HISTORY_CHUNKS)
 
     _identity = field_validator("sessionId")(_well_formed_id)
@@ -112,8 +115,16 @@ def _raw_history(events: list[dict], session_id: str) -> list[tuple[str, _Public
     return [(identifier, role, "".join(parts)) for identifier, role, parts in rows]
 
 
-def release_boundary(events: list[dict], session_id: str, generation: int) -> NativeHistoryBoundary:
+def release_boundary(events: list[dict], session_id: str, generation: int,
+                     *, include_media: bool = False) -> NativeHistoryBoundary:
     """Keep identities and raw-content digests, never the Hub's provider wrappers."""
+    if include_media:
+        from .external_import import public_items
+
+        return NativeHistoryBoundary(sessionId=session_id, generation=generation, contentMode="blocks", items=[
+            _NativeHistoryBoundaryItem(id=item.id, role=item.role, contentDigest=canonical_digest(list(item.blocks)))
+            for item in public_items(events, session_id)
+        ])
     return NativeHistoryBoundary(sessionId=session_id, generation=generation, items=[
         _NativeHistoryBoundaryItem(id=identifier, role=role, contentDigest=canonical_digest(text))
         for identifier, role, text in _raw_history(events, session_id)

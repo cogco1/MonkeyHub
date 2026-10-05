@@ -90,6 +90,8 @@ class FakeAgent:
 
     async def list_sessions(self, cwd=None, cursor=None, **kwargs):
         log("list", cwd=cwd, cursor=cursor)
+        if os.environ.get("ACP_LIST_LOOP") == "1":
+            return ListSessionsResponse(sessions=[], next_cursor="repeated-cursor")
         if os.environ.get("ACP_LIST_PAGES") == "1" and cursor is None:
             return ListSessionsResponse(sessions=[], next_cursor="page-2")
         return ListSessionsResponse(sessions=[SessionInfo(session_id=self.session_id, cwd=str(root))])
@@ -116,10 +118,10 @@ class FakeAgent:
             await self.client.session_update(session_id=self.session_id,
                 update=UserMessageChunk(session_update="user_message_chunk", message_id="old agent message",
                     content=TextContentBlock(type="text", text="wrong role")))
-        if case == "ignored":
+        if case in {"ignored", "import-media"}:
             await self.client.session_update(session_id=self.session_id,
                 update=AgentMessageChunk(session_update="agent_message_chunk", message_id="media",
-                    content=ImageContentBlock(type="image", mime_type="image/png", data="AA==")))
+                    content=ImageContentBlock(type="image", mime_type="image/png", data=os.environ.get("ACP_INLINE_IMAGE", "AA=="))))
             await self.client.session_update(session_id=self.session_id,
                 update=ToolCallStart(session_update="tool_call", tool_call_id="history-tool", title="Retained tool",
                     kind="read", status="completed", raw_output={"secret-like fixture": "not public history"}))
@@ -273,6 +275,68 @@ class AcpSessionTests(unittest.TestCase):
         self.assertEqual(len(self.calls("new")), 1)
         self.assertEqual(len(self.calls("load")), 1)
         self.assertEqual(self.calls("prompt")[-1]["sessionId"], self.ids[0])
+
+    def test_native_import_preview_reads_metadata_without_acquiring_a_writer(self):
+        session = self.make_session(ACP_LIST_PAGES="1", ACP_WRITER_BUSY="1")
+        metadata = session.inspect_native("fixture/session:not-a-uuid", 10)
+        self.assertEqual(metadata.session_id, "fixture/session:not-a-uuid")
+        self.assertEqual(metadata.cwd, str(self.root))
+        self.assertTrue(metadata.can_restore)
+        self.assertEqual([row["cursor"] for row in self.calls("list")], [None, "page-2"])
+        self.assertEqual(self.calls("load"), [])
+        self.assertEqual(self.calls("new"), [])
+        self.assertEqual(self.calls("prompt"), [])
+        self.assertIsNone(session._session_id)
+        self.assertIsNone(session._process)
+        self.assertFalse(session.history_verified)
+
+    def test_native_import_preview_can_report_an_adapter_without_restore(self):
+        session = self.make_session(ACP_NO_LOAD="1")
+        metadata = session.inspect_native("fixture/session:not-a-uuid", 10)
+        self.assertFalse(metadata.can_restore)
+        self.assertEqual(self.calls("load"), [])
+        self.assertEqual(self.calls("new"), [])
+
+    def test_native_import_preview_unknown_source_never_creates_a_session(self):
+        session = self.make_session()
+        with self.assertRaisesRegex(AcpSessionError, "cannot find"):
+            session.inspect_native("unknown-native-id", 10)
+        self.assertEqual(self.calls("load"), [])
+        self.assertEqual(self.calls("new"), [])
+        self.assertEqual(self.calls("prompt"), [])
+        self.assertIsNone(session._process)
+
+    def test_native_import_preview_stops_repeated_metadata_cursors(self):
+        session = self.make_session(ACP_LIST_LOOP="1")
+        with self.assertRaisesRegex(AcpSessionError, "cannot find"):
+            session.inspect_native("unknown-native-id", 10)
+        self.assertEqual(len(self.calls("list")), 2)
+        self.assertEqual(self.calls("load"), [])
+        self.assertIsNone(session._process)
+
+    def test_native_import_preview_does_not_dispose_an_existing_native_writer(self):
+        session = self.make_session()
+        self.prompt(session)
+        process = session._process
+        with self.assertRaisesRegex(AcpSessionError, "fresh ACP"):
+            session.inspect_native(self.ids[0], 10)
+        self.assertIs(session._process, process)
+        self.assertIsNone(process.returncode)
+        self.assertTrue(session.history_verified)
+
+    def test_native_import_load_and_owned_snapshot_retain_public_media_payloads(self):
+        original = self.make_session()
+        self.prompt(original)
+        original.close()
+        restored = self.make_session(ACP_HISTORY_CASE="import-media", ACP_INLINE_IMAGE=PNG_IMAGE)
+        history = restored.restore(self.ids[0], str(self.root), 10, include_media=True)
+        self.assertEqual([item["update"]["content"]["type"] for item in history], ["image", "text", "text"])
+        self.assertEqual(history[0]["update"]["content"]["data"], PNG_IMAGE)
+        self.assertEqual(history[0]["update"]["messageId"], "media")
+        restored.confirm_history(self.ids[0])
+        self.assertEqual(restored.snapshot(self.ids[0], 10), history)
+        self.assertEqual(len(self.calls("new")), 1)
+        self.assertEqual(len(self.calls("prompt")), 1)
 
     def test_explicit_restore_refuses_unknown_or_wrong_cwd_without_load(self):
         for identifier, cwd in [("unknown", str(self.root)), ("fixture/session:not-a-uuid", str(self.root.parent))]:

@@ -10,6 +10,7 @@ import asyncio
 from collections import deque
 from concurrent.futures import Future, InvalidStateError
 from contextlib import suppress
+from dataclasses import dataclass
 import subprocess
 import sys
 import threading
@@ -26,6 +27,7 @@ from acp.schema import (
 _STEER_TIMEOUT_S = 60.0
 _MAX_HISTORY_CHUNKS = 50_000
 _MAX_HISTORY_RAW_CHARS = 8_000_000
+_MAX_HISTORY_MEDIA_CHARS = 56 * 1024 * 1024
 # Updates that only a turn in progress produces.
 _TURN_ACTIVITY = {"agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update", "plan"}
 
@@ -36,6 +38,16 @@ class AcpSessionError(RuntimeError):
 
 class AcpCancelled(AcpSessionError):
     """The user cancelled this turn."""
+
+
+@dataclass(frozen=True)
+class NativeSessionMetadata:
+    """Provider-reported identity and execution directory, not a Hub binding."""
+
+    session_id: str
+    cwd: str
+    can_restore: bool
+    title: str | None = None
 
 
 class CodexAcpSession:
@@ -72,6 +84,8 @@ class CodexAcpSession:
         self._replaying = False
         self._history_updates: list[dict] | None = None
         self._history_size = 0
+        self._history_media_size = 0
+        self._include_history_media = False
         self._history_failed = False
         self._history_error: str | None = None
         self._history_expected_id: str | None = None
@@ -200,7 +214,65 @@ class CodexAcpSession:
         finally:
             self._finish_operation()
 
-    def restore(self, session_id: str, expected_cwd: str | None, timeout_s: float) -> list[dict]:
+    def inspect_native(self, session_id: str, timeout_s: float) -> NativeSessionMetadata:
+        """Read session/list on a fresh adapter, then dispose it without loading.
+
+        This is the import preview boundary. It never resumes a native writer,
+        creates a conversation, reads private session files or sends a prompt.
+        """
+        if timeout_s <= 0:
+            raise ValueError("ACP metadata timeout must be positive.")
+        with self._lifecycle_lock:
+            self._begin_operation("inspect")
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    self._inspect_native(session_id, timeout_s), self._loop)
+            except BaseException:
+                self._operation = None
+                self._prompt_lock.release()
+                raise
+        try:
+            return future.result()
+        finally:
+            self._finish_operation()
+
+    async def _inspect_native(self, session_id, timeout_s):
+        if self._session_id is not None:
+            raise AcpSessionError("Metadata inspection requires a fresh ACP connection.")
+        try:
+            async with asyncio.timeout(timeout_s):
+                await self._start()
+                return await self._native_metadata(session_id)
+        except Exception as exc:
+            raise self._history_failure(exc) from exc
+        finally:
+            await self._stop_process()
+
+    async def _native_metadata(self, session_id) -> NativeSessionMetadata:
+        from pathlib import Path
+
+        if (not isinstance(session_id, str) or not session_id or len(session_id) > 200
+                or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in session_id)):
+            raise AcpSessionError("The native session identity is invalid.")
+        cursor, seen = None, set()
+        for _ in range(1000):
+            page = await self._connection.list_sessions(cursor=cursor)
+            metadata = next((row for row in page.sessions if row.session_id == session_id), None)
+            if metadata is not None:
+                cwd = metadata.cwd
+                if not cwd or not Path(cwd).is_absolute() or not Path(cwd).is_dir():
+                    raise AcpSessionError("The provider's original working directory is unavailable on this machine.")
+                title = getattr(metadata, "title", None)
+                return NativeSessionMetadata(session_id, cwd, self._can_load,
+                                             title[:200] if isinstance(title, str) else None)
+            cursor = page.next_cursor
+            if not cursor or cursor in seen:
+                break
+            seen.add(cursor)
+        raise AcpSessionError("The installed Codex provider cannot find this native session. No new conversation was created.")
+
+    def restore(self, session_id: str, expected_cwd: str | None, timeout_s: float,
+                *, include_media: bool = False) -> list[dict]:
         """Resolve a fresh connection's native identity and public history.
 
         A known Hub binding may have a source/scratch cwd distinct from its project.
@@ -213,7 +285,7 @@ class CodexAcpSession:
             self._begin_operation("restore")
             try:
                 future = asyncio.run_coroutine_threadsafe(
-                    self._restore(session_id, expected_cwd, timeout_s), self._loop)
+                    self._restore(session_id, expected_cwd, timeout_s, include_media), self._loop)
             except BaseException:
                 self._operation = None
                 self._prompt_lock.release()
@@ -259,7 +331,7 @@ class CodexAcpSession:
                 detail += f": {reason}"
         return AcpSessionError(f"Native session restoration failed: {detail}")
 
-    async def _restore(self, session_id, expected_cwd, timeout_s):
+    async def _restore(self, session_id, expected_cwd, timeout_s, include_media=False):
         import os
         from pathlib import Path
 
@@ -270,22 +342,11 @@ class CodexAcpSession:
                 await self._start()
                 if not self._can_load:
                     raise AcpSessionError("This ACP adapter does not support restoring sessions.")
-                cursor, seen, metadata = None, set(), None
-                while True:
-                    page = await self._connection.list_sessions(cursor=cursor)
-                    metadata = next((row for row in page.sessions if row.session_id == session_id), None)
-                    if metadata is not None:
-                        break
-                    cursor = page.next_cursor
-                    if not cursor or cursor in seen:
-                        raise AcpSessionError("The installed Codex provider cannot find this native session. No new conversation was created.")
-                    seen.add(cursor)
+                metadata = await self._native_metadata(session_id)
                 cwd = metadata.cwd
-                if not cwd or not Path(cwd).is_absolute() or not Path(cwd).is_dir():
-                    raise AcpSessionError("The provider's original working directory is unavailable on this machine.")
                 if expected_cwd is not None and os.path.normcase(str(Path(cwd).resolve())) != os.path.normcase(str(Path(expected_cwd).resolve())):
                     raise AcpSessionError("This native session is not bound to this project's directory. Open its original Hub conversation instead.")
-                return await self._load_history(session_id, cwd)
+                return await self._load_history(session_id, cwd, include_media=include_media)
         except Exception as exc:
             # No load was admitted yet: dispose the unused fresh adapter. Once
             # a load succeeds, a local collector failure cannot undo ownership.
@@ -300,15 +361,17 @@ class CodexAcpSession:
             async with asyncio.timeout(timeout_s):
                 if not self._can_load:
                     raise AcpSessionError("This ACP adapter does not support restoring sessions.")
-                return await self._load_history(session_id, self._cwd)
+                return await self._load_history(session_id, self._cwd, include_media=self._include_history_media)
         except Exception as exc:
             if isinstance(exc, AcpSessionError):
                 raise
             raise self._history_failure(exc) from exc
 
-    async def _load_history(self, session_id, cwd):
+    async def _load_history(self, session_id, cwd, *, include_media=False):
         self._history_updates = []
         self._history_size, self._history_failed = 0, False
+        self._history_media_size = 0
+        self._include_history_media = include_media
         self._history_error, self._history_expected_id = None, session_id
         self._history_roles = {}
         with self._lifecycle_lock:
@@ -511,22 +574,28 @@ class CodexAcpSession:
         if update.session_update == "config_option_update":
             self._set_config_options(update.config_options)
         if self._replaying and self._history_updates is not None and update.session_update in {"user_message_chunk", "agent_message_chunk"}:
-            # Public messages only. Native media is not a Hub attachment grant.
+            # Public messages only. Import may collect media payloads; URI-only
+            # references remain references and never grant filesystem reads.
             if self._history_failed:
                 return
             failure = None
             identifier = getattr(update, "message_id", None)
             if session_id != self._history_expected_id:
                 failure = "The provider returned public history for a different native session."
-            elif update.content.type != "text":
+            elif update.content.type != "text" and not self._include_history_media:
                 return
             elif not isinstance(identifier, str) or not identifier or len(identifier) > 500:
                 failure = "This adapter does not provide stable public message identities."
             elif identifier in self._history_roles and self._history_roles[identifier] != update.session_update:
                 failure = "The provider reused a public message identity for different roles."
             else:
-                self._history_size += len(update.content.text)
-                if len(self._history_updates) >= _MAX_HISTORY_CHUNKS or self._history_size > _MAX_HISTORY_RAW_CHARS:
+                if update.content.type == "text":
+                    self._history_size += len(update.content.text)
+                else:
+                    self._history_media_size += len(update.content.model_dump_json(exclude_none=True))
+                if (len(self._history_updates) >= _MAX_HISTORY_CHUNKS
+                        or self._history_size > _MAX_HISTORY_RAW_CHARS
+                        or self._history_media_size > _MAX_HISTORY_MEDIA_CHARS):
                     failure = "This session's public history is too large to restore safely."
             if failure is not None:
                 self._history_failed, self._history_error = True, failure

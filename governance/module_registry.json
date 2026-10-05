@@ -7386,7 +7386,8 @@
         "apps/monkeyhub/web/src/ChatSuggestionCard.css",
         "apps/monkeyhub/web/src/features/componentInfo/",
         "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx",
-        "apps/monkeyhub/api/monkeyhub_api/chat/continuation.py"
+        "apps/monkeyhub/api/monkeyhub_api/chat/continuation.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat/external_import.py"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -7446,7 +7447,8 @@
         "apps/monkeyhub/api/tests/test_chat_progress.py",
         "apps/monkeyhub/web/test/componentInfo.test.ts",
         "apps/monkeyhub/web/test/workspaceWidth.test.ts",
-        "apps/monkeyhub/api/tests/test_chat_continuation.py"
+        "apps/monkeyhub/api/tests/test_chat_continuation.py",
+        "apps/monkeyhub/api/tests/test_external_import.py"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
