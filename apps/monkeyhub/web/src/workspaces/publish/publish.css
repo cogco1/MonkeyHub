@@ -22,7 +22,9 @@
 .publish-element:focus-visible { outline: 3px solid #537bac; }
 .publish-element img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 .publish-resize { position: absolute; bottom: 0; right: 0; width: 14px; height: 14px; background: #537bac; cursor: nwse-resize; }
-.publish-image-status { display: grid; height: 100%; place-items: center; background: #f0f0f0; }
+.publish-image-status { display: grid; height: 100%; place-items: center; overflow: auto; background: #f0f0f0; font-size: var(--hub-font-size-body, 13px); cursor: default; touch-action: auto; }
+.publish-image-error { width: 100%; min-width: 0; padding: 12px; color: var(--ink); background: var(--panel); }
+.publish-image-error .error-panel { margin: 8px 0; }
 .publish-error { padding: 12px; color: var(--danger, #d26565); }
 .publish-error button { margin-left: 12px; }
 .publish-empty { color: var(--muted); line-height: 1.6; }
