@@ -1,32 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-613",
-      "lanes": [
-        {
-          "id": "external-import",
-          "status": "active",
-          "branch": "codex/613-native-windows-validation",
-          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-613-native-windows-validation",
-          "base_ref": "b0d763c3c91b63ee22ec1fd68e655bbc526865b2",
-          "contributor": "Codex",
-          "reviewer": null,
-          "handoff": "Parent-relayed GH-618 agreement: sharedSource, continuedFrom and /continue remain owned by GH-618 at stable 989fac844e760183dc623a17a97bcbf2d4f2aad5. This lane implements native metadata preview, explicit cross-cwd external import, provenance/media preservation and synthetic tests in independent modules on b0d763c3c91b. Provide small models/routes/store/UI integration patches under the approved E: task output for GH-618 to apply hunk-by-hunk; never copy its WIP or whole shared files. No real user-session writes, installation, push or deployment.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/chat/acp_session.py",
-            "apps/monkeyhub/api/monkeyhub_api/chat/continuation.py",
-            "apps/monkeyhub/api/tests/test_acp_session.py",
-            "apps/monkeyhub/api/tests/test_chat_continuation.py",
-            "apps/monkeyhub/api/monkeyhub_api/chat/external_import.py",
-            "apps/monkeyhub/api/tests/test_external_import.py"
-          ],
-          "depends_on": []
-        }
-      ]
-    }
-  ]
+  "items": []
 }
