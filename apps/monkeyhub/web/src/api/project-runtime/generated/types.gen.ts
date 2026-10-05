@@ -1034,6 +1034,60 @@ export type CandidateSeatResultDto = {
 };
 
 /**
+ * CandidateTransferDto
+ */
+export type CandidateTransferDto = {
+    /**
+     * Project Id
+     */
+    project_id: string;
+    /**
+     * Format Version
+     */
+    format_version: number;
+    /**
+     * Mode
+     */
+    mode: 'snapshot' | 'candidate';
+    /**
+     * Head
+     */
+    head: {
+        [key: string]: unknown;
+    };
+    /**
+     * Branches
+     */
+    branches: {
+        [key: string]: unknown;
+    };
+    /**
+     * Root Run Id
+     */
+    root_run_id: string | null;
+    /**
+     * Run Ids
+     */
+    run_ids: Array<string>;
+    /**
+     * Files
+     */
+    files: Array<TransferFileDto>;
+    /**
+     * Contents
+     */
+    contents?: {
+        [key: string]: string;
+    };
+    /**
+     * Retainedrow
+     */
+    retainedRow?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
  * CapabilityDetailDto
  *
  * One capability, and what it means for the project that is bound.
@@ -11902,6 +11956,10 @@ export type StudioHealth = {
      */
     projectBound: boolean;
     /**
+     * Replicainitializing
+     */
+    replicaInitializing?: boolean | null;
+    /**
      * Projectid
      */
     projectId?: string | null;
@@ -12304,6 +12362,102 @@ export type StudyViewDto = {
      * Canonicalstatechanged
      */
     canonicalStateChanged: boolean;
+};
+
+/**
+ * SyncChunkDto
+ */
+export type SyncChunkDto = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Sha256
+     */
+    sha256: string;
+    /**
+     * Size
+     */
+    size: number;
+    /**
+     * Offset
+     */
+    offset?: number;
+    /**
+     * Length
+     */
+    length?: number;
+};
+
+/**
+ * SyncFilesDto
+ */
+export type SyncFilesDto = {
+    /**
+     * Files
+     */
+    files: Array<SyncChunkDto>;
+};
+
+/**
+ * SyncLineDto
+ */
+export type SyncLineDto = {
+    /**
+     * Current
+     */
+    current: string | null;
+    /**
+     * Row
+     */
+    row: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Expectedrevision
+     */
+    expectedRevision?: string | null;
+};
+
+/**
+ * SyncUploadBatchDto
+ */
+export type SyncUploadBatchDto = {
+    /**
+     * Files
+     */
+    files: Array<SyncUploadDto>;
+};
+
+/**
+ * SyncUploadDto
+ */
+export type SyncUploadDto = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Sha256
+     */
+    sha256: string;
+    /**
+     * Size
+     */
+    size: number;
+    /**
+     * Offset
+     */
+    offset?: number;
+    /**
+     * Length
+     */
+    length?: number;
+    /**
+     * Content
+     */
+    content: string;
 };
 
 /**
@@ -18826,7 +18980,7 @@ export type SharedFileApiSyncFilesGetResponses = {
 export type SharedFileApiSyncFilesGetResponse = SharedFileApiSyncFilesGetResponses[keyof SharedFileApiSyncFilesGetResponses];
 
 export type ReceiveCandidateApiSyncCandidatesPostData = {
-    body: ProjectTransferDto;
+    body: CandidateTransferDto;
     headers?: {
         /**
          * X-Monkey-Operation
@@ -18934,6 +19088,279 @@ export type PushCandidateApiSyncPushPostResponses = {
 };
 
 export type PushCandidateApiSyncPushPostResponse = PushCandidateApiSyncPushPostResponses[keyof PushCandidateApiSyncPushPostResponses];
+
+export type SharedFilesApiSyncFilesBatchPostData = {
+    body: SyncFilesDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/sync/files/batch';
+};
+
+export type SharedFilesApiSyncFilesBatchPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SharedFilesApiSyncFilesBatchPostError = SharedFilesApiSyncFilesBatchPostErrors[keyof SharedFilesApiSyncFilesBatchPostErrors];
+
+export type SharedFilesApiSyncFilesBatchPostResponses = {
+    /**
+     * Response Shared Files Api Sync Files Batch Post
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type SharedFilesApiSyncFilesBatchPostResponse = SharedFilesApiSyncFilesBatchPostResponses[keyof SharedFilesApiSyncFilesBatchPostResponses];
+
+export type MissingFilesApiSyncFilesMissingPostData = {
+    body: SyncFilesDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/sync/files/missing';
+};
+
+export type MissingFilesApiSyncFilesMissingPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MissingFilesApiSyncFilesMissingPostError = MissingFilesApiSyncFilesMissingPostErrors[keyof MissingFilesApiSyncFilesMissingPostErrors];
+
+export type MissingFilesApiSyncFilesMissingPostResponses = {
+    /**
+     * Response Missing Files Api Sync Files Missing Post
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type MissingFilesApiSyncFilesMissingPostResponse = MissingFilesApiSyncFilesMissingPostResponses[keyof MissingFilesApiSyncFilesMissingPostResponses];
+
+export type UploadFilesApiSyncFilesUploadPostData = {
+    body: SyncUploadBatchDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/sync/files/upload';
+};
+
+export type UploadFilesApiSyncFilesUploadPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UploadFilesApiSyncFilesUploadPostError = UploadFilesApiSyncFilesUploadPostErrors[keyof UploadFilesApiSyncFilesUploadPostErrors];
+
+export type UploadFilesApiSyncFilesUploadPostResponses = {
+    /**
+     * Response Upload Files Api Sync Files Upload Post
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type UploadFilesApiSyncFilesUploadPostResponse = UploadFilesApiSyncFilesUploadPostResponses[keyof UploadFilesApiSyncFilesUploadPostResponses];
+
+export type SharedIdentityApiSyncIdentityGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/sync/identity';
+};
+
+export type SharedIdentityApiSyncIdentityGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SharedIdentityApiSyncIdentityGetError = SharedIdentityApiSyncIdentityGetErrors[keyof SharedIdentityApiSyncIdentityGetErrors];
+
+export type SharedIdentityApiSyncIdentityGetResponses = {
+    /**
+     * Response Shared Identity Api Sync Identity Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type SharedIdentityApiSyncIdentityGetResponse = SharedIdentityApiSyncIdentityGetResponses[keyof SharedIdentityApiSyncIdentityGetResponses];
+
+export type SharedLinesApiSyncLinesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/sync/lines';
+};
+
+export type SharedLinesApiSyncLinesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SharedLinesApiSyncLinesGetError = SharedLinesApiSyncLinesGetErrors[keyof SharedLinesApiSyncLinesGetErrors];
+
+export type SharedLinesApiSyncLinesGetResponses = {
+    /**
+     * Response Shared Lines Api Sync Lines Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type SharedLinesApiSyncLinesGetResponse = SharedLinesApiSyncLinesGetResponses[keyof SharedLinesApiSyncLinesGetResponses];
+
+export type ReceiveLineApiSyncLinePutData = {
+    body: SyncLineDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/sync/line';
+};
+
+export type ReceiveLineApiSyncLinePutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReceiveLineApiSyncLinePutError = ReceiveLineApiSyncLinePutErrors[keyof ReceiveLineApiSyncLinePutErrors];
+
+export type ReceiveLineApiSyncLinePutResponses = {
+    /**
+     * Response Receive Line Api Sync Line Put
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ReceiveLineApiSyncLinePutResponse = ReceiveLineApiSyncLinePutResponses[keyof ReceiveLineApiSyncLinePutResponses];
+
+export type SyncStatusApiSyncStatusGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/sync/status';
+};
+
+export type SyncStatusApiSyncStatusGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SyncStatusApiSyncStatusGetError = SyncStatusApiSyncStatusGetErrors[keyof SyncStatusApiSyncStatusGetErrors];
+
+export type SyncStatusApiSyncStatusGetResponses = {
+    /**
+     * Response Sync Status Api Sync Status Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type SyncStatusApiSyncStatusGetResponse = SyncStatusApiSyncStatusGetResponses[keyof SyncStatusApiSyncStatusGetResponses];
 
 export type ReadCurrentWorkingDraftApiWorkingDraftGetData = {
     body?: never;

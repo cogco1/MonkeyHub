@@ -162,6 +162,7 @@ class PackageAdapterTests(unittest.TestCase):
             "packages/monkeyfab/src/monkeyfab/__main__.py", "packages/monkeyfab/pyproject.toml",
             "packages/monkeyfab/tests/test_cli.py",
             "packages/monkeycontrol/src/monkeycontrol/__init__.py",
+            "packages/monkeymesh/src/monkeymesh/__init__.py",
             "packages/monkeycontrol/src/monkeycontrol/hosts/execution_host.ps1",
             "packages/monkeydiagram/src/monkeydiagram/__init__.py", "packages/monkeydiagram/tests/test_svg.py",
             "packages/archflow/src/archflow/__init__.py", "packages/archflow/tests/test_project_repository.py",
@@ -561,6 +562,27 @@ class DesktopPackageTests(unittest.TestCase):
             self.assertEqual((bundle / "MonkeyHub.exe").read_bytes(), executable.read_bytes())
             self.assertEqual((bundle / "_runtime/desktop-Cargo.lock").read_bytes(), (desktop / "Cargo.lock").read_bytes())
             self.assertEqual(result["sourceCommit"], "a" * 40)
+            self.assertEqual(result["executableSha256"], builder.sha256(executable))
+
+    def test_project_transport_is_locked_and_bundled_from_the_same_snapshot(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            build = Path(temporary)
+            source, bundle = build / "source", build / "bundle"
+            native = source / "packages/monkeymesh/native"
+            native.mkdir(parents=True)
+            (native / "Cargo.toml").write_text('[package]\nversion="0.1.0"\n', encoding="utf-8")
+            (native / "Cargo.lock").write_text("version = 4\n", encoding="utf-8")
+            (bundle / "_runtime").mkdir(parents=True)
+            executable = build / "mesh-target/release/monkeymesh-tcp.exe"
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"synthetic native helper")
+            cargo = build / "cargo.exe"
+            with patch.object(builder, "run", return_value="") as run:
+                result = builder.build_mesh(source, bundle, cargo, {})
+            self.assertEqual(run.call_args.args[0], [str(cargo), "build", "--locked", "--release", "--target-dir", str(build / "mesh-target")])
+            self.assertEqual(run.call_args.kwargs["cwd"], native)
+            self.assertEqual((bundle / "packages/monkeymesh/bin/monkeymesh-tcp.exe").read_bytes(), executable.read_bytes())
+            self.assertEqual((bundle / "_runtime/mesh-Cargo.lock").read_bytes(), (native / "Cargo.lock").read_bytes())
             self.assertEqual(result["executableSha256"], builder.sha256(executable))
 
     def test_missing_desktop_compiler_fails_before_staging_writes(self):

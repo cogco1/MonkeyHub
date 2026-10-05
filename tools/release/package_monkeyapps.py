@@ -72,6 +72,7 @@ BUNDLED_PACKAGES = {
     "monkeydiagram": "packages/monkeydiagram/src/monkeydiagram",
     "monkeymonitor": "packages/monkeymonitor/src/monkeymonitor",
     "monkeycontrol": "packages/monkeycontrol/src/monkeycontrol",
+    "monkeymesh": "packages/monkeymesh/src/monkeymesh",
 }
 # The kernel's and the CAD package's manifests name the Python requirements the embedded
 # runtime installs (prepare_runtime): the CAD package's own, its OCCT kernel with the
@@ -134,7 +135,7 @@ STARTUP_IMPORTS = ("import monkeyhub_api.app.main, monkeyhub_api.app.composition
 # configuration, projects, credentials, caches and local WIP never enter a ZIP.
 SOURCE_PATHS = (
     *BUNDLED_PACKAGES.values(), KERNEL_MANIFEST, CAD_MANIFEST,
-    "services/project-runtime",
+    "services/project-runtime", "packages/monkeymesh/native",
     "apps/monkeyhub", FAB_SOURCE, "packages/web-shared", "OPEN_MONKEYHUB.cmd",
     "README.md", "SECURITY.md", "pyproject.toml", *BUNDLED_TOOLS, "governance/module_registry.json",
 )
@@ -486,6 +487,23 @@ def smoke_runtime(bundle: Path) -> None:
     print("Bundled MonkeyFab H2S prepare and local send dry-run: PASS", flush=True)
 
 
+def build_mesh(source: Path, bundle: Path, cargo: Path, environment: dict[str, str]) -> dict[str, str]:
+    """Build the Hub-owned stream transport from the same locked source snapshot."""
+    native = source / "packages/monkeymesh/native"
+    target = source.parent / "mesh-target"
+    run([str(cargo), "build", "--locked", "--release", "--target-dir", str(target)],
+        cwd=native, environment=environment)
+    executable = target / "release/monkeymesh-tcp.exe"
+    if not executable.is_file():
+        raise ValueError("The Windows project transport was not built.")
+    destination = bundle / "packages/monkeymesh/bin"
+    destination.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(executable, destination / executable.name)
+    shutil.copy2(native / "Cargo.lock", bundle / "_runtime/mesh-Cargo.lock")
+    metadata = tomllib.loads((native / "Cargo.toml").read_text(encoding="utf-8"))["package"]
+    return {"version": metadata["version"], "cargoLockSha256": sha256(native / "Cargo.lock"), "executableSha256": sha256(executable)}
+
+
 def build_desktop(source: Path, bundle: Path, commit: str, cargo: Path,
                   environment: dict[str, str]) -> dict[str, str]:
     """Compile the thin host from the same selected snapshot as its Hub."""
@@ -637,19 +655,20 @@ def node_components(source: Path, bundle: Path) -> list[dict[str, object]]:
     return components
 
 
-def rust_components(bundle: Path, desktop: dict[str, str]) -> list[dict[str, object]]:
+def rust_components(bundle: Path, desktop: dict[str, str], *, executable: str = "MonkeyHub.exe",
+                    lockfile: str = "_runtime/desktop-Cargo.lock") -> list[dict[str, object]]:
     """The built executable, and the crates its shipped Cargo lock pins.
 
     Cargo resolves one lock for every target, feature and build script, so a
     locked crate is a build input rather than proof of compiled-in code. Only
     the executable itself is recorded as shipped.
     """
-    locked = tomllib.loads((bundle / "_runtime/desktop-Cargo.lock").read_text(encoding="utf-8"))
+    locked = tomllib.loads((bundle / lockfile).read_text(encoding="utf-8"))
     components = [sbom_component(
-        "application", "MonkeyHub.exe", desktop["version"], "monkeyhub:MonkeyHub.exe",
-        (SHIPPED_IN, "MonkeyHub.exe"),
+        "application", Path(executable).name, desktop["version"], "monkeyhub:" + executable,
+        (SHIPPED_IN, executable),
         hashes=[{"alg": "SHA-256", "content": desktop["executableSha256"]}])]
-    place = (BUILD_INPUT, "_runtime/desktop-Cargo.lock -> MonkeyHub.exe")
+    place = (BUILD_INPUT, f"{lockfile} -> {executable}")
     for crate in locked.get("package", ()):
         if not str(crate.get("source", "")).startswith(CRATES_IO):
             continue  # The local desktop crate ships as MonkeyHub.exe itself.
@@ -703,6 +722,9 @@ def sbom_document(source: Path, bundle: Path, build_info: dict, version: str) ->
     ]
     if "desktop" in build_info:
         components.extend(rust_components(bundle, build_info["desktop"]))
+    if "projectTransport" in build_info:
+        components.extend(rust_components(bundle, build_info["projectTransport"],
+            executable="packages/monkeymesh/bin/monkeymesh-tcp.exe", lockfile="_runtime/mesh-Cargo.lock"))
     components = merged_components(components)
     return {
         "bomFormat": "CycloneDX",
@@ -1164,9 +1186,9 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
     staging, output, cache = (external(path, source_root) for path in (staging, output, cache))
     commit = run(["git", "rev-parse", "--verify", f"{source_ref}^{{commit}}"], cwd=source_root, capture=True)
     version = commit[:12]
+    if cargo is None or not cargo.is_file():
+        raise ValueError("The project transport build needs Rust/MSVC Cargo; supply --cargo or add it to PATH.")
     if desktop:
-        if cargo is None or not cargo.is_file():
-            raise ValueError("The desktop build needs Rust/MSVC Cargo; supply --cargo or add it to PATH.")
         version += "-desktop"
     staging.mkdir(parents=True, exist_ok=True)
     output.mkdir(parents=True, exist_ok=True)
@@ -1189,6 +1211,7 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
     collect_application(source, bundle, commit, node=node)
     prepare_runtime(source, bundle / "_runtime/python", cache, environment)
     bytecode = compile_bytecode(bundle)
+    mesh_info = build_mesh(source, bundle, cargo, environment)
     smoke_runtime(bundle)
     desktop_info = build_desktop(source, bundle, commit, cargo, environment) if desktop else None
     # Version + exact inputs are distribution metadata, not project records.
@@ -1196,6 +1219,7 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
     # accepts bytecode in a patch (apps/monkeyhub/installer/patch.py).
     build_info = {
         "sourceCommit": commit, "target": "windows-x64", "channel": "candidate",
+        "projectTransport": mesh_info,
         **({"desktop": desktop_info} if desktop_info else {}),
         "pythonVersion": PYTHON_VERSION, "pythonUrl": PYTHON_URL, "pythonSha256": PYTHON_SHA256,
         "pythonBytecode": bytecode,
@@ -1276,7 +1300,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--npm-cli", type=Path, help="path to npm/bin/npm-cli.js; no shell or npm.cmd interpolation")
     parser.add_argument("--desktop", action="store_true", help="build MonkeyHub.exe from the same snapshot using Rust/MSVC")
     parser.add_argument("--cargo", type=Path, default=Path(shutil.which("cargo") or "cargo.exe"),
-                        help="Cargo executable for --desktop; build dependencies stay outside the source checkout")
+                        help="Cargo executable for the native transport and optional desktop host; build dependencies stay outside the source checkout")
     args = parser.parse_args(argv)
     npm_cli = args.npm_cli or args.node.resolve().parent / "node_modules/npm/bin/npm-cli.js"
     try:

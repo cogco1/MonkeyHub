@@ -86,6 +86,27 @@ class ProjectTransferTests(unittest.TestCase):
         self.shared.compare_and_swap(expected=prepared.expected, event=prepared.event,
                                      replacement=prepared.replacement)
 
+    def test_admitted_sibling_roots_stay_in_sync_inventory_without_moving_positions(self):
+        member = self.clone("member")
+        for name in ("offline-a", "offline-b"):
+            self.stage(member, name, self.s0)
+            transfer = member.export_transfer(run_id=name)
+            row = {"updatedAt": "2026-10-05T04:00:00+00:00", "sourceStageRef": self.s0.uri,
+                   "branchId": "main", "label": name, "automatic": False}
+            self.shared.import_candidate_transfer(transfer, retained_row=row)
+        cold = FilesystemProjectRepository.open(self.shared.layout.root)
+        manifest = cold.export_sync_transfer()
+        self.assertTrue({"offline-a", "offline-b"}.issubset(manifest["run_ids"]))
+        working, _ = cold.read_working_draft()
+        self.assertIsNone(working["current"])
+        self.assertIsNone(working["localDraftRef"])
+        self.assertEqual(cold.read_design_branches(), {"main": self.branch(self.s0, self.s0)})
+        # A second uploader pass subtracts this manifest and has no missing roots.
+        self.assertEqual({"offline-a", "offline-b"} - set(manifest["run_ids"]), set())
+        other = FilesystemProjectRepository.bootstrap_transfer(self.root / "other", cold.export_sync_transfer(include_contents=True), expected_project_id="building")
+        self.assertTrue({"offline-a", "offline-b"}.issubset(other.run_ids()))
+        self.assertFalse(any("recovery" in row["path"] or row["path"] == "design/working.json" for row in manifest["files"]))
+
     def test_bootstrap_preserves_identity_history_and_named_model_only(self):
         s1 = self.stage(self.shared, "accepted", self.s0)
         self.shared.compare_and_swap_design_branch(

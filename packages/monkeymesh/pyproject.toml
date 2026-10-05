@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "monkeymesh"
+version = "0.1.0"
+description = "Hub-owned authenticated TCP transport, without project authority"
+requires-python = ">=3.12"
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -3767,6 +3767,7 @@ class FilesystemProjectRepository:
         known_files: Mapping[str, str] | None = None,
         include_contents: bool = True,
         include_all_runs: bool = False,
+        candidate_roots: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         """Read a retained design snapshot or one candidate and its dependencies.
 
@@ -3941,6 +3942,8 @@ class FilesystemProjectRepository:
                             add_run(listed)
             else:
                 add_run(run_id)
+            for candidate_root in candidate_roots:
+                add_run(candidate_root)
             while pending:
                 path, expected_digest = pending.pop()
                 if path in files:
@@ -3984,6 +3987,61 @@ class FilesystemProjectRepository:
                           for path, (digest, size) in sorted(files.items())],
                 "contents": contents,
             }
+
+    def export_sync_transfer(self, *, include_contents: bool = False,
+                             known_files: Mapping[str, str] | None = None,
+                             all_candidates: bool = False) -> dict[str, Any]:
+        """Retained candidate union, without private recovery or working-pointer files.
+
+        The shared Runtime has only admitted retained candidates. A local initial
+        share exports its retained candidate ledger and complete lineage, not
+        speculative workspace files, recovery commands or an active run.
+        """
+        working, _ = self.read_working_draft()
+        roots = tuple(self.run_ids()) if all_candidates else tuple(sorted(
+            set(working["runs"]) - set(working["active"])
+        ))
+        return self.export_transfer(include_contents=include_contents, known_files=known_files,
+                                    candidate_roots=roots)
+
+    def sync_actor_line(self, actor_id: str, *, owner_actor_id: str) -> dict[str, Any]:
+        """Public position only. Never expose local recovery or another actor's authority."""
+        view, revision = self.read_actor_working_draft(actor_id, owner_actor_id=owner_actor_id)
+        current = view["current"]
+        row = view["runs"].get(current) if current is not None else None
+        return {"actorId": actor_id, "current": current,
+                "row": dict(row) if row is not None else None, "revision": revision}
+
+    @_writes
+    def receive_sync_actor_line(self, actor_id: str, line: Mapping[str, Any], *,
+                                expected_revision: str | None, owner_actor_id: str) -> dict[str, Any]:
+        """CAS one authenticated actor's pointer after its candidate was admitted.
+
+        The caller supplies actor_id from its authenticated boundary, never from
+        line data. Local recovery of any actor and every other actor are preserved.
+        An identical retry is idempotent, including after the reply was lost.
+        """
+        with self.working_draft_guard():
+            view, revision = self.read_actor_working_draft(actor_id, owner_actor_id=owner_actor_id)
+            if set(line) != {"current", "row"}:
+                raise ProjectIntegrityError("TRANSFER_LINE_INVALID: invalid line fields")
+            current, row = line["current"], line["row"]
+            if current is not None:
+                self.load_run(current)
+                if not isinstance(row, Mapping):
+                    raise ProjectIntegrityError("TRANSFER_LINE_INVALID: missing retained row")
+            elif row is not None:
+                raise ProjectIntegrityError("TRANSFER_LINE_INVALID: empty position has a row")
+            if view["current"] == current and (current is None or view["runs"].get(current) == row):
+                return self.sync_actor_line(actor_id, owner_actor_id=owner_actor_id)
+            if revision != expected_revision:
+                raise StaleWorkingDraft("this actor's shared line changed")
+            updated = {**view, "current": current, "runs": dict(view["runs"])}
+            if current is not None:
+                updated["runs"][current] = dict(row)
+            self.compare_and_swap_actor_working_draft(actor_id, expected_revision=revision,
+                                                     value=updated, owner_actor_id=owner_actor_id)
+            return self.sync_actor_line(actor_id, owner_actor_id=owner_actor_id)
 
     def read_transfer_file(self, path: str, sha256: str) -> bytes:
         """Read one retained file by identity without rescanning other binaries."""
@@ -4556,8 +4614,8 @@ class FilesystemProjectRepository:
         )
 
     @_writes
-    def import_candidate_transfer(self, transfer: Mapping[str, Any]) -> None:
-        """Import immutable candidate evidence; never accept, branch or issue."""
+    def import_candidate_transfer(self, transfer: Mapping[str, Any], *, retained_row: Mapping[str, Any] | None = None) -> None:
+        """Import evidence and optionally retain its root; never move an actor, accept, branch or issue."""
         if transfer.get("mode") != "candidate":
             raise ProjectIntegrityError("TRANSFER_INVALID: candidate upload requires a candidate transfer")
         files = self._validate_transfer(transfer, expected_project_id=self._manifest.project_id,
@@ -4565,7 +4623,15 @@ class FilesystemProjectRepository:
         with self._lock, self._head_lock, self._design_lock:
             if self.read_head().to_dict() != transfer["head"]:
                 raise StaleProjectHead("TRANSFER_PUBLISHED_HEAD_CHANGED: synchronize the published base before upload")
+            working, revision = self.read_working_draft()
+            updated = None
+            if retained_row is not None and transfer["root_run_id"] not in working["runs"]:
+                updated = {**working, "runs": {**working["runs"], transfer["root_run_id"]: dict(retained_row)}}
+                # Validate the public retention row before any incoming byte is installed.
+                self._require_working_draft(updated)
             self._install_transfer_files(files)
+            if updated is not None:
+                self.compare_and_swap_working_draft(expected_revision=revision, value=updated)
 
     @_writes
     def pull_transfer(

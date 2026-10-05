@@ -148,6 +148,12 @@ class StudioSettings:
     sync_url: str | None = None
     sync_token: str | None = field(default=None, repr=False)
     sync_project_id: str | None = None
+    team_state_file: Path | None = None
+    team_owner: bool = False
+    team_actor_id: str | None = None
+    team_actor_name: str | None = None
+    team_role: str | None = None
+    sync_automatic: bool = False
     render_provider: str = "off"
     render_model: str | None = None
     render_api_key: str | None = field(default=None, repr=False)
@@ -189,12 +195,26 @@ class StudioSettings:
             raise SettingsError("Project owner must be a stable actor id.")
         if self.service_role not in (RUNTIME_ROLE, SHARED_PROJECT_ROLE):
             raise SettingsError(f"{SERVICE_ROLE_ENV} must be runtime or shared_project.")
-        if self.actors_file is not None and self.mode != REMOTE_MODE:
+        if self.actors_file is not None and self.mode != REMOTE_MODE and not self.team_owner:
             raise SettingsError(f"{ACTORS_FILE_ENV} requires remote mode.")
         if self.service_role == SHARED_PROJECT_ROLE and (
             self.mode != REMOTE_MODE or self.actors_file is None
         ):
             raise SettingsError(f"shared_project requires remote mode and {ACTORS_FILE_ENV}.")
+        if self.team_state_file is not None and (
+            not self.team_state_file.is_absolute()
+            or self.team_state_file.resolve(strict=False).is_relative_to(self.project_dir.resolve(strict=False))
+            or (self.cache_dir is not None and self.team_state_file.resolve(strict=False).is_relative_to(self.cache_dir.resolve(strict=False)))
+        ):
+            raise SettingsError("Member role observations must be outside the project and deletable cache.")
+        if self.team_owner and (self.mode != LOCAL_MODE or self.actors_file is None or self.team_role != "moderator"):
+            raise SettingsError("A team owner needs a local Runtime, actor configuration and moderator identity.")
+        if self.sync_automatic and (not self.sync_url or not self.team_actor_id or self.cache_dir is None or self.team_state_file is None):
+            raise SettingsError("Automatic team sync requires a member connection, identity, nonproject cache and durable role observation path.")
+        if self.team_role not in (None, "viewer", "designer", "moderator"):
+            raise SettingsError("Invalid team role.")
+        if bool(self.team_actor_id) != bool(self.team_role):
+            raise SettingsError("Team identity and role must be supplied together.")
         sync_values = (self.sync_url, self.sync_token, self.sync_project_id)
         if any(value is not None for value in sync_values):
             if not all(isinstance(value, str) and value.strip() for value in sync_values):
@@ -340,6 +360,12 @@ class StudioSettings:
             actors_file=Path(os.environ[ACTORS_FILE_ENV]) if os.environ.get(ACTORS_FILE_ENV, "").strip() else None,
             sync_url=os.environ.get(SYNC_URL_ENV, "").strip() or None,
             sync_token=os.environ.get(SYNC_TOKEN_ENV, "").strip() or None,
+            team_state_file=Path(os.environ["ARCHFLOW_STUDIO_TEAM_STATE_FILE"]) if os.environ.get("ARCHFLOW_STUDIO_TEAM_STATE_FILE") else None,
+            team_owner=os.environ.get("ARCHFLOW_STUDIO_TEAM_OWNER") == "1",
+            team_actor_id=os.environ.get("ARCHFLOW_STUDIO_TEAM_ACTOR_ID", "").strip() or None,
+            team_actor_name=os.environ.get("ARCHFLOW_STUDIO_TEAM_ACTOR_NAME", "").strip() or None,
+            team_role=os.environ.get("ARCHFLOW_STUDIO_TEAM_ROLE", "").strip() or None,
+            sync_automatic=os.environ.get("ARCHFLOW_STUDIO_SYNC_AUTOMATIC") == "1",
             sync_project_id=os.environ.get(SYNC_PROJECT_ID_ENV, "").strip() or None,
             project_owner_actor_id=os.environ.get(PROJECT_OWNER_ACTOR_ENV, "").strip() or "studio:explicit-user-action",
             monitor_dir=Path(os.environ[MONITOR_DIR_ENV]) if os.environ.get(MONITOR_DIR_ENV, "").strip() else None,

@@ -280,13 +280,15 @@ class WorkerSupervisor:
                         health = json.loads(response.read(65536))
                     if not isinstance(health, dict):
                         raise ValueError("Health must be an object")
+                    initializing = (child.launch.environment.get("ARCHFLOW_STUDIO_SYNC_AUTOMATIC") == "1"
+                                    and health.get("replicaInitializing") is True)
                     matches = (
                         health.get("managedInstanceId") == child.instance_id
                         and isinstance(health.get("processId"), int)
                         and (health.get("processId") == child.process.pid or health.get("parentProcessId") == child.process.pid)
                         and health.get("sourceRevision") == child.launch.source_revision
                         and health.get("serverVersion") == "0.1.0"
-                        and all(health.get(key) == value for key, value in child.launch.health_fields.items())
+                        and all(health.get(key) == value or (initializing and key == "projectBound") for key, value in child.launch.health_fields.items())
                     )
                     if matches and child.launch.project_dir is not None:
                         # Verify the exact binding on this same identity probe.
@@ -302,9 +304,9 @@ class WorkerSupervisor:
                             if matches:
                                 unavailable_since = None
                                 child.service_pid = health["processId"]
-                                child.healthy = True
+                                child.healthy = not initializing
                                 child.error = None
-                                child.state = "busy" if child.busy else "ready"
+                                child.state = "starting" if initializing else "busy" if child.busy else "ready"
                             else:
                                 detail = "The responding service does not match this launch, source version or selected project."
                                 if health.get("sourceRevision") != child.launch.source_revision:

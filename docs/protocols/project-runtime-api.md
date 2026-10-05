@@ -2138,3 +2138,30 @@ when none exists, the source states it is unavailable until explicitly selected.
 Actor configuration may supply `display_name`; this is presentation only.
 See [ADR-013](../decisions/013-actor-working-heads.md). This slice does not enable
 Share/Join or replicate personal pointers over the existing candidate-transfer API.
+
+### M1 member synchronization (#618)
+
+A Hub-owned local computing Runtime may enable a restricted member surface.
+The local owner continues to use its ordinary APIs; peer requests carry an
+actor credential and pass the same `request_action` classifier as the member
+ingress. Credentials are loaded again per request so role/revoke updates do
+not require stopping project work. This does not expose general Hub APIs.
+
+`GET /api/sync/manifest` includes retained actor-head candidate closures, not
+only Stage-reachable content. Recovery drafts, active jobs and unreferenced
+workspace files are excluded. `POST /api/sync/files/batch` accepts up to 128
+path/digest/size/offset/length rows, with at most 8 MiB of requested bytes.
+`POST /api/sync/files/missing` returns missing upload rows and cached offsets;
+`POST /api/sync/files/upload` appends digest-checked resumable chunks to an
+external cache. `POST /api/sync/candidates` is still P036's complete-closure
+admission boundary. Its optional `retainedRow` registers the admitted root in
+P036’s existing retained-run ledger, so divergent offline alternatives remain in
+subsequent manifests without moving a personal or shared pointer. No chunk API
+writes retained project state.
+
+`GET /api/sync/identity` reports the authenticated actor and current role.
+`GET /api/sync/lines` returns named public actor positions without recovery.
+`PUT /api/sync/line` compares `expectedRevision` and advances only the actor
+from authentication, after its candidate has arrived. Body-supplied actor ids
+are refused. Equal retries are idempotent. `GET /api/sync/status` reports local
+connection state and download progress; it is not a new persistence authority.

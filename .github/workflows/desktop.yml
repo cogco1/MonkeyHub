@@ -111,7 +111,9 @@ jobs:
           retention-days: 7
           if-no-files-found: error
       - name: Rust toolchain
-        run: rustup show
+        run: |
+          rustup show
+          rustup toolchain install 1.98.1 --profile minimal
       - uses: actions/cache/restore@v4
         id: rust-cache
         with:
@@ -298,6 +300,15 @@ jobs:
             throw 'The installed MonkeyHub.exe is missing; the runtime suite would skip instead of running'
           }
           & "$env:MONKEYHUB_INSTALLED_ROOT/_runtime/python/python.exe" -B apps/monkeyhub/desktop/tests/test_runtime.py -v
+          exit $LASTEXITCODE
+      - name: Installed project transport HTTP, SSE and reconnect
+        shell: pwsh
+        run: |
+          $env:MONKEYMESH_TEST_BINARY = "$env:MONKEYHUB_INSTALLED_ROOT/packages/monkeymesh/bin/monkeymesh-tcp.exe"
+          if (-not (Test-Path -LiteralPath $env:MONKEYMESH_TEST_BINARY)) {
+            throw 'The installed project transport is missing; refuse a skip-only pass'
+          }
+          & "$env:MONKEYHUB_INSTALLED_ROOT/_runtime/python/python.exe" -B -m unittest discover -s packages/monkeymesh/tests -v
           exit $LASTEXITCODE
       - name: Verify installed release identity
         if: env.MONKEYHUB_RELEASE_PUSH == 'true'

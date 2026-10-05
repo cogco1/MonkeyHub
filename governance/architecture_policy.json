@@ -13,7 +13,8 @@
     "tests",
     "labs",
     "apps/monkeyhub",
-    "packages/monkeyfab"
+    "packages/monkeyfab",
+    "packages/monkeymesh"
   ],
   "import_only_source_roots": [
     "labs"
@@ -25,6 +26,7 @@
     "packages/monkeyfab/src",
     "packages/monkeydiagram/src",
     "packages/archflow/src",
+    "packages/monkeymesh/src",
     "packages/monkeyarch/src",
     "packages/monkeymonitor/src",
     "packages/monkeycontrol/src",
@@ -40,7 +42,8 @@
     "packages/monkeymonitor/src/monkeymonitor": "monkeymonitor",
     "services/project-runtime/src/project_runtime": "project_runtime",
     "apps/monkeyhub/api/monkeyhub_api": "hub",
-    "tools": "tools"
+    "tools": "tools",
+    "packages/monkeymesh/src/monkeymesh": "monkeymesh"
   },
   "declared_dependency_namespaces": [
     "archflow",
@@ -146,7 +149,8 @@
     "apps/monkeyhub/api/tests",
     "apps/monkeyhub/desktop/tests",
     "apps/monkeyhub/web/test",
-    "labs"
+    "labs",
+    "packages/monkeymesh/tests"
   ],
   "subpackages": {
     "packages/archflow/src/archflow": [
@@ -1018,6 +1022,83 @@
       "kind": "projection_cache",
       "owner": "project_runtime.documents",
       "reason": "The projection cache (ADR-008, #367): PNG blobs named by their own sha256 under the project's Hub cache directory, never the project folder; written to a temp file then renamed, and removed by the reachability collector after a grace window. Derived, deletable and never cited as evidence."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/settings/team.py",
+      "function": "atomic_json",
+      "operations": [
+        "mkdir",
+        "replace",
+        "unlink"
+      ],
+      "kind": "team_configuration",
+      "owner": "hub.shell",
+      "reason": "Atomic account-private device and membership configuration below the explicit nonproject Hub runtime root; no project writes. Windows secrets use the account credential store."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/sync_cache.py",
+      "function": "offset",
+      "operations": [
+        "unlink"
+      ],
+      "kind": "sync_cache",
+      "owner": "project_runtime.binding",
+      "reason": "Discard corrupt or oversized content-addressed partial downloads only within the configured nonproject cache."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/sync_cache.py",
+      "function": "append",
+      "operations": [
+        "mkdir",
+        "open_write"
+      ],
+      "kind": "sync_cache",
+      "owner": "project_runtime.binding",
+      "reason": "Resumable chunks in the explicit nonproject cache; digest-checked completed transfers are admitted only through P036."
+    },
+    {
+      "path": "tools/release/package_monkeyapps.py",
+      "function": "build_mesh",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "package_staging",
+      "owner": "tools.release.package_monkeyapps",
+      "reason": "Creates only the native transport destination in the explicitly selected package staging root, from the same committed source snapshot; never user projects or live install."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/sync_cache.py",
+      "function": "initial_transfer",
+      "operations": [
+        "mkdir",
+        "replace",
+        "unlink"
+      ],
+      "kind": "sync_cache",
+      "owner": "project_runtime.binding",
+      "reason": "Atomically pins the first downloaded snapshot metadata in the configured nonproject cache. Resume reuses that exact snapshot; P036 still validates all content and never overwrites unrelated project files."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/sync_cache.py",
+      "function": "finish_initial_transfer",
+      "operations": [
+        "unlink"
+      ],
+      "kind": "sync_cache",
+      "owner": "project_runtime.binding",
+      "reason": "Removes only the completed initial-transfer cache journal after P036 successfully installs HEAD."
+    },
+    {
+      "path": "services/project-runtime/src/project_runtime/sync_state.py",
+      "function": "write",
+      "operations": [
+        "mkdir",
+        "replace",
+        "unlink"
+      ],
+      "kind": "membership_observation",
+      "owner": "project_runtime.binding",
+      "reason": "Atomically records only the last authenticated upstream role, bound to project, actor and credential hash, at the Hub-supplied nonproject/noncache state path. Missing/corrupt state is read-only and cannot revive a stale invitation grant."
     }
   ],
   "forbidden_layer_imports": [
@@ -1416,9 +1497,10 @@
         "project_runtime.application.artifacts.DocumentWorkCopy",
         "project_runtime.application.artifacts.WORK_COPY_WORKSPACE",
         "project_runtime.application.boards.export_board_pages",
-        "project_runtime.application.boards.BoardExportPage"
+        "project_runtime.application.boards.BoardExportPage",
+        "project_runtime.authentication.request_action"
       ],
-      "reason": "MonkeyHub starts the Runtime (main), shares its refusals (errors) and embeds its wire shapes (api.dto); it reads a project in process only through the Runtime's declared read API (#519): ProjectBinding and ReadToken, the event log, the runtime status, the document and work-copy readers and the Board page export. Everything else in project_runtime is reached over the Hub's forwarding path, so the Runtime can change its insides without the Hub following them."
+      "reason": "MonkeyHub starts the Runtime (main), shares its refusals (errors) and embeds its wire shapes (api.dto); it reads a project in process only through the Runtime's declared read API (#519): ProjectBinding and ReadToken, the event log, the runtime status, the document and work-copy readers and the Board page export. Everything else in project_runtime is reached over the Hub's forwarding path, so the Runtime can change its insides without the Hub following them. The restricted member ingress also consumes the Runtime-owned public request_action classifier so its protocol allow-list cannot drift."
     },
     {
       "source": "services/project-runtime/src/project_runtime/binding",

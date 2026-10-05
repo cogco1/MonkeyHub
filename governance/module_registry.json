@@ -2611,7 +2611,8 @@
         "The project working position and explicit retention choices in design/working.json, where a row's optional labelSavedBy \"person\" records that the person saved its label in the Hub and a row without it (another caller's label, or any row written before it existed) records no saver (#575); CAS updates and expiry of superseded local recovery snapshots. No run is removed automatically here: a run leaves runs/ only through the project trash.",
         "the process-wide memos of verified record bytes (64 MB, no record above 4 MB), verified record identities and stamp-keyed listings (list_json, run manifests, design branches) (ADR-008 phase 1a)",
         "the project trash (#575): trash_run moves one whole run directory into trash/runs/<run_id> in one rename, beside a ProjectTrashEntry@1 manifest (when, why, which rule, its state digest, what superseded it, the working row it took); restore_trashed_run moves it back with its row; purge_trash deletes entries past the 30-day retention; trash_entries lists whole entries; run_mentions reads where retained JSON outside a run names it, for a caller choosing what may go",
-        "the project's writer lease (ADR-012, writer_lease.py): an OS lock on writer.lock in the project folder that ends with the process holding it; hold_writer_lease for the open project's Project Runtime, held until released and taken with a bounded retry (HOLD_WAIT_S), since the holder may be a runtime of the same project that is exiting; writing for one write, counted where the lease is held and otherwise taken for that write's length, waiting up to WRITE_WAIT_S for another writer; ProjectWriterBusy (PROJECT_WRITER_BUSY) when another process keeps it; holds_writer_lease"
+        "the project's writer lease (ADR-012, writer_lease.py): an OS lock on writer.lock in the project folder that ends with the process holding it; hold_writer_lease for the open project's Project Runtime, held until released and taken with a bounded retry (HOLD_WAIT_S), since the holder may be a runtime of the same project that is exiting; writing for one write, counted where the lease is held and otherwise taken for that write's length, waiting up to WRITE_WAIT_S for another writer; ProjectWriterBusy (PROJECT_WRITER_BUSY) when another process keeps it; holds_writer_lease",
+        "Export retained actor-head candidate closures without local recovery; compare-and-swap an authenticated actor line after candidate admission, preserving other actor heads and all local recovery."
       ],
       "does_not_own": [
         "path naming inside a project (archflow.project.layout)",
@@ -2700,7 +2701,10 @@
         "hold_writer_lease",
         "holds_writer_lease",
         "FilesystemProjectRepository.read_actor_working_draft",
-        "FilesystemProjectRepository.compare_and_swap_actor_working_draft"
+        "FilesystemProjectRepository.compare_and_swap_actor_working_draft",
+        "FilesystemProjectRepository.export_sync_transfer",
+        "FilesystemProjectRepository.sync_actor_line",
+        "FilesystemProjectRepository.receive_sync_actor_line"
       ],
       "depends_on": [
         "archflow.project.digests",
@@ -4467,7 +4471,9 @@
         "Resolving the Working Head for ordinary work: the readable retained working position, else the main line's accepted head, else the reference run, and each workspace's compatible exact source under a LIVE or FROZEN policy; resolving writes nothing; a live rejection of the working position is reported as a warning and never moves it",
         "The representation-status projection (#223): for one exact registered page, current, outdated, frozen or unavailable, the exact retained refs it was made from and its newest registered replacement, derived on every read by asking the page's owner (a cut plan's read set through plan_status, an AI render's retained request through Render's freshness, a page bound to one model state through model_is_current, a page bound to nothing through its replacements alone); it writes nothing and stores no status or dependency edge: the project-level dependency is this projection, not a second state; GET /api/representation-status answers it for one exact page in the projection's own words (#288)",
         "the Studio projector of the project index (StudioProjector): each run's records, artifacts, documents and candidate source, the parts of its change the tree reads (change_parts), its part of the reference survey and its newest runner receipt, and the committed stages, read through the same readers the routes use; attaching the index in StudioSettings.project_index_dir (the index subdirectory of the Hub's project cache directory) to the one binding, kept current by its keeper; which reads use the index (only when it holds every write this process made): the artifact and document listings and, since #599, the design tree's views, which read every run from one snapshot (indexed_runs); the read-only agent query route GET /api/index/{table}; the client stores' catch-up route GET /api/index?since=&epoch= (#366): empty when current, the changes while the change log reaches back, otherwise a reset snapshot, tagged \"<epoch>:<revision>\"",
-        "reading the project again on request (POST /api/project/refresh, ProjectBinding.refresh, ADR-012): one walk of the runtime binding's known layout, which answers whether the folder changed outside this runtime and names what moved; the read token moves with it, and the answer waits (bounded) for the project index to apply it"
+        "reading the project again on request (POST /api/project/refresh, ProjectBinding.refresh, ADR-012): one walk of the runtime binding's known layout, which answers whether the folder changed outside this runtime and names what moved; the read token moves with it, and the answer waits (bounded) for the project index to apply it",
+        "Background retained candidate and named actor-line synchronization, resumable digest-checked downloads in a nonproject cache, and initial replica progress; P036 validates every admitted transfer and remains sole project writer.",
+        "Durable nonproject membership-role observations bound to project, actor and credential; restart never restores stale invitation write access, and only authenticated upstream identity can regrant it."
       ],
       "does_not_own": [
         "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use archflow.project.repository ports; monkeyarch.application.project_runner is the writer of a modeling run and archflow.project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through archflow.project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
@@ -4601,7 +4607,14 @@
         "ProjectBinding.indexed_reading",
         "ProjectBinding.survey_part",
         "indexed_runs",
-        "IndexedRuns"
+        "IndexedRuns",
+        "GET /api/sync/identity",
+        "GET /api/sync/lines",
+        "PUT /api/sync/line",
+        "POST /api/sync/files/batch",
+        "POST /api/sync/files/missing",
+        "POST /api/sync/files/upload",
+        "GET /api/sync/status"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -4666,7 +4679,10 @@
         "services/project-runtime/tests/test_indexed_reads.py",
         "services/project-runtime/tests/test_index_changes.py",
         "services/project-runtime/tests/test_hosted_opening.py",
-        "services/project-runtime/tests/test_actor_working_heads.py"
+        "services/project-runtime/tests/test_actor_working_heads.py",
+        "services/project-runtime/tests/test_sync_resume.py",
+        "services/project-runtime/tests/test_team_collaboration.py",
+        "services/project-runtime/tests/test_team_role_restart.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -4687,7 +4703,9 @@
         "services/project-runtime/src/project_runtime/application/representation_dependencies.py",
         "services/project-runtime/src/project_runtime/index.py",
         "services/project-runtime/src/project_runtime/api/routes/index.py",
-        "services/project-runtime/src/project_runtime/api/dto/index.py"
+        "services/project-runtime/src/project_runtime/api/dto/index.py",
+        "services/project-runtime/src/project_runtime/sync_cache.py",
+        "services/project-runtime/src/project_runtime/sync_state.py"
       ]
     },
     {
@@ -5574,7 +5592,8 @@
         "Reading the positive application-text intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter",
         "operator-configured actor authentication with explicit project read/propose/accept/release grants; shared-project service role excludes local computation; Runtime upstream settings contain no project authority",
         "ActorAttribution and request_attribution: who caused one request and through which surface (studio, or a Hub-managed process), read from the middleware's resolved actor and this process's own launch settings and never from a request body or header",
-        "holding the open project's writer lease from before the process serves until it has stopped and drained (ADR-012, _hold_project over archflow.project.repository's hold_writer_lease): the runtime is the project's only writer, and a second runtime for the same project stops with PROJECT_WRITER_BUSY"
+        "holding the open project's writer lease from before the process serves until it has stopped and drained (ADR-012, _hold_project over archflow.project.repository's hold_writer_lease): the runtime is the project's only writer, and a second runtime for the same project stops with PROJECT_WRITER_BUSY",
+        "The public request_action method/path classifier is shared with Hub member ingress; authenticated external member requests are limited even on a locally owned computing Runtime."
       ],
       "does_not_own": [
         "any design question or kernel call",
@@ -5644,7 +5663,8 @@
         "CONDITIONAL_READS",
         "INDEXED_READS",
         "IndexRevisionHeader: X-Monkey-Index <epoch>:<revision> on a successful write once the project index holds it (#366)",
-        "OWNER_REFUSALS"
+        "OWNER_REFUSALS",
+        "request_action"
       ],
       "depends_on": [
         "archflow.project.index",
@@ -7102,7 +7122,8 @@
         "Render provider/model/timeout preferences remain in UserSettingsDto; explicit launch environment supplies the secret only to the configured Runtime adapter, with no project or HTTP key field",
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement (monkeyhub_api/settings); the resolved values reach a Project Runtime only through its launch environment",
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
-        "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing"
+        "Component information in Modeling (#549): topic-agnostic MonkeyHubComponentInfo@1 datasets (docs/protocols/component-info.md), each kept on its own Board card under customData.componentInfo, checked and imported or replaced by dataset id on the Board through its save queue, read while Modeling shows a model once per Board revision, and shown in one closable card for a picked component only when the pick and the dataset's appliesTo (project, run, state digest) match the exact version on screen; datasets for another version are listed, never shown, and a click makes no request and writes nothing",
+        "Stable device secret storage, single-use project invitations, peer-bound member ingress, role and revocation settings, and Hub-owned connections to each device's own Runtime/replica; local configuration only, never project persistence."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -7219,7 +7240,13 @@
         "GET /api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source",
         "GET /api/integrations",
         "ChatSuggestion via chat_present / ChatPresentationRequest; ChatPostRequest.suggestionSelection resolves one retained card into the existing native user-turn admission",
-        "src/api/project-runtime/projectStore.ts: ProjectStore and projectStores, one ref-counted client store per open project fed by the Hub's one stream (#366), with each entity's last move (moved, movedAt) and each project's kept Studio events known by <stream>:<seq>; useProjectStore / useProjectRevision / useProjectMoved / useProjectStoreInstance / useRuntimeKey"
+        "src/api/project-runtime/projectStore.ts: ProjectStore and projectStores, one ref-counted client store per open project fed by the Hub's one stream (#366), with each entity's last move (moved, movedAt) and each project's kept Studio events known by <stream>:<seq>; useProjectStore / useProjectRevision / useProjectMoved / useProjectStoreInstance / useRuntimeKey",
+        "POST /api/team/share",
+        "POST /api/team/join",
+        "GET /api/team/projects",
+        "GET /api/team/projects/{project_id}",
+        "POST /api/team/projects/{project_id}/resume",
+        "PUT /api/team/projects/{project_id}/members/{actor_id}"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -7388,7 +7415,13 @@
         "apps/monkeyhub/web/src/ChatSuggestionCard.tsx",
         "apps/monkeyhub/web/src/ChatSuggestionCard.css",
         "apps/monkeyhub/web/src/features/componentInfo/",
-        "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx"
+        "apps/monkeyhub/web/src/features/designTree/DesignTreeCleaned.tsx",
+        "apps/monkeyhub/api/monkeyhub_api/settings/team.py",
+        "apps/monkeyhub/api/monkeyhub_api/team/__init__.py",
+        "apps/monkeyhub/api/monkeyhub_api/team/service.py",
+        "apps/monkeyhub/api/monkeyhub_api/team/gateway.py",
+        "apps/monkeyhub/api/monkeyhub_api/team/routes.py",
+        "apps/monkeyhub/web/src/app/TeamPanel.tsx"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -7447,7 +7480,8 @@
         "apps/monkeyhub/api/tests/test_chat_render.py",
         "apps/monkeyhub/api/tests/test_chat_progress.py",
         "apps/monkeyhub/web/test/componentInfo.test.ts",
-        "apps/monkeyhub/web/test/workspaceWidth.test.ts"
+        "apps/monkeyhub/web/test/workspaceWidth.test.ts",
+        "apps/monkeyhub/api/tests/test_team_m1.py"
       ],
       "depends_on": [
         "archflow.contracts.canonical",
@@ -7464,7 +7498,8 @@
         "project_runtime.board",
         "project_runtime.candidate",
         "project_runtime.documents",
-        "tools.release.package_monkeyapps"
+        "tools.release.package_monkeyapps",
+        "monkeymesh.transport"
       ]
     },
     {
@@ -8311,6 +8346,47 @@
         "services/project-runtime/tests/test_domains.py"
       ],
       "notes": "spec docs/design/construction-api.md §3.6 (GH-419 Task C5)."
+    },
+    {
+      "module_id": "monkeymesh.transport",
+      "owner_path": "packages/monkeymesh/src/monkeymesh/transport.py",
+      "purpose": "Hub-owned Iroh authenticated transparent TCP streams for existing HTTP and SSE.",
+      "owns": [
+        "Native endpoint lifecycle and bidirectional half-close-preserving streams",
+        "Peer admission and private parent control protocol with pre-forward peer binding"
+      ],
+      "does_not_own": [
+        "HTTP parsing, project membership or invitations",
+        "Credentials persistence, project state, retries or an independent application launcher"
+      ],
+      "inputs": [
+        "Hub-supplied private device key, endpoint ticket, limited loopback destinations and admitted peer ids"
+      ],
+      "outputs": [
+        "Loopback TCP endpoint and peer connection events"
+      ],
+      "public_api": [
+        "IrohTransport",
+        "MeshUnavailable"
+      ],
+      "depends_on": [],
+      "invariants": [
+        "HTTP and SSE bytes are forwarded without whole-message buffering or unary size/deadline limits",
+        "Secrets are passed only through the owned stdin, never command arguments or errors",
+        "The parent acknowledges peer identity before bytes reach restricted ingress",
+        "Transport never imports Runtime/Hub or writes project files"
+      ],
+      "status": "canonical",
+      "tests": [
+        "apps/monkeyhub/api/tests/test_team_m1.py",
+        "packages/monkeymesh/tests/test_transport.py"
+      ],
+      "notes": "CREATE: no existing module owns authenticated peer byte transport; hub.shell owns its consumer lifecycle and membership, while P036 remains sole project writer.",
+      "files": [
+        "packages/monkeymesh/src/monkeymesh/__init__.py",
+        "packages/monkeymesh/src/monkeymesh/transport.py",
+        "packages/monkeymesh/native/src/main.rs"
+      ]
     }
   ]
 }

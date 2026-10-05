@@ -1,4 +1,44 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-618",
+      "lanes": [
+        {
+          "id": "m1-two-devices",
+          "status": "review",
+          "branch": "codex/618-m1-two-devices",
+          "worktree": "/workspace/scratch/bfe17b24d3e1/dev/workspace/worktrees/codex-618-m1-two-devices",
+          "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
+          "contributor": "Codex",
+          "reviewer": null,
+          "handoff": "Integrated M1 implementation; cloud-local automated and two-Hub verification. Windows installed-app and physical different-network acceptance remain pending.",
+          "modules": [
+            "hub.shell",
+            "project_runtime.shell",
+            "project_runtime.binding",
+            "archflow.project.repository"
+          ],
+          "write_scope": [
+            "packages/monkeymesh",
+            "apps/monkeyhub",
+            "services/project-runtime",
+            "packages/archflow/src/archflow/project/repository.py",
+            "packages/archflow/src/archflow/project/ports.py",
+            "packages/archflow/tests/test_project_transfer.py",
+            "governance",
+            "docs/architecture",
+            "docs/protocols",
+            "docs/development",
+            "tools/dev/source_roots.py",
+            "tools/release/package_monkeyapps.py",
+            ".github/workflows/verify.yml",
+            ".github/workflows/desktop.yml",
+            "tests/packaging/test_package_monkeyapps.py"
+          ],
+          "depends_on": []
+        }
+      ]
+    }
+  ]
 }
