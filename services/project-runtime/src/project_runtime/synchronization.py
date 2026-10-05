@@ -21,7 +21,7 @@ from archflow.project.repository import (
     StaleDesignBranch, StaleProjectHead, StaleWorkingDraft,
 )
 
-from .binding import bound_project
+from .binding import bound_project, release_bound_project
 from archflow.project.writer_lease import hold_writer_lease
 from .sync_cache import SyncDownloadCache
 from .sync_state import MemberRoleObservation
@@ -204,10 +204,14 @@ def pull_shared_project(state: State, *, client: SharedProjectClient | None = No
         raise transfer_error(exc) from exc
     if cache is not None:
         cache.finish_initial_transfer()
-    # Keep the same live binding while candidate jobs may hold it. Its existing
-    # explicit refresh reconciles imported content into the derived index.
-    if repository:
-        bound_project(state).refresh()
+    if settings.sync_automatic:
+        # Background member sync must not invalidate a binding held by a live
+        # candidate job. Refresh its derived index through the existing owner.
+        if repository:
+            bound_project(state).refresh()
+    else:
+        # Preserve the operator-triggered pull's original close/rebind contract.
+        release_bound_project(state)
     return SynchronizationDto(projectId=client.project_id, filesTransferred=len(contents), bytesTransferred=transferred_bytes)
 
 

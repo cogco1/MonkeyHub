@@ -261,7 +261,7 @@ class StudioSettings:
 
         if self.cache_dir is not None:
             return self.cache_dir
-        folder = hashlib.sha256(str(self.project_dir.resolve()).encode("utf-8")).hexdigest()[:32]
+        folder = hashlib.sha256(str(Path(self.project_dir).resolve()).encode("utf-8")).hexdigest()[:32]
         return Path(tempfile.gettempdir()) / "archflow-studio-cache" / "projects" / folder
 
     @property
