@@ -1523,6 +1523,27 @@
         "project_runtime.api.routes"
       ],
       "reason": "A DTO shapes the wire and never reaches back into a route; only create_app (project_runtime.main) mounts the routes."
+    },
+    {
+      "source": "packages/monkeymesh/src/monkeymesh",
+      "targets": [
+        "tests",
+        "labs",
+        "archive",
+        "tools",
+        "archflow",
+        "monkeyhub_api"
+      ],
+      "reason": "The independently owned byte transport imports neither repository fixtures/tooling nor project/Hub authority. Hub supplies lifecycle and membership through its public transport adapter."
+    },
+    {
+      "source": "packages/monkeymesh/tests",
+      "targets": [
+        "tests",
+        "labs",
+        "archive"
+      ],
+      "reason": "Transport package tests stand alone and import no repository suite, lab or retired lane, matching the other package boundaries."
     }
   ],
   "authority_symbol_patterns": [

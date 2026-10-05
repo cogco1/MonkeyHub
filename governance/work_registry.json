@@ -34,7 +34,9 @@
             "tools/release/package_monkeyapps.py",
             ".github/workflows/verify.yml",
             ".github/workflows/desktop.yml",
-            "tests/packaging/test_package_monkeyapps.py"
+            "tests/packaging/test_package_monkeyapps.py",
+            "packages/archflow/tests/test_project_index.py",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs"
           ],
           "depends_on": []
         }
