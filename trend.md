@@ -232,103 +232,103 @@ Latest: 2026-10-09T00:37:47Z · `389b054839f5` · 9 of 9 runs shown
 
 ## windows-local
 
-Latest: 2026-10-08T08:36:46Z · `d6e2c45bb702` · 6 of 6 runs shown
+Latest: 2026-10-09T05:02:19Z · `d6e2c45bb702` · 7 of 7 runs shown
 
 | Metric | Unit | Trend | Latest | 7-day median | Budget | |
 |---|---|---|---:|---:|---:|---|
-| `hub_start.first_launch` | ms | `▂▁█ ▄▂` | 4304 | 4304 | 35000 |  |
-| `hub_start.warm` | ms | `▁▁▂▁▂█` | 1915 | 1185 | 8400 |  |
-| `project_open.30runs` | ms | `▁▁▂▁▂█` | 2717 | 1716 | 12000 |  |
-| `route.design_history.cold.30runs` | ms | `▁▁██▇▆` | 130 | 149 | 230 |  |
-| `route.design_history.warm.30runs` | ms | `▁▁▇▇█▄` | 103 | 129 | 240 |  |
-| `route.worktrees.cold.30runs` | ms | `▁▁██▇▆` | 110 | 128 | 230 |  |
-| `route.worktrees.warm.30runs` | ms | `▃▁██▇▇` | 114 | 119 | 230 |  |
-| `route.artifacts.cold.30runs` | ms | `█▅▂▃▆▁` | 22 | 31 | 230 |  |
-| `route.artifacts.warm.30runs` | ms | `█▂▅▁▆▇` | 37 | 33 | 220 |  |
-| `route.documents.cold.30runs` | ms | `█▃▁▄▂▂` | 16 | 17 | 230 |  |
-| `route.documents.warm.30runs` | ms | `█▁▃▄▂▁` | 16 | 21 | 220 |  |
-| `route.working_source.cold.30runs` | ms | `█▅▂▁▂▁` | 47 | 54 | 240 |  |
-| `route.working_source.warm.30runs` | ms | `▁▂▅█▅▆` | 53 | 48 | 230 |  |
-| `route.board.cold.30runs` | ms | `█▁█▅▃▅` | 28 | 27 | 230 |  |
-| `route.board.warm.30runs` | ms | `█▅▄▆▁▄` | 23 | 24 | 230 |  |
-| `open_modeling.cold.30runs` | ms | `▄▂█▇▇▁` | 483 | 702 | 740 |  |
-| `open_modeling.model.cold.30runs` | ms | `▁▁█▇▇▃` | 294 | 380 | 390 |  |
-| `open_modeling.warm.30runs` | ms | `▂▁██▇▄` | 484 | 594 | 470 | ⚠ |
-| `open_modeling.model.warm.30runs` | ms | `▁▁█▆▆▃` | 273 | 351 | 350 |  |
-| `idle.hub.cpu.30runs` | s | `█▃▃▃▁▂` | 0.41 | 0.47 | 0.99 |  |
-| `idle.hub.read.30runs` | bytes | `▄▄▄▄▄▄` | 0 B | 0 B | 4.0 MiB |  |
-| `idle.worker.cpu.30runs` | s | `▆▁▆█▃▄` | 0.56 | 0.62 | 0.75 |  |
-| `idle.worker.read.30runs` | bytes | `▄▄▄▄▄▄` | 0 B | 0 B | 4.0 MiB |  |
-| `project_open.150runs` | ms | `▁▂▂▁▁█` | 2761 | 1823 | 12000 |  |
-| `route.design_history.cold.150runs` | ms | `▁▁▇▇█▅` | 157 | 194 | 230 |  |
-| `route.design_history.warm.150runs` | ms | `▁▁█▇▇▅` | 149 | 189 | 240 |  |
-| `route.worktrees.cold.150runs` | ms | `█▄▁▁▁▁` | 249 | 311 | 5100 |  |
-| `route.worktrees.warm.150runs` | ms | `▁▁███▆` | 235 | 268 | 230 | ⚠ |
-| `route.artifacts.cold.150runs` | ms | `▂▄▇▁█▁` | 86 | 98 | 250 |  |
-| `route.artifacts.warm.150runs` | ms | `█▁▆▇▇▃` | 74 | 90 | 260 |  |
-| `route.documents.cold.150runs` | ms | `▄▄▃█▇▁` | 13 | 26 | 220 |  |
-| `route.documents.warm.150runs` | ms | `█▆▂▅▁▃` | 20 | 24 | 220 |  |
-| `route.working_source.cold.150runs` | ms | `█▇▂▁▁▁` | 53 | 74 | 400 |  |
-| `route.working_source.warm.150runs` | ms | `▁▁▅▄█▅` | 57 | 56 | 230 |  |
-| `route.board.cold.150runs` | ms | `▇▇▂▁▂█` | 42 | 29 | 220 |  |
-| `route.board.warm.150runs` | ms | `▆▇▁▄█▃` | 19 | 26 | 230 |  |
-| `open_modeling.cold.150runs` | ms | `█▃▂▂▂▁` | 1918 | 3030 | 2200 |  |
-| `open_modeling.model.cold.150runs` | ms | `▁▁███▄` | 1675 | 2147 | 790 | ⚠ |
-| `open_modeling.warm.150runs` | ms | `▃▁███▃` | 923 | 1255 | 990 |  |
-| `open_modeling.model.warm.150runs` | ms | `▂▁▇██▃` | 640 | 878 | 770 |  |
-| `idle.hub.cpu.150runs` | s | `█▄▂▁▂▁` | 0.38 | 0.47 | 1.40 |  |
-| `idle.hub.read.150runs` | bytes | `▄▄▄▄▄▄` | 0 B | 0 B | 4.0 MiB |  |
-| `idle.worker.cpu.150runs` | s | `▁▂▇█▆▃` | 0.44 | 0.52 | 2.50 |  |
-| `idle.worker.read.150runs` | bytes | `▄▄▄▄▄▄` | 0 B | 0 B | 4.1 MiB |  |
+| `hub_start.first_launch` | ms | `▂▁█ ▄▂ ` | – | 4525 | 35000 |  |
+| `hub_start.warm` | ms | `▂▁▂▁▂█▁` | 1094 | 1167 | 8400 |  |
+| `project_open.30runs` | ms | `▂▂▃▁▂█▁` | 1561 | 1713 | 12000 |  |
+| `route.design_history.cold.30runs` | ms | `▁▁██▇▆▆` | 142 | 155 | 230 |  |
+| `route.design_history.warm.30runs` | ms | `▁▁▇▇█▄▅` | 128 | 142 | 240 |  |
+| `route.worktrees.cold.30runs` | ms | `▁▁██▇▆▆` | 118 | 132 | 230 |  |
+| `route.worktrees.warm.30runs` | ms | `▃▁██▇▇▇` | 110 | 119 | 230 |  |
+| `route.artifacts.cold.30runs` | ms | `█▅▂▃▆▁▇` | 40 | 31 | 230 |  |
+| `route.artifacts.warm.30runs` | ms | `█▂▅▁▆▇▆` | 35 | 33 | 220 |  |
+| `route.documents.cold.30runs` | ms | `█▃▁▄▂▂█` | 36 | 17 | 230 |  |
+| `route.documents.warm.30runs` | ms | `█▁▃▄▂▁▂` | 20 | 19 | 220 |  |
+| `route.working_source.cold.30runs` | ms | `█▅▂▁▂▁▂` | 51 | 50 | 240 |  |
+| `route.working_source.warm.30runs` | ms | `▁▂▅█▅▆▆` | 56 | 51 | 230 |  |
+| `route.board.cold.30runs` | ms | `█▁█▅▃▅▆` | 28 | 27 | 230 |  |
+| `route.board.warm.30runs` | ms | `█▅▄▆▁▄▃` | 19 | 22 | 230 |  |
+| `open_modeling.cold.30runs` | ms | `▄▂█▇▇▁▂` | 532 | 659 | 740 |  |
+| `open_modeling.model.cold.30runs` | ms | `▁▁█▇▇▃▄` | 331 | 399 | 390 |  |
+| `open_modeling.warm.30runs` | ms | `▂▁██▇▄▃` | 450 | 594 | 470 |  |
+| `open_modeling.model.warm.30runs` | ms | `▁▁█▆▆▃▂` | 238 | 351 | 350 |  |
+| `idle.hub.cpu.30runs` | s | `█▃▃▃▁▂▂` | 0.41 | 0.44 | 0.99 |  |
+| `idle.hub.read.30runs` | bytes | `▄▄▄▄▄▄▄` | 0 B | 0 B | 4.0 MiB |  |
+| `idle.worker.cpu.30runs` | s | `▆▁▆█▃▄▂` | 0.42 | 0.55 | 0.75 |  |
+| `idle.worker.read.30runs` | bytes | `▄▄▄▄▄▄▄` | 0 B | 0 B | 4.0 MiB |  |
+| `project_open.150runs` | ms | `▂▂▃▂▂█▁` | 1626 | 1813 | 12000 |  |
+| `route.design_history.cold.150runs` | ms | `▁▁▇▇█▅▆` | 187 | 209 | 230 |  |
+| `route.design_history.warm.150runs` | ms | `▁▁█▇▇▅▅` | 176 | 202 | 240 |  |
+| `route.worktrees.cold.150runs` | ms | `█▄▁▁▁▁▁` | 281 | 299 | 5100 |  |
+| `route.worktrees.warm.150runs` | ms | `▁▁███▆▇` | 259 | 280 | 230 | ⚠ |
+| `route.artifacts.cold.150runs` | ms | `▂▄▇▁█▁▂` | 90 | 96 | 250 |  |
+| `route.artifacts.warm.150runs` | ms | `█▁▆▇▇▃▃` | 69 | 80 | 260 |  |
+| `route.documents.cold.150runs` | ms | `▄▄▃█▇▁▇` | 36 | 30 | 220 |  |
+| `route.documents.warm.150runs` | ms | `█▆▂▅▁▃▆` | 28 | 24 | 220 |  |
+| `route.working_source.cold.150runs` | ms | `█▇▂▁▁▁▁` | 65 | 64 | 400 |  |
+| `route.working_source.warm.150runs` | ms | `▁▁▅▄█▅▄` | 54 | 56 | 230 |  |
+| `route.board.cold.150runs` | ms | `▇▇▂▁▂█▄` | 27 | 24 | 220 |  |
+| `route.board.warm.150runs` | ms | `▆▇▁▄█▃▅` | 27 | 24 | 230 |  |
+| `open_modeling.cold.150runs` | ms | `█▃▂▂▂▁▁` | 2066 | 3016 | 2200 |  |
+| `open_modeling.model.cold.150runs` | ms | `▁▁███▄▅` | 1828 | 2223 | 790 | ⚠ |
+| `open_modeling.warm.150runs` | ms | `▃▁███▃▄` | 1016 | 1301 | 990 | ⚠ |
+| `open_modeling.model.warm.150runs` | ms | `▂▁▇██▃▄` | 707 | 912 | 770 |  |
+| `idle.hub.cpu.150runs` | s | `█▄▂▁▂▁▁` | 0.39 | 0.44 | 1.40 |  |
+| `idle.hub.read.150runs` | bytes | `▄▄▄▄▄▄▄` | 0 B | 0 B | 4.0 MiB |  |
+| `idle.worker.cpu.150runs` | s | `▁▂▇█▆▃▃` | 0.39 | 0.52 | 2.50 |  |
+| `idle.worker.read.150runs` | bytes | `▄▄▄▄▄▄▄` | 0 B | 0 B | 4.1 MiB |  |
 
 <details><summary>Values and runs</summary>
 
 | Metric | Medians, oldest to newest |
 |---|---|
-| `hub_start.first_launch` | 4157 3977 5790 – 4746 4304 |
-| `hub_start.warm` | 1169 1132 1202 1132 1211 1915 |
-| `project_open.30runs` | 1707 1702 1829 1632 1724 2717 |
-| `route.design_history.cold.30runs` | 30 26 175 178 167 130 |
-| `route.design_history.warm.30runs` | 28 27 161 155 187 103 |
-| `route.worktrees.cold.30runs` | 29 35 155 149 146 110 |
-| `route.worktrees.warm.30runs` | 40 15 131 133 124 114 |
-| `route.artifacts.cold.30runs` | 45 34 24 28 38 22 |
-| `route.artifacts.warm.30runs` | 43 21 30 17 36 37 |
-| `route.documents.cold.30runs` | 37 18 12 21 15 16 |
-| `route.documents.warm.30runs` | 42 14 24 26 18 16 |
-| `route.working_source.cold.30runs` | 122 89 60 42 49 47 |
-| `route.working_source.warm.30runs` | 20 29 49 65 48 53 |
-| `route.board.cold.30runs` | 38 10 38 26 17 28 |
-| `route.board.warm.30runs` | 37 26 22 30 9.8 23 |
-| `open_modeling.cold.30runs` | 617 511 823 786 790 483 |
-| `open_modeling.model.cold.30runs` | 230 229 498 468 466 294 |
-| `open_modeling.warm.30runs` | 315 276 805 805 704 484 |
-| `open_modeling.model.warm.30runs` | 206 184 507 432 428 273 |
-| `idle.hub.cpu.30runs` | 0.75 0.50 0.47 0.47 0.38 0.41 |
-| `idle.hub.read.30runs` | 0 B 0 B 0 B 0 B 0 B 0 B |
-| `idle.worker.cpu.30runs` | 0.69 0.36 0.69 0.86 0.53 0.56 |
-| `idle.worker.read.30runs` | 0 B 0 B 0 B 0 B 0 B 0 B |
-| `project_open.150runs` | 1788 1857 1893 1750 1768 2761 |
-| `route.design_history.cold.150runs` | 44 30 241 231 261 157 |
-| `route.design_history.warm.150runs` | 39 36 262 228 244 149 |
-| `route.worktrees.cold.150runs` | 7948 3481 292 305 317 249 |
-| `route.worktrees.warm.150runs` | 30 30 307 300 319 235 |
-| `route.artifacts.cold.150runs` | 95 102 127 86 130 86 |
-| `route.artifacts.warm.150runs` | 99 60 86 96 94 74 |
-| `route.documents.cold.150runs` | 27 24 21 42 38 13 |
-| `route.documents.warm.150runs` | 36 28 17 27 15 20 |
-| `route.working_source.cold.150runs` | 380 328 85 50 63 53 |
-| `route.working_source.warm.150runs` | 26 27 62 54 83 57 |
-| `route.board.cold.150runs` | 39 38 20 16 18 42 |
-| `route.board.warm.150runs` | 29 33 12 22 35 19 |
-| `open_modeling.cold.150runs` | 8385 3318 3028 3004 3032 1918 |
-| `open_modeling.model.cold.150runs` | 829 929 2623 2619 2640 1675 |
-| `open_modeling.warm.150runs` | 907 559 1586 1646 1634 923 |
-| `open_modeling.model.warm.150runs` | 557 404 1116 1205 1190 640 |
-| `idle.hub.cpu.150runs` | 1.52 0.86 0.47 0.41 0.47 0.38 |
-| `idle.hub.read.150runs` | 0 B 0 B 0 B 0 B 0 B 0 B |
-| `idle.worker.cpu.150runs` | 0.30 0.36 0.64 0.73 0.59 0.44 |
-| `idle.worker.read.150runs` | 0 B 0 B 0 B 0 B 0 B 0 B |
+| `hub_start.first_launch` | 4157 3977 5790 – 4746 4304 – |
+| `hub_start.warm` | 1169 1132 1202 1132 1211 1915 1094 |
+| `project_open.30runs` | 1707 1702 1829 1632 1724 2717 1561 |
+| `route.design_history.cold.30runs` | 30 26 175 178 167 130 142 |
+| `route.design_history.warm.30runs` | 28 27 161 155 187 103 128 |
+| `route.worktrees.cold.30runs` | 29 35 155 149 146 110 118 |
+| `route.worktrees.warm.30runs` | 40 15 131 133 124 114 110 |
+| `route.artifacts.cold.30runs` | 45 34 24 28 38 22 40 |
+| `route.artifacts.warm.30runs` | 43 21 30 17 36 37 35 |
+| `route.documents.cold.30runs` | 37 18 12 21 15 16 36 |
+| `route.documents.warm.30runs` | 42 14 24 26 18 16 20 |
+| `route.working_source.cold.30runs` | 122 89 60 42 49 47 51 |
+| `route.working_source.warm.30runs` | 20 29 49 65 48 53 56 |
+| `route.board.cold.30runs` | 38 10 38 26 17 28 28 |
+| `route.board.warm.30runs` | 37 26 22 30 9.8 23 19 |
+| `open_modeling.cold.30runs` | 617 511 823 786 790 483 532 |
+| `open_modeling.model.cold.30runs` | 230 229 498 468 466 294 331 |
+| `open_modeling.warm.30runs` | 315 276 805 805 704 484 450 |
+| `open_modeling.model.warm.30runs` | 206 184 507 432 428 273 238 |
+| `idle.hub.cpu.30runs` | 0.75 0.50 0.47 0.47 0.38 0.41 0.41 |
+| `idle.hub.read.30runs` | 0 B 0 B 0 B 0 B 0 B 0 B 0 B |
+| `idle.worker.cpu.30runs` | 0.69 0.36 0.69 0.86 0.53 0.56 0.42 |
+| `idle.worker.read.30runs` | 0 B 0 B 0 B 0 B 0 B 0 B 0 B |
+| `project_open.150runs` | 1788 1857 1893 1750 1768 2761 1626 |
+| `route.design_history.cold.150runs` | 44 30 241 231 261 157 187 |
+| `route.design_history.warm.150runs` | 39 36 262 228 244 149 176 |
+| `route.worktrees.cold.150runs` | 7948 3481 292 305 317 249 281 |
+| `route.worktrees.warm.150runs` | 30 30 307 300 319 235 259 |
+| `route.artifacts.cold.150runs` | 95 102 127 86 130 86 90 |
+| `route.artifacts.warm.150runs` | 99 60 86 96 94 74 69 |
+| `route.documents.cold.150runs` | 27 24 21 42 38 13 36 |
+| `route.documents.warm.150runs` | 36 28 17 27 15 20 28 |
+| `route.working_source.cold.150runs` | 380 328 85 50 63 53 65 |
+| `route.working_source.warm.150runs` | 26 27 62 54 83 57 54 |
+| `route.board.cold.150runs` | 39 38 20 16 18 42 27 |
+| `route.board.warm.150runs` | 29 33 12 22 35 19 27 |
+| `open_modeling.cold.150runs` | 8385 3318 3028 3004 3032 1918 2066 |
+| `open_modeling.model.cold.150runs` | 829 929 2623 2619 2640 1675 1828 |
+| `open_modeling.warm.150runs` | 907 559 1586 1646 1634 923 1016 |
+| `open_modeling.model.warm.150runs` | 557 404 1116 1205 1190 640 707 |
+| `idle.hub.cpu.150runs` | 1.52 0.86 0.47 0.41 0.47 0.38 0.39 |
+| `idle.hub.read.150runs` | 0 B 0 B 0 B 0 B 0 B 0 B 0 B |
+| `idle.worker.cpu.150runs` | 0.30 0.36 0.64 0.73 0.59 0.44 0.39 |
+| `idle.worker.read.150runs` | 0 B 0 B 0 B 0 B 0 B 0 B 0 B |
 
 | Run | Commit | File |
 |---|---|---|
@@ -338,5 +338,6 @@ Latest: 2026-10-08T08:36:46Z · `d6e2c45bb702` · 6 of 6 runs shown
 | 2026-10-04T10:06:27Z | `1a0f3ea64391` | `results/windows-local/2026-10-04-1a0f3ea64391.json` |
 | 2026-10-05T08:19:07Z | `b0d763c3c91b` | `results/windows-local/2026-10-05-b0d763c3c91b.json` |
 | 2026-10-08T08:36:46Z | `d6e2c45bb702` | `results/windows-local/2026-10-08-d6e2c45bb702.json` |
+| 2026-10-09T05:02:19Z | `d6e2c45bb702` | `results/windows-local/2026-10-09-d6e2c45bb702.json` |
 
 </details>
