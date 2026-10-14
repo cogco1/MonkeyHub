@@ -16,6 +16,8 @@ It uses only what that context holds. The four starting contexts are:
 | GF | the same model with every metadata string stripped; only the geometry and the request's own words remain |
 | SF-O | SF without its obligations, and without the relations that bound, clear or fix (support contacts stay) |
 
+Each task is answered twice. d_pre reads the state alone; d_post also realizes the candidate, reads it back and scans it. Both are reported for every context.
+
 The verdict for an executable change follows these rules, in order:
 
 1. **Unknown.** An unknown parameter, a missing value or a missing evidence topic.
@@ -224,7 +226,9 @@ def _realized(record: StateRecord, root: Path, label: str) -> pipeline.Realizati
     return _REALIZED[key]
 
 
-def decide(context: Context, task: dict[str, Any], root: Path) -> dict[str, Any]:
+def decide(context: Context, task: dict[str, Any], root: Path | None, *, execute: bool = True) -> dict[str, Any]:
+    """``execute=False`` is d_pre: the state alone, no geometry. ``execute=True`` is d_post: also realize, read back and scan."""
+
     intent = task["intent"]
     if intent["kind"] == "attribute":
         if (intent["target"], intent["value"]) in context.rejections:
@@ -271,6 +275,8 @@ def decide(context: Context, task: dict[str, Any], root: Path) -> dict[str, Any]
         limit_side = any(o["right"] in changes or f"parameter:{o['right']}" in set(start.closure(refs)) for o in failed)
         return {"verdict": "refuse" if limit_side else "violated", **base,
                 "reason": ("the request moves the limit of " if limit_side else "breaks ") + ", ".join(o["obligation_id"] for o in failed)}
+    if not execute:
+        return {"verdict": "held", **base, "reason": "no obligation fails; geometry not executed"}
     label = f"{task['task_id']}-{context.name}"
     before = _realized(context.record, root, f"start-{label}")
     after = _realized(record, root, label)
@@ -318,14 +324,17 @@ def run(out: Path, *, families: tuple[str, ...] = ("F1", "F2", "F3")) -> dict[st
         _rewrite(files[("C-full", "3dm")], stripped, strings={k: None for k in _strings(files[("C-full", "3dm")]) if k.startswith("archflow:")})
         contexts.append(geometry_context(stripped, "3dm"))
         for task in (t for t in tasks if t["family"] == family):
-            answers = {}
+            answers, pre = {}, {}
             for context in contexts:
                 started = time.perf_counter()
+                pre[context.name] = decide(context, task, fam_dir, execute=False)
                 answer = decide(context, task, fam_dir)
                 answers[context.name] = answer
                 precision, recall = _set_scores(answer["affected"], task["gold"]["affected"])
                 _, recheck_recall = _set_scores(answer["recheck"], task["gold"]["recheck"])
-                rows.append({"task_id": task["task_id"], "type": task["type"], "context": context.name, "verdict": answer["verdict"],
+                rows.append({"task_id": task["task_id"], "type": task["type"], "context": context.name,
+                             "verdict_pre": pre[context.name]["verdict"], "verdict_pre_ok": pre[context.name]["verdict"] in task["gold"]["verdicts"],
+                             "verdict": answer["verdict"],
                              "gold_verdicts": "|".join(task["gold"]["verdicts"]), "verdict_ok": answer["verdict"] in task["gold"]["verdicts"],
                              "agrees_with_H": None, "affected": "|".join(answer["affected"]), "affected_precision": precision,
                              "affected_recall": recall, "recheck_recall": recheck_recall, "changes": json.dumps(answer.get("changes")),
@@ -334,7 +343,7 @@ def run(out: Path, *, families: tuple[str, ...] = ("F1", "F2", "F3")) -> dict[st
                 h_answer = answers["H"]
                 mine = answers[row["context"]]
                 row["agrees_with_H"] = (mine["verdict"], mine["affected"], mine.get("changes")) == (h_answer["verdict"], h_answer["affected"], h_answer.get("changes"))
-            print(f"{task['task_id']:7} " + " ".join(f"{name}={answers[name]['verdict']}" for name in answers), flush=True)
+            print(f"{task['task_id']:7} " + " ".join(f"{name}={pre[name]['verdict']}/{answers[name]['verdict']}" for name in answers), flush=True)
     with (out / "x1.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
@@ -342,8 +351,9 @@ def run(out: Path, *, families: tuple[str, ...] = ("F1", "F2", "F3")) -> dict[st
     summary: dict[str, Any] = {"consistency": consistency, "by_context": {}, "state_bytes": {}}
     for row in rows:
         summary["state_bytes"].setdefault(row["task_id"].split("-")[0], {})[row["context"]] = row["state_bytes"]
-        cell = summary["by_context"].setdefault(row["context"], {"tasks": 0, "verdict_ok": 0, "agrees_with_H": 0})
+        cell = summary["by_context"].setdefault(row["context"], {"tasks": 0, "verdict_pre_ok": 0, "verdict_ok": 0, "agrees_with_H": 0})
         cell["tasks"] += 1
+        cell["verdict_pre_ok"] += int(row["verdict_pre_ok"])
         cell["verdict_ok"] += int(row["verdict_ok"])
         cell["agrees_with_H"] += int(bool(row["agrees_with_H"]))
     (out / "x1_summary.json").write_text(json.dumps(summary, indent=1, sort_keys=True, default=str) + "\n", encoding="utf-8")
