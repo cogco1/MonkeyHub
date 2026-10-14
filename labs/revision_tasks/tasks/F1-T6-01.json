@@ -31,7 +31,7 @@
   },
   "contexts": {},
   "intended_change": {
-    "text_en": "Use four columns, keep the end columns fixed, and tighten the clear spacing limit to 2.0 m.",
+    "text_en": "Use four columns, keep the corner columns fixed, and make the clear space between columns no more than 2.2 m.",
     "typed_delta": [
       {
         "target": "parameter:column_count",
@@ -43,7 +43,7 @@
         "target": "parameter:max_clear_spacing",
         "parameter": "max_clear_spacing",
         "from": 3.0,
-        "to": 2.0
+        "to": 2.2
       }
     ]
   },
@@ -75,12 +75,12 @@
       ],
       "tolerance_m": 0.0,
       "declared_in_graph": true,
-      "source": "stage:technical/obligation:p5-clear-spacing (limit tightened to 2.0 m by this request)",
+      "source": "stage:technical/obligation:p5-clear-spacing (limit tightened to 2.2 m by this request)",
       "measure": {
         "check": "column_row",
         "prefix": "obj-columns-",
         "count": 4,
-        "max_clear_spacing_m": 2.0
+        "max_clear_spacing_m": 2.2
       }
     }
   ],
@@ -98,7 +98,7 @@
     ],
     "annotated_by": "executor-draft",
     "annotated_at": "2026-10-14T05:30:00Z",
-    "physical_basis": "With the end column axes fixed at 0.9 and 11.1 m, four columns of 0.9 m diameter leave 2.5 m clear between columns; 2.5 m > 2.0 m, so no four-column layout satisfies the request. PROVISIONAL: manifest v1 states the limit as 2.5 m, which four columns meet exactly; 2.0 m is used until the manifest is corrected."
+    "physical_basis": "With the end column axes fixed at 0.9 and 11.1 m, four columns of 0.9 m diameter leave 2.5 m clear between columns; 2.5 m > 2.2 m, so no four-column layout satisfies the request."
   },
   "oracle": {
     "oracle_id": "geometry-readback-oracle",

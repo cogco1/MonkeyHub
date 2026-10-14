@@ -71,7 +71,7 @@ The arm works through these steps in order and stops at the first refusal or reo
 | Task | Change | Expected | Status |
 |---|---|---|---|
 | F1-T1-01 | six → four columns, ends fixed | accept, all held | as expected |
-| F1-T6-01 | four columns and clear spacing ≤ 2.0 m | refuse | as expected |
+| F1-T6-01 | four columns and clear spacing ≤ 2.2 m | refuse | as expected |
 | F2-T3-01 | transition block raised into the declared cornice clearance (J1) | reopen/refuse; J1 violated | as expected |
 | F2-T4-01 | portico columns +1.0 m; the transition roof is hit where no relation is declared (J3) | not accept; J3 violated | as expected |
 | F3-T1-01 | door 1.2 → 1.6 m | accept, all held | as expected |
