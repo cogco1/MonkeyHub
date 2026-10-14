@@ -27,7 +27,7 @@ from ..models import ChatPresentationRequest, HubFailure
 # The proposal routes that answer a Proposal the client has just authored; its
 # generated edits and operator are left out of the immediate answer.
 _AUTHORED_PROPOSALS = {"/api/proposals", "/api/proposals/construction", "/api/proposals/facets",
-                       "/api/proposals/hosted-opening"}
+                       "/api/proposals/hosted-opening", "/api/proposals/elevation"}
 
 
 # What each bound tool takes, exactly as its advertised input schema says.
@@ -278,6 +278,11 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         refusal = studio_tool._semantic_edit_refusal(arguments.get("body"))
         if refusal is not None:
             raise refusal
+    if name == "studio_request" and method == "POST" and parsed.path == "/api/proposals/elevation":
+        # Only set-datum, a project level (#651); refused, like the line above, before any Studio is resolved.
+        refusal = studio_tool._elevation_refusal(arguments.get("body"))
+        if refusal is not None:
+            raise refusal
     base, session = preparation._bound_studio(hub, chat_id)
     query = parse_qs(parsed.query, keep_blank_values=True)
     if any(query[key] != [session["projectId"]] for key in ("projectId", "project_id") if key in query):
@@ -320,6 +325,13 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                 schema["properties"]["action"]["enum"] = ["revoke"]
             elif parsed.path == "/api/decisions":
                 schema["properties"]["disposition"]["enum"] = ["avoid", "keep"]
+        if method == "POST" and parsed.path == "/api/proposals/elevation":
+            # The chat sends set-datum only (#651); an element's elevation is construction's.
+            reference = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+            schema = document["components"]["schemas"][reference.rsplit("/", 1)[-1]]
+            schema["properties"] = {key: value for key, value in schema["properties"].items()
+                                    if key not in {"elementId", "reference"}}
+            schema["properties"]["action"] = {**schema["properties"]["action"], "enum": [studio_tool._ELEVATION_ACTION]}
         if (method, parsed.path) in judgments._BOUND_WORDS:
             # Hub binds the user's message and words; the provider supplies neither.
             reference = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
