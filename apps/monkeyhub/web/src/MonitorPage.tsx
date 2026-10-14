@@ -25,6 +25,9 @@ type Rate = {
 };
 type Rates = { rates: Rate[] };
 type SourceResponse = { paths: string[] };
+// Monitor's registered agent usage sources (GET /api/sources), each with its explicit files.
+type SourceList = { agents: Record<string, SourceResponse> };
+const agentNames: Record<string, string> = { codex: "Codex", "claude-code": "Claude Code", "usage-file": "UsageEvent@1" };
 type Quote = { currency: string; amount_usd: string | null; known_subtotal_usd: string; missing: string[] };
 
 const words = {
@@ -39,7 +42,7 @@ const words = {
     usageScope: "汇总与明细均统计所选项目的全部已记录任务；任务选择仅切换时间线。",
     includeOperations: "包含工具与本地操作", visibleSubtotal: "当前显示的模型调用小计", allCallsTotal: "全部模型调用合计",
     recordRange: (shown: number, count: number) => `当前显示 ${shown} / ${count} 条记录`,
-    sources: "Codex 来源", sourcesHelp: "每行一个明确的本机 JSONL 路径。Hub 自动绑定的会话不需要手填；这里仅用于诊断补充。", apply: "应用来源", applied: "来源已更新",
+    sources: "用量来源", agent: "Agent", sourcesHelp: "先选 agent，再每行填一个明确的本机文件路径：Codex 或 Claude Code 的会话 JSONL，或别处导出的 UsageEvent@1 文件。不扫描目录；Hub 自动绑定的会话不需要手填，这里仅用于诊断补充。", apply: "应用来源", applied: "来源已更新",
     calculator: "费用估算", calculatorHelp: "按你明确选择的费率计算 API 等价值；不是订阅实际扣款，也不自动猜计费档位。", rate: "费率", chooseRate: "选择参考费率", input: "总输入", cacheRead: "缓存读取", cacheWrite: "缓存写入", cacheWrite1h: "其中 1 小时写入", reasoning: "其中推理输出", calculate: "计算", resetTotals: "恢复当前汇总", estimated: "估算费用", knownSubtotal: "已知小计", missing: "仍缺少",
     serviceDetail: "技术详情", updated: "更新于", download: "下载 Trace JSON", raw: "原始记录", endNotObserved: "结束时间未观测",
   },
@@ -54,7 +57,7 @@ const words = {
     usageScope: "Totals and records cover all recorded tasks in the selected project scope. The task selector changes only the timeline.",
     includeOperations: "Include tools and local operations", visibleSubtotal: "Displayed model-call subtotal", allCallsTotal: "All model-call totals",
     recordRange: (shown: number, count: number) => `Showing ${shown} of ${count} records`,
-    sources: "Codex sources", sourcesHelp: "One explicit local JSONL path per line. Hub-bound sessions do not need to be entered here; this is only for diagnostic supplements.", apply: "Apply sources", applied: "Sources updated",
+    sources: "Usage sources", agent: "Agent", sourcesHelp: "Choose an agent, then enter one explicit local file path per line: a Codex or Claude Code session JSONL, or a UsageEvent@1 file exported elsewhere. No folder is scanned. Hub-bound sessions do not need to be entered here; this is only for diagnostic supplements.", apply: "Apply sources", applied: "Sources updated",
     calculator: "Cost estimate", calculatorHelp: "Calculates an API-rate equivalent from the rate you explicitly select. It is not a subscription charge and no billing tier is guessed.", rate: "Rate", chooseRate: "Choose reference rate", input: "Total input", cacheRead: "Cache read", cacheWrite: "Cache write", cacheWrite1h: "Of which 1-hour write", reasoning: "Of which reasoning output", calculate: "Calculate", resetTotals: "Use current totals", estimated: "Estimated cost", knownSubtotal: "Known subtotal", missing: "Still missing",
     serviceDetail: "Technical details", updated: "Updated", download: "Download Trace JSON", raw: "Raw record", endNotObserved: "End not observed",
   },
@@ -92,8 +95,9 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
   const [events, setEvents] = useState<MonitorEvent[]>([]);
   const [traces, setTraces] = useState<MonitorTrace[]>([]);
   const [rates, setRates] = useState<Rate[]>([]);
-  const [sourcePaths, setSourcePaths] = useState("");
-  const [sourceDirty, setSourceDirty] = useState(false);
+  const [sourceAgent, setSourceAgent] = useState("codex");
+  const [sourceDrafts, setSourceDrafts] = useState<Record<string, string>>({});
+  const [sourceDirty, setSourceDirty] = useState<Record<string, boolean>>({});
   const [sourceStatus, setSourceStatus] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -168,12 +172,16 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
           return { eventResult, traceResult };
         }),
         jsonRequest<Rates>(`${monitorBase}/api/rates`),
-        includeSources ? jsonRequest<SourceResponse>(`${monitorBase}/api/sources/codex`) : null,
+        includeSources ? jsonRequest<SourceList>(`${monitorBase}/api/sources`) : null,
       ]);
       const { eventResult, traceResult } = diagnostics;
       setEvents(eventResult.events ?? []); setTraces(traceResult.traces ?? []); setRates(rateResult.rates ?? []);
       setWarnings([...new Set([...(eventResult.warnings ?? []), ...(traceResult.warnings ?? [])])]);
-      if (sourceResult && !sourceDirtyRef.current) setSourcePaths(sourceResult.paths.join("\n"));
+      if (sourceResult) {
+        // An agent's draft the person is editing is theirs until they apply it.
+        setSourceDrafts((drafts) => Object.fromEntries(Object.entries(sourceResult.agents ?? {}).map(([agent, selected]) =>
+          [agent, sourceDirtyRef.current[agent] ? drafts[agent] ?? "" : selected.paths.join("\n")])));
+      }
       setUpdatedAt(new Date());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -224,9 +232,11 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
     event.preventDefault(); if (!base) return;
     setSourceStatus(""); setError(null);
     try {
-      const paths = sourcePaths.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
-      const saved = await jsonRequest<SourceResponse>(`${base}/api/sources/codex`, { method: "PUT", body: JSON.stringify({ paths }) });
-      setSourcePaths(saved.paths.join("\n")); setSourceDirty(false); setSourceStatus(t.applied); await readAll(false);
+      const agent = sourceAgent;
+      const paths = (sourceDrafts[agent] ?? "").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+      const saved = await jsonRequest<SourceResponse>(`${base}/api/sources/${encodeURIComponent(agent)}`, { method: "PUT", body: JSON.stringify({ paths }) });
+      setSourceDrafts((drafts) => ({ ...drafts, [agent]: saved.paths.join("\n") }));
+      setSourceDirty((dirty) => ({ ...dirty, [agent]: false })); setSourceStatus(t.applied); await readAll(false);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   };
 
@@ -339,7 +349,7 @@ export function MonitorPage({ preferences, active, initialProjectId = "", openRe
       </section>
 
       <div className="monitor-lower-grid" hidden={view !== "calls"}>
-        <section className="monitor-section"><div className="monitor-section__head"><h2>{t.sources}</h2></div><p className="monitor-help">{t.sourcesHelp}</p><form onSubmit={(event) => void applySources(event)}><textarea className="monitor-sources" rows={6} spellCheck={false} value={sourcePaths} onChange={(event) => { setSourcePaths(event.target.value); setSourceDirty(true); setSourceStatus(""); }} /><div className="monitor-actions"><button className="btn btn--primary" type="submit" disabled={!base}>{t.apply}</button><span role="status">{sourceStatus}</span></div></form></section>
+        <section className="monitor-section"><div className="monitor-section__head"><h2>{t.sources}</h2></div><p className="monitor-help">{t.sourcesHelp}</p><form className="monitor-source-form" onSubmit={(event) => void applySources(event)}><label>{t.agent}<select value={sourceAgent} onChange={(event) => { setSourceAgent(event.target.value); setSourceStatus(""); }}>{(Object.keys(sourceDrafts).length ? Object.keys(sourceDrafts) : [sourceAgent]).map((agent) => <option value={agent} key={agent}>{agentNames[agent] ?? agent}</option>)}</select></label><textarea className="monitor-sources" aria-label={t.sources} rows={6} spellCheck={false} value={sourceDrafts[sourceAgent] ?? ""} onChange={(event) => { const value = event.target.value; setSourceDrafts((drafts) => ({ ...drafts, [sourceAgent]: value })); setSourceDirty((dirty) => ({ ...dirty, [sourceAgent]: true })); setSourceStatus(""); }} /><div className="monitor-actions"><button className="btn btn--primary" type="submit" disabled={!base}>{t.apply}</button><span role="status">{sourceStatus}</span></div></form></section>
         <section className="monitor-section"><div className="monitor-section__head"><h2>{t.calculator}</h2></div><p className="monitor-help">{t.calculatorHelp}</p><form onSubmit={(event) => void calculate(event)} className="monitor-calculator"><label>{t.rate}<select value={rateIndex} onChange={(event) => { invalidateQuote(); setRateIndex(event.target.value); }} required><option value="">{t.chooseRate}</option>{rates.map((rate, index) => <option value={index} key={`${rate.provider}:${rate.model}:${index}`}>{rate.label ?? `${rate.provider} · ${rate.model}`}</option>)}</select></label><div className="monitor-token-grid">{[
           ["input_tokens", t.input], ["cached_input_tokens", t.cacheRead], ["cache_write_input_tokens", t.cacheWrite],
           ["cache_write_1h_input_tokens", t.cacheWrite1h], ["output_tokens", t.output], ["reasoning_output_tokens", t.reasoning],

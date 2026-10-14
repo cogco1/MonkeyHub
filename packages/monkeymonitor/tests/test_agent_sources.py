@@ -21,7 +21,7 @@ from monkeymonitor.claude_code import iter_claude_code_events
 from monkeymonitor.codex import iter_codex_events
 from monkeymonitor.pricing import RateCard
 from monkeymonitor.server import MonitorData
-from monkeymonitor.sources import AGENT_SOURCES
+from monkeymonitor.sources import AGENT_SOURCES, defer_to_hub
 from monkeymonitor.store import UsageLog
 from monkeymonitor.trace import build_traces
 from monkeymonitor.usage import TokenUsage, UsageEvent
@@ -527,6 +527,7 @@ class CombinedSourceTests(unittest.TestCase):
 
 
 class TokenAuthorityTests(unittest.TestCase):
+    """The snapshot keeps one row per model call: the Hub's, where it counted the call itself."""
     START = datetime(2026, 10, 1, tzinfo=timezone.utc)
 
     def row(self, key, phase, start, end, **extra):
@@ -539,10 +540,12 @@ class TokenAuthorityTests(unittest.TestCase):
         return UsageEvent(**values).to_dict()
 
     def usage(self, rows):
-        """Usage over every trace: an agent's rows need not share a trace with the Hub's."""
-        traces = build_traces(rows, now=self.START + timedelta(seconds=30))["traces"]
+        """The input the traces total over what the snapshot keeps, and the rows it left out."""
+        kept, _ = defer_to_hub(rows)
+        traces = build_traces(kept, now=self.START + timedelta(seconds=30))["traces"]
+        held = {row["event_id"] for row in kept}
         return (sum(trace["usage"]["known_subtotal_tokens"]["input_tokens"] for trace in traces),
-                sorted(key for trace in traces for key in trace["usage"]["excluded_duplicate_event_ids"]))
+                sorted(row["event_id"] for row in rows if row["event_id"] not in held))
 
     def hub_turn(self, *messages):
         """A Hub turn and one usage row per native message the Hub counted, as its observer names them."""
@@ -590,6 +593,54 @@ class TokenAuthorityTests(unittest.TestCase):
         rows = [*self.hub_turn("msg_one"), self.claude("claude-code:msg_one", 2000, session_id="from-elsewhere"),
                 self.claude("claude-code:msg_two", 2600)]
         self.assertEqual(self.usage(rows), (400, ["claude-code:msg_one"]))
+
+    def test_left_out_rows_are_counted_per_source_and_hub_and_studio_rows_always_stay(self):
+        rows = [*self.hub_turn("msg_one"), self.claude("claude-code:msg_one", 2000),
+                self.row("tool-a:1", "agent", 3000, 3000, source="usage-file", model_call=True,
+                         tokens=TokenUsage(300, 30), timing_scope="model_call"),
+                self.row("studio-call", "model_request", 3100, 3200, source="studio", provider="anthropic",
+                         model_call=True, tokens=TokenUsage(50, 5), timing_scope="model_call")]
+        kept, left_out = defer_to_hub(rows)
+        self.assertEqual(left_out, {"claude-code": 1, "usage-file": 1})
+        self.assertEqual({row["event_id"] for row in kept},
+                         {"hub:turn:hub-turn", "hub:turn:hub-turn:usage:msg_one", "studio-call"})
+
+    def test_an_agent_row_outside_any_model_call_phase_is_drawn_in_the_agent_lane(self):
+        rows = [self.row("tool-a:step", "tool_call", 0, 100, source="usage-file", session_id="elsewhere")]
+        (trace,) = build_traces(rows, now=self.START + timedelta(seconds=30))["traces"]
+        self.assertEqual([span["lane"] for span in trace["spans"]], ["agent"])
+
+
+class SnapshotAuthorityTests(unittest.TestCase):
+    """/api/events, report and traces all read the snapshot, so each lists a call once."""
+
+    def setUp(self):
+        self.home = ClaudeHome(self)
+        self.data_dir = self.home.root.parent / "diagnostics"
+        # The Hub ran this Claude session and counted msg_one from its stream.
+        UsageLog(self.data_dir).append(UsageEvent(
+            event_id="hub:turn:t1:usage:msg_one", source="hub", provider="claude", model="claude-test-model",
+            phase="model_usage", status="succeeded", started_at=at(1), tokens=TokenUsage(3210, 120, 3000, 200, 200),
+            model_call=True, session_id=SESSION, timing_scope="unknown", billing_mode="subscription_equivalent",
+            details={"billing_plan": "api-standard"}))
+        # Its record also holds msg_one, and msg_two from a turn the Hub never saw.
+        self.session = self.home.session([user("u1", "prompt-1"), assistant("m1", "u1", "msg_one", counts(output=120)),
+                                          user("u2", "prompt-2", parent="m1", second=60),
+                                          assistant("m2", "u2", "msg_two", counts(output=70), second=61)])
+
+    def test_the_snapshot_report_and_traces_hold_each_call_once(self):
+        data = MonitorData(self.data_dir, agent_sessions={"claude-code": [self.session]})
+        snapshot = data.snapshot()
+        self.assertEqual(sorted(row["event_id"] for row in snapshot["events"]),
+                         ["claude-code:msg_two", "hub:turn:t1:usage:msg_one"])
+        self.assertTrue(any("1 条 claude-code" in warning for warning in snapshot["warnings"]))
+        traces = data.traces()["traces"]
+        self.assertEqual(sum(trace["usage"]["tokens"]["output_tokens"] or 0 for trace in traces), 190)
+        output = StringIO()
+        with redirect_stdout(output):
+            main(["report", "--data-dir", str(self.data_dir), "--agent-session", f"claude-code={self.session}"])
+        self.assertEqual(sorted(row["event_id"] for row in json.loads(output.getvalue())["events"]),
+                         ["claude-code:msg_two", "hub:turn:t1:usage:msg_one"])
 
 
 if __name__ == "__main__":
