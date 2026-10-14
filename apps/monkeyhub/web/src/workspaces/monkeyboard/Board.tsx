@@ -15,7 +15,7 @@ import { BoardFeedbackError, prepareBoardDesignRequest, type BoardDesignRequest 
 import { BoardFeedbackGeometryError, createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
 import { boardViewAppState, captureBoardView, pageSourceAt, type BoardDocumentOpen, type BoardViewState } from "./boardNavigation";
 import { BoardRenderError, handOverBoardRender, RENDER_REFERENCE_LIMIT, renderReferenceChoices, selectedRenderPages, type BoardRenderChatRequest } from "./boardRender";
-import { boardDocumentFrameName, documentKey, documentMime, findSource, imageSource, isTracingPaperReview, nextDocumentPosition, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
+import { boardDocumentFrameName, documentKey, documentMime, findSource, imageSource, isTracingPaperReview, nextDocumentPosition, nextPagePlacement, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
 import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchFrameIds, sketchSummary, type BoardSketchRequest, type SketchFrameData, type SketchSkipReason } from "./boardSketch";
 import { pageSourceDetails, pageSourceReason, pageSourceState, pageStageLabel, pageStatusShows, readStageLabels, type PageStatusRead } from "./boardSourceStatus";
 import "./board.css";
@@ -687,7 +687,9 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const restored = restoreView === null ? null : boardViewAppState(restoreView, board.elements);
     return {
       elements: board.elements as unknown as ExcalidrawElement[], files, scrollToContent: restored === null,
-      appState: { ...CANVAS_APP_STATE,
+      // Moving or resizing snaps to other elements' edges, centres and gaps (#615); Alt+S turns it off for
+      // the session, and holding Ctrl places freely while it is on.
+      appState: { ...CANVAS_APP_STATE, objectsSnapModeEnabled: true,
         ...(restored === null ? {} : { ...restored, zoom: { value: restored.zoom.value as AppState["zoom"]["value"] } }) },
     };
   });
@@ -745,12 +747,15 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const api = canvas.current;
     if (!alive.current || !api || !initialized.current || queue.getState().conflict) return;
     if (automatic && seen.current.has(documentKey(document))) return;
-    const position = nextDocumentPosition(records(api.getSceneElements()));
+    // A new page joins the row of the selected page, or of the page placed last, at its top and height (#615).
+    const elementsNow = records(api.getSceneElements());
     const scale = Math.min(1, 1000 / Math.max(rendered.width, rendered.height));
+    const placement = nextPagePlacement(elementsNow, api.getAppState().selectedElementIds, rendered.width / rendered.height)
+      ?? { ...nextDocumentPosition(elementsNow), width: rendered.width * scale, height: rendered.height * scale };
     const imageId = crypto.randomUUID();
     const fileId = crypto.randomUUID() as FileId;
     const additions = convertToExcalidrawElements([
-      { type: "image", id: imageId, fileId, ...position, width: rendered.width * scale, height: rendered.height * scale, status: "saved", customData: { sourceDocument: pageSource(document, pageIndex) } },
+      { type: "image", id: imageId, fileId, ...placement, status: "saved", customData: { sourceDocument: pageSource(document, pageIndex) } },
       { type: "frame", children: [imageId], name: boardDocumentFrameName(document, pageIndex) },
     ], { regenerateIds: false });
     api.addFiles([{ id: fileId, dataURL: rendered.dataURL, mimeType: "image/png", created: Date.now() }]);
