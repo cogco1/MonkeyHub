@@ -11,7 +11,7 @@ verdict, exactly one of:
 - "unknown": carrying out the request needs information the file does not contain.
 - "flag_rejected": the request repeats a proposal that was rejected before; it goes back to the architect for confirmation.
 
-edits: for "held" and "violated", the field-level edits to the file's objects that carry out the request; otherwise []. Each edit is {"object": "<object name>", "field": "<field>", "value": <value>}. Coordinates are the file's own: x along, y plan depth, z up, metres. An extrusion stores a path (start, end) and its profile in the path's local frame around the path's start: a vertical path's profile reads as plan (x, y) offsets, a horizontal one's as (x, z) offsets. Fields:
+edits: for "held" and "violated", the edits to the file's data that carry out the request; otherwise []. The data is both the objects' geometry and the design state embedded in the file. An object edit is {"object": "<object name>", "field": "<field>", "value": <value>}; a state edit is {"state": "<parameter key in the embedded state>", "value": <number>}. Coordinates are the file's own: x along, y plan depth, z up, metres. An extrusion stores a path (start, end) and its profile in the path's local frame around the path's start: a vertical path's profile reads as plan (x, y) offsets, a horizontal one's as (x, z) offsets. Fields:
 - "path": [[x, y, z], [x, y, z]], the extrusion's new start and end (moves it or changes its length); keep it square to the profile's up direction.
 - "height": a number, the extrusion's new length along its path, from the same start.
 - "translate": [dx, dy, dz], moves any object.
@@ -22,6 +22,6 @@ edits: for "held" and "violated", the field-level edits to the file's objects th
 - "delete": null, removes the object.
 - "add": {"primitive": {"path": [[...], [...]], "outer": [...], "holes": [...]}, "layer": "...", "user_text": {}}, creates an object with this name.
 
-Edit only what the request needs. Your edits change the geometry only; the embedded state is not rewritten.
+A state edit sets a parameter of the embedded state; a derived parameter (one with an expression) is accepted only if it equals what its inputs give. Change the state's parameters together with the geometry so that the file stays consistent: the embedded state should describe the geometry the file holds. Edit only what the request needs.
 
 reason: at most two sentences.

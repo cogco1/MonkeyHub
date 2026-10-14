@@ -28,11 +28,17 @@ def test_the_right_edits_pass_the_oracle_and_match_the_rebuild(tmp_path):
     det = x9.dd_det(start["native"], values, tmp_path / "det.native.3dm")
     regen = x9.regen(start["bound"], values, tmp_path / "regen")
     (tmp_path / "trials").mkdir()
-    answer = {"verdict": "held", "edits": det["edits"], "reason": "lintel bearing 0.3 m"}
+    state = [{"state": key, "value": value} for key, value in values.items()]
+    answer = {"verdict": "held", "edits": det["edits"] + state, "reason": "lintel bearing 0.3 m"}
     execution = x9_agent.execute(answer, task, start, regen, tmp_path / "trials" / "t")
     scored = x9_agent.score(answer, task, execution)
     assert (scored["edits_applied"], scored["oracle_verdict"], scored["agrees_regen"], scored["unrelated"], scored["missed"]) == (True, "held", True, 0, 0)
-    assert scored["verdict_ok_four"] and not scored["false_accept"] and scored["agrees_regen_unnamed"]
+    assert scored["verdict_ok_four"] and not scored["false_accept"] and scored["agrees_regen_unnamed"] and scored["self_consistent"]
+    from labs.revision_tasks import native3dm
+    assert native3dm.read_native(tmp_path / "trials" / "t.native.3dm").record.digest != start["bound"].digest   # sealed with the new state
+    # the same geometry without the state edit: the file no longer describes itself
+    stale = x9_agent.execute({"verdict": "held", "edits": det["edits"]}, task, start, regen, tmp_path / "trials" / "s")
+    assert stale["applied"] and stale["state"] == "STATE_STALE" and stale["oracle_verdict"] == "held"
     bad = x9_agent.execute({"verdict": "held", "edits": [{"object": "obj-nowhere", "field": "height", "value": 1}]}, task, start, regen,
                            tmp_path / "trials" / "u")
     assert not bad["applied"] and bad["why"].startswith("EDIT_REFUSED")

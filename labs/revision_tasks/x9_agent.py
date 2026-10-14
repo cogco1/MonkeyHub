@@ -2,7 +2,8 @@
 
 For each task of ``x1_tasks.json`` the model gets the request (``utterance``), the native file's object table (each
 object's name, layer, stored primitive and other user text) and the embedded state (``archflow:state``), with the
-system prompt ``prompts/x9_system.md``; it answers a verdict and field-level edits. The fairness controls and the
+system prompt ``prompts/x9_system.md``; it answers a verdict and edits to the file's data: object fields and the embedded
+state's parameters. The fairness controls and the
 cost ledger are ``x2``'s. ``native3dm.apply_edits`` applies the edits to the start file exactly as given (an edit it
 cannot apply refuses the whole answer); the result is meshed by the harness (``native3dm.mesh_model``) and judged by
 the oracle with the task's file, against the start's OCCT preview, and compared object by object with REGEN, the
@@ -10,8 +11,9 @@ rebuild of the gold change.
 
 Scores: the verdict against the gold, strict and in the four classes of X2's main metric (held | blocked = violated or
 refuse | unknown | flag_rejected); whether the edits applied; the oracle's verdict; agreement with REGEN; objects the
-agent changed that REGEN leaves alone (unrelated) and objects REGEN changes that the agent left alone (missed); a false
-accept is ``held`` where the gold is not held or the oracle finds a violation.
+agent changed that REGEN leaves alone (unrelated) and objects REGEN changes that the agent left alone (missed); whether
+the edited file is self-consistent (its embedded state compiles to exactly the solids it holds; else ``STATE_STALE``);
+a false accept is ``held`` where the gold is not held or the oracle finds a violation.
 """
 
 from __future__ import annotations
@@ -81,25 +83,76 @@ def shapes(numbers: dict[str, dict[str, Any]]) -> list[tuple[Any, ...]]:
     return sorted((tuple(round(v, 5) for v in n["min"]), tuple(round(v, 5) for v in n["max"]), round(n["volume"], 5)) for n in numbers.values())
 
 
+def _state_edits(record, edits: list[dict[str, Any]]):
+    """The answer's state edits applied to the file's record: inputs set, derived values checked (as X2's rule 7.2)."""
+
+    from archflow.state.state_record import StateRecordEditKind, StateRecordOperator, apply_state_record_operator, evaluate_parameters
+
+    keys = {p.key for p in record.parameters}
+    derived = {p.key for p in record.parameters if p.expr}
+    asked = {}
+    for edit in edits:
+        key, value = str(edit.get("state", "")).removeprefix("parameter:"), edit.get("value")
+        if key not in keys or isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise native3dm.NativeError(f"state edit {key!r}: not a parameter of the embedded state with a number")
+        asked[key] = float(value)
+    for key, value in asked.items():
+        if key not in derived:
+            record = apply_state_record_operator(record, StateRecordOperator(
+                kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest, base_state_digest=record.state_digest,
+                target_ref=f"parameter:{key}", key=key, value=value))
+    evaluated = evaluate_parameters(record)
+    conflicts = sorted(k for k, v in asked.items() if k in derived and abs(float(evaluated[k]) - v) > 1e-6)
+    if conflicts:
+        raise native3dm.NativeError(f"DERIVED_CONFLICT: {', '.join(conflicts)}")
+    return record
+
+
 def execute(answer: dict[str, Any], task: dict[str, Any], start: dict[str, Any], gold_regen: dict[str, Any] | None, trial: Path) -> dict[str, Any]:
-    import rhino3dm
+    """Apply the answer's object and state edits to the start file as given; then judge, compare and check the file is consistent.
+
+    The file is consistent when the edited embedded state compiles to exactly the solids the file holds (every object's
+    box and volume, under the same names); it is then sealed again (state and binding). Otherwise it is written with its
+    old binding and recorded ``STATE_STALE``.
+    """
+
+    from labs.revision_tasks import fixtures, pipeline
 
     edits = answer.get("edits") or []
     if answer.get("verdict") not in ("held", "violated") or not edits:
         return {"applied": False, "why": "no edits", "oracle_verdict": "unavailable"}
-    model = rhino3dm.File3dm.Read(str(start["native"]))
+    read = native3dm.read_native(start["native"])
+    model = read.model
+    object_edits = [e for e in edits if isinstance(e, dict) and "object" in e]
+    state_edits = [e for e in edits if isinstance(e, dict) and "state" in e]
     try:
-        applied = native3dm.apply_edits(model, edits)
-    except (native3dm.NativeError, KeyError, TypeError, ValueError) as exc:
+        applied = native3dm.apply_edits(model, object_edits)
+        record = _state_edits(fixtures.bound(read.record), state_edits)
+    except Exception as exc:  # noqa: BLE001 - any edit the patcher cannot apply refuses the answer as given
         return {"applied": False, "why": f"EDIT_REFUSED: {type(exc).__name__}: {exc}"[:300], "oracle_verdict": "unavailable"}
     candidate = trial.parent / f"{trial.name}.native.3dm"
     if not model.Write(str(candidate), 8):
         return {"applied": False, "why": "the patched file could not be written", "oracle_verdict": "unavailable"}
+    file_numbers = native3dm.geometry_boxes(candidate)
+    try:
+        program, _, _ = pipeline.compile_record(record)
+        expected = {name: native3dm.shape_numbers(p) for name, p in native3dm.primitives(program).items()}
+        consistency = native3dm.compare_numbers(file_numbers, expected)
+        consistent = consistency["agree"]
+    except pipeline.RealizationError as exc:
+        program, consistent, consistency = None, False, {"error": f"{exc.code}: {exc.detail}"[:300]}
+    if consistent:
+        native3dm.seal(model, record, program, parent_sha256=read.file_sha256)
+        if not model.Write(str(candidate), 8):
+            return {"applied": False, "why": "the sealed file could not be written", "oracle_verdict": "unavailable"}
     meshed = trial.parent / f"{trial.name}.mesh.3dm"
     numbers = native3dm.mesh_model(candidate, meshed)
     start_numbers = native3dm.readback_numbers(start["realization"])
     agent_changed = changed_objects(numbers, start_numbers)
-    result: dict[str, Any] = {"applied": True, "applied_edits": applied, "agent_changed": sorted(agent_changed)}
+    result: dict[str, Any] = {"applied": True, "applied_edits": applied, "state_edits": len(state_edits), "agent_changed": sorted(agent_changed),
+                              "self_consistent": consistent, "state": "consistent" if consistent else "STATE_STALE",
+                              "consistency": {k: consistency.get(k) for k in ("missing", "extra", "max_box_dev_m", "max_volume_rel_dev", "error")
+                                              if k in consistency}}
     if gold_regen is not None:
         regen_numbers = native3dm.readback_numbers(gold_regen["realization"])
         regen_changed = changed_objects(regen_numbers, start_numbers)
@@ -118,7 +171,6 @@ def execute(answer: dict[str, Any], task: dict[str, Any], start: dict[str, Any],
                        "oracle_violated": [r.get("id") for r in report.get("relations", []) if r.get("status") == "violated"]})
     return result
 
-
 def score(answer: dict[str, Any] | None, task: dict[str, Any], execution: dict[str, Any]) -> dict[str, Any]:
     verdict = (answer or {}).get("verdict")
     gold = task["gold"]["verdicts"]
@@ -128,7 +180,7 @@ def score(answer: dict[str, Any] | None, task: dict[str, Any], execution: dict[s
             "false_accept": verdict == "held" and ("held" not in gold or execution.get("oracle_verdict") == "violated"),
             "edits_applied": bool(execution.get("applied")), "oracle_verdict": execution.get("oracle_verdict"),
             "agrees_regen": execution.get("agrees_regen"), "agrees_regen_unnamed": execution.get("agrees_regen_unnamed"),
-            "unrelated": len(execution.get("unrelated", []) or []),
+            "self_consistent": execution.get("self_consistent"), "unrelated": len(execution.get("unrelated", []) or []),
             "missed": len(execution.get("missed", []) or [])}
 
 
@@ -195,6 +247,7 @@ def run(out: Path, *, families: tuple[str, ...], task_ids: tuple[str, ...] | Non
                "verdict_ok_four": sum(r["verdict_ok_four"] for r in judged), "false_accept": sum(r["false_accept"] for r in judged),
                "edits_applied": sum(r["edits_applied"] for r in judged), "agrees_regen": sum(bool(r["agrees_regen"]) for r in judged),
                "agrees_regen_unnamed": sum(bool(r["agrees_regen_unnamed"]) for r in judged),
+               "self_consistent": sum(bool(r["self_consistent"]) for r in judged),
                "cost_usd": round(sum(r["cost_usd"] for r in judged), 4),
                "spent_part_usd": ledger.spent(part) if ledger else 0.0, "spent_total_usd": ledger.spent() if ledger else 0.0}
     (out / "x9_agent_summary.json").write_text(json.dumps(summary, indent=1, sort_keys=True) + "\n", encoding="utf-8")
