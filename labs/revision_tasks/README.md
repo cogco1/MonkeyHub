@@ -28,6 +28,7 @@ project, changes an owner's contract or is imported by production code.
 | `native3dm.py` | A native editable 3DM: each delivered object as the rhino3dm primitive that holds it exactly (extrusions for prisms, 24-sided columns, ring pieces, lofts of two sections, and a wall minus its through-openings as its elevation outline); the dome as its exact triangulation; `archflow:primitive` per object; the C-full state and binding. `apply_edits` is the field-level edit hook; `mesh_model` gives the oracle named meshes. |
 | `x9.py` | Edit the 3DM's own data: DD-det (read the native file, apply the typed change, compile, edit only the objects whose numbers differ, re-seal; no OCCT) against REGEN (`pipeline.realize`), judged by the oracle and compared object by object; `python -m labs.revision_tasks.x9 --out <dir>`. |
 | `x9_agent.py`, `prompts/x9_*.md` | X9's DD-agent: a model gets the native file's object table and embedded state and answers a verdict and field-level edits in one call; `native3dm.apply_edits` writes them as given; the result is judged by the oracle and compared with REGEN; `python -m labs.revision_tasks.x9_agent --out <dir>` writes the prompts only. |
+| `x10.py`, `prompts/x10_materials.json` | X10, a case study on one real project: a model judges a revision request in one call from one of four levels of the project's material (L1 descriptive page data, L2 + relations and decisions, L3 + obligations and evidence, H dated history); inputs by path, checked before any call; `python -m labs.revision_tasks.x10 --out <dir> --extract <file> --tasks <file> --deny-words <file> --dry-run` scores canned answers with no call. |
 | `x5.py` | Two short transport chains (3DM to GLB and back, 3DM to IFC and back) through tools that know nothing of the state, plus a plain-resave control: what survives each hop and what the reviser does; `python -m labs.revision_tasks.x5 --out <dir>`. |
 | `buildings.py` | The X3 buildings as authored records: BB (three-storey house and studio, spec v2: 86 design rows, 46 openings, three alternating straight flights, hidden voids for the stair holes) and BA (the Pantheon at its measured size, simplified: 16-column portico, link block with the second pediment, rotunda, attic, dome and oculus; the drum family on one 48-gon; attic, dome and oculus ring as eight sector pieces each; the portico roof's clearance to the second pediment, J3, declared nowhere). |
 | `production_project.py` | A disposable project holding a fixture as production does: a frozen one-stage workflow, a stage run through the runner (the repository's own tools), decisions recorded against it, and the context pack read for that run. |
@@ -137,6 +138,60 @@ Each call is priced with `monkeymonitor.pricing.quote` at the manifest's API-equ
 The answer's `changes` are mapped to fixture parameters (the history's names through `x1.HISTORY_PARAMETERS`; B names none), applied to the start, realized, and judged by the oracle with the X4 task file of the same id. Scores: the verdict against the gold, affected and recheck recall, a false accept (`held` where the gold does not hold or the oracle finds a violation) and a usable successor (executed and held). The multi-turn G arm is in `x2_g.py`.
 
 **Arm G (`x2_g.py`).** One round is a family's production project made as the C-task pack's is (`x1.production_pack`: the record through the runner, the history's rejections recorded as decisions), a disposable Hub on it, and one fresh `claude -p` turn with MonkeyHub's tools through the lab proxy (20 calls, G's own cap, which does not follow X3's; 600 s). The system prompt is `system_common.md` and the request template `request.md`; the intro `prompts/g_intro.md` is the only G-specific text (G has tools, carries out a held or violated change itself, and ends with the same JSON), and the materials are the context MonkeyHub's own chat gives a turn (X3 mode M's injection). The answer is parsed as every arm's. The model the turn left (`x3_hub.result_model`) is judged by the oracle against the Hub's own start model, or, when MonkeyHub exported none, the run's state record realized by the lab against the lab's start. The score is x2's (verdict, affected, recheck, false accept, usable successor, which counts the left model whether landed or not), the four verdict categories of manifest 7.2, and `landing`: `landed`, `correct_not_landed` (with `would_complete_if_landed`), `candidate_not_landed` or `no_change`. A round is refused before it could take its part, the total or the invocation's `--limit-usd` past the cap.
+## X10 case study (`x10.py`)
+
+One real design project (a full-scale wall section, designed by one person in the prototype), 8 tasks x 4 materials x 3 repeats = 96 single-turn calls in x2's Latin-square order. Each call is x2's: `x2.command`, `prompts/system_common.md`, the template `prompts/request.md`, the answer schema and `x2.parse_answer`, the shared ledger and `x2.price`. Only the intro (`prompts/x10_materials.json`) and the materials differ.
+
+| material | contents |
+|---|---|
+| L1 | descriptive: the project's review page data as the page was built (components with name, material, purpose, bounding size and version flag; materials; procurement items with prices; the page's notes and any other blocks it carries) |
+| L2 | L1, then the relations and the decisions |
+| L3 | L2, then the obligations with their checks and the evidence states |
+| H | the dated design events, in date order |
+
+Each level is written by `x2.render`. Items appear without `source` and `date` (provenance); history keeps its dates, and evidence its `as_of`. An item that L2 or L3 states is not removed from L1's notes. When the extract has a key legend, every prompt carries it as a `Key legend:` block right after the intro, the same for all four materials; it is part of the prompt, not of the material. Nothing is executed and no oracle runs: the project's geometry comes from its own build scripts.
+
+**Inputs.** All three are passed by path; nothing project-specific is committed.
+
+- `--extract`, `X10Extract@1`. Every item carries `source` (a file plus a section or line) and `date` (ISO).
+  - `l1`: `{"html": <path relative to the extract>, "id"?: <script id>, "source", "date", "legend"?, "notes_classification"?}`, or the same with `"data": <inline DATA>` in place of `html` and `id`.
+    - From a page, L1 is the `DATA` JSON, read from `const DATA = {...};` in a script or from `<script type="application/json" id="...">` (with `id`, or the only one). The page is only read. Strings holding binaries (the base64 GLB, any `data:` URI) are stripped and reported by place, type and size; a base64 GLB elsewhere in the page is reported by size. Everything else stays in L1 as the page was built.
+    - `legend`: `{"entries": {<key>: <label>}, "source", "date"}`, the meaning of the page's data keys, taken from the page template by whoever writes the extract. It goes into every prompt (above) and is dated and scanned like any item.
+    - `notes_classification`: `[{note: <index in DATA.notes>, class: descriptive|relational|decision|obligation|evidence|mixed, source, date}]`, for the report only: it changes no material and is not held to the cutoff. Each index must lie within `DATA.notes` and appear once.
+  - `relations`: `[{id, kind, a, b, statement, source, date}]`, `kind` e.g. `supports`, `depends_on`, `quantity_from`.
+  - `decisions`: `[{id, chose, rejected: [...], reason, source, date}]`.
+  - `obligations`: `[{id, statement, check, applies_to: [...], source, date}]`.
+  - `evidence`: `[{id, item, status: verified|unknown|stale, as_of, source, date}]`; `as_of` may be null.
+  - `history`: `[{date, event, source}]`.
+  - Ids are unique across relations, decisions, obligations and evidence.
+- `--tasks`, `X10Tasks@1`: `{"schema", "tasks": [{task_id, utterance, gold: {verdicts: [...], affected: [component names], recheck: [obligation ids], values?: {<name>: {value, tol}}}}]}`.
+- `--deny-words`: a local list of names to hide, one per line (`#` comments), matched case-insensitively as a substring; a line `=word` matches the whole word only (a word character is a letter, digit or underscore). It is never committed: it holds the very names it hides.
+
+**Checks.** Run before any call and recorded in `x10_manifest.json`; the first four must pass.
+
+- Nesting: every L1 item is unchanged at the same place in L2, and every L2 item in L3; each inner text is a prefix of the outer. What each level adds is counted by section.
+- Leakage: every dated item (`l1`, its legend and every section item) is on or before `--cutoff` (default 2026-10-14); a later or missing `date`, or a later `as_of`, fails. Reported only: later ISO dates written inside a material, and gold strings (affected names, values) found verbatim in a material.
+- Anonymity: every material, the key legend and every prompt (in memory, before anything is written), then every output file's name and content, case-insensitive, counted as whole words and as substrings. Any hit stops the run before a call (for a `=word` line, any whole-word hit); a hit in a material or prompt stops it before that text is written. A word is reported by its line in the list, and the manifest, summary, identity and bundles are written with deny words redacted.
+- Gold ids: every gold `recheck` id is an obligation id.
+- Notes (reported, under `inputs.l1.notes`): the number of `DATA.notes`, the count per class, and the indices no entry classifies.
+- Sizes: each material's characters and estimated tokens (chars / 4), its largest prompt, the key legend's characters and tokens, and the prompts' input cost at the manifest rate (Claude Code's own system prompt and the output not counted).
+
+**Scores.** Per trial, with no execution:
+
+- the verdict, strict and in x2's four categories (held, blocked = violated or refuse, unknown, flag_rejected);
+- a false accept (`held` where the gold does not hold);
+- affected precision and recall by component name, case-insensitive and otherwise exact;
+- recheck recall against the gold's obligation ids;
+- for gold with `values`: whether `changes` gives each name (case-insensitive) within its tolerance.
+
+**Output.** `identity.json`, `config/`, `materials/<level>.txt`, `trials/<trial>.prompt.md` and `.bundle.json` (a real call also leaves its empty working directory and `.stream.jsonl`), `x10.csv`, `x10_manifest.json`, and `x10_summary.json` (per material: accuracy, false accepts, affected precision and recall, recheck recall, value hits, cost; and the anonymity scan after the run).
+
+**Runs.**
+
+- `--dry-run` makes no call: it scores two canned answers per trial (`canned-gold`, the gold itself, and `canned-wrong`, wrong on every score it can be).
+- A real run (`--cli <claude> --ledger <file>`) spends from part `x10`, which is not in `x2.CAPS` yet; until that separate change, the harness refuses before anything is written.
+- `--write-synthetic <dir>` writes a small generic project (a page with short component keys and six notes, an extract with a key legend and five notes classified, eight tasks, a deny list), which the tests and a first dry run use.
+
 ## Editing the file's numbers (`native3dm.py`, `x9.py`)
 
 Each family's start is written once as a native 3DM. DD-det reads it and checks its state, applies the task's typed change, compiles the result (pure Python) and edits only the objects whose primitive numbers changed: a move or a new height is set on the stored path in place; a new profile is a new extrusion under the same id and name, because openNURBS sets a profile only on an empty extrusion; a mesh is moved or regenerated. The state and binding are sealed again. A task is `full` when every changed object is native, `partial` when one is a mesh, `impossible` when the data cannot express it, and `not_applicable` when the gold only refuses, the request has no value, or nothing moves.

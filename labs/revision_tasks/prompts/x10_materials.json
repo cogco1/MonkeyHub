@@ -1,0 +1,6 @@
+{
+ "L1": "The project's review page data: each component with its name, material, purpose, bounding size and version flag, and the materials and procurement items with their prices.",
+ "L2": "The project's review page data (components, materials, procurement items with prices), then the relations between them (what supports what, which purchase quantities follow from which dimensions) and the decisions taken (what was chosen, what was rejected, and why).",
+ "L3": "The project's review page data (components, materials, procurement items with prices), the relations between them and the decisions taken, then the obligations with the checks that verify them and the state of the evidence (prices as of a date, items still unknown).",
+ "H": "The project's design history: every dated design event, in order."
+}
