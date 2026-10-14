@@ -232,7 +232,7 @@ def handle(server: StateFileServer, message: dict[str, Any]) -> dict[str, Any] |
         result = {"protocolVersion": params.get("protocolVersion", "2024-11-05"), "capabilities": {"tools": {}},
                   "serverInfo": {"name": SERVER, "version": "1"}}
     elif method == "tools/list":
-        result = {"tools": TOOL_LIST}
+        result = {"tools": [{**tool, "_meta": {"anthropic/maxResultSizeChars": 400000}} for tool in TOOL_LIST]}
     elif method == "tools/call":
         result = server.call(str(params.get("name", "")), params.get("arguments") or {})
     elif method == "ping":

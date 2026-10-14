@@ -156,6 +156,7 @@ def test_the_proxy_process_lists_relays_and_refuses(tmp_path):
     tools = answers[2]["result"]["tools"]
     assert [t["name"] for t in tools] == ["studio_request", "studio_schema"]
     assert tools[0]["description"].startswith("In this session only these Studio actions are available")
+    assert all(t["_meta"]["anthropic/maxResultSizeChars"] == x3_hub.RESULT_SIZE_CHARS for t in tools)
     assert answers[3]["result"]["isError"] and "X3_ACTION_UNAVAILABLE" in answers[3]["result"]["content"][0]["text"]
     assert json.loads(answers[4]["result"]["content"][0]["text"])["echo"] == "studio_request"
     log = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text(encoding="utf-8").splitlines()]

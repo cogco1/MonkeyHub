@@ -84,6 +84,10 @@ START_RUN = "stage-0-001"   # production_project.STAGE_RUN: the run the BB proje
 # surface; every other variable reaches the CLI as it does in x2.call_model.
 HOST_ONLY = ("CLAUDE_CODE_TERMINAL_MCP_TOOLS",)
 MCP_OUTPUT_TOKENS = 150000
+# The CLI writes an MCP tool result longer than the tool's maxResultSizeChars (50,000 by default) to a file the agent
+# cannot open without file tools; a tool may raise it through this _meta key (the CLI caps it at 500,000).
+RESULT_SIZE_KEY = "anthropic/maxResultSizeChars"
+RESULT_SIZE_CHARS = 400000
 
 
 class X3Error(RuntimeError):
@@ -813,11 +817,13 @@ def serve_proxy(settings: dict[str, Any], stdin=None, stdout=None) -> None:
                 emit(answer)
                 continue
             answer = ask_child(message)
-            if method == "tools/list" and settings.get("tools") is not None and "result" in answer:
-                tools = [dict(t) for t in answer["result"].get("tools", ()) if t.get("name") in settings["tools"]]
+            if method == "tools/list" and "result" in answer:
+                tools = [dict(t) for t in answer["result"].get("tools", ())
+                         if settings.get("tools") is None or t.get("name") in settings["tools"]]
                 for tool in tools:
                     if tool["name"] == "studio_request" and settings.get("note"):
                         tool["description"] = settings["note"] + tool.get("description", "")
+                    tool["_meta"] = {**(tool.get("_meta") or {}), RESULT_SIZE_KEY: RESULT_SIZE_CHARS}
                 answer = {**answer, "result": {**answer["result"], "tools": tools}}
             if method == "initialize" and settings.get("drop_instructions") and "result" in answer:
                 answer = {**answer, "result": {k: v for k, v in answer["result"].items() if k != "instructions"}}
