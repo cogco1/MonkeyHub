@@ -1,4 +1,30 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-632",
+      "status": "active",
+      "branch": "codex/632-agent-usage-sources",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-632-agent-usage-sources",
+      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": "PR1 of #632: the agent usage source interface inside monkeymonitor. Snapshot-level authority, /api/sources/{agent}, Hub bindings and the Usage page follow after #613.",
+      "modules": [
+        "monkeymonitor"
+      ],
+      "write_scope": [
+        "packages/monkeymonitor/src/monkeymonitor/sources.py",
+        "packages/monkeymonitor/src/monkeymonitor/claude_code.py",
+        "packages/monkeymonitor/src/monkeymonitor/usage_file.py",
+        "packages/monkeymonitor/src/monkeymonitor/codex.py",
+        "packages/monkeymonitor/src/monkeymonitor/usage.py",
+        "packages/monkeymonitor/src/monkeymonitor/trace.py",
+        "packages/monkeymonitor/src/monkeymonitor/server.py",
+        "packages/monkeymonitor/src/monkeymonitor/__main__.py",
+        "packages/monkeymonitor/src/monkeymonitor/README.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
