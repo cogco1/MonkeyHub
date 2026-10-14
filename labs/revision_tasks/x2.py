@@ -21,7 +21,8 @@ realized, and judged by the oracle against the X4 task file of the same id when 
 
 Each call is ``claude -p`` with the flags in ``command``: one turn, no tools, no MCP servers, only project and
 local settings (the trial directory holds no settings and no CLAUDE.md), bundled skills and slash commands off,
-no session saved. Claude Code's own system prompt cannot be removed; it is the same for every arm.
+no session saved, and auto-memory off as MonkeyHub's own chat runs it. Claude Code's own system prompt cannot be
+removed; it is the same for every arm.
 
 Cost: each call is priced with ``monkeymonitor.pricing.quote`` at the manifest's API-equivalent rates, and the
 larger of that and the CLI's own ``total_cost_usd`` goes into a shared append-only ledger. A part's cap or the
@@ -38,6 +39,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -251,8 +253,10 @@ class Ledger:
 def call_model(prompt: str, trial: Path, *, cli: str, config: Path) -> dict[str, Any]:
     trial.mkdir(parents=True)
     started = time.perf_counter()
+    # As MonkeyHub's own chat runs the CLI: Claude Code's auto-memory off, so no memory section or memory file reaches the model.
+    environment = {**os.environ, "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
     done = subprocess.run(command(cli, config), input=prompt, cwd=trial, capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", timeout=900)
+                          errors="replace", timeout=900, env=environment)
     seconds = time.perf_counter() - started
     (trial.parent / f"{trial.name}.stream.jsonl").write_text(done.stdout, encoding="utf-8", newline="\n")
     events = []
