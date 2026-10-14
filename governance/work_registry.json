@@ -1,4 +1,32 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-646",
+      "status": "active",
+      "branch": "codex/646-level-proposal",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-646-level-proposal",
+      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": "POST /api/proposals/level moves, offsets or adds a project level as one ordinary proposal; the frame, the construction contract and a written-down capability point to it.",
+      "modules": [
+        "project_runtime.construction"
+      ],
+      "write_scope": [
+        "services/project-runtime/src/project_runtime/application/construction.py",
+        "services/project-runtime/src/project_runtime/api/routes/construction.py",
+        "services/project-runtime/src/project_runtime/api/dto/construction.py",
+        "services/project-runtime/src/project_runtime/api/routes/state.py",
+        "services/project-runtime/tests/test_construction_routes.py",
+        "services/project-runtime/tests/test_capabilities.py",
+        "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+        "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
+        "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
+        "docs/design/construction-api.md",
+        "docs/protocols/project-runtime-api.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
