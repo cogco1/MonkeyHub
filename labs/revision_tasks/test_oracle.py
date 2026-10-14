@@ -156,3 +156,48 @@ def test_building_checks_read_bb_as_its_spec_states(tmp_path):
     assert status == "violated"
     assert [(c["a"], c["b"]) for c in measured["collisions"]] == [("obj-stair-F1", "obj-wall-core-W-L1"), ("obj-slab-L2", "obj-stair-F1")]
     assert abs(measured["collisions"][0]["common_volume_estimate_m3"] - 1.1246) < 0.03
+
+
+def _block(lo, hi):
+    """A closed box mesh, outward faces, as the oracle reads one."""
+
+    (x0, y0, z0), (x1, y1, z1) = lo, hi
+    v = np.array([[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], dtype=float)
+    f = np.array([[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]])
+    return v, f
+
+
+def test_a_point_s_distance_to_a_surface():
+    box = _block((0, 0, 0), (1, 1, 1))
+    points = np.array([[0.5, 0.5, 0.5], [0.5, 0.5, 0.9], [2.0, 0.5, 0.5], [2.0, 2.0, 0.5], [2.0, 2.0, 2.0]])
+    assert oracle.surface_distance(box, points) == pytest.approx([0.5, 0.1, 1.0, 2 ** 0.5, 3 ** 0.5])
+    assert abs(oracle.volume(box) - 1.0) < 1e-12
+
+
+def test_collisions_without_seams_are_as_before():
+    meshes = {"obj-a": _block((0, 0, 0), (1, 1, 1)), "obj-b": _block((0.9995, 0, 0), (2, 1, 1))}      # a 0.5 mm sliver
+    status, measured = oracle.check_collisions({"check": "collisions"}, meshes, None)
+    assert status == "violated" and set(measured) == {"collisions", "allowed_embeddings"}            # the result as it always was
+    assert measured == {"collisions": [{"a": "obj-a", "b": "obj-b", "common_volume_estimate_m3": round(14 ** 3 * 0.0005 / 14 ** 3, 6)}],
+                        "allowed_embeddings": 0}
+    other = oracle.check_collisions({"check": "collisions", "seams": [["obj-c", "obj-d"]], "seam_depth_m": 0.002}, meshes, None)
+    assert other[0] == "violated" and other[1]["collisions"] == measured["collisions"] and other[1]["seam_points_within_tolerance"] == []
+    assert oracle.check_collisions({"check": "collisions", "seams": [], "seam_depth_m": 0.002}, meshes, None) == (status, measured)
+
+
+def test_collisions_at_a_declared_seam_count_only_points_deeper_than_its_depth():
+    sliver = {"obj-a": _block((0, 0, 0), (1, 1, 1)), "obj-b": _block((0.9995, 0, 0), (2, 1, 1))}
+    seam = {"check": "collisions", "seams": [["obj-b", "obj-a"]], "seam_depth_m": 0.002}               # matched either way, as allowed is
+    status, measured = oracle.check_collisions(seam, sliver, None)
+    assert status == "held" and measured["collisions"] == [] and measured["seam_depth_m"] == 0.002
+    [kept] = measured["seam_points_within_tolerance"]                                                  # reported, not hidden
+    assert (kept["a"], kept["b"], kept["points"]) == ("obj-a", "obj-b", 14 ** 3) and kept["max_depth_m"] <= 0.00025 + 1e-9
+    assert kept["volume_estimate_m3"] == pytest.approx(0.0005, abs=1e-6)
+    deep = {"obj-a": _block((0, 0, 0), (1, 1, 1)), "obj-b": _block((0.7, 0, 0), (2, 1, 1))}            # a 0.3 m overlap at the seam
+    status, measured = oracle.check_collisions(seam, deep, None)
+    assert status == "violated" and measured["collisions"][0]["common_volume_estimate_m3"] == pytest.approx(0.3, abs=1e-6)
+    assert measured["seam_points_within_tolerance"] == []
+    status, measured = oracle.check_collisions({**seam, "seam_depth_m": 0.0001}, sliver, None)               # a stricter depth
+    [kept] = measured["seam_points_within_tolerance"]
+    assert status == "violated" and kept["points"] == 6 * 14 * 14                    # the 6 of 14 layers within 0.1 mm of a face
+    assert measured["collisions"][0]["common_volume_estimate_m3"] == pytest.approx(0.0005 * 8 / 14, abs=1e-6)

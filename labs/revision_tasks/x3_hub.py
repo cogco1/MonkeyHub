@@ -767,6 +767,33 @@ def with_base_run(arguments: dict[str, Any], base_run: str | None) -> tuple[dict
     return arguments, False
 
 
+def rhino_slot(listed: dict[str, Any], pid: int) -> str | None:
+    """GH: the slot a Rhino MCP server's ``list_slots`` answer gives the Rhino with this pid, or None."""
+
+    result = listed.get("result") or {}
+    text = "".join(c.get("text", "") for c in result.get("content", ()) if isinstance(c, dict))
+    try:
+        rows = json.loads(text).get("payload") or []
+    except (ValueError, AttributeError):
+        return None
+    return next((str(r["slotId"]) for r in rows if isinstance(r, dict) and r.get("slotId") and str(r.get("pid")) == str(pid)), None)
+
+
+def with_slot(name: str, arguments: dict[str, Any], slot: str | None, slotted: set[str]) -> tuple[dict[str, Any], bool]:
+    """GH: a call to a tool that takes a slot, naming none, made on ``slot`` (the session's Rhino), as T and H's reads are
+    made against the working run (``with_base_run``)."""
+
+    if slot is None or name not in slotted or arguments.get("slot"):
+        return arguments, False
+    return {**arguments, "slot": slot}, True
+
+
+def rhino_lost(text: str) -> bool:
+    """GH: the server says it lost the Rhino it called (it re-registers, e.g. after its document was closed)."""
+
+    return '"rhino_closed"' in text or '"slot_not_found"' in text
+
+
 def proxy_refusal(settings: dict[str, Any], name: str, arguments: dict[str, Any], calls: int) -> dict[str, Any] | None:
     """Why the proxy refuses this tool call (a MonkeyHub-shaped failure), or None to pass it on."""
 
@@ -777,10 +804,14 @@ def proxy_refusal(settings: dict[str, Any], name: str, arguments: dict[str, Any]
         return {"code": "X3_TOOL_BUDGET_SPENT", "detail": f"This request's {settings.get('max_calls', MAX_TOOL_CALLS)} tool calls are "
                 "spent. Answer the architect now, without further tools.", "httpStatus": 429}
     tools = settings.get("tools")
-    if tools is None:
-        return None
-    if name not in tools:
+    if tools is not None and name not in tools:
         return {"code": "X3_TOOL_UNAVAILABLE", "detail": f"{name} is not available in this session.", "httpStatus": 403}
+    # GH: calls whose argument matches a pattern (x3_gh.RENDER_DENY), as [tool, argument, pattern, detail]
+    for tool, argument, pattern, detail in settings.get("deny", ()):
+        if name == tool and re.search(pattern, str(arguments.get(argument) or "")):
+            return {"code": "X3_ACTION_UNAVAILABLE", "detail": detail, "httpStatus": 403}
+    if tools is None or "requests" not in settings:
+        return None
     method, path = str(arguments.get("method", "GET")).upper(), urlsplit(str(arguments.get("path", ""))).path
     if name == "studio_schema" and not path:
         return {"code": "X3_ACTION_UNAVAILABLE", "detail": "Action discovery is not available in this session; the actions are listed "
@@ -798,23 +829,57 @@ def serve_proxy(settings: dict[str, Any], stdin=None, stdout=None) -> None:
     puts the session's restriction before studio_request's description, drops the server's presentation
     instructions, refuses every other tool and Studio action, and binds the conversation and publishes the user's
     message itself before the first call. Every call is logged (name, method, path, refusal) to ``settings["log"]``.
+
+    GH (the Rhino MCP server behind it): ``settings["stderr"]`` takes the server's log; a notification the server sends
+    while it works is passed on, and a request it sends the client is answered by the proxy as not supported (logged);
+    ``deny`` refuses matching calls (``proxy_refusal``); with ``rhino_pid`` the proxy finds that Rhino's slot
+    (``list_slots``, not counted) before the first call and names it on every call that names none, and refuses the
+    calls when that Rhino is not there, so the server never starts another. ``result_size_chars`` replaces the result
+    size every listed tool declares (default ``RESULT_SIZE_CHARS``), and ``log_arguments`` ({tool: argument}) keeps that
+    argument of each such call in its log row (``payload``).
     """
 
     stdin = stdin or _sys.stdin
     stdout = stdout or _sys.stdout
-    child = subprocess.Popen(settings["child"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, encoding="utf-8")
+    errors = open(settings["stderr"], "a", encoding="utf-8") if settings.get("stderr") else None
+    child = subprocess.Popen(settings["child"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors, text=True, encoding="utf-8")
     log = Path(settings["log"])
     calls = counted = 0
     own = 0
     presented = settings.get("user_message") is None
+    slotted: set[str] = set()          # GH: the tools that take a slot
+    logged = settings.get("log_arguments") or {}   # GH: {tool: argument} whose value each call row keeps
+    slot: str | None = None            # GH: the session's Rhino as this server process names it
 
     def ask_child(message: dict[str, Any]) -> dict[str, Any]:
         child.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")
         child.stdin.flush()
-        line = child.stdout.readline()
-        if not line:
-            raise X3Error("the MonkeyHub MCP server closed")
-        return json.loads(line)
+        while True:
+            line = child.stdout.readline()
+            if not line:
+                raise X3Error("the MCP server behind the proxy closed")
+            try:
+                answer = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(answer, dict):
+                continue
+            if "method" not in answer and answer.get("id") == message.get("id"):
+                return answer
+            if "method" in answer and "id" in answer:            # the server asks the client: not supported here
+                record({"call": 0, "name": "x3-proxy:server-request", "method": answer["method"]})
+                child.stdin.write(json.dumps({"jsonrpc": "2.0", "id": answer["id"],
+                                              "error": {"code": -32601, "message": "not supported by the lab proxy"}}) + "\n")
+                child.stdin.flush()
+            elif "method" in answer:                              # a notification: passed on
+                emit(answer)
+
+    def find_rhino() -> str | None:
+        nonlocal slot
+        listed = own_call("list_slots", {})
+        slot = rhino_slot(listed, settings["rhino_pid"])
+        record({"call": 0, "name": "x3-proxy:list_slots", "rhino_pid": settings["rhino_pid"], "slot": slot})
+        return slot
 
     def own_call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         nonlocal own
@@ -847,6 +912,8 @@ def serve_proxy(settings: dict[str, Any], stdin=None, stdout=None) -> None:
                     counted += 1
                 refusal = proxy_refusal(settings, name, arguments, counted)
                 row = {"call": calls, "counted": counted, "name": name, "method": arguments.get("method"), "path": arguments.get("path")}
+                if name in logged:                                    # GH: the code or command passed, for review
+                    row["payload"] = str(arguments.get(logged[name]) or "")
                 if refusal is not None:
                     record({**row, "refused": refusal["code"]})
                     emit({"jsonrpc": "2.0", "id": message["id"], "result": {"isError": True, "content": [
@@ -860,25 +927,41 @@ def serve_proxy(settings: dict[str, Any], stdin=None, stdout=None) -> None:
                                                       "content": settings["user_message"], "status": "complete"})
                     record({"call": 0, "name": "x3-proxy:bind+present", "bound": not bound.get("result", {}).get("isError"),
                             "presented": not shown.get("result", {}).get("isError")})
-                rewritten = False
+                rewritten = slot_added = False
                 if name == "studio_request":
                     arguments, rewritten = with_base_run(arguments, settings.get("base_run"))
                     if rewritten:
                         message = {**message, "params": {**params, "arguments": arguments}}
+                if settings.get("rhino_pid") is not None:
+                    if slot is None and find_rhino() is None:
+                        refusal = {"code": "X3_RHINO_UNAVAILABLE", "detail": "The session's Rhino cannot be reached; no other Rhino is "
+                                   "started. Answer the architect without further tools.", "httpStatus": 503}
+                        record({**row, "refused": refusal["code"]})
+                        emit({"jsonrpc": "2.0", "id": message["id"], "result": {"isError": True, "content": [
+                            {"type": "text", "text": json.dumps(refusal, ensure_ascii=False)}]}})
+                        continue
+                    arguments, slot_added = with_slot(name, arguments, slot, slotted)
+                    if slot_added:
+                        message = {**message, "params": {**params, "arguments": arguments}}
                 answer = ask_child(message)
                 result = answer.get("result") or {}
+                text = "".join(c.get("text", "") for c in result.get("content", ()) if isinstance(c, dict))
                 record({**row, "is_error": bool(result.get("isError")), "base_run_added": rewritten,
-                        "chars": sum(len(c.get("text", "")) for c in result.get("content", ()) if isinstance(c, dict))})
+                        **({"slot_added": slot_added} if settings.get("rhino_pid") is not None else {}), "chars": len(text)})
+                if settings.get("rhino_pid") is not None and rhino_lost(text):
+                    slot = None                                   # found again before the next call
                 emit(answer)
                 continue
             answer = ask_child(message)
             if method == "tools/list" and "result" in answer:
+                slotted = {t.get("name") for t in answer["result"].get("tools", ())
+                           if "slot" in (((t.get("inputSchema") or {}).get("properties")) or {})}
                 tools = [dict(t) for t in answer["result"].get("tools", ())
                          if settings.get("tools") is None or t.get("name") in settings["tools"]]
                 for tool in tools:
                     if tool["name"] == "studio_request" and settings.get("note"):
                         tool["description"] = settings["note"] + tool.get("description", "")
-                    tool["_meta"] = {**(tool.get("_meta") or {}), RESULT_SIZE_KEY: RESULT_SIZE_CHARS}
+                    tool["_meta"] = {**(tool.get("_meta") or {}), RESULT_SIZE_KEY: int(settings.get("result_size_chars", RESULT_SIZE_CHARS))}
                 answer = {**answer, "result": {**answer["result"], "tools": tools}}
             if method == "initialize" and settings.get("drop_instructions") and "result" in answer:
                 answer = {**answer, "result": {k: v for k, v in answer["result"].items() if k != "instructions"}}
@@ -889,6 +972,8 @@ def serve_proxy(settings: dict[str, Any], stdin=None, stdout=None) -> None:
             child.wait(30)
         except subprocess.TimeoutExpired:
             child.kill()
+        if errors is not None:
+            errors.close()
 
 
 def main(argv: list[str] | None = None) -> int:

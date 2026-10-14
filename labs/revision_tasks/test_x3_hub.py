@@ -175,3 +175,26 @@ def test_an_attached_model_is_an_external_asset_of_these_exact_bytes(tmp_path, m
     monkeypatch.setattr(x3_hub, "studio_write", lambda *args: {**answer, "representation": "composed"})
     with pytest.raises(x3_hub.X3Error):
         x3_hub.attach_model(services, model, "returned.3dm")
+
+
+def test_gh_names_the_sessions_rhino_by_its_pid_on_calls_that_take_a_slot():
+    listed = {"result": {"content": [{"type": "text", "text": json.dumps({"payload": [{"slotId": "aardvark", "pid": 25200, "adopted": True},
+                                                                                     {"slotId": "otter", "pid": 4242}]})}]}}
+    assert x3_hub.rhino_slot(listed, 4242) == "otter" and x3_hub.rhino_slot(listed, "25200") == "aardvark"
+    assert x3_hub.rhino_slot(listed, 1) is None
+    assert x3_hub.rhino_slot({"result": {"content": [{"type": "text", "text": "not json"}]}}, 4242) is None
+    assert x3_hub.with_slot("run_python", {"script": "x"}, "otter", {"run_python"}) == ({"script": "x", "slot": "otter"}, True)
+    assert x3_hub.with_slot("run_python", {"script": "x", "slot": "mine"}, "otter", {"run_python"})[1] is False
+    assert x3_hub.with_slot("list_slots", {}, "otter", {"run_python"}) == ({}, False)
+    assert x3_hub.with_slot("run_python", {}, None, {"run_python"}) == ({}, False)
+    assert x3_hub.rhino_lost('{"error":{"code":"rhino_closed","message":"m"}}') and x3_hub.rhino_lost('{"error":{"code":"slot_not_found"}}')
+    assert not x3_hub.rhino_lost('{"payload":"rhino_closed is a word"}')
+
+
+def test_the_unrestricted_and_restricted_proxies_refuse_as_before_without_gh_settings():
+    m = x3_hub.proxy_settings({"command": "python", "args": []}, log=Path("calls.jsonl"), restricted=False)
+    assert "deny" not in m and "rhino_pid" not in m and "stderr" not in m
+    assert x3_hub.proxy_refusal(m, "anything", {"method": "DELETE", "path": "/x"}, 1) is None
+    t = x3_hub.proxy_settings({"command": "python", "args": []}, log=Path("calls.jsonl"), restricted=True, user_message="u")
+    assert x3_hub.proxy_refusal(t, "studio_request", {"method": "GET", "path": "/api/construction/model"}, 1) is None
+    assert x3_hub.proxy_refusal(t, "studio_request", {"method": "GET", "path": "/api/memory"}, 1)["code"] == "X3_ACTION_UNAVAILABLE"

@@ -798,15 +798,52 @@ def check_door_beside_flight(m, meshes, start):
     return ("violated" if problems else "held"), {"pairs": gaps, "problems": problems}
 
 
+def surface_distance(mesh: Mesh, points: np.ndarray, chunk: int = 500_000) -> np.ndarray:
+    """Each point's distance to the mesh's surface: the nearest of its triangles, each by its plane where the point's
+    projection falls inside it, else by its nearest edge (degenerate triangles by their edges)."""
+
+    v, f = mesh
+    a, b, c = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
+    normal = np.cross(b - a, c - a)
+    length = np.linalg.norm(normal, axis=1)
+    flat = length > 1e-15
+    unit = np.zeros_like(normal)
+    unit[flat] = normal[flat] / length[flat, None]
+    edges = ((a, b), (b, c), (c, a))
+    out = np.empty(len(points))
+    step = max(1, chunk // max(1, len(f)))
+    for start in range(0, len(points), step):
+        p = points[start:start + step][:, None, :]                       # (P, 1, 3) against (T, 3)
+        best = np.full((p.shape[0], len(f)), np.inf)
+        for e0, e1 in edges:
+            d = e1 - e0
+            t = np.clip(np.einsum("ptk,tk->pt", p - e0, d) / np.maximum(np.einsum("tk,tk->t", d, d), 1e-30), 0.0, 1.0)
+            best = np.minimum(best, np.linalg.norm(p - (e0 + t[..., None] * d), axis=2))
+        height = np.einsum("ptk,tk->pt", p - a, unit)
+        q = p - height[..., None] * unit
+        inside_face = flat & np.all([np.einsum("ptk,tk->pt", np.cross(e1 - e0, q - e0), unit) >= -1e-12 for e0, e1 in edges], axis=0)
+        best = np.where(inside_face, np.minimum(best, np.abs(height)), best)
+        out[start:start + step] = best.min(axis=1)
+    return out
+
+
 def check_collisions(m, meshes, start):
     """Every pair of material solids sharing volume, largest first (sampled like ``non_interference``); pairs whose
-    names match an ``allowed`` prefix pair (an embedding the drawing convention accepts) are listed apart."""
+    names match an ``allowed`` prefix pair (an embedding the drawing convention accepts) are listed apart.
+
+    Optional, off unless ``seams`` is given: for a pair matching a ``seams`` prefix pair (matched as ``allowed`` is: two
+    curved faces declared to meet there), a sample point inside both solids counts only if its depth, the smaller of
+    its distances to the two surfaces, exceeds ``seam_depth_m``. The points that do not are reported per pair under
+    ``seam_points_within_tolerance`` (with the volume they would have counted), never dropped silently. Without
+    ``seams`` the check and its result are as before."""
 
     names = sorted(n for n in meshes if not _is_cavity(n))
     allowed = [tuple(p) for p in m.get("allowed", [])]
+    seams = [tuple(p) for p in m.get("seams", [])]
+    seam_depth = float(m.get("seam_depth_m", 0.0))
     n = int(m.get("samples_per_axis", 14))
     boxes = {k: bbox(meshes, [k]) for k in names}
-    found, accepted = [], 0
+    found, accepted, within = [], 0, []
     for i, a in enumerate(names):
         for b in names[i + 1:]:
             lo, hi = np.maximum(boxes[a][0], boxes[b][0]), np.minimum(boxes[a][1], boxes[b][1])
@@ -817,13 +854,26 @@ def check_collisions(m, meshes, start):
                 continue
             axes = [lo[k] + (np.arange(n) + 0.5) * (hi[k] - lo[k]) / n for k in range(3)]
             grid = np.array(np.meshgrid(*axes, indexing="ij")).reshape(3, -1).T
-            both = int(np.count_nonzero(inside(meshes[a], grid) & inside(meshes[b], grid)))
+            common = inside(meshes[a], grid) & inside(meshes[b], grid)
+            both = int(np.count_nonzero(common))
+            cell = float(np.prod(hi - lo)) / n ** 3
+            if both and any((a.startswith(p) and b.startswith(q)) or (a.startswith(q) and b.startswith(p)) for p, q in seams):
+                points = grid[common]
+                depth = np.minimum(surface_distance(meshes[a], points), surface_distance(meshes[b], points))
+                shallow = int(np.count_nonzero(depth <= seam_depth))
+                if shallow:
+                    within.append({"a": a, "b": b, "points": shallow, "max_depth_m": round(float(depth[depth <= seam_depth].max()), 6),
+                                   "volume_estimate_m3": round(shallow * cell, 6)})
+                both -= shallow
             if both:
                 found.append({"a": a, "b": b, "common_volume_estimate_m3": round(both * float(np.prod(hi - lo)) / n ** 3, 6)})
     found.sort(key=lambda row: -row["common_volume_estimate_m3"])
     tolerance = float(m.get("tolerance_m3", 1e-6))
     held = all(row["common_volume_estimate_m3"] <= tolerance for row in found)
-    return ("held" if held else "violated"), {"collisions": found, "allowed_embeddings": accepted}
+    result = {"collisions": found, "allowed_embeddings": accepted}
+    if seams:
+        result.update(seam_depth_m=seam_depth, seam_points_within_tolerance=sorted(within, key=lambda row: -row["volume_estimate_m3"]))
+    return ("held" if held else "violated"), result
 
 
 CHECKS: dict[str, Callable[[dict, dict, dict | None], tuple[str, dict]]] = {
