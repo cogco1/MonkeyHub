@@ -5,8 +5,10 @@ controls as ``x2`` and its own system prompt (``prompts/i3_system.md``). The mat
 role (``infer.role_of``, or its component's stated intent where the role table names none) and its cold-read box,
 and the relations and obligations the record declares. Each proposal naming two known elements and a known kind
 becomes an ``Inferred("I3", ...)`` and is measured on the start exactly as I1 and I2 are (``infer.check_inferred``);
-only those that hold are kept, as unconfirmed candidate obligations. Recall is by element pair and kind against each
-start's undeclared-by-design relation.
+only those that hold are kept, as unconfirmed candidate obligations; those that fail are counted. Per call: the proposals,
+the valid ones, the kept ones, those that fail verification, and recall (by element pair and kind) of the start's
+undeclared-by-design relation; per start, the union of what the repeats kept and whether it recalls. The prompt's limit
+of 20 proposals may hold recall down on the buildings.
 """
 
 from __future__ import annotations
@@ -26,10 +28,12 @@ from archflow.state.state_record import StateRecord
 from labs.revision_tasks import buildings, fixtures, infer, pipeline, x2
 from labs.revision_tasks import run as runner
 
-STARTS = {"F1": fixtures.f1_portico, "F2": fixtures.f2_portico_rotunda, "F3": fixtures.f3_wall_stair, "BB": buildings.bb_house}
+STARTS = {"F1": fixtures.f1_portico, "F2": fixtures.f2_portico_rotunda, "F3": fixtures.f3_wall_stair, "BB": buildings.bb_house,
+          "BA": buildings.ba_pantheon}
 # The relation each start leaves undeclared by design: element pair and the kind that would catch its breach.
 GOLD = {"F1": ("entablature", "pediment", "support"), "F2": ("portico-entablature-rear", "transition-roof", "non_interference"),
-        "F3": ("wall", "stair", "non_interference"), "BB": ("wall-core-W-L1", "stair-F1", "non_interference")}
+        "F3": ("wall", "stair", "non_interference"), "BB": ("wall-core-W-L1", "stair-F1", "non_interference"),
+        "BA": ("portico-roof", "intermediate-pediment", "non_interference")}
 KINDS = ("support", "abutment", "near", "non_interference", "same_level")
 SYSTEM = x2.PROMPTS / "i3_system.md"
 
@@ -97,6 +101,7 @@ def run(out: Path, *, starts: tuple[str, ...], repeats: int, ledger: x2.Ledger |
         prompt = materials(record, realization)
         (out / "starts" / f"{name}.prompt.md").write_text(prompt, encoding="utf-8", newline="\n")
         cell = summary["by_start"].setdefault(name, {"calls": [], "recalled_in": 0})
+        union: set[tuple[str, str, str]] = set()
         for repeat in range(repeats):
             if cli is None:
                 continue
@@ -115,7 +120,10 @@ def run(out: Path, *, starts: tuple[str, ...], repeats: int, ledger: x2.Ledger |
             hit = recalled(name, checked["kept_relations"])
             cell["recalled_in"] += int(hit)
             cell["calls"].append({"trial_id": trial_id, "proposed": checked["proposed"], "valid": checked["valid"], "kept": checked["kept"],
-                                  "recalled": hit, "cost_usd": round(cost, 4)})
+                                  "verified_fail": len(checked["not_held"]), "recalled": hit, "cost_usd": round(cost, 4)})
+            union |= {(min(k["a"], k["b"]), max(k["a"], k["b"]), k["kind"]) for k in checked["kept_relations"]}
+            cell["union_kept"] = len(union)
+            cell["recalled_in_union"] = recalled(name, [{"a": a, "b": b, "kind": kind} for a, b, kind in union])
             bundle = {"trial_id": trial_id, "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
                       "call": {k: call[k] for k in ("exit_code", "seconds", "init", "text", "stderr")}, "usage": priced, "cost_usd": cost,
                       "answer": answer, "checked": checked, "recalled": hit}
