@@ -1,0 +1,1108 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "BA-A1-01",
+  "family": "BA",
+  "task_type": "T1_legal_local",
+  "stage_context": {
+    "stage": "design",
+    "earlier_stages": [
+      "massing",
+      "opening-request-0"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "BA-pantheon",
+    "version": "2",
+    "generator": "labs/revision_tasks/buildings.py:ba_pantheon",
+    "files_sha256": {
+      "labs/revision_tasks/buildings.py": "e24e20324eb088b7d4080dadd24c704967b2a12ca25e0c0b6fbe58961c137a27",
+      "labs/revision_tasks/fixtures.py": "3261abaaa5f9b4b1067fbd3598ef2e4860c383435e5157d08d31592fc7693a03"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:BA-pantheon@x3-before-A1",
+    "content_digest": "9244185da2ab096fdb8188939b0ebae328723c8fb3a0a0a40014a65d77b3215a",
+    "exact_base_digest": "9bd06985664333f80a74da20ea1d2eae97cfc98fee9c261f05de7c57acb4ccfa"
+  },
+  "history": {
+    "history_ref": null,
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "x3_request": {
+    "file": "labs/revision_tasks/x3_requests.json",
+    "building": "BA",
+    "request": "A1",
+    "order": 1,
+    "start_after": [],
+    "type": "legal",
+    "expected": {
+      "verdict": "held",
+      "outcome": [
+        "complete"
+      ]
+    }
+  },
+  "intended_change": {
+    "text_en": "Make the rotunda 1 m larger in diameter, keeping its centre and its wall thickness.",
+    "typed_delta": [
+      {
+        "target": "parameter:interior_diameter",
+        "parameter": "interior_diameter",
+        "from": 43.3,
+        "to": 44.3
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "ring-top",
+      "kind": "equality",
+      "entities": [
+        "oculus-ring-1"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/measure:ring-top (D4)",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-oculus-ring-1",
+        "min": [
+          null,
+          null,
+          45.3
+        ],
+        "max": [
+          null,
+          null,
+          45.8
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "drum-outer",
+      "kind": "equality",
+      "entities": [
+        "rotunda-wall-1"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/measure:drum-outer (D1)",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-rotunda-wall-1",
+        "min": [
+          null,
+          null,
+          null
+        ],
+        "max": [
+          null,
+          28.55,
+          22.15
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "drum-springing",
+      "kind": "equality",
+      "entities": [
+        "rotunda-wall-1"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/measure:drum-springing (D2)",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-rotunda-wall-1",
+        "min": [
+          null,
+          null,
+          null
+        ],
+        "max": [
+          null,
+          null,
+          22.15
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "floor",
+      "kind": "equality",
+      "entities": [
+        "rotunda-floor"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/measure:floor (D1)",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-rotunda-floor",
+        "min": [
+          -22.15,
+          -22.15,
+          null
+        ],
+        "max": [
+          22.15,
+          22.15,
+          null
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "block-rear",
+      "kind": "contact",
+      "entities": [
+        "intermediate-block",
+        "rotunda-wall-1",
+        "rotunda-wall-2"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/measure:block-rear (J0; built 22.8374, spec 22.837)",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-intermediate-block",
+        "min": [
+          null,
+          22.8374,
+          null
+        ],
+        "max": [
+          null,
+          null,
+          null
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "J1:obj-intermediate-roof",
+      "kind": "equality",
+      "entities": [
+        "intermediate-roof"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/recheck:J1 (in words)",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-intermediate-roof",
+        "min": [
+          null,
+          null,
+          null
+        ],
+        "max": [
+          null,
+          null,
+          30.51
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "J1:obj-rotunda-attic-1",
+      "kind": "equality",
+      "entities": [
+        "rotunda-attic-1"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/recheck:J1 (in words)",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-rotunda-attic-1",
+        "min": [
+          null,
+          null,
+          null
+        ],
+        "max": [
+          null,
+          null,
+          30.51
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "J1:obj-rotunda-cornice-3",
+      "kind": "equality",
+      "entities": [
+        "rotunda-cornice-3"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/recheck:J1 (in words)",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-rotunda-cornice-3",
+        "min": [
+          null,
+          null,
+          null
+        ],
+        "max": [
+          null,
+          null,
+          30.51
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "J1:obj-intermediate-cornice-top",
+      "kind": "equality",
+      "entities": [
+        "intermediate-cornice-top"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/recheck:J1 (in words)",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-intermediate-cornice-top",
+        "min": [
+          null,
+          null,
+          null
+        ],
+        "max": [
+          null,
+          null,
+          30.51
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "D2",
+      "kind": "contact",
+      "entities": [
+        "rotunda-wall",
+        "rotunda-attic"
+      ],
+      "tolerance_m": 0.001,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/recheck:D2 (relations d2-attic-on-drum-*)",
+      "measure": {
+        "check": "support_contact",
+        "lower": [
+          "obj-rotunda-wall-0",
+          "obj-rotunda-wall-1",
+          "obj-rotunda-wall-2",
+          "obj-rotunda-wall-3",
+          "obj-rotunda-wall-4",
+          "obj-rotunda-wall-5",
+          "obj-rotunda-wall-6",
+          "obj-rotunda-wall-7"
+        ],
+        "upper": [
+          "obj-rotunda-attic-0",
+          "obj-rotunda-attic-1",
+          "obj-rotunda-attic-2",
+          "obj-rotunda-attic-3",
+          "obj-rotunda-attic-4",
+          "obj-rotunda-attic-5",
+          "obj-rotunda-attic-6",
+          "obj-rotunda-attic-7"
+        ],
+        "tolerance_m": 0.001
+      }
+    },
+    {
+      "id": "D3",
+      "kind": "contact",
+      "entities": [
+        "rotunda-attic",
+        "dome"
+      ],
+      "tolerance_m": 0.001,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/recheck:D3 (relations d3-dome-on-attic-*)",
+      "measure": {
+        "check": "support_contact",
+        "lower": [
+          "obj-rotunda-attic-0",
+          "obj-rotunda-attic-1",
+          "obj-rotunda-attic-2",
+          "obj-rotunda-attic-3",
+          "obj-rotunda-attic-4",
+          "obj-rotunda-attic-5",
+          "obj-rotunda-attic-6",
+          "obj-rotunda-attic-7"
+        ],
+        "upper": [
+          "obj-dome-0",
+          "obj-dome-1",
+          "obj-dome-2",
+          "obj-dome-3",
+          "obj-dome-4",
+          "obj-dome-5",
+          "obj-dome-6",
+          "obj-dome-7"
+        ],
+        "tolerance_m": 0.001
+      }
+    },
+    {
+      "id": "D4",
+      "kind": "contact",
+      "entities": [
+        "dome",
+        "oculus-ring"
+      ],
+      "tolerance_m": 0.001,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/recheck:D4 (relations d4-ring-on-dome-*)",
+      "measure": {
+        "check": "support_contact",
+        "lower": [
+          "obj-dome-0",
+          "obj-dome-1",
+          "obj-dome-2",
+          "obj-dome-3",
+          "obj-dome-4",
+          "obj-dome-5",
+          "obj-dome-6",
+          "obj-dome-7"
+        ],
+        "upper": [
+          "obj-oculus-ring-0",
+          "obj-oculus-ring-1",
+          "obj-oculus-ring-2",
+          "obj-oculus-ring-3",
+          "obj-oculus-ring-4",
+          "obj-oculus-ring-5",
+          "obj-oculus-ring-6",
+          "obj-oculus-ring-7"
+        ],
+        "tolerance_m": 0.001
+      }
+    },
+    {
+      "id": "K1-west:obj-portico-col-front-W-0",
+      "kind": "bound",
+      "entities": [
+        "portico-col-front-W"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K1 (obligation k1-central-clear, read on the front row's middle columns)",
+      "measure": {
+        "check": "within",
+        "object": "obj-portico-col-front-W-0",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          -1.5,
+          1000000.0,
+          1000000.0
+        ]
+      }
+    },
+    {
+      "id": "K1-west:obj-portico-col-front-W-1",
+      "kind": "bound",
+      "entities": [
+        "portico-col-front-W"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K1 (obligation k1-central-clear, read on the front row's middle columns)",
+      "measure": {
+        "check": "within",
+        "object": "obj-portico-col-front-W-1",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          -1.5,
+          1000000.0,
+          1000000.0
+        ]
+      }
+    },
+    {
+      "id": "K1-west:obj-portico-col-front-W-2",
+      "kind": "bound",
+      "entities": [
+        "portico-col-front-W"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K1 (obligation k1-central-clear, read on the front row's middle columns)",
+      "measure": {
+        "check": "within",
+        "object": "obj-portico-col-front-W-2",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          -1.5,
+          1000000.0,
+          1000000.0
+        ]
+      }
+    },
+    {
+      "id": "K1-east:obj-portico-col-front-E-0",
+      "kind": "bound",
+      "entities": [
+        "portico-col-front-E"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K1 (obligation k1-central-clear, read on the front row's middle columns)",
+      "measure": {
+        "check": "within",
+        "object": "obj-portico-col-front-E-0",
+        "region_min": [
+          1.5,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          1000000.0
+        ]
+      }
+    },
+    {
+      "id": "K1-east:obj-portico-col-front-E-1",
+      "kind": "bound",
+      "entities": [
+        "portico-col-front-E"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K1 (obligation k1-central-clear, read on the front row's middle columns)",
+      "measure": {
+        "check": "within",
+        "object": "obj-portico-col-front-E-1",
+        "region_min": [
+          1.5,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          1000000.0
+        ]
+      }
+    },
+    {
+      "id": "K1-east:obj-portico-col-front-E-2",
+      "kind": "bound",
+      "entities": [
+        "portico-col-front-E"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K1 (obligation k1-central-clear, read on the front row's middle columns)",
+      "measure": {
+        "check": "within",
+        "object": "obj-portico-col-front-E-2",
+        "region_min": [
+          1.5,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          1000000.0
+        ]
+      }
+    },
+    {
+      "id": "K2-oculus-ring:obj-oculus-ring-0",
+      "kind": "bound",
+      "entities": [
+        "oculus-ring-0"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-oculus-ring-0",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-oculus-ring:obj-oculus-ring-1",
+      "kind": "bound",
+      "entities": [
+        "oculus-ring-1"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-oculus-ring-1",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-oculus-ring:obj-oculus-ring-2",
+      "kind": "bound",
+      "entities": [
+        "oculus-ring-2"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-oculus-ring-2",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-oculus-ring:obj-oculus-ring-3",
+      "kind": "bound",
+      "entities": [
+        "oculus-ring-3"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-oculus-ring-3",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-oculus-ring:obj-oculus-ring-4",
+      "kind": "bound",
+      "entities": [
+        "oculus-ring-4"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-oculus-ring-4",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-oculus-ring:obj-oculus-ring-5",
+      "kind": "bound",
+      "entities": [
+        "oculus-ring-5"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-oculus-ring-5",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-oculus-ring:obj-oculus-ring-6",
+      "kind": "bound",
+      "entities": [
+        "oculus-ring-6"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-oculus-ring-6",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-oculus-ring:obj-oculus-ring-7",
+      "kind": "bound",
+      "entities": [
+        "oculus-ring-7"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-oculus-ring-7",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-dome:obj-dome-0",
+      "kind": "bound",
+      "entities": [
+        "dome-0"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-dome-0",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-dome:obj-dome-1",
+      "kind": "bound",
+      "entities": [
+        "dome-1"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-dome-1",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-dome:obj-dome-2",
+      "kind": "bound",
+      "entities": [
+        "dome-2"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-dome-2",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-dome:obj-dome-3",
+      "kind": "bound",
+      "entities": [
+        "dome-3"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-dome-3",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-dome:obj-dome-4",
+      "kind": "bound",
+      "entities": [
+        "dome-4"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-dome-4",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-dome:obj-dome-5",
+      "kind": "bound",
+      "entities": [
+        "dome-5"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-dome-5",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-dome:obj-dome-6",
+      "kind": "bound",
+      "entities": [
+        "dome-6"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-dome-6",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K2-dome:obj-dome-7",
+      "kind": "bound",
+      "entities": [
+        "dome-7"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K2 (obligation k2-dome-top)",
+      "measure": {
+        "check": "within",
+        "object": "obj-dome-7",
+        "region_min": [
+          -1000000.0,
+          -1000000.0,
+          -1000000.0
+        ],
+        "region_max": [
+          1000000.0,
+          1000000.0,
+          46.5
+        ]
+      }
+    },
+    {
+      "id": "K5",
+      "kind": "equality",
+      "entities": [
+        "bronze-door"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A1/condition:K5 (obligation k5-door-centred, in words)",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-bronze-door",
+        "min": [
+          -2.225,
+          null,
+          null
+        ],
+        "max": [
+          2.225,
+          null,
+          null
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "collisions",
+      "kind": "non_interference",
+      "entities": [
+        "building"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": false,
+      "source": "x3:BA-A1/condition:collisions (the oracle's sweep; the bronze-door void is a cut, not material)",
+      "measure": {
+        "check": "collisions",
+        "allowed": [
+          [
+            "obj-bronze-door",
+            "obj-"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "U",
+      "kind": "equality",
+      "entities": [
+        "portico",
+        "intermediate-pediment",
+        "intermediate-cornice-top",
+        "bronze-door"
+      ],
+      "tolerance_m": 0.0,
+      "declared_in_graph": false,
+      "source": "x3:BA-A1/measure:U (the portico, podium, steps, second pediment, top cornice of the block, bronze door)",
+      "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+          "obj-bronze-door",
+          "obj-entablature-front",
+          "obj-entablature-inner-E",
+          "obj-entablature-inner-W",
+          "obj-entablature-side-E",
+          "obj-entablature-side-W",
+          "obj-intermediate-cornice-top",
+          "obj-intermediate-pediment",
+          "obj-pediment-front",
+          "obj-podium",
+          "obj-portico-col-F1",
+          "obj-portico-col-F8",
+          "obj-portico-col-M1",
+          "obj-portico-col-M2",
+          "obj-portico-col-M3",
+          "obj-portico-col-M4",
+          "obj-portico-col-R1",
+          "obj-portico-col-R2",
+          "obj-portico-col-R3",
+          "obj-portico-col-R4",
+          "obj-portico-col-front-E-0",
+          "obj-portico-col-front-E-1",
+          "obj-portico-col-front-E-2",
+          "obj-portico-col-front-W-0",
+          "obj-portico-col-front-W-1",
+          "obj-portico-col-front-W-2",
+          "obj-portico-roof",
+          "obj-steps"
+        ]
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [
+      "rotunda-wall-0",
+      "rotunda-wall-1",
+      "rotunda-wall-2",
+      "rotunda-wall-3",
+      "rotunda-wall-4",
+      "rotunda-wall-5",
+      "rotunda-wall-6",
+      "rotunda-wall-7",
+      "rotunda-floor",
+      "rotunda-attic-0",
+      "rotunda-attic-1",
+      "rotunda-attic-2",
+      "rotunda-attic-3",
+      "rotunda-attic-4",
+      "rotunda-attic-5",
+      "rotunda-attic-6",
+      "rotunda-attic-7",
+      "dome-0",
+      "dome-1",
+      "dome-2",
+      "dome-3",
+      "dome-4",
+      "dome-5",
+      "dome-6",
+      "dome-7",
+      "oculus-ring-0",
+      "oculus-ring-1",
+      "oculus-ring-2",
+      "oculus-ring-3",
+      "oculus-ring-4",
+      "oculus-ring-5",
+      "oculus-ring-6",
+      "oculus-ring-7",
+      "rotunda-cornice-1",
+      "rotunda-cornice-2",
+      "rotunda-cornice-3",
+      "intermediate-block",
+      "intermediate-roof"
+    ],
+    "obligations_to_recheck": [
+      "drum-outer",
+      "drum-springing",
+      "floor",
+      "ring-top",
+      "block-rear",
+      "D2",
+      "D3",
+      "D4",
+      "J1:obj-intermediate-roof",
+      "K5",
+      "K2-oculus-ring:obj-oculus-ring-0",
+      "K2-oculus-ring:obj-oculus-ring-1",
+      "K2-oculus-ring:obj-oculus-ring-2",
+      "K2-oculus-ring:obj-oculus-ring-3",
+      "K2-oculus-ring:obj-oculus-ring-4",
+      "K2-oculus-ring:obj-oculus-ring-5",
+      "K2-oculus-ring:obj-oculus-ring-6",
+      "K2-oculus-ring:obj-oculus-ring-7"
+    ],
+    "expected_verdict": "held",
+    "acceptable_arm_outcomes": [
+      "accept"
+    ],
+    "annotated_by": "executor-draft-from-x3-requests",
+    "annotated_at": "2026-10-14T11:04:43Z",
+    "physical_basis": "Interior diameter 43.30 -> 44.30 m with the wall 6.40: R_i 22.15, R_e 28.55, springing 22.15, dome flat top 45.30, oculus ring top 45.80 <= 46.5 (K2). The link block's rear corner where x = +-17.10 meets the drum's 48-gon moves to y 22.8374 (spec 22.837), the block and its roof following the drum (J0); attic top, block roof and top cornice stay at 30.51 (J1). Portico, podium, steps, second pediment, the block's top cornice and the bronze door do not move."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "848bf9c994e56f9c76712330f2bed61c0e69ce971b3018d3bc96da1388e5ad28",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 600,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "the arm's outcome is acceptable and, when it executed, the oracle agrees with the expected verdict",
+    "failure": "any other outcome; an accept the oracle finds violated, or an accept of a refused task, is a false accept",
+    "partial": "none"
+  }
+}

@@ -78,7 +78,9 @@ The same task can be run by five arms (`--arms B0,B1,B2,B3_archflow,B3+I --exper
 
 B1 and B2 reuse every other object from the start model as it was, composed at the 3DM level. B0, B1 and B2 skip the base check, read no obligations and relations, and claim `accept` whenever the change executes.
 
-A task with `setup` starts from the fixture with those changes applied. Its patch carries the digests of the fixture before them, so only an arm that checks the base can see it is stale.
+A task with `setup` starts from the fixture with those changes applied. With `patch_base: before_setup` (T8X) its patch carries the digests of the fixture before them, so only an arm that checks the base can see it is stale. With `patch_base: after_setup` the patch was made on that start and carries its digests.
+
+**X3 buildings.** `tasks/BA-*.json` and `tasks/BB-*.json` are the X3 requests whose change is a typed patch of the building's parameters (BA A1-A4, A6, A7; BB B1, B4, B5); `fixture.generator` names `buildings.py`. Each starts where its request is made in X3: the earlier requests that land in the gold main line are its `setup`, with `patch_base: after_setup` (A4, A6 and A7 start after A1-A3; B4 and B5 after B1). B2 cannot be a SET_SCALAR patch (its lintel's ends are derived), so B4 and B5 start without it; `x3_request.start_note` says so. Relations come from the request's `measures`, `recheck` and the session's conditions. `test_x4_buildings.py` checks the chain without OCCT.
 
 A false accept is an `accept` that the oracle finds violated, or an `accept` of a task whose gold is `refuse`.
 

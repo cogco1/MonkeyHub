@@ -1,0 +1,558 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "BB-B5-01",
+  "family": "BB",
+  "task_type": "T4_planted_hidden_dependency",
+  "stage_context": {
+    "stage": "design",
+    "earlier_stages": [
+      "design-stage-core",
+      "opening-request-0"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "BB-house",
+    "version": "2",
+    "generator": "labs/revision_tasks/buildings.py:bb_house",
+    "files_sha256": {
+      "labs/revision_tasks/buildings.py": "e24e20324eb088b7d4080dadd24c704967b2a12ca25e0c0b6fbe58961c137a27",
+      "labs/revision_tasks/fixtures.py": "3261abaaa5f9b4b1067fbd3598ef2e4860c383435e5157d08d31592fc7693a03"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:BB-house@x3-before-B5",
+    "content_digest": "c55ce00e214e572c868463b2201abe31b0dbdf83ad2f7e70d83706933d9c58bc",
+    "exact_base_digest": "0ecb3dce681ad83c458b8b2a404e15d3f650e7d9daf348ee3988fa716d681c8a"
+  },
+  "history": {
+    "history_ref": null,
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "x3_request": {
+    "file": "labs/revision_tasks/x3_requests.json",
+    "building": "BB",
+    "request": "B5",
+    "order": 5,
+    "start_after": [
+      "B1"
+    ],
+    "type": "undeclared interface",
+    "expected": {
+      "verdict": "violated",
+      "outcome": [
+        "asked_rightly"
+      ]
+    },
+    "start_note": "X3's gold state here is after B1 and B2 (B3 is reopened and B3' keeps the ground floor at 3.0 m). B2 gives one lintel 0.30 m bearing; its ends are derived parameters of the shared window width and lintel bearing, which SET_SCALAR cannot set, so the start applies B1 only: obj-lintel-win-S-L3-3 stays at x 8.10-9.90 where X3's gold has 7.95-10.05. Nothing this task measures reads that lintel; B4 (asked) leaves the state as it was"
+  },
+  "intended_change": {
+    "text_en": "Shift the ground-floor flight 0.25 m to the west to widen the passage to the bike store.",
+    "typed_delta": [
+      {
+        "target": "parameter:f1_x",
+        "parameter": "f1_x",
+        "from": 8.4,
+        "to": 8.15
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "H1",
+      "kind": "non_interference",
+      "entities": [
+        "stair-F1",
+        "wall-core-W-L1"
+      ],
+      "tolerance_m": 0.0,
+      "declared_in_graph": false,
+      "source": "x3:BB-B5/undeclared by design: the flight's 0.10 side clearance to the core wall",
+      "measure": {
+        "check": "non_interference",
+        "a": [
+          "obj-stair-F1"
+        ],
+        "b": [
+          "obj-wall-core-W-L1"
+        ]
+      }
+    },
+    {
+      "id": "F1-run",
+      "kind": "equality",
+      "entities": [
+        "stair-F1"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BB-B5/gold: the flight 0.25 west if done",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-stair-F1",
+        "min": [
+          7.6,
+          1.9,
+          0.0
+        ],
+        "max": [
+          8.7,
+          6.66,
+          3.0
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "R5-solid",
+      "kind": "non_interference",
+      "entities": [
+        "stair-F1",
+        "slab-L2"
+      ],
+      "tolerance_m": 0.0,
+      "declared_in_graph": true,
+      "source": "x3:BB-B5/relation:r5-F1-lands-on-slab-L2 (declared as a box clearance of 0-0.001; the flight must not run into the slab)",
+      "measure": {
+        "check": "non_interference",
+        "a": [
+          "obj-stair-F1"
+        ],
+        "b": [
+          "obj-slab-L2"
+        ]
+      }
+    },
+    {
+      "id": "K3",
+      "kind": "bound",
+      "entities": [
+        "building"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BB-B5/condition:K3 (obligation k3-piers, in words)",
+      "measure": {
+        "check": "wall_piers",
+        "min_m": 0.5
+      }
+    },
+    {
+      "id": "K4",
+      "kind": "bound",
+      "entities": [
+        "lintels"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BB-B5/condition:K4 (obligation k4-wall-above-lintels, in words)",
+      "measure": {
+        "check": "wall_above_lintels",
+        "min_m": 0.15
+      }
+    },
+    {
+      "id": "K6-F1",
+      "kind": "bound",
+      "entities": [
+        "stair-F1"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BB-B5/condition:K6 (obligation k6-stair-headroom, in words; R7)",
+      "measure": {
+        "check": "flight",
+        "object": "obj-stair-F1",
+        "max_rise_m": 0.18,
+        "min_going_m": 0.28,
+        "min_headroom_m": 2.0
+      }
+    },
+    {
+      "id": "K6-F2",
+      "kind": "bound",
+      "entities": [
+        "stair-F2"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BB-B5/condition:K6 (obligation k6-stair-headroom, in words; R7)",
+      "measure": {
+        "check": "flight",
+        "object": "obj-stair-F2",
+        "max_rise_m": 0.18,
+        "min_going_m": 0.28,
+        "min_headroom_m": 2.0
+      }
+    },
+    {
+      "id": "K6-F3",
+      "kind": "bound",
+      "entities": [
+        "stair-F3"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BB-B5/condition:K6 (obligation k6-stair-headroom, in words; R7)",
+      "measure": {
+        "check": "flight",
+        "object": "obj-stair-F3",
+        "max_rise_m": 0.18,
+        "min_going_m": 0.28,
+        "min_headroom_m": 2.0
+      }
+    },
+    {
+      "id": "R8-F1",
+      "kind": "clearance",
+      "entities": [
+        "stair-F1"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BB-B5/condition:R8 (obligation r8-landing-depth, in words)",
+      "measure": {
+        "check": "landing_depth",
+        "object": "obj-stair-F1",
+        "min_m": 1.2
+      }
+    },
+    {
+      "id": "R8-F2",
+      "kind": "clearance",
+      "entities": [
+        "stair-F2"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BB-B5/condition:R8 (obligation r8-landing-depth, in words)",
+      "measure": {
+        "check": "landing_depth",
+        "object": "obj-stair-F2",
+        "min_m": 1.2
+      }
+    },
+    {
+      "id": "R8-F3",
+      "kind": "clearance",
+      "entities": [
+        "stair-F3"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BB-B5/condition:R8 (obligation r8-landing-depth, in words)",
+      "measure": {
+        "check": "landing_depth",
+        "object": "obj-stair-F3",
+        "min_m": 1.2
+      }
+    },
+    {
+      "id": "R9",
+      "kind": "clearance",
+      "entities": [
+        "core",
+        "stairs"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BB-B5/condition:R9 (obligation r9-flat-doors-on-landings, in words)",
+      "measure": {
+        "check": "door_beside_flight",
+        "min_gap_m": 0.0,
+        "pairs": [
+          {
+            "wall": "obj-wall-core-W-L1",
+            "flight": "obj-stair-F1"
+          },
+          {
+            "wall": "obj-wall-core-W-L2",
+            "flight": "obj-stair-F1"
+          },
+          {
+            "wall": "obj-wall-core-E-L2",
+            "flight": "obj-stair-F2"
+          },
+          {
+            "wall": "obj-wall-core-E-L3",
+            "flight": "obj-stair-F2"
+          },
+          {
+            "wall": "obj-wall-core-W-L3",
+            "flight": "obj-stair-F3"
+          }
+        ]
+      }
+    },
+    {
+      "id": "collisions",
+      "kind": "non_interference",
+      "entities": [
+        "building"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": false,
+      "source": "x3:BB-B5/condition:collisions (the oracle's sweep; lintels, door frames and leaves sit in their walls by convention)",
+      "measure": {
+        "check": "collisions",
+        "allowed": [
+          [
+            "obj-lintel-",
+            "obj-wall-"
+          ],
+          [
+            "obj-door-frame-",
+            "obj-wall-"
+          ],
+          [
+            "obj-door-leaf-",
+            "obj-wall-"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "U",
+      "kind": "equality",
+      "entities": [
+        "building"
+      ],
+      "tolerance_m": 0.0,
+      "declared_in_graph": false,
+      "source": "x3:BB-B5/unchanged: everything but the ground-floor flight",
+      "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+          "obj-door-frame-wall-S-L1-door-front-left",
+          "obj-door-frame-wall-S-L1-door-front-right",
+          "obj-door-frame-wall-S-L1-door-front-top",
+          "obj-door-frame-wall-core-E-L1-door-flat-E-L1-left",
+          "obj-door-frame-wall-core-E-L1-door-flat-E-L1-right",
+          "obj-door-frame-wall-core-E-L1-door-flat-E-L1-top",
+          "obj-door-frame-wall-core-E-L2-door-flat-E-L2-left",
+          "obj-door-frame-wall-core-E-L2-door-flat-E-L2-right",
+          "obj-door-frame-wall-core-E-L2-door-flat-E-L2-top",
+          "obj-door-frame-wall-core-E-L3-door-flat-E-L3-left",
+          "obj-door-frame-wall-core-E-L3-door-flat-E-L3-right",
+          "obj-door-frame-wall-core-E-L3-door-flat-E-L3-top",
+          "obj-door-frame-wall-core-W-L1-door-flat-W-L1-left",
+          "obj-door-frame-wall-core-W-L1-door-flat-W-L1-right",
+          "obj-door-frame-wall-core-W-L1-door-flat-W-L1-top",
+          "obj-door-frame-wall-core-W-L2-door-flat-W-L2-left",
+          "obj-door-frame-wall-core-W-L2-door-flat-W-L2-right",
+          "obj-door-frame-wall-core-W-L2-door-flat-W-L2-top",
+          "obj-door-frame-wall-core-W-L3-door-flat-W-L3-left",
+          "obj-door-frame-wall-core-W-L3-door-flat-W-L3-right",
+          "obj-door-frame-wall-core-W-L3-door-flat-W-L3-top",
+          "obj-door-frame-wall-stairhead-N-door-roof-left",
+          "obj-door-frame-wall-stairhead-N-door-roof-right",
+          "obj-door-frame-wall-stairhead-N-door-roof-top",
+          "obj-door-leaf-wall-S-L1-door-front-0",
+          "obj-door-leaf-wall-core-E-L1-door-flat-E-L1-0",
+          "obj-door-leaf-wall-core-E-L2-door-flat-E-L2-0",
+          "obj-door-leaf-wall-core-E-L3-door-flat-E-L3-0",
+          "obj-door-leaf-wall-core-W-L1-door-flat-W-L1-0",
+          "obj-door-leaf-wall-core-W-L2-door-flat-W-L2-0",
+          "obj-door-leaf-wall-core-W-L3-door-flat-W-L3-0",
+          "obj-door-leaf-wall-stairhead-N-door-roof-0",
+          "obj-hole-L2",
+          "obj-hole-L3",
+          "obj-hole-R",
+          "obj-lintel-door-flat-E-L1",
+          "obj-lintel-door-flat-E-L2",
+          "obj-lintel-door-flat-E-L3",
+          "obj-lintel-door-flat-W-L1",
+          "obj-lintel-door-flat-W-L2",
+          "obj-lintel-door-flat-W-L3",
+          "obj-lintel-door-front",
+          "obj-lintel-door-roof",
+          "obj-lintel-win-E-L1-1",
+          "obj-lintel-win-E-L1-2",
+          "obj-lintel-win-E-L2-1",
+          "obj-lintel-win-E-L2-2",
+          "obj-lintel-win-E-L3-1",
+          "obj-lintel-win-E-L3-2",
+          "obj-lintel-win-N-L1-1",
+          "obj-lintel-win-N-L1-2",
+          "obj-lintel-win-N-L1-4",
+          "obj-lintel-win-N-L1-5",
+          "obj-lintel-win-N-L2-1",
+          "obj-lintel-win-N-L2-2",
+          "obj-lintel-win-N-L2-4",
+          "obj-lintel-win-N-L2-5",
+          "obj-lintel-win-N-L3-1",
+          "obj-lintel-win-N-L3-2",
+          "obj-lintel-win-N-L3-4",
+          "obj-lintel-win-N-L3-5",
+          "obj-lintel-win-S-L1-1",
+          "obj-lintel-win-S-L1-2",
+          "obj-lintel-win-S-L1-4",
+          "obj-lintel-win-S-L1-5",
+          "obj-lintel-win-S-L2-1",
+          "obj-lintel-win-S-L2-2",
+          "obj-lintel-win-S-L2-3",
+          "obj-lintel-win-S-L2-4",
+          "obj-lintel-win-S-L2-5",
+          "obj-lintel-win-S-L3-1",
+          "obj-lintel-win-S-L3-2",
+          "obj-lintel-win-S-L3-3",
+          "obj-lintel-win-S-L3-4",
+          "obj-lintel-win-S-L3-5",
+          "obj-lintel-win-W-L1-1",
+          "obj-lintel-win-W-L1-2",
+          "obj-lintel-win-W-L2-1",
+          "obj-lintel-win-W-L2-2",
+          "obj-lintel-win-W-L3-1",
+          "obj-lintel-win-W-L3-2",
+          "obj-parapet-E",
+          "obj-parapet-N",
+          "obj-parapet-S",
+          "obj-parapet-W",
+          "obj-roof-stairhead",
+          "obj-slab-L1",
+          "obj-slab-L2",
+          "obj-slab-L3",
+          "obj-slab-R",
+          "obj-stair-F2",
+          "obj-stair-F3",
+          "obj-wall-E-L1",
+          "obj-wall-E-L1-aperture-win-E-L1-1",
+          "obj-wall-E-L1-aperture-win-E-L1-2",
+          "obj-wall-E-L2",
+          "obj-wall-E-L2-aperture-win-E-L2-1",
+          "obj-wall-E-L2-aperture-win-E-L2-2",
+          "obj-wall-E-L3",
+          "obj-wall-E-L3-aperture-win-E-L3-1",
+          "obj-wall-E-L3-aperture-win-E-L3-2",
+          "obj-wall-N-L1",
+          "obj-wall-N-L1-aperture-win-N-L1-1",
+          "obj-wall-N-L1-aperture-win-N-L1-2",
+          "obj-wall-N-L1-aperture-win-N-L1-4",
+          "obj-wall-N-L1-aperture-win-N-L1-5",
+          "obj-wall-N-L2",
+          "obj-wall-N-L2-aperture-win-N-L2-1",
+          "obj-wall-N-L2-aperture-win-N-L2-2",
+          "obj-wall-N-L2-aperture-win-N-L2-4",
+          "obj-wall-N-L2-aperture-win-N-L2-5",
+          "obj-wall-N-L3",
+          "obj-wall-N-L3-aperture-win-N-L3-1",
+          "obj-wall-N-L3-aperture-win-N-L3-2",
+          "obj-wall-N-L3-aperture-win-N-L3-4",
+          "obj-wall-N-L3-aperture-win-N-L3-5",
+          "obj-wall-S-L1",
+          "obj-wall-S-L1-aperture-door-front",
+          "obj-wall-S-L1-aperture-win-S-L1-1",
+          "obj-wall-S-L1-aperture-win-S-L1-2",
+          "obj-wall-S-L1-aperture-win-S-L1-4",
+          "obj-wall-S-L1-aperture-win-S-L1-5",
+          "obj-wall-S-L2",
+          "obj-wall-S-L2-aperture-win-S-L2-1",
+          "obj-wall-S-L2-aperture-win-S-L2-2",
+          "obj-wall-S-L2-aperture-win-S-L2-3",
+          "obj-wall-S-L2-aperture-win-S-L2-4",
+          "obj-wall-S-L2-aperture-win-S-L2-5",
+          "obj-wall-S-L3",
+          "obj-wall-S-L3-aperture-win-S-L3-1",
+          "obj-wall-S-L3-aperture-win-S-L3-2",
+          "obj-wall-S-L3-aperture-win-S-L3-3",
+          "obj-wall-S-L3-aperture-win-S-L3-4",
+          "obj-wall-S-L3-aperture-win-S-L3-5",
+          "obj-wall-W-L1",
+          "obj-wall-W-L1-aperture-win-W-L1-1",
+          "obj-wall-W-L1-aperture-win-W-L1-2",
+          "obj-wall-W-L2",
+          "obj-wall-W-L2-aperture-win-W-L2-1",
+          "obj-wall-W-L2-aperture-win-W-L2-2",
+          "obj-wall-W-L3",
+          "obj-wall-W-L3-aperture-win-W-L3-1",
+          "obj-wall-W-L3-aperture-win-W-L3-2",
+          "obj-wall-core-E-L1",
+          "obj-wall-core-E-L1-aperture-door-flat-E-L1",
+          "obj-wall-core-E-L2",
+          "obj-wall-core-E-L2-aperture-door-flat-E-L2",
+          "obj-wall-core-E-L3",
+          "obj-wall-core-E-L3-aperture-door-flat-E-L3",
+          "obj-wall-core-N-L1",
+          "obj-wall-core-N-L2",
+          "obj-wall-core-N-L3",
+          "obj-wall-core-W-L1",
+          "obj-wall-core-W-L1-aperture-door-flat-W-L1",
+          "obj-wall-core-W-L2",
+          "obj-wall-core-W-L2-aperture-door-flat-W-L2",
+          "obj-wall-core-W-L3",
+          "obj-wall-core-W-L3-aperture-door-flat-W-L3",
+          "obj-wall-party-L1",
+          "obj-wall-party-L2",
+          "obj-wall-party-L3",
+          "obj-wall-stairhead-E",
+          "obj-wall-stairhead-N",
+          "obj-wall-stairhead-N-aperture-door-roof",
+          "obj-wall-stairhead-S",
+          "obj-wall-stairhead-W"
+        ]
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [
+      "stair-F1"
+    ],
+    "obligations_to_recheck": [
+      "H1",
+      "R5-solid",
+      "K6-F1",
+      "R8-F1",
+      "R9",
+      "K3",
+      "K4"
+    ],
+    "expected_verdict": "violated",
+    "acceptable_arm_outcomes": [
+      "reopen",
+      "unknown",
+      "refuse"
+    ],
+    "annotated_by": "executor-draft-from-x3-requests",
+    "annotated_at": "2026-10-14T11:04:43Z",
+    "physical_basis": "The flight (1.10 wide) moves from x 7.85-8.95 to 7.60-8.70: it runs 0.15 into the core wall at x 7.55-7.75 (1.1246 m3) and, at its top, into the L2 slab beside the stair hole, which stays at x 7.75-9.00 (0.0094 m3). The flight's side clearance to the core wall is declared nowhere; at most 0.10 m is clear."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "848bf9c994e56f9c76712330f2bed61c0e69ce971b3018d3bc96da1388e5ad28",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 600,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "the arm's outcome is acceptable and, when it executed, the oracle agrees with the expected verdict",
+    "failure": "any other outcome; an accept the oracle finds violated, or an accept of a refused task, is a false accept",
+    "partial": "none"
+  },
+  "setup": [
+    {
+      "target": "parameter:front_door_width",
+      "parameter": "front_door_width",
+      "from": 1.1,
+      "to": 1.4
+    }
+  ],
+  "patch_base": "after_setup"
+}

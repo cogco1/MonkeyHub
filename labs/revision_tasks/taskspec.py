@@ -6,6 +6,13 @@ measurement for each, the gold expectations a person wrote from the fixture's
 physical definition, and the oracle that judges it. It is a research file
 format: it is never written into a project.
 
+The fixture is the record its ``generator`` (``<file>:<function>``) authors: an
+F fixture in ``fixtures.py`` or an X3 building in ``buildings.py``. A task with
+``setup`` starts from that record with the setup's typed changes applied. With
+``patch_base: before_setup`` the task's own change was prepared before them and
+carries the older digests (a stale base, T8X); with ``after_setup`` it was
+prepared on the start itself (an X3 request made after earlier requests landed).
+
 ``freeze`` fills only the fields computed from code (start digests, the
 fixture generator's and the oracle's file hashes); every expectation stays as
 the author wrote it.
@@ -37,6 +44,24 @@ RELATION_KINDS = {"contact", "clearance", "equality", "bound", "non_interference
 ORACLE_METHODS = {"cold_readback_geometry", "rule", "human"}
 REQUIRED = ("spec_version", "task_id", "family", "task_type", "fixture", "start_state", "intended_change",
             "protected_relations", "gold", "oracle", "backend", "budget", "rubric")
+PATCH_BASES = {"before_setup", "after_setup"}
+# Each generator file and the files its record is built from (the buildings use the fixtures' row helpers).
+GENERATOR_FILES = {
+    "labs/revision_tasks/fixtures.py": ("fixtures", ("labs/revision_tasks/fixtures.py",)),
+    "labs/revision_tasks/buildings.py": ("buildings", ("labs/revision_tasks/buildings.py", "labs/revision_tasks/fixtures.py")),
+}
+
+
+def _delta_problems(deltas: Any, where: str) -> list[str]:
+    if not isinstance(deltas, list) or not deltas:
+        return [f"{where} must be a non-empty list"]
+    found = []
+    for k, delta in enumerate(deltas):
+        if not isinstance(delta, dict) or set(delta) != {"target", "parameter", "from", "to"}:
+            found.append(f"{where}[{k}] must have exactly target, parameter, from, to")
+        elif delta["target"] != f"parameter:{delta['parameter']}":
+            found.append(f"{where}[{k}].target must be parameter:<parameter>")
+    return found
 
 
 class TaskSpecError(ValueError):
@@ -66,6 +91,8 @@ def problems(spec: Any) -> list[str]:
     for key in ("fixture_id", "version", "generator", "files_sha256"):
         if key not in fixture:
             found.append(f"fixture.{key} missing")
+    if str(fixture.get("generator", "")).partition(":")[0] not in GENERATOR_FILES:
+        found.append(f"fixture.generator must be <file>:<function> in one of {sorted(GENERATOR_FILES)}")
     start = spec["start_state"]
     for key in ("state_ref", "content_digest", "exact_base_digest"):
         if not isinstance(start.get(key), str) or not start[key]:
@@ -74,14 +101,7 @@ def problems(spec: Any) -> list[str]:
     deltas = change.get("typed_delta")
     if not isinstance(change.get("text_en"), str) or not change["text_en"]:
         found.append("intended_change.text_en missing")
-    if not isinstance(deltas, list) or not deltas:
-        found.append("intended_change.typed_delta must be a non-empty list")
-    else:
-        for k, delta in enumerate(deltas):
-            if set(delta) != {"target", "parameter", "from", "to"}:
-                found.append(f"typed_delta[{k}] must have exactly target, parameter, from, to")
-            elif delta["target"] != f"parameter:{delta['parameter']}":
-                found.append(f"typed_delta[{k}].target must be parameter:<parameter>")
+    found += _delta_problems(deltas, "intended_change.typed_delta")
     ids = set()
     for k, relation in enumerate(spec["protected_relations"]):
         rid = relation.get("id")
@@ -108,10 +128,15 @@ def problems(spec: Any) -> list[str]:
         if not isinstance(gold.get(key), str) or not gold[key]:
             found.append(f"gold.{key} missing")
     if "setup" in spec:
-        if not isinstance(spec["setup"], list) or not spec["setup"] or spec.get("patch_base") != "before_setup":
-            found.append("setup must be a non-empty list of deltas, with patch_base 'before_setup'")
-        elif not isinstance(spec.get("patch_base_digests"), dict):
-            found.append("a task with setup must freeze patch_base_digests")
+        found += _delta_problems(spec["setup"], "setup")
+        if spec.get("patch_base") not in PATCH_BASES:
+            found.append(f"a task with setup names its patch_base, one of {sorted(PATCH_BASES)}")
+        elif spec["patch_base"] == "before_setup" and not isinstance(spec.get("patch_base_digests"), dict):
+            found.append("a task whose patch predates its setup must freeze patch_base_digests")
+        elif spec["patch_base"] == "after_setup" and "patch_base_digests" in spec:
+            found.append("a patch made after its setup carries the start's own digests, not patch_base_digests")
+    elif "patch_base" in spec or "patch_base_digests" in spec:
+        found.append("patch_base and patch_base_digests need a setup")
     oracle = spec["oracle"]
     if oracle.get("reads_metadata") is not False:
         found.append("oracle.reads_metadata must be false")
@@ -145,6 +170,16 @@ def spec_sha256(spec: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(spec, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
+def fixture_record(spec: dict[str, Any]):
+    """The record the task's generator authors (``<file>:<function>``), before any setup."""
+
+    import importlib
+
+    path, _, function = spec["fixture"]["generator"].partition(":")
+    module = importlib.import_module(f"labs.revision_tasks.{GENERATOR_FILES[path][0]}")
+    return getattr(module, function)()
+
+
 def start_record(spec: dict[str, Any]):
     """The task's current start: the fixture, with the task's setup changes applied when it has any."""
 
@@ -152,7 +187,7 @@ def start_record(spec: dict[str, Any]):
 
     from labs.revision_tasks import fixtures
 
-    record = fixtures.FIXTURES[spec["fixture"]["fixture_id"]]()
+    record = fixture_record(spec)
     if not spec.get("setup"):
         return record
     bound = fixtures.bound(record)
@@ -169,14 +204,16 @@ def freeze(path: Path) -> bool:
     from labs.revision_tasks import fixtures, oracle
 
     spec = json.loads(path.read_text(encoding="utf-8"))
-    original = fixtures.FIXTURES[spec["fixture"]["fixture_id"]]()
+    original = fixture_record(spec)
     record = start_record(spec)
     bound = fixtures.bound(record)
     derived = json.loads(json.dumps(spec))
-    if "setup" in spec:
+    if spec.get("patch_base") == "before_setup":
         derived["patch_base_digests"] = {"content_digest": original.digest, "exact_base_digest": fixtures.bound(original).state_digest}
-    derived["fixture"]["version"] = fixtures.FIXTURE_VERSION
-    derived["fixture"]["files_sha256"] = {"labs/revision_tasks/fixtures.py": file_sha256(Path(fixtures.__file__))}
+    generator = spec["fixture"]["generator"].partition(":")[0]
+    if generator == "labs/revision_tasks/fixtures.py":
+        derived["fixture"]["version"] = fixtures.FIXTURE_VERSION       # the buildings carry no version constant: their spec's stays as written
+    derived["fixture"]["files_sha256"] = {name: file_sha256(LAB.parents[1] / name) for name in GENERATOR_FILES[generator][1]}
     derived["start_state"]["content_digest"] = record.digest
     derived["start_state"]["exact_base_digest"] = bound.state_digest
     derived["oracle"].update({"oracle_id": oracle.ORACLE_ID, "version": oracle.ORACLE_VERSION, "sha256": file_sha256(Path(oracle.__file__))})

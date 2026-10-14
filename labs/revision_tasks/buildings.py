@@ -1,7 +1,7 @@
 """The X3 buildings as authored records: BB, a three-storey house and studio, and BA, the Pantheon (both spec v2).
 
 Same conventions as ``fixtures``: an in-memory ``StateRecord`` of Component@1, Level@1 and Element@1 rows built
-with the production element producers (``wall`` with hosted openings and door types, ``beam`` lintels, ``prism``
+with the production element producers (``wall`` with hosted openings and door types, ``prism`` lintels, ``prism``
 slabs voided by hidden ``prism`` stair holes, ``stair`` flights), declared parameters, checked relations and
 obligations. Plan points are ``[x, y]`` of the model file (east, north); the program frame carries the file's y
 as its plan z.
@@ -237,7 +237,7 @@ def bb_house() -> StateRecord:
         DesignObligation("k3-piers", "Keep at least 0.5 m of wall on each side of every opening.", "decision:opening-request-0",
                          subject_refs=tuple(f"entity:{e.entity_id}" for e in walls.entities if e.fields["producer"] == "wall")),
         DesignObligation("k4-wall-above-lintels", "Keep at least 0.15 m of wall above every lintel.", "decision:opening-request-0",
-                         subject_refs=tuple(f"entity:{e.entity_id}" for e in walls.entities if e.fields["producer"] == "beam")),
+                         subject_refs=tuple(f"entity:{e.entity_id}" for e in walls.entities if e.entity_id.startswith("lintel-"))),
         DesignObligation("k6-stair-headroom", "Headroom over the stair must stay at least 2.0 m.", "decision:opening-request-0",
                          subject_refs=tuple(f"entity:stair-{n}" for n in flights)),
         DesignObligation("r8-landing-depth", "Each flight has a landing at least 1.2 m deep at both ends, measured along the flight "
