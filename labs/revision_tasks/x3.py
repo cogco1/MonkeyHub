@@ -11,21 +11,28 @@ condition broke, sends the matching correction sentence once before the next req
 | T  | the same Hub, its tools restricted to construction proposals, candidates and the model readback (``x3_hub.serve_proxy``); the prompt is the request only | fresh per request |
 | H  | as T, with the full previous transcript (requests, tool calls and results, answers) in the prompt | fresh per request |
 | SF | no Hub: the previous request's C-task 3DM state file through ``x3_sf_mcp`` (read the state, read the boxes, submit typed changes to the hostless reviser) | fresh per request |
+| GH | no Hub: the building's expert Grasshopper definition in the session's one Rhino 8, through the Rhino MCP server behind the lab proxy (``x3_gh``); the prompt is the request only | fresh per request |
 
 Request 0 (the opening conditions and the history's rejections) is not a model turn: the harness writes it where each
 mode keeps it. M and M+: the conditions as ``keep`` and the rejections as ``reject`` decisions in the project.
 H: the transcript's first entries. SF: the start file's context pack, read after the same decisions are recorded in
-a production project of the building. T: nowhere (the building's own parameters and obligations, as authored, are
+a production project of the building. GH: the definition's ``PROJECT NOTES`` panel (its place for them in the GH
+definitions' spec), saved with the .gh. T: nowhere (the building's own parameters and obligations, as authored, are
 all any mode starts with).
 
 What carries to the next request: M and M+, the Working Head (the agent lands a change with admission and Continue);
 T and H, which have no landing tool, the candidate the answer names (else the turn's last candidate), landed by the
-harness as the architect's Continue on the Hub page; SF, the file the agent's last adopted submission wrote.
+harness as the architect's Continue on the Hub page; SF, the file the agent's last adopted submission wrote; GH, the
+definition as the turn left it, saved by the harness, and the model the harness bakes and exports from it
+(``bake_export.py``). The oracle judges GH's measurement copy of it (each object meshed again from its Brep within
+0.001 m, BA's front row under its rows' names) through GH's reading of the rows (``x3_gh.judging``: whole objects for
+BA's sectors, keep rows from GH's own start, the 48-gon's tolerance on bounds derived from the drum's circle).
 
-Every turn: the common system prompt (``prompts/x3_system.md``), x2's fairness flags (``x3_hub.command``), at most
+Every turn: the common system prompt (``prompts/x3_system.md``; GH: followed by ``prompts/x3_gh_addendum.md``), x2's
+fairness flags (``x3_hub.command``), at most
 30 design tool calls (the lab proxy or the SF server refuses later calls; MonkeyHub's presentation calls do not count)
-and 600 s, its cost in the shared ledger. One bundle per request (``<session>/<request>.bundle.json``), a session CSV
-and summary.
+and 600 s, its cost in the shared ledger (GH: part ``x3_gh``). One bundle per request
+(``<session>/<request>.bundle.json``), a session CSV and summary.
 
 The file hand-over (A10, B10; ``Session.hand_over``): the harness makes the consultant's file from the design as it
 stands (``external_edit``: one named object moved, everything else kept) and keeps it beside the bundle. SF: it becomes
@@ -33,8 +40,10 @@ the current file; ``submit_change`` refuses it (its geometry no longer matches i
 ``rebuild_from_state``, which discards and lists the outside change. Hub modes: the architect attaches it (an external
 model asset, ``x3_hub.attach_model``) and the request names it. MonkeyHub offers no read of an attached model's objects
 with their positions, so a Hub agent cannot see the outside change unless it finds another way (protocol 7.16: run as
-is, a measured product gap; ``HUB_HANDOVER_READY`` only switches it off). The request is judged against the design as recorded; the score adds
-``external_change_reported_auto`` and ``external_change_adopted``. GH is paused.
+is, a measured product gap; ``HUB_HANDOVER_READY`` only switches it off). GH ("the .gh and the .3dm"): the consultant's
+file is made from the last export, and the harness opens it in Rhino (the document cleared, the file imported) beside the
+definition, which it does not change; the request names it. The request is judged against the design as recorded; the
+score adds ``external_change_reported_auto`` and ``external_change_adopted``.
 """
 
 from __future__ import annotations
@@ -45,6 +54,8 @@ import argparse
 import csv
 import fnmatch
 import json
+import os
+import shutil
 import subprocess
 import sys
 import time
@@ -59,8 +70,9 @@ LAB = Path(__file__).resolve().parent
 REQUESTS = LAB / "x3_requests.json"
 SYSTEM = LAB / "prompts" / "x3_system.md"
 ORACLE = LAB / "oracle.py"
-MODES = ("M", "M+", "T", "H", "SF")
+MODES = ("M", "M+", "T", "H", "SF", "GH")
 HUB_MODES = ("M", "M+", "T", "H")
+GH_PART = "x3_gh"              # GH's own cost part (x2.CAPS); its pilot books to "pilot" as every mode's
 REQUEST_TIMEOUT_S = 600
 TURN_BUDGET_USD = 3.0          # a runaway guard, not the binding limit (manifest 7.11)
 MAX_TURNS = 40                 # 30 design calls (the binding cap), the presentation protocol, progress messages and the answer
@@ -80,6 +92,7 @@ HUB_HANDOVER_READY = True
 HUB_HANDOVER_GAP = ("the file hand-over in the Hub modes is held: MonkeyHub keeps the attached file as an external model asset, "
                     "but offers no read of its objects (the model-asset index needs an exact run state and carries no geometry)")
 HANDOVER_FILE_NAME = "model-from-consultant.3dm"
+GH_OPENED_LINE = "(Opened in Rhino: {name}.)"   # GH's counterpart of the Hub modes' attachment line
 
 
 # ---------------------------------------------------------------- the request file
@@ -328,9 +341,12 @@ def h_prompt(history: list[str], text: str) -> str:
 
 class Session:
     def __init__(self, building: str, mode: str, repeat: int, out: Path, *, cli: str, ledger: x2.Ledger, part: str,
-                 limit_usd: float, budget_usd: float = TURN_BUDGET_USD, data: dict[str, Any] | None = None) -> None:
+                 limit_usd: float, budget_usd: float = TURN_BUDGET_USD, data: dict[str, Any] | None = None,
+                 gh: dict[str, Any] | None = None) -> None:
         if mode not in MODES:
             raise ValueError(f"mode {mode} is not one of {MODES}")
+        if mode == "GH" and not (gh and gh.get("dir") and gh.get("launcher")):
+            raise ValueError("GH needs the definitions' folder and the Rhino MCP launcher (gh={'dir': ..., 'launcher': ...})")
         self.data = data or load_requests()
         self.spec = self.data["buildings"][building]
         self.building, self.mode, self.repeat = building, mode, repeat
@@ -351,6 +367,14 @@ class Session:
         self.rows: list[dict[str, Any]] = []
         self.stopped: str | None = None
         self.turn_count = 0
+        self.gh = gh                                # GH: {"dir": definitions' folder, "launcher": the Rhino MCP launcher}
+        self.rhino = None                           # GH: x3_gh.RhinoMcp, the session's Rhino
+        self.gh_files: dict[str, Any] = {}          # GH: the session's definition (what carries), the bake script
+        self.gh_export: Path | None = None          # GH: the last export (Breps with stored render meshes)
+        self.gh_tools: tuple[str, ...] = ()         # GH: the Rhino MCP tools the agent is given
+        self.gh_start: Path | None = None           # GH: the session's start, measured (opening conditions' keep rows)
+        self.gh_names: dict[str, str] = {}          # GH: {GH name: measured name} of the last measurement copy
+        self.system_file = SYSTEM                   # GH: the common prompt and its addendum
 
     # ---- request 0
     def opening_decisions(self) -> list[dict[str, Any]]:
@@ -399,6 +423,71 @@ class Session:
                                            context_root=start / "context", utterance="Current design state.", context_pack=pack["pack"])
         self._write("opening.json", {"mode": "SF", "decisions": pack["decisions"], "file": str(written.path)})
         self.model = written.path
+
+    def open_gh(self, stack) -> None:
+        """GH: the session's own Rhino 8 (started here, ended when the session ends), the document in metres, Grasshopper
+        with the session's copy of the definition, request 0 written into its ``PROJECT NOTES`` panel and saved, GH's
+        system prompt (the common one and ``x3_gh.ADDENDUM``), and the start model baked, exported and measured as every
+        later request's model is. The start is checked against the building's conditions as GH answers them."""
+
+        from labs.revision_tasks import x3_gh
+
+        self.gh_files = x3_gh.session_files(Path(self.gh["dir"]), self.building, self.dir / "gh")
+        self.rhino = stack.enter_context(x3_gh.rhino_session(self.gh["launcher"], self.dir / "rhino"))
+        record: dict[str, Any] = {"mode": "GH", "definition": str(self.gh_files["definition"]), "sha256": self.gh_files["sha256"]}
+        record["system_prompt"] = x3_gh.system_prompt(SYSTEM, self.dir / "gh" / "system.md")
+        self.system_file = Path(record["system_prompt"]["path"])
+        record["rhino"] = self.rhino.spawn()
+        self.gh_tools = x3_gh.agent_tools(self.rhino.tools)
+        record["tools"] = {"given": list(self.gh_tools), "not_given": [t for t in x3_gh.EXCLUDED_TOOLS if any(r.get("name") == t for r in self.rhino.tools)]}
+        record["document"] = self.rhino.prepare_document()
+        record["grasshopper"] = self.rhino.start_grasshopper()
+        record["opened"] = self.rhino.open_definition(self.gh_files["definition"])
+        notes = x3_gh.opening_notes(self.spec)
+        record["notes"] = {**self.rhino.write_notes(notes), "text": notes}
+        record["saved"] = self.rhino.save_definition([self.gh_files["definition"]])
+        start = self.gh_bake(self.dir / "gh" / "start.3dm")
+        record["start"] = start
+        stored = x3_gh.render_mesh_model(Path(start["export"]), self.dir / "gh" / "start.stored.3dm")
+        authored = x3_gh.render_mesh_model(self.gh_files["default"], self.dir / "gh" / "default.stored.3dm")
+        record["start_vs_authored_default"] = x3_gh.compare(x3_gh.mesh_boxes(Path(authored["path"])), x3_gh.mesh_boxes(Path(stored["path"])))
+        self.model = self.gh_start = Path(start["measured"]["path"])
+        check = self._judge({"id": "start", "measures": [], "change": []}, self.model, self.model, self.dir / "gh" / "start.oracle.json")
+        record["start_conditions"] = {"conditions": check["summary"]["conditions"], "verdict": check["summary"]["verdict"],
+                                      "collisions": next((r["measured"] for r in check.get("relations", []) if r["id"] == "collisions"), None)}
+        self._write("opening.json", record)
+
+    def gh_bake(self, export: Path) -> dict[str, Any]:
+        """GH: the active definition baked and exported (``bake_export.py``: the model the agent and a consultant see),
+        its objects meshed within ``x3_gh.DEVIATION_M`` (``RhinoMcp.measure``), and the measurement copy the oracle judges
+        (``x3_gh.measurement_copy``: those meshes, BA's front row under its measures' names)."""
+
+        from labs.revision_tasks import x3_gh
+
+        baked = self.rhino.bake(self.gh_files["bake"], self.building, export, self.gh_files["source_name"])
+        self.gh_export = export
+        fine = export.with_name(export.stem + ".fine.3dm")
+        meshed = self.rhino.measure(self.building, fine)
+        measured = x3_gh.measurement_copy(fine, export.with_name(export.stem + ".measured.3dm"), self.building)
+        self.gh_names = measured["renamed"]
+        return {"bake": {k: baked.get(k) for k in ("active", "written", "objects", "problems", "seconds")}, "export": str(export),
+                "export_sha256": _sha(export), "meshed": {k: meshed.get(k) for k in ("objects", "faces", "deviation_m", "max_edge_m", "problems", "seconds")},
+                "measured": measured}
+
+    def _judge(self, request: dict[str, Any], model: Path, start: Path, out: Path, **judged: Any) -> dict[str, Any]:
+        """``judge`` for this session. GH: the building's conditions, the request's rows and its change list as GH's
+        objects answer them (``x3_gh.judging``: whole objects for sectors, keep rows from GH's own start, circle
+        tolerances); the rows that differ from the request file are kept in the report (``gh_rows``)."""
+
+        if self.mode != "GH":
+            return judge(self.spec, request, model, start, self.before, out, **judged)
+        from labs.revision_tasks import x3_gh
+
+        spec, adapted, rows = x3_gh.judging(self.spec, request, self.building, session_start=x3_gh.mesh_boxes(self.gh_start),
+                                            request_start=x3_gh.mesh_boxes(Path(start)))
+        report = judge(spec, adapted, model, start, self.before, out, **judged)
+        report["gh_rows"] = rows
+        return report
 
     def opening_pack(self, project, cache_dir: Path) -> dict[str, Any]:
         """Record request 0's decisions against the stage run (an in-process Runtime, as ``production_project`` does)
@@ -475,7 +564,7 @@ class Session:
         self.turn_count += 1
         work = self.dir / f"{self.turn_count:02d}-{rid.replace(chr(39), 'p')}-{kind}"
         trial = f"X3-{self.building}-{self.mode}-r{self.repeat}-{rid}-{kind}"
-        common = dict(workdir=work, cli=self.cli, ledger=self.ledger, part=self.part, system_prompt_file=SYSTEM, max_turns=MAX_TURNS,
+        common = dict(workdir=work, cli=self.cli, ledger=self.ledger, part=self.part, system_prompt_file=self.system_file, max_turns=MAX_TURNS,
                       budget_usd=self.budget_usd, trial_id=trial, timeout=REQUEST_TIMEOUT_S, settings_file=self.settings)
         work_cfg = self.dir / "config" / f"{self.turn_count:02d}"
         work_cfg.mkdir(parents=True)
@@ -502,6 +591,8 @@ class Session:
             if info["landed_by"] is None and tried:
                 info["unlanded_candidate"] = {"model": {"path": tried[-1]["file"]}, "rule": "the last submission tried without adopt"}
             self.model = new
+        elif self.mode == "GH":
+            turn = self.gh_turn(text, rid, kind, work_cfg, info, common)
         else:
             s = self.services
             hub_session = self.hub_session if self.mode == "M+" else x3_hub.new_session_id()
@@ -558,6 +649,43 @@ class Session:
         info.update(turn=turn, model_after=str(self.model))
         return info
 
+    def gh_turn(self, text: str, rid: str, kind: str, work_cfg: Path, info: dict[str, Any], common: dict[str, Any]) -> dict[str, Any]:
+        """GH: the definition as saved opened again in Grasshopper (the architect's own file, open when the request comes);
+        one turn with the Rhino MCP server behind the lab proxy; then the definition as the turn left it saved (the carried
+        design, and a copy per turn), baked, exported and measured. The measurement copy is the model the request left.
+        The bundle also gets the turn's method (``x3_gh.method``, from snapshots before and after the turn and after the
+        bake) and every code payload and command it ran, scanned for file access (``x3_gh.code_review``)."""
+
+        from labs.revision_tasks import x3_gh
+
+        info["opened"] = self.rhino.open_definition(self.gh_files["definition"])
+        before = self.rhino.snapshot(self.building)
+        settings = x3_gh.proxy_settings(self.gh["launcher"], log=work_cfg / "calls.jsonl", stderr=work_cfg / "rhino-mcp.stderr.txt",
+                                        tools=self.gh_tools, rhino_pid=self.rhino.pid, max_calls=x3_hub.MAX_TOOL_CALLS)
+        (work_cfg / "proxy.json").write_text(json.dumps(settings, indent=1), encoding="utf-8", newline="\n")
+        mcp = {"mcpServers": {x3_gh.SERVER: x3_hub.proxy_server_config(work_cfg / "proxy.json")}}
+        turn = x3_hub.run_turn(text, mcp=mcp, allowed=tuple(f"mcp__{x3_gh.SERVER}__{t}" for t in self.gh_tools), close_open_turn=False,
+                               **common)
+        after = self.rhino.snapshot(self.building)
+        model_before = self.model
+        record: dict[str, Any] = {"largest_tool_result": x3_gh.largest_result(work_cfg / "calls.jsonl"),
+                                  "code": x3_gh.code_review(work_cfg / "calls.jsonl")}
+        baked = None
+        try:
+            stem = f"{self.turn_count:02d}-{rid.replace(chr(39), 'p')}-{kind}"
+            record["saved"] = self.rhino.save_definition([self.dir / f"{stem}.gh", self.gh_files["definition"]])
+            record.update(self.gh_bake(work_cfg / "export.3dm"))
+            baked = self.rhino.snapshot(self.building)
+            self.model = Path(record["measured"]["path"])
+            record["changes"] = x3_gh.compare(x3_gh.mesh_boxes(model_before), x3_gh.mesh_boxes(self.model))
+            info["landed_by"] = "harness" if any(record["changes"].values()) else None
+        except x3_gh.RhinoError as exc:            # the model stays the last one; the session goes on
+            record["error"] = str(exc)[:1500]
+            info["landed_by"] = None
+        record["method"] = x3_gh.method(before, after, baked)
+        info["gh"] = record
+        return turn
+
     # ---- one request
     def hand_over(self, request: dict[str, Any]) -> dict[str, Any]:
         """A file hand-over: the consultant's file, made from the design as it stands now (Hub modes: the Working Head's
@@ -569,6 +697,8 @@ class Session:
         rid = request["id"]
         if self.mode in HUB_MODES and not HUB_HANDOVER_READY:
             raise NotBuilt(f"{rid}: {HUB_HANDOVER_GAP}")
+        if self.mode == "GH":
+            return self.gh_hand_over(request)
         design = Path(self.head_model()["path"]) if self.mode in HUB_MODES else Path(self.model)
         edit = external_edit(design, request["external_edit"], self.dir / f"{rid.replace(chr(39), 'p')}.consultant.3dm")
         record: dict[str, Any] = {"request": rid, "design": str(design), "edit": edit}
@@ -583,6 +713,39 @@ class Session:
         self._write(f"{rid.replace(chr(39), 'p')}.handover.json", record)
         return record
 
+    def gh_hand_over(self, request: dict[str, Any]) -> dict[str, Any]:
+        """GH ("the .gh and the .3dm"): the consultant's file is the last export (Breps with Rhino's own meshes) with the one
+        object moved (``external_edit``; an object the request names as BA's measures do is found under its GH name). The
+        harness opens it in Rhino as the architect opens a returned model (the document cleared, the file imported) beside
+        the definition, which the file does not change, and the request names it. The moved object's boxes the judge
+        compares are its box in the measurement copy of the design and that box moved by the edit; the Brep boxes
+        ``external_edit`` reports are kept beside them. As in the Hub modes the request is judged against the design as
+        recorded and the agent's own change is measured against it: the next export is baked from the definition."""
+
+        from labs.revision_tasks import x3_gh
+
+        rid = request["id"]
+        name = rid.replace(chr(39), "p")
+        design = Path(self.model)
+        named = request["external_edit"]["object"]
+        gh_object = {v: k for k, v in self.gh_names.items()}.get(named, named)
+        edit = external_edit(Path(self.gh_export), {**request["external_edit"], "object": gh_object}, self.dir / f"{name}.consultant.3dm")
+        recorded = x3_gh.mesh_boxes(design).get(named)
+        if recorded is None:
+            raise NotBuilt(f"external edit: {named} is not in the measurement copy of the design")
+        moved = {side: [round(v + d, 6) for v, d in zip(recorded[side], edit["translate"])] for side in ("min", "max")}
+        judged = {**edit, "object": named, "gh_object": gh_object, "box_before": {k: recorded[k] for k in ("min", "max")}, "box_after": moved,
+                  "brep_box_before": edit["box_before"], "brep_box_after": edit["box_after"],
+                  "box_source": "box_before: the object in the design's measurement copy; box_after: that box moved by the edit; brep_box_*: rhino3dm's Brep"}
+        opened = self.dir / "gh" / HANDOVER_FILE_NAME
+        shutil.copyfile(edit["file"], opened)
+        record = {"request": rid, "design": str(design), "edit": judged,
+                  "delivery": "opened in Rhino (the document cleared, the file imported) beside the definition, which it does not change",
+                  "opened_file": str(opened), "opened": self.rhino.import_model(opened),
+                  "opened_line": GH_OPENED_LINE.format(name=HANDOVER_FILE_NAME), "delivered": str(design)}
+        self._write(f"{name}.handover.json", record)
+        return record
+
     def request(self, request: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any]:
         rid = request["id"]
         handover = self.hand_over(request) if request.get("external_edit") else None
@@ -591,8 +754,9 @@ class Session:
         text = request["text"]
         if request.get("fixed_reply") and previous is not None and previous["oracle"]["summary"]["verdict"] == "violated":
             text = request.get("text_if_broken", text)
-        if handover and handover.get("attachment_line"):
-            text = text + "\n" + handover["attachment_line"]
+        line = (handover or {}).get("attachment_line") or (handover or {}).get("opened_line")
+        if line:
+            text = text + "\n" + line
         extra = tuple(tuple(r) for r in (handover or {}).get("extra_requests", ()))
         judged = dict(delivered=Path(handover["delivered"]), external=handover["edit"]) if handover else {}
         bundle: dict[str, Any] = {"building": self.building, "mode": self.mode, "repeat": self.repeat, "request": request, "sent_text": text,
@@ -601,19 +765,19 @@ class Session:
             bundle["handover"] = handover
         first = self.turn(rid, "request", text, extra)
         bundle["turns"].append(first)
-        report = judge(self.spec, request, self.model, start, self.before, self.dir / f"{rid.replace(chr(39), 'p')}.oracle.json", **judged)
+        report = self._judge(request, self.model, start, self.dir / f"{rid.replace(chr(39), 'p')}.oracle.json", **judged)
         bundle["oracle"] = report
         if first.get("unlanded_candidate", {}).get("model"):
             path = Path(first["unlanded_candidate"]["model"]["path"])
-            bundle["oracle_unlanded_candidate"] = judge(self.spec, request, path, start, self.before,
-                                                        self.dir / f"{rid.replace(chr(39), 'p')}.candidate.oracle.json", **judged)["summary"]
+            bundle["oracle_unlanded_candidate"] = self._judge(request, path, start, self.dir / f"{rid.replace(chr(39), 'p')}.candidate.oracle.json",
+                                                              **judged)["summary"]
         fix = correction(self.spec, report)
         bundle["correction"] = fix
         if fix is not None:
             second = self.turn(rid, "correction", fix["sentence"], extra)
             bundle["turns"].append(second)
-            bundle["oracle_after_correction"] = judge(self.spec, request, self.model, start, self.before,
-                                                      self.dir / f"{rid.replace(chr(39), 'p')}.corrected.oracle.json", **judged)
+            bundle["oracle_after_correction"] = self._judge(request, self.model, start, self.dir / f"{rid.replace(chr(39), 'p')}.corrected.oracle.json",
+                                                            **judged)
         bundle["score"] = score(request, bundle)
         self._write(f"{rid.replace(chr(39), 'p')}.bundle.json", bundle)
         return bundle
@@ -626,6 +790,8 @@ class Session:
             try:
                 if self.mode in HUB_MODES:
                     self.open_hub(stack)
+                elif self.mode == "GH":
+                    self.open_gh(stack)
                 else:
                     self.open_file()
                 previous = None
@@ -646,6 +812,8 @@ class Session:
                    "cli_sessions": self.cli_sessions}
         if self.mode == "M+":
             summary["transcripts"] = x3_hub.transcript_bytes(self.cli_sessions)
+        if self.mode == "GH" and self.rhino is not None:
+            summary["rhino_closed"] = self.rhino.closed             # the session's Rhino, ended with the session
         if self.rows:
             with (self.dir / "session.csv").open("w", newline="", encoding="utf-8") as handle:
                 writer = csv.DictWriter(handle, fieldnames=list(self.rows[0]))
@@ -883,12 +1051,22 @@ def transfer_audit(before: Path, after: Path, via: tuple[Path, ...] = ()) -> dic
 def harness_added(mode: str, handover: bool = False) -> list[str]:
     """What the lab adds to each way of working, beyond the product (recorded in every bundle). A file hand-over adds the
     consultant's file (made by the harness from the design as it stands), its attachment in the Hub modes (registered as
-    the architect's act) and, in T and H, the read of the attached asset's index on the allow-list."""
+    the architect's act), in T and H the read of the attached asset's index on the allow-list, and in GH its opening in
+    Rhino. GH: the session's Rhino (started, in metres, Grasshopper with the definition open when a request comes), the
+    bake and export after each turn, the definition saved after each turn, the measurement copy of the export (its stored
+    render meshes as named meshes), the proxy naming the session's Rhino, the tools less another Rhino, closing Rhino and
+    a question in Rhino's panel, and the refusal of rendering."""
 
     common = ["tool_call_cap_30_design_calls", "request_0_written_by_harness", "simulated_architect_correction", "tool_result_size_400k",
               "prompt_says_done_means_current"]
     if handover:
         common.append("consultant_file_by_harness")
+    if mode == "GH":
+        return [*(c if c != "tool_result_size_400k" else "tool_result_size_500k" for c in common), "rhino_session_by_harness",
+                "gh_bake_export", "gh_definition_saved_by_harness", "gh_fine_measurement_copy", "gh_front_columns_named_as_measured",
+                "gh_whole_objects_for_sectors", "gh_keep_rows_from_own_start", "gh_circle_tolerance_rows", "gh_curved_seam_contact_tolerance", "gh_seam_collision_depth",
+                "gh_system_prompt_addendum", "gh_code_payloads_logged_and_scanned", "gh_method_class", "proxy_names_session_rhino",
+                "gh_tools_less_slots_and_ask_user", "gh_no_render", *(["consultant_file_opened_by_harness"] if handover else [])]
     if mode in ("M", "M+"):
         return [*common, "prepared_context_for_working_design", *(["attachment_registered_by_harness"] if handover else [])]
     if mode in ("T", "H"):
@@ -913,7 +1091,19 @@ def csv_row(bundle: dict[str, Any]) -> dict[str, Any]:
             "false_landing_claim_auto": s.get("false_landing_claim_auto"),
             "correction": (bundle.get("correction") or {}).get("key"), "tool_calls": s["tool_calls"],
             "input_tokens": s["tokens"]["input"], "output_tokens": s["tokens"]["output"], "cost_usd": s["cost_usd"], "seconds": s["seconds"],
-            "cli_session": first["turn"].get("cli_session_id")}
+            "cli_session": first["turn"].get("cli_session_id"), **gh_columns(bundle)}
+
+
+def gh_columns(bundle: dict[str, Any]) -> dict[str, Any]:
+    """GH's own CSV columns (GH sessions only): each turn's method class, and the code payloads and those flagged for
+    file access, over the request's turns."""
+
+    if bundle.get("mode") != "GH":
+        return {}
+    turns = [t.get("gh") or {} for t in bundle["turns"]]
+    return {"gh_method": "|".join((t.get("method") or {}).get("class", "unknown") for t in turns),
+            "gh_code_payloads": sum((t.get("code") or {}).get("payloads", 0) for t in turns),
+            "gh_code_flagged": sum((t.get("code") or {}).get("flagged", 0) for t in turns)}
 
 
 # ---------------------------------------------------------------- the run
@@ -930,7 +1120,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cli", required=True, help="the claude executable")
     parser.add_argument("--limit-usd", type=float, required=True, help="what this invocation may add to the part's spend")
     parser.add_argument("--turn-budget-usd", type=float, default=TURN_BUDGET_USD)
+    parser.add_argument("--gh-dir", type=Path, help="GH: the folder of the definitions, their default models and bake_export.py "
+                        "(default: the X3_GH_DIR environment variable)")
+    parser.add_argument("--rhino-mcp", help="GH: the Rhino MCP server's launcher, router-launcher.mjs (default: X3_RHINO_MCP)")
     args = parser.parse_args(argv)
+    modes = args.modes.split(",")
+    gh = None
+    if "GH" in modes:
+        gh = {"dir": args.gh_dir or os.environ.get("X3_GH_DIR"), "launcher": args.rhino_mcp or os.environ.get("X3_RHINO_MCP")}
+        if not gh["dir"] or not gh["launcher"] or not Path(gh["launcher"]).is_file():
+            parser.error("GH needs --gh-dir (or X3_GH_DIR) and --rhino-mcp (or X3_RHINO_MCP), the launcher file")
+        if args.part == "x3":
+            parser.error(f"GH books to its own part: run it with --part {GH_PART} (or pilot)")
+    if args.part == GH_PART and modes != ["GH"]:
+        parser.error(f"--part {GH_PART} is GH's alone")
     out = args.out.resolve()
     if out.exists() and any(out.iterdir()):
         parser.error(f"{out} is not empty")
@@ -945,11 +1148,17 @@ def main(argv: list[str] | None = None) -> int:
                 "system_sha256": _sha(SYSTEM), "cli_version": subprocess.run([args.cli, "--version"], capture_output=True, text=True).stdout.strip(),
                 "part": args.part, "spent_before": spent, "limit_usd": args.limit_usd, "turn_budget_usd": args.turn_budget_usd,
                 "run_id": str(uuid.uuid4())}
+    if gh is not None:
+        from labs.revision_tasks import x3_gh
+
+        identity["gh"] = {"files_sha256": x3_gh.provenance(Path(gh["dir"]), args.building), "launcher_sha256": _sha(Path(gh["launcher"])),
+                          "addendum_sha256": _sha(x3_gh.ADDENDUM), "result_size_chars": x3_gh.RESULT_SIZE_CHARS,
+                          "measurement": {"deviation_m": x3_gh.DEVIATION_M, "max_edge_m": x3_gh.MAX_EDGE_M}}
     (out / "identity.json").write_text(json.dumps(identity, indent=1) + "\n", encoding="utf-8", newline="\n")
     summaries = []
-    for mode in args.modes.split(","):
+    for mode in modes:
         session = Session(args.building, mode, args.repeat, out, cli=args.cli, ledger=ledger, part=args.part, limit_usd=args.limit_usd,
-                          budget_usd=args.turn_budget_usd, data=data)
+                          budget_usd=args.turn_budget_usd, data=data, gh=gh if mode == "GH" else None)
         summaries.append(session.run(tuple(args.requests.split(",")) if args.requests else None))
         if session.stopped and "CapReached" in session.stopped:
             break
