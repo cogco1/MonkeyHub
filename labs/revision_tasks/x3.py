@@ -77,6 +77,7 @@ class NotBuilt(RuntimeError):
 # studio-model-<sha256> with no design state), and GET /api/model-assets/{sha256}/index requires an exact run state
 # (REFERENCE_STATE_NOT_EXACT for that run) and carries native metadata only, no geometry, by design. A dry run sets this.
 HUB_HANDOVER_READY = True
+CONTEXT_FOCUS_LIMIT = 64          # the Runtime's bound on elementIds in POST /api/intents/context
 HUB_HANDOVER_GAP = ("the file hand-over in the Hub modes is held: MonkeyHub keeps the attached file as an external model asset, "
                     "but offers no read of its objects (the model-asset index needs an exact run state and carries no geometry)")
 HANDOVER_FILE_NAME = "model-from-consultant.3dm"
@@ -416,9 +417,13 @@ class Session:
                 answer = client.post("/api/decisions", json=self.decision_body(state["projectId"], project.run_id, state["stateDigest"], row))
                 recorded.append({"status": answer.status_code, "disposition": row["disposition"], "target_ref": row["target_ref"]})
             elements = sorted(e.entity_id for e in project_record(project).entities_of("Element@1"))
+            # The Runtime focuses a context read on at most CONTEXT_FOCUS_LIMIT element ids; a building with more
+            # (BB: 89) is read without a focus, which MonkeyHub then resolves from the words. The recorded decisions
+            # come through either way (BB: 4 with or without a focus).
+            focus = {"elementIds": elements} if len(elements) <= CONTEXT_FOCUS_LIMIT else {}
             pack = client.post("/api/intents/context", json={"projectId": state["projectId"], "sourceRunId": project.run_id,
                                                               "stateDigest": state["stateDigest"], "utterance": "Current design state.",
-                                                              "elementIds": elements})
+                                                              **focus})
             if pack.status_code != 200:
                 raise x3_hub.X3Error(f"context read failed: {pack.text[:400]}")
             return {"decisions": recorded, "pack": pack.json()}
