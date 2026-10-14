@@ -1,22 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-651",
-      "status": "active",
-      "branch": "codex/integration-645-652",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-645-652",
-      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": "Merge #652 into the integration of #645, #647, #649, #650 and #652. #650 also changed this file; the claim covers the merge and is released right after it.",
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/chat/tool_calls.py"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
