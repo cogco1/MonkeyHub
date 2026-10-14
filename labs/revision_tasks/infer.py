@@ -365,11 +365,19 @@ def _datum_key(reference: Any) -> tuple[str, str, str] | None:
     return None
 
 
-def _bindings(record: StateRecord) -> dict[str, tuple[tuple[str, str, str] | None, tuple[str, str, str] | None]]:
-    """Each element's declared bottom and top datum bindings."""
+def _bindings(record: StateRecord) -> dict[str, tuple[Any, Any]]:
+    """Each element's declared bottom and top bindings. A top with no reference of its own is bound by its base and its
+    declared height (the same base datum and the same height expression put two tops at one level by declaration)."""
 
-    return {e.entity_id: (_datum_key(e.fields.get("references", {}).get("base")), _datum_key(e.fields.get("references", {}).get("top")))
-            for e in record.entities_of("Element@1")}
+    out = {}
+    for e in record.entities_of("Element@1"):
+        references, params = e.fields.get("references", {}), e.fields.get("params", {})
+        bottom = _datum_key(references.get("base"))
+        top = _datum_key(references.get("top"))
+        if top is None and bottom is not None and "height" in params:
+            top = (bottom, "height", str(params["height"]))
+        out[e.entity_id] = (bottom, top)
+    return out
 
 
 def narrow(record: StateRecord, inferred: list[Inferred], start: pipeline.Realization) -> tuple[list[Inferred], list[dict[str, Any]]]:

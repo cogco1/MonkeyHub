@@ -52,7 +52,10 @@ def test_the_narrowing_rules_remove_what_the_record_explains_and_what_is_far(tmp
 
 def test_a_roof_against_a_wall_is_not_its_support(tmp_path):
     start = fixtures.bound(fixtures.f2_portico_rotunda())
-    kept, dropped, _ = infer.infer_all(start, _start(tmp_path, start))
+    kept, dropped, narrowed = infer.infer_all(start, _start(tmp_path, start))
+    # both column rows stand on the stylobate's top and share one height parameter: their tops align by declaration
+    assert {(n["item"].kind, n["item"].a, n["item"].b): n["rule"] for n in narrowed} == {
+        ("same_level", "portico-columns-front", "portico-columns-rear"): "declared common datum"}
     pair = ("support", "rotunda-wall", "transition-roof")
     assert pair in {(k.kind, k.a, k.b) for k in dropped} and pair not in {(k.kind, k.a, k.b) for k in kept}
     assert ("I1", "abutment", "rotunda-wall", "transition-roof") in {(k.layer, k.kind, k.a, k.b) for k in kept}
