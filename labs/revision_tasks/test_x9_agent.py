@@ -32,7 +32,7 @@ def test_the_right_edits_pass_the_oracle_and_match_the_rebuild(tmp_path):
     execution = x9_agent.execute(answer, task, start, regen, tmp_path / "trials" / "t")
     scored = x9_agent.score(answer, task, execution)
     assert (scored["edits_applied"], scored["oracle_verdict"], scored["agrees_regen"], scored["unrelated"], scored["missed"]) == (True, "held", True, 0, 0)
-    assert scored["verdict_ok_four"] and not scored["false_accept"]
+    assert scored["verdict_ok_four"] and not scored["false_accept"] and scored["agrees_regen_unnamed"]
     bad = x9_agent.execute({"verdict": "held", "edits": [{"object": "obj-nowhere", "field": "height", "value": 1}]}, task, start, regen,
                            tmp_path / "trials" / "u")
     assert not bad["applied"] and bad["why"].startswith("EDIT_REFUSED")

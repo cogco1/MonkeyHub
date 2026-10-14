@@ -75,6 +75,12 @@ def changed_objects(after: dict[str, dict[str, Any]], before: dict[str, dict[str
     return out
 
 
+def shapes(numbers: dict[str, dict[str, Any]]) -> list[tuple[Any, ...]]:
+    """The model's solids without their names: each box and volume, rounded to 1e-5, sorted."""
+
+    return sorted((tuple(round(v, 5) for v in n["min"]), tuple(round(v, 5) for v in n["max"]), round(n["volume"], 5)) for n in numbers.values())
+
+
 def execute(answer: dict[str, Any], task: dict[str, Any], start: dict[str, Any], gold_regen: dict[str, Any] | None, trial: Path) -> dict[str, Any]:
     import rhino3dm
 
@@ -98,7 +104,10 @@ def execute(answer: dict[str, Any], task: dict[str, Any], start: dict[str, Any],
         regen_numbers = native3dm.readback_numbers(gold_regen["realization"])
         regen_changed = changed_objects(regen_numbers, start_numbers)
         agreement = native3dm.compare_numbers(numbers, regen_numbers)
-        result.update({"agrees_regen": agreement["agree"], "unrelated": sorted(agent_changed - regen_changed),
+        # the same solids under other names (an array the agent shortened by deleting its middle, not its end) is a naming
+        # difference, scored apart from a wrong shape
+        result.update({"agrees_regen": agreement["agree"], "agrees_regen_unnamed": shapes(numbers) == shapes(regen_numbers),
+                       "unrelated": sorted(agent_changed - regen_changed),
                        "missed": sorted(regen_changed - agent_changed)})
     spec_path, why = x9.oracle_spec(task["task_id"], start["record"])
     if spec_path is None:
@@ -118,7 +127,8 @@ def score(answer: dict[str, Any] | None, task: dict[str, Any], execution: dict[s
             "verdict_ok_four": verdict in CLASSES and CLASSES[verdict] in {CLASSES[g] for g in gold if g in CLASSES},
             "false_accept": verdict == "held" and ("held" not in gold or execution.get("oracle_verdict") == "violated"),
             "edits_applied": bool(execution.get("applied")), "oracle_verdict": execution.get("oracle_verdict"),
-            "agrees_regen": execution.get("agrees_regen"), "unrelated": len(execution.get("unrelated", []) or []),
+            "agrees_regen": execution.get("agrees_regen"), "agrees_regen_unnamed": execution.get("agrees_regen_unnamed"),
+            "unrelated": len(execution.get("unrelated", []) or []),
             "missed": len(execution.get("missed", []) or [])}
 
 
@@ -184,6 +194,7 @@ def run(out: Path, *, families: tuple[str, ...], task_ids: tuple[str, ...] | Non
     summary = {"stopped": stopped, "trials": len(judged), "verdict_ok": sum(r["verdict_ok"] for r in judged),
                "verdict_ok_four": sum(r["verdict_ok_four"] for r in judged), "false_accept": sum(r["false_accept"] for r in judged),
                "edits_applied": sum(r["edits_applied"] for r in judged), "agrees_regen": sum(bool(r["agrees_regen"]) for r in judged),
+               "agrees_regen_unnamed": sum(bool(r["agrees_regen_unnamed"]) for r in judged),
                "cost_usd": round(sum(r["cost_usd"] for r in judged), 4),
                "spent_part_usd": ledger.spent(part) if ledger else 0.0, "spent_total_usd": ledger.spent() if ledger else 0.0}
     (out / "x9_agent_summary.json").write_text(json.dumps(summary, indent=1, sort_keys=True) + "\n", encoding="utf-8")
