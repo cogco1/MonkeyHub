@@ -62,8 +62,9 @@ MODEL = "claude-opus-5-5"
 # standard multiples of input (0.1, 1.25 for five minutes, 2 for one hour).
 RATES = {"input": "4", "cached_input": "0.4", "cache_write_input": "5", "cache_write_1h_input": "8", "output": "20"}
 # Batch 3d: $35 of X2 single's unspent cap moves to X3 (its reruns), and X3 GH rises from 105 to 180 (total 865).
-CAPS = {"pilot": 45.0, "x2_single": 65.0, "x2_g": 75.0, "x3": 465.0, "x3_gh": 180.0, "x8_i3": 15.0, "x9_agent": 20.0}
-TOTAL_CAP = 865.0
+# Batch 3e: X3 rises to 640 and the total to 1070, so that X3's second wave runs to the end.
+CAPS = {"pilot": 45.0, "x2_single": 65.0, "x2_g": 75.0, "x3": 640.0, "x3_gh": 180.0, "x8_i3": 15.0, "x9_agent": 20.0}
+TOTAL_CAP = 1070.0
 PER_CALL_USD = 1.0
 VERDICTS = ("held", "violated", "refuse", "unknown", "flag_rejected")
 
