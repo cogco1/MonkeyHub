@@ -20,8 +20,14 @@ basis in the statement; it stays open and unconfirmed. ``check_inferred``
 measures them on a candidate: a contact that opens or turns into penetration,
 a near contact that penetrates, a non-interference that is violated, or an
 alignment that breaks is a broken inference, and the decision on it is
-``ask``. ``crossing`` is the pre-execution signal: an inferred relation with
-one element inside the change's closure and one outside.
+``ask``.
+
+Before execution, ``predict_inferred`` measures the same relations on the
+compiler's analytic per-object bounds (``expected_object_bounds``: compile
+only, no OCCT). A relation whose boxes cannot settle it (an element with no
+analytic bounds, or a non-interference whose boxes already overlapped at the
+start) falls back to ``crossing``: one element inside the change's closure
+and one outside. Each result names the method that decided it.
 """
 
 from __future__ import annotations
@@ -204,6 +210,77 @@ def _parse(obligation: DesignObligation) -> tuple[str, str, str] | None:
     kind = obligation.validator_ref.removeprefix(PREFIX).replace("-", "_")
     a, b = (ref.removeprefix("entity:") for ref in obligation.subject_refs)
     return kind, a, b
+
+
+Box = tuple[list[float], list[float]]
+
+
+def predicted_boxes(record: StateRecord) -> dict[str, Box | None]:
+    """Each element's union box over its visible objects as the compiler predicts it, in the model frame; ``None`` where
+    an object has no analytic bounds. Compiles only: no OCCT."""
+
+    from archflow.state.geometry_program import GeometryBoundsError, delivered_object_ids, expected_object_bounds, operation_parameters
+
+    program, objects_by_element, _ = pipeline.compile_record(record)
+    try:
+        bounds = expected_object_bounds(program)
+    except GeometryBoundsError:
+        return {element: None for element in objects_by_element}
+    delivered = set(delivered_object_ids(program.proposal))
+    hidden = {op.output_object_ids[0] for op in program.proposal.operations if operation_parameters(op).get("hidden_for_inspection")}
+    boxes: dict[str, Box | None] = {}
+    for element, objects in objects_by_element.items():
+        rows = [bounds.get(o) for o in objects if o in delivered and o not in hidden]
+        if not rows or any(r is None for r in rows):
+            boxes[element] = None
+            continue
+        lo = [min(r["bbox_min"][i] for r in rows) for i in range(3)]
+        hi = [max(r["bbox_max"][i] for r in rows) for i in range(3)]
+        boxes[element] = ([lo[0], lo[2], lo[1]], [hi[0], hi[2], hi[1]])      # program (x, up, plan) -> model (x, plan, up)
+    return boxes
+
+
+def _box_status(kind: str, statement: str, a: Box, b: Box, a0: Box, b0: Box) -> str | None:
+    """held / broken from boxes, or None when boxes cannot settle it."""
+
+    if a == a0 and b == b0:
+        return "held"                                   # neither element moves
+    if kind == "same_level":
+        match = re.search(r"face=(\w+)", statement)
+        side = 1 if match and match.group(1) == "top" else 0
+        return "held" if abs(a[side][2] - b[side][2]) <= CONTACT_M else "broken"
+    if kind == "support":
+        return "held" if abs(a[1][2] - b[0][2]) <= CONTACT_M and _plan_overlap(a, b) else "broken"
+    if kind == "abutment":
+        return "held" if _gap(a, b) <= CONTACT_M else "broken"
+    if kind == "near":
+        return "held" if _gap(a, b) <= NEAR_M else "broken"
+    if _gap(a, b) > 0.0:                                # non_interference: apart boxes cannot meet
+        return "held"
+    return "broken" if _gap(a0, b0) > 0.0 else None     # boxes that were apart now overlap; already overlapping: unknown
+
+
+def predict_inferred(start: StateRecord, successor: StateRecord, affected: set[str]) -> list[dict[str, Any]]:
+    """Each inferred relation of ``start`` judged before execution on predicted boxes, else by the closure boundary."""
+
+    before, after = predicted_boxes(start), predicted_boxes(successor)
+    results = []
+    for obligation in start.obligations:
+        parsed = _parse(obligation)
+        if parsed is None:
+            continue
+        kind, a, b = parsed
+        row = {"obligation_id": obligation.obligation_id, "kind": kind, "a": a, "b": b}
+        if a not in after or b not in after:
+            results.append({**row, "status": "broken", "method": "predicted_box", "detail": "an element is gone"})
+            continue
+        boxes = (after[a], after[b], before.get(a), before.get(b))
+        status = None if None in boxes else _box_status(kind, obligation.statement, *boxes)
+        if status is not None:
+            results.append({**row, "status": status, "method": "predicted_box"})
+        else:
+            results.append({**row, "status": "broken" if (a in affected) != (b in affected) else "held", "method": "closure_boundary"})
+    return results
 
 
 def crossing(record: StateRecord, affected: set[str]) -> list[str]:

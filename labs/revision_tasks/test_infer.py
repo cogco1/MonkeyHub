@@ -45,6 +45,24 @@ def test_role_rules_propose_what_geometry_cannot_see(tmp_path):
     assert ("I2", "non_interference", "wall", "stair") in {(k.layer, k.kind, k.a, k.b) for k in kept}
 
 
+def test_predicted_boxes_settle_the_pediment_before_execution():
+    from archflow.state.state_record import StateRecordEditKind, StateRecordOperator, apply_state_record_operator
+
+    start = fixtures.bound(fixtures.f1_portico())
+    item = infer.Inferred("I1", "support", "entablature", "pediment", {"distance_m": 0.0})
+    with_one = infer.with_inferred(start, [item])
+
+    def successor(key, value):
+        return apply_state_record_operator(with_one, StateRecordOperator(
+            kind=StateRecordEditKind.SET_SCALAR, base_record_digest=with_one.digest, base_state_digest=with_one.state_digest,
+            target_ref=f"parameter:{key}", key=key, value=value))
+
+    shallower = infer.predict_inferred(with_one, successor("entablature_height", 1.5), {"entablature"})
+    assert [(r["status"], r["method"]) for r in shallower] == [("broken", "predicted_box")]
+    four = infer.predict_inferred(with_one, successor("column_count", 4), {"columns", "entablature"})
+    assert [(r["status"], r["method"]) for r in four] == [("held", "predicted_box")]
+
+
 def test_a_crossing_inference_is_the_pre_execution_question():
     record = fixtures.bound(fixtures.f1_portico())
     item = infer.Inferred("I1", "support", "entablature", "pediment", {"distance_m": 0.0})

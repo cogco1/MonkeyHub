@@ -290,9 +290,10 @@ def decide(context: Context, task: dict[str, Any], root: Path | None, *, execute
         return {"verdict": "refuse" if limit_side else "violated", **base,
                 "reason": ("the request moves the limit of " if limit_side else "breaks ") + ", ".join(o["obligation_id"] for o in failed)}
     if not execute:
-        crossing = infer.crossing(start, set(affected))
-        if crossing:
-            return {"verdict": "ask", **base, "reason": "inferred relations cross the change: " + ", ".join(crossing)}
+        predicted = [r for r in infer.predict_inferred(start, record, set(affected)) if r["status"] == "broken"]
+        if predicted:
+            return {"verdict": "ask", **base, "reason": "inferred relations broken before execution: "
+                    + ", ".join(f"{r['a']}/{r['b']} {r['kind']} ({r['method']})" for r in predicted)}
         return {"verdict": "held", **base, "reason": "no obligation fails; geometry not executed"}
     label = f"{task['task_id']}-{context.name}"
     before = _realized(context.record, root, f"start-{label}")
