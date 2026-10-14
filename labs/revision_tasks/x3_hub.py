@@ -36,7 +36,14 @@ which this lab may not write, so the call is refused. A config directory has to 
 
 from __future__ import annotations
 
-from labs.revision_tasks import _bootstrap  # noqa: F401  (source roots first)
+import sys as _sys
+from pathlib import Path as _Path
+
+if __package__ in (None, ""):
+    # Started by its path, as the CLI starts the lab's MCP proxy: the checkout is not on the path yet.
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+
+from labs.revision_tasks import _bootstrap  # noqa: F401,E402  (source roots first)
 
 import hashlib
 import json
@@ -76,6 +83,7 @@ START_RUN = "stage-0-001"   # production_project.STAGE_RUN: the run the BB proje
 # Variables of the Claude Code session this harness may itself run under that would change the child's tool
 # surface; every other variable reaches the CLI as it does in x2.call_model.
 HOST_ONLY = ("CLAUDE_CODE_TERMINAL_MCP_TOOLS",)
+MCP_OUTPUT_TOKENS = 150000
 
 
 class X3Error(RuntimeError):
@@ -107,7 +115,10 @@ def cli_environment(parent: Mapping[str, str], config_dir: Path | None = None) -
     """
 
     environment = {key: value for key, value in _scrubbed(parent).items() if key not in HOST_ONLY}
-    environment.update(CLAUDE_CODE_DISABLE_AUTO_MEMORY="1", CUDA_VISIBLE_DEVICES="")
+    # An MCP result over the CLI's token limit (25k by default) is saved to a file under the CLI's projects directory
+    # and replaced by its path; with no built-in tools the agent cannot read it (measured: BA's 51 KB model read).
+    # MonkeyHub's own chat reads such a file with its built-in tools; here the answer comes inline instead.
+    environment.update(CLAUDE_CODE_DISABLE_AUTO_MEMORY="1", CUDA_VISIBLE_DEVICES="", MAX_MCP_OUTPUT_TOKENS=str(MCP_OUTPUT_TOKENS))
     if config_dir is not None:
         environment["CLAUDE_CONFIG_DIR"] = str(config_dir)
     else:
@@ -143,17 +154,27 @@ class HubServices:
     parent_env: Mapping[str, str] = field(repr=False, compare=False, default_factory=dict)
 
 
-def bb_project(projects: Path) -> Path:
-    """The BB production project under ``projects``: made once, reused when complete, never removed."""
+def building_project(projects: Path, building: str = "BB") -> Path:
+    """A lab building's production project under ``projects`` (BB ``bb_house``, BA ``ba_pantheon``): made once,
+    reused when complete, never removed."""
 
     from labs.revision_tasks import buildings, fixtures, production_project
 
+    make = {"BB": buildings.bb_house, "BA": buildings.ba_pantheon}[building]
     project_dir = projects / fixtures.PROJECT_ID
     if project_dir.exists():
         if not (project_dir / "project.json").is_file() or not (project_dir / "runs" / production_project.STAGE_RUN).is_dir():
-            raise X3Error(f"{project_dir} exists but is not a complete BB project; choose a new root")
+            raise X3Error(f"{project_dir} exists but is not a complete {building} project; choose a new root")
         return project_dir
-    return production_project.make_production_project(buildings.bb_house(), projects).project_dir
+    return production_project.make_production_project(make(), projects).project_dir
+
+
+def bb_project(projects: Path) -> Path:
+    return building_project(projects, "BB")
+
+
+def ba_project(projects: Path) -> Path:
+    return building_project(projects, "BA")
 
 
 @contextmanager
@@ -222,8 +243,11 @@ def mcp_config(*, hub_url: str, project_dir: Path, session_id: str, python: str 
 
 def command(cli: str, mcp_file: Path, *, max_turns: int = MAX_TURNS, budget_usd: float = BUDGET_USD,
             resume: str | None = None, persist: bool = False, system_prompt_file: Path | None = None,
-            model: str = MODEL, allowed: tuple[str, ...] = ALLOWED) -> list[str]:
-    """The CLI's flags: MonkeyHub's tools only, no built-in tool, project and local settings only, one bounded turn."""
+            model: str = MODEL, allowed: tuple[str, ...] = ALLOWED, settings_file: Path | None = None) -> list[str]:
+    """The CLI's flags: MonkeyHub's tools only, no built-in tool, project and local settings only, one bounded turn.
+
+    ``settings_file`` is x2's ``settings.json`` (bundled skills off), passed as x2 passes it.
+    """
 
     argv = [cli, "-p", "--model", model, "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk",
             "--setting-sources", "project,local", "--disable-slash-commands", "--tools", "",
@@ -232,6 +256,8 @@ def command(cli: str, mcp_file: Path, *, max_turns: int = MAX_TURNS, budget_usd:
             "--max-budget-usd", f"{budget_usd:g}"]
     if system_prompt_file is not None:
         argv += ["--append-system-prompt-file", str(system_prompt_file)]
+    if settings_file is not None:
+        argv += ["--settings", str(settings_file)]
     if resume:
         argv += ["--resume", resume]
     elif not persist:
@@ -275,8 +301,9 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
             if event.get("type") == "assistant" and item.get("type") == "tool_use":
                 name = str(item.get("name", ""))
                 arguments = item.get("input") if isinstance(item.get("input"), dict) else {}
-                call = {"name": name.removeprefix(f"mcp__{SERVER}__"), "server": SERVER if name.startswith(f"mcp__{SERVER}__") else None}
-                for key in ("method", "path", "kind", "taskClass", "awaitSeconds", "pathPrefix"):
+                server, short = (name.split("__", 2)[1:] if name.startswith("mcp__") and name.count("__") >= 2 else (None, name))
+                call = {"name": short, "server": server}
+                for key in ("method", "path", "kind", "taskClass", "awaitSeconds", "pathPrefix", "section", "adopt"):
                     if key in arguments:
                         call[key] = arguments[key]
                 if isinstance(arguments.get("body"), dict):
@@ -308,35 +335,46 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
             "permission_denials": result.get("permission_denials") or []}
 
 
-def run_turn(request_text: str, *, hub_url: str, project_dir: Path, session_id: str, workdir: Path, cli: str,
-             ledger: x2.Ledger, part: str, resume: str | None = None, system_prompt_file: Path | None = None,
-             max_turns: int = MAX_TURNS, budget_usd: float = BUDGET_USD, persist: bool = False,
-             config_dir: Path | None = None, parent_env: Mapping[str, str] | None = None, trial_id: str | None = None,
-             timeout: float = TIMEOUT_S, close_open_turn: bool = True) -> dict[str, Any]:
-    """One ``claude -p`` turn bound to the Hub conversation ``session_id``; its stream and cost are recorded.
+def run_turn(request_text: str, *, workdir: Path, cli: str, ledger: x2.Ledger, part: str, hub_url: str | None = None,
+             project_dir: Path | None = None, session_id: str | None = None, resume: str | None = None,
+             system_prompt_file: Path | None = None, max_turns: int = MAX_TURNS, budget_usd: float = BUDGET_USD,
+             persist: bool = False, config_dir: Path | None = None, default_config: bool = False,
+             parent_env: Mapping[str, str] | None = None, trial_id: str | None = None, timeout: float = TIMEOUT_S,
+             close_open_turn: bool = True, mcp: dict[str, Any] | None = None, allowed: tuple[str, ...] = ALLOWED,
+             prompt: str | None = None, cwd: Path | None = None, settings_file: Path | None = None,
+             experiment: str = "X3") -> dict[str, Any]:
+    """One ``claude -p`` turn; its stream and cost are recorded.
 
-    ``workdir`` is a new directory owned by this turn: the CLI runs in its empty ``cwd/``, and the MCP config, the
-    prompt, the stream and a summary are written beside it. ``session_id`` is the external source session the Hub
-    conversation is bound by (the same id on every turn of one M+ session); ``resume`` is the CLI session id a
-    previous turn returned. ``parent_env`` is ``HubServices.parent_env`` when the turn runs inside ``isolated_hub``.
-    A conversation turn the agent left running is closed afterwards (``close_open_turn``) so the next request can
-    open one; the record says who closed it.
+    ``workdir`` is a new directory owned by this turn: the CLI runs in its empty ``cwd/`` (or in ``cwd``, which every
+    turn of a resumed session must share, since the CLI finds a session by its working directory), and the MCP config,
+    the prompt, the stream and a summary are written beside it. By default the turn is bound to the Hub conversation
+    ``session_id`` through MonkeyHub's own server (``mcp_config``); ``mcp`` replaces that configuration (a lab proxy or
+    server) and ``allowed`` names its tools. ``prompt`` is what the CLI reads (default ``request_text``, the architect's
+    words). ``resume`` is the CLI session id a previous turn returned. ``parent_env`` is ``HubServices.parent_env``
+    when the turn runs inside ``isolated_hub``. A conversation turn the agent left running is closed afterwards
+    (``close_open_turn``) so the next request can open one; the record says who closed it.
+
+    A resumable turn (``persist`` or ``resume``) keeps the CLI's transcript in its config directory: ``config_dir``, or
+    with ``default_config`` the CLI's default one (allowed for M+ only; the caller accounts for the space it takes).
     """
 
-    if (persist or resume) and config_dir is None:
-        raise X3Error("a resumable turn writes the CLI's transcript into its config directory: pass config_dir under this "
-                      "lab's temp root (signed in once with CLAUDE_CONFIG_DIR set), never the user's profile on C:")
+    if (persist or resume) and config_dir is None and not default_config:
+        raise X3Error("a resumable turn writes the CLI's transcript into its config directory: pass config_dir, or "
+                      "default_config=True where the CLI's default directory is allowed (M+)")
     check_budget(ledger, part, budget_usd)
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=False)
-    cwd = workdir / "cwd"
-    cwd.mkdir()
+    if cwd is None:
+        cwd = workdir / "cwd"
+        cwd.mkdir()
     mcp_file = workdir / "mcp.json"
-    mcp_file.write_text(json.dumps(mcp_config(hub_url=hub_url, project_dir=project_dir, session_id=session_id), indent=1) + "\n",
-                        encoding="utf-8", newline="\n")
+    configured = mcp if mcp is not None else mcp_config(hub_url=hub_url, project_dir=project_dir, session_id=session_id)
+    mcp_file.write_text(json.dumps(configured, indent=1) + "\n", encoding="utf-8", newline="\n")
+    text = request_text if prompt is None else prompt
     (workdir / "request.md").write_text(request_text, encoding="utf-8", newline="\n")
+    (workdir / "prompt.md").write_text(text, encoding="utf-8", newline="\n")
     argv = command(cli, mcp_file, max_turns=max_turns, budget_usd=budget_usd, resume=resume, persist=persist,
-                   system_prompt_file=system_prompt_file)
+                   system_prompt_file=system_prompt_file, allowed=allowed, settings_file=settings_file)
     environment = cli_environment(os.environ if parent_env is None else parent_env, config_dir)
     trial = trial_id or f"X3-{workdir.name}"
     (workdir / "command.json").write_text(json.dumps({"argv": argv[1:], "cwd": str(cwd), "config_dir": str(config_dir) if config_dir else None},
@@ -344,7 +382,7 @@ def run_turn(request_text: str, *, hub_url: str, project_dir: Path, session_id: 
     started_at = datetime.now(timezone.utc).isoformat()
     started = time.perf_counter()
     try:
-        done = subprocess.run(argv, input=request_text, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+        done = subprocess.run(argv, input=text, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
                               errors="replace", timeout=timeout, env=environment)
         stdout, stderr, exit_code = done.stdout, done.stderr, done.returncode
     except subprocess.TimeoutExpired as exc:
@@ -358,14 +396,15 @@ def run_turn(request_text: str, *, hub_url: str, project_dir: Path, session_id: 
     if not result:
         # No result event: what was spent is unknown, so the turn's whole budget is booked.
         cost = max(cost, budget_usd)
-    ledger.add({"at": datetime.now(timezone.utc).isoformat(), "experiment": "X3", "part": part, "trial_id": trial,
+    ledger.add({"at": datetime.now(timezone.utc).isoformat(), "experiment": experiment, "part": part, "trial_id": trial,
                 "out": str(workdir), "cost_usd": cost, **priced})
     summary = summarize(events)
     turn = {"trial_id": trial, "started_at": started_at, "seconds": round(seconds, 1), "exit_code": exit_code,
             "stderr": stderr[-2000:], "cost_usd": cost, "usage": priced, "cli_session_id": summary["session_id"],
             "hub_source_session_id": session_id, "resumed_from": resume, "persisted": bool(persist or resume),
             "tool_call_count": summary["tool_call_count"], "summary": summary,
-            "hub_conversation": _conversation_after(hub_url, project_dir, session_id, request_text, started_at, close_open_turn)}
+            "hub_conversation": (_conversation_after(hub_url, project_dir, session_id, request_text, started_at, close_open_turn)
+                                 if hub_url and session_id else None)}
     (workdir / "turn.json").write_text(json.dumps(turn, indent=1, sort_keys=True, default=str) + "\n", encoding="utf-8", newline="\n")
     return turn
 
@@ -577,3 +616,234 @@ def lab_realization(project_dir: Path, run_id: str, out_dir: Path) -> dict[str, 
 
 def new_session_id() -> str:
     return f"x3-{uuid.uuid4()}"
+
+
+def studio_write(hub_url: str, runtime_id: str, method: str, path: str, body: dict[str, Any]) -> Any:
+    """A Studio write the way the Hub page sends it (the Hub's runtime route, with an idempotency key): a person's act."""
+
+    request = Request(hub_url.rstrip("/") + f"/api/runtime/projects/{quote(runtime_id)}/studio{path}", method=method,
+                      data=json.dumps(body).encode("utf-8"),
+                      headers={"Content-Type": "application/json", "Idempotency-Key": str(uuid.uuid4())})
+    try:
+        with build_opener(ProxyHandler({})).open(request, timeout=120) as response:
+            return json.load(response)
+    except HTTPError as exc:
+        raise X3Error(f"{method} {path}: HTTP {exc.code}: {exc.read().decode('utf-8', errors='replace')[:2000]}") from exc
+
+
+def continue_on(services: HubServices, run_id: str) -> dict[str, Any]:
+    """Move the Working Head onto ``run_id`` as the architect's Continue on the Hub page (no chat message bound)."""
+
+    project_id = json.loads((services.project_dir / "project.json").read_text(encoding="utf-8"))["project_id"]
+    base = _call(services.runtime_url, "/api/working-source?" + urlencode({"workspace": "modeling"})).get("revisionSha256")
+    answer = studio_write(services.hub_url, services.runtime_id, "PUT", "/api/working-draft",
+                          {"projectId": project_id, "runId": run_id, "baseRevisionSha256": base})
+    return {k: answer.get(k) for k in ("revisionSha256", "current")}
+
+
+def transcript_bytes(session_ids: list[str], projects_root: Path | None = None) -> dict[str, Any]:
+    """Read-only: the size of the CLI's transcripts for these session ids in its default projects directory (M+)."""
+
+    root = projects_root if projects_root is not None else Path.home() / ".claude" / "projects"
+    files: dict[str, int] = {}
+    for session in sorted(set(s for s in session_ids if s)):
+        for path in root.glob(f"*/{session}.jsonl"):
+            files[str(path)] = path.stat().st_size
+        for folder in root.glob(f"*/{session}"):
+            if folder.is_dir():
+                files.update({str(p): p.stat().st_size for p in folder.rglob("*") if p.is_file()})
+    return {"root": str(root), "files": files, "bytes": sum(files.values())}
+
+
+# ---------------------------------------------------------------- the lab's MCP proxy (call cap; T/H allow-list)
+
+# T and H: construction proposals, their candidates and the model readback only.
+T_REQUESTS = (("GET", r"/api/construction/model"), ("GET", r"/api/construction"), ("POST", r"/api/proposals/construction"),
+              ("GET", r"/api/proposals/[^/]+"), ("POST", r"/api/proposals/[^/]+/candidate"), ("GET", r"/api/candidates/[^/]+"),
+              ("GET", r"/api/candidates/[^/]+/compare"), ("GET", r"/api/jobs/[^/]+"), ("POST", r"/api/project/modeling"))
+T_TOOLS = ("studio_request", "studio_schema")
+T_NOTE = ("In this session only these Studio actions are available: GET /api/construction/model, GET /api/construction, "
+          "POST /api/proposals/construction, GET /api/proposals/{id}, POST /api/proposals/{id}/candidate, GET /api/candidates/{id}, "
+          "GET /api/candidates/{id}/compare, GET /api/jobs/{id}, POST /api/project/modeling. Every other action is refused. "
+          "The guide below describes the whole Studio.\n\n")
+MAX_TOOL_CALLS = 12
+
+
+def proxy_server_config(config_file: Path, python: str = sys.executable) -> dict[str, Any]:
+    """The CLI's MCP entry for the lab proxy (``serve_proxy``), configured by ``config_file``."""
+
+    return {"command": python, "args": [str(Path(__file__).resolve()), "proxy", str(config_file)], "alwaysLoad": True}
+
+
+def proxy_settings(child: dict[str, Any], *, log: Path, restricted: bool, max_calls: int = MAX_TOOL_CALLS,
+                   user_message: str | None = None, base_run: str | None = None) -> dict[str, Any]:
+    """The proxy's own configuration: the child server it fronts, the call cap, and for T/H the allow-list, the
+    user message it publishes into the bound conversation itself (so the agent spends no call on presentation) and
+    the run to read and write against when the agent names none (``base_run``, the Working Head)."""
+
+    settings: dict[str, Any] = {"child": [child["command"], *child["args"]], "log": str(log), "max_calls": max_calls}
+    if restricted:
+        settings.update(tools=list(T_TOOLS), requests=[list(r) for r in T_REQUESTS], note=T_NOTE, drop_instructions=True)
+    if user_message is not None:
+        settings["user_message"] = user_message
+    if base_run is not None:
+        settings["base_run"] = base_run
+    return settings
+
+
+def with_base_run(arguments: dict[str, Any], base_run: str | None) -> tuple[dict[str, Any], bool]:
+    """A studio_request read of the construction model, or a construction proposal, that names no run, made against
+    ``base_run``. Without a run the Runtime reads and writes its reference run, not the Working Head; MonkeyHub's own
+    chat names the source in each turn's prepared context, which T and H do not get."""
+
+    from urllib.parse import parse_qs, urlsplit
+
+    if not base_run:
+        return arguments, False
+    method, path = str(arguments.get("method", "GET")).upper(), str(arguments.get("path", ""))
+    parsed = urlsplit(path)
+    if method == "GET" and parsed.path == "/api/construction/model" and "run" not in parse_qs(parsed.query):
+        return {**arguments, "path": path + ("&" if parsed.query else "?") + urlencode({"run": base_run})}, True
+    body = arguments.get("body")
+    if method == "POST" and parsed.path == "/api/proposals/construction" and isinstance(body, dict) and not body.get("sourceRunId"):
+        return {**arguments, "body": {**body, "sourceRunId": base_run}}, True
+    return arguments, False
+
+
+def proxy_refusal(settings: dict[str, Any], name: str, arguments: dict[str, Any], calls: int) -> dict[str, Any] | None:
+    """Why the proxy refuses this tool call (a MonkeyHub-shaped failure), or None to pass it on."""
+
+    import re
+    from urllib.parse import urlsplit
+
+    if calls > int(settings.get("max_calls", MAX_TOOL_CALLS)):
+        return {"code": "X3_TOOL_BUDGET_SPENT", "detail": f"This request's {settings.get('max_calls', MAX_TOOL_CALLS)} tool calls are "
+                "spent. Answer the architect now, without further tools.", "httpStatus": 429}
+    tools = settings.get("tools")
+    if tools is None:
+        return None
+    if name not in tools:
+        return {"code": "X3_TOOL_UNAVAILABLE", "detail": f"{name} is not available in this session.", "httpStatus": 403}
+    method, path = str(arguments.get("method", "GET")).upper(), urlsplit(str(arguments.get("path", ""))).path
+    if name == "studio_schema" and not path:
+        return {"code": "X3_ACTION_UNAVAILABLE", "detail": "Action discovery is not available in this session; the actions are listed "
+                "in studio_request's description.", "httpStatus": 403}
+    if not any(m == method and re.fullmatch(pattern, path) for m, pattern in settings.get("requests", ())):
+        return {"code": "X3_ACTION_UNAVAILABLE", "detail": f"{method} {path} is not available in this session. Available: "
+                + ", ".join(f"{m} {p}" for m, p in settings.get("requests", ())), "httpStatus": 403}
+    return None
+
+
+def serve_proxy(settings: dict[str, Any], stdin=None, stdout=None) -> None:
+    """A stdio MCP server in front of another (MonkeyHub's), passing every message on except what it refuses.
+
+    It counts tool calls and refuses those past the cap; with an allow-list (T, H) it lists only the allowed tools,
+    puts the session's restriction before studio_request's description, drops the server's presentation
+    instructions, refuses every other tool and Studio action, and binds the conversation and publishes the user's
+    message itself before the first call. Every call is logged (name, method, path, refusal) to ``settings["log"]``.
+    """
+
+    stdin = stdin or _sys.stdin
+    stdout = stdout or _sys.stdout
+    child = subprocess.Popen(settings["child"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, encoding="utf-8")
+    log = Path(settings["log"])
+    calls = 0
+    own = 0
+    presented = settings.get("user_message") is None
+
+    def ask_child(message: dict[str, Any]) -> dict[str, Any]:
+        child.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")
+        child.stdin.flush()
+        line = child.stdout.readline()
+        if not line:
+            raise X3Error("the MonkeyHub MCP server closed")
+        return json.loads(line)
+
+    def own_call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        nonlocal own
+        own += 1
+        return ask_child({"jsonrpc": "2.0", "id": f"x3-proxy-{own}", "method": "tools/call", "params": {"name": name, "arguments": arguments}})
+
+    def emit(message: dict[str, Any]) -> None:
+        stdout.write(json.dumps(message, ensure_ascii=False) + "\n")
+        stdout.flush()
+
+    def record(row: dict[str, Any]) -> None:
+        with log.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(), **row}, ensure_ascii=False) + "\n")
+
+    try:
+        for line in stdin:
+            try:
+                message = json.loads(line)
+            except ValueError:
+                continue
+            if "id" not in message:                                   # a notification: the server answers none
+                child.stdin.write(json.dumps(message) + "\n")
+                child.stdin.flush()
+                continue
+            method, params = message.get("method"), message.get("params") or {}
+            if method == "tools/call":
+                calls += 1
+                name, arguments = str(params.get("name", "")), params.get("arguments") or {}
+                refusal = proxy_refusal(settings, name, arguments, calls)
+                row = {"call": calls, "name": name, "method": arguments.get("method"), "path": arguments.get("path")}
+                if refusal is not None:
+                    record({**row, "refused": refusal["code"]})
+                    emit({"jsonrpc": "2.0", "id": message["id"], "result": {"isError": True, "content": [
+                        {"type": "text", "text": json.dumps(refusal, ensure_ascii=False)}]}})
+                    continue
+                if not presented:
+                    presented = True
+                    bound = own_call("presentation_bind", {})
+                    turn = str(uuid.uuid4())
+                    shown = own_call("chat_present", {"turnId": turn, "messageId": str(uuid.uuid4()), "kind": "user",
+                                                      "content": settings["user_message"], "status": "complete"})
+                    record({"call": 0, "name": "x3-proxy:bind+present", "bound": not bound.get("result", {}).get("isError"),
+                            "presented": not shown.get("result", {}).get("isError")})
+                rewritten = False
+                if name == "studio_request":
+                    arguments, rewritten = with_base_run(arguments, settings.get("base_run"))
+                    if rewritten:
+                        message = {**message, "params": {**params, "arguments": arguments}}
+                answer = ask_child(message)
+                result = answer.get("result") or {}
+                record({**row, "is_error": bool(result.get("isError")), "base_run_added": rewritten,
+                        "chars": sum(len(c.get("text", "")) for c in result.get("content", ()) if isinstance(c, dict))})
+                emit(answer)
+                continue
+            answer = ask_child(message)
+            if method == "tools/list" and settings.get("tools") is not None and "result" in answer:
+                tools = [dict(t) for t in answer["result"].get("tools", ()) if t.get("name") in settings["tools"]]
+                for tool in tools:
+                    if tool["name"] == "studio_request" and settings.get("note"):
+                        tool["description"] = settings["note"] + tool.get("description", "")
+                answer = {**answer, "result": {**answer["result"], "tools": tools}}
+            if method == "initialize" and settings.get("drop_instructions") and "result" in answer:
+                answer = {**answer, "result": {k: v for k, v in answer["result"].items() if k != "instructions"}}
+            emit(answer)
+    finally:
+        child.stdin.close()
+        try:
+            child.wait(30)
+        except subprocess.TimeoutExpired:
+            child.kill()
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="X3 MonkeyHub driver pieces run as their own process.")
+    sub = parser.add_subparsers(dest="command", required=True)
+    proxy = sub.add_parser("proxy", help="serve the lab's MCP proxy on stdio")
+    proxy.add_argument("config", type=Path)
+    args = parser.parse_args(argv)
+    if args.command == "proxy":
+        _sys.stdin.reconfigure(encoding="utf-8")
+        _sys.stdout.reconfigure(encoding="utf-8")
+        serve_proxy(json.loads(args.config.read_text(encoding="utf-8")))
+    return 0
+
+
+if __name__ == "__main__":
+    _sys.exit(main())
