@@ -137,7 +137,7 @@ here and nowhere else:
 |---|---|---|
 | Create/modify geometry | `POST /api/proposals/sketch`, `/transform`, `/push-pull`, `/elevation`, `/delete`, `semanticEdit` with producer rows | **`POST /api/proposals/construction {stateDigest, script, parameters?, summary?, sourceRunId?, sourceStageRef?, sourceProposalId?, keep?}`** |
 | Discover | `studio_schema POST /api/proposals` → producer index → producer contract | **`GET /api/construction`**: the vocabulary, conventions, limits and one example; the Hub prompt carries the same vocabulary so no discovery round trip is needed |
-| Read the model | `GET /api/state` (components, elements with `producer`) | **`GET /api/construction/model[?run=]`**: `stateDigest` and one entry per geometry id: form, bounds, `cuts`/`cutBy`, facets, and the capabilities its facets unlock |
+| Read the model | `GET /api/state` (components, elements with `producer`) | **`GET /api/construction/model[?run=]`**: `stateDigest` and one entry per geometry id: form, bounds, `cuts`/`cutBy`, facets, and the capabilities its facets unlock. A named run without an exact retained design state, such as a model attached from outside the project, answers 409 `REFERENCE_STATE_NOT_EXACT` saying what the run holds |
 | Meaning | `semanticKind` on sketches; `Component@1.semantic_kind` via `semanticEdit` | **`POST /api/proposals/facets {stateDigest, targets:[{id, set:{…}, remove:[…]}]}`** (Stage C) |
 | Door or window in a wall | choose producer `wall` at creation | **`POST /api/proposals/hosted-opening`**, listed for an entity only once it has `architectural.role = wall` |
 

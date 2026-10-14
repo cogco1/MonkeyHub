@@ -1553,29 +1553,65 @@ def require_complete_model(record: ArtifactRecord, runner_receipt: Mapping[str, 
         raise StudioError(409, "MODEL_SOURCE_INCOMPLETE", "This native export does not establish coverage of every producing seat. Select a complete composed model or the run's complete native delivery.")
 
 
+def _attached_model(binding: ProjectBinding, run_id: str, asset_sha256: str) -> ArtifactRecord:
+    """The model attached from outside the project under its own run, with its exact bytes available."""
+
+    record = None
+    if run_id in binding.run_ids():
+        record = next((row for row in _registered_model_assets(binding, run_id) if row.sha256 == asset_sha256), None)
+    if record is None:
+        raise StudioError(404, "MODEL_SOURCE_UNREGISTERED", "No model with this SHA-256 is attached to the project.")
+    if not record.available:
+        raise _unavailable(binding, record)
+    return record
+
+
 @retained_sources
 def read_model_source_index(
-    binding: ProjectBinding, source: ModelSource, *, object_ids: tuple[str, ...] = (),
-    offset: int = 0, limit: int = 50,
+    binding: ProjectBinding, run_id: str, asset_sha256: str, state_digest: str | None = None, *,
+    object_ids: tuple[str, ...] = (), offset: int = 0, limit: int = 50, bounds: bool = False,
 ) -> dict[str, Any]:
-    """Page native identities from exact retained bytes, without admitting an edit."""
+    """Page native identities from exact retained bytes, without admitting an edit.
+
+    A model bound to a design run is named by that run and its exact state. A
+    model attached from outside the project has no design state and is named by
+    its own run, ``studio-model-<assetSha256>``, alone. ``bounds`` adds each paged
+    object's bounds, read for that page only.
+    """
 
     if offset < 0 or not 1 <= limit <= 200 or len(object_ids) > 200:
         raise StudioError(422, "MODEL_INDEX_RANGE_INVALID", "Use a nonnegative offset and at most 200 objects per read.")
-    artifact = require_model_source(binding, source)
+    source = None
+    if run_id == MODEL_UPLOAD_RUN_PREFIX + asset_sha256:
+        if state_digest is not None:
+            raise StudioError(422, "MODEL_SOURCE_INVALID",
+                              "An attached model has no design state: name it by its own run alone, without stateDigest.")
+        artifact = _attached_model(binding, run_id, asset_sha256)
+    else:
+        if state_digest is None:
+            raise StudioError(422, "MODEL_SOURCE_INVALID",
+                              "A design run's model is named by its exact stateDigest; an attached model by its own run, "
+                              f"{MODEL_UPLOAD_RUN_PREFIX}<assetSha256>.")
+        source = ModelSource(run_id, state_digest, asset_sha256)
+        artifact = require_model_source(binding, source)
     assert artifact.path is not None
     try:
         data = artifact.path.read_bytes()
     except OSError as exc:
         raise StudioError(409, "MODEL_SOURCE_UNAVAILABLE", "The exact model bytes could not be read.") from exc
-    if hashlib.sha256(data).hexdigest() != source.asset_sha256:
+    if hashlib.sha256(data).hexdigest() != asset_sha256:
         raise StudioError(409, "MODEL_SOURCE_MISMATCH", "The model bytes changed during the index read.")
+    requested = set(object_ids)
+
+    def page_ids(ids: tuple[str, ...]) -> tuple[str, ...]:
+        # The same page this read answers: GUID order, the requested GUIDs, offset and limit.
+        return tuple(value for value in ids if not requested or value in requested)[offset:offset + limit]
+
     try:
-        index = inspect_three_dm_index(data)
+        index = inspect_three_dm_index(data, bounds_for=page_ids if bounds else ())
     except ThreeDmInspectionError as exc:
         raise StudioError(422, "MODEL_INDEX_UNAVAILABLE", exc.message) from exc
     rows = index["objects"]
-    requested = set(object_ids)
     if requested - {row["object_id"] for row in rows}:
         raise StudioError(404, "MODEL_OBJECT_NOT_FOUND", "An object GUID is absent from this exact source; names are not identity matches.")
     matched = [row for row in rows if not requested or row["object_id"] in requested]
@@ -1595,7 +1631,8 @@ def read_model_source_index(
                         "containing_definition_ids": membership.get(row["object_id"], []),
                         "instance_reference": references.get(row["object_id"])})
     next_offset = offset + len(page)
-    return {"modelSource": source.to_dict(), "fileName": artifact.file_name,
+    return {"modelSource": None if source is None else source.to_dict(), "runId": run_id, "assetSha256": asset_sha256,
+            "fileName": artifact.file_name,
             "archiveVersion": index["archive_version"], "units": index["units"],
             "objectCount": len(rows), "matchedCount": len(matched), "objects": objects,
             "offset": offset, "nextOffset": next_offset if next_offset < len(matched) else None}

@@ -17,7 +17,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, Callable, ClassVar, Collection
 
 
 _MAX_ERROR_TEXT = 1_000
@@ -218,7 +218,11 @@ def inspect_three_dm_contents(data: bytes) -> ThreeDmInspection:
     return _inspect_bytes(data, include_geometry=False)
 
 
-def inspect_three_dm_index(data: bytes) -> dict[str, object]:
+def inspect_three_dm_index(
+    data: bytes,
+    *,
+    bounds_for: Collection[str] | Callable[[tuple[str, ...]], Collection[str]] = (),
+) -> dict[str, object]:
     """Read native identities and relations without inspecting geometry content.
 
     This index includes unnamed objects and block definition members as saved.
@@ -226,8 +230,13 @@ def inspect_three_dm_index(data: bytes) -> dict[str, object]:
     visibility and material source are the native object attributes, not resolved
     display properties. ``material`` is the one resolved value: the material the
     object wears from this file's own table and where it comes from
-    (``_worn_material``). Geometry validity, bounds, encoding and morphology are
+    (``_worn_material``). Geometry validity, encoding and morphology are
     deliberately outside this inexpensive lookup path.
+
+    Bounds are read only for the object ids in ``bounds_for`` (``_index_bounds``),
+    or for those it returns when given every object id in index order: a caller
+    pages objects and asks for the positions of that page, so the cost follows the
+    page, not the file.
     """
 
     if not isinstance(data, bytes):
@@ -283,7 +292,15 @@ def inspect_three_dm_index(data: bytes) -> dict[str, object]:
                 row["mode"] = _enum_name(mode, "object mode")
             rows.append(row)
         rows.sort(key=lambda item: item["id"])
-        definitions, _ = _definitions(model)
+        definitions, definition_members = _definitions(model)
+        if callable(bounds_for):
+            bounds_for = bounds_for(tuple(row["id"] for row in rows))
+        bounds_for = frozenset(bounds_for)
+        if bounds_for:
+            by_id = {row["id"]: row for row in rows}
+            for row in rows:
+                if row["id"] in bounds_for:
+                    row.update(_index_bounds(row, by_id, definition_members, rhino3dm))
         references = _references(rows, definitions, layers_by_index)
         reference_counts = Counter(item["definition_id"] for item in references)
         for definition in definitions:
@@ -309,6 +326,66 @@ def inspect_three_dm_index(data: bytes) -> dict[str, object]:
             ThreeDmInspectionErrorCode.INVALID_FILE,
             "the decoded 3dm model contains invalid index data",
         ) from exc
+
+
+def _index_bounds(
+    row: dict[str, Any],
+    rows_by_id: dict[str, dict[str, Any]],
+    definition_members: dict[str, tuple[str, ...]],
+    rhino3dm: Any,
+) -> dict[str, object]:
+    """One object's bounds as the index reports them, or why it has none.
+
+    A top-level object and an instance reference are read where they stand
+    (``world``); a block definition's own member in its definition's coordinates
+    (``definition``). Bounds come from saved visible geometry exactly as the
+    export inspector reads it, never from Brep control points: a Brep saved
+    without render meshes has none, and says why. One object that gives no bounds
+    is reported on its row and never fails the page.
+    """
+
+    space = "definition" if row["is_instance_definition_object"] else "world"
+    try:
+        points, source = _placed_points(row, (), (), rows_by_id, definition_members, rhino3dm)
+        bounds = _points_bbox(points)
+    except ThreeDmInspectionError as exc:
+        return {"bounds": None, "bounds_space": space, "bounds_source": None, "bounds_error": exc.message}
+    except (ValueError, TypeError, AttributeError) as exc:
+        return {"bounds": None, "bounds_space": space, "bounds_source": None,
+                "bounds_error": f"object {row['id']}: {str(exc)[:_MAX_ERROR_TEXT]}"}
+    return {"bounds": bounds, "bounds_space": space, "bounds_source": source, "bounds_error": None}
+
+
+def _placed_points(
+    row: dict[str, Any],
+    transforms: tuple[Any, ...],
+    definition_stack: tuple[str, ...],
+    rows_by_id: dict[str, dict[str, Any]],
+    definition_members: dict[str, tuple[str, ...]],
+    rhino3dm: Any,
+) -> tuple[list[tuple[float, float, float]], str]:
+    geometry = row["geometry"]
+    if row["type"] == "InstanceReference":
+        definition_id = _identifier(geometry.ParentIdefId, "reference definition id")
+        if definition_id in definition_stack:
+            raise ValueError("cyclic instance definition reference")
+        members = definition_members.get(definition_id)
+        if not members:
+            raise ValueError("instance reference has no definition members")
+        points: list[tuple[float, float, float]] = []
+        for member_id in members:
+            member = rows_by_id.get(member_id)
+            if member is None:
+                raise ValueError("instance definition member is missing")
+            member_points, _ = _placed_points(member, (*transforms, geometry.Xform),
+                                              (*definition_stack, definition_id), rows_by_id, definition_members, rhino3dm)
+            points.extend(member_points)
+        return points, "instance_definition_members"
+    points, witness = _visible_geometry_points(geometry, str(row["type"]), rhino3dm, object_id=str(row["id"]))
+    source = str(witness["source"])
+    for transform in reversed(transforms):
+        points = [_transform_point(point, transform) for point in points]
+    return points, source
 
 
 def _decode_model(file_bytes: bytes, rhino3dm: Any) -> Any:
