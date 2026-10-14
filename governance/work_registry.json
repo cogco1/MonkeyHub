@@ -27,7 +27,8 @@
         "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
         "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
         "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
-        "docs/protocols/project-runtime-api.md"
+        "docs/protocols/project-runtime-api.md",
+        "docs/design/construction-api.md"
       ],
       "depends_on": []
     }
