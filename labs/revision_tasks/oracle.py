@@ -40,8 +40,10 @@ class OracleInputError(ValueError):
 
 
 def load_meshes(path: Path) -> dict[str, Mesh]:
-    """Every mesh object by its name; a duplicated or empty name is an input error."""
+    """Every mesh object by its name, from a .3dm or a .glb; a duplicated or empty name is an input error."""
 
+    if Path(path).suffix.lower() == ".glb":
+        return _load_glb(Path(path))
     import rhino3dm
 
     model = rhino3dm.File3dm.Read(str(path))
@@ -66,6 +68,60 @@ def load_meshes(path: Path) -> dict[str, Mesh]:
             if d != c:
                 triangles.append([a, c, d])
         meshes[name] = (vertices, np.array(triangles, dtype=np.int64).reshape(-1, 3))
+    return meshes
+
+
+_COMPONENTS = {5126: "<f4", 5125: "<u4", 5123: "<u2", 5121: "<u1"}
+_WIDTH = {"SCALAR": 1, "VEC3": 3}
+# glTF is y-up; the oracle's frame is the model file's, z-up: (x, y, z) = (x_g, -z_g, y_g), a proper rotation.
+_GLTF_TO_MODEL = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]])
+
+
+def _load_glb(path: Path) -> dict[str, Mesh]:
+    """Named triangle meshes from a glTF 2.0 binary, read with struct and numpy only; node transforms are refused."""
+
+    import struct
+
+    data = path.read_bytes()
+    if len(data) < 20 or struct.unpack_from("<III", data, 0) != (0x46546C67, 2, len(data)):
+        raise OracleInputError(f"{path.name}: not a glTF 2.0 binary")
+    chunks, offset = [], 12
+    while offset < len(data):
+        n, kind = struct.unpack_from("<II", data, offset)
+        chunks.append((kind, data[offset + 8: offset + 8 + n]))
+        offset += 8 + n
+    document = json.loads(chunks[0][1].decode("utf-8").rstrip(" \0"))
+    binary = chunks[1][1] if len(chunks) > 1 else b""
+
+    def accessor(index: int) -> np.ndarray:
+        a = document["accessors"][index]
+        view = document["bufferViews"][a["bufferView"]]
+        dtype, width = np.dtype(_COMPONENTS[a["componentType"]]), _WIDTH[a["type"]]
+        if view.get("byteStride") not in (None, dtype.itemsize * width):
+            raise OracleInputError(f"{path.name}: strided accessors are not read")
+        array = np.frombuffer(binary, dtype=dtype, count=a["count"] * width, offset=view.get("byteOffset", 0) + a.get("byteOffset", 0))
+        return array.reshape(a["count"], width) if width > 1 else array
+
+    meshes: dict[str, Mesh] = {}
+    for node in document.get("nodes", []):
+        if "mesh" not in node:
+            continue
+        name = node.get("name")
+        if not name:
+            raise OracleInputError("an unnamed mesh node has no identity")
+        if name in meshes:
+            raise OracleInputError(f"mesh name {name!r} occurs twice")
+        if any(key in node for key in ("matrix", "translation", "rotation", "scale")):
+            raise OracleInputError(f"node {name!r} carries a transform")
+        vertices, triangles = [], []
+        for primitive in document["meshes"][node["mesh"]]["primitives"]:
+            if primitive.get("mode", 4) != 4:
+                raise OracleInputError(f"{name}: only triangle primitives are read")
+            v = accessor(primitive["attributes"]["POSITION"]).astype(np.float64) @ _GLTF_TO_MODEL.T
+            f = accessor(primitive["indices"]).astype(np.int64).reshape(-1, 3) if "indices" in primitive else np.arange(len(v)).reshape(-1, 3)
+            triangles.append(f + sum(len(x) for x in vertices))
+            vertices.append(v)
+        meshes[name] = (np.vstack(vertices), np.vstack(triangles))
     return meshes
 
 

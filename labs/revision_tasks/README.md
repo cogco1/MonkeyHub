@@ -15,7 +15,10 @@ project, changes an owner's contract or is imported by production code.
 | `pipeline.py` | Realization through the owners' public functions, the system's own checks, and the ArchFlow arm. |
 | `oracle.py` | The independent judge, run as its own `python -I` process. Imports only `rhino3dm` and `numpy`. |
 | `run.py` | Runs tasks into an empty directory, one bundle per attempt, an index and a gate summary; `--compare` replays against an earlier run. |
-| `test_*.py` | Task-file validity and freezing; the oracle on a real F3 candidate and on eight wrong geometries. |
+| `carrier.py` | State-bearing files: the design state written into a 3DM or GLB (or a sidecar), and read back with its binding checked. |
+| `reviser.py` | The hostless reviser: read a state file, apply a typed change, realize it, write the next state file. No CAD application runs. |
+| `context_pack.py` | The `ContextPack@1` MonkeyHub would give an agent, read from a disposable project by an in-process Project Runtime. |
+| `test_*.py` | Task-file validity and freezing; the oracle on a real F3 candidate and on eight wrong geometries; state files on every arm and format. |
 
 ## Run
 
@@ -49,9 +52,46 @@ The arm works through these steps in order and stops at the first refusal or reo
 | A declared relation that cannot be measured | — | `unknown` |
 | Otherwise | — | `accept` |
 
+## State-bearing files (`carrier.py`, `reviser.py`)
+
+The four arms carry the same state. They differ only in where it lives and what binds it.
+
+| Arm | Where the state is | Binding |
+|---|---|---|
+| C-full | in the file: the whole record | full |
+| C-task | in the file: the task view of the record (elements, levels, grids, components, parameters, relations, obligations) and the `ContextPack@1` | full |
+| C-unbound | in the file: the whole record | no per-object geometry digests |
+| D | beside the file (sidecar JSON); the file keeps only its existing `archflow:*` references | full |
+
+The full binding is `{record_digest, state_digest, sufficient_digest, parent_file_sha256, element_geometry_digests}`.
+
+**3DM.** The state is written into the document string `archflow:state` through `execute_occt_export(provenance=...)`, which also verifies it on its cold read. The per-object geometry digests exist only once the file does. So the harness reads the file with rhino3dm, adds `archflow:binding` and saves it again; a test checks that this changes no object geometry.
+
+**GLB.** Converted from that 3DM by `InProcessMeshProvider`. The state and binding go into `asset.extras.archflow`; each node's identity goes into `node.extras.archflow`.
+
+**Checks on read.** In order:
+
+1. the state and binding are present;
+2. the record matches its digest;
+3. the pack matches its digest;
+4. the model's own design-state reference matches;
+5. every object's geometry digest matches.
+
+A file that fails is refused with a code and never repaired.
+
+`reviser.revise` takes its exact base from the file's binding and can be given the file hash a change was made against (`STALE_BASE` otherwise). The rest is the arm above, with a full rebuild from the file's state.
+
+**Harness additions.** These are not kernel capabilities. Each revision reports them under `harness_added`:
+
+- the binding seal;
+- the at-most obligation;
+- the undeclared-interference scan;
+- the retention of the context pack;
+- rebuilding a state from an external file.
+
 ## The oracle (`oracle.py`)
 
-- **What it reads.** Each object's name (identity) and mesh, from the exported `.3dm`. No user strings, document strings, layers or state; `reads_metadata` is always false.
+- **What it reads.** Each object's name (identity) and mesh, from a `.3dm` (rhino3dm) or a `.glb` (struct and numpy; glTF's y-up is rotated to the model's z-up; node transforms are refused). No user strings, document strings, layers or state; `reads_metadata` is always false.
 - **Where expectations come from.** Every expected number is in the task's `protected_relations[].measure`, written by a person from the fixture's physical definition. Gold is never the record's dependency closure (a test checks one case).
 - **Checks.** `support_contact`, `vertical_clearance`, `non_interference` (grid sampling of the boxes' overlap with ray-parity containment), `aperture` (opening extents measured from the host mesh, plus rays through and beside it), `bbox`, `within`, `geometry_unchanged`, `column_row`, `stair` (rises, goings, top, landing contact, headroom under the slab).
 - **Unchanged geometry.** Compared by shape signature (bounds, volume, area) with 1e-5 m / 1e-6 relative tolerance. An unchanged B-rep can be re-meshed differently: another diagonal on a planar quad, or a few more triangles on a curved face reused from STEP.
@@ -86,3 +126,5 @@ The gold in these files is a draft written for smoke runs. A run counts only aft
 - Contact and clearance in the oracle use bounding boxes over plan overlap. Interference uses sampling: 14³ points per overlapping pair of boxes, so a sliver smaller than a sample cell can be missed.
 - The undeclared-interference scan finds solid penetration only. A clearance that nothing declares (the space under a stair, say) is invisible to it.
 - One arm (ArchFlow) for now; the baselines and repeated timing come with the next slice.
+- A hostless revision rebuilds the whole model from the file's state: the file does not carry the previous exact STEP, so shapes are not reused across files.
+- A C-unbound file that another tool edited is accepted, and its rebuild silently discards the edit (`test_carrier`).

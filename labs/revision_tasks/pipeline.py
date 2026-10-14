@@ -124,8 +124,12 @@ def synthetic_binding(program: CompiledGeometryProgram) -> CadProgramBinding:
         design_state_digest=proposal.design_state_digest, predecessor_program_digest=proposal.predecessor_program_digest)
 
 
-def realize(record: StateRecord, workspace: Path, stem: str, *, prior: Realization | None = None) -> Realization:
-    """Compile and export ``record`` into ``workspace``; with ``prior``, unchanged shapes come from its verified STEP."""
+def realize(record: StateRecord, workspace: Path, stem: str, *, prior: Realization | None = None,
+            provenance: dict[str, str] | None = None) -> Realization:
+    """Compile and export ``record`` into ``workspace``; with ``prior``, unchanged shapes come from its verified STEP.
+
+    ``provenance`` adds caller keys to the model's ``archflow:*`` document strings (``execute_occt_export``).
+    """
 
     started = time.perf_counter()
     program, objects_by_element, datum_values = compile_record(record)
@@ -135,7 +139,7 @@ def realize(record: StateRecord, workspace: Path, stem: str, *, prior: Realizati
         incremental = {"prior_program": prior.program, "prior_step": prior.step_path,
                        "prior_step_sha256": hashlib.sha256(prior.step_path.read_bytes()).hexdigest()}
     receipt = execute_occt_export(program, binding=synthetic_binding(program), speculative_workspace=workspace, artifact_stem=stem,
-                                  **incremental)
+                                  provenance=provenance, **incremental)
     exported = time.perf_counter()
     if receipt.status.value != "succeeded" or not receipt.readback_verified:
         failures = "; ".join(f"{f.get('code')}: {f.get('detail')}" for f in receipt.failures) if receipt.failures else receipt.status.value
