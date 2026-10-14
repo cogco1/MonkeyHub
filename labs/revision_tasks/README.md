@@ -18,6 +18,7 @@ project, changes an owner's contract or is imported by production code.
 | `carrier.py` | State-bearing files: the design state written into a 3DM or GLB (or a sidecar), and read back with its binding checked. |
 | `reviser.py` | The hostless reviser: read a state file, apply a typed change, realize it, write the next state file. No CAD application runs. |
 | `attacks.py` | Eleven attacks on state-bearing files, each compared with the honest revision; `python -m labs.revision_tasks.attacks --out <dir>`. |
+| `x1.py`, `x1_tasks.json`, `history/events_v1.json` | Sufficiency: one reference decision from four starting contexts (history, state file, geometry only, state file without obligations); `python -m labs.revision_tasks.x1 --out <dir>`. |
 | `context_pack.py` | The `ContextPack@1` MonkeyHub would give an agent, read from a disposable project by an in-process Project Runtime. |
 | `test_*.py` | Task-file validity and freezing; the oracle on a real F3 candidate and on eight wrong geometries; state files on every arm and format. |
 
@@ -60,7 +61,7 @@ The four arms carry the same state. They differ only in where it lives and what 
 | Arm | Where the state is | Binding |
 |---|---|---|
 | C-full | in the file: the whole record | full |
-| C-task | in the file: the task view of the record (elements, levels, grids, components, parameters, relations, obligations) and the `ContextPack@1` | full |
+| C-task | in the file: the task view of the record (elements, levels, grids, components, evidence, parameters, relations, obligations) and the `ContextPack@1` | full |
 | C-unbound | in the file: the whole record | no per-object geometry digests |
 | D | beside the file (sidecar JSON); the file keeps only its existing `archflow:*` references | full |
 

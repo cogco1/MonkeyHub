@@ -15,13 +15,13 @@
     "version": "2",
     "generator": "labs/revision_tasks/fixtures.py:f1_portico",
     "files_sha256": {
-      "labs/revision_tasks/fixtures.py": "f56225ec47e73d735010aa44dedf1e2eaa973d97ca5fa4d59a00c1e000e70bc9"
+      "labs/revision_tasks/fixtures.py": "3261abaaa5f9b4b1067fbd3598ef2e4860c383435e5157d08d31592fc7693a03"
     }
   },
   "start_state": {
     "state_ref": "fixture:F1-portico@1",
-    "content_digest": "8b08692f1067873b12e849f5622b9d8edb797de345499a4850ba3153f73ea0dc",
-    "exact_base_digest": "3a95079ad0fa6b3541b5dd6efa94ae6b6686b38cdf83cb18633944f58895a648"
+    "content_digest": "14bdb89d49095fb57265d73431f4ae5161a9f02ef6bf1e5bcd98f87fc67fd481",
+    "exact_base_digest": "f33df6f3010bb1827db4b4ce4bdeedf574ca51a2977a81c0d4e6708ad653361a"
   },
   "history": {
     "history_ref": null,

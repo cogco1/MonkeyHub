@@ -48,7 +48,8 @@ from labs.revision_tasks.context_pack import pack_digest
 SCHEMA = "ArchFlowStateFile@1"
 ARMS = ("C-full", "C-task", "C-unbound", "D")
 FORMATS = ("3dm", "glb")
-TASK_VIEW_SCHEMAS = frozenset({"Element@1", "Level@1", "GridAxis@1", "Component@1"})
+# Evidence (Reading@1) is task state: the context pack reads it from these rows, and a stale-evidence task needs it.
+TASK_VIEW_SCHEMAS = frozenset({"Element@1", "Level@1", "GridAxis@1", "Component@1", "Reading@1"})
 
 
 class CarrierRefused(ValueError):
@@ -75,7 +76,7 @@ def sha256_bytes(data: bytes) -> str:
 
 
 def task_view(record: StateRecord) -> StateRecord:
-    """The rows a revision needs: elements and what they stand on, parameters, relations among kept entities, obligations."""
+    """The rows a revision needs: elements and what they stand on, evidence, parameters, relations among kept entities, obligations."""
 
     from dataclasses import replace
 

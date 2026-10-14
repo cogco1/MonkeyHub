@@ -109,6 +109,9 @@ def f1_portico() -> StateRecord:
 
     parameters = (
         Parameter("stylobate_length", 12.0, "m", epistemic_status="declared"),
+        Parameter("stylobate_depth", 2.4, "m", epistemic_status="declared"),
+        Parameter("stylobate_front", -1.2, "m", expr="0 - stylobate_depth / 2"),
+        Parameter("stylobate_back", 1.2, "m", expr="stylobate_depth / 2"),
         Parameter("column_span", 10.2, "m", epistemic_status="declared"),
         Parameter("column_count", 6, "count", epistemic_status="declared"),
         Parameter("column_radius", 0.45, "m", epistemic_status="declared"),
@@ -131,7 +134,8 @@ def f1_portico() -> StateRecord:
         # geometry program refuses unsorted parameter names.)
         _level("level-pediment", "pediment-springing", 11.4),
         _element("stylobate", "portico-base", "prism", {"base": {"level": "level-ground"}},
-                 {"profile": [[0.0, -1.2], ["@stylobate_length", -1.2], ["@stylobate_length", 1.2], [0.0, 1.2]], "height": 0.6}),
+                 {"profile": [[0.0, "@stylobate_front"], ["@stylobate_length", "@stylobate_front"], ["@stylobate_length", "@stylobate_back"],
+                              [0.0, "@stylobate_back"]], "height": 0.6}),
         _element("columns", "portico-columns", "column-array",
                  {"at": {"point": [6.0, 0.0]}, "direction": "X", "base": {"datum": "stylobate-top"}},
                  {"count": "@column_count", "spacing": "@column_spacing", "radius": "@column_radius", "height": "@column_height", "segments": 24}),

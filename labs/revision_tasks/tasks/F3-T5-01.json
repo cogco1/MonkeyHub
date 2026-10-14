@@ -14,7 +14,7 @@
     "version": "2",
     "generator": "labs/revision_tasks/fixtures.py:f3_wall_stair",
     "files_sha256": {
-      "labs/revision_tasks/fixtures.py": "f56225ec47e73d735010aa44dedf1e2eaa973d97ca5fa4d59a00c1e000e70bc9"
+      "labs/revision_tasks/fixtures.py": "3261abaaa5f9b4b1067fbd3598ef2e4860c383435e5157d08d31592fc7693a03"
     }
   },
   "start_state": {
