@@ -76,6 +76,25 @@ class RelationCheckTests(unittest.TestCase):
         self.assertAlmostEqual(check.measured["engagement_depth"], 0.02)
         self.assertAlmostEqual(check.measured["subject_top"] - check.measured["object_bottom"], 0.02)
 
+    def test_a_beam_on_a_level_plus_offset_declares_its_seat_and_holds(self) -> None:
+        """#641: a lintel above a door head, built on its level plus an offset, is seated where it was built."""
+
+        ends = {"from": {"axis_point": {"axis": "OX", "along": 0.0}}, "to": {"axis_point": {"axis": "OX", "along": 1.2}}}
+        offset = {"offset_from": {"level": "level-ground", "offset": 2.4}}
+        for base, params, bottom, declared in (
+            (offset, {}, 2.4, {"rise": 2.4}),
+            (offset, {"engagement": {"depth": 0.05}}, 2.35, {"rise": 2.35}),        # the seat is what was built: the offset less the embed
+            ({"level": "level-ground"}, {}, 0.0, {}),                               # no offset: declared as before
+        ):
+            with self.subTest(base=base, params=params):
+                lintel = ElementRow("lintel", "envelope", "beam", {**ends, "base": base}, {"depth": 0.2, "height": 0.2, **params}, BASIS)
+                record, bounds, objects, datums = _record_and_bounds((lintel,))
+                (relation,) = record.relations
+                self.assertEqual(dict(relation.parameters), declared)
+                (check,) = check_relations(record, bounds=bounds, objects_by_element=objects, datum_values=datums).checks
+                self.assertEqual((check.relation_id, check.status), ("level-ground-support-lintel", "held"), check.detail)
+                self.assertAlmostEqual(check.measured["element_bottom"], bottom)
+
     def test_a_moved_column_violates_and_is_not_healed(self) -> None:
         record, bounds, objects, datums = _record_and_bounds(program_rows=_rows(column_height=7.0))    # record says 6.426, geometry says 7.0
         report = check_relations(record, bounds=bounds, objects_by_element=objects, datum_values=datums)

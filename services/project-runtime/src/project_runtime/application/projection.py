@@ -36,6 +36,7 @@ from archflow.project.inputs import (
 from archflow.project.layout import AUTHORED_RECORD_PATH
 from archflow.project.memo import ContentMemo
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef, record_ref_from_uri
+from archflow.project.repository import ProjectRepositoryError
 from archflow.state.developed_design import (
     DEVELOPED_PHASES,
     DevelopedDesignError,
@@ -229,6 +230,25 @@ class StateProjection:
         return self.reference.receipt
 
 
+# What reading the working position can fail with; Working Head resolution
+# passes over the same failures to the line's head (working_draft._UNREADABLE).
+_POSITION_UNREADABLE = (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError)
+
+
+def _working_position(binding: ProjectBinding) -> tuple[str, ProjectRecordRef | None] | None:
+    """The working position's current run and, when it is a Stage of its own line, that Stage."""
+
+    value, _ = binding.repository.read_working_draft()
+    current = value["current"]
+    if current is None:
+        return None
+    branch_id = value["runs"][current]["branchId"]
+    if branch_id is None or branch_id not in binding.repository.read_design_branches():
+        return current, None
+    # A run accepted into several lines answers as the Stage of its own line.
+    return current, next((ref for ref, stage in binding.design_history(branch_id) if stage.candidate_id == current), None)
+
+
 def project_state(
     binding: ProjectBinding,
     run_id: str | None = None,
@@ -237,6 +257,41 @@ def project_state(
     source_stage_ref: ProjectRecordRef | str | None = None,
 ) -> StateProjection:
     """Project one run's retained record, or authored WIP when no run exists.
+
+    A caller that names neither a run nor a Stage is given the working design
+    (#640): the run the working position stands on, which only Continue moves
+    and every workspace follows. Without a position, or with one that cannot be
+    read, the line's accepted head answers, then the reference run, as Working
+    Head resolution falls back; an unreadable position says so in ``honesty``.
+    Every reader and writer that omits the run therefore stands on one base.
+    """
+
+    if run_id is None and source_stage_ref is None:
+        try:
+            position = _working_position(binding)
+            if position is not None:
+                projection = _project_state(binding, position[0], require_view=require_view, source_stage_ref=position[1])
+                # The same test Working Head resolution makes (working_draft._head_at).
+                if (projection.run.run_id != position[0] or not projection.reference_state_exact
+                        or projection.state_digest is None):
+                    raise StudioError(409, "WORKING_SOURCE_UNAVAILABLE", f"Run {position[0]} has no exact finished state.")
+                return projection
+        except _POSITION_UNREADABLE as exc:
+            fallback = _project_state(binding, None, require_view=require_view)
+            reason = exc.detail if isinstance(exc, StudioError) else str(exc) or type(exc).__name__
+            return replace(fallback, honesty=(*fallback.honesty, f"The working position could not be read ({reason}); "
+                                                                  "this answers from the line's accepted head instead."))
+    return _project_state(binding, run_id, require_view=require_view, source_stage_ref=source_stage_ref)
+
+
+def _project_state(
+    binding: ProjectBinding,
+    run_id: str | None = None,
+    *,
+    require_view: bool = True,
+    source_stage_ref: ProjectRecordRef | str | None = None,
+) -> StateProjection:
+    """Project the run the caller named, or the line's head when it named none.
 
     Everything after the record is parsed is still the record's own fault when
     it fails: the kernel validates no per-schema entity fields, so a record can

@@ -572,7 +572,7 @@ def produce_beam(row: ElementRow, context: ProductionContext) -> ProducedElement
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + height, row.basis_refs)
     context.published[top.datum_id] = top
     support = str(row.references.get("support", base_datum))
-    relation = ProducedRelation(f"{support}-support-{row.element_id}", "support", support, row.element_id, base_datum, {"engagement_depth": engage} if engage else {})
+    relation = ProducedRelation(f"{support}-support-{row.element_id}", "support", support, row.element_id, base_datum, _seat_parameters(base_offset - engage))
     return ProducedElement((op,), (_bind(row.element_id, base_datum),), (top,), (relation,), HostLine(start, (ux, uz)))
 
 
@@ -593,13 +593,13 @@ def produce_pediment(row: ElementRow, context: ProductionContext) -> ProducedEle
     # a vertical triangular profile lofted through the thickness: as two triangles (front and back faces)
     front = [(start[0], 0.0, start[1]), (end[0], 0.0, end[1]), (apex[0], rise, apex[1])]
     back = [(x + nx * thickness, y, z + nz * thickness) for x, y, z in front]
-    op = GeometryOperation(op_id=row.element_id, kind=GeometryOperationKind.LOFT, output_object_ids=(f"obj-{row.element_id}",), input_object_ids=(), frame_id=context.frame_id, parameters=(
+    op = GeometryOperation(op_id=row.element_id, kind=GeometryOperationKind.LOFT, output_object_ids=(f"obj-{row.element_id}",), input_object_ids=(), frame_id=context.frame_id, parameters=((GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=round(base_offset, 9), unit=_M),) if base_offset else ()) + (
         GeometryParameter.create(name="cap_ends", kind=GeometryParameterKind.BOOLEAN, value=True),
         GeometryParameter.create(name="loft_type", kind=GeometryParameterKind.TEXT, value="straight"),
         GeometryParameter.create(name="profile_basis", kind=GeometryParameterKind.TEXT, value="polyline"),
         GeometryParameter.create(name="profile_size", kind=GeometryParameterKind.INTEGER, value=3),
         _points("profiles", front + back),
-    ) + ((GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=round(base_offset, 9), unit=_M),) if base_offset else ()),
+    ),
         semantic_binding_ids=(row.binding_id,))
     support = str(row.references.get("support", base_datum))
     return ProducedElement((op,), (_bind(row.element_id, base_datum),), (), (ProducedRelation(f"{support}-support-{row.element_id}", "support", support, row.element_id, base_datum),), None)

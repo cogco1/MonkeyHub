@@ -844,5 +844,52 @@ class PartFacetsProposalTestCase(ConstructionTestCase):
         self.assertEqual((response.status_code, response.json()["code"]), (422, "REQUEST_INVALID"))
 
 
+
+class LevelChangeTestCase(ConstructionTestCase):
+    """A project level is added or moved with ``POST /api/proposals/elevation`` (``set-datum``); what stands on it follows."""
+
+    def set_datum(self, level_id: str, value: float, **body: object) -> dict:
+        run = body.get("sourceRunId")
+        payload = {"stateDigest": self.digest(run if isinstance(run, str) else None),
+                   "action": "set-datum", "levelId": level_id, "value": value, **body}
+        response = self.client.post("/api/proposals/elevation", json=payload)
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def slab(self, run: str) -> list:
+        return next(row["bounds"] for row in self.model(run)["entities"] if row["id"] == "slab")
+
+    def test_a_shape_a_script_stood_on_a_level_follows_the_level(self) -> None:
+        added = self.set_datum("level-2", 3.5)
+        self.assertEqual(added["impact"]["direct"], ["entity:level-2"])
+        first = self.run_candidate(added["proposalId"])
+        made = self.construct('slab = extrude(rect(0, 0, 6, 4), 0.3, at=level("level-2"))\n', sourceRunId=first)
+        built = self.run_candidate(made["proposalId"])
+        self.assertEqual(self.slab(built), [[0.0, 3.5, 0.0], [6.0, 3.8, 4.0]])
+        raised = self.set_datum("level-2", 4.0, sourceRunId=built)
+        self.assertEqual(raised["impact"]["direct"], ["entity:level-2"])
+        self.assertIn("entity:slab-body", raised["impact"]["propagated"])
+        after = self.run_candidate(raised["proposalId"])
+        self.assertEqual(self.slab(after), [[0.0, 4.0, 0.0], [6.0, 4.3, 4.0]])
+        levels = {row["levelId"]: row for row in
+                  self.client.get("/api/state/frame", params={"run": after}).json()["levels"]}
+        self.assertEqual((levels["level-2"]["role"], levels["level-2"]["elevation"]), ("level-2", 4.0))
+
+    def test_an_existing_level_keeps_its_role_and_basis(self) -> None:
+        before = next(entity for entity in self.record().entities if entity.entity_id == "level-ground")
+        proposal = self.set_datum("level-ground", 0.25)
+        after = next(entity for entity in self.successor(proposal).entities if entity.entity_id == "level-ground")
+        self.assertEqual(after.fields, {**before.fields, "elevation": 0.25})
+        self.assertEqual(after.basis_refs, before.basis_refs)
+
+    def test_the_frame_the_language_and_the_route_say_where_levels_change(self) -> None:
+        paths = self.client.get("/openapi.json").json()["paths"]
+        for path in ("/api/state/frame", "/api/construction"):
+            with self.subTest(path=path):
+                self.assertIn("POST /api/proposals/elevation", paths[path]["get"]["description"])
+                self.assertIn("set-datum", paths[path]["get"]["description"])
+        self.assertIn("project level", paths["/api/proposals/elevation"]["post"]["description"])
+
+
 if __name__ == "__main__":
     unittest.main()

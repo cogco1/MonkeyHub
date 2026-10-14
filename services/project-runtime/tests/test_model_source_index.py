@@ -88,3 +88,67 @@ class ModelSourceIndexTests(unittest.TestCase):
         with patch("monkeycad.formats.three_dm_inspector._encoded_geometry_sha256", side_effect=AssertionError("full inspection")):
             response = self.client.get(self.path, params={**self.params, "objectId": self.ids[1]})
         self.assertEqual(response.status_code, 200, response.text)
+
+
+class AttachedModelIndexTests(unittest.TestCase):
+    """A model retained from outside the project (no design state) reads through the same index."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="attached-model-index-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.repository, _ = make_project(self.root)
+        self.settings = StudioSettings(project_dir=self.root / PROJECT_ID, reference_run=REFERENCE_RUN_ID, cad_export="off")
+        self.client = TestClient(create_app(self.settings))
+        self.addCleanup(self.client.close)
+        self.data = (Path(__file__).parent / "fixtures/native-source-index.3dm").read_bytes()
+        response = self.client.post("/api/model-assets", json={
+            "projectId": PROJECT_ID, "fileName": "returned.3dm", "contentBase64": base64.b64encode(self.data).decode(),
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        self.sha = hashlib.sha256(self.data).hexdigest()
+        self.run = f"studio-model-{self.sha}"
+        self.assertEqual(response.json()["runId"], self.run)
+        self.path = f"/api/model-assets/{self.sha}/index"
+
+    def test_an_attachment_reads_with_its_run_alone_and_bounds_on_request(self):
+        plain = self.client.get(self.path, params={"runId": self.run})
+        self.assertEqual(plain.status_code, 200, plain.text)
+        plain = plain.json()
+        self.assertEqual((plain["runId"], plain["assetSha256"], plain["modelSource"]), (self.run, self.sha, None))
+        self.assertEqual((plain["objectCount"], plain["fileName"]), (5, "returned.3dm"))
+        self.assertTrue(all("bounds" not in row for row in plain["objects"]))
+        bounded = self.client.get(self.path, params={"runId": self.run, "bounds": "true"})
+        self.assertEqual(bounded.status_code, 200, bounded.text)
+        positions = sorted((row["name"], row["bounds"]["min"], row["bounds"]["max"], row["bounds_space"])
+                           for row in bounded.json()["objects"])
+        self.assertEqual(positions, sorted([
+            ("Window", [0.0, 0.0, 3000.0], [0.0, 0.0, 3000.0], "world"),
+            ("Window", [1000.0, 0.0, 3000.0], [1000.0, 0.0, 3000.0], "world"),
+            ("", [2000.0, 0.0, 3000.0], [2000.0, 0.0, 3000.0], "world"),
+            ("Roof", [3000.0, 0.0, 3000.0], [3000.0, 0.0, 3000.0], "world"),
+            ("Ambiguous", [4000.0, 0.0, 3000.0], [4000.0, 0.0, 3000.0], "world"),
+        ]))
+        self.assertEqual(bounded.json()["units"]["name"], "Millimeters")
+
+    def test_state_digest_belongs_to_a_design_run_only(self):
+        with_state = self.client.get(self.path, params={"runId": self.run, "stateDigest": "0" * 64})
+        self.assertEqual(with_state.status_code, 422, with_state.text)
+        self.assertEqual(with_state.json()["code"], "MODEL_SOURCE_INVALID")
+        design = self.client.get(self.path, params={"runId": REFERENCE_RUN_ID})
+        self.assertEqual(design.status_code, 422, design.text)
+        self.assertEqual(design.json()["code"], "MODEL_SOURCE_INVALID")
+        other = "a" * 64
+        missing = self.client.get(f"/api/model-assets/{other}/index", params={"runId": f"studio-model-{other}"})
+        self.assertEqual(missing.status_code, 404, missing.text)
+        mismatched = self.client.get(f"/api/model-assets/{other}/index", params={"runId": self.run})
+        self.assertEqual(mismatched.status_code, 422, mismatched.text)
+
+    def test_the_construction_model_refuses_a_run_that_holds_only_an_attachment(self):
+        response = self.client.get("/api/construction/model", params={"run": self.run})
+        self.assertEqual(response.status_code, 409, response.text)
+        body = response.json()
+        self.assertEqual(body["code"], "REFERENCE_STATE_NOT_EXACT")
+        self.assertIn(f"/api/model-assets/{self.sha}/index?runId={self.run}", body["detail"])
+        # The project's own model is still read where no run is named.
+        self.assertEqual(self.client.get("/api/construction/model").status_code, 200)

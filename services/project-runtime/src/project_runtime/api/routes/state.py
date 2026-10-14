@@ -85,6 +85,8 @@ def read_frame(
 ) -> FrameDto:
     """The levels and axes this record positions everything against.
 
+    Read-only. A project level is added or moved with POST /api/proposals/elevation, action set-datum with levelId and value in metres; what stands on that level follows it.
+
     Read off ``projection.record`` and nothing else, so it asks with
     ``require_view=False`` for the same reason ``GET /api/state`` does: a
     record the kernel would not build a bound view for still declares its own
