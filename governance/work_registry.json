@@ -1,4 +1,35 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-643",
+      "status": "active",
+      "branch": "codex/643-attachment-objects",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-643-attachment-objects",
+      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": "Attached models read through the existing index with optional per-object bounds; construction/model refuses a named run without an exact state.",
+      "modules": [
+        "monkeycad.formats",
+        "project_runtime.documents",
+        "project_runtime.construction"
+      ],
+      "write_scope": [
+        "packages/monkeycad/src/monkeycad/formats/three_dm_inspector.py",
+        "packages/monkeycad/tests/test_three_dm_inspector.py",
+        "services/project-runtime/src/project_runtime/application/artifacts.py",
+        "services/project-runtime/src/project_runtime/api/routes/artifacts.py",
+        "services/project-runtime/src/project_runtime/api/dto/artifacts.py",
+        "services/project-runtime/src/project_runtime/api/routes/construction.py",
+        "services/project-runtime/tests/test_model_source_index.py",
+        "services/project-runtime/tests/test_construction_routes.py",
+        "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
+        "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
+        "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
+        "docs/protocols/project-runtime-api.md"
+      ],
+      "depends_on": []
+    }
+  ]
 }
