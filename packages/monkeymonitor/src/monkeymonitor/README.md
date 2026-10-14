@@ -203,7 +203,9 @@ Hub 管理的 Monitor 启动参数包含：
 
 需要额外诊断时，可在 Usage 页面逐行填写明确的 JSONL 绝对路径，或在 CLI 使用多个 `--agent-session codex=<path>`（或兼容的 `--codex-session`）。重复路径和重复快照不会重复计数；无法核实的旧式继承关系保持未知。
 
-Usage 页面的来源区先选 agent，再逐行填写明确路径（`/api/sources/{agent}`），CLI 用 `--agent-session <agent>=<path>`。Hub 自动绑定目前只覆盖 Codex 会话。
+Usage 页面的来源区先选 agent，再逐行填写明确路径（`/api/sources/{agent}`），CLI 用 `--agent-session <agent>=<path>`。
+
+Hub 自动绑定只覆盖 Codex 会话，因为 Hub 不记录 Codex 的 token。Hub 跑的 Claude 会话不另外绑定：Hub 从流里逐条记下每条 message 的最终用量，会话记录里的同一批调用它都已计过，再读一遍只会让每次刷新多读整份记录，计数一条不多。等 Hub 跑某个 agent 而不自己记它的 token 时，再给绑定加上 agent 字段。
 
 ## 费率
 
