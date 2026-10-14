@@ -19,6 +19,7 @@ project, changes an owner's contract or is imported by production code.
 | `reviser.py` | The hostless reviser: read a state file, apply a typed change, realize it, write the next state file. No CAD application runs. |
 | `attacks.py` | Eleven attacks on state-bearing files, each compared with the honest revision; `python -m labs.revision_tasks.attacks --out <dir>`. |
 | `x1.py`, `x1_tasks.json`, `history/events_v1.json` | Sufficiency: one reference decision from four starting contexts (history, state file, geometry only, state file without obligations); `python -m labs.revision_tasks.x1 --out <dir>`. |
+| `x5.py` | Two short transport chains (3DM to GLB and back, 3DM to IFC and back) through tools that know nothing of the state, plus a plain-resave control: what survives each hop and what the reviser does; `python -m labs.revision_tasks.x5 --out <dir>`. |
 | `production_project.py` | A disposable project holding a fixture as production does: a frozen one-stage workflow, a stage run through the runner (the repository's own tools), decisions recorded against it, and the context pack read for that run. |
 | `infer.py` | Undeclared relations made explicit: geometric (I1) and role-rule (I2) inference on the start, kept as open candidate obligations and checked on a candidate. |
 | `context_pack.py` | The `ContextPack@1` MonkeyHub would give an agent, read from a disposable project by an in-process Project Runtime. |
@@ -89,6 +90,8 @@ The full binding is `{record_digest, state_digest, sufficient_digest, parent_fil
 
 **GLB.** Converted from that 3DM by `InProcessMeshProvider`. The state and binding go into `asset.extras.archflow`; each node's identity goes into `node.extras.archflow`.
 
+**IFC.** The 3DM's named meshes as `IfcTriangulatedFaceSet` bodies on `IfcBuildingElementProxy` products, in metres, under identity placements (a harness conversion). The state and binding go into the property set `ArchFlow_State` on `IfcProject`; each product's identity goes into `ArchFlow_Object`. Geometry digests cover each face set's coordinates (rounded to 1e-9 m) and indices.
+
 **Checks on read.** In order:
 
 1. the state and binding are present;
@@ -109,6 +112,19 @@ A file that fails is refused with a code and never repaired.
 - the retention of the context pack;
 - rebuilding a state from an external file.
 
+## Transport chains (`x5.py`)
+
+Each arm's 3DM state file is passed through tools that do not know the state, and after every hop one benign revision is tried (a D arm keeps its sidecar, which stays with the authority).
+
+| chain | hop 1 | hop 2 |
+|---|---|---|
+| `3dm-glb` | production mesh conversion to GLB | trimesh reads it, rhino3dm writes the named meshes to 3DM |
+| `3dm-ifc` | named meshes to IFC4, no property sets | ifcopenshell's geometry reader, rhino3dm writes the meshes |
+| `control` | rhino3dm reads and saves the 3DM | — |
+
+Six items are recorded per hop: object identity, parameters, dependency edges, obligations, version binding and geometry digests. The attempt is `correct_accept`, `silent_wrong_accept`, `correct_refuse`, `unneeded_refuse` or `crash`.
+
+On F1 and F3, every lossy hop is refused and the control is accepted, on all four arms. Object names survive every hop. The C arms lose the whole state (`METADATA_MISSING`). D keeps its state outside but the file no longer matches its binding (`GEOMETRY_BINDING_STALE`): the reviser does not carry a D state over to a re-meshed file.
 ## Attacks (`attacks.py`)
 
 The attacker holds the model file and never a D arm's sidecar, which stands for the authority outside the file. Attackers who recompute digests use the same public library a reader does.
@@ -136,14 +152,14 @@ Two deterministic layers, both harness additions (the kernel infers nothing):
 - **I1, geometry.** On the start's cold-read STEP, every pair of elements no declared relation covers is measured with OCCT. A distance of at most 1 mm is a contact: a support when one element's top meets the other's bottom over a shared plan, otherwise an abutment. Up to 5 cm is a near contact. Tops (or non-ground bottoms) at one level are an alignment.
 - **I2, role rules.** Each element gets a role from its producer and id; a frozen rule table proposes the relations those roles should have (a roof rests on its entablature or wall, a stair does not run into a wall, ...).
 
-Every inference is kept only if it holds on the start geometry. It is written into the record as an open `DesignObligation` with `validator:inferred-<kind>`, marked unconfirmed. Before execution, an inferred relation with one element inside the change's closure and one outside is a question (`crossing`). After execution, a broken one (a contact that opens or penetrates, an alignment that breaks, an interference) turns the decision into `ask`; it is never silently repaired or treated as a refusal.
+Every inference is kept only if it holds on the start geometry. It is written into the record as an open `DesignObligation` with `validator:inferred-<kind>`, marked unconfirmed. Before execution (`predict_inferred`), each inferred relation is measured on the compiler's analytic per-object bounds (compile only, no OCCT; on the three fixture starts they equal the cold-read boxes exactly). Where boxes cannot settle it (no analytic bounds, or a non-interference whose boxes already overlapped at the start), the fallback is the closure boundary: one element inside the change's closure and one outside. Each result names its method. After execution, a broken one (a contact that opens or penetrates, an alignment that breaks, an interference) turns the decision into `ask`; it is never silently repaired or treated as a refusal.
 
 They appear as the X1 start `SF+I` and the X4 arm `B3+I`. Scoring counts `ask` as right wherever the gold says violated and reports it separately as an unneeded question where the gold holds.
 
 On the fixtures: the pediment's support on the entablature (F1) is found by both layers; the stair-to-wall non-interference (F3) by I2. F2's transition roof (J3) is not found: it sits 0.2 m from the portico at the start, outside the near band, and the role proposal does not hold on the start, so it is dropped.
 ## The oracle (`oracle.py`)
 
-- **What it reads.** Each object's name (identity) and mesh, from a `.3dm` (rhino3dm) or a `.glb` (struct and numpy; glTF's y-up is rotated to the model's z-up; node transforms are refused). No user strings, document strings, layers or state; `reads_metadata` is always false.
+- **What it reads.** Each object's name (identity) and mesh, from a `.3dm` (rhino3dm), a `.glb` (struct and numpy; glTF's y-up is rotated to the model's z-up; node transforms are refused) or an `.ifc` (read as STEP text: products with triangulated face sets under identity placements in metres; anything else is refused). No user strings, document strings, layers or state; `reads_metadata` is always false.
 - **Where expectations come from.** Every expected number is in the task's `protected_relations[].measure`, written by a person from the fixture's physical definition. Gold is never the record's dependency closure (a test checks one case).
 - **Checks.** `support_contact`, `vertical_clearance`, `non_interference` (grid sampling of the boxes' overlap with ray-parity containment), `aperture` (opening extents measured from the host mesh, plus rays through and beside it), `bbox`, `within`, `geometry_unchanged`, `column_row`, `stair` (rises, goings, top, landing contact, headroom under the slab).
 - **Unchanged geometry.** Compared by shape signature (bounds, volume, area) with 1e-5 m / 1e-6 relative tolerance. An unchanged B-rep can be re-meshed differently: another diagonal on a planar quad, or a few more triangles on a curved face reused from STEP.

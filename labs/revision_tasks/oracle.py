@@ -40,10 +40,12 @@ class OracleInputError(ValueError):
 
 
 def load_meshes(path: Path) -> dict[str, Mesh]:
-    """Every mesh object by its name, from a .3dm or a .glb; a duplicated or empty name is an input error."""
+    """Every mesh object by its name, from a .3dm, a .glb or an .ifc; a duplicated or empty name is an input error."""
 
     if Path(path).suffix.lower() == ".glb":
         return _load_glb(Path(path))
+    if Path(path).suffix.lower() == ".ifc":
+        return _load_ifc(Path(path))
     import rhino3dm
 
     model = rhino3dm.File3dm.Read(str(path))
@@ -121,6 +123,91 @@ def _load_glb(path: Path) -> dict[str, Mesh]:
             f = accessor(primitive["indices"]).astype(np.int64).reshape(-1, 3) if "indices" in primitive else np.arange(len(v)).reshape(-1, 3)
             triangles.append(f + sum(len(x) for x in vertices))
             vertices.append(v)
+        meshes[name] = (np.vstack(vertices), np.vstack(triangles))
+    return meshes
+
+
+def _step_args(text: str) -> list[str]:
+    """Top-level arguments of one STEP entity, split at commas outside parentheses and quoted strings."""
+
+    parts, depth, quoted, current, i = [], 0, False, [], 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "'":
+            if quoted and text[i + 1: i + 2] == "'":       # an escaped quote inside a string
+                current.append("''")
+                i += 2
+                continue
+            quoted = not quoted
+        elif not quoted:
+            depth += ch == "("
+            depth -= ch == ")"
+            if ch == "," and depth == 0:
+                parts.append("".join(current).strip())
+                current, i = [], i + 1
+                continue
+        current.append(ch)
+        i += 1
+    parts.append("".join(current).strip())
+    return parts
+
+
+def _load_ifc(path: Path) -> dict[str, Mesh]:
+    """Named triangle meshes from an IFC4 STEP file, read as text: products whose body is an ``IfcTriangulatedFaceSet``
+    under identity placements in metres. Anything else (another unit, a moved placement, another body) is refused."""
+
+    import re
+
+    entities: dict[str, tuple[str, str]] = {}
+    for line in path.read_text(encoding="ascii", errors="strict").splitlines():
+        match = re.match(r"^(#\d+)\s*=\s*([A-Z0-9]+)\((.*)\);\s*$", line)
+        if match:
+            entities[match.group(1)] = (match.group(2), match.group(3))
+    if not entities:
+        raise OracleInputError(f"{path.name}: not a STEP file")
+    units = [args for kind, args in entities.values() if kind == "IFCSIUNIT" and ".LENGTHUNIT." in args]
+    if units != ["*,.LENGTHUNIT.,$,.METRE."]:
+        raise OracleInputError(f"{path.name}: the length unit is not plain metres")
+    number = r"[-+]?\d+\.?\d*(?:[Ee][-+]?\d+)?"
+
+    def identity_placement(ref: str) -> bool:
+        while ref != "$":
+            kind, args = entities[ref]
+            if kind != "IFCLOCALPLACEMENT":
+                return False
+            parent, relative = _step_args(args)
+            kind, args = entities[relative]
+            location, *axes = _step_args(args)
+            if kind != "IFCAXIS2PLACEMENT3D" or any(a != "$" for a in axes):
+                return False
+            if any(float(v) != 0.0 for v in re.findall(number, entities[location][1])):
+                return False
+            ref = parent
+        return True
+
+    meshes: dict[str, Mesh] = {}
+    for kind, args in entities.values():
+        if kind != "IFCBUILDINGELEMENTPROXY":
+            continue
+        fields = _step_args(args)
+        name = fields[2][1:-1].replace("''", "'") if fields[2].startswith("'") else ""
+        if not name:
+            raise OracleInputError("an unnamed product has no identity")
+        if name in meshes:
+            raise OracleInputError(f"product name {name!r} occurs twice")
+        if not identity_placement(fields[5]):
+            raise OracleInputError(f"{name}: placement is not the identity")
+        vertices, triangles = [], []
+        for representation in re.findall(r"#\d+", _step_args(entities[fields[6]][1])[2]):
+            for item in re.findall(r"#\d+", _step_args(entities[representation][1])[3]):
+                item_kind, item_args = entities[item]
+                if item_kind != "IFCTRIANGULATEDFACESET":
+                    raise OracleInputError(f"{name}: body {item_kind} is not read")
+                coordinates, _, _, index, _ = _step_args(item_args)
+                v = np.array([float(x) for x in re.findall(number, entities[coordinates][1])], dtype=np.float64).reshape(-1, 3)
+                f = np.array([int(x) for x in re.findall(r"\d+", index)], dtype=np.int64).reshape(-1, 3) - 1
+                triangles.append(f + sum(len(x) for x in vertices))
+                vertices.append(v)
         meshes[name] = (np.vstack(vertices), np.vstack(triangles))
     return meshes
 

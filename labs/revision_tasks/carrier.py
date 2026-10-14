@@ -19,7 +19,10 @@ second step reads the file with rhino3dm, adds the ``archflow:binding`` string a
 writes it again (object geometry is unchanged by that rewrite; ``test_carrier``
 checks it). GLB: converted from that 3DM by ``InProcessMeshProvider`` (meshes only);
 the state and binding go into ``asset.extras.archflow``, identities into
-``node.extras.archflow``.
+``node.extras.archflow``. IFC: the same meshes as ``IfcTriangulatedFaceSet``s on
+``IfcBuildingElementProxy`` products (a harness conversion); the state and binding
+go into the property set ``ArchFlow_State`` on ``IfcProject``, identities into
+``ArchFlow_Object`` on each product.
 
 Reading checks, in order:
 1. the state and binding are present;
@@ -47,7 +50,7 @@ from labs.revision_tasks.context_pack import pack_digest
 
 SCHEMA = "ArchFlowStateFile@1"
 ARMS = ("C-full", "C-task", "C-unbound", "D")
-FORMATS = ("3dm", "glb")
+FORMATS = ("3dm", "glb", "ifc")
 # Evidence (Reading@1) is task state: the context pack reads it from these rows, and a stale-evidence task needs it.
 TASK_VIEW_SCHEMAS = frozenset({"Element@1", "Level@1", "GridAxis@1", "Component@1", "Reading@1"})
 
@@ -238,6 +241,131 @@ def read_glb(path: Path, *, sidecar: Path | None = None) -> StateFile:
             raise CarrierRefused("METADATA_MISSING", "no archflow state in asset.extras")
         state, bound = archflow["state"], archflow["binding"]
     return _checked(state, bound, sha256_bytes(data), geometry, reference, "glb")
+
+
+# ---------------------------------------------------------------- IFC
+
+IFC_PSET = "ArchFlow_State"
+IFC_OBJECT_PSET = "ArchFlow_Object"
+
+
+def _guid(*parts: str) -> str:
+    import uuid
+
+    import ifcopenshell.guid
+
+    return ifcopenshell.guid.compress(uuid.uuid5(uuid.NAMESPACE_URL, "archflow-lab:" + "/".join(parts)).hex)
+
+
+def ifc_from_three_dm(three_dm: Path) -> Any:
+    """An IFC4 model of the 3DM's named meshes: one ``IfcBuildingElementProxy`` per object, its mesh as an
+    ``IfcTriangulatedFaceSet`` in metres, nothing else. Identifiers are derived from the object names, so the same
+    model gives the same file."""
+
+    import ifcopenshell
+    import rhino3dm
+
+    model = rhino3dm.File3dm.Read(str(three_dm))
+    f = ifcopenshell.file(schema="IFC4")
+    origin = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint((0.0, 0.0, 0.0)), None, None)
+    context = f.createIfcGeometricRepresentationContext(None, "Model", 3, 1.0e-5, origin, None)
+    units = f.createIfcUnitAssignment([f.createIfcSIUnit(UnitType="LENGTHUNIT", Name="METRE")])
+    project = f.createIfcProject(_guid("project"), None, "lab model", None, None, None, None, [context], units)
+    site = f.createIfcSite(_guid("site"), None, "site", None, None, f.createIfcLocalPlacement(None, origin), None, None, "ELEMENT",
+                           None, None, None, None, None)
+    f.createIfcRelAggregates(_guid("aggregates"), None, None, None, project, [site])
+    products = []
+    for obj in sorted(model.Objects, key=lambda o: o.Attributes.Name or ""):
+        mesh, name = obj.Geometry, obj.Attributes.Name
+        if not isinstance(mesh, rhino3dm.Mesh) or not name:
+            continue
+        points = [(round(float(mesh.Vertices[i].X), 9), round(float(mesh.Vertices[i].Y), 9), round(float(mesh.Vertices[i].Z), 9))
+                  for i in range(len(mesh.Vertices))]
+        triangles = []
+        for i in range(mesh.Faces.Count):
+            a, b, c, d = mesh.Faces[i]
+            triangles.append((a + 1, b + 1, c + 1))
+            if d != c:
+                triangles.append((a + 1, c + 1, d + 1))
+        body = f.createIfcTriangulatedFaceSet(f.createIfcCartesianPointList3D(points), None, None, triangles, None)
+        shape = f.createIfcProductDefinitionShape(None, None, [f.createIfcShapeRepresentation(context, "Body", "Tessellation", [body])])
+        products.append(f.createIfcBuildingElementProxy(_guid("object", name), None, name, None, None,
+                                                        f.createIfcLocalPlacement(site.ObjectPlacement, origin), shape, name, None))
+    f.createIfcRelContainedInSpatialStructure(_guid("contains"), None, None, None, products, site)
+    return f
+
+
+def ifc_geometry(model: Any) -> dict[str, str]:
+    """Product name -> SHA-256 of its face set's coordinates (rounded to 1e-9 m) and indices."""
+
+    digests = {}
+    for product in model.by_type("IfcProduct"):
+        if not product.Name or product.Representation is None:
+            continue
+        digest = hashlib.sha256()
+        for representation in product.Representation.Representations:
+            for item in representation.Items:
+                if item.is_a("IfcTriangulatedFaceSet"):
+                    digest.update(json.dumps([[round(float(v), 9) for v in p] for p in item.Coordinates.CoordList]).encode())
+                    digest.update(json.dumps([list(t) for t in item.CoordIndex]).encode())
+        digests[product.Name] = digest.hexdigest()
+    return digests
+
+
+def _ifc_pset(model: Any, name: str, owner: Any, values: dict[str, str]) -> None:
+    properties = [model.createIfcPropertySingleValue(key, None, model.createIfcText(value), None) for key, value in sorted(values.items())]
+    pset = model.createIfcPropertySet(_guid("pset", name, owner.GlobalId), None, name, None, properties)
+    model.createIfcRelDefinesByProperties(_guid("defines", name, owner.GlobalId), None, None, None, [owner], pset)
+
+
+def _ifc_psets(model: Any, owner: Any) -> dict[str, dict[str, str]]:
+    found: dict[str, dict[str, str]] = {}
+    for rel in getattr(owner, "IsDefinedBy", None) or ():
+        if rel.is_a("IfcRelDefinesByProperties") and rel.RelatingPropertyDefinition.is_a("IfcPropertySet"):
+            pset = rel.RelatingPropertyDefinition
+            found[pset.Name] = {p.Name: p.NominalValue.wrappedValue for p in pset.HasProperties
+                                if p.is_a("IfcPropertySingleValue") and p.NominalValue is not None}
+    return found
+
+
+def write_ifc(model: Any, final: Path, *, state: dict[str, Any] | None, binding_value: dict[str, Any] | None,
+              design_state_digest: str) -> None:
+    """Embed state and binding (C arms) or only the design-state reference (D) on ``IfcProject``, and identities on every product."""
+
+    values = {"design_state_digest": design_state_digest}
+    if state is not None:
+        values.update({"state": canonical_json(state), "binding": canonical_json(binding_value)})
+    _ifc_pset(model, IFC_PSET, model.by_type("IfcProject")[0], values)
+    for product in model.by_type("IfcBuildingElementProxy"):
+        _ifc_pset(model, IFC_OBJECT_PSET, product, {"object_ref": f"cad-object:{product.Name}"})
+    model.write(str(final))
+
+
+def read_ifc(path: Path, *, sidecar: Path | None = None) -> StateFile:
+    import ifcopenshell
+
+    data = path.read_bytes()
+    try:
+        model = ifcopenshell.open(str(path))
+    except Exception as exc:  # noqa: BLE001 - an unreadable file is one refusal
+        raise CarrierRefused("FILE_CORRUPT", f"{type(exc).__name__}: {exc}") from exc
+    projects = model.by_type("IfcProject")
+    carried = _ifc_psets(model, projects[0]).get(IFC_PSET, {}) if projects else {}
+    reference = carried.get("design_state_digest")
+    if sidecar is not None:
+        try:
+            outside = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise CarrierRefused("METADATA_MISSING", f"sidecar unreadable: {exc}") from exc
+        state, bound = outside.get("state"), outside.get("binding")
+    else:
+        if "state" not in carried or "binding" not in carried:
+            raise CarrierRefused("METADATA_MISSING", f"no {IFC_PSET} state on IfcProject")
+        try:
+            state, bound = json.loads(carried["state"]), json.loads(carried["binding"])
+        except ValueError as exc:
+            raise CarrierRefused("METADATA_CORRUPT", str(exc)) from exc
+    return _checked(state, bound, sha256_bytes(data), ifc_geometry(model), reference, "ifc")
 
 
 # ---------------------------------------------------------------- the checks every arm and format share

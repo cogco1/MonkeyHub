@@ -97,6 +97,12 @@ def write_state_file(record: StateRecord, *, arm: str, fmt: str, out_dir: Path, 
         bind = carrier.binding(carried, bound.state_digest, arm, pack, parent_sha256, geometry)
         final = out_dir / f"{stem}.3dm"
         carrier.seal_three_dm(realization.preview_path, final, None if arm == "D" else bind)
+    elif fmt == "ifc":
+        model = carrier.ifc_from_three_dm(realization.preview_path)
+        bind = carrier.binding(carried, bound.state_digest, arm, pack, parent_sha256, carrier.ifc_geometry(model))
+        final = out_dir / f"{stem}.ifc"
+        carrier.write_ifc(model, final, state=None if arm == "D" else state, binding_value=None if arm == "D" else bind,
+                          design_state_digest=bound.state_digest)
     else:
         document, tail = carrier.glb_from_three_dm(realization.preview_path)
         bind = carrier.binding(carried, bound.state_digest, arm, pack, parent_sha256, carrier.glb_geometry(document, tail))
@@ -111,7 +117,8 @@ def write_state_file(record: StateRecord, *, arm: str, fmt: str, out_dir: Path, 
 
 
 def read_state_file(path: Path, *, fmt: str, sidecar: Path | None = None) -> carrier.StateFile:
-    return carrier.read_three_dm(path, sidecar=sidecar) if fmt == "3dm" else carrier.read_glb(path, sidecar=sidecar)
+    reader = {"3dm": carrier.read_three_dm, "glb": carrier.read_glb, "ifc": carrier.read_ifc}[fmt]
+    return reader(path, sidecar=sidecar)
 
 
 def revise(path: Path, *, fmt: str, arm: str, deltas: list[dict[str, Any]], out_dir: Path, stem: str, context_root: Path,
