@@ -210,8 +210,11 @@ def write_config(config: Path) -> None:
     (config / "settings.json").write_text(json.dumps({"disableBundledSkills": True}), encoding="utf-8")
 
 
-def price(result: dict[str, Any]) -> tuple[float, dict[str, Any]]:
-    """API-equivalent cost of one call: MonkeyMonitor's quote at the manifest rates, or the CLI's own if larger."""
+def price(result: dict[str, Any], cli_offset: float = 0.0) -> tuple[float, dict[str, Any]]:
+    """API-equivalent cost of one call: MonkeyMonitor's quote at the manifest rates, or the CLI's own if larger.
+
+    A resumed CLI session reports ``total_cost_usd`` for the whole session so far (its ``usage`` is the turn's own):
+    ``cli_offset`` is that session's total before this turn, so the turn is booked by what it added."""
 
     from monkeymonitor.pricing import RateCard, quote
     from monkeymonitor.usage import TokenUsage
@@ -223,8 +226,10 @@ def price(result: dict[str, Any]) -> tuple[float, dict[str, Any]]:
                         cache_write_1h_input_tokens=hour, output_tokens=int(usage.get("output_tokens") or 0))
     quoted = quote(tokens, RateCard(provider="claude", model=MODEL, label="manifest v3.2 section 4 API equivalent", **RATES))
     monitor = float(quoted["amount_usd"] or quoted["known_subtotal_usd"])
-    cli = float(result.get("total_cost_usd") or 0.0)
-    return max(monitor, cli), {"tokens": tokens.to_dict(), "monkeymonitor_usd": monitor, "cli_total_cost_usd": cli}
+    cli_total = float(result.get("total_cost_usd") or 0.0)
+    cli = max(0.0, cli_total - cli_offset)
+    return max(monitor, cli), {"tokens": tokens.to_dict(), "monkeymonitor_usd": monitor, "cli_total_cost_usd": cli_total,
+                               "cli_turn_cost_usd": cli, "cli_offset_usd": cli_offset}
 
 
 class Ledger:

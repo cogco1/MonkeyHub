@@ -346,7 +346,7 @@ def run_turn(request_text: str, *, workdir: Path, cli: str, ledger: x2.Ledger, p
              parent_env: Mapping[str, str] | None = None, trial_id: str | None = None, timeout: float = TIMEOUT_S,
              close_open_turn: bool = True, mcp: dict[str, Any] | None = None, allowed: tuple[str, ...] = ALLOWED,
              prompt: str | None = None, cwd: Path | None = None, settings_file: Path | None = None,
-             experiment: str = "X3") -> dict[str, Any]:
+             experiment: str = "X3", cli_offset: float = 0.0) -> dict[str, Any]:
     """One ``claude -p`` turn; its stream and cost are recorded.
 
     ``workdir`` is a new directory owned by this turn: the CLI runs in its empty ``cwd/`` (or in ``cwd``, which every
@@ -396,7 +396,7 @@ def run_turn(request_text: str, *, workdir: Path, cli: str, ledger: x2.Ledger, p
     (workdir / "stream.jsonl").write_text(stdout, encoding="utf-8", newline="\n")
     events = _events(stdout)
     result = next((e for e in reversed(events) if e.get("type") == "result"), {})
-    cost, priced = x2.price(result)
+    cost, priced = x2.price(result, cli_offset if resume else 0.0)
     if not result:
         # No result event: what was spent is unknown, so the turn's whole budget is booked.
         cost = max(cost, budget_usd)

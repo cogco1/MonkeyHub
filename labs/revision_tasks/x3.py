@@ -346,6 +346,7 @@ class Session:
         self.before: dict[str, Path] = {}           # request id -> the model it started from
         self.history: list[str] = []                # H's transcript
         self.cli_session: str | None = None         # M+
+        self.cli_cost_total = 0.0                   # M+: the resumed session's CLI total so far
         self.hub_session = x3_hub.new_session_id()  # M+ keeps one conversation
         self.cwd = self.dir / "cli-cwd"             # M+ resumes from one working directory
         self.cli_sessions: list[str] = []
@@ -522,7 +523,8 @@ class Session:
             extra: dict[str, Any] = {}
             if self.mode == "M+":
                 self.cwd.mkdir(exist_ok=True)
-                extra = dict(cwd=self.cwd, default_config=True, persist=self.cli_session is None, resume=self.cli_session)
+                extra = dict(cwd=self.cwd, default_config=True, persist=self.cli_session is None, resume=self.cli_session,
+                             cli_offset=self.cli_cost_total)
             if self.mode == "H":
                 prompt = h_prompt(self.history, text)
             elif self.mode in ("M", "M+"):
@@ -555,6 +557,7 @@ class Session:
             self.model = head_after["path"]
             if self.mode == "M+":
                 self.cli_session = turn["cli_session_id"] or self.cli_session
+                self.cli_cost_total = float((turn.get("usage") or {}).get("cli_total_cost_usd") or self.cli_cost_total)
         if self.mode == "H":
             stream = (work / "stream.jsonl").read_text(encoding="utf-8")
             self.history += [f"[Architect] {text}", *transcript_entries(stream)]

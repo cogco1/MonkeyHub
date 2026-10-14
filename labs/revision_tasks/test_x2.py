@@ -53,3 +53,11 @@ def test_a_run_counts_only_its_own_rows(tmp_path):
     ledger.add({"part": "pilot", "out": str(tmp_path / "run-a" / "turn-1"), "cost_usd": 1.0})
     ledger.add({"part": "pilot", "out": str(tmp_path / "run-ab" / "turn-1"), "cost_usd": 2.0})   # a sibling, not a child
     assert ledger.spent_by(tmp_path / "run-a") == 1.0 and ledger.spent("pilot") == 3.0
+
+
+def test_a_resumed_turn_is_priced_by_what_it_added():
+    result = {"total_cost_usd": 7.59, "usage": {"input_tokens": 8, "output_tokens": 10}}
+    alone, _ = x2.price(result)
+    resumed, priced = x2.price(result, cli_offset=6.93)
+    assert alone == 7.59                                            # without the offset the session's running total wins
+    assert abs(resumed - 0.66) < 1e-9 and priced["cli_total_cost_usd"] == 7.59 and priced["cli_offset_usd"] == 6.93
