@@ -15,7 +15,7 @@ project, changes an owner's contract or is imported by production code.
 | `pipeline.py` | Realization through the owners' public functions, the system's own checks, and the ArchFlow arm. |
 | `oracle.py` | The independent judge, run as its own `python -I` process. Imports only `rhino3dm` and `numpy`. |
 | `run.py` | Runs tasks into an empty directory, one bundle per attempt, an index and a gate summary; `--compare` replays against an earlier run. |
-| `carrier.py` | State-bearing files: the design state written into a 3DM or GLB (or a sidecar), and read back with its binding checked. |
+| `carrier.py`, `state_page.html` | State-bearing files: the design state written into a 3DM, GLB, IFC, USD or single-page HTML file (or a sidecar), and read back with its binding checked; `state_page.html` is the HTML file's page and viewer. |
 | `reviser.py` | The hostless reviser: read a state file, apply a typed change, realize it, write the next state file. No CAD application runs. |
 | `attacks.py` | Eleven attacks on state-bearing files, each compared with the honest revision; `python -m labs.revision_tasks.attacks --out <dir>`. |
 | `x1.py`, `x1_tasks.json`, `history/events_v1.json` | Sufficiency: one reference decision from four starting contexts (history, state file, geometry only, state file without obligations); `python -m labs.revision_tasks.x1 --out <dir>`. |
@@ -105,6 +105,8 @@ The full binding is `{record_digest, state_digest, sufficient_digest, parent_fil
 **IFC.** The 3DM's named meshes as `IfcTriangulatedFaceSet` bodies on `IfcBuildingElementProxy` products, in metres, under identity placements (a harness conversion). The state and binding go into the property set `ArchFlow_State` on `IfcProject`; each product's identity goes into `ArchFlow_Object`. Geometry digests cover each face set's coordinates (rounded to 1e-9 m) and indices.
 
 **USD.** The 3DM's named meshes as `UsdGeom.Mesh` prims under `/World` (z up, metres), written as `.usda` text. A prim name cannot hold a hyphen, so each mesh carries its object name in the string attribute `objectName`. The state and binding go into the root layer's `customLayerData`; each prim's reference into its `customData`. Geometry digests cover the points (32-bit in USD, rounded to 1e-5 m) and faces.
+
+**HTML.** One self-contained page (`state_page.html`) that a person can open to see the model: a small three.js viewer loaded from a CDN, beside the parameters and obligations the page carries. The model is the GLB above with each node's identity and the design-state reference only, base64 in the data block `<script type="model/gltf-binary" id="model-glb">`. The state and binding are the JSON block `<script type="application/json" id="decision-projection">`, `{"binding":β,"state":S}` with S and β the same canonical JSON text as the 3DM's `archflow:state` and `archflow:binding` strings and every `<` written `<`, so no end tag or comment can start inside it. The binding's per-object digests are the embedded GLB's, as in the GLB format. The reader reads only the page: S and β from the JSON block, geometry and the design-state reference from the embedded GLB. A page with two blocks of the same id is refused. The oracle reads no HTML; its tests judge the embedded GLB.
 
 **Checks on read.** In order:
 

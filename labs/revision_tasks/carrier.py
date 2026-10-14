@@ -24,7 +24,12 @@ the state and binding go into ``asset.extras.archflow``, identities into
 go into the property set ``ArchFlow_State`` on ``IfcProject``, identities into
 ``ArchFlow_Object`` on each product. USD (``.usda`` text): the same meshes as
 ``UsdGeom.Mesh`` prims (z up, metres), each named by its ``objectName`` string;
-the state and binding go into the root layer's ``customLayerData``.
+the state and binding go into the root layer's ``customLayerData``. HTML: one
+self-contained page (``state_page.html``); the GLB above, with identities and
+only the design-state reference, base64 in the data block ``model-glb``; the
+state and binding in the JSON block ``decision-projection``, the same text as
+the 3DM's ``archflow:state`` and ``archflow:binding`` with every ``<`` written
+``\\u003c``. A three.js viewer from a CDN shows the model.
 
 Reading checks, in order:
 1. the state and binding are present;
@@ -38,10 +43,12 @@ A file that fails any check is refused with a code; it is never repaired.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import struct
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -52,7 +59,7 @@ from labs.revision_tasks.context_pack import pack_digest
 
 SCHEMA = "ArchFlowStateFile@1"
 ARMS = ("C-full", "C-task", "C-unbound", "D")
-FORMATS = ("3dm", "glb", "ifc", "usd")
+FORMATS = ("3dm", "glb", "ifc", "usd", "html")
 # Evidence (Reading@1) is task state: the context pack reads it from these rows, and a stale-evidence task needs it.
 TASK_VIEW_SCHEMAS = frozenset({"Element@1", "Level@1", "GridAxis@1", "Component@1", "Reading@1"})
 
@@ -211,9 +218,9 @@ def glb_from_three_dm(three_dm: Path) -> tuple[dict[str, Any], list[tuple[int, b
     return glb_split(bytes(converted.data))
 
 
-def write_glb(document: dict[str, Any], tail: list[tuple[int, bytes]], final: Path, *, state: dict[str, Any] | None,
-              binding_value: dict[str, Any] | None, design_state_digest: str) -> None:
-    """Embed state and binding (C arms) or only the design-state reference (D), and identities on every node."""
+def glb_bytes(document: dict[str, Any], tail: list[tuple[int, bytes]], *, state: dict[str, Any] | None,
+              binding_value: dict[str, Any] | None, design_state_digest: str) -> bytes:
+    """The GLB with state and binding (C arms) or only the design-state reference (D), and identities on every node."""
 
     document = json.loads(json.dumps(document))
     archflow: dict[str, Any] = {"design_state_digest": design_state_digest}
@@ -223,7 +230,14 @@ def write_glb(document: dict[str, Any], tail: list[tuple[int, bytes]], final: Pa
     for node in document.get("nodes", []):
         if node.get("name"):
             node.setdefault("extras", {})["archflow"] = {"object_ref": f"cad-object:{node['name']}"}
-    final.write_bytes(glb_join(document, tail))
+    return glb_join(document, tail)
+
+
+def write_glb(document: dict[str, Any], tail: list[tuple[int, bytes]], final: Path, *, state: dict[str, Any] | None,
+              binding_value: dict[str, Any] | None, design_state_digest: str) -> None:
+    """Embed state and binding (C arms) or only the design-state reference (D), and identities on every node."""
+
+    final.write_bytes(glb_bytes(document, tail, state=state, binding_value=binding_value, design_state_digest=design_state_digest))
 
 
 def read_glb(path: Path, *, sidecar: Path | None = None) -> StateFile:
@@ -470,6 +484,115 @@ def read_usd(path: Path, *, sidecar: Path | None = None) -> StateFile:
         except ValueError as exc:
             raise CarrierRefused("METADATA_CORRUPT", str(exc)) from exc
     return _checked(state, bound, sha256_bytes(data), usd_geometry(stage), reference, "usd")
+
+
+# ---------------------------------------------------------------- HTML
+
+HTML_PAGE = Path(__file__).resolve().with_name("state_page.html")
+HTML_SLOT = "<!--archflow:data-blocks-->"
+HTML_PROJECTION_ID, HTML_MODEL_ID = "decision-projection", "model-glb"
+
+
+def html_projection(state: dict[str, Any], binding_value: dict[str, Any]) -> str:
+    """S and β as the 3DM's ``archflow:state`` and ``archflow:binding`` strings hold them (``canonical_json``), side by
+    side in one object, with every ``<`` written ``\\u003c``: no end tag or comment can start inside the script element,
+    and a JSON reader gets the same values back. Fixture states hold no ``<``, so there the text is S and β verbatim."""
+
+    return ('{"binding":' + canonical_json(binding_value) + ',"state":' + canonical_json(state) + "}").replace("<", "\\u003c")
+
+
+def write_html(document: dict[str, Any], tail: list[tuple[int, bytes]], final: Path, *, state: dict[str, Any] | None,
+               binding_value: dict[str, Any] | None, design_state_digest: str) -> None:
+    """One self-contained page: the GLB with identities and only the design-state reference (as ``glb_bytes`` writes
+    it for D), base64 in the data block ``model-glb``, and S and β (C arms) in the JSON block ``decision-projection``."""
+
+    model = base64.b64encode(glb_bytes(document, tail, state=None, binding_value=None, design_state_digest=design_state_digest))
+    blocks = []
+    if state is not None:
+        blocks.append(f'<script type="application/json" id="{HTML_PROJECTION_ID}">{html_projection(state, binding_value)}</script>')
+    blocks.append(f'<script type="model/gltf-binary" data-encoding="base64" id="{HTML_MODEL_ID}">{model.decode("ascii")}</script>')
+    page = HTML_PAGE.read_text(encoding="utf-8")
+    if page.count(HTML_SLOT) != 1:
+        raise CarrierRefused("WRITE_FAILED", f"{HTML_PAGE.name}: the page needs exactly one {HTML_SLOT}")
+    final.write_text(page.replace(HTML_SLOT, "\n".join(blocks)), encoding="utf-8", newline="\n")
+
+
+class _ScriptBlocks(HTMLParser):
+    """The text of every ``<script>`` element that has an ``id``, one entry per element."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.blocks: list[tuple[str, str]] = []
+        self._open: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "script":
+            self._open = dict(attrs).get("id")
+            if self._open is not None:
+                self.blocks.append((self._open, ""))
+
+    def handle_data(self, data: str) -> None:
+        if self._open is not None:
+            self.blocks[-1] = (self._open, self.blocks[-1][1] + data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "script":
+            self._open = None
+
+
+def html_blocks(data: bytes) -> dict[str, str]:
+    """Script element id -> its text. A page naming two elements alike is ambiguous and refused, never resolved."""
+
+    parser = _ScriptBlocks()
+    try:
+        parser.feed(data.decode("utf-8"))
+        parser.close()
+    except UnicodeDecodeError as exc:
+        raise CarrierRefused("FILE_CORRUPT", f"not UTF-8 text: {exc}") from exc
+    names = [name for name, _ in parser.blocks]
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        raise CarrierRefused("FILE_CORRUPT", f"more than one script element named {repeated}")
+    return dict(parser.blocks)
+
+
+def html_glb(blocks: dict[str, str]) -> bytes:
+    """The GLB the page embeds."""
+
+    if HTML_MODEL_ID not in blocks:
+        raise CarrierRefused("FILE_CORRUPT", f"no {HTML_MODEL_ID} block in the page")
+    try:
+        return base64.b64decode(blocks[HTML_MODEL_ID].strip(), validate=True)
+    except ValueError as exc:
+        raise CarrierRefused("FILE_CORRUPT", f"{HTML_MODEL_ID} is not base64: {exc}") from exc
+
+
+def read_html(path: Path, *, sidecar: Path | None = None) -> StateFile:
+    """The page alone: S and β from its JSON block, geometry and the design-state reference from its embedded GLB."""
+
+    data = path.read_bytes()
+    blocks = html_blocks(data)
+    document, tail = glb_split(html_glb(blocks))
+    geometry = glb_geometry(document, tail)
+    archflow = document.get("asset", {}).get("extras", {}).get("archflow")
+    reference = archflow.get("design_state_digest") if isinstance(archflow, dict) else None
+    if sidecar is not None:
+        try:
+            carried = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise CarrierRefused("METADATA_MISSING", f"sidecar unreadable: {exc}") from exc
+        state, bound = carried.get("state"), carried.get("binding")
+    else:
+        if HTML_PROJECTION_ID not in blocks:
+            raise CarrierRefused("METADATA_MISSING", f"no {HTML_PROJECTION_ID} block in the page")
+        try:
+            carried = json.loads(blocks[HTML_PROJECTION_ID])
+        except ValueError as exc:
+            raise CarrierRefused("METADATA_CORRUPT", str(exc)) from exc
+        if not isinstance(carried, dict):
+            raise CarrierRefused("METADATA_CORRUPT", f"{HTML_PROJECTION_ID} is not an object")
+        state, bound = carried.get("state"), carried.get("binding")
+    return _checked(state, bound, sha256_bytes(data), geometry, reference, "html")
 
 
 # ---------------------------------------------------------------- the checks every arm and format share

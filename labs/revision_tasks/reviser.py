@@ -112,6 +112,12 @@ def write_state_file(record: StateRecord, *, arm: str, fmt: str, out_dir: Path, 
         final = out_dir / f"{stem}.ifc"
         carrier.write_ifc(model, final, state=None if arm == "D" else state, binding_value=None if arm == "D" else bind,
                           design_state_digest=bound.state_digest)
+    elif fmt == "html":
+        document, tail = carrier.glb_from_three_dm(realization.preview_path)
+        bind = carrier.binding(carried, bound.state_digest, arm, pack, parent_sha256, carrier.glb_geometry(document, tail))
+        final = out_dir / f"{stem}.html"
+        carrier.write_html(document, tail, final, state=None if arm == "D" else state, binding_value=None if arm == "D" else bind,
+                           design_state_digest=bound.state_digest)
     else:
         document, tail = carrier.glb_from_three_dm(realization.preview_path)
         bind = carrier.binding(carried, bound.state_digest, arm, pack, parent_sha256, carrier.glb_geometry(document, tail))
@@ -140,7 +146,8 @@ def carry_decisions(pack: dict[str, Any], prior: dict[str, Any] | None) -> dict[
 
 
 def read_state_file(path: Path, *, fmt: str, sidecar: Path | None = None) -> carrier.StateFile:
-    reader = {"3dm": carrier.read_three_dm, "glb": carrier.read_glb, "ifc": carrier.read_ifc, "usd": carrier.read_usd}[fmt]
+    reader = {"3dm": carrier.read_three_dm, "glb": carrier.read_glb, "ifc": carrier.read_ifc, "usd": carrier.read_usd,
+              "html": carrier.read_html}[fmt]
     return reader(path, sidecar=sidecar)
 
 

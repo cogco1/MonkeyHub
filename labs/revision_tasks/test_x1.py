@@ -56,6 +56,20 @@ def test_a_geometry_only_file_knows_nothing_it_has_to_check():
 
 
 @pytest.mark.skipif(not READY, reason="needs the OCCT kernel (cadquery-ocp)")
+def test_a_page_decides_as_the_3dm_does(tmp_path):
+    record = x1.FAMILY_FIXTURE["F3"]()
+    contexts = {}
+    for fmt in ("3dm", "html"):
+        written = x1.reviser.write_state_file(record, arm="C-full", fmt=fmt, out_dir=tmp_path / fmt, stem="state", parent_sha256=None,
+                                              context_root=tmp_path / f"ctx-{fmt}", utterance="Current design state.")
+        contexts[fmt] = x1.file_context(f"SF[C-full,{fmt}]", written.path, fmt, "F3")
+    assert contexts["html"].state_bytes == contexts["3dm"].state_bytes
+    assert (contexts["html"].evidence, contexts["html"].decisions) == (contexts["3dm"].evidence, contexts["3dm"].decisions)
+    for task in (t for t in TASKS.values() if t["family"] == "F3"):
+        assert x1.decide(contexts["html"], task, None, execute=False) == x1.decide(contexts["3dm"], task, None, execute=False), task["task_id"]
+
+
+@pytest.mark.skipif(not READY, reason="needs the OCCT kernel (cadquery-ocp)")
 def test_a_local_change_rebuilds_only_what_it_reaches(tmp_path):
     h = x1.history_context("F3")
     answer = x1.decide(h, TASKS["F3-T2"], tmp_path)

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design state</title>
+<!-- One self-contained state file (carrier.write_html). The model is the base64 GLB in the data block "model-glb";
+     the design state and its binding are the JSON block "decision-projection" (C arms only). The viewer below only
+     shows them; carrier.read_html reads the two blocks and nothing else. -->
+<style>
+:root {
+  --bg: #f2f3f0; --stage: #e5e8e3; --panel: #fbfbf9; --ink: #1f2421; --muted: #5f6863; --rule: #d5dad4;
+  --accent: #2f6b8f; --edge: #2a302c; --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #141716; --stage: #1b1f1d; --panel: #1c201e; --ink: #e4e8e5; --muted: #9aa39e; --rule: #2f3632;
+          --accent: #8fbad6; --edge: #0b0d0c; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+.shell { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px; padding: 12px 16px; }
+.stage { position: relative; min-height: 320px; background: var(--stage); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.note { position: absolute; left: 10px; right: 10px; bottom: 8px; color: var(--muted); font-size: .8rem; pointer-events: none; }
+aside { min-height: 0; overflow-y: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
+        padding: 12px 14px; display: grid; align-content: start; gap: 14px; }
+h1 { margin: 0; font-size: 1.1rem; overflow-wrap: anywhere; }
+h2 { margin: 0 0 4px; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+td { padding: 2px 4px; border-bottom: 1px solid var(--rule); vertical-align: top; overflow-wrap: anywhere; }
+.id { font-family: var(--mono); font-size: .78rem; color: var(--muted); overflow-wrap: anywhere; }
+label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+label.picked .id { color: var(--accent); font-weight: 600; }
+@media (max-width: 820px) {
+  .shell { height: auto; grid-template-columns: minmax(0, 1fr); }
+  .stage { height: 60vh; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <section class="stage" id="stage" aria-label="3D model"><div class="note" id="note">Loading the model…</div></section>
+  <aside aria-label="Design state">
+    <div><h1 id="title">Design state</h1><div class="id" id="identity"></div></div>
+    <div><h2>Objects</h2><div id="objects"></div></div>
+    <div><h2>Parameters</h2><table id="parameters"></table></div>
+    <div><h2>Obligations</h2><table id="obligations"></table></div>
+  </aside>
+</div>
+<!--archflow:data-blocks-->
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const row = (table, cells) => { const tr = table.insertRow(); for (const c of cells) tr.insertCell().textContent = String(c); };
+
+  // ---------------------------------------------------------------- the state, as the page carries it
+  const block = $('decision-projection');
+  if (block) {
+    const projection = JSON.parse(block.textContent), record = projection.state.record, binding = projection.binding;
+    $('title').textContent = record.project_id;
+    $('identity').textContent = `${binding.arm} · record ${binding.record_digest.slice(0, 12)} · state ${binding.state_digest.slice(0, 12)}`;
+    for (const p of record.parameters) row($('parameters'), [p.key, p.expr ?? p.value, p.unit ?? '']);
+    for (const o of record.obligations) row($('obligations'), [o.obligation_id, o.statement]);
+  } else {
+    $('identity').textContent = 'The design state of this model is kept beside the file.';
+  }
+
+  // ---------------------------------------------------------------- the model
+  if (!window.THREE || !THREE.GLTFLoader || !THREE.OrbitControls) {
+    $('note').textContent = 'The 3D view needs an internet connection to load three.js. The state above is in the page.';
+    return;
+  }
+  const stage = $('stage');
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  stage.prepend(renderer.domElement);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(css('--stage'));
+  const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 1000);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f86, 0.8));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+  sun.position.set(-3, 5, 4);
+  scene.add(sun);
+  const edges = new THREE.LineBasicMaterial({ color: css('--edge'), transparent: true, opacity: 0.6 });
+  const objects = new Map();          // object name -> mesh
+  let picked = null;
+
+  const bytes = Uint8Array.from(atob($('model-glb').textContent.trim()), (c) => c.charCodeAt(0));
+  new THREE.GLTFLoader().parse(bytes.buffer, '', (gltf) => {
+    const nodes = gltf.parser.json.nodes;
+    gltf.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      // three.js sanitizes object names; the glTF node name is the object's identity
+      const a = gltf.parser.associations.get(o);
+      const name = a && a.nodes !== undefined ? nodes[a.nodes].name : o.name;
+      o.material = new THREE.MeshStandardMaterial({ color: 0xc9ccc4, roughness: 0.85, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+      o.add(new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry, 30), edges));
+      o.userData.name = name;
+      objects.set(name, o);
+    });
+    scene.add(gltf.scene);
+    listObjects();
+    resize();
+    fit(gltf.scene);
+    $('note').textContent = 'Drag to orbit · right-drag to pan · scroll to zoom · click an object for its name';
+  }, (error) => { $('note').textContent = 'The model could not be read: ' + error; });
+
+  function listObjects() {
+    for (const name of [...objects.keys()].sort()) {
+      const label = document.createElement('label');
+      label.dataset.name = name;
+      const shown = document.createElement('input');
+      shown.type = 'checkbox';
+      shown.checked = true;
+      shown.addEventListener('change', () => { objects.get(name).visible = shown.checked; });
+      const text = document.createElement('span');
+      text.className = 'id';
+      text.textContent = name;
+      text.addEventListener('click', (e) => { e.preventDefault(); pick(picked === name ? null : name); });
+      label.append(shown, text);
+      $('objects').append(label);
+    }
+  }
+
+  function pick(name) {
+    if (picked) objects.get(picked).material.emissive.set(0x000000);
+    picked = name;
+    if (name) {
+      objects.get(name).material.emissive.set(css('--accent'));
+      objects.get(name).material.emissiveIntensity = 0.5;
+    }
+    for (const label of $('objects').children) label.classList.toggle('picked', label.dataset.name === name);
+  }
+
+  const ray = new THREE.Raycaster(), pointer = new THREE.Vector2();
+  let down = null;
+  renderer.domElement.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
+  renderer.domElement.addEventListener('pointerup', (e) => {
+    if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
+    const r = renderer.domElement.getBoundingClientRect();
+    pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(pointer, camera);
+    const hit = ray.intersectObjects([...objects.values()].filter((o) => o.visible), false)[0];
+    pick(hit ? hit.object.userData.name : null);
+  });
+
+  function fit(root) {
+    const box = new THREE.Box3().setFromObject(root);
+    const center = box.getCenter(new THREE.Vector3());
+    const radius = box.getBoundingSphere(new THREE.Sphere()).radius || 1;
+    const distance = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2));
+    camera.position.copy(center).add(new THREE.Vector3(-0.7, 0.5, 1).normalize().multiplyScalar(distance));
+    camera.near = distance / 100;
+    camera.far = distance * 10;
+    camera.updateProjectionMatrix();
+    controls.target.copy(center);
+    controls.update();
+  }
+
+  function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / Math.max(h, 1);
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(stage);
+  (function loop() { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
+})();
+</script>
+</body>
+</html>

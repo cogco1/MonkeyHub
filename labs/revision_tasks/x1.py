@@ -12,7 +12,7 @@ It uses only what that context holds. The four starting contexts are:
 | context | what it holds |
 |---|---|
 | H | the history events (``history/events_v1.json``) and the record they agree with. The agreement is checked parameter by parameter, and every disagreement is reported |
-| SF | a state file, C-full or C-task, read back from 3DM and from GLB through ``carrier`` with its binding checked |
+| SF | a state file, C-full or C-task, read back from each of ``carrier.FORMATS`` (3DM, GLB, IFC, USD, HTML) through ``carrier`` with its binding checked |
 | GF | the same model with every metadata string stripped; only the geometry and the request's own words remain |
 | SF-O | SF without its obligations, and without the relations that bound, clear or fix (support contacts stay) |
 | SF+I | SF with the relations ``infer`` finds (I1 geometry, I2 role rules) that hold on the start, written in as candidate obligations; a broken one is ``ask`` |
