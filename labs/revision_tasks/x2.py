@@ -7,7 +7,7 @@ request template (``prompts/request.md``) and the same answer schema; only the m
 |---|---|
 | A | the history events (``history/events_v1.json``), written out as text |
 | B | a readback of the model with its metadata stripped: object names and boxes |
-| C | the C-task state (task rows of the record and the ``ContextPack@1``) without obligations or bounding relations, as text |
+| C | the C-task state (task rows of the record and the ``ContextPack@1``) without obligations, their limit parameters or bounding relations, as text |
 | D | the C-task state, as text |
 | F | the C-task state exactly as embedded in the 3DM (JSON) |
 
@@ -115,12 +115,17 @@ def render(value: Any) -> str:
 
 
 def without_guards(state: dict[str, Any]) -> dict[str, Any]:
-    """The state without its obligations and the relations that bound, clear or fix, wherever the pack repeats them."""
+    """The state without its obligations, the limit parameters they compare against, and the relations that bound,
+    clear or fix, wherever the pack repeats them."""
 
     state = json.loads(json.dumps(state))
     record = state["record"]
-    removed = {o["obligation_id"] for o in record.get("obligations", [])}
+    obligations = record.get("obligations", [])
+    removed = {o["obligation_id"] for o in obligations}
     removed |= {r["relation_id"] for r in record.get("relations", []) if (r.get("validator") or {}).get("check_kind") in x1.BOUNDING_CHECKS}
+    # An obligation's second subject is its limit (``min_pier``, ``max_clear_spacing``): a parameter that only states the rule.
+    removed |= {o["subject_refs"][1].removeprefix("parameter:") for o in obligations
+                if len(o.get("subject_refs", [])) == 2 and str(o["subject_refs"][1]).startswith("parameter:")}
     record["obligations"] = []
 
     def keep(item: Any) -> bool:

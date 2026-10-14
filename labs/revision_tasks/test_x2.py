@@ -12,13 +12,15 @@ def test_render_writes_nested_data_as_indented_text():
 
 
 def test_without_guards_removes_obligations_and_bounding_relations_everywhere():
-    state = {"record": {"obligations": [{"obligation_id": "k1"}],
+    state = {"record": {"obligations": [{"obligation_id": "k1", "subject_refs": ["parameter:clear", "parameter:min_clear"]}],
+                        "parameters": [{"key": "clear"}, {"key": "min_clear"}],
                         "relations": [{"relation_id": "p1", "validator": {"check_kind": "support_contact"}},
                                       {"relation_id": "j1", "validator": {"check_kind": "clearance_interval"}}]},
              "context_pack": {"context": {"relationships": [{"relation_id": "j1"}, {"relation_id": "p1"}],
-                                          "readOnlyRefs": ["relation:j1", "relation:p1"]}}}
+                                          "readOnlyRefs": ["relation:j1", "relation:p1", "parameter:min_clear"]}}}
     out = x2.without_guards(state)
     assert out["record"]["obligations"] == []
+    assert out["record"]["parameters"] == [{"key": "clear"}]
     assert [r["relation_id"] for r in out["record"]["relations"]] == ["p1"]
     assert out["context_pack"]["context"] == {"relationships": [{"relation_id": "p1"}], "readOnlyRefs": ["relation:p1"]}
 
