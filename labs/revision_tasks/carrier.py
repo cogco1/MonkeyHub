@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from archflow.contracts.canonical import canonical_json
-from archflow.state.state_record import StateRecord
+from archflow.state.state_record import StateRecord, evaluate_parameters
 
 from labs.revision_tasks.context_pack import pack_digest
 
@@ -250,6 +250,8 @@ def _checked(state: Any, bound: Any, file_sha: str, geometry: dict[str, str], re
         raise CarrierRefused("SCHEMA_UNSUPPORTED", f"{state.get('schema')!r} / {bound.get('schema')!r}")
     try:
         record = StateRecord.from_dict(state["record"])
+        record.dependency_edges()          # a self edge or a malformed expression is refused here, not mid-revision
+        evaluate_parameters(record)
     except Exception as exc:  # noqa: BLE001 - any malformed record is one refusal
         raise CarrierRefused("STATE_INVALID", f"{type(exc).__name__}: {exc}") from exc
     if record.digest != bound.get("record_digest"):

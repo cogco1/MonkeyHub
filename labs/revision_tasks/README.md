@@ -17,6 +17,7 @@ project, changes an owner's contract or is imported by production code.
 | `run.py` | Runs tasks into an empty directory, one bundle per attempt, an index and a gate summary; `--compare` replays against an earlier run. |
 | `carrier.py` | State-bearing files: the design state written into a 3DM or GLB (or a sidecar), and read back with its binding checked. |
 | `reviser.py` | The hostless reviser: read a state file, apply a typed change, realize it, write the next state file. No CAD application runs. |
+| `attacks.py` | Eleven attacks on state-bearing files, each compared with the honest revision; `python -m labs.revision_tasks.attacks --out <dir>`. |
 | `context_pack.py` | The `ContextPack@1` MonkeyHub would give an agent, read from a disposable project by an in-process Project Runtime. |
 | `test_*.py` | Task-file validity and freezing; the oracle on a real F3 candidate and on eight wrong geometries; state files on every arm and format. |
 
@@ -88,6 +89,26 @@ A file that fails is refused with a code and never repaired.
 - the undeclared-interference scan;
 - the retention of the context pack;
 - rebuilding a state from an external file.
+
+## Attacks (`attacks.py`)
+
+The attacker holds the model file and never a D arm's sidecar, which stands for the authority outside the file. Attackers who recompute digests use the same public library a reader does.
+
+Each case is classed by comparing it with the same probe change on the untouched file:
+
+- `detected`;
+- `undetected_same_outcome`;
+- `undetected_different_outcome`;
+- `not_applicable`: the attack edits state the file does not carry;
+- `crash`.
+
+Outcome on F1 and F3, 3DM:
+
+- **What the in-file arms miss.** All three in-file arms let three attacks through, each changing the result: a guard relaxed and its digests recomputed, a guard deleted and its digests recomputed, and an older file replayed in place of the current one.
+- **What D catches.** D detects the replay, and every other attack it is open to.
+- **Without geometry digests.** C-unbound also accepts an outside geometry edit and a duplicated object name. Its full rebuild silently discards the file's own geometry.
+
+A file's own digests prove that the file is self-consistent. They cannot prove that it is the current state or that its guards are the ones that were agreed.
 
 ## The oracle (`oracle.py`)
 
