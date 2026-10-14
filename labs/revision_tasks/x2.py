@@ -306,11 +306,21 @@ def execute(answer: dict[str, Any], arm: str, family: str, task: dict[str, Any],
     if mapped is None:
         return {"executed": False, "why": error, "oracle_verdict": "unavailable"}
     record = fixtures.bound(inputs["record"])
+    # A derived parameter in the answer is a statement about the result: it must equal what the inputs give.
+    derived = {p.key for p in record.parameters if p.expr}
     try:
         for key, value in mapped.items():
+            if key in derived:
+                continue
             record = apply_state_record_operator(record, StateRecordOperator(
                 kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest, base_state_digest=record.state_digest,
                 target_ref=f"parameter:{key}", key=key, value=value))
+        evaluated = evaluate_parameters(record)
+        conflicts = sorted(k for k, v in mapped.items() if k in derived and abs(float(evaluated[k]) - v) > 1e-6)
+        if conflicts:
+            return {"executed": False, "why": f"DERIVED_CONFLICT: {', '.join(conflicts)}", "mapped": mapped, "oracle_verdict": "unavailable"}
+        if all(k in derived for k in mapped):
+            return {"executed": False, "why": "only derived values given", "mapped": mapped, "oracle_verdict": "unavailable"}
         work = trial.parent / f"{trial.name}.candidate"
         work.mkdir()
         candidate = pipeline.realize(record, work.resolve(), "candidate")

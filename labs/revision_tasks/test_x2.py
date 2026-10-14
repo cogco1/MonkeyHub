@@ -29,6 +29,15 @@ def test_an_answer_is_read_from_fenced_or_bare_json():
     assert x2.parse_answer("no json") is None
 
 
+def test_a_derived_value_must_follow_from_the_inputs(tmp_path):
+    inputs = {"record": fixtures.f1_portico()}
+    task = {"task_id": "F1-T1"}
+    wrong = {"verdict": "held", "changes": {"column_count": 4, "column_spacing": 2.0}}
+    assert x2.execute(wrong, "D", "F1", task, inputs, tmp_path / "t")["why"] == "DERIVED_CONFLICT: column_spacing"
+    only = {"verdict": "held", "changes": {"column_spacing": 3.4}}
+    assert x2.execute(only, "D", "F1", task, inputs, tmp_path / "t")["why"] == "DERIVED_CONFLICT: column_spacing"
+
+
 def test_changes_map_history_names_and_refuse_unknown_ones():
     record = fixtures.f1_portico()
     assert x2.map_changes({"portico.column_diameter": 0.81}, "A", "F1", record) == ({"column_radius": 0.405}, None)
