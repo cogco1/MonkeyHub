@@ -69,11 +69,13 @@ def focus_elements(record: StateRecord, changed: tuple[str, ...]) -> tuple[str, 
 
 def write_state_file(record: StateRecord, *, arm: str, fmt: str, out_dir: Path, stem: str, parent_sha256: str | None,
                      context_root: Path, utterance: str, focus: tuple[str, ...] = (),
-                     prior: pipeline.Realization | None = None, context_pack: dict[str, Any] | None = None) -> Written:
+                     prior: pipeline.Realization | None = None, context_pack: dict[str, Any] | None = None,
+                     carried_from: dict[str, Any] | None = None) -> Written:
     """Realize ``record`` and write it as ``<stem>.<fmt>`` (plus ``<stem>.sidecar.json`` for D) into ``out_dir``.
 
     A C-task file carries the context pack read from a disposable project holding the record, or ``context_pack``
-    when the caller read one from a project that holds more (a stage run and its decisions).
+    when the caller read one from a project that holds more (a stage run and its decisions). ``carried_from`` is the
+    pack of the file a revision started from: its scoped decisions are kept (``carry_decisions``).
     """
 
     if arm not in carrier.ARMS or fmt not in carrier.FORMATS:
@@ -83,6 +85,7 @@ def write_state_file(record: StateRecord, *, arm: str, fmt: str, out_dir: Path, 
     pack = None
     if arm == "C-task":
         pack = context_pack if context_pack is not None else read_context_pack(carried, root=context_root, utterance=utterance, element_ids=focus)
+        pack = carry_decisions(pack, carried_from)
     t1 = time.perf_counter()
     bound = fixtures.bound(carried)
     state = carrier.payload(carried, arm, pack)
@@ -120,6 +123,20 @@ def write_state_file(record: StateRecord, *, arm: str, fmt: str, out_dir: Path, 
     t3 = time.perf_counter()
     return Written(final, sidecar, carried, bind, realization, pack,
                    {"context_pack_s": t1 - t0, "realize_s": t2 - t1, "write_s": t3 - t2})
+
+
+def carry_decisions(pack: dict[str, Any], prior: dict[str, Any] | None) -> dict[str, Any]:
+    """``pack`` with the scoped decisions of ``prior`` it lacks appended, in their order (harness-added retention).
+
+    A revised file's pack is read from a disposable project that holds only the record, so without this the decisions
+    the starting file carried (an architect's keep and reject decisions) would drop out after the first revision.
+    """
+
+    if not prior or not prior.get("scopedDecisions"):
+        return pack
+    have = {d.get("decisionId") for d in pack.get("scopedDecisions") or []}
+    carried = [d for d in prior["scopedDecisions"] if d.get("decisionId") not in have]
+    return {**pack, "scopedDecisions": [*(pack.get("scopedDecisions") or []), *carried]} if carried else pack
 
 
 def read_state_file(path: Path, *, fmt: str, sidecar: Path | None = None) -> carrier.StateFile:
@@ -172,7 +189,7 @@ def revise(path: Path, *, fmt: str, arm: str, deltas: list[dict[str, Any]], out_
     try:
         written = write_state_file(record, arm=arm, fmt=fmt, out_dir=out_dir, stem=stem, parent_sha256=current.file_sha256,
                                    context_root=context_root, utterance=utterance, focus=focus_elements(record, changed),
-                                   prior=start_realization)
+                                   prior=start_realization, carried_from=current.context_pack)
     except pipeline.RealizationError as exc:
         return Revision("refuse", [{"code": exc.code, "detail": exc.detail}], read=current, operators=operators, closure=closure,
                         obligations=obligations)

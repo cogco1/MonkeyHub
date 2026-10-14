@@ -129,3 +129,22 @@ def test_an_edited_state_without_a_new_digest_is_refused(tmp_path):
     edited.write_bytes(carrier.glb_join(document, tail))
     revision = _revise(tmp_path, start, "C-full", "glb", path=edited)
     assert revision.claim == "refuse" and revision.reasons[0]["code"] == "STATE_DIGEST_MISMATCH"
+
+
+def test_a_revision_keeps_the_decisions_its_file_carried(tmp_path):
+    decision = {"decisionId": "d-keep", "disposition": "reject", "status": "active", "targetRef": "parameter:door_width",
+                "rawLanguage": "Not 1.4 m."}
+    pack = reviser.read_context_pack(fixtures.f3_wall_stair(), root=tmp_path / "ctx0", utterance="Start state.")
+    start = reviser.write_state_file(fixtures.f3_wall_stair(), arm="C-task", fmt="3dm", out_dir=tmp_path, stem="s0", parent_sha256=None,
+                                     context_root=tmp_path / "ctx", utterance="Start state.",
+                                     context_pack={**pack, "scopedDecisions": [decision]})
+    first = _revise(tmp_path, start, "C-task", "3dm")
+    assert first.claim == "accept"
+    assert decision in first.written.context_pack["scopedDecisions"]
+    assert decision in reviser.read_state_file(first.written.path, fmt="3dm").context_pack["scopedDecisions"]
+
+
+def test_carry_decisions_appends_only_missing_ones():
+    a, b = {"decisionId": "a"}, {"decisionId": "b"}
+    assert reviser.carry_decisions({"scopedDecisions": [a]}, {"scopedDecisions": [a, b]})["scopedDecisions"] == [a, b]
+    assert reviser.carry_decisions({"x": 1}, None) == {"x": 1}
