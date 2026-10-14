@@ -1,4 +1,23 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-641",
+      "status": "review",
+      "branch": "codex/641-beam-offset",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-641-beam-offset",
+      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "monkeyarch.authoring.element_producers"
+      ],
+      "write_scope": [
+        "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
+        "packages/monkeyarch/tests/test_relation_checks.py"
+      ],
+      "depends_on": []
+    }
+  ]
 }

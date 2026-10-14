@@ -572,7 +572,7 @@ def produce_beam(row: ElementRow, context: ProductionContext) -> ProducedElement
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + height, row.basis_refs)
     context.published[top.datum_id] = top
     support = str(row.references.get("support", base_datum))
-    relation = ProducedRelation(f"{support}-support-{row.element_id}", "support", support, row.element_id, base_datum, {"engagement_depth": engage} if engage else {})
+    relation = ProducedRelation(f"{support}-support-{row.element_id}", "support", support, row.element_id, base_datum, _seat_parameters(base_offset - engage))
     return ProducedElement((op,), (_bind(row.element_id, base_datum),), (top,), (relation,), HostLine(start, (ux, uz)))
 
 
