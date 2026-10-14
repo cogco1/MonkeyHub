@@ -19,7 +19,7 @@ from ..models import HubFailure
 
 
 _READ = re.compile(r"^/api/(exports(?:/[A-Za-z0-9_-]+)?|project|construction(?:/model)?|domains(?:/[a-z]+/readiness)?|state/(?:frame|volumes)|semantics|program|options|board|artifacts|model-assets/[0-9a-f]{64}/index|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|memory(?:/locate)?|drawings/(?:styles|model-view|plans/vector|plans/dimensions|corrections)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?|admissions|working-source|working-draft/revision|render/(?:capabilities|jobs(?:/[A-Za-z0-9_-]+)?))$")
-_POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|memory(?:/about|/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(?:construction|facets|hosted-opening)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives|plans|plans/status)|admissions|render/jobs)$")
+_POST = re.compile(r"^/api/(exports|project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|memory(?:/about|/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(?:construction|facets|hosted-opening|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets|section-perspectives|plans|plans/status)|admissions|render/jobs)$")
 _WRITE = re.compile(r"^/api/(board|document-annotations|working-draft)$")
 # The agent routes the construction contract replaced (#419). The Studio still
 # serves them to its own web client, so a refusal names the agent's route
@@ -27,8 +27,17 @@ _WRITE = re.compile(r"^/api/(board|document-annotations|working-draft)$")
 _REPLACED_ACTIONS = {
     ("GET", "/api/state"): "GET /api/construction/model (add ?run=<candidateId> for a candidate)",
     **{("POST", f"/api/proposals/{name}"): "POST /api/proposals/construction with one script"
-       for name in ("sketch", "transform", "push-pull", "delete", "elevation")},
+       for name in ("sketch", "transform", "push-pull", "delete")},
 }
+
+# The elevation route's one action nothing replaced (#651): set-datum moves or
+# adds a project level (Level@1 in the frame) and what stands on it follows
+# (#646). Its element actions edit an element's own elevation, which the
+# construction contract replaced, so the chat sends only set-datum.
+_ELEVATION_ACTION = "set-datum"
+_ELEVATION_REFUSAL = ("An element's base, top or height is authored with POST /api/proposals/construction. From the chat, "
+                      "POST /api/proposals/elevation moves or adds a project level: action set-datum with levelId and value. "
+                      "Nothing was sent.")
 
 
 # What an agent's semanticEdit may still carry (#419): parameters, relations,
@@ -74,6 +83,16 @@ def _semantic_edit_refusal(body) -> HubFailure | None:
                 return HubFailure(422, "CHAT_TOOL_INVALID", _GEOMETRY_REFUSAL)
             if _MEANING_FIELDS.intersection(fields):
                 return HubFailure(422, "CHAT_TOOL_INVALID", _MEANING_REFUSAL)
+    return None
+
+
+def _elevation_refusal(body) -> HubFailure | None:
+    """Why an agent's elevation request may not be sent, or None for a set-datum.
+
+    A malformed body is the Runtime's to refuse; this only narrows the actions.
+    """
+    if isinstance(body, Mapping) and body.get("action") != _ELEVATION_ACTION:
+        return HubFailure(422, "CHAT_TOOL_INVALID", _ELEVATION_REFUSAL)
     return None
 
 
