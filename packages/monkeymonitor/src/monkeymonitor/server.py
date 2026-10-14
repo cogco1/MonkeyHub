@@ -20,7 +20,7 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, build_opener
 
 from .codex import bound_codex_sources, iter_codex_events
 from .pricing import RateCard, load_rates, quote
-from .sources import AGENT_SOURCES
+from .sources import AGENT_SOURCES, defer_to_hub
 from .store import BUSY_NOTICE, UsageLog
 from .trace import build_traces
 from .usage import TokenUsage
@@ -60,8 +60,9 @@ class MonitorData:
         if unknown:
             raise ValueError(f"Unknown agent usage source: {', '.join(unknown)}")
         self.store = UsageLog(data_dir) if data_dir is not None else None
-        self.codex_sessions = tuple(dict.fromkeys((*codex_sessions, *selected.pop("codex", ()))))
-        self.agent_sessions = {agent: paths for agent, paths in selected.items() if paths}
+        selected["codex"] = (*codex_sessions, *selected.get("codex", ()))
+        # The explicit files a caller selected for each registered agent; none is discovered.
+        self.selected = {agent: tuple(dict.fromkeys(selected.get(agent, ()))) for agent in AGENT_SOURCES}
         self.hub_origin: str | None = None
         self.hub_origins: tuple[str, ...] = ()
         if codex_bindings_url is not None:
@@ -103,22 +104,25 @@ class MonitorData:
             warnings.append("Hub 会话用量绑定暂不可读；已有诊断和手选来源仍保留。")
             return {}, {}
 
-    def codex_sources(self) -> dict:
+    def sources(self, agent: str | None = None) -> dict:
+        """The files selected for one agent, or for every registered agent."""
+        if agent is None:
+            return {"agents": {key: self.sources(key) for key in AGENT_SOURCES}}
         return {"paths": [path.as_posix() for path in dict.fromkeys(
-            Path(value).resolve() for value in self.codex_sessions
+            Path(value).resolve() for value in self.selected[agent]
         )]}
 
-    def select_codex_sources(self, paths: object) -> dict:
+    def select_sources(self, agent: str, paths: object) -> dict:
         if not isinstance(paths, list) or any(not isinstance(value, str) for value in paths):
-            raise ValueError("paths must be a list of absolute Codex JSONL file paths")
+            raise ValueError("paths must be a list of absolute file paths")
         selected = []
         for value in paths:
             path = Path(value)
             if not path.is_absolute() or not path.is_file():
-                raise ValueError("Each Codex source must be an existing absolute file path")
+                raise ValueError("Each source must be an existing absolute file path")
             selected.append(path.resolve())
-        self.codex_sessions = tuple(dict.fromkeys(selected))
-        return self.codex_sources()
+        self.selected[agent] = tuple(dict.fromkeys(selected))
+        return self.sources(agent)
 
     def snapshot(self) -> dict:
         events, warnings = [], []
@@ -133,15 +137,16 @@ class MonitorData:
                 raise BlockingIOError(BUSY_NOTICE)
         paths, projects = self._bound_sources(warnings)
         try:
-            events.extend(iter_codex_events((*self.codex_sessions, *paths), warnings=warnings,
-                                           expected_sessions=paths, manual_sources=self.codex_sessions,
+            manual = self.selected["codex"]
+            events.extend(iter_codex_events((*manual, *paths), warnings=warnings,
+                                           expected_sessions=paths, manual_sources=manual,
                                            project_ids=projects))
         except (OSError, ValueError, UnicodeError):
             warnings.append("指定的 Codex 会话暂时不可读或包含无效计数。")
         # Codex is read above with its Hub bindings; every other agent reads only
         # the files named for it. A copy never takes an id already held.
         for agent, source in AGENT_SOURCES.items():
-            paths_for_agent = self.agent_sessions.get(agent)
+            paths_for_agent = self.selected[agent]
             if agent == "codex" or not paths_for_agent:
                 continue
             try:
@@ -174,7 +179,12 @@ class MonitorData:
         rows = sorted(unique.values(), key=lambda event: event.started_at, reverse=True)
         if any(event.status in {"counter_discontinuity", "partial_history", "counter_reset_unknown", "last_only"} for event in rows):
             warnings.append("Codex 累计计数存在断点，已保留可识别的单次用量；此汇总不是完整账单。")
-        return {"events": _diagnose_operations([event.to_dict() for event in rows]), "warnings": warnings}
+        # Each model call is listed once, so every reader of the snapshot (events,
+        # report, traces, the Usage page) counts it once.
+        kept, left_out = defer_to_hub([event.to_dict() for event in rows])
+        for source, count in left_out.items():
+            warnings.append(f"{count} 条 {source} 记录是 Hub 已经计过的调用，以 Hub 的记录为准，未列出。")
+        return {"events": _diagnose_operations(kept), "warnings": warnings}
 
     def traces(self) -> dict:
         snapshot = self.snapshot()
@@ -331,6 +341,15 @@ class MonitorHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def _drain(self) -> None:
+        """Read a bounded body this request will not use, so the reply is not lost to a reset."""
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return
+        if 0 < length <= 65536:
+            self.rfile.read(length)
+
     def _local_request(self) -> bool:
         host = self.headers.get("Host", "")
         expected = {f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"}
@@ -382,8 +401,10 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 self._send(trace if trace else {"error": "Trace not found"}, 200 if trace else 404, download=trace is not None)
             else:
                 self._send(result)
-        elif path == "/api/sources/codex":
-            self._send(self.data.codex_sources())
+        elif path == "/api/sources":
+            self._send(self.data.sources())
+        elif path.startswith("/api/sources/") and path.removeprefix("/api/sources/") in AGENT_SOURCES:
+            self._send(self.data.sources(path.removeprefix("/api/sources/")))
         elif path == "/api/rates":
             self._send(json.loads((Path(__file__).parent / "rates.json").read_text(encoding="utf-8")))
         elif path in {"/", "/index.html"}:
@@ -403,7 +424,9 @@ class MonitorHandler(BaseHTTPRequestHandler):
     def do_PUT(self):
         if not self._local_request():
             return
-        if urlsplit(self.path).path != "/api/sources/codex":
+        agent = urlsplit(self.path).path.removeprefix("/api/sources/")
+        if not urlsplit(self.path).path.startswith("/api/sources/") or agent not in AGENT_SOURCES:
+            self._drain()
             self._send({"error": "Not found"}, 404)
             return
         try:
@@ -413,7 +436,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             if not isinstance(body, dict) or set(body) != {"paths"}:
                 raise ValueError("Expected an object containing paths")
-            self._send(self.data.select_codex_sources(body["paths"]))
+            self._send(self.data.select_sources(agent, body["paths"]))
         except (OSError, ValueError, TypeError, UnicodeError) as exc:
             self._send({"error": str(exc)}, 400)
 

@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Callable, Iterator, Literal, Mapping
+from typing import Callable, Iterable, Iterator, Literal, Mapping
 
 from . import claude_code, codex, usage_file
 from .usage import TokenUsage, UsageEvent
@@ -71,7 +71,40 @@ def token_authority(source: str) -> str:
     return declared.token_authority if declared is not None else "host"
 
 
-def call_id(source: str, event_id: str) -> str | None:
-    """The native call an agent event names, where its source declares how to read it."""
-    declared = AGENT_SOURCES.get(source)
-    return declared.call_id(event_id) if declared is not None and declared.call_id is not None else None
+# The Hub writes one usage row per native message it counted itself, with the
+# event id ``hub:turn:<turn>:usage:<message.id>`` (MonkeyHub's chat turn observer).
+_HUB_CALL = ":usage:"
+
+
+def defer_to_hub(rows: Iterable[Mapping[str, object]]) -> tuple[list[Mapping[str, object]], dict[str, int]]:
+    """One row per model call: a ``host`` source's row for a call the Hub counted itself is left out.
+
+    A source that names its native call (``call_id``) is matched call by call, so a
+    fork's copy and a subagent's message are matched too, and a call the Hub never
+    saw stays. A source that names none defers for every session the Hub counted
+    and those sessions' subagents. Hub, Studio and ``agent`` sources' rows always
+    stay. Returns the kept rows, in order, and how many were left out per source.
+    """
+    rows = list(rows)
+    calls, sessions = set(), set()
+    for row in rows:
+        if row["source"] == "hub" and row.get("model_call") is True:
+            _, marker, call = str(row["event_id"]).rpartition(_HUB_CALL)
+            if marker and call:
+                calls.add(call)
+            if row.get("session_id"):
+                sessions.add(row["session_id"])
+    kept, left_out = [], {}
+    for row in rows:
+        declared = AGENT_SOURCES.get(row["source"])
+        if declared is not None and declared.token_authority == "host" and row.get("model_call") is True:
+            call = declared.call_id(row["event_id"]) if declared.call_id is not None else None
+            if call is not None:
+                counted = call in calls
+            else:
+                counted = bool(sessions & {row.get("session_id"), row.get("parent_session_id")})
+            if counted:
+                left_out[row["source"]] = left_out.get(row["source"], 0) + 1
+                continue
+        kept.append(row)
+    return kept, left_out

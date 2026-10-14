@@ -61,7 +61,8 @@ python -m monkeymonitor serve --data-dir C:\explicit\diagnostics
 | `GET /api/events` | 当前归一化用量记录 |
 | `GET /api/traces` | `TurnTrace@1` 任务视图 |
 | `GET /api/traces/export?trace_id=...` | 导出一条经过过滤的 trace |
-| `GET/PUT /api/sources/codex` | 查看/设置明确的 Codex JSONL 补充来源 |
+| `GET /api/sources` | 每个已登记 agent 的明确补充文件 |
+| `GET/PUT /api/sources/{agent}` | 查看/设置某个 agent（`AGENT_SOURCES` 的键）的明确补充文件；未登记的 agent 返回 404 |
 | `GET /api/rates` | 读取内置参考费率目录 |
 | `POST /api/quote` | 对调用方提供的 token + rate 做确定性估算 |
 
@@ -126,12 +127,12 @@ Token 口径：
 **权威规则：每一次模型调用只有一个 token 权威。**
 
 - `agent`（Codex）：这个来源的记录替代 Hub 对同一会话写的用量行。Hub 对 Codex 只记 agent 活动区间，不是额外的模型调用。
-- `host`（Claude Code、UsageEvent 文件）：Hub 自己计过的调用，以 Hub 为准，这个来源的同一次调用不再计入，无论落在哪个 trace 里。Hub 跑 Claude 时从流的结束事件取每条 message 的最终计数，并按它实际用的连接定 plan（包括 `coding-plan`），会话记录做不到这两点。
+- `host`（Claude Code、UsageEvent 文件）：Hub 自己计过的调用，以 Hub 为准，这个来源的同一次调用不进快照，并给出按来源计数的告警。Hub 跑 Claude 时从流的结束事件取每条 message 的最终计数，并按它实际用的连接定 plan（包括 `coding-plan`），会话记录做不到这两点。
   - Claude Code 按 `message.id` 逐次对：Hub 的用量行是 `hub:turn:<回合>:usage:<message.id>`。同一条 message 在 Hub 的会话里、在子代理里、或被复制进分叉的会话，都只算 Hub 那一次。Hub 没计到的 message（会话后来在 Hub 外续接，或回合在写下用量前就断了）照常从会话记录计入。
   - 不指明原生调用的事件（`usage-file` 来源）只能按会话：Hub 计过 token 的会话及其子代理（`parent_session_id`）上的行不再计入。
 - Hub 外的会话没有 Hub 记录，以各自的来源为准。归属只看 id，不看工作目录或时间。
 - Studio 自己的 provider 调用是另外的调用，始终计入。
-- 这条规则目前在 trace 汇总（`/api/traces`）里生效。`/api/events`（包括手动 `serve` 时）和 `report` 仍按 `event_id` 列出全部原始行：同时给 `--data-dir` 和 Hub 跑过的会话记录时，同一次调用会各列一行。
+- `host` 规则在快照（`MonitorData.snapshot()`）里执行，所以 `/api/events`、`/api/traces`、`report` 和 Usage 页面的汇总都只看到每次调用一行。`agent` 规则留在 trace 汇总里：被它替代的 Hub 行是活动区间，时间轴还要画，不能从快照里删。
 
 **金额不是扣费。** 三种来源的金额都按公开价目表计算，是 API 等价值，不是实际扣费。Codex 和 Claude Code 的事件记为 `subscription_equivalent`，trace 里标“订阅 API 等价值（非实际扣款）”。Monitor 不知道某个账户用的是订阅还是 API key。
 
@@ -202,7 +203,7 @@ Hub 管理的 Monitor 启动参数包含：
 
 需要额外诊断时，可在 Usage 页面逐行填写明确的 JSONL 绝对路径，或在 CLI 使用多个 `--agent-session codex=<path>`（或兼容的 `--codex-session`）。重复路径和重复快照不会重复计数；无法核实的旧式继承关系保持未知。
 
-Hub 绑定、Usage 页面的来源设置（`/api/sources/codex`）目前只支持 Codex；其他 agent 先通过 CLI 与 `MonitorData(agent_sessions=...)` 接入。
+Usage 页面的来源区先选 agent，再逐行填写明确路径（`/api/sources/{agent}`），CLI 用 `--agent-session <agent>=<path>`。Hub 自动绑定目前只覆盖 Codex 会话。
 
 ## 费率
 
