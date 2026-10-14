@@ -5,9 +5,11 @@ MonkeyMonitor 是 MonkeyHub 的工程观测与费用估算模块。它继续拥�
 这条边界是刻意的：
 
 ```text
-Hub / Studio / CAD / Codex observations
+Hub / Studio / CAD observations    agent usage sources (Codex, Claude Code, UsageEvent@1 files)
+                 ↓                                   ↓
+      MonkeyMonitor UsageLog          +       explicitly selected files, read only
                  ↓
-      MonkeyMonitor UsageLog + trace views
+              trace views
                  ↓
         MonkeyHub · Usage page
 ```
@@ -34,10 +36,16 @@ MonkeyHub 页面通过只允许 owning Hub loopback origin 的 CORS 访问内部
 
 ```powershell
 python -m monkeymonitor report --data-dir C:\explicit\diagnostics
-python -m monkeymonitor report --codex-session C:\path\to\rollout.jsonl
+python -m monkeymonitor report --agent-session codex=C:\path\to\rollout.jsonl
+python -m monkeymonitor report --agent-session claude-code=$env:USERPROFILE\.claude\projects\<folder>\<session>.jsonl `
+    --since 2026-10-01T09:00:00+08:00 --until 2026-10-01T12:00:00+08:00
+python -m monkeymonitor report --data-dir C:\explicit\diagnostics --output-dir C:\explicit\benchmark-output
 ```
 
-它向标准输出返回 JSON，不写项目文件，不导出提示词、回答、工具正文或凭据。
+它返回一份 `UsageEvent@1` 文档：`{"schema": "UsageEvent@1", "events": [...], "warnings": [...]}`。默认写到标准输出；给了 `--output-dir` 时只写这个目录里的 `usage-events.json`，标准输出只报文件位置和条数。它不写项目文件，不导出提示词、回答、工具正文或凭据。
+
+- `--agent-session <agent>=<path>` 可以重复；`<agent>` 取 `AGENT_SOURCES` 的键（`codex`、`claude-code`、`usage-file`）。不做任何自动发现。`--codex-session <path>` 是 `--agent-session codex=<path>` 的兼容别名。
+- `--since` / `--until` 只用于 `report`，必须是带时区的 ISO-8601 时间。按事件的 `started_at` 切片：`since` 含端点，`until` 不含，便于分阶段基准首尾相接。没有时区的旧记录无法判断，不进切片，并给出提示。`window` 字段原样回显这两个参数。
 
 `serve` 也保留，供 MonkeyHub 的受管 worker、测试和明确的诊断集成使用；它现在是 **API-only** 服务，而不是第二个产品入口：
 
@@ -53,7 +61,8 @@ python -m monkeymonitor serve --data-dir C:\explicit\diagnostics
 | `GET /api/events` | 当前归一化用量记录 |
 | `GET /api/traces` | `TurnTrace@1` 任务视图 |
 | `GET /api/traces/export?trace_id=...` | 导出一条经过过滤的 trace |
-| `GET/PUT /api/sources/codex` | 查看/设置明确的 Codex JSONL 补充来源 |
+| `GET /api/sources` | 每个已登记 agent 的明确补充文件 |
+| `GET/PUT /api/sources/{agent}` | 查看/设置某个 agent（`AGENT_SOURCES` 的键）的明确补充文件；未登记的 agent 返回 404 |
 | `GET /api/rates` | 读取内置参考费率目录 |
 | `POST /api/quote` | 对调用方提供的 token + rate 做确定性估算 |
 
@@ -94,7 +103,95 @@ Token 口径：
 
 计时修复采用 [Python 3.12 `Lock.acquire(timeout)`](https://docs.python.org/3.12/library/threading.html#threading.Lock.acquire) 与现有非阻塞文件锁；参考 [Portalocker 3.2.0 的有界锁重试](https://github.com/wolph/portalocker/blob/v3.2.0/portalocker/utils.py)（[BSD-3-Clause](https://github.com/wolph/portalocker/blob/v3.2.0/LICENSE)），使用同一单调时钟截止时间，未引入该依赖。保留 [OpenTelemetry Python 1.37.0 `SimpleSpanProcessor`](https://github.com/open-telemetry/opentelemetry-python/blob/v1.37.0/opentelemetry-sdk/src/opentelemetry/sdk/trace/export/__init__.py)（[Apache-2.0](https://github.com/open-telemetry/opentelemetry-python/blob/v1.37.0/LICENSE)）的结束事件同步交付、诊断失败隔离思路；未采用其批处理后台线程，因为本次缺口是短暂锁竞争，增加队列会额外引入关闭时排空和事件顺序问题。父阶段结束不证明子阶段结束，符合 [OpenTelemetry Trace API 的独立 span 生命周期](https://opentelemetry.io/docs/specs/otel/trace/api/#end)。
 
-## Codex 会话来源
+## Agent 用量来源
+
+`monkeymonitor.sources` 定义 agent 用量来源接口。`AGENT_SOURCES` 是唯一登记点，键就是 agent 身份，也是这些事件的 `UsageEvent.source`。`source` 只有两个宿主写入方 `studio`、`hub`，加上这里登记的键；其他值一律拒绝。旧日志里的 `codex` 照常可读。接入一个新 agent，就是写一个读取模块，再在这里加一项。
+
+每一项声明这些：
+
+| 声明 | 含义 |
+| --- | --- |
+| `read(paths, *, warnings)` | 只读调用方点名的文件，以及该文件自己指向的附属记录；不扫描目录，不写任何东西。被拒的路径、坏行都变成 warning，不中断其他文件 |
+| `tokens(native)` | 把原生计数换成 Monitor 的 `TokenUsage` 口径（总量包含子集）；缺的字段保持 `null` |
+| `provider` | 计价连接，决定 `pricing.billing_plan()` 给哪个 plan；`None` 表示按每个会话或事件自己记录的连接 |
+| `token_authority` | 同一原生会话同时有 Hub 记录时，谁的 token 算数 |
+| `existing_ids` | 遇到已有记录持有的 `event_id` 时怎么办：`merge` 视为同一条记录再读一遍，`reject` 视为副本并拒收 |
+| `call_id(event_id)` | 事件对应哪一次原生模型调用（可选）。有它，`host` 来源就能和 Hub 的用量行逐次对上 |
+
+| agent | 读什么 | 计价连接 | token 权威 | 已有 id |
+| --- | --- | --- | --- | --- |
+| `codex` | 明确的 Codex rollout JSONL，及 Hub 绑定的会话（见下节） | 会话记录的 `model_provider` | `agent` | `merge` |
+| `claude-code` | 明确的 Claude Code 会话 JSONL，及同一会话的子代理与 workflow agent 记录 | `claude` | `host` | `merge` |
+| `usage-file` | 明确的 `UsageEvent@1` 文件 | 每个事件自己记录的 provider | `host` | `reject` |
+
+**权威规则：每一次模型调用只有一个 token 权威。**
+
+- `agent`（Codex）：这个来源的记录替代 Hub 对同一会话写的用量行。Hub 对 Codex 只记 agent 活动区间，不是额外的模型调用。
+- `host`（Claude Code、UsageEvent 文件）：Hub 自己计过的调用，以 Hub 为准，这个来源的同一次调用不进快照，并给出按来源计数的告警。Hub 跑 Claude 时从流的结束事件取每条 message 的最终计数，并按它实际用的连接定 plan（包括 `coding-plan`），会话记录做不到这两点。
+  - Claude Code 按 `message.id` 逐次对：Hub 的用量行是 `hub:turn:<回合>:usage:<message.id>`。同一条 message 在 Hub 的会话里、在子代理里、或被复制进分叉的会话，都只算 Hub 那一次。Hub 没计到的 message（会话后来在 Hub 外续接，或回合在写下用量前就断了）照常从会话记录计入。
+  - 不指明原生调用的事件（`usage-file` 来源）只能按会话：Hub 计过 token 的会话及其子代理（`parent_session_id`）上的行不再计入。
+- Hub 外的会话没有 Hub 记录，以各自的来源为准。归属只看 id，不看工作目录或时间。
+- Studio 自己的 provider 调用是另外的调用，始终计入。
+- `host` 规则在快照（`MonitorData.snapshot()`）里执行，所以 `/api/events`、`/api/traces`、`report` 和 Usage 页面的汇总都只看到每次调用一行。`agent` 规则留在 trace 汇总里：被它替代的 Hub 行是活动区间，时间轴还要画，不能从快照里删。
+
+**金额不是扣费。** 三种来源的金额都按公开价目表计算，是 API 等价值，不是实际扣费。Codex 和 Claude Code 的事件记为 `subscription_equivalent`，trace 里标“订阅 API 等价值（非实际扣款）”。Monitor 不知道某个账户用的是订阅还是 API key。
+
+### Claude Code
+
+- **读取范围**：只读调用方给出的会话文件 `<Claude home>/projects/<目录>/<session>.jsonl`，再自动带上同一会话目录下的子代理记录 `<session>/subagents/agent-*.jsonl` 和 workflow agent 记录 `<session>/subagents/workflows/<run>/agent-*.jsonl`（不读 workflow 的 `journal.jsonl`）。
+  - 不扫描 `projects/`，不按工作目录或时间归属。
+  - 路径必须在 Claude home（`CLAUDE_CONFIG_DIR`，默认 `~/.claude`）之内，且是 `.jsonl`；越界的路径整条拒绝，警告里不回显路径。
+- **只取元数据**：只读 `type == "assistant"` 且带 `message.usage` 的行，以及每行的 `uuid` / `parentUuid` / `promptId`，用来找到所属回合。
+  - 对话正文、工具输入输出、`cwd`、分支名等字段一律不读入事件。
+  - 标识和模型名只在是受限代码时才复制，否则记为 `unknown` 或跳过该行。
+- **去重**：一次回复会按内容块写成多行，这些行共享 `message.id`，计数随流式输出增长。按 `message.id` 合并，每个计数取所有行的最大值，算一次模型调用。
+  - 同一条 message 被复制进另一个选中的会话（续接、分叉）时，仍是同一次调用，只算一次。复制品的写入时间和原件相同，分不出谁是原件，所以归第一个被选中的文件所在的会话。
+  - 没有 `message.id` 的行无法去重，跳过并告警。
+  - `<synthetic>` 模型的行是 Claude Code 本地写的提示，不是 provider 调用，直接跳过。
+- **口径**：
+  - `input_tokens` = 未缓存 + 缓存写 + 缓存读；
+  - `cached_input_tokens` = `cache_read_input_tokens`；
+  - `cache_write_input_tokens` = `cache_creation_input_tokens`；
+  - `cache_write_1h_input_tokens` = `cache_creation.ephemeral_1h_input_tokens`；缓存写为 0 时它按定义为 0，与 Hub、Codex 一致；
+  - `output_tokens` = `output_tokens`，已包含思考部分。只有带 `stop_reason` 的行才写着最终输出数；一条 message 的行都没有 `stop_reason` 时，记录里只有流式开头的几个 token，输出记为 `null` 并告警，输入和缓存计数照常计入。实测的记录里主会话很少出现，子代理记录约有 4% 的 message 如此；
+  - `reasoning_output_tokens` = `output_tokens_details.thinking_tokens`；
+  - 任一字段缺失就保持 `null`，不补 0。
+- **计价**：plan 由 `pricing.billing_plan("claude", usage)` 判定。`service_tier`、`speed` 或 `inference_geo` 报告非标准档位时不写 plan；同一条 message 的几行档位互相矛盾时也不写。
+- **身份**：
+  - `event_id` 为 `claude-code:<message.id>`；
+  - 主会话的 `session_id` 是 `sessionId`；
+  - 子代理的 `session_id` 是 `agentId`，`parent_session_id` 是 `sessionId`；
+  - `turn_id` 是所属用户回合的 `promptId`；
+  - `source_ref` 为 `claude-code:<sessionId>`。
+- **时间**：`started_at` / `ended_at` 是这条 message 第一行和最后一行的写入时间，不是模型耗时，所以 `timing_scope` 为 `unknown`。
+- **坏行**：无法解析的行跳过并告警；末尾不完整的半行（文件可能仍在写入）跳过并告警；无法解码的字节只影响它所在的那一行。子代理目录读不了时，只读会话本身并告警。
+
+### UsageEvent@1 文件
+
+供其他机器、或还没有专用读取器的 agent 接入。读两种形式：
+
+- **文档**：`report` 写出的 `{"schema": "UsageEvent@1", "events": [...]}`；
+- **逐行文件**：每行一个 `UsageEvent@1` 对象，便于 agent 边做边追加；末尾半行跳过。
+
+每个对象就是 `UsageEvent.to_dict()`，经过同样的校验。除时间外，每个文本字段（标识、模型名、details 里的值）都必须是受限代码：不含空格、路径、网址，不超过 480 个字符。所以文件带不进提示词、回答或工作区文本，不合格的记录整条不计入并告警。格式错误的记录或文件只产生告警，不会让读取中断。
+
+文件只是报告，不能推翻已有记录：
+
+- 事件保留自己记录的 agent 来源；没有专用读取器的 agent 写 `usage-file`。
+- `hub`、`studio` 行一律拒收：它们是本机当场写下的记录，副本不能冒充。
+- `event_id` 已被日志或其他来源持有的，拒收，已有记录不变。
+- 同一 `event_id` 在不同副本里内容不同的，全部拒收，不猜哪份对；内容相同的只算一次。
+- `billing_plan` 只有在它记录的连接确实给出这个 plan 时才保留；否则去掉 plan，费用保持未知。
+- 文件里的费率快照一律不带进来，费用按本机费率目录计算。
+- 其他 schema 的文档整份跳过。
+
+### 隐私边界
+
+- 所有来源都只读调用方明确点名的文件，不写这些文件，不建索引，也不把来源路径放进事件。
+- 读取结果只含计数、时间、受限标识和模型名。
+- `report --output-dir` 只写调用方给出的目录。
+
+### Codex 会话来源
 
 Hub 管理的 Monitor 启动参数包含：
 
@@ -104,7 +201,11 @@ Hub 管理的 Monitor 启动参数包含：
 
 这个私有 Hub 投影只提供项目/会话身份。Monitor 在 `CODEX_HOME`（默认 `~/.codex`）中只读定位对应日志并核对身份，不读取 Hub 聊天正文，也不按“最近任务”或工作目录猜归属。
 
-需要额外诊断时，可在 Usage 页面逐行填写明确的 JSONL 绝对路径，或在 CLI 使用多个 `--codex-session`。重复路径和重复快照不会重复计数；无法核实的旧式继承关系保持未知。
+需要额外诊断时，可在 Usage 页面逐行填写明确的 JSONL 绝对路径，或在 CLI 使用多个 `--agent-session codex=<path>`（或兼容的 `--codex-session`）。重复路径和重复快照不会重复计数；无法核实的旧式继承关系保持未知。
+
+Usage 页面的来源区先选 agent，再逐行填写明确路径（`/api/sources/{agent}`），CLI 用 `--agent-session <agent>=<path>`。
+
+Hub 自动绑定只覆盖 Codex 会话，因为 Hub 不记录 Codex 的 token。Hub 跑的 Claude 会话不另外绑定：Hub 从流里逐条记下每条 message 的最终用量，会话记录里的同一批调用它都已计过，再读一遍只会让每次刷新多读整份记录，计数一条不多。等 Hub 跑某个 agent 而不自己记它的 token 时，再给绑定加上 agent 字段。
 
 ## 费率
 
@@ -116,7 +217,7 @@ Hub 管理的 Monitor 启动参数包含：
 | --- | --- | --- |
 | `anthropic` | Studio 意图编译，Anthropic Messages API | `api-standard` |
 | `codex` | Studio 意图编译，`codex exec`（忽略用户配置） | `api-standard` |
-| `claude` | Hub 对话，Claude CLI | `api-standard`；消息 usage 报告 fast、priority、batch 或 US-only 推理时不写 |
+| `claude` | Hub 对话，Claude CLI；`claude-code` 来源读取的 Claude Code 会话 | `api-standard`；消息 usage 报告 fast、priority、batch 或 US-only 推理时不写 |
 | `coding-plan` | Hub 对话，第三方兼容端点 | `coding-plan`（包月，没有公开的逐 token 价） |
 | `openai` | Codex 会话日志记录的 model provider | `api-standard` |
 
