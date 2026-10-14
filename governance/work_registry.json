@@ -1,4 +1,23 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-638",
+      "status": "active",
+      "branch": "codex/638-pediment-offset",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-638-pediment-offset",
+      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "monkeyarch.authoring.element_producers"
+      ],
+      "write_scope": [
+        "packages/monkeyarch/src/monkeyarch/authoring/element_producers.py",
+        "packages/monkeyarch/tests/test_element_producers.py"
+      ],
+      "depends_on": []
+    }
+  ]
 }
