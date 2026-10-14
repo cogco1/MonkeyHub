@@ -325,6 +325,20 @@ def _set_scores(found: list[str], gold: list[str]) -> tuple[float | None, float 
 
 # ---------------------------------------------------------------- the run
 
+def production_pack(family: str, record: StateRecord, root: Path) -> dict[str, Any]:
+    """The C-task pack from a project that holds the record as production does: a stage run through the runner,
+    and the history's rejected proposals recorded as decisions against it."""
+
+    production = production_project.make_production_project(record, root)
+    events = json.loads(HISTORY.read_text(encoding="utf-8"))["families"][family]["events"]
+    rejected = [e for e in events if e["type"] == "proposal" and e["status"] == "rejected"]
+    decisions = [{"text": f"{e['change']['target']} = {e['change']['value']}: rejected by {e['authority']} ({e['reason']}).",
+                  "target_ref": f"entity:{REJECTION_TARGETS[family][e['change']['target']]}"} for e in rejected]
+    return production_project.record_rejections_and_read_context(
+        production, decisions, utterance="Current design state.",
+        element_ids=tuple(sorted(x.entity_id for x in record.entities_of("Element@1"))), cache_dir=root / "cache")
+
+
 def run(out: Path, *, families: tuple[str, ...] = ("F1", "F2", "F3")) -> dict[str, Any]:
     tasks = [t for t in json.loads(TASKS.read_text(encoding="utf-8"))["tasks"] if t["family"] in families]
     rows, consistency = [], {}
@@ -336,16 +350,7 @@ def run(out: Path, *, families: tuple[str, ...] = ("F1", "F2", "F3")) -> dict[st
         record = FAMILY_FIXTURE[family]()
         contexts = [h]
         files = {}
-        # The C-task pack comes from a project that holds the record as production does: a stage run through
-        # the runner, and the history's rejected proposals recorded as decisions against it.
-        production = production_project.make_production_project(record, fam_dir / "production")
-        events = json.loads(HISTORY.read_text(encoding="utf-8"))["families"][family]["events"]
-        rejected = [e for e in events if e["type"] == "proposal" and e["status"] == "rejected"]
-        decisions = [{"text": f"{e['change']['target']} = {e['change']['value']}: rejected by {e['authority']} ({e['reason']}).",
-                      "target_ref": f"entity:{REJECTION_TARGETS[family][e['change']['target']]}"} for e in rejected]
-        pack_read = production_project.record_rejections_and_read_context(
-            production, decisions, utterance="Current design state.",
-            element_ids=tuple(sorted(x.entity_id for x in record.entities_of("Element@1"))), cache_dir=fam_dir / "production" / "cache")
+        pack_read = production_pack(family, record, fam_dir / "production")
         consistency[family]["decisions_recorded"] = [d["status"] for d in pack_read["decisions"]]
         for arm in ("C-full", "C-task"):
             for fmt in carrier.FORMATS:

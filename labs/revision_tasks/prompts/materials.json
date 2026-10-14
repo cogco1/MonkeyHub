@@ -1,0 +1,7 @@
+{
+ "A": "The complete design history: every event, in order, from the brief to now.",
+ "B": "A readback of the model file: each object's name and its bounding box in metres (x along, y depth, z up). The file carries no other data.",
+ "C": "The design state carried in the model file, written out as text.",
+ "D": "The design state carried in the model file, written out as text.",
+ "F": "The design state exactly as it is embedded in the model file (JSON)."
+}
