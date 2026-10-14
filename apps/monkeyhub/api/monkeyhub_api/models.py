@@ -325,6 +325,46 @@ class ChatMessage(BaseModel):
     interjection: Literal["pending", "delivered", "restarted", "undelivered"] | None = None
 
 
+class ChatNativeSourceReference(BaseModel):
+    messageId: str
+    uri: str
+    name: str
+    availability: Literal["source-only"] = "source-only"
+
+
+class ChatNativeImportSource(BaseModel):
+    # Local-machine provenance only. Never include this in a shared projection.
+    sourceSessionId: str
+    providerCwd: str
+    importedAt: str
+    sourceReferences: list[ChatNativeSourceReference] = Field(default_factory=list)
+
+
+class ChatImportPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    sourceSessionId: str = Field(min_length=1, max_length=200)
+    projectId: str = Field(min_length=1)
+    projectDir: str = Field(min_length=1)
+
+
+class ChatImportRequest(ChatImportPreviewRequest):
+    previewToken: str = Field(min_length=1)
+    confirmed: bool
+
+
+class ChatImportPreview(BaseModel):
+    previewToken: str
+    sourceSessionId: str
+    projectId: str
+    projectDir: str
+    providerCwd: str
+    sameDirectory: bool
+    canContinue: bool
+    limitation: str | None
+    existingChatId: str | None
+
+
 class ChatSummary(BaseModel):
     id: str
     projectId: str
@@ -341,6 +381,7 @@ class ChatSummary(BaseModel):
     sourceSessionId: str | None = None
     # Native identity is projected only from a negotiated or explicitly restored binding.
     continuationSessionId: str | None = None
+    nativeImport: ChatNativeImportSource | None = None
     # "permission" while a permission request in this conversation waits for a
     # decision: the same request the conversation shows with its options.
     # Derived on every read and never stored, so a record cannot go stale.
@@ -367,6 +408,14 @@ class ChatCreateRequest(BaseModel):
     provider: ChatProviderId
     model: str | None = Field(default=None, min_length=1)
     title: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class ChatImportResult(BaseModel):
+    chat: ChatDetail
+    providerCwd: str
+    executionMode: Literal["original-directory"]
+    state: Literal["native-ready", "native-bound", "continue-in-codex"]
+    sourceReferences: list[ChatNativeSourceReference]
 
 
 class ChatPresentationBindRequest(BaseModel):

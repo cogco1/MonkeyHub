@@ -43,6 +43,7 @@ from ..models import (
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
 )
 from .continuation import NativeHistoryBoundary
+from .external_import import ExternalImports, import_history
 from .turn_trace import HubTurnObserver
 from monkeymonitor.store import UsageLog
 
@@ -214,6 +215,7 @@ class ChatStore:
         self._checked_at: float | None = None
         self._checking = False
         self._check_thread: threading.Thread | None = None
+        self._external_imports = ExternalImports(self, _SavedChat)
 
     def _load(self) -> None:
         if self._loaded:
@@ -579,6 +581,13 @@ class ChatStore:
                 or session.nativeReleasePending or session_id in self._handoffs
                 or session_id in self._fenced_handoffs)
 
+    def preview_native_import(self, request):
+        return self._external_imports.preview(request.sourceSessionId, request.projectId, request.projectDir)
+
+    def import_native(self, request):
+        return self._external_imports.confirm(request.sourceSessionId, request.projectId, request.projectDir,
+                                             request.previewToken, confirmed=request.confirmed)
+
     def continue_native(self, session_id: str) -> ChatDetail:
         """Return by verifying the exact saved public prefix, never guessing origin."""
         from .continuation import check_native_version, public_history
@@ -629,14 +638,30 @@ class ChatStore:
                 if self._closing or ids & self._cancelled_handoffs:
                     raise HubFailure(409, "CHAT_CONTINUATION_CANCELLED", "The project closed while its native session was being restored.")
                 self._handoff_clients[target.id] = client
-            events = client.restore(native_id, None if matches else source.projectDir, min(self.timeout_s, 60))
-            history = public_history(events, native_id, _now(), environment, boundary=snapshot.nativeReleaseBoundary)
+            imported = None
+            if snapshot.nativeImport is not None:
+                # An imported session runs in its original directory, never the project's.
+                events = client.restore(native_id, snapshot.nativeImport.providerCwd, min(self.timeout_s, 60), include_media=True)
+                imported = import_history(events, native_id, _now(), environment, boundary=snapshot.nativeReleaseBoundary)
+                history = list(imported.messages)
+            else:
+                events = client.restore(native_id, None if matches else source.projectDir, min(self.timeout_s, 60))
+                history = public_history(events, native_id, _now(), environment, boundary=snapshot.nativeReleaseBoundary)
             with self._lock:
                 if self._closing or ids & self._cancelled_handoffs:
                     raise HubFailure(409, "CHAT_CONTINUATION_CANCELLED", "The project closed while its native session was being restored.")
                 if projects._project(target.projectDir) != (target.projectId, target.projectDir):
                     raise HubFailure(409, "CHAT_CONTINUATION_MISMATCH", "The project changed while its native session was being restored.")
+                if self._sessions.get(target.id) is not target:
+                    raise HubFailure(409, "CHAT_CONTINUATION_MISMATCH", "The source binding changed while its history was loading.")
+                if (snapshot.nativeImport is not None
+                        and self._external_imports._matching(native_id, target.projectId, target.projectDir) is not target):
+                    raise HubFailure(409, "CHAT_CONTINUATION_MISMATCH", "The native import has a conflicting source binding.")
                 updated = target.model_copy(deep=True)
+                if imported is not None:
+                    origin = updated.nativeImport.model_dump()
+                    origin["sourceReferences"].extend(imported.source_references)
+                    updated = _SavedChat.model_validate({**updated.model_dump(), "nativeImport": origin})
                 updated.originalSourceSessionId = updated.originalSourceSessionId or source.sourceSessionId
                 updated.sourceSessionId = None
                 updated.transport, updated.acpSessionId, updated.nativeSessionId = "acp", native_id, None
@@ -649,7 +674,7 @@ class ChatStore:
                 updated.nativePublicTimeline = True
                 updated.status, updated.error, updated.updatedAt = "idle", None, _now()
                 client.confirm_history(native_id)
-                self._save(updated)
+                self._save(updated, imported.attachments if imported is not None else ())
                 self._sessions[target.id] = updated
                 for identifier in ids:
                     self._presentation_tokens.pop(identifier, None)
@@ -699,7 +724,7 @@ class ChatStore:
         try:
             events = client.snapshot(native_id, min(self.timeout_s, 60))
             generation = session.nativeReleaseBoundary.generation + 1 if session.nativeReleaseBoundary else 1
-            boundary = release_boundary(events, native_id, generation)
+            boundary = release_boundary(events, native_id, generation, include_media=session.nativeImport is not None)
             with self._lock:
                 if self._closing or session_id in self._cancelled_handoffs:
                     raise HubFailure(409, "CHAT_CONTINUATION_CANCELLED", "The project closed during its native handoff.")
@@ -1682,8 +1707,14 @@ class ChatStore:
         environment["CODEX_CONFIG"] = json.dumps({
             "mcp_servers": self._codex_mcp(session, commands["codex"], environment),
         })
+        cwd = providers._source_checkout() or session.projectDir
+        if session.nativeImport is not None:
+            # A confirmed import keeps the provider's own directory and file access.
+            cwd = session.nativeImport.providerCwd
+            if not Path(cwd).is_absolute() or not Path(cwd).is_dir():
+                raise HubFailure(409, "CHAT_IMPORT_SOURCE", "The original Codex working directory is unavailable.")
         return CodexAcpSession(
-            command=self._acp_command, cwd=str(providers._source_checkout() or session.projectDir),
+            command=self._acp_command, cwd=str(cwd),
             environment=environment,
             # Nonempty ACP mcpServers would replace the disabled entries
             # above. This per-chat adapter already has the exact binding.

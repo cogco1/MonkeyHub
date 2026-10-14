@@ -15,7 +15,7 @@ from . import media
 from ..models import (
     HubError, HubFailure, ChatProvider, ChatProject, ChatProjectRequest, ChatSummary, ChatDetail, ChatCreateRequest,
     ChatModelRequest, ChatPostRequest, ChatUsageSource, ChatWorkspace, ChatPermissionRequest, ChatArchiveRequest,
-    ChatAttachmentContent,
+    ChatAttachmentContent, ChatImportPreviewRequest, ChatImportRequest, ChatImportPreview, ChatImportResult,
     ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
 )
 
@@ -73,6 +73,16 @@ def sessions_router(chats) -> APIRouter:
     def local_presenter(request: Request) -> None:
         if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:
             raise HubFailure(403, "LOCAL_PRESENTER_REQUIRED", "Presentation tools must connect from this machine.")
+
+    @routes.post("/api/chat/imports/preview", response_model=ChatImportPreview)
+    def preview_native_import(request: Request, body: ChatImportPreviewRequest):
+        local_presenter(request)
+        return chats.preview_native_import(body)
+
+    @routes.post("/api/chat/imports", response_model=ChatImportResult, status_code=201)
+    def import_native_chat(request: Request, body: ChatImportRequest):
+        local_presenter(request)
+        return chats.import_native(body)
 
     @routes.post("/api/chat/presentation/bind", response_model=ChatPresentationBinding)
     def bind_chat_presentation(request: Request, body: ChatPresentationBindRequest):

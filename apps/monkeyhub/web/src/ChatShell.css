@@ -98,6 +98,8 @@
 /* A written summary makes this dialog taller than a short window; its own
    scrollbar keeps Export and Close reachable rather than clipped. */
 .chat-dialog--archive{max-height:85dvh;overflow:auto}
+.chat-dialog--native-import{width:560px;max-width:calc(100vw - 30px);max-height:calc(100dvh - 30px);overflow:auto}
+.chat-dialog--native-import form>label{display:grid;gap:6px}.chat-dialog--native-import input:not([type=checkbox]),.chat-dialog--native-import select{width:100%;min-width:0}.chat-native-preview{margin-top:20px}.chat-native-preview dl{display:grid;gap:6px;margin:0 0 18px}.chat-native-preview dt{font-size:var(--text-caption);color:var(--muted)}.chat-native-preview dd{margin:0 0 8px;overflow-wrap:anywhere}.chat-native-consent{display:flex;flex-direction:row;align-items:flex-start;gap:10px}.chat-native-consent input{flex:none;margin-top:3px}.chat-native-directory code{overflow-wrap:anywhere}
 .chat-archive-project{font:var(--text-caption)/1.6 var(--font-mono);overflow-wrap:anywhere}
 .chat-archive-summary{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:14px 0 8px;font-size:var(--text-caption);line-height:1.7}.chat-archive-summary dt{color:var(--muted);overflow-wrap:anywhere}.chat-archive-summary dd{margin:0;min-width:0;overflow-wrap:anywhere}.chat-archive-summary ul{list-style:none;margin:0;padding:0}
 .chat-project-card p{margin-bottom:6px}

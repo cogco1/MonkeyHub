@@ -376,6 +376,8 @@ class ExternalImports:
             snapshot = self.record_type.model_validate({**snapshot.model_dump(), "nativeImport": origin})
             client = self.store._new_acp_client(row.id, snapshot, environment)
             with self.store._lock:
+                if self.store._closing or row.id in self.store._cancelled_handoffs:
+                    raise _failure("CANCELLED", "The project closed before the import completed.")
                 self.store._handoff_clients[row.id] = client
             events = client.restore(source_session_id, preview.providerCwd, min(self.store.timeout_s, 60), include_media=True)
             history = import_history(events, source_session_id, now, environment)
