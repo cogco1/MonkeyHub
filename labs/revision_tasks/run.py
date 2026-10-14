@@ -96,8 +96,9 @@ def score(spec: dict[str, Any], claim: str, oracle_verdict: str) -> dict[str, An
         oracle_ok = None if oracle_verdict == "unavailable" else False
         success = outcome_ok and oracle_verdict == "unavailable"
     else:
-        oracle_ok = oracle_verdict == gold["expected_verdict"]
-        success = outcome_ok and oracle_ok
+        # A refusal before execution leaves no candidate to judge; it counts when the gold accepts a refusal.
+        oracle_ok = None if oracle_verdict == "unavailable" else oracle_verdict == gold["expected_verdict"]
+        success = outcome_ok and (claim == "refuse" or bool(oracle_ok))
     return {"success": success, "outcome_matches_gold": outcome_ok, "oracle_matches_gold": oracle_ok,
             "false_accept": claim == "accept" and oracle_verdict == "violated"}
 

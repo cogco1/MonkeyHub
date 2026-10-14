@@ -11,16 +11,16 @@
   },
   "fixture": {
     "fixture_id": "F3-wall-stair",
-    "version": "1",
+    "version": "2",
     "generator": "labs/revision_tasks/fixtures.py:f3_wall_stair",
     "files_sha256": {
-      "labs/revision_tasks/fixtures.py": "9e2e38311067fd4b9f5c894a3cccd7ef462c6aa54bd49488a316203e7f300837"
+      "labs/revision_tasks/fixtures.py": "f56225ec47e73d735010aa44dedf1e2eaa973d97ca5fa4d59a00c1e000e70bc9"
     }
   },
   "start_state": {
     "state_ref": "fixture:F3-wall-stair@1",
-    "content_digest": "f3295f7b18abc05f0e870e0a77439c8aee05f32a95be7d4828e06cd0cf7562c7",
-    "exact_base_digest": "85a39b8fc61eb102c28d6bca67578f3cff03ff93013928f3759b59624b595d1f"
+    "content_digest": "80cdede7a57abcca5d8edd471de23149a8b1d065807a48a97ecaf4ee2c40b494",
+    "exact_base_digest": "cd19072a949656c316849c622e94047c74d2a37840f1f6a06b5014c8bfce3592"
   },
   "history": {
     "history_ref": null,

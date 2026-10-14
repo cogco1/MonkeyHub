@@ -11,16 +11,16 @@
   },
   "fixture": {
     "fixture_id": "F2-portico-rotunda",
-    "version": "1",
+    "version": "2",
     "generator": "labs/revision_tasks/fixtures.py:f2_portico_rotunda",
     "files_sha256": {
-      "labs/revision_tasks/fixtures.py": "9e2e38311067fd4b9f5c894a3cccd7ef462c6aa54bd49488a316203e7f300837"
+      "labs/revision_tasks/fixtures.py": "f56225ec47e73d735010aa44dedf1e2eaa973d97ca5fa4d59a00c1e000e70bc9"
     }
   },
   "start_state": {
     "state_ref": "fixture:F2-portico-rotunda@1",
-    "content_digest": "ddef711e167fb025a27c6b3250935955aa5e5bc783df8f1c2ec28f91ebe44c9e",
-    "exact_base_digest": "c698c5a04a5fd78dd1fc46b8ce52d8b3c07bd691af63035b054e5e60448b01e2"
+    "content_digest": "c9878f31b212ccef570be6c87bd039053462c2a58699dd23b9909e604805f41a",
+    "exact_base_digest": "35b186f4497b44bb7db5478ccb0bb46560fc64dca7481c99e241f9676fcdc13c"
   },
   "history": {
     "history_ref": null,

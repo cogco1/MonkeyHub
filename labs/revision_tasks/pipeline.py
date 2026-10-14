@@ -182,23 +182,23 @@ def declared_checks(record: StateRecord, realization: Realization) -> list[dict[
 
 
 def obligation_checks(record: StateRecord) -> list[dict[str, Any]]:
-    """Open obligations the record declares with the at-most validator, evaluated on its parameters.
+    """Open obligations the record declares with an at-most or at-least validator, evaluated on its parameters.
 
-    The kernel stores obligations and evaluates none; this one predicate belongs
-    to the harness, and it reads only what the record declares.
+    The kernel stores obligations and evaluates none; these two predicates belong
+    to the harness, and they read only what the record declares.
     """
 
-    from labs.revision_tasks.fixtures import AT_MOST
+    from labs.revision_tasks.fixtures import AT_LEAST, AT_MOST
 
     values = evaluate_parameters(record)
     results = []
     for obligation in record.obligations:
-        if obligation.validator_ref != AT_MOST or obligation.status.value != "open":
+        if obligation.validator_ref not in (AT_MOST, AT_LEAST) or obligation.status.value != "open":
             continue
         left, right = (ref.removeprefix("parameter:") for ref in obligation.subject_refs)
-        results.append({"obligation_id": obligation.obligation_id, "left": left, "right": right,
-                        "left_value": _r(values[left]), "right_value": _r(values[right]),
-                        "status": "held" if values[left] <= values[right] + 1e-9 else "violated"})
+        holds = values[left] <= values[right] + 1e-9 if obligation.validator_ref == AT_MOST else values[left] >= values[right] - 1e-9
+        results.append({"obligation_id": obligation.obligation_id, "validator": obligation.validator_ref, "left": left, "right": right,
+                        "left_value": _r(values[left]), "right_value": _r(values[right]), "status": "held" if holds else "violated"})
     return results
 
 
