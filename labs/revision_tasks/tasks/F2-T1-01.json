@@ -230,7 +230,7 @@
   "oracle": {
     "oracle_id": "geometry-readback-oracle",
     "version": "1",
-    "sha256": "502502d48e58844d9813869cb3dda16c9b8a9273f476b497cb4826778b60abd3",
+    "sha256": "848bf9c994e56f9c76712330f2bed61c0e69ce971b3018d3bc96da1388e5ad28",
     "method": "cold_readback_geometry",
     "reads_metadata": false
   },

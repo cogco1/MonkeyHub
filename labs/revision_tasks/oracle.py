@@ -40,12 +40,14 @@ class OracleInputError(ValueError):
 
 
 def load_meshes(path: Path) -> dict[str, Mesh]:
-    """Every mesh object by its name, from a .3dm, a .glb or an .ifc; a duplicated or empty name is an input error."""
+    """Every mesh object by its name, from a .3dm, a .glb, an .ifc or a .usda; a duplicated or empty name is an input error."""
 
     if Path(path).suffix.lower() == ".glb":
         return _load_glb(Path(path))
     if Path(path).suffix.lower() == ".ifc":
         return _load_ifc(Path(path))
+    if Path(path).suffix.lower() == ".usda":
+        return _load_usda(Path(path))
     import rhino3dm
 
     model = rhino3dm.File3dm.Read(str(path))
@@ -209,6 +211,42 @@ def _load_ifc(path: Path) -> dict[str, Mesh]:
                 triangles.append(f + sum(len(x) for x in vertices))
                 vertices.append(v)
         meshes[name] = (np.vstack(vertices), np.vstack(triangles))
+    return meshes
+
+
+def _load_usda(path: Path) -> dict[str, Mesh]:
+    """Named meshes from a USD text layer, read as text: each ``def Mesh`` block's ``objectName`` string (its identity:
+    a prim name cannot hold a hyphen), points and faces. A layer that is not z-up in metres, or a mesh with a transform
+    op, is refused."""
+
+    import re
+
+    text = path.read_text(encoding="utf-8")
+    header = text.split("def ", 1)[0]
+    if 'upAxis = "Z"' not in header or not re.search(r"metersPerUnit = 1(\.0)?\b", header):
+        raise OracleInputError(f"{path.name}: not z-up in metres")
+    meshes: dict[str, Mesh] = {}
+    for block in re.split(r'\n\s*def Mesh "', text)[1:]:
+        body = block.split("\n    }", 1)[0]
+        if "xformOp" in body:
+            raise OracleInputError(f"{path.name}: a mesh carries a transform")
+        name = re.search(r'custom string objectName = "([^"]*)"', body)
+        counts = re.search(r"int\[\] faceVertexCounts = \[([^\]]*)\]", body)
+        indices = re.search(r"int\[\] faceVertexIndices = \[([^\]]*)\]", body)
+        points = re.search(r"point3f\[\] points = \[(.*?)\](?:\n|$)", body, re.S)
+        if not (name and counts and indices and points):
+            raise OracleInputError(f"{path.name}: a mesh without a name, faces or points")
+        if name.group(1) in meshes:
+            raise OracleInputError(f"mesh name {name.group(1)!r} occurs twice")
+        number = r"[-+]?\d+\.?\d*(?:[eE][-+]?\d+)?"
+        v = np.array([float(x) for x in re.findall(number, points.group(1))], dtype=np.float64).reshape(-1, 3)
+        flat = [int(x) for x in re.findall(r"\d+", indices.group(1))]
+        triangles, k = [], 0
+        for n in (int(x) for x in re.findall(r"\d+", counts.group(1))):
+            face = flat[k:k + n]
+            k += n
+            triangles += [[face[0], face[i], face[i + 1]] for i in range(1, n - 1)]
+        meshes[name.group(1)] = (v, np.array(triangles, dtype=np.int64).reshape(-1, 3))
     return meshes
 
 

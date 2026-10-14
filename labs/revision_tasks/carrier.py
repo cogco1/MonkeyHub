@@ -22,7 +22,9 @@ the state and binding go into ``asset.extras.archflow``, identities into
 ``node.extras.archflow``. IFC: the same meshes as ``IfcTriangulatedFaceSet``s on
 ``IfcBuildingElementProxy`` products (a harness conversion); the state and binding
 go into the property set ``ArchFlow_State`` on ``IfcProject``, identities into
-``ArchFlow_Object`` on each product.
+``ArchFlow_Object`` on each product. USD (``.usda`` text): the same meshes as
+``UsdGeom.Mesh`` prims (z up, metres), each named by its ``objectName`` string;
+the state and binding go into the root layer's ``customLayerData``.
 
 Reading checks, in order:
 1. the state and binding are present;
@@ -50,7 +52,7 @@ from labs.revision_tasks.context_pack import pack_digest
 
 SCHEMA = "ArchFlowStateFile@1"
 ARMS = ("C-full", "C-task", "C-unbound", "D")
-FORMATS = ("3dm", "glb", "ifc")
+FORMATS = ("3dm", "glb", "ifc", "usd")
 # Evidence (Reading@1) is task state: the context pack reads it from these rows, and a stale-evidence task needs it.
 TASK_VIEW_SCHEMAS = frozenset({"Element@1", "Level@1", "GridAxis@1", "Component@1", "Reading@1"})
 
@@ -366,6 +368,108 @@ def read_ifc(path: Path, *, sidecar: Path | None = None) -> StateFile:
         except ValueError as exc:
             raise CarrierRefused("METADATA_CORRUPT", str(exc)) from exc
     return _checked(state, bound, sha256_bytes(data), ifc_geometry(model), reference, "ifc")
+
+
+# ---------------------------------------------------------------- USD
+
+def _usd_prim_name(name: str) -> str:
+    """A USD prim name for an object name (prim names allow letters, digits and underscores only)."""
+
+    return "o_" + "".join(ch if ch.isalnum() else "_" for ch in name)
+
+
+def usd_from_three_dm(three_dm: Path) -> Any:
+    """A USD stage of the 3DM's named meshes: one ``UsdGeom.Mesh`` per object under ``/World``, z up, metres. A prim
+    name cannot hold a hyphen, so each mesh carries its object name in the string attribute ``objectName``."""
+
+    import rhino3dm
+    from pxr import Gf, Sdf, Usd, UsdGeom, Vt
+
+    model = rhino3dm.File3dm.Read(str(three_dm))
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
+    UsdGeom.Xform.Define(stage, "/World")
+    for obj in sorted(model.Objects, key=lambda o: o.Attributes.Name or ""):
+        mesh, name = obj.Geometry, obj.Attributes.Name
+        if not isinstance(mesh, rhino3dm.Mesh) or not name:
+            continue
+        prim = UsdGeom.Mesh.Define(stage, f"/World/{_usd_prim_name(name)}")
+        prim.GetPointsAttr().Set(Vt.Vec3fArray([Gf.Vec3f(mesh.Vertices[i].X, mesh.Vertices[i].Y, mesh.Vertices[i].Z)
+                                                for i in range(len(mesh.Vertices))]))
+        counts, indices = [], []
+        for i in range(mesh.Faces.Count):
+            a, b, c, d = mesh.Faces[i]
+            counts.append(3 if d == c else 4)
+            indices += [a, b, c] if d == c else [a, b, c, d]
+        prim.GetFaceVertexCountsAttr().Set(Vt.IntArray(counts))
+        prim.GetFaceVertexIndicesAttr().Set(Vt.IntArray(indices))
+        prim.GetPrim().CreateAttribute("objectName", Sdf.ValueTypeNames.String, custom=True).Set(name)
+    return stage
+
+
+def usd_geometry(stage: Any) -> dict[str, str]:
+    """Object name -> SHA-256 of its mesh points (rounded to 1e-5 m: USD points are 32-bit) and faces."""
+
+    from pxr import UsdGeom
+
+    digests = {}
+    for prim in stage.Traverse():
+        if not prim.IsA(UsdGeom.Mesh):
+            continue
+        name = prim.GetAttribute("objectName").Get() if prim.HasAttribute("objectName") else None
+        if not name:
+            continue
+        mesh = UsdGeom.Mesh(prim)
+        digest = hashlib.sha256()
+        digest.update(json.dumps([[round(float(v), 5) for v in p] for p in mesh.GetPointsAttr().Get()]).encode())
+        digest.update(json.dumps([int(v) for v in mesh.GetFaceVertexCountsAttr().Get()]).encode())
+        digest.update(json.dumps([int(v) for v in mesh.GetFaceVertexIndicesAttr().Get()]).encode())
+        digests[str(name)] = digest.hexdigest()
+    return digests
+
+
+def write_usd(stage: Any, final: Path, *, state: dict[str, Any] | None, binding_value: dict[str, Any] | None,
+              design_state_digest: str) -> None:
+    """Embed state and binding (C arms) or only the design-state reference (D) in the root layer's
+    ``customLayerData``, and each object's reference in its prim's ``customData``; write ``.usda`` text."""
+
+    archflow = {"design_state_digest": design_state_digest}
+    if state is not None:
+        archflow.update({"state": canonical_json(state), "binding": canonical_json(binding_value)})
+    stage.GetRootLayer().customLayerData = {"archflow": archflow}
+    for prim in stage.Traverse():
+        if prim.HasAttribute("objectName"):
+            prim.SetCustomDataByKey("archflow:object_ref", f"cad-object:{prim.GetAttribute('objectName').Get()}")
+    final.write_text(stage.GetRootLayer().ExportToString(), encoding="utf-8", newline="\n")
+
+
+def read_usd(path: Path, *, sidecar: Path | None = None) -> StateFile:
+    from pxr import Usd
+
+    data = path.read_bytes()
+    try:
+        stage = Usd.Stage.Open(str(path))
+    except Exception as exc:  # noqa: BLE001 - an unreadable file is one refusal
+        raise CarrierRefused("FILE_CORRUPT", f"{type(exc).__name__}: {exc}") from exc
+    if stage is None:
+        raise CarrierRefused("FILE_CORRUPT", "not a readable USD layer")
+    carried = dict(stage.GetRootLayer().customLayerData.get("archflow", {}) or {})
+    reference = carried.get("design_state_digest")
+    if sidecar is not None:
+        try:
+            outside = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise CarrierRefused("METADATA_MISSING", f"sidecar unreadable: {exc}") from exc
+        state, bound = outside.get("state"), outside.get("binding")
+    else:
+        if "state" not in carried or "binding" not in carried:
+            raise CarrierRefused("METADATA_MISSING", "no archflow state in the root layer's customLayerData")
+        try:
+            state, bound = json.loads(carried["state"]), json.loads(carried["binding"])
+        except ValueError as exc:
+            raise CarrierRefused("METADATA_CORRUPT", str(exc)) from exc
+    return _checked(state, bound, sha256_bytes(data), usd_geometry(stage), reference, "usd")
 
 
 # ---------------------------------------------------------------- the checks every arm and format share

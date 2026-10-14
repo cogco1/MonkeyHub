@@ -97,6 +97,12 @@ def write_state_file(record: StateRecord, *, arm: str, fmt: str, out_dir: Path, 
         bind = carrier.binding(carried, bound.state_digest, arm, pack, parent_sha256, geometry)
         final = out_dir / f"{stem}.3dm"
         carrier.seal_three_dm(realization.preview_path, final, None if arm == "D" else bind)
+    elif fmt == "usd":
+        stage = carrier.usd_from_three_dm(realization.preview_path)
+        bind = carrier.binding(carried, bound.state_digest, arm, pack, parent_sha256, carrier.usd_geometry(stage))
+        final = out_dir / f"{stem}.usda"
+        carrier.write_usd(stage, final, state=None if arm == "D" else state, binding_value=None if arm == "D" else bind,
+                          design_state_digest=bound.state_digest)
     elif fmt == "ifc":
         model = carrier.ifc_from_three_dm(realization.preview_path)
         bind = carrier.binding(carried, bound.state_digest, arm, pack, parent_sha256, carrier.ifc_geometry(model))
@@ -117,7 +123,7 @@ def write_state_file(record: StateRecord, *, arm: str, fmt: str, out_dir: Path, 
 
 
 def read_state_file(path: Path, *, fmt: str, sidecar: Path | None = None) -> carrier.StateFile:
-    reader = {"3dm": carrier.read_three_dm, "glb": carrier.read_glb, "ifc": carrier.read_ifc}[fmt]
+    reader = {"3dm": carrier.read_three_dm, "glb": carrier.read_glb, "ifc": carrier.read_ifc, "usd": carrier.read_usd}[fmt]
     return reader(path, sidecar=sidecar)
 
 
