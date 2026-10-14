@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from labs.revision_tasks import _bootstrap  # noqa: F401  (source roots first)
-from labs.revision_tasks import fixtures, oracle, pipeline, taskspec  # noqa: E402
+from labs.revision_tasks import fixtures, infer, oracle, pipeline, taskspec  # noqa: E402
 
 LAB = Path(__file__).resolve().parent
 CHECKOUT = _bootstrap.CHECKOUT
@@ -91,7 +91,8 @@ def element_of(objects_by_element: dict[str, tuple[str, ...]]) -> dict[str, str]
 
 def score(spec: dict[str, Any], claim: str, oracle_verdict: str) -> dict[str, Any]:
     gold = spec["gold"]
-    outcome_ok = claim in gold["acceptable_arm_outcomes"]
+    # ``ask`` (a broken inferred relation, X8) is right wherever the gold says violated; on a held task it is an unneeded question.
+    outcome_ok = claim in gold["acceptable_arm_outcomes"] or (claim == "ask" and gold["expected_verdict"] == "violated")
     if gold["expected_verdict"] == "refuse":
         oracle_ok = None if oracle_verdict == "unavailable" else False
         success = outcome_ok and oracle_verdict == "unavailable"
@@ -128,10 +129,21 @@ def run_task(task_path: Path, out: Path, order_slot: int, arm_name: str = ARM) -
     start = record if record.base is not None else fixtures.bound(record)
     start_real = pipeline.realize(start, (task_dir / "start").resolve(), "start")
     t_start = time.perf_counter()
-    if arm_name == ARM:
+    inferred_report = None
+    if arm_name in (ARM, "B3+I"):
         # A patch prepared against an older start carries that start's digests: the arm sees the stale base.
         arm_spec = spec if "patch_base_digests" not in spec else {**spec, "start_state": {**spec["start_state"], **spec["patch_base_digests"]}}
         arm = pipeline.run_archflow_arm(arm_spec, start, start_real, (task_dir / "candidate").resolve())
+        if arm_name == "B3+I":
+            kept, dropped = infer.infer_all(start, start_real)
+            inferred_report = {"kept": [f"{k.layer} {k.kind} {k.a}/{k.b}" for k in kept], "dropped_on_start": [f"{k.layer} {k.kind} {k.a}/{k.b}" for k in dropped],
+                               "harness_added": True}
+            if arm.claim == "accept" and arm.realization is not None:
+                broken = [r for r in infer.check_inferred(infer.with_inferred(arm.record, kept), arm.realization) if r["status"] == "broken"]
+                inferred_report["broken"] = broken
+                if broken:
+                    arm.claim = "ask"
+                    arm.reasons.append({"code": "INFERRED_RELATION_BROKEN", "refs": [f"{r['a']}/{r['b']} {r['kind']}" for r in broken]})
     else:
         arm = pipeline.run_baseline_arm(arm_name, spec, start, start_real, (task_dir / "candidate").resolve())
     t_arm = time.perf_counter()
@@ -166,7 +178,8 @@ def run_task(task_path: Path, out: Path, order_slot: int, arm_name: str = ARM) -
             "operation_ids": [op.op_id for op in arm.realization.program.proposal.operations],
             "reused_object_ids": sorted(arm.realization.receipt.reused_object_ids)},
         "readback": None if arm.realization is None else readback_summary(arm.realization),
-        "checker": {"system": {"declared": arm.declared, "obligations": arm.obligations, "new_interference": arm.new_interference},
+        "checker": {"system": {"declared": arm.declared, "obligations": arm.obligations, "new_interference": arm.new_interference,
+                               "inferred": inferred_report},
                     "oracle": {"oracle_id": report.get("oracle_id", oracle.ORACLE_ID), "oracle_version": report.get("oracle_version", oracle.ORACLE_VERSION),
                                "verdict": report["verdict"], "relations": report.get("relations", []), "error": report.get("error")}},
         "ids": ids,
@@ -210,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, required=True, help="an empty or new directory outside the repository")
     parser.add_argument("--tasks", help="comma-separated task ids (default: every task file)")
     parser.add_argument("--compare", type=Path, help="an earlier output directory whose bundle hashes must match")
-    parser.add_argument("--arms", default=ARM, help="comma-separated arms: B0 (full rebuild), B1 (target only), B2 (declared closure), B3_archflow")
+    parser.add_argument("--arms", default=ARM, help="comma-separated arms: B0 (full rebuild), B1 (target only), B2 (declared closure), B3_archflow, B3+I (B3 with inferred relations)")
     parser.add_argument("--experiment", default=EXPERIMENT)
     args = parser.parse_args(argv)
     out = args.out.resolve()

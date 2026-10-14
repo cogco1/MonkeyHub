@@ -1,0 +1,53 @@
+"""Undeclared relations made explicit: what I1 and I2 find on the fixtures, and that a broken one is noticed."""
+
+from __future__ import annotations
+
+import pytest
+
+from labs.revision_tasks import _bootstrap  # noqa: F401
+from labs.revision_tasks import fixtures, infer, pipeline
+
+try:
+    from monkeycad.backends.occt.kernel import occt_available
+    READY = occt_available()
+except ImportError:
+    READY = False
+
+pytestmark = pytest.mark.skipif(not READY, reason="needs the OCCT kernel (cadquery-ocp)")
+
+
+def _start(tmp_path, record):
+    work = tmp_path / "start"
+    work.mkdir()
+    return pipeline.realize(record, work.resolve(), "start")
+
+
+def test_the_undeclared_pediment_support_is_found_and_its_loss_is_noticed(tmp_path):
+    from archflow.state.state_record import StateRecordEditKind, StateRecordOperator, apply_state_record_operator
+
+    start = fixtures.bound(fixtures.f1_portico())
+    kept, dropped = infer.infer_all(start, _start(tmp_path, start))
+    assert {(k.layer, k.kind, k.a, k.b) for k in kept} == {("I1", "support", "entablature", "pediment"), ("I2", "support", "entablature", "pediment")}
+    assert dropped == []
+    shallower = apply_state_record_operator(start, StateRecordOperator(
+        kind=StateRecordEditKind.SET_SCALAR, base_record_digest=start.digest, base_state_digest=start.state_digest,
+        target_ref="parameter:entablature_height", key="entablature_height", value=1.5))
+    work = tmp_path / "candidate"
+    work.mkdir()
+    candidate = pipeline.realize(shallower, work.resolve(), "candidate")
+    statuses = {r["status"] for r in infer.check_inferred(infer.with_inferred(shallower, kept), candidate)}
+    assert statuses == {"broken"}
+
+
+def test_role_rules_propose_what_geometry_cannot_see(tmp_path):
+    start = fixtures.bound(fixtures.f3_wall_stair())
+    kept, _ = infer.infer_all(start, _start(tmp_path, start))
+    assert ("I2", "non_interference", "wall", "stair") in {(k.layer, k.kind, k.a, k.b) for k in kept}
+
+
+def test_a_crossing_inference_is_the_pre_execution_question():
+    record = fixtures.bound(fixtures.f1_portico())
+    item = infer.Inferred("I1", "support", "entablature", "pediment", {"distance_m": 0.0})
+    with_one = infer.with_inferred(record, [item])
+    assert infer.crossing(with_one, {"entablature"}) == [item.obligation().obligation_id]
+    assert infer.crossing(with_one, {"entablature", "pediment"}) == []

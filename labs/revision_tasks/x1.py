@@ -15,6 +15,7 @@ It uses only what that context holds. The four starting contexts are:
 | SF | a state file, C-full or C-task, read back from 3DM and from GLB through ``carrier`` with its binding checked |
 | GF | the same model with every metadata string stripped; only the geometry and the request's own words remain |
 | SF-O | SF without its obligations, and without the relations that bound, clear or fix (support contacts stay) |
+| SF+I | SF with the relations ``infer`` finds (I1 geometry, I2 role rules) that hold on the start, written in as candidate obligations; a broken one is ``ask`` |
 
 Each task is answered twice. d_pre reads the state alone; d_post also realizes the candidate, reads it back and scans it. Both are reported for every context.
 
@@ -61,7 +62,7 @@ from archflow.state.state_record import (
     evaluate_parameters,
 )
 
-from labs.revision_tasks import carrier, fixtures, pipeline, production_project, reviser
+from labs.revision_tasks import carrier, fixtures, infer, pipeline, production_project, reviser
 
 LAB = Path(__file__).resolve().parent
 HISTORY = LAB / "history" / "events_v1.json"
@@ -289,6 +290,9 @@ def decide(context: Context, task: dict[str, Any], root: Path | None, *, execute
         return {"verdict": "refuse" if limit_side else "violated", **base,
                 "reason": ("the request moves the limit of " if limit_side else "breaks ") + ", ".join(o["obligation_id"] for o in failed)}
     if not execute:
+        crossing = infer.crossing(start, set(affected))
+        if crossing:
+            return {"verdict": "ask", **base, "reason": "inferred relations cross the change: " + ", ".join(crossing)}
         return {"verdict": "held", **base, "reason": "no obligation fails; geometry not executed"}
     label = f"{task['task_id']}-{context.name}"
     before = _realized(context.record, root, f"start-{label}")
@@ -299,7 +303,16 @@ def decide(context: Context, task: dict[str, Any], root: Path | None, *, execute
     new = sorted(p for p in pipeline.penetrating_pairs(after) if p not in baseline and frozenset(p) not in covered)
     if declared or new:
         return {"verdict": "violated", **base, "reason": "; ".join([c["relation_id"] for c in declared] + [" / ".join(p) for p in new])}
+    broken = [r for r in infer.check_inferred(record, after) if r["status"] == "broken"]
+    if broken:
+        return {"verdict": "ask", **base, "reason": "inferred relations broken: " + ", ".join(f"{r['a']}/{r['b']} {r['kind']}" for r in broken)}
     return {"verdict": "held", **base, "reason": "every check holds"}
+
+
+def _ok(verdict: str, task: dict[str, Any]) -> bool:
+    """A verdict the gold accepts; ``ask`` counts wherever the gold says ``violated`` (X8)."""
+
+    return verdict in task["gold"]["verdicts"] or (verdict == "ask" and "violated" in task["gold"]["verdicts"])
 
 
 def _set_scores(found: list[str], gold: list[str]) -> tuple[float | None, float | None]:
@@ -344,6 +357,15 @@ def run(out: Path, *, families: tuple[str, ...] = ("F1", "F2", "F3")) -> dict[st
                 files[(arm, fmt)] = written.path
                 contexts.append(file_context(f"SF[{arm},{fmt}]", written.path, fmt, family))
         contexts.append(file_context("SF-O[C-full,3dm]", files[("C-full", "3dm")], "3dm", family, minus_obligations=True))
+        start_real = _realized(record, fam_dir, "inference-start")
+        kept, dropped = infer.infer_all(fixtures.bound(record), start_real)
+        consistency[family]["inferred"] = {"kept": [f"{k.layer} {k.kind} {k.a}/{k.b}" for k in kept],
+                                           "dropped_on_start": [f"{k.layer} {k.kind} {k.a}/{k.b}" for k in dropped]}
+        inferred_dir = fam_dir / "C-full-I-3dm"
+        inferred_dir.mkdir()
+        inferred_file = reviser.write_state_file(infer.with_inferred(record, kept), arm="C-full", fmt="3dm", out_dir=inferred_dir, stem="state",
+                                                 parent_sha256=None, context_root=inferred_dir / "ctx", utterance="Current design state.")
+        contexts.append(file_context("SF+I[C-full,3dm]", inferred_file.path, "3dm", family))
         stripped = fam_dir / "geometry-only.3dm"
         from labs.revision_tasks.attacks import _rewrite, _strings
         _rewrite(files[("C-full", "3dm")], stripped, strings={k: None for k in _strings(files[("C-full", "3dm")]) if k.startswith("archflow:")})
@@ -358,9 +380,11 @@ def run(out: Path, *, families: tuple[str, ...] = ("F1", "F2", "F3")) -> dict[st
                 precision, recall = _set_scores(answer["affected"], task["gold"]["affected"])
                 _, recheck_recall = _set_scores(answer["recheck"], task["gold"]["recheck"])
                 rows.append({"task_id": task["task_id"], "type": task["type"], "context": context.name,
-                             "verdict_pre": pre[context.name]["verdict"], "verdict_pre_ok": pre[context.name]["verdict"] in task["gold"]["verdicts"],
+                             "verdict_pre": pre[context.name]["verdict"], "verdict_pre_ok": _ok(pre[context.name]["verdict"], task),
                              "verdict": answer["verdict"],
-                             "gold_verdicts": "|".join(task["gold"]["verdicts"]), "verdict_ok": answer["verdict"] in task["gold"]["verdicts"],
+                             "gold_verdicts": "|".join(task["gold"]["verdicts"]), "verdict_ok": _ok(answer["verdict"], task),
+                             "unneeded_ask_pre": pre[context.name]["verdict"] == "ask" and "held" in task["gold"]["verdicts"],
+                             "unneeded_ask": answer["verdict"] == "ask" and "held" in task["gold"]["verdicts"],
                              "agrees_with_H": None, "affected": "|".join(answer["affected"]), "affected_precision": precision,
                              "affected_recall": recall, "recheck_recall": recheck_recall, "changes": json.dumps(answer.get("changes")),
                              "reason": answer["reason"], "state_bytes": context.state_bytes, "seconds": round(time.perf_counter() - started, 3)})
@@ -376,9 +400,12 @@ def run(out: Path, *, families: tuple[str, ...] = ("F1", "F2", "F3")) -> dict[st
     summary: dict[str, Any] = {"consistency": consistency, "by_context": {}, "state_bytes": {}}
     for row in rows:
         summary["state_bytes"].setdefault(row["task_id"].split("-")[0], {})[row["context"]] = row["state_bytes"]
-        cell = summary["by_context"].setdefault(row["context"], {"tasks": 0, "verdict_pre_ok": 0, "verdict_ok": 0, "agrees_with_H": 0})
+        cell = summary["by_context"].setdefault(row["context"], {"tasks": 0, "verdict_pre_ok": 0, "verdict_ok": 0, "agrees_with_H": 0,
+                                                                 "unneeded_ask_pre": 0, "unneeded_ask": 0})
         cell["tasks"] += 1
         cell["verdict_pre_ok"] += int(row["verdict_pre_ok"])
+        cell["unneeded_ask_pre"] += int(row["unneeded_ask_pre"])
+        cell["unneeded_ask"] += int(row["unneeded_ask"])
         cell["verdict_ok"] += int(row["verdict_ok"])
         cell["agrees_with_H"] += int(bool(row["agrees_with_H"]))
     (out / "x1_summary.json").write_text(json.dumps(summary, indent=1, sort_keys=True, default=str) + "\n", encoding="utf-8")

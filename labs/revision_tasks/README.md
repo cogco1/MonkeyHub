@@ -20,8 +20,9 @@ project, changes an owner's contract or is imported by production code.
 | `attacks.py` | Eleven attacks on state-bearing files, each compared with the honest revision; `python -m labs.revision_tasks.attacks --out <dir>`. |
 | `x1.py`, `x1_tasks.json`, `history/events_v1.json` | Sufficiency: one reference decision from four starting contexts (history, state file, geometry only, state file without obligations); `python -m labs.revision_tasks.x1 --out <dir>`. |
 | `production_project.py` | A disposable project holding a fixture as production does: a frozen one-stage workflow, a stage run through the runner (the repository's own tools), decisions recorded against it, and the context pack read for that run. |
+| `infer.py` | Undeclared relations made explicit: geometric (I1) and role-rule (I2) inference on the start, kept as open candidate obligations and checked on a candidate. |
 | `context_pack.py` | The `ContextPack@1` MonkeyHub would give an agent, read from a disposable project by an in-process Project Runtime. |
-| `test_*.py` | Task-file validity and freezing; the oracle on a real F3 candidate and on eight wrong geometries; state files on every arm and format. |
+| `test_*.py` | Task-file validity and freezing; the oracle on a real F3 candidate and on eight wrong geometries; state files on every arm and format; what inference finds on F1 and F3. |
 
 ## Run
 
@@ -57,12 +58,13 @@ The arm works through these steps in order and stops at the first refusal or reo
 
 ## Baseline arms (`run.py --arms`)
 
-The same task can be run by four arms (`--arms B0,B1,B2,B3_archflow --experiment X4`).
+The same task can be run by five arms (`--arms B0,B1,B2,B3_archflow,B3+I --experiment X4`).
 
 - **B0** rebuilds the whole model.
 - **B1** replaces only the elements whose own rows bind a changed parameter.
 - **B2** replaces the elements in the declared closure.
 - **B3** is the ArchFlow arm above.
+- **B3+I** is B3 with the inferred relations of the start; an accepted candidate that breaks one becomes `ask`.
 
 B1 and B2 reuse every other object from the start model as it was, composed at the 3DM level. B0, B1 and B2 skip the base check, read no obligations and relations, and claim `accept` whenever the change executes.
 
@@ -127,6 +129,18 @@ Outcome on F1 and F3, 3DM:
 
 A file's own digests prove that the file is self-consistent. They cannot prove that it is the current state or that its guards are the ones that were agreed.
 
+## Undeclared relations (`infer.py`)
+
+Two deterministic layers, both harness additions (the kernel infers nothing):
+
+- **I1, geometry.** On the start's cold-read STEP, every pair of elements no declared relation covers is measured with OCCT. A distance of at most 1 mm is a contact: a support when one element's top meets the other's bottom over a shared plan, otherwise an abutment. Up to 5 cm is a near contact. Tops (or non-ground bottoms) at one level are an alignment.
+- **I2, role rules.** Each element gets a role from its producer and id; a frozen rule table proposes the relations those roles should have (a roof rests on its entablature or wall, a stair does not run into a wall, ...).
+
+Every inference is kept only if it holds on the start geometry. It is written into the record as an open `DesignObligation` with `validator:inferred-<kind>`, marked unconfirmed. Before execution, an inferred relation with one element inside the change's closure and one outside is a question (`crossing`). After execution, a broken one (a contact that opens or penetrates, an alignment that breaks, an interference) turns the decision into `ask`; it is never silently repaired or treated as a refusal.
+
+They appear as the X1 start `SF+I` and the X4 arm `B3+I`. Scoring counts `ask` as right wherever the gold says violated and reports it separately as an unneeded question where the gold holds.
+
+On the fixtures: the pediment's support on the entablature (F1) is found by both layers; the stair-to-wall non-interference (F3) by I2. F2's transition roof (J3) is not found: it sits 0.2 m from the portico at the start, outside the near band, and the role proposal does not hold on the start, so it is dropped.
 ## The oracle (`oracle.py`)
 
 - **What it reads.** Each object's name (identity) and mesh, from a `.3dm` (rhino3dm) or a `.glb` (struct and numpy; glTF's y-up is rotated to the model's z-up; node transforms are refused). No user strings, document strings, layers or state; `reads_metadata` is always false.
@@ -165,3 +179,5 @@ The gold in these files is a draft written for smoke runs. A run counts only aft
 - The undeclared-interference scan finds solid penetration only. A clearance that nothing declares (the space under a stair, say) is invisible to it.
 - A hostless revision rebuilds the whole model from the file's state: the file does not carry the previous exact STEP, so shapes are not reused across files.
 - A C-unbound file that another tool edited is accepted, and its rebuild silently discards the edit (`test_carrier`).
+- Inference sees only what touches, nearly touches or aligns at the start, plus what its role table names. A relation that holds across a gap (F2's J3) or between roles the table does not list stays undeclared.
+- Role rules over-propose: on a change that moves an element away from an inferred contact on purpose, the answer is a question the gold did not need.
