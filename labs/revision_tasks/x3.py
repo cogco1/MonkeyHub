@@ -57,7 +57,7 @@ HUB_MODES = ("M", "M+", "T", "H")
 REQUEST_TIMEOUT_S = 600
 TURN_BUDGET_USD = 3.0          # a runaway guard, not the binding limit (manifest 7.11)
 MAX_TURNS = 24                 # 20 tool calls (the binding cap), the answer and a margin
-OUTCOMES = ("complete", "honest_limitation", "wrong", "asked_rightly", "asked_wrongly", "repeated_explanation", "external_change_reported")
+OUTCOMES = ("complete", "correct_not_landed", "honest_limitation", "wrong", "asked_rightly", "asked_wrongly", "repeated_explanation", "external_change_reported")
 
 
 class NotBuilt(RuntimeError):

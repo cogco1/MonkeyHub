@@ -150,7 +150,7 @@ The lab proxy (`serve_proxy`) fronts MonkeyHub's server for every Hub mode: it c
 
 ## X3 sessions (`x3.py`)
 
-Request 0 (the opening conditions and the history's rejections) is written by the harness where each mode keeps it, not sent as a model turn. After each request the oracle runs in its own process; when a condition broke, the simulated architect sends the matching correction once. Outcome classes are provisional and every row is flagged `needs_coding`. Not built: the file hand-over (A10/B10) in the Hub modes; GH.
+Request 0 (the opening conditions and the history's rejections) is written by the harness where each mode keeps it, not sent as a model turn. After each request the oracle runs in its own process; when a condition broke, the simulated architect sends the matching correction once. Outcome classes are provisional and every row is flagged `needs_coding`. A correct candidate the agent left for acceptance is `correct_not_landed` (with `would_complete_if_landed`); the next request continues from the unchanged working design. A turn that changed nothing and says its tools cannot do the request is flagged for the hand-coded class `honest_limitation`. Each bundle lists `harness_added`; every request has 20 tool calls. Not built: the file hand-over (A10/B10) in the Hub modes; GH.
 ## Transport chains (`x5.py`)
 
 Each arm's 3DM state file is passed through tools that do not know the state, and after every hop one benign revision is tried (a D arm keeps its sidecar, which stays with the authority).
