@@ -14,7 +14,8 @@
         "archflow.state.state_record",
         "archflow.state.geometry_program",
         "monkeyarch.application.project_runner",
-        "project_runtime.intent"
+        "project_runtime.intent",
+        "project_runtime.candidate"
       ],
       "write_scope": [
         "packages/archflow/src/archflow/state/state_record.py",
@@ -30,7 +31,10 @@
         "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
         "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
         "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
-        "docs/protocols/project-runtime-api.md"
+        "docs/protocols/project-runtime-api.md",
+        "services/project-runtime/src/project_runtime/api/routes/intents.py",
+        "services/project-runtime/src/project_runtime/api/routes/candidates.py",
+        "services/project-runtime/tests/test_candidates.py"
       ],
       "depends_on": []
     }
