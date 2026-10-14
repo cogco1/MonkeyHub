@@ -26,9 +26,9 @@ def test_the_undeclared_pediment_support_is_found_and_its_loss_is_noticed(tmp_pa
     from archflow.state.state_record import StateRecordEditKind, StateRecordOperator, apply_state_record_operator
 
     start = fixtures.bound(fixtures.f1_portico())
-    kept, dropped = infer.infer_all(start, _start(tmp_path, start))
+    kept, dropped, narrowed = infer.infer_all(start, _start(tmp_path, start))
     assert {(k.layer, k.kind, k.a, k.b) for k in kept} == {("I1", "support", "entablature", "pediment"), ("I2", "support", "entablature", "pediment")}
-    assert dropped == []
+    assert dropped == [] and narrowed == []
     shallower = apply_state_record_operator(start, StateRecordOperator(
         kind=StateRecordEditKind.SET_SCALAR, base_record_digest=start.digest, base_state_digest=start.state_digest,
         target_ref="parameter:entablature_height", key="entablature_height", value=1.5))
@@ -39,15 +39,20 @@ def test_the_undeclared_pediment_support_is_found_and_its_loss_is_noticed(tmp_pa
     assert statuses == {"broken"}
 
 
-def test_role_rules_propose_what_geometry_cannot_see(tmp_path):
+def test_the_narrowing_rules_remove_what_the_record_explains_and_what_is_far(tmp_path):
     start = fixtures.bound(fixtures.f3_wall_stair())
-    kept, _ = infer.infer_all(start, _start(tmp_path, start))
-    assert ("I2", "non_interference", "wall", "stair") in {(k.layer, k.kind, k.a, k.b) for k in kept}
+    kept, _, narrowed = infer.infer_all(start, _start(tmp_path, start))
+    removed = {(n["item"].layer, n["item"].kind, n["item"].a, n["item"].b): n["rule"] for n in narrowed}
+    # the stair and the wall both top out on level-2: the record already says so
+    assert removed[("I1", "same_level", "stair", "wall")] == "declared common datum"
+    # the stair stands 1.5 m from the wall: beyond the role rule's reach
+    assert removed[("I2", "non_interference", "wall", "stair")] == "farther apart than 1.0 m"
+    assert {(k.layer, k.kind, k.a, k.b) for k in kept} == {("I1", "abutment", "slab-l2", "wall")}
 
 
 def test_a_roof_against_a_wall_is_not_its_support(tmp_path):
     start = fixtures.bound(fixtures.f2_portico_rotunda())
-    kept, dropped = infer.infer_all(start, _start(tmp_path, start))
+    kept, dropped, _ = infer.infer_all(start, _start(tmp_path, start))
     pair = ("support", "rotunda-wall", "transition-roof")
     assert pair in {(k.kind, k.a, k.b) for k in dropped} and pair not in {(k.kind, k.a, k.b) for k in kept}
     assert ("I1", "abutment", "rotunda-wall", "transition-roof") in {(k.layer, k.kind, k.a, k.b) for k in kept}

@@ -14,6 +14,12 @@ Both layers are deterministic harness additions; the kernel infers nothing.
   roles should have. A proposal some declared relation already covers is
   dropped.
 
+Two narrowing rules, frozen with the role table, apply before anything is
+measured (``narrow``): an alignment both of whose faces the record binds to the
+same declared datum is not added (inference adds only what the state does not
+say), and a role rule's non-interference covers only elements whose boxes are
+within ``ROLE_REACH_M`` (1.0 m). What they remove is reported, not discarded.
+
 Each inferred relation becomes a ``DesignObligation`` with
 ``validator:inferred-<kind>``, its two elements as subjects and its geometric
 basis in the statement; it stays open and unconfirmed. ``check_inferred``
@@ -47,6 +53,7 @@ from labs.revision_tasks import pipeline
 
 CONTACT_M = 0.001
 NEAR_M = 0.05
+ROLE_REACH_M = 1.0       # narrowing rule 2: a role rule's non-interference covers elements this close (box gap)
 PREFIX = "validator:inferred-"
 
 # Element roles, by producer and (where one producer serves several roles) by id. Frozen with the rules.
@@ -343,11 +350,63 @@ def check_inferred(record: StateRecord, realization: pipeline.Realization) -> li
     return results
 
 
-def infer_all(record: StateRecord, start: pipeline.Realization) -> tuple[list[Inferred], list[Inferred]]:
-    """I1 and I2 on the start, each kept only if it holds on the start geometry; returns (kept, dropped)."""
+def _datum_key(reference: Any) -> tuple[str, str, str] | None:
+    """The datum a base or top reference binds to, with its offset as written; ``None`` for an absolute elevation."""
 
-    candidates = infer_geometric(record, start) + infer_roles(record)
-    measured = {r["obligation_id"]: r["status"] for r in check_inferred(with_inferred(record, candidates), start)}
+    if not isinstance(reference, dict):
+        return None
+    if "level" in reference:
+        return ("level", str(reference["level"]), "0")
+    if "datum" in reference:
+        return ("datum", str(reference["datum"]), str(reference.get("offset", 0)))
+    inner = reference.get("offset_from")
+    if isinstance(inner, dict) and "level" in inner:
+        return ("level", str(inner["level"]), str(inner.get("offset", 0)))
+    return None
+
+
+def _bindings(record: StateRecord) -> dict[str, tuple[tuple[str, str, str] | None, tuple[str, str, str] | None]]:
+    """Each element's declared bottom and top datum bindings."""
+
+    return {e.entity_id: (_datum_key(e.fields.get("references", {}).get("base")), _datum_key(e.fields.get("references", {}).get("top")))
+            for e in record.entities_of("Element@1")}
+
+
+def narrow(record: StateRecord, inferred: list[Inferred], start: pipeline.Realization) -> tuple[list[Inferred], list[dict[str, Any]]]:
+    """The two narrowing rules (frozen with the role table), applied before anything is measured:
+
+    1. an alignment the record already explains, both faces bound to one declared datum (the same level or datum,
+       with the same offset), is not an inferred relation: inference adds only what the state does not say;
+    2. a role rule's ``non_interference`` applies only to elements whose boxes are within ``ROLE_REACH_M``.
+
+    Returns (kept, removed with the rule that removed each).
+    """
+
+    bindings, boxes = _bindings(record), _boxes(start)
+    kept, removed = [], []
+    for item in inferred:
+        if item.kind == "same_level":
+            side = 1 if item.basis.get("face") == "top" else 0
+            a, b = bindings.get(item.a, (None, None))[side], bindings.get(item.b, (None, None))[side]
+            if a is not None and a == b:
+                removed.append({"item": item, "rule": "declared common datum"})
+                continue
+        if item.layer == "I2" and item.kind == "non_interference":
+            if item.a not in boxes or item.b not in boxes or _gap(boxes[item.a], boxes[item.b]) > ROLE_REACH_M:
+                removed.append({"item": item, "rule": f"farther apart than {ROLE_REACH_M} m"})
+                continue
+        kept.append(item)
+    return kept, removed
+
+
+def infer_all(record: StateRecord, start: pipeline.Realization) -> tuple[list[Inferred], list[Inferred], list[dict[str, Any]]]:
+    """I1 and I2 on the start, narrowed, then each kept only if it holds on the start geometry.
+
+    Returns (kept, dropped because they do not hold on the start, removed by a narrowing rule).
+    """
+
+    candidates, narrowed = narrow(record, infer_geometric(record, start) + infer_roles(record), start)
+    measured = {r["obligation_id"]: r["status"] for r in check_inferred(with_inferred(record, candidates), start)} if candidates else {}
     kept = [c for c in candidates if measured.get(c.obligation().obligation_id) == "held"]
     dropped = [c for c in candidates if measured.get(c.obligation().obligation_id) != "held"]
-    return kept, dropped
+    return kept, dropped, narrowed

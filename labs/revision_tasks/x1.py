@@ -364,9 +364,10 @@ def run(out: Path, *, families: tuple[str, ...] = ("F1", "F2", "F3")) -> dict[st
                 contexts.append(file_context(f"SF[{arm},{fmt}]", written.path, fmt, family))
         contexts.append(file_context("SF-O[C-full,3dm]", files[("C-full", "3dm")], "3dm", family, minus_obligations=True))
         start_real = _realized(record, fam_dir, "inference-start")
-        kept, dropped = infer.infer_all(fixtures.bound(record), start_real)
+        kept, dropped, narrowed = infer.infer_all(fixtures.bound(record), start_real)
         consistency[family]["inferred"] = {"kept": [f"{k.layer} {k.kind} {k.a}/{k.b}" for k in kept],
-                                           "dropped_on_start": [f"{k.layer} {k.kind} {k.a}/{k.b}" for k in dropped]}
+                                           "dropped_on_start": [f"{k.layer} {k.kind} {k.a}/{k.b}" for k in dropped],
+                                           "narrowed_out": [f"{n['item'].layer} {n['item'].kind} {n['item'].a}/{n['item'].b}: {n['rule']}" for n in narrowed]}
         inferred_dir = fam_dir / "C-full-I-3dm"
         inferred_dir.mkdir()
         inferred_file = reviser.write_state_file(infer.with_inferred(record, kept), arm="C-full", fmt="3dm", out_dir=inferred_dir, stem="state",

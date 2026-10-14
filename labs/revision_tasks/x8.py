@@ -65,8 +65,12 @@ def verify(record: StateRecord, realization: pipeline.Realization, answer: dict[
         elif frozenset((a, b)) in declared:
             rejected.append({"row": row, "why": "already declared"})
         else:
-            valid.append(infer.Inferred("I3", kind, a, b, {"reason": str(row.get("reason", ""))[:200]}))
-    measured = {r["obligation_id"]: r for r in infer.check_inferred(infer.with_inferred(record, valid), realization)} if valid else {}
+            basis = {"reason": str(row.get("reason", ""))[:200], **({"face": "top"} if kind == "same_level" else {})}   # the prompt's same_level is tops
+            valid.append(infer.Inferred("I3", kind, a, b, basis))
+    # the same narrowing as I1 and I2: an alignment the record's datums already explain is not added
+    valid, narrowed = infer.narrow(record, valid, realization)
+    rejected += [{"row": {"a": n["item"].a, "b": n["item"].b, "kind": n["item"].kind}, "why": n["rule"]} for n in narrowed]
+    measured ={r["obligation_id"]: r for r in infer.check_inferred(infer.with_inferred(record, valid), realization)} if valid else {}
     kept = [v for v in valid if measured.get(v.obligation().obligation_id, {}).get("status") == "held"]
     return {"proposed": len(proposals) if isinstance(proposals, list) else 0, "valid": len(valid), "kept": len(kept),
             "rejected": rejected, "kept_relations": [{"a": k.a, "b": k.b, "kind": k.kind, "reason": k.basis["reason"]} for k in kept],

@@ -135,8 +135,9 @@ def run_task(task_path: Path, out: Path, order_slot: int, arm_name: str = ARM) -
         arm_spec = spec if "patch_base_digests" not in spec else {**spec, "start_state": {**spec["start_state"], **spec["patch_base_digests"]}}
         arm = pipeline.run_archflow_arm(arm_spec, start, start_real, (task_dir / "candidate").resolve())
         if arm_name == "B3+I":
-            kept, dropped = infer.infer_all(start, start_real)
+            kept, dropped, narrowed = infer.infer_all(start, start_real)
             inferred_report = {"kept": [f"{k.layer} {k.kind} {k.a}/{k.b}" for k in kept], "dropped_on_start": [f"{k.layer} {k.kind} {k.a}/{k.b}" for k in dropped],
+                               "narrowed_out": [f"{n['item'].layer} {n['item'].kind} {n['item'].a}/{n['item'].b}: {n['rule']}" for n in narrowed],
                                "harness_added": True}
             if arm.claim == "accept" and arm.realization is not None:
                 broken = [r for r in infer.check_inferred(infer.with_inferred(arm.record, kept), arm.realization) if r["status"] == "broken"]
