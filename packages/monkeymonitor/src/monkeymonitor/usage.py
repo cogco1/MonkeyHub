@@ -32,6 +32,9 @@ _IDENTITY_KEYS = {
     "source_execution_ref", "source_ref", "source_stage_ref", "producer_code", "references", "model",
     "provider", "format", "representation", "record_digest", "state_digest", "seat_id",
 }
+# The two writers that record their own calls as they happen. Every other
+# source is an agent usage source registered in monkeymonitor.sources.
+HOST_SOURCES = frozenset({"studio", "hub"})
 # The only values details.billing_plan takes: the price list a connection's
 # usage is valued against (see monkeymonitor.pricing.billing_plan). A plan names
 # no account, login or key. "api-standard" is a provider's public standard
@@ -226,8 +229,10 @@ class UsageEvent:
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{name} must be non-empty text")
-        if self.source not in {"studio", "codex", "hub"}:
-            raise ValueError("source must be studio, codex or hub")
+        if self.source not in HOST_SOURCES:
+            from .sources import AGENT_SOURCES
+            if self.source not in AGENT_SOURCES:
+                raise ValueError("source must be studio, hub or a registered agent usage source")
         if self.billing_mode not in {"api_estimate", "subscription_equivalent", "unknown"}:
             raise ValueError("unsupported billing_mode")
         started = datetime.fromisoformat(self.started_at.replace("Z", "+00:00"))

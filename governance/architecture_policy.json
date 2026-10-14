@@ -627,6 +627,17 @@
       "reason": "Create the caller-selected diagnostics directory and shared Hub/Runtime journal lock file; no project authority."
     },
     {
+      "path": "packages/monkeymonitor/src/monkeymonitor/__main__.py",
+      "function": "_write_report",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "diagnostics",
+      "owner": "monkeymonitor",
+      "reason": "Write one content-free UsageEvent@1 report into the output directory the caller names on the report command line; never a default location or project state."
+    },
+    {
       "path": "packages/monkeycontrol/src/monkeycontrol/store.py",
       "function": "_prepare",
       "operations": [

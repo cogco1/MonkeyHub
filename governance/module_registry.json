@@ -45,6 +45,38 @@
           "output": "BlenderExecutionReceipt@1: closed mesh .blend for solid/straight-extrusion programs, independently read in a fresh process; unsupported operations fail explicitly"
         }
       ]
+    },
+    {
+      "interface_id": "agent-usage-source",
+      "owner": "monkeymonitor",
+      "contract": "AgentSource.read(paths, *, warnings) turns files a caller explicitly selected into content-free UsageEvent values whose source is the agent key. monkeymonitor.sources.AGENT_SOURCES is the single registration point and UsageEvent accepts exactly its keys beside the studio and hub writers. Each implementation declares its token conversion into the inclusive TokenUsage, its pricing connection, its token authority against Hub rows of the same native session (agent or host) and whether an event id already held is the same record (merge) or a refused copy (reject). No implementation discovers files beyond what the selected file names as its own, reads message, tool or workspace text, or writes.",
+      "implementations": [
+        {
+          "agent": "codex",
+          "entry_points": [
+            "monkeymonitor.codex.iter_codex_events",
+            "monkeymonitor.codex.bound_codex_sources"
+          ],
+          "implementation_file": "packages/monkeymonitor/src/monkeymonitor/codex.py",
+          "output": "Codex token and agent-turn events from session_meta/turn_context/event_msg metadata; provider as each session records; authority agent; existing ids merge"
+        },
+        {
+          "agent": "claude-code",
+          "entry_points": [
+            "monkeymonitor.claude_code.iter_claude_code_events"
+          ],
+          "implementation_file": "packages/monkeymonitor/src/monkeymonitor/claude_code.py",
+          "output": "One event per message.id from a selected session JSONL and its own subagents/agent-*.jsonl inside the Claude home, each count at its maximum over the message's rows; provider claude; authority agent; existing ids merge"
+        },
+        {
+          "agent": "usage-file",
+          "entry_points": [
+            "monkeymonitor.usage_file.iter_usage_file_events"
+          ],
+          "implementation_file": "packages/monkeymonitor/src/monkeymonitor/usage_file.py",
+          "output": "UsageEvent@1 documents (the report export) or one UsageEvent@1 object per line, keeping each event's recorded agent source; Hub/Studio rows and ids differing between copies refused; provider as each event records; authority host; existing ids reject"
+        }
+      ]
     }
   ],
   "capabilities": [
@@ -6840,10 +6872,12 @@
     {
       "module_id": "monkeymonitor",
       "owner_path": "packages/monkeymonitor/src/monkeymonitor/usage.py",
-      "purpose": "Engineering usage, trace, exact decimal token pricing and bounded algorithm recommendations for Hub/Studio observations and explicit Codex session files; MonkeyHub owns the visible Usage page.",
+      "purpose": "Engineering usage, trace, exact decimal token pricing and bounded algorithm recommendations for Hub/Studio observations and explicitly selected agent usage sources (Codex, Claude Code, UsageEvent@1 files); MonkeyHub owns the visible Usage page.",
       "owns": [
         "Portable TokenUsage and UsageEvent diagnostic values, with unknown counters preserved",
+        "The agent-usage-source interface and its single registration point AGENT_SOURCES: per-agent explicit-path readers, token conversion, pricing connection and declared token authority",
         "Explicit-source Codex token event normalization and duplicate/counter-discontinuity handling",
+        "Explicit Claude Code session and own-subagent usage metadata, one model call per message.id, and UsageEvent@1 file import that cannot replace or impersonate an existing record",
         "Caller-selected per-million-token RateCard and disjoint-bucket USD estimates",
         "Pure Algorithm selection interface and FirstAvailablePolicy baseline over caller-owned actions and budgets",
         "Loopback MonkeyMonitor diagnostic API and CLI, and optional usage.jsonl diagnostic append/read under a caller-supplied noncanonical data directory",
@@ -6865,12 +6899,13 @@
       ],
       "inputs": [
         "Provider-reported numeric usage metadata",
-        "Explicit diagnostic directory or Codex JSONL session paths",
+        "Explicit diagnostic directory or explicitly selected agent usage files: Codex or Claude Code session JSONL and UsageEvent@1 files",
         "Caller-selected rates and available actions, observations, objectives and remaining budget",
-        "Optional loopback Hub session/project identity projection and explicitly selected Codex home"
+        "Optional loopback Hub session/project identity projection and explicitly selected Codex home; the Claude home (CLAUDE_CONFIG_DIR, default ~/.claude) that bounds Claude Code paths"
       ],
       "outputs": [
         "UsageEvent values and optional diagnostic JSONL",
+        "UsageEvent@1 report documents on stdout or in an explicitly supplied output directory, optionally sliced by started_at",
         "USD quote or known subtotal with missing components",
         "Validated Decision, without executing its action"
       ],
@@ -6880,7 +6915,11 @@
         "RateCard",
         "quote",
         "billing_plan",
+        "AgentSource",
+        "AGENT_SOURCES",
         "iter_codex_events",
+        "iter_claude_code_events",
+        "iter_usage_file_events",
         "Budget",
         "Action",
         "SelectionContext",
@@ -6909,13 +6948,14 @@
         "Core and workflow packages do not import Monitor; the host composes it",
         "Only the explicitly supplied diagnostics directory is writable; project state is untouched",
         "The algorithm chooses only a caller-provided action within stated estimates or stops",
-        "Standalone report and API-only serve remain available; both read the same UsageLog/Codex sources as the Hub-owned page; managed identity reads the actual source-version.txt or checkout HEAD and never trusts a parent-supplied revision",
-        "Only explicitly selected Codex paths are read; lineage uses recorded session/parent ids, repeated source snapshots count once and token event gaps never become model duration",
+        "Standalone report and API-only serve remain available; both read the same UsageLog and agent sources as the Hub-owned page; managed identity reads the actual source-version.txt or checkout HEAD and never trusts a parent-supplied revision",
+        "Only explicitly selected agent paths are read, with what a selected file names as its own (a Claude Code session's subagents/agent-*.jsonl inside the Claude home); lineage uses recorded session/parent ids, repeated source snapshots and message rows count once and token event gaps never become model duration",
+        "An imported UsageEvent@1 file never replaces, joins or impersonates a record: Hub/Studio rows, ids already held and ids that differ between copies are refused, and a billing plan stays only where its recorded connection gives it",
         "Non-model phases carry unknown token counters; nested geometry duration is not added to the candidate interval and human review time is not service duration",
         "Interaction wall time comes only from an explicit client root; active waits and between-action time remain separate and overlapping child durations are never summed into a total; repeated inputs alone do not prove an avoidable retry or eligible provider cache",
         "Estimated section tokens never substitute for actual provider input/output/cache tokens; each context expansion keeps its own usage and model",
         "Automatic sources are matched by exact recorded session identity, never cwd or recency; identity conflicts or unavailable sources are reported, and persisted diagnostic event identities prevent backfill double counting",
-        "A Hub activity interval is not pure inference. Native token records remain the Codex usage authority; parallel spans are never added to elapsed time and ambiguous critical branches remain unassigned",
+        "A Hub activity interval is not pure inference. Each native session has one token authority, the one its agent source declares; Studio's own provider calls always count; parallel spans are never added to elapsed time and ambiguous critical branches remain unassigned",
         "Pricing requires exact recorded provider/model/billing plan and a sourced effective rate; subscription equivalents never claim an account charge and unknown local compute cost is not zero",
         "A producer records only its connection's declared billing plan, withheld when the call reports another tier; a context tier or model alias is never guessed",
         "MonkeyHub owns the product browser UI; the Monitor process serves only its loopback API and CLI diagnostics. Browser API access is limited to the exact owning Hub loopback origin."
@@ -6927,6 +6967,7 @@
         "tools/tests/test_design_loop.py",
         "apps/monkeyhub/api/tests/test_chat_trace.py",
         "packages/monkeymonitor/tests/test_server.py",
+        "packages/monkeymonitor/tests/test_agent_sources.py",
         "services/project-runtime/tests/test_monitoring.py",
         "services/project-runtime/tests/test_model_load_monitoring.py",
         "services/project-runtime/tests/test_intent_budget.py",
@@ -6939,6 +6980,9 @@
         "packages/monkeymonitor/src/monkeymonitor/pricing.py",
         "packages/monkeymonitor/src/monkeymonitor/algorithms.py",
         "packages/monkeymonitor/src/monkeymonitor/codex.py",
+        "packages/monkeymonitor/src/monkeymonitor/sources.py",
+        "packages/monkeymonitor/src/monkeymonitor/claude_code.py",
+        "packages/monkeymonitor/src/monkeymonitor/usage_file.py",
         "packages/monkeymonitor/src/monkeymonitor/store.py",
         "packages/monkeymonitor/src/monkeymonitor/server.py",
         "packages/monkeymonitor/src/monkeymonitor/trace.py",

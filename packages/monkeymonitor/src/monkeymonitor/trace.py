@@ -7,7 +7,8 @@ from decimal import Decimal
 import re
 
 from .pricing import RateCard, match_rate, quote
-from .usage import TokenUsage
+from .sources import token_authority
+from .usage import HOST_SOURCES, TokenUsage
 
 
 LANES = [{"id": key, "label": label} for key, label in (
@@ -106,7 +107,7 @@ def _groups(rows, now, warnings):
             continue
         matches = [root for root in roots if row.get("turn_id") and row["turn_id"] == root.get("turn_id")
                    and row.get("project_id") == root.get("project_id")]
-        if not matches and row["source"] == "codex" and row.get("session_id"):
+        if not matches and _native(row) and row.get("session_id"):
             candidates = [root for root in roots if root.get("session_id") == row["session_id"]
                           and (not row.get("project_id") or root.get("project_id") == row.get("project_id"))]
             native = [root for root in candidates if row.get("turn_id") and
@@ -153,16 +154,27 @@ def _groups(rows, now, warnings):
     return result
 
 
+def _native(row):
+    """A row of an agent source that is its sessions' token authority (sources.AGENT_SOURCES)."""
+    return token_authority(row["source"]) == "agent"
+
+
 def _usage(rows):
-    # Codex JSONL is the sole token authority for Hub Codex rounds. The Hub
-    # records agent activity intervals, which are not additional model calls.
-    native = [row for row in rows if row["source"] == "codex" and row.get("model_call") is True]
-    sessions = {row.get("session_id") for row in native if row.get("session_id")}
+    # One token authority per native session. An agent source that declares
+    # itself the authority (Codex, Claude Code) replaces the Hub's usage rows of
+    # that session: the Hub records agent activity intervals, which are not
+    # additional model calls. A source that defers to the host (an imported
+    # usage file) is not counted again where the Hub counted that session.
+    # Studio's own provider calls are separate calls and always count.
+    calls = [row for row in rows if row.get("model_call") is True]
+    native = {row.get("session_id") for row in calls if _native(row) and row.get("session_id")}
+    hosted = {row.get("session_id") for row in calls if row["source"] == "hub" and row.get("session_id")}
     measured, excluded = [], []
-    for row in rows:
-        if row.get("model_call") is not True:
-            continue
-        if row["source"] == "hub" and row.get("session_id") in sessions:
+    for row in calls:
+        session = row.get("session_id")
+        if row["source"] == "hub" and session in native:
+            excluded.append(row["event_id"])
+        elif row["source"] not in HOST_SOURCES and not _native(row) and session in hosted:
             excluded.append(row["event_id"])
         else:
             measured.append(row)
