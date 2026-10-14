@@ -1,33 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-632",
-      "status": "active",
-      "branch": "codex/632-usage-sources-hub",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-632-usage-sources-hub",
-      "base_ref": "d3f662eda33f98c8fde757ef86411f05853cb857",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": "PR2 of #632, stacked on #634: Hub-counted calls leave the snapshot, /api/sources/{agent}, the registry's lane fallback and the Usage page's per-agent sources. Hub bindings with an agent field follow once #627 is on main.",
-      "modules": [
-        "monkeymonitor",
-        "hub.shell"
-      ],
-      "write_scope": [
-        "packages/monkeymonitor/src/monkeymonitor/sources.py",
-        "packages/monkeymonitor/src/monkeymonitor/server.py",
-        "packages/monkeymonitor/src/monkeymonitor/trace.py",
-        "packages/monkeymonitor/src/monkeymonitor/claude_code.py",
-        "packages/monkeymonitor/src/monkeymonitor/codex.py",
-        "packages/monkeymonitor/src/monkeymonitor/__main__.py",
-        "packages/monkeymonitor/src/monkeymonitor/README.md",
-        "apps/monkeyhub/web/src/MonitorPage.tsx",
-        "apps/monkeyhub/web/src/MonitorPage.css",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs",
-        "apps/monkeyhub/web/test/monitorData.test.ts"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
