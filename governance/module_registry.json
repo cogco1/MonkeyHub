@@ -4445,7 +4445,7 @@
         "opening the located project on first use and holding that one binding for the process",
         "resolving the project segment of /api/projects/{project_id}: today only the bound project resolves, and every other id is 404 PROJECT_NOT_FOUND",
         "listing the projects this server binds, and which of them the unscoped default-project shortcut answers for",
-        "choosing the default reference run: the configured one, or the newest runner receipt whose run actually finished its seats, skipping harness workflows; an explicit run selects that run's exact retained record for state, frame, volumes, pick, closure and candidate continuation",
+        "choosing the default reference run: the configured one, or the newest runner receipt whose run actually finished its seats, skipping harness workflows; an explicit run selects that run's exact retained record for state, frame, volumes, pick, closure and candidate continuation; a request that names neither a run nor a Stage answers the Working Head's run (the working position's run with an exact finished state), else the main line's accepted head, else the reference run, with an honesty line when the position could not be read (#640)",
         "reading the P036 record-name convention (kind plus sha256) and listing a run's record refs",
         "loading the reference run's State Record through the state_record_ref carried by its runner receipt, checking its content digest and exact run/base binding; only a project with no eligible reference run reads the authored work-in-progress record",
         "answering archflow.project.inputs' refusals on the wire: 404 STATE_RECORD_NOT_FOUND and 422 STATE_RECORD_INVALID, each naming the file",
