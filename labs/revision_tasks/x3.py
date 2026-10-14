@@ -695,7 +695,7 @@ def transfer_audit(before: Path, after: Path) -> dict[str, Any]:
 def harness_added(mode: str) -> list[str]:
     """What the lab adds to each way of working, beyond the product (recorded in every bundle)."""
 
-    common = ["tool_call_cap_20", "request_0_written_by_harness", "simulated_architect_correction", "tool_result_size_400k",
+    common = ["tool_call_cap_20_design_calls", "request_0_written_by_harness", "simulated_architect_correction", "tool_result_size_400k",
               "prompt_says_done_means_current"]
     if mode in ("M", "M+"):
         return [*common, "prepared_context_for_working_design"]       # what the Hub page gives MonkeyHub's own chat

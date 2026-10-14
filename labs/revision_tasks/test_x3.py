@@ -109,6 +109,7 @@ def test_the_t_proxy_refuses_everything_but_construction_and_readback():
     unrestricted = x3_hub.proxy_settings({"command": "python", "args": []}, log=Path("calls.jsonl"), restricted=False)
     assert x3_hub.proxy_refusal(unrestricted, "studio_request", {"method": "POST", "path": "/api/admissions"}, x3_hub.MAX_TOOL_CALLS) is None
     assert x3_hub.proxy_refusal(unrestricted, "visual_review", {}, x3_hub.MAX_TOOL_CALLS + 1)["code"] == "X3_TOOL_BUDGET_SPENT"
+    assert x3_hub.proxy_refusal(unrestricted, "chat_present", {"kind": "assistant"}, x3_hub.MAX_TOOL_CALLS + 1) is None   # protocol, not work
 
 
 def test_t_and_h_read_and_write_the_working_head_when_the_agent_names_no_run():
@@ -261,5 +262,5 @@ def test_a_stated_limitation_is_flagged_for_coding_not_counted_complete():
 
 def test_every_bundle_names_what_the_harness_added():
     assert "prepared_context_for_working_design" in x3.harness_added("M+")
-    assert "proxy_names_working_run" in x3.harness_added("T") and "tool_call_cap_20" in x3.harness_added("SF")
+    assert "proxy_names_working_run" in x3.harness_added("T") and "tool_call_cap_20_design_calls" in x3.harness_added("SF")
     assert x3_hub.MAX_TOOL_CALLS == 20 and x3_sf_mcp.MAX_CALLS == 20

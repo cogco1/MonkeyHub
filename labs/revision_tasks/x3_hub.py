@@ -671,6 +671,9 @@ T_NOTE = ("In this session only these Studio actions are available: GET /api/con
           "GET /api/candidates/{id}/compare, GET /api/jobs/{id}, POST /api/project/modeling. Every other action is refused. "
           "The guide below describes the whole Studio.\n\n")
 MAX_TOOL_CALLS = 20
+# MonkeyHub's presentation protocol for an external host (bind, then present the user's message and the answer): it does
+# no work on the design and SF has none, so these calls do not count toward MAX_TOOL_CALLS.
+PROTOCOL_TOOLS = ("presentation_bind", "chat_present")
 
 
 def proxy_server_config(config_file: Path, python: str = sys.executable) -> dict[str, Any]:
@@ -720,7 +723,7 @@ def proxy_refusal(settings: dict[str, Any], name: str, arguments: dict[str, Any]
     import re
     from urllib.parse import urlsplit
 
-    if calls > int(settings.get("max_calls", MAX_TOOL_CALLS)):
+    if name not in PROTOCOL_TOOLS and calls > int(settings.get("max_calls", MAX_TOOL_CALLS)):
         return {"code": "X3_TOOL_BUDGET_SPENT", "detail": f"This request's {settings.get('max_calls', MAX_TOOL_CALLS)} tool calls are "
                 "spent. Answer the architect now, without further tools.", "httpStatus": 429}
     tools = settings.get("tools")
@@ -751,7 +754,7 @@ def serve_proxy(settings: dict[str, Any], stdin=None, stdout=None) -> None:
     stdout = stdout or _sys.stdout
     child = subprocess.Popen(settings["child"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, encoding="utf-8")
     log = Path(settings["log"])
-    calls = 0
+    calls = counted = 0
     own = 0
     presented = settings.get("user_message") is None
 
@@ -790,8 +793,10 @@ def serve_proxy(settings: dict[str, Any], stdin=None, stdout=None) -> None:
             if method == "tools/call":
                 calls += 1
                 name, arguments = str(params.get("name", "")), params.get("arguments") or {}
-                refusal = proxy_refusal(settings, name, arguments, calls)
-                row = {"call": calls, "name": name, "method": arguments.get("method"), "path": arguments.get("path")}
+                if name not in PROTOCOL_TOOLS:
+                    counted += 1
+                refusal = proxy_refusal(settings, name, arguments, counted)
+                row = {"call": calls, "counted": counted, "name": name, "method": arguments.get("method"), "path": arguments.get("path")}
                 if refusal is not None:
                     record({**row, "refused": refusal["code"]})
                     emit({"jsonrpc": "2.0", "id": message["id"], "result": {"isError": True, "content": [
