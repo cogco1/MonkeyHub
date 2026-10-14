@@ -69,14 +69,20 @@ def focus_elements(record: StateRecord, changed: tuple[str, ...]) -> tuple[str, 
 
 def write_state_file(record: StateRecord, *, arm: str, fmt: str, out_dir: Path, stem: str, parent_sha256: str | None,
                      context_root: Path, utterance: str, focus: tuple[str, ...] = (),
-                     prior: pipeline.Realization | None = None) -> Written:
-    """Realize ``record`` and write it as ``<stem>.<fmt>`` (plus ``<stem>.sidecar.json`` for D) into ``out_dir``."""
+                     prior: pipeline.Realization | None = None, context_pack: dict[str, Any] | None = None) -> Written:
+    """Realize ``record`` and write it as ``<stem>.<fmt>`` (plus ``<stem>.sidecar.json`` for D) into ``out_dir``.
+
+    A C-task file carries the context pack read from a disposable project holding the record, or ``context_pack``
+    when the caller read one from a project that holds more (a stage run and its decisions).
+    """
 
     if arm not in carrier.ARMS or fmt not in carrier.FORMATS:
         raise ValueError(f"unknown arm/format {arm!r}/{fmt!r}")
     t0 = time.perf_counter()
     carried = carrier.task_view(record) if arm == "C-task" else record
-    pack = read_context_pack(carried, root=context_root, utterance=utterance, element_ids=focus) if arm == "C-task" else None
+    pack = None
+    if arm == "C-task":
+        pack = context_pack if context_pack is not None else read_context_pack(carried, root=context_root, utterance=utterance, element_ids=focus)
     t1 = time.perf_counter()
     bound = fixtures.bound(carried)
     state = carrier.payload(carried, arm, pack)

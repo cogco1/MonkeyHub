@@ -61,7 +61,7 @@ from archflow.state.state_record import (
     evaluate_parameters,
 )
 
-from labs.revision_tasks import carrier, fixtures, pipeline, reviser
+from labs.revision_tasks import carrier, fixtures, pipeline, production_project, reviser
 
 LAB = Path(__file__).resolve().parent
 HISTORY = LAB / "history" / "events_v1.json"
@@ -101,6 +101,10 @@ HISTORY_DECLARATIONS = {
            "K3": "k3-left-pier", "K4": "k4-wall-above-lintel"},
 }
 BOUNDING_CHECKS = frozenset({"clearance_interval", "lintel_minimum_bearing"})
+# The element a rejected proposal in the history was about, by its history target.
+REJECTION_TARGETS = {"F1": {"portico.column_count": "columns", "portico.capital_order": "columns"},
+                     "F2": {"obj-transition-roof.material": "transition-roof"},
+                     "F3": {"stair.type": "stair"}}
 
 
 def _number(text: str) -> float:
@@ -115,6 +119,7 @@ class Context:
     evidence: dict[str, float | None] = field(default_factory=dict)
     state_bytes: int = 0
     notes: dict[str, Any] = field(default_factory=dict)
+    decisions: list[dict[str, str]] = field(default_factory=list)
 
 
 def history_context(family: str) -> Context:
@@ -178,14 +183,22 @@ def _record_evidence(record: StateRecord, pack: dict[str, Any] | None, family: s
     return evidence
 
 
-def _pack_rejections(pack: dict[str, Any] | None) -> set[tuple[str, Any]]:
+def _pack_rejections(pack: dict[str, Any] | None) -> list[dict[str, str]]:
     """Rejections the context pack carries in its scoped decisions (none unless the project holds decisions)."""
 
-    found = set()
-    for decision in (pack or {}).get("scopedDecisions", []) or []:
-        if str(decision.get("disposition", "")).lower() in {"reject", "avoid"}:
-            found.add((decision.get("targetRef"), decision.get("rawLanguage")))
-    return found
+    return [{"target_ref": str(d.get("targetRef")), "text": str(d.get("rawLanguage", ""))}
+            for d in (pack or {}).get("scopedDecisions", []) or []
+            if str(d.get("disposition", "")).lower() in {"reject", "avoid"} and d.get("status", "active") == "active"]
+
+
+def _rejected(context: "Context", task: dict[str, Any]) -> bool:
+    """A history rejection of the same target and value, or a decision rejecting the request's element that names the value."""
+
+    intent = task["intent"]
+    if (intent["target"], intent["value"]) in context.rejections:
+        return True
+    element_refs = {f"entity:{name}" for name in task["named"]}
+    return any(d["target_ref"] in element_refs and str(intent["value"]).lower() in d["text"].lower() for d in context.decisions)
 
 
 def file_context(name: str, path: Path, fmt: str, family: str, *, sidecar: Path | None = None, minus_obligations: bool = False) -> Context:
@@ -195,8 +208,8 @@ def file_context(name: str, path: Path, fmt: str, family: str, *, sidecar: Path 
         record = replace(record, obligations=(), relations=tuple(r for r in record.relations
                                                                  if not (r.validator and r.validator.check_kind in BOUNDING_CHECKS)))
     size = len(json.dumps(carrier.payload(state.record, state.arm, state.context_pack), sort_keys=True, separators=(",", ":")).encode("utf-8"))
-    return Context(name, record, _pack_rejections(state.context_pack), _record_evidence(state.record, state.context_pack, family), size,
-                   {"record_digest": state.record.digest, "arm": state.arm, "format": fmt})
+    return Context(name, record, set(), _record_evidence(state.record, state.context_pack, family), size,
+                   {"record_digest": state.record.digest, "arm": state.arm, "format": fmt}, _pack_rejections(state.context_pack))
 
 
 def geometry_context(path: Path, fmt: str) -> Context:
@@ -231,7 +244,7 @@ def decide(context: Context, task: dict[str, Any], root: Path | None, *, execute
 
     intent = task["intent"]
     if intent["kind"] == "attribute":
-        if (intent["target"], intent["value"]) in context.rejections:
+        if _rejected(context, task):
             return {"verdict": "flag_rejected", "affected": [], "recheck": [], "reason": "matches a rejected proposal"}
         return {"verdict": "unknown", "affected": [], "recheck": [], "reason": f"no parameter for {intent['target']}"}
     if intent["kind"] == "missing":
@@ -309,13 +322,25 @@ def run(out: Path, *, families: tuple[str, ...] = ("F1", "F2", "F3")) -> dict[st
         record = FAMILY_FIXTURE[family]()
         contexts = [h]
         files = {}
+        # The C-task pack comes from a project that holds the record as production does: a stage run through
+        # the runner, and the history's rejected proposals recorded as decisions against it.
+        production = production_project.make_production_project(record, fam_dir / "production")
+        events = json.loads(HISTORY.read_text(encoding="utf-8"))["families"][family]["events"]
+        rejected = [e for e in events if e["type"] == "proposal" and e["status"] == "rejected"]
+        decisions = [{"text": f"{e['change']['target']} = {e['change']['value']}: rejected by {e['authority']} ({e['reason']}).",
+                      "target_ref": f"entity:{REJECTION_TARGETS[family][e['change']['target']]}"} for e in rejected]
+        pack_read = production_project.record_rejections_and_read_context(
+            production, decisions, utterance="Current design state.",
+            element_ids=tuple(sorted(x.entity_id for x in record.entities_of("Element@1"))), cache_dir=fam_dir / "production" / "cache")
+        consistency[family]["decisions_recorded"] = [d["status"] for d in pack_read["decisions"]]
         for arm in ("C-full", "C-task"):
             for fmt in carrier.FORMATS:
                 arm_dir = fam_dir / f"{arm}-{fmt}"
                 arm_dir.mkdir()
                 written = reviser.write_state_file(record, arm=arm, fmt=fmt, out_dir=arm_dir, stem="state", parent_sha256=None,
                                                    context_root=arm_dir / "ctx", utterance="Current design state.",
-                                                   focus=tuple(sorted(e.entity_id for e in record.entities_of("Element@1"))))
+                                                   focus=tuple(sorted(e.entity_id for e in record.entities_of("Element@1"))),
+                                                   context_pack=pack_read["pack"] if arm == "C-task" else None)
                 files[(arm, fmt)] = written.path
                 contexts.append(file_context(f"SF[{arm},{fmt}]", written.path, fmt, family))
         contexts.append(file_context("SF-O[C-full,3dm]", files[("C-full", "3dm")], "3dm", family, minus_obligations=True))

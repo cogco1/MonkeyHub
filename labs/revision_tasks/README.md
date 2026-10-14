@@ -19,6 +19,7 @@ project, changes an owner's contract or is imported by production code.
 | `reviser.py` | The hostless reviser: read a state file, apply a typed change, realize it, write the next state file. No CAD application runs. |
 | `attacks.py` | Eleven attacks on state-bearing files, each compared with the honest revision; `python -m labs.revision_tasks.attacks --out <dir>`. |
 | `x1.py`, `x1_tasks.json`, `history/events_v1.json` | Sufficiency: one reference decision from four starting contexts (history, state file, geometry only, state file without obligations); `python -m labs.revision_tasks.x1 --out <dir>`. |
+| `production_project.py` | A disposable project holding a fixture as production does: a frozen one-stage workflow, a stage run through the runner (the repository's own tools), decisions recorded against it, and the context pack read for that run. |
 | `context_pack.py` | The `ContextPack@1` MonkeyHub would give an agent, read from a disposable project by an in-process Project Runtime. |
 | `test_*.py` | Task-file validity and freezing; the oracle on a real F3 candidate and on eight wrong geometries; state files on every arm and format. |
 
