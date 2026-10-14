@@ -553,6 +553,18 @@ def choose_result(head_moved: bool, head_run: str | None, candidates: list[str],
     return head_run, "unchanged"
 
 
+def choose_landing(head_run: str | None, candidates: list[str], answer_text: str,
+                   has_model: Callable[[str], bool]) -> tuple[str | None, str, list[str]]:
+    """The candidate the harness lands for an agent that cannot Continue (T, H), by ``choose_result``'s rules among the
+    candidates with a checked model only: a run MonkeyHub exported no checked model for (a failed readback) is never
+    landed, and the rules go on to the next. No such candidate: nothing is landed (``None``, ``"unchanged"``). The
+    third value lists the candidates passed over."""
+
+    landable = [c for c in candidates if has_model(c)]
+    chosen, rule = choose_result(False, head_run, landable, [], answer_text)
+    return (None if rule == "unchanged" else chosen), rule, [c for c in candidates if c not in landable]
+
+
 def result_model(runtime_url: str, project_dir: Path, *, hub_url: str | None = None, runtime_id: str | None = None,
                  session_id: str | None = None, start_run: str = START_RUN, answer_text: str = "") -> dict[str, Any]:
     """The model a turn left: the working design when the turn moved it, else its result candidate (``choose_result``).

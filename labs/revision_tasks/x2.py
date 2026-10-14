@@ -61,8 +61,9 @@ MODEL = "claude-opus-5-5"
 # Manifest v3.2 section 4: input $4 and output $20 per million tokens; cache reads and writes at the provider's
 # standard multiples of input (0.1, 1.25 for five minutes, 2 for one hour).
 RATES = {"input": "4", "cached_input": "0.4", "cache_write_input": "5", "cache_write_1h_input": "8", "output": "20"}
-CAPS = {"pilot": 45.0, "x2_single": 100.0, "x2_g": 75.0, "x3": 430.0, "x3_gh": 105.0, "x8_i3": 15.0, "x9_agent": 20.0}
-TOTAL_CAP = 790.0
+# Batch 3d: $35 of X2 single's unspent cap moves to X3 (its reruns), and X3 GH rises from 105 to 180 (total 865).
+CAPS = {"pilot": 45.0, "x2_single": 65.0, "x2_g": 75.0, "x3": 465.0, "x3_gh": 180.0, "x8_i3": 15.0, "x9_agent": 20.0}
+TOTAL_CAP = 865.0
 PER_CALL_USD = 1.0
 VERDICTS = ("held", "violated", "refuse", "unknown", "flag_rejected")
 

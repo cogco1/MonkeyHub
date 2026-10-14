@@ -119,6 +119,17 @@ def test_the_result_is_the_working_design_then_an_admitted_then_a_named_candidat
     assert choose(False, "stage-0-001", [], [], "") == ("stage-0-001", "unchanged")
 
 
+def test_the_harness_lands_only_a_candidate_with_a_checked_model():
+    land = x3_hub.choose_landing
+    checked = {"c1", "c3"}.__contains__
+    # the named candidate failed its readback: the rules go on to the latest candidate with a model
+    assert land("head-0", ["c1", "c2"], "see c2", checked) == ("c1", "latest_candidate", ["c2"])
+    assert land("head-0", ["c1", "c2", "c3"], "see c3", checked) == ("c3", "candidate_named_in_answer", ["c2"])
+    # no candidate has a model: nothing is landed
+    assert land("head-0", ["c2"], "see c2", checked) == (None, "unchanged", ["c2"])
+    assert land("head-0", [], "", checked) == (None, "unchanged", [])
+
+
 def test_the_preview_model_is_the_runs_certified_3dm_checked_on_disk(tmp_path):
     model = tmp_path / "runs" / "c1" / "m.preview.3dm"
     model.parent.mkdir(parents=True)

@@ -52,6 +52,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from labs.revision_tasks import x2, x3_hub
 
@@ -437,20 +438,33 @@ class Session:
         working = x3_hub._call(s.runtime_url, "/api/working-source?workspace=modeling")
         head = working.get("head") or {}
         source = working.get("source") or {}
+        found = self.run_model(head.get("runId"), head.get("stateDigest"),
+                               source.get("assetSha256") if source.get("runId") == head.get("runId") else None)
+        if found is not None:
+            return found
+        raise x3_hub.X3Error(f"the Working Head {head.get('runId')} has no verified model: {working.get('reason')}")
+
+    def run_model(self, run_id: str | None, state_digest: str | None, asset_sha256: str | None = None) -> dict[str, Any] | None:
+        """A run's checked model (its certified ``.preview.3dm`` with matching bytes), or None (Hub modes)."""
+
+        s = self.services
         artifacts = x3_hub._call(s.runtime_url, "/api/artifacts").get("artifacts", [])
-        model = x3_hub.preview_model(artifacts, head.get("runId"), head.get("stateDigest"), s.project_dir,
-                                     source.get("assetSha256") if source.get("runId") == head.get("runId") else None)
+        model = x3_hub.preview_model(artifacts, run_id, state_digest, s.project_dir, asset_sha256)
         if model is not None and model.get("verified"):
-            return {"run_id": head.get("runId"), "state_digest": head.get("stateDigest"), "path": Path(model["path"])}
+            return {"run_id": run_id, "state_digest": state_digest, "path": Path(model["path"])}
         # production_project runs the runner with its workspace beside the project, not in it, so the stage run's
         # export is listed "file missing": the receipt's bytes are found where the runner wrote them, by their sha256.
-        rows = [r for r in artifacts if r.get("runId") == head.get("runId") and r.get("format") == "3dm" and r.get("representation") == "preview"
-                and r.get("designStateDigest") == head.get("stateDigest") and r.get("sha256")]
+        rows = [r for r in artifacts if r.get("runId") == run_id and r.get("format") == "3dm" and r.get("representation") == "preview"
+                and r.get("designStateDigest") == state_digest and r.get("sha256")]
         for row in rows:
             for path in (s.root / "projects").rglob(row["fileName"]):
                 if x3_hub._sha256(path) == row["sha256"]:
-                    return {"run_id": head.get("runId"), "state_digest": head.get("stateDigest"), "path": path, "outside_project": True}
-        raise x3_hub.X3Error(f"the Working Head {head.get('runId')} has no verified model: {working.get('reason')}")
+                    return {"run_id": run_id, "state_digest": state_digest, "path": path, "outside_project": True}
+        return None
+
+    def candidate_has_model(self, candidate_id: str) -> bool:
+        digest = x3_hub._call(self.services.runtime_url, f"/api/candidates/{quote(candidate_id)}").get("stateDigest")
+        return digest is not None and self.run_model(candidate_id, digest) is not None
 
     def prepared_prompt(self, text: str, head: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         """M: the request with the prepared context MonkeyHub's own chat gives a turn whose message names a design source
@@ -544,10 +558,18 @@ class Session:
             if head_after["run_id"] != head_before["run_id"]:
                 info["landed_by"] = "agent"
             elif restricted and made:
-                chosen, rule = x3_hub.choose_result(False, head_before["run_id"], info["candidates"], [], final)
-                info["landed"] = {"run_id": chosen, "rule": rule, **x3_hub.continue_on(s, chosen)}
-                info["landed_by"] = "harness"
-                head_after = self.head_model()
+                # Batch 3d: a candidate without a checked model (a failed readback) is never landed; the rules go on
+                # to the next, and with none left nothing is landed.
+                chosen, rule, passed_over = x3_hub.choose_landing(head_before["run_id"], info["candidates"], final, self.candidate_has_model)
+                if passed_over:
+                    info["not_landed_without_model"] = passed_over
+                if chosen is None:
+                    info["landed"] = {"run_id": None, "rule": "no_candidate_with_checked_model"}
+                    info["landed_by"] = None
+                else:
+                    info["landed"] = {"run_id": chosen, "rule": rule, **x3_hub.continue_on(s, chosen)}
+                    info["landed_by"] = "harness"
+                    head_after = self.head_model()
             else:
                 info["landed_by"] = None
                 if made:
@@ -900,7 +922,7 @@ def harness_added(mode: str, handover: bool = False) -> list[str]:
     if mode in ("M", "M+"):
         return [*common, "prepared_context_for_working_design", *(["attachment_registered_by_harness"] if handover else [])]
     if mode in ("T", "H"):
-        return [*common, "proxy_names_working_run", "harness_lands_named_candidate",
+        return [*common, "proxy_names_working_run", "harness_lands_named_candidate", "harness_lands_only_checked_models",
                 *(["attachment_registered_by_harness", "returned_file_readable"] if handover else [])]
     return [*common, "hostless_reviser_tools", "sf_rebuild_from_state"]
 
