@@ -343,7 +343,7 @@ def execute(answer: dict[str, Any], arm: str, family: str, task: dict[str, Any],
         return {"executed": True, "mapped": mapped, "oracle_verdict": "unavailable", "why": "the oracle task starts elsewhere"}
     report = runner.run_oracle(spec_path, candidate.preview_path, inputs["start_model"], trial.parent / f"{trial.name}.oracle.json")
     return {"executed": True, "mapped": mapped, "oracle_verdict": report.get("verdict", "unchecked"),
-            "oracle_violated": [r.get("relation_id") for r in report.get("relations", []) if r.get("status") == "violated"]}
+            "oracle_violated": [r.get("id") for r in report.get("relations", []) if r.get("status") == "violated"]}
 
 
 def _element_ids(names: Any, inputs: dict[str, Any]) -> list[str]:
