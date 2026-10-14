@@ -46,3 +46,10 @@ def test_changes_map_history_names_and_refuse_unknown_ones():
     assert x2.map_changes({"column_count": 4}, "D", "F1", record) == ({"column_count": 4.0}, None)
     assert x2.map_changes({"column_count": 4}, "B", "F1", record)[1] == "UNKNOWN_PARAMETER: column_count"
     assert x2.map_changes({"capital_order": "corinthian"}, "D", "F1", record)[1] == "NOT_A_NUMBER: capital_order"
+
+
+def test_a_run_counts_only_its_own_rows(tmp_path):
+    ledger = x2.Ledger(tmp_path / "ledger.jsonl")
+    ledger.add({"part": "pilot", "out": str(tmp_path / "run-a" / "turn-1"), "cost_usd": 1.0})
+    ledger.add({"part": "pilot", "out": str(tmp_path / "run-ab" / "turn-1"), "cost_usd": 2.0})   # a sibling, not a child
+    assert ledger.spent_by(tmp_path / "run-a") == 1.0 and ledger.spent("pilot") == 3.0

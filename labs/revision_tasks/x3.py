@@ -281,7 +281,7 @@ def h_prompt(history: list[str], text: str) -> str:
 
 class Session:
     def __init__(self, building: str, mode: str, repeat: int, out: Path, *, cli: str, ledger: x2.Ledger, part: str,
-                 limit_usd: float, spent_at_start: float, budget_usd: float = TURN_BUDGET_USD, data: dict[str, Any] | None = None) -> None:
+                 limit_usd: float, budget_usd: float = TURN_BUDGET_USD, data: dict[str, Any] | None = None) -> None:
         if mode not in MODES:
             raise ValueError(f"mode {mode} is not one of {MODES}")
         self.data = data or load_requests()
@@ -290,7 +290,7 @@ class Session:
         self.dir = out / f"{building}-{mode.replace('+', 'plus')}-r{repeat}"
         self.dir.mkdir(parents=True, exist_ok=False)
         self.cli, self.ledger, self.part = cli, ledger, part
-        self.limit_usd, self.spent_at_start, self.budget_usd = limit_usd, spent_at_start, budget_usd
+        self.run_root, self.limit_usd, self.budget_usd = out, limit_usd, budget_usd
         self.settings = self.dir / "settings.json"
         self.settings.write_text(json.dumps({"disableBundledSkills": True}), encoding="utf-8")
         self.services: x3_hub.HubServices | None = None
@@ -416,7 +416,7 @@ class Session:
 
     # ---- one turn
     def _check_spend(self) -> None:
-        spent = self.ledger.spent(self.part) - self.spent_at_start
+        spent = self.ledger.spent_by(self.run_root)
         if spent + self.budget_usd > self.limit_usd:
             raise x2.CapReached(f"this run's limit: {spent:.2f} of {self.limit_usd:.2f} spent, a turn may spend {self.budget_usd:.2f}")
 
@@ -754,11 +754,11 @@ def main(argv: list[str] | None = None) -> int:
     summaries = []
     for mode in args.modes.split(","):
         session = Session(args.building, mode, args.repeat, out, cli=args.cli, ledger=ledger, part=args.part, limit_usd=args.limit_usd,
-                          spent_at_start=spent, budget_usd=args.turn_budget_usd, data=data)
+                          budget_usd=args.turn_budget_usd, data=data)
         summaries.append(session.run(tuple(args.requests.split(",")) if args.requests else None))
         if session.stopped and "CapReached" in session.stopped:
             break
-    total = {"sessions": summaries, "spent_part_after": ledger.spent(args.part), "spent_this_run": round(ledger.spent(args.part) - spent, 4)}
+    total = {"sessions": summaries, "spent_part_after": ledger.spent(args.part), "spent_this_run": round(ledger.spent_by(out), 4)}
     (out / "x3_summary.json").write_text(json.dumps(total, indent=1, default=str) + "\n", encoding="utf-8", newline="\n")
     print(json.dumps(total, indent=1, default=str))
     return 0

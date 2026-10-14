@@ -159,7 +159,7 @@ def test_this_runs_spend_is_its_own_rows_in_the_shared_ledger(tmp_path):
     ledger.add({"part": "pilot", "cost_usd": 0.5, "out": str(out / "rounds" / "F1-T2-r0" / "turn")})
     ledger.add({"part": "pilot", "cost_usd": 4.0, "out": str(tmp_path / "run-10" / "rounds" / "F1-T2-r0" / "turn")})
     ledger.add({"part": "pilot", "cost_usd": 7.0, "out": "another session"})
-    assert x2_g.ledger_spent_by(ledger, out) == 0.5
+    assert ledger.spent_by(out) == 0.5
 
 
 def test_a_run_over_its_limit_starts_no_hub(tmp_path):

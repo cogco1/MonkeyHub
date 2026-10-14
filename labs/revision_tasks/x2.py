@@ -239,6 +239,16 @@ class Ledger:
         rows = [json.loads(line) for line in self.path.read_text(encoding="utf-8").splitlines() if line.strip()]
         return sum(r["cost_usd"] for r in rows if part is None or r["part"] == part)
 
+    def spent_by(self, out: Path) -> float:
+        """What one run booked: the rows whose turn directory lies under ``out``. Runs that share a part, at the same time
+        or not, do not count each other."""
+
+        if not self.path.exists():
+            return 0.0
+        rows = [json.loads(line) for line in self.path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        root = str(Path(out)) + os.sep
+        return sum(r["cost_usd"] for r in rows if str(r.get("out", "")).startswith(root))
+
     def check(self, part: str) -> None:
         if self.spent(part) + PER_CALL_USD > CAPS[part]:
             raise CapReached(f"part {part}: {self.spent(part):.2f} of {CAPS[part]:.2f} spent")

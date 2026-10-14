@@ -34,7 +34,6 @@ import argparse
 import csv
 import hashlib
 import json
-import os
 import subprocess
 import sys
 import time
@@ -365,7 +364,7 @@ def run(out: Path, *, families: tuple[str, ...], repeats: int, first_repeat: int
     for repeat in range(first_repeat, first_repeat + repeats):
         for task in chosen:
             try:
-                check_round(ledger, part, ledger_spent_by(ledger, out), limit_usd, budget_usd)
+                check_round(ledger, part, ledger.spent_by(out), limit_usd, budget_usd)
             except x2.CapReached as exc:
                 stopped = str(exc)
                 break
@@ -400,20 +399,10 @@ def run(out: Path, *, families: tuple[str, ...], repeats: int, first_repeat: int
             writer = csv.DictWriter(handle, fieldnames=fields)
             writer.writeheader()
             writer.writerows(rows)
-    summary = {"stopped": stopped, "spent_this_run_usd": round(ledger_spent_by(ledger, out), 4), "spent_part_usd": ledger.spent(part), "spent_total_usd": ledger.spent(),
+    summary = {"stopped": stopped, "spent_this_run_usd": round(ledger.spent_by(out), 4), "spent_part_usd": ledger.spent(part), "spent_total_usd": ledger.spent(),
                "errors": sum(1 for r in rows if "error" in r), "by_family": summarize([r for r in rows if "error" not in r])}
     (out / "x2g_summary.json").write_text(json.dumps(summary, indent=1, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     return summary
-
-
-def ledger_spent_by(ledger: x2.Ledger, out: Path) -> float:
-    """What this run's turns booked in the shared ledger (its rows name a turn directory under ``out``)."""
-
-    if not ledger.path.exists():
-        return 0.0
-    rows = [json.loads(line) for line in ledger.path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    root = str(out) + os.sep
-    return sum(r["cost_usd"] for r in rows if str(r.get("out", "")).startswith(root))
 
 
 def main(argv: list[str] | None = None) -> int:
