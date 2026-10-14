@@ -1,0 +1,153 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "F1-T8-01",
+  "family": "F1",
+  "task_type": "T8_stale_evidence",
+  "stage_context": {
+    "stage": "technical",
+    "earlier_stages": [
+      "massing",
+      "architecture"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "F1-portico",
+    "version": "2",
+    "generator": "labs/revision_tasks/fixtures.py:f1_portico",
+    "files_sha256": {
+      "labs/revision_tasks/fixtures.py": "3261abaaa5f9b4b1067fbd3598ef2e4860c383435e5157d08d31592fc7693a03"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:F1-portico@2",
+    "content_digest": "14bdb89d49095fb57265d73431f4ae5161a9f02ef6bf1e5bcd98f87fc67fd481",
+    "exact_base_digest": "f33df6f3010bb1827db4b4ce4bdeedf574ca51a2977a81c0d4e6708ad653361a"
+  },
+  "history": {
+    "history_ref": "labs/revision_tasks/history/events_v1.json",
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "intended_change": {
+    "text_en": "Extend the stylobate to the full usable site length from the survey.",
+    "typed_delta": [
+      {
+        "target": "parameter:stylobate_length",
+        "parameter": "stylobate_length",
+        "from": 12.0,
+        "to": 12.2
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "S1",
+      "kind": "equality",
+      "entities": [
+        "stylobate"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-stylobate",
+        "min": [
+          0.0,
+          -1.2,
+          0.0
+        ],
+        "max": [
+          12.2,
+          1.2,
+          0.6
+        ]
+      }
+    },
+    {
+      "id": "P4",
+      "kind": "equality",
+      "entities": [
+        "columns"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "column_row",
+        "prefix": "obj-columns-",
+        "count": 6,
+        "first_x": 0.9,
+        "last_x": 11.1
+      }
+    },
+    {
+      "id": "U1",
+      "kind": "equality",
+      "entities": [
+        "columns",
+        "entablature",
+        "pediment"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": false,
+      "source": "fixture:unrelated-geometry",
+      "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+          "obj-columns-0",
+          "obj-columns-1",
+          "obj-columns-2",
+          "obj-columns-3",
+          "obj-columns-4",
+          "obj-columns-5",
+          "obj-entablature",
+          "obj-pediment"
+        ]
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [
+      "stylobate"
+    ],
+    "obligations_to_recheck": [],
+    "expected_verdict": "held",
+    "acceptable_arm_outcomes": [
+      "accept"
+    ],
+    "annotated_by": "executor-draft-from-gold-v2",
+    "annotated_at": "2026-10-14T06:50:00Z",
+    "physical_basis": "Current survey S2 gives 12.2 m (S1 12.4 m is superseded); the end columns stay at 0.9 and 11.1 m (P4)."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "61e91356ef8eb7ec4244a37ff41b437424a5dbd7046a8dd7d5957e0d62741c04",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 300,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "the arm's outcome is acceptable and, when it executed, the oracle agrees with the expected verdict",
+    "failure": "any other outcome; an accept the oracle finds violated, or an accept of a refused task, is a false accept",
+    "partial": "none"
+  }
+}

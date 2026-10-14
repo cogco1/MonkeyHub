@@ -54,6 +54,21 @@ The arm works through these steps in order and stops at the first refusal or reo
 | A declared relation that cannot be measured | — | `unknown` |
 | Otherwise | — | `accept` |
 
+## Baseline arms (`run.py --arms`)
+
+The same task can be run by four arms (`--arms B0,B1,B2,B3_archflow --experiment X4`).
+
+- **B0** rebuilds the whole model.
+- **B1** replaces only the elements whose own rows bind a changed parameter.
+- **B2** replaces the elements in the declared closure.
+- **B3** is the ArchFlow arm above.
+
+B1 and B2 reuse every other object from the start model as it was, composed at the 3DM level. B0, B1 and B2 skip the base check, read no obligations and relations, and claim `accept` whenever the change executes.
+
+A task with `setup` starts from the fixture with those changes applied. Its patch carries the digests of the fixture before them, so only an arm that checks the base can see it is stale.
+
+A false accept is an `accept` that the oracle finds violated, or an `accept` of a task whose gold is `refuse`.
+
 ## State-bearing files (`carrier.py`, `reviser.py`)
 
 The four arms carry the same state. They differ only in where it lives and what binds it.
@@ -147,6 +162,5 @@ The gold in these files is a draft written for smoke runs. A run counts only aft
 
 - Contact and clearance in the oracle use bounding boxes over plan overlap. Interference uses sampling: 14³ points per overlapping pair of boxes, so a sliver smaller than a sample cell can be missed.
 - The undeclared-interference scan finds solid penetration only. A clearance that nothing declares (the space under a stair, say) is invisible to it.
-- One arm (ArchFlow) for now; the baselines and repeated timing come with the next slice.
 - A hostless revision rebuilds the whole model from the file's state: the file does not carry the previous exact STEP, so shapes are not reused across files.
 - A C-unbound file that another tool edited is accepted, and its rebuild silently discards the edit (`test_carrier`).

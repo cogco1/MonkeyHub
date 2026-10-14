@@ -247,6 +247,9 @@ class ArmResult:
     obligations: list[dict[str, Any]] = field(default_factory=list)
     new_interference: list[dict[str, Any]] = field(default_factory=list)
     phases_s: dict[str, float] = field(default_factory=dict)
+    model_path: Path | None = None              # the model the oracle judges (a composed one for B1/B2)
+    recompiled: list[str] | None = None         # visible objects built anew, counted where the kernel or the composer made them
+    updated_elements: list[str] | None = None
 
 
 def run_archflow_arm(spec: dict[str, Any], start: StateRecord, start_realization: Realization, workspace: Path) -> ArmResult:
@@ -308,4 +311,96 @@ def run_archflow_arm(spec: dict[str, Any], start: StateRecord, start_realization
         reasons.append({"code": "DECLARED_RELATION_UNCHECKED", "refs": unchecked})
     return ArmResult(claim, reasons, record=record, realization=candidate, operators=operators, closure=closure, declared=declared,
                      obligations=obligations, new_interference=new,
-                     phases_s={"patch_s": t1 - t0, "execute_s": t2 - t1, "system_checks_s": t3 - t2})
+                     phases_s={"patch_s": t1 - t0, "execute_s": t2 - t1, "system_checks_s": t3 - t2},
+                     model_path=candidate.preview_path,
+                     recompiled=sorted(set(visible_objects(candidate)) - set(candidate.receipt.reused_object_ids)))
+
+
+# ---------------------------------------------------------------- baseline arms (B0 full rebuild, B1 target only, B2 declared closure)
+
+def direct_binders(record: StateRecord, parameters: tuple[str, ...]) -> list[str]:
+    """Elements whose own row names one of ``parameters`` as an ``@`` binding: what a request names, before any closure."""
+
+    import json as _json
+
+    found = []
+    for entity in record.entities_of("Element@1"):
+        text = _json.dumps(dict(entity.fields))
+        if any(f'"@{name}"' in text for name in parameters):
+            found.append(entity.entity_id)
+    return sorted(found)
+
+
+def compose_three_dm(start: Realization, successor: Realization, update: set[str], target: Path) -> list[str]:
+    """The start model with every object of the ``update`` elements replaced by the successor's; the rest reused as they were."""
+
+    import rhino3dm
+
+    owner_start = {o: e for e, objs in start.objects_by_element.items() for o in objs}
+    owner_next = {o: e for e, objs in successor.objects_by_element.items() for o in objs}
+    model = rhino3dm.File3dm.Read(str(start.preview_path))
+    for obj in list(model.Objects):
+        if owner_start.get(obj.Attributes.Name) in update:
+            model.Objects.Delete(obj.Attributes.Id)
+    replaced = []
+    for obj in rhino3dm.File3dm.Read(str(successor.preview_path)).Objects:
+        if owner_next.get(obj.Attributes.Name) in update:
+            model.Objects.AddMesh(obj.Geometry, obj.Attributes)
+            replaced.append(obj.Attributes.Name)
+    if not model.Write(str(target), 8):
+        raise RealizationError("COMPOSE_FAILED", f"{target.name} could not be written")
+    return sorted(replaced)
+
+
+def run_baseline_arm(arm: str, spec: dict[str, Any], start: StateRecord, start_realization: Realization, workspace: Path) -> ArmResult:
+    """B0, B1 or B2: apply the patch to the current state with no base check, rebuild, and claim accept if it runs.
+
+    B0 rebuilds the whole model. B1 replaces only the elements the request
+    names directly; B2 replaces the elements in the declared closure. In both,
+    every other object is reused from the start as it was. None of them reads
+    obligations, relations or the result back.
+    """
+
+    t0 = time.perf_counter()
+    deltas = spec["intended_change"]["typed_delta"]
+    changed = tuple(d["target"] for d in deltas)
+    if any(d["to"] is None for d in deltas):
+        return ArmResult("refuse", [{"code": "CANNOT_EXECUTE", "detail": "the change names no value"}])
+    record = fixtures_bound(start)
+    operators = []
+    for delta in deltas:
+        operator = StateRecordOperator(kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest, base_state_digest=record.state_digest,
+                                       target_ref=delta["target"], key=delta["parameter"], value=delta["to"])
+        try:
+            record = apply_state_record_operator(record, operator)
+        except StateRecordError as exc:
+            return ArmResult("refuse", [{"code": "CANNOT_EXECUTE", "detail": str(exc)}], operators=operators)
+        operators.append(operator.to_dict())
+    try:
+        successor = realize(record, workspace, "candidate")
+    except RealizationError as exc:
+        return ArmResult("refuse", [{"code": exc.code, "detail": exc.detail}], record=record, operators=operators)
+    t1 = time.perf_counter()
+    closure = list(fixtures_bound(start).closure(changed))
+    if arm == "B0":
+        return ArmResult("accept", [], record=record, realization=successor, operators=operators, closure=closure,
+                         model_path=successor.preview_path, recompiled=sorted(visible_objects(successor)),
+                         phases_s={"execute_s": t1 - t0})
+    elements = {e.entity_id for e in start.entities_of("Element@1")}
+    if arm == "B1":
+        update = set(direct_binders(start, tuple(d["parameter"] for d in deltas)))
+    elif arm == "B2":
+        update = {ref.removeprefix("entity:") for ref in closure if ref.removeprefix("entity:") in elements}
+    else:
+        raise ValueError(f"unknown baseline arm {arm!r}")
+    composed = workspace / "candidate.composed.3dm"
+    replaced = compose_three_dm(start_realization, successor, update, composed)
+    return ArmResult("accept", [], record=record, realization=successor, operators=operators, closure=closure, model_path=composed,
+                     recompiled=sorted(o for o in replaced if o in set(visible_objects(successor))), updated_elements=sorted(update),
+                     phases_s={"execute_s": t1 - t0, "compose_s": time.perf_counter() - t1})
+
+
+def fixtures_bound(record: StateRecord) -> StateRecord:
+    from labs.revision_tasks.fixtures import bound
+
+    return record if record.base is not None else bound(record)

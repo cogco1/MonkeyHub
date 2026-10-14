@@ -100,19 +100,19 @@ def score(spec: dict[str, Any], claim: str, oracle_verdict: str) -> dict[str, An
         oracle_ok = None if oracle_verdict == "unavailable" else oracle_verdict == gold["expected_verdict"]
         success = outcome_ok and (claim == "refuse" or bool(oracle_ok))
     return {"success": success, "outcome_matches_gold": outcome_ok, "oracle_matches_gold": oracle_ok,
-            "false_accept": claim == "accept" and oracle_verdict == "violated"}
+            "false_accept": claim == "accept" and (oracle_verdict == "violated" or gold["expected_verdict"] == "refuse")}
 
 
-def run_task(task_path: Path, out: Path, order_slot: int) -> dict[str, Any]:
+def run_task(task_path: Path, out: Path, order_slot: int, arm_name: str = ARM) -> dict[str, Any]:
     spec = taskspec.load(task_path)
-    task_dir = out / spec["task_id"]
+    task_dir = out / spec["task_id"] if arm_name == ARM else out / arm_name / spec["task_id"]
     (task_dir / "start").mkdir(parents=True)
     (task_dir / "candidate").mkdir()
     started_at = datetime.now(timezone.utc).isoformat()
     t0 = time.perf_counter()
-    record = fixtures.FIXTURES[spec["fixture"]["fixture_id"]]()
+    record = taskspec.start_record(spec)
     deterministic: dict[str, Any] = {
-        "attempt_id": f"{EXPERIMENT}-{ARM}-{spec['task_id']}-r0", "task_id": spec["task_id"], "experiment": EXPERIMENT, "arm": ARM,
+        "attempt_id": f"{EXPERIMENT}-{arm_name}-{spec['task_id']}-r0", "task_id": spec["task_id"], "experiment": EXPERIMENT, "arm": arm_name,
         "repeat_idx": 0, "order_slot": order_slot, "harness": harness_identity(), "taskspec_sha256": taskspec.spec_sha256(spec),
         "inputs": {"context_ref": None, "sha256": None, "tokens": 0},
     }
@@ -125,31 +125,35 @@ def run_task(task_path: Path, out: Path, order_slot: int) -> dict[str, Any]:
     if (frozen["oracle_id"], frozen["version"], frozen["sha256"]) != (oracle.ORACLE_ID, oracle.ORACLE_VERSION, taskspec.file_sha256(LAB / "oracle.py")):
         deterministic.update({"status": "excluded", "reasons": [{"code": "ORACLE_DRIFT", "detail": "oracle code differs from the one the task froze"}]})
         return finish(task_dir, deterministic, observed, t0)
-    start = fixtures.bound(record)
+    start = record if record.base is not None else fixtures.bound(record)
     start_real = pipeline.realize(start, (task_dir / "start").resolve(), "start")
     t_start = time.perf_counter()
-    arm = pipeline.run_archflow_arm(spec, start, start_real, (task_dir / "candidate").resolve())
+    if arm_name == ARM:
+        # A patch prepared against an older start carries that start's digests: the arm sees the stale base.
+        arm_spec = spec if "patch_base_digests" not in spec else {**spec, "start_state": {**spec["start_state"], **spec["patch_base_digests"]}}
+        arm = pipeline.run_archflow_arm(arm_spec, start, start_real, (task_dir / "candidate").resolve())
+    else:
+        arm = pipeline.run_baseline_arm(arm_name, spec, start, start_real, (task_dir / "candidate").resolve())
     t_arm = time.perf_counter()
     report: dict[str, Any] = {"verdict": "unavailable", "relations": [], "detail": "no executed candidate"}
-    if arm.realization is not None:
-        report = run_oracle(task_path, arm.realization.preview_path, start_real.preview_path, task_dir / "oracle_report.json")
+    if arm.model_path is not None:
+        report = run_oracle(task_path, arm.model_path, start_real.preview_path, task_dir / "oracle_report.json")
     t_oracle = time.perf_counter()
     start_shapes = {name: oracle.signature(mesh) for name, mesh in oracle.load_meshes(start_real.preview_path).items()}
     ids: dict[str, Any] = {"closure": arm.closure}
     if arm.realization is not None:
         shapes = report.get("object_signatures", {})
         owners = {**element_of(start_real.objects_by_element), **element_of(arm.realization.objects_by_element)}
-        visible = set(pipeline.visible_objects(arm.realization))
-        reused = set(arm.realization.receipt.reused_object_ids)
         changed = sorted(o for o in set(start_shapes) | set(shapes)
                          if o not in start_shapes or o not in shapes or not oracle.same_shape(start_shapes[o], shapes[o]))
+        recompiled = arm.recompiled if arm.recompiled is not None else []
         ids.update({
-            "recompiled": sorted(visible - reused), "retained": sorted(visible & reused),
+            "recompiled": recompiled, "retained": sorted(set(shapes) - set(recompiled)), "updated_elements": arm.updated_elements,
             "retired": sorted(set(start_shapes) - set(shapes)), "added": sorted(set(shapes) - set(start_shapes)),
             "changed_objects": changed, "untouched": sorted(set(shapes) - set(changed)),
             "unrelated_touched": sorted(o for o in changed if owners.get(o) not in spec["gold"]["affected_entities"]),
         })
-        observed["artifacts"].update({"candidate.step": sha256_file(arm.realization.step_path), "candidate.preview.3dm": sha256_file(arm.realization.preview_path)})
+        observed["artifacts"].update({"candidate.step": sha256_file(arm.realization.step_path), "candidate.model": sha256_file(arm.model_path)})
     observed["artifacts"].update({"start.step": sha256_file(start_real.step_path), "start.preview.3dm": sha256_file(start_real.preview_path)})
     if arm.claim == "refuse":
         status = "refused"
@@ -201,10 +205,13 @@ def gate_one(bundles: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    global EXPERIMENT
     parser = argparse.ArgumentParser(description="Run the revision tasks into an empty directory.")
     parser.add_argument("--out", type=Path, required=True, help="an empty or new directory outside the repository")
     parser.add_argument("--tasks", help="comma-separated task ids (default: every task file)")
     parser.add_argument("--compare", type=Path, help="an earlier output directory whose bundle hashes must match")
+    parser.add_argument("--arms", default=ARM, help="comma-separated arms: B0 (full rebuild), B1 (target only), B2 (declared closure), B3_archflow")
+    parser.add_argument("--experiment", default=EXPERIMENT)
     args = parser.parse_args(argv)
     out = args.out.resolve()
     if out.exists() and any(out.iterdir()):
@@ -213,12 +220,16 @@ def main(argv: list[str] | None = None) -> int:
     wanted = set(args.tasks.split(",")) if args.tasks else None
     paths = [p for p in taskspec.task_files() if wanted is None or p.stem in wanted]
     bundles = []
-    for slot, path in enumerate(paths):
-        bundle = run_task(path, out, slot)
-        d = bundle["deterministic"]
-        print(f"{d['task_id']}: claim={d.get('arm_claim')} oracle={d.get('checker', {}).get('oracle', {}).get('verdict')} "
-              f"success={d.get('score', {}).get('success')} bundle={bundle['bundle_sha256'][:16]}", flush=True)
-        bundles.append(bundle)
+    EXPERIMENT = args.experiment
+    for arm_name in args.arms.split(","):
+        for slot, path in enumerate(paths):
+            bundle = run_task(path, out, slot, arm_name)
+            d = bundle["deterministic"]
+            prefix = "" if arm_name == ARM else f"{arm_name} "
+            print(f"{prefix}{d['task_id']}: claim={d.get('arm_claim')} oracle={d.get('checker', {}).get('oracle', {}).get('verdict')} "
+                  f"success={d.get('score', {}).get('success')} false_accept={d.get('score', {}).get('false_accept')} "
+                  f"bundle={bundle['bundle_sha256'][:16]}", flush=True)
+            bundles.append(bundle)
     with (out / "index.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["run_id", "task_id", "experiment", "arm", "status", "arm_claim", "oracle_verdict", "success", "bundle_sha256"])
@@ -226,10 +237,17 @@ def main(argv: list[str] | None = None) -> int:
             d = b["deterministic"]
             writer.writerow([d["attempt_id"], d["task_id"], d["experiment"], d["arm"], d["status"], d.get("arm_claim"),
                              d.get("checker", {}).get("oracle", {}).get("verdict"), d.get("score", {}).get("success"), b["bundle_sha256"]])
-    summary = {"gate_1": gate_one(bundles), "tasks": len(bundles)}
+    summary: dict[str, Any] = {"gate_1": gate_one([b for b in bundles if b["deterministic"]["arm"] == ARM]), "tasks": len(bundles), "by_arm": {}}
+    for b in bundles:
+        d = b["deterministic"]
+        cell = summary["by_arm"].setdefault(d["arm"], {"tasks": 0, "success": 0, "false_accept": 0})
+        cell["tasks"] += 1
+        cell["success"] += int(bool(d.get("score", {}).get("success")))
+        cell["false_accept"] += int(bool(d.get("score", {}).get("false_accept")))
     if args.compare:
-        earlier = {row["task_id"]: row["bundle_sha256"] for row in csv.DictReader((args.compare / "index.csv").open(encoding="utf-8"))}
-        summary["replay"] = {b["deterministic"]["task_id"]: b["bundle_sha256"] == earlier.get(b["deterministic"]["task_id"]) for b in bundles}
+        earlier = {(row["arm"], row["task_id"]): row["bundle_sha256"] for row in csv.DictReader((args.compare / "index.csv").open(encoding="utf-8"))}
+        summary["replay"] = {f"{b['deterministic']['arm']}/{b['deterministic']['task_id']}": b["bundle_sha256"] == earlier.get((b["deterministic"]["arm"], b["deterministic"]["task_id"]))
+                             for b in bundles}
     (out / "summary.json").write_text(json.dumps(summary, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=1, sort_keys=True))
     if args.compare and not all(summary["replay"].values()):

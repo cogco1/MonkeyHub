@@ -1,0 +1,122 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "F2-T8X-01",
+  "family": "F2",
+  "task_type": "T8_stale_evidence",
+  "stage_context": {
+    "stage": "technical",
+    "earlier_stages": [
+      "massing",
+      "architecture"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "F2-portico-rotunda",
+    "version": "2",
+    "generator": "labs/revision_tasks/fixtures.py:f2_portico_rotunda",
+    "files_sha256": {
+      "labs/revision_tasks/fixtures.py": "3261abaaa5f9b4b1067fbd3598ef2e4860c383435e5157d08d31592fc7693a03"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:F2-portico-rotunda@2",
+    "content_digest": "ed30d62e33844a9f4854ac5e0ace304de10ed4e86cd0072fe681d2dea5fa3f31",
+    "exact_base_digest": "47312636db3045dfb1840653ceacebc250ca7c29cc436916bb3746d4562be914"
+  },
+  "history": {
+    "history_ref": "labs/revision_tasks/history/events_v1.json",
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "intended_change": {
+    "text_en": "Increase the rotunda's outer radius by 0.5 m (a change prepared before the cornice was raised).",
+    "typed_delta": [
+      {
+        "target": "parameter:rotunda_radius",
+        "parameter": "rotunda_radius",
+        "from": 10.0,
+        "to": 10.5
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "R1",
+      "kind": "equality",
+      "entities": [
+        "rotunda-drum"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-rotunda-drum",
+        "min": [
+          -9.9,
+          -9.9,
+          null
+        ],
+        "max": [
+          9.9,
+          9.9,
+          null
+        ]
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [],
+    "obligations_to_recheck": [],
+    "expected_verdict": "refuse",
+    "acceptable_arm_outcomes": [
+      "refuse"
+    ],
+    "annotated_by": "executor-draft-from-gold-v2",
+    "annotated_at": "2026-10-14T06:50:00Z",
+    "physical_basis": "The change names the start before the cornice change; the current state is not that start."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "61e91356ef8eb7ec4244a37ff41b437424a5dbd7046a8dd7d5957e0d62741c04",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 300,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "the arm's outcome is acceptable and, when it executed, the oracle agrees with the expected verdict",
+    "failure": "any other outcome; an accept the oracle finds violated, or an accept of a refused task, is a false accept",
+    "partial": "none"
+  },
+  "setup": [
+    {
+      "target": "parameter:cornice_base",
+      "parameter": "cornice_base",
+      "from": 12.0,
+      "to": 12.6
+    }
+  ],
+  "patch_base": "before_setup",
+  "patch_base_digests": {
+    "content_digest": "c9878f31b212ccef570be6c87bd039053462c2a58699dd23b9909e604805f41a",
+    "exact_base_digest": "35b186f4497b44bb7db5478ccb0bb46560fc64dca7481c99e241f9676fcdc13c"
+  }
+}

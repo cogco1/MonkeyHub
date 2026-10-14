@@ -397,6 +397,11 @@ def check_column_row(m, meshes, start):
             problems.append("spacing is not equal")
         if "max_clear_spacing_m" in m and float(clear.max()) > float(m["max_clear_spacing_m"]) + 1e-6:
             problems.append(f"clear spacing {float(clear.max()):.4f} > {m['max_clear_spacing_m']}")
+        measured["clear_spacing_min"] = round(float(clear.min()), 6)
+        if "min_clear_spacing_m" in m and float(clear.min()) < float(m["min_clear_spacing_m"]) - 1e-6:
+            problems.append(f"clear spacing {float(clear.min()):.4f} < {m['min_clear_spacing_m']}")
+        if "diameter_m" in m and any(abs(d - float(m["diameter_m"])) > tol for d in diameters):
+            problems.append(f"column diameter differs from {m['diameter_m']}")
     measured["problems"] = problems
     return ("violated" if problems else "held"), measured
 

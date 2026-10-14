@@ -15,9 +15,9 @@ def _specs():
     return [(path.stem, json.loads(path.read_text(encoding="utf-8"))) for path in taskspec.task_files()]
 
 
-def test_the_six_smoke_tasks_are_present_and_valid():
+def test_the_six_smoke_tasks_are_present_and_every_task_is_valid():
     names = [name for name, _ in _specs()]
-    assert names == ["F1-T1-01", "F1-T6-01", "F2-T3-01", "F2-T4-01", "F3-T1-01", "F3-T5-01"]
+    assert {"F1-T1-01", "F1-T6-01", "F2-T3-01", "F2-T4-01", "F3-T1-01", "F3-T5-01"} <= set(names)
     for name, spec in _specs():
         assert taskspec.problems(spec) == [], name
         assert spec["task_id"] == name
@@ -26,7 +26,7 @@ def test_the_six_smoke_tasks_are_present_and_valid():
 def test_frozen_fields_match_the_fixtures_and_the_oracle():
     oracle_sha = taskspec.file_sha256(taskspec.LAB / "oracle.py")
     for name, spec in _specs():
-        record = fixtures.FIXTURES[spec["fixture"]["fixture_id"]]()
+        record = taskspec.start_record(spec)
         assert spec["start_state"]["content_digest"] == record.digest, name
         assert spec["start_state"]["exact_base_digest"] == fixtures.bound(record).state_digest, name
         assert (spec["oracle"]["oracle_id"], spec["oracle"]["version"], spec["oracle"]["sha256"]) == (oracle.ORACLE_ID, oracle.ORACLE_VERSION, oracle_sha), name

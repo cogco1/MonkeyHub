@@ -1,0 +1,161 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "F1-T4b-01",
+  "family": "F1",
+  "task_type": "T4_planted_hidden_dependency",
+  "stage_context": {
+    "stage": "technical",
+    "earlier_stages": [
+      "massing",
+      "architecture"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "F1-portico",
+    "version": "2",
+    "generator": "labs/revision_tasks/fixtures.py:f1_portico",
+    "files_sha256": {
+      "labs/revision_tasks/fixtures.py": "3261abaaa5f9b4b1067fbd3598ef2e4860c383435e5157d08d31592fc7693a03"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:F1-portico@2",
+    "content_digest": "14bdb89d49095fb57265d73431f4ae5161a9f02ef6bf1e5bcd98f87fc67fd481",
+    "exact_base_digest": "f33df6f3010bb1827db4b4ce4bdeedf574ca51a2977a81c0d4e6708ad653361a"
+  },
+  "history": {
+    "history_ref": "labs/revision_tasks/history/events_v1.json",
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "intended_change": {
+    "text_en": "Make the entablature shallower, from 1.8 m to 1.5 m.",
+    "typed_delta": [
+      {
+        "target": "parameter:entablature_height",
+        "parameter": "entablature_height",
+        "from": 1.8,
+        "to": 1.5
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "E1",
+      "kind": "equality",
+      "entities": [
+        "entablature"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-entablature",
+        "min": [
+          0.3,
+          -0.6,
+          9.6
+        ],
+        "max": [
+          11.7,
+          0.6,
+          11.1
+        ]
+      }
+    },
+    {
+      "id": "H1",
+      "kind": "contact",
+      "entities": [
+        "entablature",
+        "pediment"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": false,
+      "source": "fixture:planted-undeclared",
+      "measure": {
+        "check": "support_contact",
+        "lower": [
+          "obj-entablature"
+        ],
+        "upper": [
+          "obj-pediment"
+        ],
+        "tolerance_m": 0.001
+      }
+    },
+    {
+      "id": "U1",
+      "kind": "equality",
+      "entities": [
+        "stylobate",
+        "columns",
+        "pediment"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": false,
+      "source": "fixture:unrelated-geometry",
+      "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+          "obj-stylobate",
+          "obj-pediment",
+          "obj-columns-0",
+          "obj-columns-1",
+          "obj-columns-2",
+          "obj-columns-3",
+          "obj-columns-4",
+          "obj-columns-5"
+        ]
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [
+      "entablature"
+    ],
+    "obligations_to_recheck": [
+      "P2"
+    ],
+    "expected_verdict": "violated",
+    "acceptable_arm_outcomes": [
+      "reopen",
+      "unknown",
+      "refuse"
+    ],
+    "annotated_by": "executor-draft-from-gold-v2",
+    "annotated_at": "2026-10-14T06:50:00Z",
+    "physical_basis": "Entablature 9.6-11.1 m; the pediment stays at 11.4 m and floats 0.3 m above it. No solids penetrate; only the missing contact is wrong."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "61e91356ef8eb7ec4244a37ff41b437424a5dbd7046a8dd7d5957e0d62741c04",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 300,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "the arm's outcome is acceptable and, when it executed, the oracle agrees with the expected verdict",
+    "failure": "any other outcome; an accept the oracle finds violated, or an accept of a refused task, is a false accept",
+    "partial": "none"
+  }
+}

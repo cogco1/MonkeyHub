@@ -107,8 +107,11 @@ def problems(spec: Any) -> list[str]:
     for key in ("annotated_by", "annotated_at"):
         if not isinstance(gold.get(key), str) or not gold[key]:
             found.append(f"gold.{key} missing")
-    if any(r not in ids for r in gold.get("obligations_to_recheck", [])):
-        found.append("gold.obligations_to_recheck names an unknown relation")
+    if "setup" in spec:
+        if not isinstance(spec["setup"], list) or not spec["setup"] or spec.get("patch_base") != "before_setup":
+            found.append("setup must be a non-empty list of deltas, with patch_base 'before_setup'")
+        elif not isinstance(spec.get("patch_base_digests"), dict):
+            found.append("a task with setup must freeze patch_base_digests")
     oracle = spec["oracle"]
     if oracle.get("reads_metadata") is not False:
         found.append("oracle.reads_metadata must be false")
@@ -142,15 +145,36 @@ def spec_sha256(spec: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(spec, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
+def start_record(spec: dict[str, Any]):
+    """The task's current start: the fixture, with the task's setup changes applied when it has any."""
+
+    from archflow.state.state_record import StateRecordEditKind, StateRecordOperator, apply_state_record_operator
+
+    from labs.revision_tasks import fixtures
+
+    record = fixtures.FIXTURES[spec["fixture"]["fixture_id"]]()
+    if not spec.get("setup"):
+        return record
+    bound = fixtures.bound(record)
+    for delta in spec["setup"]:
+        bound = apply_state_record_operator(bound, StateRecordOperator(
+            kind=StateRecordEditKind.SET_SCALAR, base_record_digest=bound.digest, base_state_digest=bound.state_digest,
+            target_ref=delta["target"], key=delta["parameter"], value=delta["to"]))
+    return bound
+
+
 def freeze(path: Path) -> bool:
     """Recompute the derived fields of one task file; True when it changed."""
 
     from labs.revision_tasks import fixtures, oracle
 
     spec = json.loads(path.read_text(encoding="utf-8"))
-    record = fixtures.FIXTURES[spec["fixture"]["fixture_id"]]()
+    original = fixtures.FIXTURES[spec["fixture"]["fixture_id"]]()
+    record = start_record(spec)
     bound = fixtures.bound(record)
     derived = json.loads(json.dumps(spec))
+    if "setup" in spec:
+        derived["patch_base_digests"] = {"content_digest": original.digest, "exact_base_digest": fixtures.bound(original).state_digest}
     derived["fixture"]["version"] = fixtures.FIXTURE_VERSION
     derived["fixture"]["files_sha256"] = {"labs/revision_tasks/fixtures.py": file_sha256(Path(fixtures.__file__))}
     derived["start_state"]["content_digest"] = record.digest

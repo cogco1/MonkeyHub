@@ -1,0 +1,135 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "F3-T4-01",
+  "family": "F3",
+  "task_type": "T4_planted_hidden_dependency",
+  "stage_context": {
+    "stage": "technical",
+    "earlier_stages": [
+      "massing",
+      "architecture"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "F3-wall-stair",
+    "version": "2",
+    "generator": "labs/revision_tasks/fixtures.py:f3_wall_stair",
+    "files_sha256": {
+      "labs/revision_tasks/fixtures.py": "3261abaaa5f9b4b1067fbd3598ef2e4860c383435e5157d08d31592fc7693a03"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:F3-wall-stair@2",
+    "content_digest": "80cdede7a57abcca5d8edd471de23149a8b1d065807a48a97ecaf4ee2c40b494",
+    "exact_base_digest": "cd19072a949656c316849c622e94047c74d2a37840f1f6a06b5014c8bfce3592"
+  },
+  "history": {
+    "history_ref": "labs/revision_tasks/history/events_v1.json",
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "intended_change": {
+    "text_en": "Move the stair 1.6 m towards the wall.",
+    "typed_delta": [
+      {
+        "target": "parameter:stair_y",
+        "parameter": "stair_y",
+        "from": 2.0,
+        "to": 0.4
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "S1",
+      "kind": "equality",
+      "entities": [
+        "stair"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-stair",
+        "min": [
+          0.6,
+          -0.1,
+          0.0
+        ],
+        "max": [
+          5.36,
+          0.9,
+          3.0
+        ]
+      }
+    },
+    {
+      "id": "H1",
+      "kind": "non_interference",
+      "entities": [
+        "stair",
+        "wall"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": false,
+      "source": "fixture:planted-undeclared",
+      "measure": {
+        "check": "non_interference",
+        "a": [
+          "obj-stair"
+        ],
+        "b": [
+          "obj-wall"
+        ]
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [
+      "stair"
+    ],
+    "obligations_to_recheck": [
+      "ST1"
+    ],
+    "expected_verdict": "violated",
+    "acceptable_arm_outcomes": [
+      "reopen",
+      "unknown",
+      "refuse"
+    ],
+    "annotated_by": "executor-draft-from-gold-v2",
+    "annotated_at": "2026-10-14T06:50:00Z",
+    "physical_basis": "Stair y -0.1..0.9 overlaps the wall's -0.2..0 thickness band along its run."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "61e91356ef8eb7ec4244a37ff41b437424a5dbd7046a8dd7d5957e0d62741c04",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 300,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "the arm's outcome is acceptable and, when it executed, the oracle agrees with the expected verdict",
+    "failure": "any other outcome; an accept the oracle finds violated, or an accept of a refused task, is a false accept",
+    "partial": "none"
+  }
+}

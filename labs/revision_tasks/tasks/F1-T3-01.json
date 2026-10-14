@@ -1,0 +1,126 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "F1-T3-01",
+  "family": "F1",
+  "task_type": "T3_declared_interface_conflict",
+  "stage_context": {
+    "stage": "technical",
+    "earlier_stages": [
+      "massing",
+      "architecture"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "F1-portico",
+    "version": "2",
+    "generator": "labs/revision_tasks/fixtures.py:f1_portico",
+    "files_sha256": {
+      "labs/revision_tasks/fixtures.py": "3261abaaa5f9b4b1067fbd3598ef2e4860c383435e5157d08d31592fc7693a03"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:F1-portico@2",
+    "content_digest": "14bdb89d49095fb57265d73431f4ae5161a9f02ef6bf1e5bcd98f87fc67fd481",
+    "exact_base_digest": "f33df6f3010bb1827db4b4ce4bdeedf574ca51a2977a81c0d4e6708ad653361a"
+  },
+  "history": {
+    "history_ref": "labs/revision_tasks/history/events_v1.json",
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "intended_change": {
+    "text_en": "Increase the column diameter to 1.3 m.",
+    "typed_delta": [
+      {
+        "target": "parameter:column_radius",
+        "parameter": "column_radius",
+        "from": 0.45,
+        "to": 0.65
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "K1",
+      "kind": "bound",
+      "entities": [
+        "columns"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "column_row",
+        "prefix": "obj-columns-",
+        "count": 6,
+        "min_clear_spacing_m": 1.0
+      }
+    },
+    {
+      "id": "U1",
+      "kind": "equality",
+      "entities": [
+        "stylobate",
+        "entablature",
+        "pediment"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": false,
+      "source": "fixture:unrelated-geometry",
+      "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+          "obj-stylobate",
+          "obj-entablature",
+          "obj-pediment"
+        ]
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [
+      "columns"
+    ],
+    "obligations_to_recheck": [
+      "K1"
+    ],
+    "expected_verdict": "violated",
+    "acceptable_arm_outcomes": [
+      "reopen",
+      "refuse"
+    ],
+    "annotated_by": "executor-draft-from-gold-v2",
+    "annotated_at": "2026-10-14T06:50:00Z",
+    "physical_basis": "Spacing 2.04 m minus diameter 1.3 m leaves 0.74 m < 1.0 m (K1)."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "61e91356ef8eb7ec4244a37ff41b437424a5dbd7046a8dd7d5957e0d62741c04",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 300,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "the arm's outcome is acceptable and, when it executed, the oracle agrees with the expected verdict",
+    "failure": "any other outcome; an accept the oracle finds violated, or an accept of a refused task, is a false accept",
+    "partial": "none"
+  }
+}
