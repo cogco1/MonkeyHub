@@ -6944,7 +6944,18 @@ export type ModelSourceDto = {
  * Native metadata only; no geometry validation or semantic admission.
  */
 export type ModelSourceIndexDto = {
-    modelSource: ModelSourceDto;
+    /**
+     * The design run and exact state the model is bound to; null for a model attached from outside the project.
+     */
+    modelSource: ModelSourceDto | null;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
     /**
      * Filename
      */
@@ -6970,7 +6981,7 @@ export type ModelSourceIndexDto = {
     /**
      * Objects
      *
-     * Native object rows as saved. Each row's material is the one resolved value: {name, color (#RRGGBB, the material table's diffuse colour), source}, the material the object wears (its own, or its layer's render material); source is declared when its archflow:material label names that material, file when no declaration names it, undeclared (name and color null) when it wears none.
+     * Native object rows as saved. Each row's material is the one resolved value: {name, color (#RRGGBB, the material table's diffuse colour), source}, the material the object wears (its own, or its layer's render material); source is declared when its archflow:material label names that material, file when no declaration names it, undeclared (name and color null) when it wears none. With bounds=true each row also has bounds {min, max} in the file's units, bounds_space (world, or definition for a block definition's own member), bounds_source (the saved visible geometry read: mesh or render-mesh vertices, a tight geometry box, instance_definition_members for a placed block), or bounds_error when that object's saved geometry gives none, as a Brep saved without render meshes does: bounds never come from Brep control points.
      */
     objects: Array<{
         [key: string]: unknown;
@@ -14615,12 +14626,16 @@ export type ReadNativeModelIndexApiModelAssetsAssetSha256IndexGetData = {
     query: {
         /**
          * Runid
+         *
+         * The model's run: a design run with its exact stateDigest, or an attached model's own run, studio-model-<assetSha256>, alone.
          */
         runId: string;
         /**
          * Statedigest
+         *
+         * Required for a design run's model; absent for an attached model.
          */
-        stateDigest: string;
+        stateDigest?: string | null;
         /**
          * Objectid
          */
@@ -14633,6 +14648,12 @@ export type ReadNativeModelIndexApiModelAssetsAssetSha256IndexGetData = {
          * Limit
          */
         limit?: number;
+        /**
+         * Bounds
+         *
+         * Add each paged object's bounds; read for this page only.
+         */
+        bounds?: boolean;
     };
     url: '/api/model-assets/{asset_sha256}/index';
 };
