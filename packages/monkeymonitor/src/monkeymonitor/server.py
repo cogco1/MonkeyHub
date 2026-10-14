@@ -14,11 +14,13 @@ import os
 from pathlib import Path
 import re
 import subprocess
+from typing import Iterable, Mapping
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, build_opener
 
 from .codex import bound_codex_sources, iter_codex_events
 from .pricing import RateCard, load_rates, quote
+from .sources import AGENT_SOURCES
 from .store import BUSY_NOTICE, UsageLog
 from .trace import build_traces
 from .usage import TokenUsage
@@ -50,9 +52,16 @@ class _NoRedirect(HTTPRedirectHandler):
 
 class MonitorData:
     def __init__(self, data_dir: Path | None = None, codex_sessions: tuple[Path, ...] = (), *,
-                 codex_bindings_url: str | None = None, codex_home: Path | None = None):
+                 codex_bindings_url: str | None = None, codex_home: Path | None = None,
+                 agent_sessions: Mapping[str, Iterable[Path]] | None = None):
+        """``agent_sessions`` names explicit files per ``AGENT_SOURCES`` key; Codex's join ``codex_sessions``."""
+        selected = {agent: tuple(paths) for agent, paths in (agent_sessions or {}).items()}
+        unknown = sorted(set(selected) - set(AGENT_SOURCES))
+        if unknown:
+            raise ValueError(f"Unknown agent usage source: {', '.join(unknown)}")
         self.store = UsageLog(data_dir) if data_dir is not None else None
-        self.codex_sessions = codex_sessions
+        self.codex_sessions = tuple(dict.fromkeys((*codex_sessions, *selected.pop("codex", ()))))
+        self.agent_sessions = {agent: paths for agent, paths in selected.items() if paths}
         self.hub_origin: str | None = None
         self.hub_origins: tuple[str, ...] = ()
         if codex_bindings_url is not None:
@@ -129,6 +138,25 @@ class MonitorData:
                                            project_ids=projects))
         except (OSError, ValueError, UnicodeError):
             warnings.append("指定的 Codex 会话暂时不可读或包含无效计数。")
+        # Codex is read above with its Hub bindings; every other agent reads only
+        # the files named for it. A copy never takes an id already held.
+        for agent, source in AGENT_SOURCES.items():
+            paths_for_agent = self.agent_sessions.get(agent)
+            if agent == "codex" or not paths_for_agent:
+                continue
+            try:
+                read = list(source.read(paths_for_agent, warnings=warnings))
+            except Exception:
+                # One reader's failure on a selected file never takes the other sources down.
+                warnings.append(f"指定的 {agent} 记录读取失败；已跳过，其他来源照常。")
+                continue
+            if source.existing_ids == "reject":
+                held = {event.event_id for event in events}
+                kept = [event for event in read if event.event_id not in held]
+                if len(kept) < len(read):
+                    warnings.append(f"{len(read) - len(kept)} 条 {agent} 记录与已有记录同 event_id，已拒收；已有记录保持不变。")
+                read = kept
+            events.extend(read)
         unique = {}
         for event in events:
             previous = unique.get(event.event_id)
