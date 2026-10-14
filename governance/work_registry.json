@@ -1,25 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-646",
-      "status": "active",
-      "branch": "codex/integration-645-652",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-integration-645-652",
-      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": "Merge #647 into the integration of #645, #647, #649, #650 and #652. #645 also changed these files; the claim covers the merge and is released right after it.",
-      "modules": [
-        "project_runtime.binding",
-        "project_runtime.construction"
-      ],
-      "write_scope": [
-        "services/project-runtime/src/project_runtime/api/routes/construction.py",
-        "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
-        "docs/design/construction-api.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
