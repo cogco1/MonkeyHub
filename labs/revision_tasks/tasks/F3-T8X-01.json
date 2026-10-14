@@ -1,0 +1,120 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "F3-T8X-01",
+  "family": "F3",
+  "task_type": "T8_stale_evidence",
+  "stage_context": {
+    "stage": "technical",
+    "earlier_stages": [
+      "massing",
+      "architecture"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "F3-wall-stair",
+    "version": "2",
+    "generator": "labs/revision_tasks/fixtures.py:f3_wall_stair",
+    "files_sha256": {
+      "labs/revision_tasks/fixtures.py": "3261abaaa5f9b4b1067fbd3598ef2e4860c383435e5157d08d31592fc7693a03"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:F3-wall-stair@2",
+    "content_digest": "d1a691b794885ed103b688d156d70069c2a9fdaa68583f84fb6c1c0d63aa43cd",
+    "exact_base_digest": "77b07c996495feab04d354bd01d8739cb6b0ddeeba470b5d802107e7d06de523"
+  },
+  "history": {
+    "history_ref": "labs/revision_tasks/history/events_v1.json",
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "intended_change": {
+    "text_en": "Widen the door opening from 1.2 m to 1.6 m (a change prepared before the lintel bearing was increased).",
+    "typed_delta": [
+      {
+        "target": "parameter:door_width",
+        "parameter": "door_width",
+        "from": 1.2,
+        "to": 1.6
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "D1",
+      "kind": "equality",
+      "entities": [
+        "wall"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "aperture",
+        "host": "obj-wall",
+        "x": [
+          1.2,
+          2.8
+        ],
+        "z": [
+          0.0,
+          2.1
+        ]
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [],
+    "obligations_to_recheck": [],
+    "expected_verdict": "refuse",
+    "acceptable_arm_outcomes": [
+      "refuse"
+    ],
+    "annotated_by": "executor-draft-from-gold-v2",
+    "annotated_at": "2026-10-14T06:50:00Z",
+    "physical_basis": "The change names the start before the lintel change; the current state is not that start."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "848bf9c994e56f9c76712330f2bed61c0e69ce971b3018d3bc96da1388e5ad28",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 300,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "the arm's outcome is acceptable and, when it executed, the oracle agrees with the expected verdict",
+    "failure": "any other outcome; an accept the oracle finds violated, or an accept of a refused task, is a false accept",
+    "partial": "none"
+  },
+  "setup": [
+    {
+      "target": "parameter:lintel_bearing",
+      "parameter": "lintel_bearing",
+      "from": 0.15,
+      "to": 0.3
+    }
+  ],
+  "patch_base": "before_setup",
+  "patch_base_digests": {
+    "content_digest": "80cdede7a57abcca5d8edd471de23149a8b1d065807a48a97ecaf4ee2c40b494",
+    "exact_base_digest": "cd19072a949656c316849c622e94047c74d2a37840f1f6a06b5014c8bfce3592"
+  }
+}

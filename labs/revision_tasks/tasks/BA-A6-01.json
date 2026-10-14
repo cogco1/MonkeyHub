@@ -1,0 +1,230 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "BA-A6-01",
+  "family": "BA",
+  "task_type": "T6_contradictory",
+  "stage_context": {
+    "stage": "design",
+    "earlier_stages": [
+      "massing",
+      "opening-request-0"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "BA-pantheon",
+    "version": "2",
+    "generator": "labs/revision_tasks/buildings.py:ba_pantheon",
+    "files_sha256": {
+      "labs/revision_tasks/buildings.py": "e24e20324eb088b7d4080dadd24c704967b2a12ca25e0c0b6fbe58961c137a27",
+      "labs/revision_tasks/fixtures.py": "3261abaaa5f9b4b1067fbd3598ef2e4860c383435e5157d08d31592fc7693a03"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:BA-pantheon@x3-before-A6",
+    "content_digest": "fea513b9b28a872e0cfceafcaeb02167c0147f3ebe10493be473f02882e8c760",
+    "exact_base_digest": "c16e12c38ae234a1684a6f4dbf4a2a50ff90e2dd7ef17c8b9f5d9819b1e4816d"
+  },
+  "history": {
+    "history_ref": null,
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "x3_request": {
+    "file": "labs/revision_tasks/x3_requests.json",
+    "building": "BA",
+    "request": "A6",
+    "order": 6,
+    "start_after": [
+      "A1",
+      "A2",
+      "A3"
+    ],
+    "type": "contradiction",
+    "expected": {
+      "verdict": "refuse",
+      "outcome": [
+        "asked_rightly"
+      ]
+    },
+    "start_note": "A4 (asked) and A5 (asked) leave the state as it was; the start is the gold state after A1-A3"
+  },
+  "intended_change": {
+    "text_en": "Keep six front columns of 2.0 m diameter with the corners fixed, but make the clear space between front columns no more than 4.0 m.",
+    "typed_delta": [
+      {
+        "target": "parameter:max_clear_spacing",
+        "parameter": "max_clear_spacing",
+        "from": 5.0,
+        "to": 4.0
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "P5-front-W",
+      "kind": "equality",
+      "entities": [
+        "portico-col-front-W"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A6/obligation:p5-front-clear (limit tightened to 4.0 by this request)",
+      "measure": {
+        "check": "column_row",
+        "prefix": "obj-portico-col-front-W-",
+        "count": 2,
+        "first_x": -9.618,
+        "last_x": -3.206,
+        "diameter_m": 2.0,
+        "max_clear_spacing_m": 4.0,
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "P5-front-E",
+      "kind": "equality",
+      "entities": [
+        "portico-col-front-E"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A6/obligation:p5-front-clear (limit tightened to 4.0 by this request)",
+      "measure": {
+        "check": "column_row",
+        "prefix": "obj-portico-col-front-E-",
+        "count": 2,
+        "first_x": 3.206,
+        "last_x": 9.618,
+        "diameter_m": 2.0,
+        "max_clear_spacing_m": 4.0,
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "P4:F1",
+      "kind": "equality",
+      "entities": [
+        "portico-col-F1"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A6/obligation:p4-corner-columns-fixed (in words)",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-portico-col-F1",
+        "min": [
+          -17.03,
+          46.35,
+          null
+        ],
+        "max": [
+          -15.03,
+          48.35,
+          null
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "P4:F8",
+      "kind": "equality",
+      "entities": [
+        "portico-col-F8"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "x3:BA-A6/obligation:p4-corner-columns-fixed (in words)",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-portico-col-F8",
+        "min": [
+          15.03,
+          46.35,
+          null
+        ],
+        "max": [
+          17.03,
+          48.35,
+          null
+        ],
+        "tolerance_m": 0.002
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [
+      "portico-col-front-W",
+      "portico-col-front-E"
+    ],
+    "obligations_to_recheck": [
+      "P5-front-W",
+      "P5-front-E",
+      "P4:F1",
+      "P4:F8"
+    ],
+    "expected_verdict": "refuse",
+    "acceptable_arm_outcomes": [
+      "refuse"
+    ],
+    "annotated_by": "executor-draft-from-x3-requests",
+    "annotated_at": "2026-10-14T11:04:43Z",
+    "physical_basis": "Corner axes fixed at x +-16.03 (32.06 apart), six columns of 2.0 m: the five clears sum to 32.06 - 5 x 2.0 = 22.06 m > 5 x 4.0 = 20.0 m, so no six-column row satisfies the request; evenly spaced the clear is 4.412 > 4.0."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "848bf9c994e56f9c76712330f2bed61c0e69ce971b3018d3bc96da1388e5ad28",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 600,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "the arm's outcome is acceptable and, when it executed, the oracle agrees with the expected verdict",
+    "failure": "any other outcome; an accept the oracle finds violated, or an accept of a refused task, is a false accept",
+    "partial": "none"
+  },
+  "setup": [
+    {
+      "target": "parameter:interior_diameter",
+      "parameter": "interior_diameter",
+      "from": 43.3,
+      "to": 44.3
+    },
+    {
+      "target": "parameter:front_column_count",
+      "parameter": "front_column_count",
+      "from": 8,
+      "to": 6
+    },
+    {
+      "target": "parameter:front_central_bay",
+      "parameter": "front_central_bay",
+      "from": 4.88,
+      "to": 6.412
+    },
+    {
+      "target": "parameter:column_diameter",
+      "parameter": "column_diameter",
+      "from": 1.48,
+      "to": 2.0
+    }
+  ],
+  "patch_base": "after_setup"
+}

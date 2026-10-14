@@ -1,0 +1,638 @@
+{
+ "schema": "HistoryEvents@paper/1",
+ "status": "draft v1; reviewed together with the gold at the first gate",
+ "conventions": {
+  "units": "m",
+  "coordinates": "as built in PR #636 (x long axis, y depth, z up)",
+  "event_types": {
+   "set_parameter": "a value decided at a stage; maps to a StateRecord parameter edit (SET_SCALAR)",
+   "create_element": "an element produced at a stage; maps to an element/component edit",
+   "declare_dependency": "a declared edge upstream -> downstream with effect invalidates | requires_revalidation",
+   "declare_relation": "a checked relation (contact, clearance, bound, non_interference) with its checker",
+   "commitment": "an obligation/keep condition with an executable validator; status active",
+   "proposal": "an alternative put forward; status accepted | rejected; rejected ones carry reason, authority and whether the reason is geometric",
+   "evidence": "a source fact with epistemic status current | superseded | unknown",
+   "evidence_supersede": "marks an earlier evidence item superseded by a later one",
+   "stage_accept": "the stage is accepted; later events belong to the next stage"
+  },
+  "replay_rule": "H is replayed in seq order through the existing operators; a rejected proposal is recorded but never applied",
+  "undeclared_by_design": "relations listed under undeclared_by_design are never emitted as declare_dependency/declare_relation; they exist only in the oracle"
+ },
+ "families": {
+  "F1": {
+   "undeclared_by_design": [
+    "pediment.base rests on entablature.top (used by F1-T4, F1-T4b)"
+   ],
+   "events": [
+    {
+     "seq": 1,
+     "stage": "massing",
+     "type": "set_parameter",
+     "target": "portico.stylobate_length",
+     "value": 12.0,
+     "source": "brief"
+    },
+    {
+     "seq": 2,
+     "stage": "massing",
+     "type": "set_parameter",
+     "target": "portico.stylobate_depth",
+     "value": 2.4,
+     "source": "brief"
+    },
+    {
+     "seq": 3,
+     "stage": "massing",
+     "type": "evidence",
+     "id": "S1",
+     "claim": "usable site length 12.4",
+     "status": "current",
+     "source": "site survey 1"
+    },
+    {
+     "seq": 4,
+     "stage": "massing",
+     "type": "stage_accept"
+    },
+    {
+     "seq": 5,
+     "stage": "architecture",
+     "type": "set_parameter",
+     "target": "portico.column_count",
+     "value": 6
+    },
+    {
+     "seq": 6,
+     "stage": "architecture",
+     "type": "set_parameter",
+     "target": "portico.column_diameter",
+     "value": 0.9
+    },
+    {
+     "seq": 7,
+     "stage": "architecture",
+     "type": "set_parameter",
+     "target": "portico.end_column_axis_offset",
+     "value": 0.9
+    },
+    {
+     "seq": 8,
+     "stage": "architecture",
+     "type": "set_parameter",
+     "target": "portico.column_height",
+     "value": 9.0
+    },
+    {
+     "seq": 9,
+     "stage": "architecture",
+     "type": "set_parameter",
+     "target": "portico.entablature_depth",
+     "value": 1.8
+    },
+    {
+     "seq": 10,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "obj-stylobate"
+    },
+    {
+     "seq": 11,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "obj-columns"
+    },
+    {
+     "seq": 12,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "obj-entablature"
+    },
+    {
+     "seq": 13,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "obj-pediment"
+    },
+    {
+     "seq": 14,
+     "stage": "architecture",
+     "type": "declare_dependency",
+     "upstream": "obj-stylobate.top",
+     "downstream": "obj-columns.base",
+     "effect": "invalidates"
+    },
+    {
+     "seq": 15,
+     "stage": "architecture",
+     "type": "declare_dependency",
+     "upstream": "obj-columns.top",
+     "downstream": "obj-entablature.base",
+     "effect": "invalidates"
+    },
+    {
+     "seq": 16,
+     "stage": "architecture",
+     "type": "declare_relation",
+     "id": "P1",
+     "kind": "contact",
+     "between": [
+      "obj-columns.base",
+      "obj-stylobate.top"
+     ],
+     "tolerance": 0.001
+    },
+    {
+     "seq": 17,
+     "stage": "architecture",
+     "type": "declare_relation",
+     "id": "P2",
+     "kind": "contact",
+     "between": [
+      "obj-entablature.base",
+      "obj-columns.top"
+     ],
+     "tolerance": 0.001
+    },
+    {
+     "seq": 18,
+     "stage": "architecture",
+     "type": "declare_relation",
+     "id": "P3",
+     "kind": "equality",
+     "what": "column axis spacing",
+     "tolerance": 0.005
+    },
+    {
+     "seq": 19,
+     "stage": "architecture",
+     "type": "declare_relation",
+     "id": "P4",
+     "kind": "fixed",
+     "what": "end column axes at x 0.9 and 11.1",
+     "tolerance": 0.002
+    },
+    {
+     "seq": 20,
+     "stage": "architecture",
+     "type": "commitment",
+     "id": "K1",
+     "statement": "clear space between the two central columns >= 1.0 (main entrance)",
+     "validator": "clear_between_central_columns >= 1.0",
+     "status": "active",
+     "authority": "architect"
+    },
+    {
+     "seq": 21,
+     "stage": "architecture",
+     "type": "proposal",
+     "id": "ALT-8COL",
+     "change": {
+      "target": "portico.column_count",
+      "value": 8
+     },
+     "status": "rejected",
+     "reason": "clear between central columns 0.557 < 1.0 (K1)",
+     "reason_is_geometric": true,
+     "authority": "architect"
+    },
+    {
+     "seq": 22,
+     "stage": "architecture",
+     "type": "proposal",
+     "id": "ALT-CORINTHIAN",
+     "change": {
+      "target": "portico.capital_order",
+      "value": "corinthian"
+     },
+     "status": "rejected",
+     "reason": "client: budget and maintenance",
+     "reason_is_geometric": false,
+     "authority": "client"
+    },
+    {
+     "seq": 23,
+     "stage": "architecture",
+     "type": "stage_accept"
+    },
+    {
+     "seq": 24,
+     "stage": "technical",
+     "type": "declare_relation",
+     "id": "P5",
+     "kind": "bound",
+     "what": "clear intercolumniation <= 3.0",
+     "note": "structural span not evaluated; obligation OPEN"
+    },
+    {
+     "seq": 25,
+     "stage": "technical",
+     "type": "commitment",
+     "id": "P5-OPEN",
+     "statement": "entablature span between columns needs structural check",
+     "validator": null,
+     "status": "open"
+    },
+    {
+     "seq": 26,
+     "stage": "technical",
+     "type": "evidence",
+     "id": "S2",
+     "claim": "usable site length 12.2",
+     "status": "current",
+     "source": "site survey 2"
+    },
+    {
+     "seq": 27,
+     "stage": "technical",
+     "type": "evidence_supersede",
+     "id": "S1",
+     "superseded_by": "S2"
+    }
+   ]
+  },
+  "F2": {
+   "undeclared_by_design": [
+    "J3: link roof slab does not interfere with portico rear entablature/columns/pediment (used by F2-T4)"
+   ],
+   "events": [
+    {
+     "seq": 1,
+     "stage": "massing",
+     "type": "set_parameter",
+     "target": "rotunda.outer_radius",
+     "value": 10.0
+    },
+    {
+     "seq": 2,
+     "stage": "massing",
+     "type": "set_parameter",
+     "target": "rotunda.cornice_base_level",
+     "value": 12.0
+    },
+    {
+     "seq": 3,
+     "stage": "massing",
+     "type": "evidence",
+     "id": "E-CORNICE-OLD",
+     "claim": "rotunda cornice base 11.8 (early estimate)",
+     "status": "current"
+    },
+    {
+     "seq": 4,
+     "stage": "massing",
+     "type": "commitment",
+     "id": "K2",
+     "statement": "dome apex <= 24.5 (skyline limit agreed with the city)",
+     "validator": "dome.apex_z <= 24.5",
+     "status": "active",
+     "authority": "city/architect"
+    },
+    {
+     "seq": 5,
+     "stage": "massing",
+     "type": "stage_accept"
+    },
+    {
+     "seq": 6,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "obj-portico-stylobate"
+    },
+    {
+     "seq": 7,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "obj-portico-columns (front, rear)"
+    },
+    {
+     "seq": 8,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "obj-portico-entablature (front, rear)"
+    },
+    {
+     "seq": 9,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "obj-portico-pediment"
+    },
+    {
+     "seq": 10,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "obj-transition-body"
+    },
+    {
+     "seq": 11,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "obj-transition-roof"
+    },
+    {
+     "seq": 12,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "obj-rotunda-wall, obj-rotunda-cornice, obj-rotunda-drum, obj-rotunda-dome"
+    },
+    {
+     "seq": 13,
+     "stage": "architecture",
+     "type": "declare_dependency",
+     "upstream": "obj-transition-body.top",
+     "downstream": "obj-transition-roof.base",
+     "effect": "invalidates"
+    },
+    {
+     "seq": 14,
+     "stage": "architecture",
+     "type": "declare_dependency",
+     "upstream": "rotunda.outer_radius",
+     "downstream": "obj-transition-body.rear_face",
+     "effect": "invalidates"
+    },
+    {
+     "seq": 15,
+     "stage": "architecture",
+     "type": "declare_dependency",
+     "upstream": "obj-rotunda-wall.top",
+     "downstream": "obj-rotunda-cornice, obj-rotunda-drum, obj-rotunda-dome",
+     "effect": "invalidates"
+    },
+    {
+     "seq": 16,
+     "stage": "architecture",
+     "type": "declare_relation",
+     "id": "J0",
+     "kind": "contact",
+     "between": [
+      "obj-transition-body.rear_face",
+      "obj-rotunda-wall"
+     ],
+     "tolerance": 0.25
+    },
+    {
+     "seq": 17,
+     "stage": "architecture",
+     "type": "declare_relation",
+     "id": "J1",
+     "kind": "bound",
+     "what": "obj-transition-roof.top <= rotunda.cornice_base_level - 0.3"
+    },
+    {
+     "seq": 18,
+     "stage": "architecture",
+     "type": "declare_relation",
+     "id": "J2",
+     "kind": "non_interference",
+     "between": [
+      "obj-portico-pediment",
+      "obj-rotunda-drum"
+     ]
+    },
+    {
+     "seq": 19,
+     "stage": "architecture",
+     "type": "proposal",
+     "id": "ALT-GLAZED-LINK",
+     "change": {
+      "target": "obj-transition-roof.material",
+      "value": "glazed"
+     },
+     "status": "rejected",
+     "reason": "heritage review",
+     "reason_is_geometric": false,
+     "authority": "heritage reviewer"
+    },
+    {
+     "seq": 20,
+     "stage": "architecture",
+     "type": "stage_accept"
+    },
+    {
+     "seq": 21,
+     "stage": "technical",
+     "type": "evidence",
+     "id": "E-CORNICE",
+     "claim": "rotunda cornice base 12.0 (measured)",
+     "status": "current"
+    },
+    {
+     "seq": 22,
+     "stage": "technical",
+     "type": "evidence_supersede",
+     "id": "E-CORNICE-OLD",
+     "superseded_by": "E-CORNICE"
+    }
+   ]
+  },
+  "F3": {
+   "undeclared_by_design": [
+    "stair does not interfere with the wall (used by F3-T4)"
+   ],
+   "events": [
+    {
+     "seq": 1,
+     "stage": "massing",
+     "type": "set_parameter",
+     "target": "level.L2",
+     "value": 3.15,
+     "source": "early drawing"
+    },
+    {
+     "seq": 2,
+     "stage": "massing",
+     "type": "evidence",
+     "id": "E-L2-OLD",
+     "claim": "L2 = 3.15 (early drawing)",
+     "status": "current"
+    },
+    {
+     "seq": 3,
+     "stage": "massing",
+     "type": "stage_accept"
+    },
+    {
+     "seq": 4,
+     "stage": "architecture",
+     "type": "set_parameter",
+     "target": "level.L2",
+     "value": 3.0,
+     "source": "revised section"
+    },
+    {
+     "seq": 5,
+     "stage": "architecture",
+     "type": "evidence",
+     "id": "E-L2",
+     "claim": "L2 = 3.0 (revised section)",
+     "status": "current"
+    },
+    {
+     "seq": 6,
+     "stage": "architecture",
+     "type": "evidence_supersede",
+     "id": "E-L2-OLD",
+     "superseded_by": "E-L2"
+    },
+    {
+     "seq": 7,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "obj-wall"
+    },
+    {
+     "seq": 8,
+     "stage": "architecture",
+     "type": "set_parameter",
+     "target": "door.width",
+     "value": 1.2
+    },
+    {
+     "seq": 9,
+     "stage": "architecture",
+     "type": "set_parameter",
+     "target": "door.height",
+     "value": 2.1
+    },
+    {
+     "seq": 10,
+     "stage": "architecture",
+     "type": "set_parameter",
+     "target": "door.centre_x",
+     "value": 2.0
+    },
+    {
+     "seq": 11,
+     "stage": "architecture",
+     "type": "set_parameter",
+     "target": "lintel.bearing",
+     "value": 0.15
+    },
+    {
+     "seq": 12,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "door opening (wall cut), door frame, door leaf, obj-lintel"
+    },
+    {
+     "seq": 13,
+     "stage": "architecture",
+     "type": "create_element",
+     "target": "obj-slab-l2 (with stair opening), obj-stair"
+    },
+    {
+     "seq": 14,
+     "stage": "architecture",
+     "type": "declare_dependency",
+     "upstream": "door.width, door.height, door.centre_x",
+     "downstream": "wall cut, frame, leaf, obj-lintel",
+     "effect": "invalidates"
+    },
+    {
+     "seq": 15,
+     "stage": "architecture",
+     "type": "declare_dependency",
+     "upstream": "lintel.bearing",
+     "downstream": "obj-lintel",
+     "effect": "invalidates"
+    },
+    {
+     "seq": 16,
+     "stage": "architecture",
+     "type": "declare_dependency",
+     "upstream": "level.L2",
+     "downstream": "obj-slab-l2, obj-stair",
+     "effect": "invalidates"
+    },
+    {
+     "seq": 17,
+     "stage": "architecture",
+     "type": "declare_relation",
+     "id": "D1",
+     "kind": "aperture_exists",
+     "what": "door opening passes through the wall"
+    },
+    {
+     "seq": 18,
+     "stage": "architecture",
+     "type": "declare_relation",
+     "id": "D2",
+     "kind": "bound",
+     "what": "lintel bearing >= 0.15 at each end"
+    },
+    {
+     "seq": 19,
+     "stage": "architecture",
+     "type": "declare_relation",
+     "id": "ST1",
+     "kind": "contact",
+     "between": [
+      "obj-stair.top",
+      "obj-slab-l2.top"
+     ],
+     "tolerance": 0.001
+    },
+    {
+     "seq": 20,
+     "stage": "architecture",
+     "type": "declare_relation",
+     "id": "ST2",
+     "kind": "bound",
+     "what": "riser <= 0.18 and tread >= 0.28"
+    },
+    {
+     "seq": 21,
+     "stage": "architecture",
+     "type": "declare_relation",
+     "id": "ST3",
+     "kind": "clearance",
+     "what": "headroom over stair >= 2.0"
+    },
+    {
+     "seq": 22,
+     "stage": "architecture",
+     "type": "commitment",
+     "id": "K3",
+     "statement": "at least 0.5 m of wall on each side of every opening",
+     "validator": "min_pier_width >= 0.5",
+     "status": "active",
+     "authority": "architect"
+    },
+    {
+     "seq": 23,
+     "stage": "architecture",
+     "type": "commitment",
+     "id": "K4",
+     "statement": "at least 0.15 m of wall above every lintel",
+     "validator": "wall_top - lintel_top >= 0.15",
+     "status": "active",
+     "authority": "architect"
+    },
+    {
+     "seq": 24,
+     "stage": "architecture",
+     "type": "proposal",
+     "id": "ALT-SPIRAL",
+     "change": {
+      "target": "stair.type",
+      "value": "spiral"
+     },
+     "status": "rejected",
+     "reason": "fire review: egress",
+     "reason_is_geometric": false,
+     "authority": "fire reviewer"
+    },
+    {
+     "seq": 25,
+     "stage": "architecture",
+     "type": "stage_accept"
+    }
+   ]
+  }
+ },
+ "notes_for_x1": [
+  "H start = replay of all events; SF start = state file compiled after the last event; GF = same file with all metadata stripped; SF-O = SF without commitment events and declare_relation events of kind bound/fixed/clearance.",
+  "Whether rejected proposals reach SF depends on what the compiler (ContextPack@1 + records) carries; do not add them by hand. T7 tests exactly this.",
+  "Superseded evidence must reach SF with its status if the compiler carries evidence status; T8 tests this."
+ ]
+}

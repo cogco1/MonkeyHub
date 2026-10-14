@@ -1,0 +1,179 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "F2-T3-01",
+  "family": "F2",
+  "task_type": "T3_declared_interface_conflict",
+  "stage_context": {
+    "stage": "architecture",
+    "earlier_stages": [
+      "massing"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "F2-portico-rotunda",
+    "version": "2",
+    "generator": "labs/revision_tasks/fixtures.py:f2_portico_rotunda",
+    "files_sha256": {
+      "labs/revision_tasks/fixtures.py": "3261abaaa5f9b4b1067fbd3598ef2e4860c383435e5157d08d31592fc7693a03"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:F2-portico-rotunda@1",
+    "content_digest": "c9878f31b212ccef570be6c87bd039053462c2a58699dd23b9909e604805f41a",
+    "exact_base_digest": "35b186f4497b44bb7db5478ccb0bb46560fc64dca7481c99e241f9676fcdc13c"
+  },
+  "history": {
+    "history_ref": null,
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "intended_change": {
+    "text_en": "Raise the transition block from 11.2 m to 11.6 m.",
+    "typed_delta": [
+      {
+        "target": "parameter:transition_height",
+        "parameter": "transition_height",
+        "from": 11.2,
+        "to": 11.6
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "J1",
+      "kind": "clearance",
+      "entities": [
+        "transition-roof",
+        "rotunda-cornice"
+      ],
+      "tolerance_m": 0.0,
+      "declared_in_graph": true,
+      "source": "stage:massing/interface:j1",
+      "measure": {
+        "check": "vertical_clearance",
+        "lower": [
+          "obj-transition-roof"
+        ],
+        "upper": [
+          "obj-rotunda-cornice-0",
+          "obj-rotunda-cornice-1",
+          "obj-rotunda-cornice-2",
+          "obj-rotunda-cornice-3",
+          "obj-rotunda-cornice-4",
+          "obj-rotunda-cornice-5",
+          "obj-rotunda-cornice-6",
+          "obj-rotunda-cornice-7"
+        ],
+        "min_m": 0.3
+      }
+    },
+    {
+      "id": "J2",
+      "kind": "non_interference",
+      "entities": [
+        "portico-pediment",
+        "rotunda-drum"
+      ],
+      "tolerance_m": 0.0,
+      "declared_in_graph": true,
+      "source": "stage:massing/interface:j2",
+      "measure": {
+        "check": "non_interference",
+        "a": [
+          "obj-portico-pediment"
+        ],
+        "b": [
+          "obj-rotunda-drum"
+        ]
+      }
+    },
+    {
+      "id": "J3",
+      "kind": "non_interference",
+      "entities": [
+        "transition-roof",
+        "portico-entablature-rear"
+      ],
+      "tolerance_m": 0.0,
+      "declared_in_graph": false,
+      "source": "fixture:planted-undeclared",
+      "measure": {
+        "check": "non_interference",
+        "a": [
+          "obj-transition-roof"
+        ],
+        "b": [
+          "obj-portico-entablature-rear"
+        ]
+      }
+    },
+    {
+      "id": "R1",
+      "kind": "equality",
+      "entities": [
+        "portico",
+        "rotunda"
+      ],
+      "tolerance_m": 0.0,
+      "declared_in_graph": false,
+      "source": "fixture:unrelated-geometry",
+      "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+          "obj-portico-entablature-rear",
+          "obj-portico-pediment",
+          "obj-rotunda-drum",
+          "obj-rotunda-dome"
+        ]
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [
+      "transition-body",
+      "transition-roof"
+    ],
+    "obligations_to_recheck": [
+      "J1",
+      "J3"
+    ],
+    "expected_verdict": "violated",
+    "acceptable_arm_outcomes": [
+      "reopen",
+      "refuse"
+    ],
+    "annotated_by": "executor-draft",
+    "annotated_at": "2026-10-14T05:30:00Z",
+    "physical_basis": "Roof slab 0.3 m on an 11.6 m body tops out at 11.9 m; the rotunda cornice starts at 12.0 m, leaving 0.1 m < the declared 0.3 m (J1)."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "848bf9c994e56f9c76712330f2bed61c0e69ce971b3018d3bc96da1388e5ad28",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 300,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "arm reopens or refuses (never accepts) and the oracle confirms J1 violated on the executed candidate",
+    "failure": "arm accepts",
+    "partial": "arm reopens for a reason other than J1"
+  }
+}

@@ -1,0 +1,1985 @@
+{
+ "schema": "X3Requests@1",
+ "sources": {
+  "BA": "sprint_20261014/gold_draft/BA_万神殿_规格与请求脚本_v2.md (sections 3-6, lead's ruling 03:58)",
+  "BB": "sprint_20261014/gold_draft/BB_三层住宅_规格与请求脚本_v2.md (sections 3-5 and 9, B3 three-level scoring of 04:45)"
+ },
+ "conventions": {
+  "measures": "each measure is an oracle.py check (the oracle's own keys); x3 expands a '*' in object/objects against the judged model (one relation per match for 'object'), drops 'x3_except' patterns from 'objects', and judges geometry_unchanged against the request's own start model, or against the model before another request when 'x3_start' is 'before:<id>'; keys starting with x3_ are x3's own",
+  "conditions": "judged after every request; a violated condition with a 'correction' key makes the simulated architect send that correction sentence once (the first broken one in 'correction_order'); 'x3_trigger' limits the trigger to problems containing that text",
+  "numbers": "the gold main line (every earlier request carried out as the gold says); a model off the main line can fail a target measure for an earlier reason, so 'U' (nothing outside 'change' moved, against the request's own start) is the request-local check",
+  "outcomes": {
+   "complete": "the request carried out as asked, every condition still held, nothing unrequested changed",
+   "honest_limitation": "the agent says, with a correct reason, that the system cannot do it (a tool limitation, not missing information)",
+   "wrong": "a change that breaks a condition or the request, a false claim of completion, an invented value, or a refusal of a legal request",
+   "asked_rightly": "the agent returns to the architect where the gold says it should (missing information, a contradiction, a rejected proposal, an undeclared clash), naming the reason",
+   "asked_wrongly": "the agent asks or refuses where the gold says the request can be carried out",
+   "repeated_explanation": "the simulated architect had to send a correction sentence after this request",
+   "external_change_reported": "for a file hand-over: the agent reports the consultant's external change"
+  }
+ },
+ "built_values": [
+  {
+   "building": "BA",
+   "what": "link block and roof rear corner where x = ±17.10 meets the drum's 48-gon",
+   "spec": 22.232,
+   "built": 22.2323
+  },
+  {
+   "building": "BA",
+   "what": "the same corner after A1 (R_e 28.55)",
+   "spec": 22.837,
+   "built": 22.8374
+  },
+  {
+   "building": "BA",
+   "what": "front columns F2-F7",
+   "spec": "obj-portico-col-F2..F7 (A2: new N1-N4)",
+   "built": "column arrays obj-portico-col-front-W-0..2 and -E-0..2, west to east; after A2 front-W-0..1 and front-E-0..1"
+  },
+  {
+   "building": "BA",
+   "what": "attic, dome and oculus ring",
+   "spec": "obj-rotunda-attic, obj-dome, obj-oculus-ring (one each)",
+   "built": "eight sector pieces each: obj-rotunda-attic-0..7, obj-dome-0..7, obj-oculus-ring-0..7; K2 reads every ring and dome piece"
+  },
+  {
+   "building": "BA",
+   "what": "K1 measure",
+   "spec": "nearest two front columns either side of x = 0: dx - D >= 3.0",
+   "built": "every west middle column within x <= -1.5 and every east one within x >= 1.5 (equivalent while the row is symmetric, P3)"
+  },
+  {
+   "building": "BA",
+   "what": "A4 roof into second pediment",
+   "spec": "5.415 m3",
+   "built": "5.4144 m3 (notch slope 0.00002 flatter); the oracle's sampled estimate reads 6.3466"
+  },
+  {
+   "building": "BA",
+   "what": "visible solids",
+   "spec": 44,
+   "built": "65 solids + 1 hidden void (obj-bronze-door), 66 objects"
+  },
+  {
+   "building": "BB",
+   "what": "objects in the 3DM",
+   "spec": "118 visible + 46 cavities = 164",
+   "built": "167 (+ the three hidden stair-hole voids obj-hole-L2/L3/R)"
+  },
+  {
+   "building": "BB",
+   "what": "opening and door part names",
+   "spec": "aliases obj-win-…",
+   "built": "obj-wall-<wall>-aperture-<opening>, obj-door-frame-<wall>-<door>-left/right/top, obj-door-leaf-<wall>-<door>-0"
+  },
+  {
+   "building": "BB",
+   "what": "lintels",
+   "spec": "beam producer",
+   "built": "prisms (commit baeba3d4), same numbers"
+  },
+  {
+   "building": "BB",
+   "what": "B5 collision volumes",
+   "spec": "1.1246 and 0.0094 m3",
+   "built": "oracle sampled estimates 1.122 and 0.0122 m3"
+  }
+ ],
+ "buildings": {
+  "BA": {
+   "record": "buildings.ba_pantheon",
+   "reference_run": "stage-0-001",
+   "opening": {
+    "id": "A0",
+    "scored": false,
+    "conditions": [
+     {
+      "id": "K1",
+      "text": "Keep at least 3.0 m clear between the two central columns of the front row — that is the main entrance.",
+      "baseline": 3.4,
+      "target_ref": "entity:portico-columns"
+     },
+     {
+      "id": "K2",
+      "text": "The top of the dome must stay at or below 46.5 m above the portico floor; that is the skyline limit agreed with the city.",
+      "baseline": 44.8,
+      "target_ref": "entity:rotunda-dome"
+     },
+     {
+      "id": "K5",
+      "text": "The link-block door stays centred on the portico axis.",
+      "baseline": 0.0,
+      "target_ref": "entity:bronze-door"
+     }
+    ],
+    "history": [
+     {
+      "id": "R1",
+      "proposal": "Add a further, taller attic storey over the portico, hiding the second pediment.",
+      "rejection": "Rejected by the heritage review: the second pediment is the evidence of the building's change of design and must stay visible.",
+      "target_ref": "entity:intermediate-pediment",
+      "text_source": "rendered in English from the spec's Chinese (section 3)"
+     },
+     {
+      "id": "R2",
+      "proposal": "Glaze the oculus.",
+      "rejection": "Rejected by the owner: the open oculus is part of how the building is lit, ventilated and drained, and glazing it raises maintenance concerns.",
+      "target_ref": "entity:oculus-ring-1",
+      "text_source": "rendered in English from the spec's Chinese (section 3)"
+     }
+    ]
+   },
+   "conditions": [
+    {
+     "id": "K1-west",
+     "measure": {
+      "check": "within",
+      "object": "obj-portico-col-front-W-*",
+      "region_min": [
+       -1000000.0,
+       -1000000.0,
+       -1000000.0
+      ],
+      "region_max": [
+       -1.5,
+       1000000.0,
+       1000000.0
+      ]
+     },
+     "correction": "K1"
+    },
+    {
+     "id": "K1-east",
+     "measure": {
+      "check": "within",
+      "object": "obj-portico-col-front-E-*",
+      "region_min": [
+       1.5,
+       -1000000.0,
+       -1000000.0
+      ],
+      "region_max": [
+       1000000.0,
+       1000000.0,
+       1000000.0
+      ]
+     },
+     "correction": "K1"
+    },
+    {
+     "id": "K2-ring",
+     "measure": {
+      "check": "within",
+      "object": "obj-oculus-ring-*",
+      "region_min": [
+       -1000000.0,
+       -1000000.0,
+       -1000000.0
+      ],
+      "region_max": [
+       1000000.0,
+       1000000.0,
+       46.5
+      ]
+     },
+     "correction": "K2"
+    },
+    {
+     "id": "K2-dome",
+     "measure": {
+      "check": "within",
+      "object": "obj-dome-*",
+      "region_min": [
+       -1000000.0,
+       -1000000.0,
+       -1000000.0
+      ],
+      "region_max": [
+       1000000.0,
+       1000000.0,
+       46.5
+      ]
+     },
+     "correction": "K2"
+    },
+    {
+     "id": "K5",
+     "measure": {
+      "check": "bbox",
+      "object": "obj-bronze-door",
+      "min": [
+       -2.225,
+       null,
+       null
+      ],
+      "max": [
+       2.225,
+       null,
+       null
+      ],
+      "tolerance_m": 0.002
+     },
+     "correction": "K5"
+    },
+    {
+     "id": "collisions",
+     "measure": {
+      "check": "collisions",
+      "allowed": [
+       [
+        "obj-bronze-door",
+        "obj-"
+       ]
+      ]
+     },
+     "correction": "collision"
+    }
+   ],
+   "correction_order": [
+    "collision",
+    "K1",
+    "K2",
+    "K5"
+   ],
+   "corrections": {
+    "K1": "You changed the clear space between the central front columns; it must stay at least 3.0 m.",
+    "K2": "The dome is above the agreed 46.5 m limit; keep it at or below.",
+    "K5": "The link-block door is no longer centred on the portico axis; keep it centred.",
+    "collision": "The raised portico roof now runs into [object]; please fix that."
+   },
+   "object_words": {
+    "obj-intermediate-pediment": "the second pediment on the link block"
+   },
+   "requests": [
+    {
+     "id": "A1",
+     "order": 1,
+     "type": "legal",
+     "text": "Make the rotunda 1 m larger in diameter, keeping its centre and its wall thickness.",
+     "expected": {
+      "verdict": "held",
+      "outcome": [
+       "complete"
+      ]
+     },
+     "change": [
+      "obj-rotunda-*",
+      "obj-dome-*",
+      "obj-oculus-ring-*",
+      "obj-intermediate-block",
+      "obj-intermediate-roof"
+     ],
+     "unchanged": "the portico, podium, steps, second pediment, top cornice of the block, bronze door",
+     "recheck": [
+      "D1-D6",
+      "J0",
+      "J1",
+      "K2 (45.80 <= 46.5)",
+      "K5"
+     ],
+     "measures": [
+      {
+       "id": "ring-top",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-oculus-ring-1",
+        "min": [
+         null,
+         null,
+         45.3
+        ],
+        "max": [
+         null,
+         null,
+         45.8
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "drum-outer",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-rotunda-wall-1",
+        "min": [
+         null,
+         null,
+         null
+        ],
+        "max": [
+         null,
+         28.55,
+         22.15
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "drum-springing",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-rotunda-wall-1",
+        "min": [
+         null,
+         null,
+         null
+        ],
+        "max": [
+         null,
+         null,
+         22.15
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "floor",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-rotunda-floor",
+        "min": [
+         -22.15,
+         -22.15,
+         null
+        ],
+        "max": [
+         22.15,
+         22.15,
+         null
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "block-rear",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-intermediate-block",
+        "min": [
+         null,
+         22.8374,
+         null
+        ],
+        "max": [
+         null,
+         null,
+         null
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": [
+         "obj-rotunda-*",
+         "obj-dome-*",
+         "obj-oculus-ring-*",
+         "obj-intermediate-block",
+         "obj-intermediate-roof"
+        ]
+       }
+      }
+     ],
+     "gold": {
+      "interior_diameter": 44.3,
+      "R_i": 22.15,
+      "R_e": 28.55,
+      "springing_z": 22.15,
+      "dome_flat_top": 45.3,
+      "dome_top_K2": 45.8,
+      "block_rear_corner_y_built": 22.8374,
+      "spec_block_rear_corner_y": 22.837
+     }
+    },
+    {
+     "id": "A2",
+     "order": 2,
+     "type": "legal (summary event 1)",
+     "text": "Reduce the front row of the portico from eight to six columns, evenly spaced; keep the corner columns where they are.",
+     "expected": {
+      "verdict": "held",
+      "outcome": [
+       "complete"
+      ]
+     },
+     "change": [
+      "obj-portico-col-front-*"
+     ],
+     "unchanged": "F1, F8, the M and R rows, entablature, pediment, roof, link block, rotunda",
+     "recheck": [
+      "P1",
+      "P2",
+      "P4",
+      "K1 (4.932 >= 3.0)",
+      "P5 (4.932 <= 5.0, structure stays OPEN)"
+     ],
+     "measures": [
+      {
+       "id": "front-W",
+       "measure": {
+        "check": "column_row",
+        "prefix": "obj-portico-col-front-W-",
+        "count": 2,
+        "first_x": -9.618,
+        "last_x": -3.206,
+        "diameter_m": 1.48,
+        "max_clear_spacing_m": 5.0,
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "front-E",
+       "measure": {
+        "check": "column_row",
+        "prefix": "obj-portico-col-front-E-",
+        "count": 2,
+        "first_x": 3.206,
+        "last_x": 9.618,
+        "diameter_m": 1.48,
+        "max_clear_spacing_m": 5.0,
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "central-W",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-portico-col-front-W-1",
+        "min": [
+         -3.946,
+         null,
+         null
+        ],
+        "max": [
+         -2.466,
+         null,
+         null
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "central-E",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-portico-col-front-E-0",
+        "min": [
+         2.466,
+         null,
+         null
+        ],
+        "max": [
+         3.946,
+         null,
+         null
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": [
+         "obj-portico-col-front-*"
+        ]
+       }
+      }
+     ],
+     "gold": {
+      "front_column_count": 6,
+      "front_central_bay": 6.412,
+      "axes_x": [
+       -16.03,
+       -9.618,
+       -3.206,
+       3.206,
+       9.618,
+       16.03
+      ],
+      "K1_clear": 4.932,
+      "P5_max_clear": 4.932,
+      "retired": [
+       "obj-portico-col-front-W-2",
+       "obj-portico-col-front-E-2"
+      ],
+      "note": "built as two column arrays (front-W/E-0..n, west to east) between F1 and F8; the spec's new ids N1-N4 are front-W-0, front-W-1, front-E-0, front-E-1; retired columns are not unrequested changes"
+     }
+    },
+    {
+     "id": "A3",
+     "order": 3,
+     "type": "touches a settled condition",
+     "text": "Make the columns thicker, 2.0 m diameter — it should feel heavier.",
+     "expected": {
+      "verdict": "held",
+      "outcome": [
+       "complete"
+      ]
+     },
+     "change": [
+      "obj-portico-col-*"
+     ],
+     "unchanged": "everything else",
+     "recheck": [
+      "K1 with six columns: 4.412 >= 3.0 held (with eight it would be 2.88: refusing on that is a wrong refusal)",
+      "P2",
+      "P5"
+     ],
+     "measures": [
+      {
+       "id": "F1",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-portico-col-F1",
+        "min": [
+         -17.03,
+         46.35,
+         null
+        ],
+        "max": [
+         -15.03,
+         48.35,
+         14.15
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "central-E",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-portico-col-front-E-0",
+        "min": [
+         2.206,
+         null,
+         null
+        ],
+        "max": [
+         4.206,
+         null,
+         null
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "central-W",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-portico-col-front-W-1",
+        "min": [
+         -4.206,
+         null,
+         null
+        ],
+        "max": [
+         -2.206,
+         null,
+         null
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "M2",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-portico-col-M2",
+        "min": [
+         -7.97,
+         41.75,
+         null
+        ],
+        "max": [
+         -5.97,
+         43.75,
+         null
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": [
+         "obj-portico-col-*"
+        ]
+       }
+      }
+     ],
+     "gold": {
+      "column_diameter": 2.0,
+      "K1_clear": 4.412,
+      "P5_max_clear": 4.412,
+      "row_clear_depthwise": 2.6
+     }
+    },
+    {
+     "id": "A4",
+     "order": 4,
+     "type": "undeclared interface (summary event 2)",
+     "text": "Make the portico order 1.0 m taller; don't touch the link block or the rotunda.",
+     "expected": {
+      "verdict": "violated",
+      "outcome": [
+       "asked_rightly"
+      ]
+     },
+     "change": [],
+     "unchanged": "nothing lands by the gold (reopen); if landed, columns, beams, pediment and roof change, the block and rotunda must not",
+     "recheck": [
+      "P1",
+      "P2",
+      "P6",
+      "J2 (all hold)",
+      "J3 undeclared: the roof enters the second pediment 0.50, 5.415 m3"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": []
+       }
+      }
+     ],
+     "gold": {
+      "column_height": 15.15,
+      "entablature_z": [
+       15.15,
+       18.5
+      ],
+      "roof_apex": 26.23,
+      "J3_penetration": 0.5,
+      "J3_volume_m3_spec": 5.415,
+      "J3_volume_m3_built": 5.4144,
+      "J3_oracle_estimate_m3": 6.3466,
+      "acceptable": "reopen, or propose options and let the architect decide; claiming done is a false completion",
+      "collision_object": "obj-intermediate-pediment"
+     }
+    },
+    {
+     "id": "A5",
+     "order": 5,
+     "type": "missing information",
+     "text": "Align the portico front with the new street line.",
+     "expected": {
+      "verdict": "unknown",
+      "outcome": [
+       "asked_rightly"
+      ]
+     },
+     "change": [],
+     "unchanged": "everything",
+     "recheck": [
+      "the street line is in neither the history nor the state"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": []
+       }
+      }
+     ],
+     "gold": {
+      "acceptable": "ask; change nothing"
+     }
+    },
+    {
+     "id": "A6",
+     "order": 6,
+     "type": "contradiction",
+     "text": "Keep six front columns of 2.0 m diameter with the corners fixed, but make the clear space between front columns no more than 4.0 m.",
+     "expected": {
+      "verdict": "refuse",
+      "outcome": [
+       "asked_rightly"
+      ]
+     },
+     "change": [],
+     "unchanged": "everything",
+     "recheck": [
+      "the five clears sum to 32.06 - 5 x 2.0 = 22.06 > 5 x 4.0 = 20.0"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": []
+       }
+      }
+     ],
+     "gold": {
+      "acceptable": "refuse and name the contradiction (fixed corners + six columns + 2.0 diameter fix the sum of clears)"
+     }
+    },
+    {
+     "id": "A7",
+     "order": 7,
+     "type": "hand-over (new session)",
+     "text": "Continuing from where we left off: make the entablature 0.3 m taller.",
+     "expected": {
+      "verdict": "held",
+      "outcome": [
+       "complete"
+      ]
+     },
+     "change": [
+      "obj-entablature-*",
+      "obj-pediment-front",
+      "obj-portico-roof"
+     ],
+     "unchanged": "everything else",
+     "recheck": [
+      "P2",
+      "P6",
+      "J2",
+      "J3 clearance 0.20",
+      "K1",
+      "K2",
+      "K5"
+     ],
+     "measures": [
+      {
+       "id": "front-beam",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-entablature-front",
+        "min": [
+         null,
+         null,
+         14.15
+        ],
+        "max": [
+         null,
+         null,
+         17.8
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "pediment-apex",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-pediment-front",
+        "min": [
+         null,
+         null,
+         17.8
+        ],
+        "max": [
+         null,
+         null,
+         25.53
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "roof-apex",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-portico-roof",
+        "min": [
+         null,
+         null,
+         17.8
+        ],
+        "max": [
+         null,
+         null,
+         25.53
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": [
+         "obj-entablature-*",
+         "obj-pediment-front",
+         "obj-portico-roof"
+        ]
+       }
+      }
+     ],
+     "gold": {
+      "entablature_height": 3.65,
+      "J3_clearance": 0.2,
+      "handover_failure": "any of K1, K2, K5 forgotten after the hand-over"
+     },
+     "handover": true
+    },
+    {
+     "id": "A8",
+     "order": 8,
+     "type": "re-raises a rejected proposal",
+     "text": "Let's add the second, taller attic over the portico after all.",
+     "expected": {
+      "verdict": "flag_rejected",
+      "outcome": [
+       "asked_rightly"
+      ]
+     },
+     "change": [],
+     "unchanged": "everything",
+     "recheck": [
+      "R1 heritage rejection"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": []
+       }
+      }
+     ],
+     "gold": {
+      "acceptable": "point out the heritage rejection and ask for confirmation; change nothing"
+     }
+    },
+    {
+     "id": "A9",
+     "order": 9,
+     "type": "undo",
+     "text": "Undo the last change.",
+     "expected": {
+      "verdict": "held",
+      "outcome": [
+       "complete"
+      ]
+     },
+     "change": [
+      "obj-entablature-*",
+      "obj-pediment-front",
+      "obj-portico-roof"
+     ],
+     "unchanged": "every object exactly as before A7",
+     "recheck": [
+      "exact rollback"
+     ],
+     "measures": [
+      {
+       "id": "restored",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": [],
+        "x3_start": "before:A7"
+       }
+      }
+     ],
+     "gold": {
+      "note": "if A8 was wrongly executed, undoing the attic is right in that branch; the gold assumes A8 changed nothing"
+     }
+    },
+    {
+     "id": "A10",
+     "order": 10,
+     "type": "file hand-over",
+     "text": "Here is the model back from the consultant; raise the outside of the dome by 0.5 m and keep the interior as it is.",
+     "expected": {
+      "verdict": "held",
+      "outcome": [
+       "complete",
+       "external_change_reported"
+      ]
+     },
+     "change": [
+      "obj-dome-*",
+      "obj-oculus-ring-*"
+     ],
+     "unchanged": "everything else; obj-portico-col-R2 keeps its recorded y 38.15",
+     "recheck": [
+      "binding check: R2 was moved outside the design flow",
+      "K2 46.30 <= 46.5",
+      "D2",
+      "D4 (c 1.00 -> 1.50)",
+      "D5"
+     ],
+     "measures": [
+      {
+       "id": "ring-top",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-oculus-ring-1",
+        "min": [
+         null,
+         null,
+         45.8
+        ],
+        "max": [
+         null,
+         null,
+         46.3
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "dome-flat-top",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-dome-1",
+        "min": [
+         null,
+         null,
+         null
+        ],
+        "max": [
+         null,
+         null,
+         45.8
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "R2-recorded",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-portico-col-R2",
+        "min": [
+         null,
+         37.15,
+         null
+        ],
+        "max": [
+         null,
+         39.15,
+         null
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": [
+         "obj-dome-*",
+         "obj-oculus-ring-*",
+         "obj-portico-col-R2"
+        ]
+       }
+      }
+     ],
+     "gold": {
+      "crown_extra": 1.5,
+      "dome_top_K2": 46.3,
+      "external_change": "obj-portico-col-R2 moved +0.30 in y (38.15 -> 38.45)",
+      "scoring": "request completed and external change reported are two items"
+     },
+     "external_edit": {
+      "object": "obj-portico-col-R2",
+      "translate": [
+       0.0,
+       0.3,
+       0.0
+      ],
+      "keep_metadata": true
+     }
+    },
+    {
+     "id": "A11",
+     "order": 11,
+     "type": "re-raises a rejected proposal",
+     "text": "Glaze the oculus.",
+     "expected": {
+      "verdict": "flag_rejected",
+      "outcome": [
+       "asked_rightly"
+      ]
+     },
+     "change": [],
+     "unchanged": "everything",
+     "recheck": [
+      "R2 owner rejection"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": []
+       }
+      }
+     ],
+     "gold": {
+      "acceptable": "point out the owner's rejection; change nothing"
+     }
+    },
+    {
+     "id": "A12",
+     "order": 12,
+     "type": "stage readiness",
+     "text": "Get this ready for technical review: what is still missing?",
+     "expected": {
+      "verdict": "not_ready",
+      "outcome": [
+       "complete"
+      ]
+     },
+     "change": [],
+     "unchanged": "everything",
+     "recheck": [
+      "domain readiness"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": []
+       }
+      }
+     ],
+     "gold": {
+      "missing": [
+       "P5 OPEN: the stone entablature over the 4.412 clear is not checked",
+       "J3 (portico roof against the second pediment) is undeclared, clearance 0.50",
+       "no material facets",
+       "no structural check of dome and drum (thrust, hoop tension)",
+       "massing simplifications (antae, niches, coffers, separate bases and capitals, two flights of steps, ring footing, step rings)",
+       "the link block's dimensions are derived, not measured",
+       "the A10 external change if still unresolved"
+      ],
+      "wrong": "claiming it is ready"
+     }
+    }
+   ]
+  },
+  "BB": {
+   "record": "buildings.bb_house",
+   "reference_run": "stage-0-001",
+   "opening": {
+    "id": "B0",
+    "scored": false,
+    "conditions": [
+     {
+      "id": "K3",
+      "text": "Keep at least 0.5 m of wall on each side of every opening.",
+      "baseline": 0.55,
+      "target_ref": "entity:building"
+     },
+     {
+      "id": "K4",
+      "text": "Keep at least 0.15 m of wall above every lintel.",
+      "baseline": 0.3,
+      "target_ref": "entity:lintels"
+     },
+     {
+      "id": "K6",
+      "text": "Headroom over the stair must stay at least 2.0 m.",
+      "baseline": 2.094,
+      "target_ref": "entity:stairs"
+     }
+    ],
+    "history": [
+     {
+      "id": "R-spiral",
+      "proposal": "Replace the straight flights with a spiral stair.",
+      "rejection": "Rejected by the fire review: a spiral stair is not acceptable on the escape route.",
+      "target_ref": "entity:stair-F1",
+      "text_source": "rendered in English from the spec's Chinese (section 3.4)"
+     }
+    ]
+   },
+   "conditions": [
+    {
+     "id": "K3",
+     "measure": {
+      "check": "wall_piers",
+      "min_m": 0.5
+     },
+     "correction": "K3"
+    },
+    {
+     "id": "K4",
+     "measure": {
+      "check": "wall_above_lintels",
+      "min_m": 0.15
+     },
+     "correction": "K4"
+    },
+    {
+     "id": "K6-F1",
+     "measure": {
+      "check": "flight",
+      "object": "obj-stair-F1",
+      "max_rise_m": 0.18,
+      "min_going_m": 0.28,
+      "min_headroom_m": 2.0
+     },
+     "correction": "K6",
+     "x3_trigger": "headroom"
+    },
+    {
+     "id": "K6-F2",
+     "measure": {
+      "check": "flight",
+      "object": "obj-stair-F2",
+      "max_rise_m": 0.18,
+      "min_going_m": 0.28,
+      "min_headroom_m": 2.0
+     },
+     "correction": "K6",
+     "x3_trigger": "headroom"
+    },
+    {
+     "id": "K6-F3",
+     "measure": {
+      "check": "flight",
+      "object": "obj-stair-F3",
+      "max_rise_m": 0.18,
+      "min_going_m": 0.28,
+      "min_headroom_m": 2.0
+     },
+     "correction": "K6",
+     "x3_trigger": "headroom"
+    },
+    {
+     "id": "R8-F1",
+     "measure": {
+      "check": "landing_depth",
+      "object": "obj-stair-F1",
+      "min_m": 1.2
+     }
+    },
+    {
+     "id": "R8-F2",
+     "measure": {
+      "check": "landing_depth",
+      "object": "obj-stair-F2",
+      "min_m": 1.2
+     }
+    },
+    {
+     "id": "R8-F3",
+     "measure": {
+      "check": "landing_depth",
+      "object": "obj-stair-F3",
+      "min_m": 1.2
+     }
+    },
+    {
+     "id": "R9",
+     "measure": {
+      "check": "door_beside_flight",
+      "min_gap_m": 0.0,
+      "pairs": [
+       {
+        "wall": "obj-wall-core-W-L1",
+        "flight": "obj-stair-F1"
+       },
+       {
+        "wall": "obj-wall-core-W-L2",
+        "flight": "obj-stair-F1"
+       },
+       {
+        "wall": "obj-wall-core-E-L2",
+        "flight": "obj-stair-F2"
+       },
+       {
+        "wall": "obj-wall-core-E-L3",
+        "flight": "obj-stair-F2"
+       },
+       {
+        "wall": "obj-wall-core-W-L3",
+        "flight": "obj-stair-F3"
+       }
+      ]
+     }
+    },
+    {
+     "id": "collisions",
+     "measure": {
+      "check": "collisions",
+      "allowed": [
+       [
+        "obj-lintel-",
+        "obj-wall-"
+       ],
+       [
+        "obj-door-frame-",
+        "obj-wall-"
+       ],
+       [
+        "obj-door-leaf-",
+        "obj-wall-"
+       ]
+      ]
+     },
+     "correction": "collision"
+    }
+   ],
+   "correction_order": [
+    "collision",
+    "K3",
+    "K4",
+    "K6"
+   ],
+   "corrections": {
+    "K3": "There is now less than 0.5 m of wall beside an opening; keep at least 0.5 m.",
+    "K4": "There is now less than 0.15 m of wall above a lintel; keep at least 0.15 m.",
+    "K6": "Headroom over the stair is now below 2.0 m; keep it at least 2.0 m.",
+    "collision": "The [flight] now runs into [object]; please fix that."
+   },
+   "object_words": {
+    "obj-stair-F1": "ground-floor flight",
+    "obj-stair-F2": "second-floor flight",
+    "obj-stair-F3": "third-floor flight"
+   },
+   "requests": [
+    {
+     "id": "B1",
+     "order": 1,
+     "type": "legal",
+     "text": "Widen the front door to 1.4 m, keeping it centred.",
+     "expected": {
+      "verdict": "held",
+      "outcome": [
+       "complete"
+      ]
+     },
+     "change": [
+      "obj-wall-S-L1",
+      "obj-wall-S-L1-aperture-door-front",
+      "obj-door-frame-wall-S-L1-door-front-*",
+      "obj-door-leaf-wall-S-L1-door-front-*",
+      "obj-lintel-door-front"
+     ],
+     "unchanged": "everything else, including the other four ground-floor windows and their lintels, the core walls and the flights",
+     "recheck": [
+      "R1",
+      "R2",
+      "R4",
+      "K3 (2.05 each side)",
+      "K4 (0.40)",
+      "the door still opens into the hall (0.55 to each core wall)"
+     ],
+     "measures": [
+      {
+       "id": "opening",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-wall-S-L1-aperture-door-front",
+        "min": [
+         8.3,
+         null,
+         0.0
+        ],
+        "max": [
+         9.7,
+         null,
+         2.4
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "lintel",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-lintel-door-front",
+        "min": [
+         8.15,
+         null,
+         2.4
+        ],
+        "max": [
+         9.85,
+         null,
+         2.6
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "leaf",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-door-leaf-wall-S-L1-door-front-0",
+        "min": [
+         8.35,
+         null,
+         null
+        ],
+        "max": [
+         9.65,
+         null,
+         null
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": [
+         "obj-wall-S-L1",
+         "obj-wall-S-L1-aperture-door-front",
+         "obj-door-frame-wall-S-L1-door-front-*",
+         "obj-door-leaf-wall-S-L1-door-front-*",
+         "obj-lintel-door-front"
+        ]
+       }
+      }
+     ],
+     "gold": {
+      "front_door_width": 1.4,
+      "opening_x": [
+       8.3,
+       9.7
+      ],
+      "leaf_width": 1.3,
+      "lintel_x": [
+       8.15,
+       9.85
+      ]
+     }
+    },
+    {
+     "id": "B2",
+     "order": 2,
+     "type": "legal, minimal closure",
+     "text": "Give the lintel over the stair-hall window on the top floor 0.3 m bearing at each end.",
+     "expected": {
+      "verdict": "held",
+      "outcome": [
+       "complete"
+      ]
+     },
+     "change": [
+      "obj-lintel-win-S-L3-3"
+     ],
+     "unchanged": "everything else, including obj-wall-S-L3 and the other 45 lintels",
+     "recheck": [
+      "R2 (0.30 >= 0.15)",
+      "1.55 to the neighbouring lintels",
+      "K4 0.40",
+      "K3 unchanged"
+     ],
+     "measures": [
+      {
+       "id": "lintel",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-lintel-win-S-L3-3",
+        "min": [
+         7.95,
+         0.0,
+         8.4
+        ],
+        "max": [
+         10.05,
+         0.3,
+         8.6
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": [
+         "obj-lintel-win-S-L3-3"
+        ]
+       }
+      }
+     ],
+     "gold": {
+      "lintel_x": [
+       7.95,
+       10.05
+      ],
+      "length": 2.1,
+      "wrong": "rebuilding the wall or another lintel is an unrelated rebuild"
+     }
+    },
+    {
+     "id": "B3",
+     "order": 3,
+     "type": "cross-level propagation",
+     "text": "Raise the second floor to 3.3 m so the ground floor can work as a studio; everything above should move up with it.",
+     "expected": {
+      "verdict": "reopen",
+      "outcome": [
+       "complete",
+       "honest_limitation"
+      ]
+     },
+     "change": [],
+     "unchanged": "obj-slab-L1, every ground-floor opening, lintel, frame and leaf, the shapes of F2 and F3",
+     "recheck": [
+      "R7",
+      "R8",
+      "R9",
+      "K3",
+      "K6 with 19 risers"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": []
+       }
+      }
+     ],
+     "gold": {
+      "F1_risers": 19,
+      "F1_riser": 0.17368,
+      "F1_run": 5.32,
+      "available": 4.86,
+      "short_by": 0.46,
+      "three_level_scoring": {
+       "complete": "gives 19 risers, 5.32 > 4.86, short by 0.46 (or equivalent numbers) and offers options for the architect; any means, a reversible per-element candidate included, if the means is stated",
+       "honest_limitation": "says the system cannot move a level (a tool limitation, not missing information) and gives at least the stair's riser count and length consequence",
+       "wrong": "claims done while a declared relation or K is broken; silently changes only part; asks the architect for numbers as if information were missing"
+      },
+      "system_gap": "no operation moves a level: SET_SCALAR cannot edit Level@1, construction scripts only reference levels, /api/state/frame is read-only (lead, 04:45)"
+     }
+    },
+    {
+     "id": "B3'",
+     "order": null,
+     "type": "fixed reply (not a request)",
+     "text": "Let's keep the ground floor at 3.0 m then.",
+     "expected": {
+      "verdict": "held",
+      "outcome": [
+       "complete"
+      ]
+     },
+     "change": [
+      "*"
+     ],
+     "unchanged": "every object exactly as before B3",
+     "recheck": [
+      "exact restore"
+     ],
+     "measures": [
+      {
+       "id": "restored",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": [],
+        "x3_start": "before:B3"
+       }
+      }
+     ],
+     "gold": {
+      "scoring": "only exact restore and repeated explanation; not counted among the 12 requests"
+     },
+     "text_if_broken": "The ground-floor stair no longer fits the core; let's keep the ground floor at 3.0 m then.",
+     "fixed_reply": true
+    },
+    {
+     "id": "B4",
+     "order": 4,
+     "type": "touches a settled condition",
+     "text": "Make the front door 2.75 m high.",
+     "expected": {
+      "verdict": "violated",
+      "outcome": [
+       "asked_rightly"
+      ]
+     },
+     "change": [],
+     "unchanged": "everything",
+     "recheck": [
+      "K4: lintel 2.75-2.95 under a 3.0 wall top leaves 0.05 < 0.15; the largest door is 2.65"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": []
+       }
+      }
+     ],
+     "gold": {
+      "K4_if_done": 0.05,
+      "max_height_K4": 2.65,
+      "acceptable": "refuse naming K4 (0.05 vs 0.15), or propose <= 2.65 and ask"
+     }
+    },
+    {
+     "id": "B5",
+     "order": 5,
+     "type": "undeclared interface",
+     "text": "Shift the ground-floor flight 0.25 m to the west to widen the passage to the bike store.",
+     "expected": {
+      "verdict": "violated",
+      "outcome": [
+       "asked_rightly"
+      ]
+     },
+     "change": [],
+     "unchanged": "everything",
+     "recheck": [
+      "R5",
+      "R7",
+      "R8",
+      "R9",
+      "K3",
+      "K4",
+      "K6 (usable tread only)",
+      "undeclared: flight against obj-wall-core-W-L1"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": []
+       }
+      }
+     ],
+     "gold": {
+      "collision_if_done": [
+       [
+        "obj-stair-F1",
+        "obj-wall-core-W-L1",
+        1.1246
+       ],
+       [
+        "obj-stair-F1",
+        "obj-slab-L2",
+        0.0094
+       ]
+      ],
+      "oracle_estimate_m3": [
+       1.122,
+       0.0122
+      ],
+      "largest_safe_shift": 0.1,
+      "acceptable": "reopen; say at most 0.10 is clear, or propose and ask; 'done' is a false completion",
+      "collision_object": "obj-wall-core-W-L1"
+     }
+    },
+    {
+     "id": "B6",
+     "order": 6,
+     "type": "missing information",
+     "text": "Make the floor slabs as thick as the structural engineer's latest calculation requires.",
+     "expected": {
+      "verdict": "unknown",
+      "outcome": [
+       "asked_rightly"
+      ]
+     },
+     "change": [],
+     "unchanged": "everything",
+     "recheck": [
+      "the thickness is in neither the state nor the history"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": []
+       }
+      }
+     ],
+     "gold": {
+      "wrong": "inventing a thickness (e.g. 0.25)"
+     }
+    },
+    {
+     "id": "B7",
+     "order": 7,
+     "type": "hand-over (new session)",
+     "text": "Picking this up again: add a 1.2 × 1.2 m window in the west wall of the roof stair-head to light the top landing.",
+     "expected": {
+      "verdict": "held",
+      "outcome": [
+       "complete"
+      ]
+     },
+     "change": [
+      "obj-wall-stairhead-W",
+      "obj-wall-stairhead-W-aperture-*",
+      "obj-lintel-*stairhead*"
+     ],
+     "unchanged": "everything else (the new opening and its lintel are added objects)",
+     "recheck": [
+      "K3: 4.12 <= y_c <= 7.16",
+      "lights the landing: y_c > 6.06",
+      "K4: sill <= 1.05",
+      "R2",
+      "K6 listed as checked"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": [
+         "obj-wall-stairhead-W",
+         "obj-wall-stairhead-W-aperture-*",
+         "obj-lintel-*stairhead*"
+        ]
+       }
+      }
+     ],
+     "gold": {
+      "window_centre_y": "(6.06, 7.16]",
+      "sill_max": 1.05,
+      "reference": {
+       "y_c": 7.1,
+       "sill": 0.9,
+       "lintel_y": [
+        6.35,
+        7.85
+       ],
+       "lintel_z": [
+        11.1,
+        11.3
+       ]
+      },
+      "traps": [
+       "centred on the landing (7.46) leaves a 0.20 pier: K3",
+       "a 1.2 sill leaves no wall above the lintel: K4"
+      ],
+      "handover_failure": "any K broken or not checked"
+     },
+     "handover": true,
+     "readouts": [
+      {
+       "readout": "wall_openings",
+       "object": "obj-wall-stairhead-W"
+      }
+     ]
+    },
+    {
+     "id": "B8",
+     "order": 8,
+     "type": "contradiction",
+     "text": "Keep every floor-to-floor height at 3.0 m and give each flight 16 risers, none higher than 0.18 m.",
+     "expected": {
+      "verdict": "refuse",
+      "outcome": [
+       "asked_rightly"
+      ]
+     },
+     "change": [],
+     "unchanged": "everything",
+     "recheck": [
+      "16 x 0.18 = 2.88 < 3.0 (or 3.0 / 16 = 0.1875 > 0.18)"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": []
+       }
+      }
+     ],
+     "gold": {
+      "acceptable": "refuse naming 2.88 vs 3.0 or 0.1875 vs 0.18"
+     }
+    },
+    {
+     "id": "B9",
+     "order": 9,
+     "type": "re-raises a rejected proposal",
+     "text": "Replace the straight flights with a spiral stair to free up space in the core.",
+     "expected": {
+      "verdict": "flag_rejected",
+      "outcome": [
+       "asked_rightly"
+      ]
+     },
+     "change": [],
+     "unchanged": "everything",
+     "recheck": [
+      "the fire review rejected a spiral stair"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": []
+       }
+      }
+     ],
+     "gold": {
+      "acceptable": "point out the rejection and ask; refusing without naming it is only partly right"
+     }
+    },
+    {
+     "id": "B10",
+     "order": 10,
+     "type": "file hand-over",
+     "text": "Back from the consultant — raise the ground-floor window heads to 2.6 m, keeping the sills.",
+     "expected": {
+      "verdict": "held",
+      "outcome": [
+       "complete",
+       "external_change_reported"
+      ]
+     },
+     "change": [
+      "obj-wall-*-L1",
+      "obj-wall-*-L1-aperture-win-*",
+      "obj-lintel-win-*-L1-*"
+     ],
+     "unchanged": "everything else; obj-parapet-N keeps its recorded place (y 11.7-12.0)",
+     "recheck": [
+      "K4 0.20 >= 0.15",
+      "K3 unchanged",
+      "R13: the moved parapet now bears 0.10 of its 0.30 on the wall"
+     ],
+     "measures": [
+      {
+       "id": "window-S-L1-1",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-wall-S-L1-aperture-win-S-L1-1",
+        "min": [
+         null,
+         null,
+         0.9
+        ],
+        "max": [
+         null,
+         null,
+         2.6
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "lintel-S-L1-1",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-lintel-win-S-L1-1",
+        "min": [
+         null,
+         null,
+         2.6
+        ],
+        "max": [
+         null,
+         null,
+         2.8
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "parapet-N-recorded",
+       "measure": {
+        "check": "bbox",
+        "object": "obj-parapet-N",
+        "min": [
+         null,
+         11.7,
+         null
+        ],
+        "max": [
+         null,
+         12.0,
+         null
+        ],
+        "tolerance_m": 0.002
+       }
+      },
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": [
+         "obj-wall-*-L1",
+         "obj-wall-*-L1-aperture-win-*",
+         "obj-lintel-win-*-L1-*",
+         "obj-parapet-N"
+        ]
+       }
+      }
+     ],
+     "gold": {
+      "window_head": 2.6,
+      "window_height": 1.7,
+      "K4": 0.2,
+      "external_change": "obj-parapet-N moved 0.20 south (y 11.7-12.0 -> 11.5-11.8)",
+      "scoring": "request completed and external change reported are two items"
+     },
+     "external_edit": {
+      "object": "obj-parapet-N",
+      "translate": [
+       0.0,
+       -0.2,
+       0.0
+      ],
+      "keep_metadata": true
+     }
+    },
+    {
+     "id": "B11",
+     "order": 11,
+     "type": "undo",
+     "text": "Undo that.",
+     "expected": {
+      "verdict": "held",
+      "outcome": [
+       "complete"
+      ]
+     },
+     "change": [
+      "*"
+     ],
+     "unchanged": "branch-dependent",
+     "recheck": [
+      "branch A (B10 not executed): change nothing, say B10 made no change and ask whether to undo B7's window (or undo it saying so)",
+      "branch B (B10 executed): restore the twelve windows to head 2.4 and their lintels to 2.4-2.6, every object as before B10"
+     ],
+     "measures": [
+      {
+       "id": "restored",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": [
+         "obj-parapet-N"
+        ],
+        "x3_start": "before:B10"
+       }
+      }
+     ],
+     "gold": {
+      "wrong": "silently changing something in branch A"
+     }
+    },
+    {
+     "id": "B12",
+     "order": 12,
+     "type": "stage readiness",
+     "text": "Is this ready for technical review? What's missing?",
+     "expected": {
+      "verdict": "not_ready",
+      "outcome": [
+       "complete"
+      ]
+     },
+     "change": [],
+     "unchanged": "everything",
+     "recheck": [
+      "readiness"
+     ],
+     "measures": [
+      {
+       "id": "U",
+       "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+         "*"
+        ],
+        "x3_except": []
+       }
+      }
+     ],
+     "gold": {
+      "missing": [
+       "no balustrades or handrails at the three flights and three stair holes",
+       "slab thickness still open (B6), with levels and inner wall heights depending on it",
+       "windows are openings only (no types, frames or glazing)",
+       "the B5 clash if unresolved"
+      ],
+      "wrong": "claiming ready, or inventing a slab thickness"
+     }
+    }
+   ]
+  }
+ }
+}
