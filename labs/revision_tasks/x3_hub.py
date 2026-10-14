@@ -666,7 +666,7 @@ T_NOTE = ("In this session only these Studio actions are available: GET /api/con
           "POST /api/proposals/construction, GET /api/proposals/{id}, POST /api/proposals/{id}/candidate, GET /api/candidates/{id}, "
           "GET /api/candidates/{id}/compare, GET /api/jobs/{id}, POST /api/project/modeling. Every other action is refused. "
           "The guide below describes the whole Studio.\n\n")
-MAX_TOOL_CALLS = 12
+MAX_TOOL_CALLS = 20
 
 
 def proxy_server_config(config_file: Path, python: str = sys.executable) -> dict[str, Any]:

@@ -4,7 +4,7 @@ The CLI starts it by path with one JSON configuration file::
 
     python x3_sf_mcp.py CONFIG.json
     {"file": "<the previous request's state file>", "out": "<new directory for this session's files>",
-     "user_message": "<the architect's words, the reviser's utterance>", "log": "<calls.jsonl>", "max_calls": 12}
+     "user_message": "<the architect's words, the reviser's utterance>", "log": "<calls.jsonl>", "max_calls": 20}
 
 Tools:
 
@@ -41,7 +41,7 @@ from typing import Any  # noqa: E402
 SERVER = "design"
 TOOLS = ("state_read", "model_objects", "submit_change")
 SECTIONS = ("summary", "parameters", "entities", "relations", "obligations", "context_pack")
-MAX_CALLS = 12
+MAX_CALLS = 20
 PAGE = 20000
 
 TOOL_LIST = [

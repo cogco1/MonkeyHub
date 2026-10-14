@@ -23,7 +23,7 @@ T and H, which have no landing tool, the candidate the answer names (else the tu
 harness as the architect's Continue on the Hub page; SF, the file the agent's last adopted submission wrote.
 
 Every turn: the common system prompt (``prompts/x3_system.md``), x2's fairness flags (``x3_hub.command``), at most
-12 tool calls (the lab proxy or the SF server refuses later calls) and 600 s, its cost in the shared ledger.
+20 tool calls (the lab proxy or the SF server refuses later calls) and 600 s, its cost in the shared ledger.
 One bundle per request (``<session>/<request>.bundle.json``), a session CSV and summary.
 
 Not built here: the file hand-over (A10/B10) in the Hub modes, which needs the returned model imported into the
@@ -55,8 +55,8 @@ ORACLE = LAB / "oracle.py"
 MODES = ("M", "M+", "T", "H", "SF")
 HUB_MODES = ("M", "M+", "T", "H")
 REQUEST_TIMEOUT_S = 600
-TURN_BUDGET_USD = 1.5
-MAX_TURNS = 16
+TURN_BUDGET_USD = 3.0          # a runaway guard, not the binding limit (manifest 7.11)
+MAX_TURNS = 24                 # 20 tool calls (the binding cap), the answer and a margin
 OUTCOMES = ("complete", "honest_limitation", "wrong", "asked_rightly", "asked_wrongly", "repeated_explanation", "external_change_reported")
 
 
@@ -442,6 +442,9 @@ class Session:
             current = json.loads((work_cfg / "states" / "current.json").read_text(encoding="utf-8")) if (work_cfg / "states" / "current.json").exists() else {}
             new = Path(current.get("current", str(self.model)))
             info.update(landed_by="agent" if new != self.model else None, submissions=current.get("submissions", []))
+            tried = [row for row in info["submissions"] if row.get("file") and not row.get("adopted")]
+            if info["landed_by"] is None and tried:
+                info["unlanded_candidate"] = {"model": {"path": tried[-1]["file"]}, "rule": "the last submission tried without adopt"}
             self.model = new
         else:
             s = self.services
@@ -511,7 +514,7 @@ class Session:
         if request.get("fixed_reply") and previous is not None and previous["oracle"]["summary"]["verdict"] == "violated":
             text = request.get("text_if_broken", text)
         bundle: dict[str, Any] = {"building": self.building, "mode": self.mode, "repeat": self.repeat, "request": request, "sent_text": text,
-                                  "start_model": str(start), "turns": []}
+                                  "start_model": str(start), "turns": [], "harness_added": harness_added(self.mode)}
         first = self.turn(rid, "request", text)
         bundle["turns"].append(first)
         report = judge(self.spec, request, self.model, start, self.before, self.dir / f"{rid.replace(chr(39), 'p')}.oracle.json")
@@ -620,11 +623,19 @@ def score(request: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
         outcome = "wrong" if changed else ("asked_rightly" if "?" in final else "no_change")
     else:
         outcome = "needs_coding"
+    unlanded = bundle.get("oracle_unlanded_candidate")
+    would_complete = bool(unlanded) and _complete(unlanded)
+    if outcome in ("no_change", "asked_wrongly") and would_complete:
+        outcome = "correct_not_landed"
+    limitation = not changed and not unlanded and _states_limitation(final)
     classes = [outcome]
+    if limitation:
+        classes.append("honest_limitation?")
     if bundle.get("correction"):
         classes.append("repeated_explanation")
     usage = [t["turn"]["usage"]["tokens"] for t in turns]
     return {"outcome_auto": outcome, "classes_auto": classes, "needs_coding": True, "changed": changed,
+            "would_complete_if_landed": would_complete if unlanded else None, "honest_limitation_auto": limitation,
             "unrequested": summary["unrequested"], "measures_held": measures_ok, "conditions_held": conditions_ok,
             "corrections": 1 if bundle.get("correction") else 0,
             "tokens": {"input": sum(u["input_tokens"] for u in usage), "output": sum(u["output_tokens"] for u in usage)},
@@ -632,12 +643,46 @@ def score(request: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
             "tool_calls": sum(t["turn"]["tool_call_count"] for t in turns)}
 
 
+def _complete(summary: dict[str, Any]) -> bool:
+    """The oracle's summary of a result shows the requested change, every measure held, no condition broken, nothing unrequested."""
+
+    changed = bool(summary["changed"] or summary["added"] or summary["removed"])
+    measures_ok = all(v == "held" for v in summary["measures"].values()) if summary["measures"] else True
+    conditions_ok = all(v != "violated" for v in summary["conditions"].values())
+    return changed and measures_ok and conditions_ok and not summary["unrequested"]
+
+
+LIMITATION_WORDS = ("cannot", "can't", "can not", "unable", "not able", "not supported", "isn't supported", "is not supported",
+                    "no tool", "not possible with", "does not allow", "doesn't allow", "not available")
+DONE_WORDS = ("done", "completed", "is now", "has been", "have been", "applied", "updated")
+
+
+def _states_limitation(final: str) -> bool:
+    """A candidate for the hand-coded class "honest limitation" (manifest 7.11): nothing changed, the answer says its tools
+    cannot do the request and does not say it is done. The coder confirms it; this only flags the row."""
+
+    text = (final or "").lower()
+    return any(w in text for w in LIMITATION_WORDS) and not any(w in text for w in DONE_WORDS)
+
+
+def harness_added(mode: str) -> list[str]:
+    """What the lab adds to each way of working, beyond the product (recorded in every bundle)."""
+
+    common = ["tool_call_cap_20", "request_0_written_by_harness", "simulated_architect_correction"]
+    if mode in ("M", "M+"):
+        return [*common, "prepared_context_for_working_design"]       # what the Hub page gives MonkeyHub's own chat
+    if mode in ("T", "H"):
+        return [*common, "proxy_names_working_run", "harness_lands_named_candidate"]
+    return [*common, "hostless_reviser_tools"]
+
+
 def csv_row(bundle: dict[str, Any]) -> dict[str, Any]:
     s, o = bundle["score"], bundle["oracle"]["summary"]
     first = bundle["turns"][0]
     return {"building": bundle["building"], "mode": bundle["mode"], "repeat": bundle["repeat"], "request": bundle["request"]["id"],
             "type": bundle["request"]["type"], "expected": "|".join(bundle["request"]["expected"]["outcome"]),
-            "outcome_auto": s["outcome_auto"], "oracle_verdict": o["verdict"],
+            "outcome_auto": s["outcome_auto"], "would_complete_if_landed": s.get("would_complete_if_landed"),
+            "honest_limitation_auto": s.get("honest_limitation_auto"), "oracle_verdict": o["verdict"],
             "conditions_violated": "|".join(k for k, v in o["conditions"].items() if v == "violated"),
             "measures_failed": "|".join(k for k, v in o["measures"].items() if v != "held"),
             "changed": s["changed"], "unrequested": len(s["unrequested"]), "landed_by": first.get("landed_by"),

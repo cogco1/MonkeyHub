@@ -105,10 +105,10 @@ def test_the_t_proxy_refuses_everything_but_construction_and_readback():
     assert refuse("studio_schema", {})["code"] == "X3_ACTION_UNAVAILABLE"
     assert refuse("chat_present", {"kind": "user"})["code"] == "X3_TOOL_UNAVAILABLE"
     assert refuse("visual_review", {})["code"] == "X3_TOOL_UNAVAILABLE"
-    assert refuse("studio_request", {"method": "GET", "path": "/api/construction/model"}, calls=13)["code"] == "X3_TOOL_BUDGET_SPENT"
+    assert refuse("studio_request", {"method": "GET", "path": "/api/construction/model"}, calls=x3_hub.MAX_TOOL_CALLS + 1)["code"] == "X3_TOOL_BUDGET_SPENT"
     unrestricted = x3_hub.proxy_settings({"command": "python", "args": []}, log=Path("calls.jsonl"), restricted=False)
-    assert x3_hub.proxy_refusal(unrestricted, "studio_request", {"method": "POST", "path": "/api/admissions"}, 12) is None
-    assert x3_hub.proxy_refusal(unrestricted, "visual_review", {}, 13)["code"] == "X3_TOOL_BUDGET_SPENT"
+    assert x3_hub.proxy_refusal(unrestricted, "studio_request", {"method": "POST", "path": "/api/admissions"}, x3_hub.MAX_TOOL_CALLS) is None
+    assert x3_hub.proxy_refusal(unrestricted, "visual_review", {}, x3_hub.MAX_TOOL_CALLS + 1)["code"] == "X3_TOOL_BUDGET_SPENT"
 
 
 def test_t_and_h_read_and_write_the_working_head_when_the_agent_names_no_run():
@@ -216,3 +216,39 @@ def test_the_sf_server_submits_a_change_and_adopts_its_file(state_file):
     assert spent["isError"] and "tool calls are spent" in spent["content"][0]["text"]
     listed = x3_sf_mcp.handle(server, {"jsonrpc": "2.0", "id": 9, "method": "tools/list"})["result"]["tools"]
     assert [t["name"] for t in listed] == list(x3_sf_mcp.TOOLS)
+
+
+def _bundle(*, changed: bool, final: str, unlanded: dict | None = None) -> dict:
+    summary = {"changed": ["obj-a"] if changed else [], "added": [], "removed": [], "unrequested": [],
+               "measures": {"m1": "held"}, "conditions": {"K1": "held"}, "verdict": "held"}
+    turn = {"turn": {"summary": {"final_text": final}, "usage": {"tokens": {"input_tokens": 1, "output_tokens": 1}},
+                     "cost_usd": 0.01, "seconds": 1.0, "tool_call_count": 3}}
+    bundle = {"oracle": {"summary": summary}, "turns": [turn]}
+    if unlanded is not None:
+        bundle["oracle_unlanded_candidate"] = unlanded
+    return bundle
+
+
+REQUEST = {"id": "A1", "expected": {"verdict": "held", "outcome": ["complete"]}}
+
+
+def test_a_correct_candidate_left_unlanded_is_its_own_class():
+    good = {"changed": ["obj-a"], "added": [], "removed": [], "unrequested": [], "measures": {"m1": "held"}, "conditions": {"K1": "held"}}
+    s = x3.score(REQUEST, _bundle(changed=False, final="The candidate is ready for your acceptance.", unlanded=good))
+    assert s["outcome_auto"] == "correct_not_landed" and s["would_complete_if_landed"] is True
+    bad = {**good, "measures": {"m1": "violated"}}
+    s = x3.score(REQUEST, _bundle(changed=False, final="Ready for your acceptance.", unlanded=bad))
+    assert s["outcome_auto"] == "no_change" and s["would_complete_if_landed"] is False
+    assert x3.score(REQUEST, _bundle(changed=True, final="Done."))["would_complete_if_landed"] is None
+
+
+def test_a_stated_limitation_is_flagged_for_coding_not_counted_complete():
+    s = x3.score(REQUEST, _bundle(changed=False, final="My tools cannot move a level; nothing was changed."))
+    assert s["outcome_auto"] == "no_change" and s["honest_limitation_auto"] is True and "honest_limitation?" in s["classes_auto"]
+    assert x3.score(REQUEST, _bundle(changed=False, final="It cannot fail now: the change has been applied."))["honest_limitation_auto"] is False
+
+
+def test_every_bundle_names_what_the_harness_added():
+    assert "prepared_context_for_working_design" in x3.harness_added("M+")
+    assert "proxy_names_working_run" in x3.harness_added("T") and "tool_call_cap_20" in x3.harness_added("SF")
+    assert x3_hub.MAX_TOOL_CALLS == 20 and x3_sf_mcp.MAX_CALLS == 20
