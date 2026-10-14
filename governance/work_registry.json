@@ -1,4 +1,22 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": []
+  "items": [
+    {
+      "id": "GH-635",
+      "status": "active",
+      "branch": "codex/635-revision-tasks",
+      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-635-revision-tasks",
+      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
+      "contributor": "Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "labs.revision_tasks"
+      ],
+      "write_scope": [
+        "labs/revision_tasks"
+      ],
+      "depends_on": []
+    }
+  ]
 }
