@@ -143,6 +143,74 @@ class ThreeDmInspectorTests(unittest.TestCase):
         self.assertEqual(result["units"], {"name": "Meters", "code": 4})
 
     @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
+    def test_native_index_reads_bounds_for_the_requested_objects_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "block.3dm"
+            self._write_model(source)
+            data = source.read_bytes()
+        plain = inspect_three_dm_index(data)
+        self.assertTrue(all("bounds" not in row for row in plain["objects"]))
+        reference_id = plain["instance_references"][0]["object_id"]
+        member_id = plain["instance_definitions"][0]["object_ids"][0]
+        point_id = next(row["object_id"] for row in plain["objects"] if row["name"] == "axis-witness")
+        line_id = next(row["object_id"] for row in plain["objects"] if row["type"] == "Curve")
+        rows = {row["object_id"]: row for row in inspect_three_dm_index(
+            data, bounds_for=(reference_id, member_id, point_id, line_id))["objects"]}
+        self.assertEqual({key: rows[point_id][key] for key in ("bounds", "bounds_space", "bounds_error")},
+                         {"bounds": {"min": [-1.0, 2.0, 3.0], "max": [-1.0, 2.0, 3.0]},
+                          "bounds_space": "world", "bounds_error": None})
+        self.assertEqual(rows[line_id]["bounds"], {"min": [0.0, 0.0, 0.0], "max": [2.0, 4.0, 6.0]})
+        # A block member is read in its definition's own coordinates; the
+        # instance that places it is read where it stands.
+        self.assertEqual((rows[member_id]["bounds"], rows[member_id]["bounds_space"]),
+                         ({"min": [1.0, 1.0, 1.0], "max": [1.0, 1.0, 1.0]}, "definition"))
+        self.assertEqual((rows[reference_id]["bounds"], rows[reference_id]["bounds_space"],
+                          rows[reference_id]["bounds_source"]),
+                         ({"min": [11.0, 1.0, 1.0], "max": [11.0, 1.0, 1.0]}, "world", "instance_definition_members"))
+        only = inspect_three_dm_index(data, bounds_for=(point_id,))["objects"]
+        self.assertEqual([row["object_id"] for row in only if "bounds" in row], [point_id])
+
+    @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
+    def test_native_index_bounds_name_their_source_and_one_unreadable_object_does_not_fail_the_page(self) -> None:
+        model = rhino3dm.File3dm()
+        model.Settings.ModelUnitSystem = rhino3dm.UnitSystem.Millimeters
+        box = rhino3dm.Brep.CreateFromBoundingBox(rhino3dm.BoundingBox(rhino3dm.Point3d(0, 0, 0), rhino3dm.Point3d(2, 3, 4)))
+        box_attributes = rhino3dm.ObjectAttributes()
+        box_attributes.Name = "box"
+        model.Objects.AddBrep(box, box_attributes)
+        mesh = rhino3dm.Mesh()
+        for x, y, z in ((5, 5, 0), (7, 5, 0), (7, 8, 1)):
+            mesh.Vertices.Add(x, y, z)
+        mesh.Faces.AddFace(0, 1, 2)
+        mesh_attributes = rhino3dm.ObjectAttributes()
+        mesh_attributes.Name = "mesh"
+        model.Objects.AddMesh(mesh, mesh_attributes)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "mixed.3dm"
+            self.assertTrue(model.Write(str(source), 8))
+            data = source.read_bytes()
+        ids = {row["name"]: row["object_id"] for row in inspect_three_dm_index(data)["objects"]}
+        rows = {row["name"]: row for row in inspect_three_dm_index(data, bounds_for=tuple(ids.values()))["objects"]}
+        self.assertEqual((rows["mesh"]["bounds"], rows["mesh"]["bounds_source"]),
+                         ({"min": [5.0, 5.0, 0.0], "max": [7.0, 8.0, 1.0]}, "mesh_vertices"))
+        # Bounds never come from Brep control points: a Brep saved without
+        # render meshes has none, and its row says why.
+        self.assertIsNone(rows["box"]["bounds"])
+        self.assertIn("no retained render mesh", rows["box"]["bounds_error"])
+        broken = ThreeDmInspectionError(ThreeDmInspectionErrorCode.VISIBLE_BOUNDS_UNAVAILABLE, "object x: Mesh has no vertices")
+        real = _visible_geometry_points
+
+        def refuse_mesh(geometry, geometry_type, *args, **kwargs):
+            if geometry_type == "Mesh":
+                raise broken
+            return real(geometry, geometry_type, *args, **kwargs)
+
+        with patch("monkeycad.formats.three_dm_inspector._visible_geometry_points", side_effect=refuse_mesh):
+            rows = {row["name"]: row for row in inspect_three_dm_index(data, bounds_for=tuple(ids.values()))["objects"]}
+        self.assertEqual((rows["mesh"]["bounds"], rows["mesh"]["bounds_error"]), (None, "object x: Mesh has no vertices"))
+        self.assertEqual(len(rows), 2, "one object without bounds does not fail the page")
+
+    @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
     def test_native_index_resolves_each_objects_worn_material_and_its_source(self) -> None:
         model = rhino3dm.File3dm()
         timber, glass, old = rhino3dm.Material(), rhino3dm.Material(), rhino3dm.Material()

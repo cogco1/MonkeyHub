@@ -215,6 +215,78 @@
         "packages/archflow/tests/test_project_repository.py"
       ],
       "status_note": "Initial input preparation is verified through real OCCT modeling and drawing tests; image interpretation is a separate task."
+    },
+    {
+      "capability_id": "frame.set_level",
+      "owner": "project_runtime.intent",
+      "execution_owner": "project_runtime.candidate",
+      "kind": "authoring",
+      "status": "PARTIAL",
+      "purpose": "Add a project level or move one to a new elevation, with whatever stands on it following through the record's own dependency edges, and run the result as a new candidate on the same exact source.",
+      "purpose_zh": "新增一个楼层，或把楼层移到新标高；站在这层上的构件按记录里的依赖一起移动，结果在同一精确来源上生成新候选。",
+      "goals": [
+        "raise a floor",
+        "lower a floor",
+        "move a level",
+        "add a level",
+        "set a level elevation",
+        "抬高楼层",
+        "降低楼层",
+        "改楼层标高",
+        "新增楼层"
+      ],
+      "aliases": [
+        "move a storey",
+        "抬高二层",
+        "楼层标高"
+      ],
+      "requires": [
+        "bound_project",
+        "exact_source: the run this candidate is edited from",
+        "stateDigest of that source"
+      ],
+      "reads": [
+        "the exact retained StateRecord",
+        "its Level@1 entities and dependency edges"
+      ],
+      "writes": [
+        "a proposal in memory; the candidate route retains the run through P036"
+      ],
+      "effects": [
+        "one Level@1 added or its elevation changed; dependent elements rebuilt by the candidate"
+      ],
+      "inputs_ref": "/openapi.json#/components/schemas/ElevationEditRequestDto",
+      "entrypoints": [
+        "GET /api/state/frame",
+        "POST /api/proposals/elevation",
+        "POST /api/proposals/{proposal_id}/candidate"
+      ],
+      "composes": [
+        "project_runtime.intent: set-datum as one edit_components proposal",
+        "project_runtime.candidate: rebuild and read back what depends on the level"
+      ],
+      "produces": [
+        "a candidate run whose levels and dependent geometry read back at the new elevation"
+      ],
+      "validators": [],
+      "estimated_cost": "One proposal and one candidate run; no model call.",
+      "works": [
+        "moving an existing level keeps its role and basis",
+        "a shape a construction script placed at level(id) follows the level",
+        "adding a new level by a new levelId"
+      ],
+      "missing": [
+        "a relative offset: read the level's elevation from GET /api/state/frame first",
+        "removing a level"
+      ],
+      "ui": {
+        "preview": "MonkeyArch"
+      },
+      "tests": [
+        "services/project-runtime/tests/test_construction_routes.py",
+        "services/project-runtime/tests/test_capabilities.py"
+      ],
+      "status_note": "The operation is the existing set-datum action of POST /api/proposals/elevation; it is described here so a goal finds it."
     }
   ],
   "modules": [
@@ -596,7 +668,7 @@
         "per-object encoded-geometry digests and morphology analysis (planarity, curve sampling and exact native polyline vertices/length)",
         "the typed, fail-closed inspection error codes",
         "reading original 3dm container bytes, geometry encodings, user strings, block definitions/references and material tables without claiming geometric validity or bounds; invalid geometry object ids remain explicit",
-        "lightweight native identity, layer, block/reference and raw user-string indexing from exact 3dm bytes, without per-object geometry encoding or validation; each indexed object's worn material resolved from the file's own table (its own, or its layer's render material: name, diffuse #RRGGBB) and whether its archflow:material label declares it (declared, file or undeclared)",
+        "lightweight native identity, layer, block/reference and raw user-string indexing from exact 3dm bytes, without per-object geometry encoding or validation, with saved-geometry bounds read only for the objects a caller names (one page); each indexed object's worn material resolved from the file's own table (its own, or its layer's render material: name, diffuse #RRGGBB) and whether its archflow:material label declares it (declared, file or undeclared)",
         "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified conversion-provider selection; provider execution remains separate from the standalone SKP reader, with no project writes.",
         "independent local SketchUp C API reading of visible face geometry into meters/Z-up meshes; nested instances, transformations, holes and visibility, without launching a desktop host",
         "patching caller-supplied composed 3dm bytes from exact prior/current compiled programs and a native replacement preview, preserving unchanged objects and shared block/material tables with explicit unit conversion",
@@ -4088,7 +4160,7 @@
         "one horizontal cut-plan revision over the existing SourceDocument and DrawingProjectionReceipt: retained scale, pens, hatch, semantic rectangular empty-door dimensions and explicit rebuild against a named exact source or the original Stage branch head; a rebuild registers as its previous revision's whole-document replacement through the upload path's own validation",
         "a vertical model-axis section through the same cut-plan route and recipe: section (plan line and kept side, or origin and normal), depth, window and scale from the request, a new section framed from the model's bounds in its slab; a rebuild keeps its orientation, plane, side, depth and window unless the request states them, a horizontal plan never becomes a section nor a section a plan, whether the request names its previous revision or only its drawing id, as a sheet view does (DRAWING_ORIENTATION_CHANGED), sections take no opening dimensions or plan symbols, and its status reads the objects in its own window and slab",
         "Model conversion orchestration using the existing job pool, original source objects and noncanonical P036 export runs; retained progress, failure and validated-download reports.",
-        "read-only paged native-object lookup by exact ModelSource and GUID; no architectural-role inference or edit admission",
+        "read-only paged native-object lookup by exact ModelSource, or by an attached external model's own run, and GUID, with each paged object's bounds on request; no architectural-role inference or edit admission",
         "typed representation-only SVG dressing replacement and insert/move/scale/flip/delete operations against an exact previous Drawing revision; retained SVG readback and source anchor choices",
         "registering section perspective revisions from a complete verified source model in the existing document list with the same source resolution, cache, monitoring and registration as elevations, keeping the drawing owner's refusal names",
         "direct native model drawing selection: registered external sourceAsset stays frozen and has no modelSource; state-bound composed 3DM uses its own geometry, never a partial paired STEP",
@@ -4445,7 +4517,7 @@
         "opening the located project on first use and holding that one binding for the process",
         "resolving the project segment of /api/projects/{project_id}: today only the bound project resolves, and every other id is 404 PROJECT_NOT_FOUND",
         "listing the projects this server binds, and which of them the unscoped default-project shortcut answers for",
-        "choosing the default reference run: the configured one, or the newest runner receipt whose run actually finished its seats, skipping harness workflows; an explicit run selects that run's exact retained record for state, frame, volumes, pick, closure and candidate continuation",
+        "choosing the default reference run: the configured one, or the newest runner receipt whose run actually finished its seats, skipping harness workflows; an explicit run selects that run's exact retained record for state, frame, volumes, pick, closure and candidate continuation; a request that names neither a run nor a Stage answers the Working Head's run (the working position's run with an exact finished state), else the main line's accepted head, else the reference run, with an honesty line when the position could not be read (#640)",
         "reading the P036 record-name convention (kind plus sha256) and listing a run's record refs",
         "loading the reference run's State Record through the state_record_ref carried by its runner receipt, checking its content digest and exact run/base binding; only a project with no eligible reference run reads the authored work-in-progress record",
         "answering archflow.project.inputs' refusals on the wire: 404 STATE_RECORD_NOT_FOUND and 422 STATE_RECORD_INVALID, each naming the file",
@@ -7200,7 +7272,7 @@
         "GET /api/chat/sessions/{id}/documents/{messageId}/{index}",
         "presentation_bind and chat_present: local MCP binding and result presentation without provider invocation; native chat_present exposes progress/assistant with streaming status only (older complete requests normalize to streaming), completed by CLI turn end; external presentation retains user/progress/assistant and caller-controlled status",
         "studio_request /api/decisions: GET latest/history, POST current-user avoid/keep feedback and POST feedback-only revoke through existing Runtime authorization; studio_schema derives the narrowed inputs from Runtime OpenAPI",
-        "studio_request POST /api/admissions (hub-chat, message-bound, with the loop's taskClass) and PUT /api/working-draft (a Continue on the user's bound words), with GET /api/admissions, /api/working-source and /api/working-draft/revision; studio_schema hides the bound fields",
+        "studio_request POST /api/admissions (hub-chat, message-bound, with the loop's taskClass; continue: true also continues the working design onto its one admitted result in the same call, and every chat admission answers workingDesign: headRunId, onWorkingDesign and a ready continueWith, #644) and PUT /api/working-draft (a Continue on the user's bound words), with GET /api/admissions, /api/working-source and /api/working-draft/revision; studio_schema hides the bound fields",
         "GET /api/updates/status",
         "GET /api/updates/restart",
         "POST /api/updates/prepare",

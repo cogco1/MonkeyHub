@@ -191,6 +191,12 @@ class AgentAdmissionTests(unittest.TestCase):
         quote = tools["studio_request"]["inputSchema"]["properties"]["feedbackQuote"]["description"]
         self.assertIn("/api/admissions", quote)
         self.assertIn("PUT /api/working-draft", quote)
+        landing = tools["studio_request"]["inputSchema"]["properties"]["continue"]
+        self.assertEqual(landing["type"], "boolean")
+        self.assertIn("Only for POST /api/admissions of the change the user asked for", landing["description"])
+        for words in ("put continue: true beside method/path on that admission", "or send its continueWith",
+                      "Call a change their design only", "when workingDesign says so"):
+            self.assertIn(words, described)
         declared = tools["studio_request"]["inputSchema"]["properties"]["taskClass"]
         self.assertEqual(declared["enum"], ["spatial_formal", "polish", "deterministic_edit"])
         self.assertIn("Only for POST /api/admissions", declared["description"])
@@ -276,6 +282,103 @@ class AgentAdmissionTests(unittest.TestCase):
         self.assertEqual([row["runId"] for record in self.admissions() for row in record["results"]], [result],
                          "the Continue admitted nothing more")
 
+    def test_one_admission_with_continue_lands_the_requested_change(self):
+        """#644: the change the user asked for is admitted and continued in one call, bound to their words."""
+        request = "门廊太笨重了，让它的比例轻一些。"
+        message = self.user(request)
+        result = self.generate(height=2.6)
+        answer = self.tool("/api/admissions", {"results": [{"runId": result, "outcome": "admitted", "supersedes": [],
+                           "label": "轻门廊"}]}, taskClass="deterministic_edit", **{"continue": True})
+        self.assertEqual(answer["workingDesign"], {"headRunId": result, "onWorkingDesign": True, "continued": True})
+        self.assertEqual(self.head(), result)
+        self.assertEqual([(method, path.rsplit("/studio", 1)[1]) for method, path, _, _ in self.writes],
+                         [("POST", "/api/admissions"), ("PUT", "/api/working-draft")])
+        bound = {"sessionId": self.session["id"], "messageId": message["id"]}
+        [(_, _, sent, options)] = [write for write in self.writes if write[0] == "PUT"]
+        self.assertEqual((sent["runId"], sent["messageSource"], sent["rawLanguage"]), (result, bound, request))
+        self.assertEqual(options["headers"]["X-Monkey-Chat"], self.session["id"])
+        [event] = self.continued(result)
+        self.assertEqual((event["origin"], event["previousHeadRunId"], event["targetRunId"], event["messageSource"]),
+                         ("hub-agent", self.reference, result, bound))
+        self.assertEqual([row["runId"] for record in self.admissions() for row in record["results"]], [result])
+
+    def test_an_admission_says_when_its_result_is_not_on_the_working_design(self):
+        self.user("门廊太笨重了，让它的比例轻一些。")
+        result = self.generate(height=2.6)
+        answer = self.tool("/api/admissions", {"results": [{"runId": result, "outcome": "admitted", "supersedes": [],
+                           "label": "轻门廊"}]}, taskClass="deterministic_edit")
+        design = answer["workingDesign"]
+        self.assertEqual((design["headRunId"], design["onWorkingDesign"]), (self.reference, False))
+        self.assertNotIn("continued", design)
+        self.assertIn("not on the user's working design", design["note"])
+        self.assertEqual(design["continueWith"], {"method": "PUT", "path": "/api/working-draft",
+                         "body": {"runId": result, "baseRevisionSha256": self.revision()}})
+        self.assertEqual(self.head(), self.reference, "an admission alone never moves the Working Head")
+        # The ready call is exactly the Continue the chat sends.
+        step = design["continueWith"]
+        position = self.tool(step["path"], step["body"], method=step["method"])
+        self.assertEqual((position["current"]["runId"], self.head()), (result, result))
+
+        # Several alternatives stay candidates; the answer offers no single Continue.
+        self.user("给我两个不同高度的方案。")
+        first, second = self.generate(source=result, height=2.4), self.generate(source=result, height=2.8)
+        study = self.tool("/api/admissions", {"study": {"id": "porch-heights", "label": "两个高度", "baseRunId": result},
+                          "results": [{"runId": run_id, "outcome": "admitted", "supersedes": [], "label": label}
+                                      for run_id, label in ((first, "低"), (second, "高"))]}, taskClass="deterministic_edit")
+        design = study["workingDesign"]
+        self.assertEqual((design["headRunId"], design["onWorkingDesign"]), (result, False))
+        self.assertNotIn("continueWith", design)
+        self.assertIn("Continue onto one only when the user's words choose it", design["note"])
+
+    def test_continue_is_refused_before_anything_is_sent_unless_it_lands_one_requested_result(self):
+        self.user("门廊太笨重了，让它的比例轻一些。")
+        first, second = self.generate(height=2.4), self.generate(height=2.8)
+        row = lambda run_id, label: {"runId": run_id, "outcome": "admitted", "supersedes": [], "label": label}  # noqa: E731
+        for body in ({"results": [row(first, "低"), row(second, "高")]},
+                     {"study": {"id": "porch", "label": "两个高度", "baseRunId": self.reference},
+                      "results": [row(first, "低")]},
+                     {"results": [{"runId": first, "outcome": "withdrawn"}]}):
+            with self.subTest(body=body):
+                self.refused("CHAT_TOOL_INVALID", "/api/admissions", body, taskClass="deterministic_edit", **{"continue": True})
+        for path, method in (("/api/admissions", "GET"), ("/api/working-draft", "PUT")):
+            with self.subTest(path=path, method=method):
+                self.refused("CHAT_TOOL_INVALID", path, {"runId": first, "baseRevisionSha256": self.revision()}
+                             if method == "PUT" else None, method=method, **{"continue": True})
+        self.refused("CHAT_TOOL_INVALID", "/api/admissions", {"results": [row(first, "轻")]},
+                     taskClass="deterministic_edit", **{"continue": "yes"})
+        # A Continue needs the user's words; a message too long to bind whole needs its passage selected.
+        self.user("门廊" * 1100)
+        self.refused("CHAT_FEEDBACK_TOO_LONG", "/api/admissions", {"results": [row(first, "轻")]},
+                     taskClass="deterministic_edit", **{"continue": True})
+        self.assertEqual(self.writes, [])
+        self.assertEqual(self.admissions(), [])
+        self.assertEqual(self.head(), self.reference)
+
+    def test_a_refused_continue_leaves_the_admission_and_says_how_to_land_it(self):
+        self.user("门廊太笨重了，让它的比例轻一些。")
+        result = self.generate(height=2.6)
+        body = {"results": [{"runId": result, "outcome": "admitted", "supersedes": [], "label": "轻门廊"}]}
+        forward, moved = self.request, []
+
+        def position_moves_first(base, path, method="GET", body=None, **kwargs):
+            if method == "PUT" and path.endswith("/api/working-draft") and not moved:
+                moved.append(path)
+                raise HubFailure(409, "WORKING_DRAFT_STALE", "The working position changed; read it before selecting another source.")
+            return forward(base, path, method, body, **kwargs)
+
+        with patch.object(transport, "_request_json", side_effect=position_moves_first):
+            answer = self.tool("/api/admissions", body, taskClass="deterministic_edit", **{"continue": True})
+        design = answer["workingDesign"]
+        self.assertEqual((design["continued"], design["onWorkingDesign"], design["continueRefused"]["code"]),
+                         (False, False, "WORKING_DRAFT_STALE"))
+        self.assertEqual(design["continueWith"]["body"], {"runId": result, "baseRevisionSha256": self.revision()})
+        self.assertEqual([row["runId"] for record in self.admissions() for row in record["results"]], [result],
+                         "the admission stands")
+        # The same call again admits nothing new and lands the result.
+        again = self.tool("/api/admissions", body, taskClass="deterministic_edit", **{"continue": True})
+        self.assertEqual(again["workingDesign"], {"headRunId": result, "onWorkingDesign": True, "continued": True})
+        self.assertEqual(len(self.admissions()), 1)
+
     def test_the_binding_fills_message_source_and_words_only_where_they_decide(self):
         kept, tried = self.generate(height=2.4), self.generate(height=2.8)
         current = self.user("做两个方案比较一下")
@@ -303,6 +406,9 @@ class AgentAdmissionTests(unittest.TestCase):
         self.assertEqual((rejection["messageSource"]["messageId"], rejection["rawLanguage"]),
                          (rejecting["id"], "第二个太高了，不要。"))
         self.assertEqual(self.head(), self.reference, "admission never moves the Working Head")
+        # The chat's answer is the retained record plus where the working design stands (#644).
+        self.assertEqual(rejection.pop("workingDesign"), {"headRunId": self.reference})
+        self.assertEqual(record.pop("workingDesign")["onWorkingDesign"], False)
         with TestClient(create_app(self.settings)) as restarted:
             self.assertEqual(self.admissions(restarted), [record, rejection])
 

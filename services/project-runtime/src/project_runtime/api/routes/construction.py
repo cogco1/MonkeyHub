@@ -14,6 +14,7 @@ drawing routes (reused from ``routes/proposals.py``, never copied).
 from __future__ import annotations
 
 from dataclasses import replace
+import re
 
 from fastapi import APIRouter, Query
 from starlette.requests import Request
@@ -28,6 +29,7 @@ from ...application.construction import (
     hosted_opening_proposal,
     kept_refs,
 )
+from ...application.artifacts import MODEL_UPLOAD_RUN_PREFIX
 from ...application.projection import StateProjection, project_state
 from ...application.proposals import Proposal
 from ..dto.construction import (
@@ -63,7 +65,9 @@ _OPENING_REFUSED = {
 
 @router.get("/construction", response_model=ConstructionVocabularyDto, response_model_by_alias=True)
 def read_construction_vocabulary() -> ConstructionVocabularyDto:
-    """The construction language: conventions, verbs, limits and one example. Nothing needs to be discovered first."""
+    """The construction language: conventions, verbs, limits and one example. Nothing needs to be discovered first.
+
+    level(id) measures from a project level. A project level is added or moved with POST /api/proposals/elevation, action set-datum with levelId and value in metres; what stands on that level follows it."""
 
     return ConstructionVocabularyDto.model_validate(vocabulary())
 
@@ -83,7 +87,21 @@ def read_construction_model(
 
     projection = project_state(bound_project(request.app.state), run, require_view=False,
                                source_stage_ref=source_stage_ref)
+    if run is not None and not projection.reference_state_exact:
+        # Answering the project's current record under this run's name would
+        # read as the run's model. Say what the run is instead.
+        raise StudioError(409, "REFERENCE_STATE_NOT_EXACT", _not_a_design_state(run, projection))
     return construction_model_dto(projection, construction_model(projection))
+
+
+def _not_a_design_state(run: str, projection: StateProjection) -> str:
+    asset = run.removeprefix(MODEL_UPLOAD_RUN_PREFIX)
+    if run.startswith(MODEL_UPLOAD_RUN_PREFIX) and re.fullmatch(r"[0-9a-f]{64}", asset):
+        return (f"Run {run} holds a model attached from outside the project, not a design state. Read its objects "
+                f"with GET /api/model-assets/{asset}/index?runId={run} (add bounds=true for their positions).")
+    reason = f" ({projection.reference_state_error})" if projection.reference_state_error else ""
+    return (f"Run {run} has no exact retained design state{reason}, so it has no construction model. "
+            "GET /api/construction/model without run reads the project's own.")
 
 
 @router.post("/proposals/construction", response_model=ConstructionProposalDto, response_model_by_alias=True,

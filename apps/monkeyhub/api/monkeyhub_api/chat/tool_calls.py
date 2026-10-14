@@ -27,7 +27,7 @@ from ..models import ChatPresentationRequest, HubFailure
 # The proposal routes that answer a Proposal the client has just authored; its
 # generated edits and operator are left out of the immediate answer.
 _AUTHORED_PROPOSALS = {"/api/proposals", "/api/proposals/construction", "/api/proposals/facets",
-                       "/api/proposals/hosted-opening"}
+                       "/api/proposals/hosted-opening", "/api/proposals/elevation"}
 
 
 # What each bound tool takes, exactly as its advertised input schema says.
@@ -35,7 +35,8 @@ _AUTHORED_PROPOSALS = {"/api/proposals", "/api/proposals/construction", "/api/pr
 # such as a producer cannot pass for one that took effect.
 _TOOL_ARGUMENTS = {
     "studio_schema": frozenset({"method", "path", "body", "pathPrefix", "offset", "limit"}),
-    "studio_request": frozenset({"method", "path", "body", "operationId", "feedbackQuote", "awaitSeconds", "taskClass"}),
+    "studio_request": frozenset({"method", "path", "body", "operationId", "feedbackQuote", "awaitSeconds", "taskClass",
+                                 "continue"}),
     "fab_request": frozenset({"method", "path", "body"}),
 }
 
@@ -217,6 +218,10 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if "taskClass" in arguments and (name, method, parsed.path) != ("studio_request", "POST", "/api/admissions"):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "taskClass beside method/path names the loop POST /api/admissions "
                          "closes; visual_review takes its own.")
+    if "continue" in arguments and ((name, method, parsed.path) != ("studio_request", "POST", "/api/admissions")
+                                    or not isinstance(arguments["continue"], bool)):
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "continue: true beside method/path lands the one result POST "
+                         "/api/admissions admits; a Continue on its own is PUT /api/working-draft.")
     if "operationId" in arguments and (name != "studio_request" or method == "GET" or (
             method == "POST" and parsed.path in {"/api/board/export", "/api/drawings/plans/status"})):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "operationId identifies a Studio mutation request.")
@@ -273,6 +278,11 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         refusal = studio_tool._semantic_edit_refusal(arguments.get("body"))
         if refusal is not None:
             raise refusal
+    if name == "studio_request" and method == "POST" and parsed.path == "/api/proposals/elevation":
+        # Only set-datum, a project level (#651); refused, like the line above, before any Studio is resolved.
+        refusal = studio_tool._elevation_refusal(arguments.get("body"))
+        if refusal is not None:
+            raise refusal
     base, session = preparation._bound_studio(hub, chat_id)
     query = parse_qs(parsed.query, keep_blank_values=True)
     if any(query[key] != [session["projectId"]] for key in ("projectId", "project_id") if key in query):
@@ -315,6 +325,13 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                 schema["properties"]["action"]["enum"] = ["revoke"]
             elif parsed.path == "/api/decisions":
                 schema["properties"]["disposition"]["enum"] = ["avoid", "keep"]
+        if method == "POST" and parsed.path == "/api/proposals/elevation":
+            # The chat sends set-datum only (#651); an element's elevation is construction's.
+            reference = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+            schema = document["components"]["schemas"][reference.rsplit("/", 1)[-1]]
+            schema["properties"] = {key: value for key, value in schema["properties"].items()
+                                    if key not in {"elementId", "reference"}}
+            schema["properties"]["action"] = {**schema["properties"]["action"], "enum": [studio_tool._ELEVATION_ACTION]}
         if (method, parsed.path) in judgments._BOUND_WORDS:
             # Hub binds the user's message and words; the provider supplies neither.
             reference = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
@@ -380,12 +397,14 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         if parsed.query or not isinstance(body, dict):
             raise HubFailure(422, "CHAT_FEEDBACK_INVALID", "Feedback takes its scope and exact source in the body, without query parameters.")
         body = judgments._feedback_body(hub, base, chat_id, session, parsed.path, body, arguments.get("feedbackQuote"))
+    landing = None
     if (method, parsed.path) in judgments._BOUND_WORDS:
         if parsed.query or not isinstance(body, dict):
             raise HubFailure(422, "CHAT_TOOL_INVALID", f"{method} {parsed.path} takes its whole request in the body, without query parameters.")
         bind = judgments._admission_body if method == "POST" else judgments._continue_body
         body = bind(chat_id, session, body, arguments.get("feedbackQuote"))
         if method == "POST":
+            landing = _landing(chat_id, session, body, arguments) if arguments.get("continue") else None
             # A loop is admitted once it has finished, its declared look first (#294).
             visual_review._require_look(chat_id, body, arguments.get("taskClass"))
     if method == "POST" and parsed.path == "/api/board/export":
@@ -437,6 +456,9 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                     started[section] = {**started[section], field: values[:100],
                                         f"{field}Count": len(values), f"{field}Omitted": len(values) - 100}
                     started["detailsPath"] = f"/api/proposals/{started['proposalId']}"
+        if method == "POST" and parsed.path == "/api/admissions" and isinstance(started, dict):
+            # #644: an admission says where the working design stands, and lands the result when asked.
+            started = {**started, "workingDesign": _working_design(hub, base, chat_id, runtime_id, body, landing)}
         if method == "PUT" and parsed.path == "/api/working-draft" and isinstance(started, dict):
             # The position also lists every recovery row and any local recovery
             # draft. The Continue needs only where the head now is and the
@@ -445,6 +467,68 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         return started
     # One POST has happened. From here on this call only reads.
     return _finish(base, started, comparison, time.monotonic() + wait)
+
+
+def _admitted(body: Mapping) -> list[str]:
+    """The runs an admission request admits, in its own order."""
+    return [row["runId"] for row in body.get("results") or () if isinstance(row, dict)
+            and row.get("outcome") == "admitted" and isinstance(row.get("runId"), str)]
+
+
+def _landing(chat_id: str, session: dict, body: Mapping, arguments: Mapping) -> dict:
+    """The Continue an admission with continue: true sends, bound and checked before anything is sent (#644).
+
+    It lands the change the user asked for: one admitted result, never a Study's
+    alternatives, a rejection or a withdrawal. The Continue's own binding, the
+    user's message and words, is checked here too, so no admission is sent for a
+    Continue the chat would refuse. Its revision is read after the admission.
+    """
+    admitted = _admitted(body)
+    if body.get("study") is not None or len(body.get("results") or ()) != 1 or len(admitted) != 1:
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "continue: true lands the one result the user asked for: admit exactly "
+                         "one result with outcome admitted and no study. Alternatives they asked for stay candidates.")
+    return judgments._continue_body(chat_id, session, {"runId": admitted[0], "baseRevisionSha256": None},
+                                    arguments.get("feedbackQuote"))
+
+
+def _working_design(hub: str, base: str, chat_id: str, runtime_id: str, body: Mapping, landing: dict | None) -> dict:
+    """Where the user's working design stands after an admission, moved onto ``landing`` when one was asked for.
+
+    The Continue is the chat's ordinary bound PUT /api/working-draft, sent against
+    the position's revision read just before it. Its refusal never undoes the
+    admission: the answer says so, with the call that would still land the result.
+    """
+    refusal = None
+    if landing is not None:
+        source = transport._request_json(base, "/api/working-source")
+        if (source.get("head") or {}).get("runId") != landing["runId"]:
+            try:
+                transport._request_json(hub, f"/api/runtime/projects/{runtime_id}/studio/api/working-draft", "PUT",
+                                        {**landing, "baseRevisionSha256": source.get("revisionSha256")},
+                                        headers={"Idempotency-Key": str(uuid4()), "X-Monkey-Chat": chat_id})
+            except HubFailure as exc:
+                refusal = {"code": exc.error.code, "detail": exc.error.detail}
+    source = transport._request_json(base, "/api/working-source")
+    head = (source.get("head") or {}).get("runId")
+    admitted = _admitted(body)
+    answer = {"headRunId": head}
+    if admitted:
+        answer["onWorkingDesign"] = head in admitted
+    if landing is not None:
+        answer["continued"] = head == landing["runId"]
+        if refusal is not None:
+            answer["continueRefused"] = refusal
+    pending = [run_id for run_id in admitted if run_id != head]
+    if len(admitted) == 1 and pending:
+        answer["continueWith"] = {"method": "PUT", "path": "/api/working-draft",
+                                  "body": {"runId": pending[0], "baseRevisionSha256": source.get("revisionSha256")}}
+        answer["note"] = ("Admitted, not on the user's working design. If it is the change the user asked for, send "
+                          "continueWith now, in this turn; an option or alternative they asked for stays a candidate. "
+                          "Do not call it their current design until onWorkingDesign is true.")
+    elif pending:
+        answer["note"] = ("Admitted as candidates; the working design did not move. Continue onto one only when the "
+                          "user's words choose it.")
+    return answer
 
 
 def _present_tool(hub: str, chat_id: str, arguments: dict, token: str):

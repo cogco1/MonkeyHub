@@ -2163,10 +2163,12 @@ class ChatTests(unittest.TestCase):
         replaced = {("GET", "/api/state"): "GET /api/construction/model",
                     ("GET", "/api/state?run=candidate-1"): "GET /api/construction/model",
                     **{("POST", f"/api/proposals/{name}"): "POST /api/proposals/construction"
-                       for name in ("sketch", "transform", "push-pull", "delete", "elevation")}}
+                       for name in ("sketch", "transform", "push-pull", "delete")}}
         patterns = {"GET": studio_tool._READ, "POST": studio_tool._POST}
         for method, path in added + kept:
             self.assertTrue(patterns[method].fullmatch(urlsplit(path).path), (method, path))
+        # Its set-datum moves a project level, which nothing replaced (#651, test_chat_levels).
+        self.assertTrue(studio_tool._POST.fullmatch("/api/proposals/elevation"))
         for method, path in replaced:
             self.assertIsNone(patterns[method].fullmatch(urlsplit(path).path), (method, path))
         self.assertIsNone(studio_tool._READ.fullmatch("/api/domains/Structure/readiness"))

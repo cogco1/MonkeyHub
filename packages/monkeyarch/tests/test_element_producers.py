@@ -33,7 +33,7 @@ from monkeyarch.domain.reference_resolver import ReferenceContext
 from monkeyarch.compilation.geometry import compile_geometry_program
 from archflow.state.geometry_program import GeometryOperationKind, SemanticBinding
 from archflow.state.state_record import project_grids_of, project_levels_of
-from portico_fixture import BASIS, PN, _grids, _levels, _op_params, _produce, _rows
+from portico_fixture import BASIS, PN, _compile, _grids, _levels, _op_params, _produce, _rows
 from tests.support.spine_fixture import COMMITMENT, ProducerFixture, _only, _proposal, _state, authored_record
 
 
@@ -116,6 +116,14 @@ class VerticalSliceTests(unittest.TestCase):
         b = compile_slice(7.0)
         for oid in ("obj-capitals-west-0", "obj-entablature-west", "obj-pediment-west"):
             self.assertAlmostEqual(b[oid]["bbox_min"][1] - a[oid]["bbox_min"][1], 7.0 - 6.426)                     # the chain moved as one
+
+    def test_a_pediment_on_a_level_plus_offset_base_compiles_at_that_elevation(self) -> None:
+        # #638: base_offset joined the loft's parameters out of name order, so the operation was refused
+        pediment = replace(_rows()[3], references={"from": {"grid": ["1", "W"]}, "to": {"grid": ["6", "W"]},
+                                                   "base": {"offset_from": {"level": "level-ground", "offset": 11.4}}})
+        bounds = expected_object_bounds(_compile((pediment,)))["obj-pediment-west"]
+        self.assertAlmostEqual(bounds["bbox_min"][1], 11.4)
+        self.assertAlmostEqual(bounds["bbox_max"][1], 11.4 + 1.78)
 
 
 WINDOW_TYPE = {"schema": "WindowType@1", "type_id": "window-type-1", "frame_width": 0.09, "frame_depth": 0.18,
