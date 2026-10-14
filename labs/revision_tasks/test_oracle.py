@@ -119,3 +119,40 @@ def test_shape_signature_ignores_triangulation_but_not_movement(models):
     renumbered = (v[order], np.argsort(order)[f][:, [1, 2, 0]])
     assert oracle.same_shape(oracle.signature(wall), oracle.signature(renumbered))
     assert not oracle.same_shape(oracle.signature(wall), oracle.signature(_moved(wall, lambda vv: np.ones(len(vv), bool), (0.001, 0, 0))))
+
+
+def test_building_checks_read_bb_as_its_spec_states(tmp_path):
+    """K3, K4, K6, R7, R8, R9 and the collision list on BB's baseline, then the ground-floor flight moved 0.25 m west."""
+
+    from archflow.state.state_record import StateRecordEditKind, StateRecordOperator, apply_state_record_operator
+    from labs.revision_tasks import buildings, fixtures, pipeline
+
+    start = fixtures.bound(buildings.bb_house())
+    (tmp_path / "start").mkdir()
+    (tmp_path / "moved").mkdir()
+    real = pipeline.realize(start, (tmp_path / "start").resolve(), "m")
+    moved = apply_state_record_operator(start, StateRecordOperator(kind=StateRecordEditKind.SET_SCALAR, base_record_digest=start.digest,
+                                                                   base_state_digest=start.state_digest, target_ref="parameter:f1_x",
+                                                                   key="f1_x", value=8.15))
+    shifted = pipeline.realize(moved, (tmp_path / "moved").resolve(), "m", prior=real)
+    meshes = oracle.load_meshes(real.preview_path)
+
+    def run(measure, on=meshes):
+        return oracle.CHECKS[measure["check"]](measure, on, None)
+
+    assert run({"check": "wall_piers", "min_m": 0.5})[1]["min_pier_m"] == 0.55
+    assert run({"check": "wall_above_lintels", "min_m": 0.15})[1]["min_wall_above_m"] == 0.3
+    for flight in ("F1", "F2", "F3"):
+        status, measured = run({"check": "flight", "object": f"obj-stair-{flight}", "risers": 17, "max_rise_m": 0.18, "min_going_m": 0.28,
+                                "min_headroom_m": 2.0})
+        assert status == "held" and round(measured["headroom_min_m"], 3) == 2.094
+        ends = run({"check": "landing_depth", "object": f"obj-stair-{flight}", "min_m": 1.2})[1]["ends"]
+        assert [round(e["depth_m"], 4) for e in ends.values()] == [1.6, 1.6]
+    pairs = [{"wall": "obj-wall-core-W-L1", "flight": "obj-stair-F1"}, {"wall": "obj-wall-core-E-L2", "flight": "obj-stair-F2"}]
+    assert [p["gap_m"] for p in run({"check": "door_beside_flight", "pairs": pairs})[1]["pairs"]] == [0.05, 0.05]
+    collisions = {"check": "collisions", "allowed": [["obj-lintel-", "obj-wall-"]]}
+    assert run(collisions) == ("held", {"collisions": [], "allowed_embeddings": 46})
+    status, measured = run(collisions, oracle.load_meshes(shifted.preview_path))
+    assert status == "violated"
+    assert [(c["a"], c["b"]) for c in measured["collisions"]] == [("obj-stair-F1", "obj-wall-core-W-L1"), ("obj-slab-L2", "obj-stair-F1")]
+    assert abs(measured["collisions"][0]["common_volume_estimate_m3"] - 1.1246) < 0.03

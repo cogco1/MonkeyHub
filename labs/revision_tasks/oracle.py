@@ -539,6 +539,255 @@ def check_stair(m, meshes, start):
     return ("violated" if problems else "held"), measured
 
 
+# ---------------------------------------------------------------- building checks (X3): openings, lintels, flights
+
+def _is_cavity(name: str) -> bool:
+    """A void, not material: an opening's cavity or a stair hole, recognised by its name (identity, not metadata)."""
+
+    return "-aperture-" in name or name.startswith("obj-hole-")
+
+
+def first_hit(meshes: dict[str, Mesh], start: np.ndarray, direction: np.ndarray, reach: float, skip: set[str]) -> tuple[float, str | None]:
+    """Distance along a unit ray to the nearest material surface within ``reach``, and whose it is."""
+
+    best, owner = math.inf, None
+    end = start + direction * reach
+    lo_ray, hi_ray = np.minimum(start, end), np.maximum(start, end)
+    for name, (v, f) in meshes.items():
+        if name in skip or _is_cavity(name):
+            continue
+        lo, hi = v.min(axis=0), v.max(axis=0)
+        if np.any(hi < lo_ray - 1e-9) or np.any(lo > hi_ray + 1e-9):
+            continue
+        tri = v[f]
+        e1, e2 = tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]
+        h = np.cross(direction, e2)
+        det = np.einsum("ij,ij->i", e1, h)
+        ok = np.abs(det) > 1e-12
+        if not np.any(ok):
+            continue
+        inv = 1.0 / det[ok]
+        s = start - tri[ok, 0]
+        u = inv * np.einsum("ij,ij->i", s, h[ok])
+        q = np.cross(s, e1[ok])
+        w = inv * (q @ direction)
+        t = inv * np.einsum("ij,ij->i", e2[ok], q)
+        hits = t[(u >= -1e-9) & (w >= -1e-9) & (u + w <= 1 + 1e-9) & (t > 1e-7) & (t <= reach)]
+        if len(hits) and float(hits.min()) < best:
+            best, owner = float(hits.min()), name
+    return best, owner
+
+
+def wall_openings(mesh: Mesh) -> tuple[int, float, float, list[tuple[float, float, float, float]]]:
+    """A straight wall's run axis (0 x, 1 y), its run extent, and each through opening as (u0, u1, z0, z1).
+
+    Breakpoints come from the mesh's own vertices; each cell between them is probed with one ray through the
+    wall's thickness, so an opening's edges are exact.
+    """
+
+    v, _ = mesh
+    lo, hi = v.min(axis=0), v.max(axis=0)
+    axis = 0 if hi[0] - lo[0] >= hi[1] - lo[1] else 1
+    across = 1 - axis
+    us, zs = np.unique(np.round(v[:, axis], 6)), np.unique(np.round(v[:, 2], 6))
+    open_cells = []
+    for u0, u1 in zip(us, us[1:]):
+        for z0, z1 in zip(zs, zs[1:]):
+            start, end = np.zeros(3), np.zeros(3)
+            start[axis] = end[axis] = (u0 + u1) / 2
+            start[2] = end[2] = (z0 + z1) / 2
+            start[across], end[across] = lo[across] - 0.5, hi[across] + 0.5
+            if not segment_hits(mesh, start, end):
+                open_cells.append((float(u0), float(u1), float(z0), float(z1)))
+    openings: list[list[float]] = []
+    for u0, u1, z0, z1 in sorted(open_cells):
+        if openings and abs(openings[-1][1] - u0) < 1e-6 or openings and abs(openings[-1][0] - u0) < 1e-6:
+            last = openings[-1]
+            last[1], last[2], last[3] = max(last[1], u1), min(last[2], z0), max(last[3], z1)
+        else:
+            openings.append([u0, u1, z0, z1])
+    return axis, float(lo[axis]), float(hi[axis]), [tuple(o) for o in openings]
+
+
+def check_wall_piers(m, meshes, start):
+    """K3: wall left beside every opening, along the wall to the next opening or the wall's end, at least ``min_m``."""
+
+    walls = sorted(n for n in meshes if n.startswith(m.get("walls_prefix", "obj-wall-")) and not _is_cavity(n))
+    worst, where, below = math.inf, None, []
+    for wall in walls:
+        _, start_u, end_u, openings = wall_openings(meshes[wall])
+        edges = [start_u] + [x for o in openings for x in (o[0], o[1])] + [end_u]
+        for k, o in enumerate(openings):
+            left, right = o[0] - edges[2 * k], edges[2 * k + 3] - o[1]
+            for side, pier in (("left", left), ("right", right)):
+                if pier < worst:
+                    worst, where = pier, f"{wall} opening {o[0]:.3f}-{o[1]:.3f} {side}"
+                if pier < float(m["min_m"]) - 1e-6:
+                    below.append({"wall": wall, "opening": [round(o[0], 6), round(o[1], 6)], "side": side, "pier_m": round(pier, 6)})
+    return ("violated" if below else "held"), {"min_pier_m": round(worst, 6) if math.isfinite(worst) else None, "at": where, "below": below}
+
+
+def check_wall_above_lintels(m, meshes, start):
+    """K4: each lintel's host wall (the wall holding its plan) reaches at least ``min_m`` above the lintel's top."""
+
+    walls = [n for n in meshes if n.startswith(m.get("walls_prefix", "obj-wall-")) and not _is_cavity(n)]
+    worst, where, below, orphans = math.inf, None, [], []
+    for lintel in sorted(n for n in meshes if n.startswith(m.get("lintels_prefix", "obj-lintel-"))):
+        llo, lhi = bbox(meshes, [lintel])
+        hosts = []
+        for wall in walls:
+            wlo, whi = bbox(meshes, [wall])
+            if all(wlo[i] - 1e-6 <= llo[i] and lhi[i] <= whi[i] + 1e-6 for i in (0, 1)) and wlo[2] <= llo[2] <= whi[2]:
+                hosts.append((float(whi[2] - lhi[2]), wall))
+        if not hosts:
+            orphans.append(lintel)
+            continue
+        above, wall = min(hosts)
+        if above < worst:
+            worst, where = above, f"{lintel} in {wall}"
+        if above < float(m["min_m"]) - 1e-6:
+            below.append({"lintel": lintel, "wall": wall, "wall_above_m": round(above, 6)})
+    status = "violated" if below else "unchecked" if orphans else "held"
+    return status, {"min_wall_above_m": round(worst, 6) if math.isfinite(worst) else None, "at": where, "below": below, "no_host": orphans}
+
+
+def _flight(mesh: Mesh) -> dict[str, Any]:
+    """A straight stepped flight: its run axis, treads (z, u0, u1) in climbing order, plan extents."""
+
+    v, f = mesh
+    lo, hi = v.min(axis=0), v.max(axis=0)
+    axis = 0 if hi[0] - lo[0] >= hi[1] - lo[1] else 1
+    tri = v[f]
+    normal = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    length = np.linalg.norm(normal, axis=1)
+    up = (normal[:, 2] > 0.999 * length) & (length > 1e-12)
+    treads: dict[float, list[float]] = {}
+    for t in tri[up]:
+        z = round(float(t[:, 2].mean()), 6)
+        span = treads.setdefault(z, [math.inf, -math.inf])
+        span[0], span[1] = min(span[0], float(t[:, axis].min())), max(span[1], float(t[:, axis].max()))
+    rows = sorted((z, s[0], s[1]) for z, s in treads.items())
+    climbing = 1.0 if len(rows) < 2 or (rows[-1][1] + rows[-1][2]) >= (rows[0][1] + rows[0][2]) else -1.0
+    return {"axis": axis, "treads": rows, "lo": lo, "hi": hi, "sense": climbing}
+
+
+def check_flight(m, meshes, start):
+    """R7 and K6 for one flight: risers, rise and going limits, and headroom over the usable part of every tread.
+
+    Headroom is measured straight up from points on each tread to the nearest other material (cavities and the
+    flight itself left out). A point buried in other material is not usable and is not measured.
+    """
+
+    name = m["object"]
+    if name not in meshes:
+        return "unchecked", {"missing": [name]}
+    flight = _flight(meshes[name])
+    rows, axis = flight["treads"], flight["axis"]
+    across = 1 - axis
+    rises = np.diff([flight["lo"][2]] + [z for z, _, _ in rows])
+    goings = [u1 - u0 for _, u0, u1 in rows]
+    measured: dict[str, Any] = {"risers": len(rows), "rise_max": round(float(rises.max()), 6), "going_min": round(float(min(goings)), 6),
+                                "top_z": round(float(rows[-1][0]), 6)}
+    problems = []
+    if "risers" in m and len(rows) != int(m["risers"]):
+        problems.append(f"{len(rows)} risers != {m['risers']}")
+    if float(rises.max()) > float(m["max_rise_m"]) + 1e-6:
+        problems.append(f"riser {float(rises.max()):.5f} > {m['max_rise_m']}")
+    if float(min(goings)) < float(m["min_going_m"]) - 1e-6:
+        problems.append(f"going {float(min(goings)):.5f} < {m['min_going_m']}")
+    others = {k: mesh for k, mesh in meshes.items() if k != name and not _is_cavity(k)}
+    headroom, low_at = math.inf, None
+    a0, a1 = float(flight["lo"][across]), float(flight["hi"][across])
+    for z, u0, u1 in rows:
+        for fu in (0.1, 0.5, 0.9):
+            for fa in (0.05, 0.25, 0.5, 0.75, 0.95):
+                point = np.zeros(3)
+                point[axis], point[across], point[2] = u0 + fu * (u1 - u0), a0 + fa * (a1 - a0), z + 1e-4
+                if any(inside(mesh, point[None, :])[0] for mesh in others.values() if np.all(mesh[0].min(axis=0) <= point) and np.all(mesh[0].max(axis=0) >= point)):
+                    continue                       # buried: not a usable part of the tread
+                clear, _ = first_hit(others, point, np.array([0.0, 0.0, 1.0]), 50.0, set())
+                if clear < headroom:
+                    headroom, low_at = clear, round(z, 6)
+    measured["headroom_min_m"] = round(headroom, 6) if math.isfinite(headroom) else None
+    measured["headroom_lowest_at_tread_z"] = low_at
+    if "min_headroom_m" in m and headroom < float(m["min_headroom_m"]) - 1e-6:
+        problems.append(f"headroom {headroom:.4f} < {m['min_headroom_m']}")
+    measured["problems"] = problems
+    return ("violated" if problems else "held"), measured
+
+
+def check_landing_depth(m, meshes, start):
+    """R8: from each end of a flight, along its run, the clear depth to the facing material at ``probe_height_m`` above the landing."""
+
+    name = m["object"]
+    if name not in meshes:
+        return "unchecked", {"missing": [name]}
+    flight = _flight(meshes[name])
+    axis, across, rows = flight["axis"], 1 - flight["axis"], flight["treads"]
+    mid = float(flight["lo"][across] + flight["hi"][across]) / 2
+    sense = flight["sense"]
+    ends = {"low": (min(rows[0][1], rows[0][2]) if sense > 0 else max(rows[0][1], rows[0][2]), float(flight["lo"][2]), -sense),
+            "high": (max(rows[-1][1], rows[-1][2]) if sense > 0 else min(rows[-1][1], rows[-1][2]), float(rows[-1][0]), sense)}
+    depths = {}
+    for label, (u, z, direction) in ends.items():
+        point, ray = np.zeros(3), np.zeros(3)
+        point[axis], point[across], point[2] = u + direction * 1e-4, mid, z + float(m.get("probe_height_m", 0.3))
+        ray[axis] = direction
+        depth, owner = first_hit(meshes, point, ray, 50.0, {name})
+        depth += 1e-4                                       # the probe starts that far beyond the flight's end
+        depths[label] = {"depth_m": round(depth, 6) if math.isfinite(depth) else None, "facing": owner}
+    short = [k for k, d in depths.items() if d["depth_m"] is None or d["depth_m"] < float(m["min_m"]) - 1e-6]
+    return ("violated" if short else "held"), {"ends": depths, "short": short}
+
+
+def check_door_beside_flight(m, meshes, start):
+    """R9: along the host wall, each door opening does not overlap the flight beside it (gap at least ``min_gap_m``)."""
+
+    gaps, problems = [], []
+    for pair in m["pairs"]:
+        wall, flight = pair["wall"], pair["flight"]
+        missing = _require(meshes, [wall, flight])
+        if missing:
+            return "unchecked", {"missing": missing}
+        axis, _, _, openings = wall_openings(meshes[wall])
+        doors = [o for o in openings if o[2] <= float(bbox(meshes, [wall])[0][2]) + 0.05]   # openings from the floor up
+        flo, fhi = bbox(meshes, [flight])
+        for o in doors:
+            gap = max(float(flo[axis]) - o[1], o[0] - float(fhi[axis]))
+            gaps.append({"wall": wall, "flight": flight, "door": [round(o[0], 6), round(o[1], 6)], "gap_m": round(gap, 6)})
+            if gap < float(m.get("min_gap_m", 0.0)) - 1e-6:
+                problems.append(f"{wall} door {o[0]:.3f}-{o[1]:.3f} overlaps {flight} by {-gap:.3f}")
+    return ("violated" if problems else "held"), {"pairs": gaps, "problems": problems}
+
+
+def check_collisions(m, meshes, start):
+    """Every pair of material solids sharing volume, largest first (sampled like ``non_interference``); pairs whose
+    names match an ``allowed`` prefix pair (an embedding the drawing convention accepts) are listed apart."""
+
+    names = sorted(n for n in meshes if not _is_cavity(n))
+    allowed = [tuple(p) for p in m.get("allowed", [])]
+    n = int(m.get("samples_per_axis", 14))
+    boxes = {k: bbox(meshes, [k]) for k in names}
+    found, accepted = [], 0
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            lo, hi = np.maximum(boxes[a][0], boxes[b][0]), np.minimum(boxes[a][1], boxes[b][1])
+            if np.any(hi - lo <= 1e-4):
+                continue
+            if any((a.startswith(p) and b.startswith(q)) or (a.startswith(q) and b.startswith(p)) for p, q in allowed):
+                accepted += 1
+                continue
+            axes = [lo[k] + (np.arange(n) + 0.5) * (hi[k] - lo[k]) / n for k in range(3)]
+            grid = np.array(np.meshgrid(*axes, indexing="ij")).reshape(3, -1).T
+            both = int(np.count_nonzero(inside(meshes[a], grid) & inside(meshes[b], grid)))
+            if both:
+                found.append({"a": a, "b": b, "common_volume_estimate_m3": round(both * float(np.prod(hi - lo)) / n ** 3, 6)})
+    found.sort(key=lambda row: -row["common_volume_estimate_m3"])
+    tolerance = float(m.get("tolerance_m3", 1e-6))
+    held = all(row["common_volume_estimate_m3"] <= tolerance for row in found)
+    return ("held" if held else "violated"), {"collisions": found, "allowed_embeddings": accepted}
+
+
 CHECKS: dict[str, Callable[[dict, dict, dict | None], tuple[str, dict]]] = {
     "support_contact": check_support_contact,
     "vertical_clearance": check_vertical_clearance,
@@ -549,6 +798,12 @@ CHECKS: dict[str, Callable[[dict, dict, dict | None], tuple[str, dict]]] = {
     "geometry_unchanged": check_geometry_unchanged,
     "column_row": check_column_row,
     "stair": check_stair,
+    "wall_piers": check_wall_piers,
+    "wall_above_lintels": check_wall_above_lintels,
+    "flight": check_flight,
+    "landing_depth": check_landing_depth,
+    "door_beside_flight": check_door_beside_flight,
+    "collisions": check_collisions,
 }
 
 
