@@ -90,6 +90,10 @@ def tost(c: list[float], d: list[float], margin: float) -> dict[str, Any]:
     return {"mean_c_s": mean(c), "mean_d_s": mean(d), "ratio": mean(c) / mean(d), "margin": margin, "p": p, "equivalent_at_0.05": p < 0.05}
 
 
+FIELDS = ["n", "arm", "format", "revision", "claim", "codes", "total_s", "read_s", "patch_s", "kernel_s", "write_s", "cold_read_s",
+          "state_bytes", "file_bytes", "rewrite_bytes", "file_sha256", "write_context_pack_s", "write_realize_s", "write_write_s"]
+
+
 def _discard(folder: Path, stem: str) -> None:
     """Remove one superseded revision's files and work directory (``--keep-models`` only: a compute server's own output)."""
 
@@ -105,12 +109,40 @@ def _discard(folder: Path, stem: str) -> None:
 def run(out: Path, *, sizes: tuple[int, ...], revisions: int, arms: tuple[str, ...], formats: tuple[str, ...],
         keep_models: int | None = None, min_free_gb: float | None = None) -> dict[str, Any]:
     """``keep_models``: keep the model files of the start and the first ``keep_models`` revisions of each chain and remove
-    each later one once the next revision has read it (sizes, hashes and timings are recorded first). ``min_free_gb``:
-    stop before a revision when the output disk has less free space; what ran so far is written."""
+    each later one once the next revision has read it (sizes, hashes and timings are recorded first); the last revision
+    and every refused one are kept. ``min_free_gb``: stop before a revision when the output disk has less free space.
 
-    import shutil
+    Each row is appended to ``x7.csv`` as it is measured, so a run that stops or fails keeps what it measured. A refused
+    revision is recorded (claim and reason codes) and its chain continues from the last written file."""
 
     rows: list[dict[str, Any]] = []
+    box: dict[str, Any] = {"stopped": None}
+    out.mkdir(parents=True, exist_ok=True)
+    handle = (out / "x7.csv").open("w", newline="", encoding="utf-8")
+    writer = csv.DictWriter(handle, fieldnames=FIELDS, restval="", extrasaction="ignore")
+    writer.writeheader()
+
+    def record_row(row: dict[str, Any]) -> None:
+        rows.append(row)
+        writer.writerow(row)
+        handle.flush()
+
+    try:
+        _chains(out, rows, record_row, box, sizes=sizes, revisions=revisions, arms=arms, formats=formats, keep_models=keep_models,
+                min_free_gb=min_free_gb)
+    except BaseException as exc:
+        box["stopped"] = f"failed: {type(exc).__name__}: {str(exc)[:500]}"
+        raise
+    finally:
+        handle.close()
+        _summarize(out, rows, sizes=sizes, formats=formats, arms=arms, stopped=box["stopped"])
+    return json.loads((out / "x7_summary.json").read_text(encoding="utf-8"))
+
+
+def _chains(out: Path, rows: list[dict[str, Any]], record_row: Any, box: dict[str, Any], *, sizes: tuple[int, ...], revisions: int,
+            arms: tuple[str, ...], formats: tuple[str, ...], keep_models: int | None, min_free_gb: float | None) -> None:
+    import shutil
+
     stopped = None
     for n in sizes:
         if stopped:
@@ -126,14 +158,15 @@ def run(out: Path, *, sizes: tuple[int, ...], revisions: int, arms: tuple[str, .
                 t = time.perf_counter()
                 written = reviser.write_state_file(record, arm=arm, fmt=fmt, out_dir=folder, stem="r00", parent_sha256=None,
                                                    context_root=folder / "ctx", utterance="Scale run.")
-                rows.append({"n": n, "arm": arm, "format": fmt, "revision": 0, "claim": "start", "total_s": time.perf_counter() - t,
+                record_row({"n": n, "arm": arm, "format": fmt, "revision": 0, "claim": "start", "total_s": time.perf_counter() - t,
                              "state_bytes": state_bytes(written.path, fmt, written.sidecar), "file_bytes": written.path.stat().st_size,
                              "rewrite_bytes": written.path.stat().st_size + (written.sidecar.stat().st_size if written.sidecar else 0),
                              **{f"write_{k}": v for k, v in written.seconds.items()}})
                 chains[arm] = (written.path, written.sidecar, {f"h_{k}": 3.0 for k in range(n)})
+            refused: dict[str, set[int]] = {arm: set() for arm in arms}
             for i in range(1, revisions + 1):
                 if min_free_gb is not None and shutil.disk_usage(out).free / 1e9 < min_free_gb:
-                    stopped = f"free space below {min_free_gb} GB before n={n} {fmt} r{i:02d}"
+                    stopped = box["stopped"] = f"free space below {min_free_gb} GB before n={n} {fmt} r{i:02d}"
                     break
                 key = f"h_{(i * 7919) % n}"
                 for arm in arms:
@@ -146,14 +179,18 @@ def run(out: Path, *, sizes: tuple[int, ...], revisions: int, arms: tuple[str, .
                                               utterance="Scale run.", sidecar=sidecar, scan=False)
                     total = time.perf_counter() - t
                     if revision.written is None:
-                        raise RuntimeError(f"revision {i} of {arm}/{fmt}/n{n} was refused: {revision.reasons}")
+                        refused[arm].add(i)
+                        record_row({"n": n, "arm": arm, "format": fmt, "revision": i, "claim": revision.claim, "total_s": total,
+                                    "codes": ";".join(str(r.get("code", "")) for r in revision.reasons)})
+                        continue
                     written = revision.written
                     values[key] = new
                     chains[arm] = (written.path, written.sidecar, values)
-                    if keep_models is not None and i - 1 > keep_models:
-                        _discard(folder, f"r{i - 1:02d}")
+                    previous = max((j for j in range(1, i) if j not in refused[arm]), default=0)
+                    if keep_models is not None and previous > keep_models:
+                        _discard(folder, f"r{previous:02d}")
                     seconds = revision.seconds
-                    rows.append({"n": n, "arm": arm, "format": fmt, "revision": i, "claim": revision.claim, "total_s": total,
+                    record_row({"n": n, "arm": arm, "format": fmt, "revision": i, "claim": revision.claim, "total_s": total,
                                  "read_s": seconds.get("read_s"), "patch_s": seconds.get("patch_s"),
                                  "kernel_s": seconds.get("write_realize_s"), "write_s": seconds.get("write_write_s"),
                                  "state_bytes": state_bytes(written.path, fmt, written.sidecar), "file_bytes": written.path.stat().st_size,
@@ -161,29 +198,36 @@ def run(out: Path, *, sizes: tuple[int, ...], revisions: int, arms: tuple[str, .
                                  "cold_read_s": cold_read(written.path, fmt, written.sidecar),
                                  "file_sha256": hashlib.sha256(written.path.read_bytes()).hexdigest()})
                 print(f"n={n} {fmt} r{i:02d} " + " ".join(f"{r['arm']}={r['total_s']:.2f}s" for r in rows[-len(arms):]), flush=True)
-    fields = ["n", "arm", "format", "revision", "claim", "total_s", "read_s", "patch_s", "kernel_s", "write_s", "cold_read_s",
-              "state_bytes", "file_bytes", "rewrite_bytes", "file_sha256", "write_context_pack_s", "write_realize_s", "write_write_s"]
-    with (out / "x7.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, restval="")
-        writer.writeheader()
-        writer.writerows(rows)
+
+
+def _summarize(out: Path, rows: list[dict[str, Any]], *, sizes: tuple[int, ...], formats: tuple[str, ...], arms: tuple[str, ...],
+               stopped: str | None) -> None:
+    """Medians per size, format and arm over the written revisions, refusals counted, and the TOST on total time."""
+
     summary: dict[str, Any] = {"stopped": stopped} if stopped else {}
+    written = [r for r in rows if r["revision"] > 0 and r.get("file_sha256")]
     for n in sizes:
         for fmt in formats:
             cell: dict[str, Any] = {}
-            if not any(r["n"] == n and r["format"] == fmt and r["revision"] > 0 for r in rows):
+            if not any(r["n"] == n and r["format"] == fmt for r in written):
                 continue
             for arm in arms:
-                chain = [r for r in rows if r["n"] == n and r["format"] == fmt and r["arm"] == arm and r["revision"] > 0]
+                refusals = sum(1 for r in rows if r["n"] == n and r["format"] == fmt and r["arm"] == arm and r["revision"] > 0
+                               and not r.get("file_sha256"))
+                chain = [r for r in written if r["n"] == n and r["format"] == fmt and r["arm"] == arm]
+                if not chain:
+                    cell[arm] = {"refused": refusals}
+                    continue
                 cell[arm] = {k: median(r[k] for r in chain) for k in ("total_s", "read_s", "patch_s", "kernel_s", "write_s", "cold_read_s",
                                                                        "state_bytes", "file_bytes", "rewrite_bytes")}
+                cell[arm]["refused"] = refusals
             if set(arms) >= {"C-full", "D"}:
-                totals = {arm: [r["total_s"] for r in rows if r["n"] == n and r["format"] == fmt and r["arm"] == arm and r["revision"] > 0]
+                totals = {arm: [r["total_s"] for r in written if r["n"] == n and r["format"] == fmt and r["arm"] == arm]
                           for arm in ("C-full", "D")}
-                cell["tost_total"] = tost(totals["C-full"], totals["D"], MARGIN)
+                if len(totals["C-full"]) > 1 and len(totals["D"]) > 1:
+                    cell["tost_total"] = tost(totals["C-full"], totals["D"], MARGIN)
             summary[f"n{n}-{fmt}"] = cell
-    (out / "x7_summary.json").write_text(json.dumps(summary, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-    return summary
+    (out / "x7_summary.json").write_text(json.dumps(summary, indent=1, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
 
 
 def main(argv: list[str] | None = None) -> int:
