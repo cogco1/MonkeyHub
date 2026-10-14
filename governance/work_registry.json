@@ -1,25 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-651",
-      "status": "active",
-      "branch": "codex/651-chat-set-datum",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-651-chat-set-datum",
-      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": "The chat tool layer admits POST /api/proposals/elevation for set-datum only; element elevation actions stay refused. The repository owner reviews and merges the PR; GH-644 changes other functions of tool_calls.py.",
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/chat/studio_tool.py",
-        "apps/monkeyhub/api/monkeyhub_api/chat/tool_calls.py",
-        "apps/monkeyhub/api/tests/test_chat_levels.py",
-        "apps/monkeyhub/api/tests/test_chat.py"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
