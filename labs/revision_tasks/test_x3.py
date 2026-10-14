@@ -219,6 +219,16 @@ def test_the_sf_server_submits_a_change_and_adopts_its_file(state_file):
     assert [t["name"] for t in listed] == list(x3_sf_mcp.TOOLS)
 
 
+def test_a_file_to_file_revision_is_audited_for_what_it_kept(state_file):
+    root, path = state_file
+    server = x3_sf_mcp.StateFileServer({"file": str(path), "out": str(root / "out-transfer"), "user_message": "Widen the door to 1.5 m.",
+                                        "max_calls": 2})
+    server.call("submit_change", {"parameters": {"door_width": 1.5}})
+    audit = x3.transfer_audit(path, server.current)
+    assert audit["parent_ok"] and audit["lost"] == {} and audit["counts_before"] == audit["counts_after"]
+    assert audit["counts_before"]["parameters"] > 0 and audit["counts_before"]["relations"] > 0
+
+
 def _bundle(*, changed: bool, final: str, unlanded: dict | None = None) -> dict:
     summary = {"changed": ["obj-a"] if changed else [], "added": [], "removed": [], "unrequested": [],
                "measures": {"m1": "held"}, "conditions": {"K1": "held"}, "verdict": "held"}

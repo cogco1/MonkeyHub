@@ -442,6 +442,8 @@ class Session:
             current = json.loads((work_cfg / "states" / "current.json").read_text(encoding="utf-8")) if (work_cfg / "states" / "current.json").exists() else {}
             new = Path(current.get("current", str(self.model)))
             info.update(landed_by="agent" if new != self.model else None, submissions=current.get("submissions", []))
+            if new != self.model:
+                info["transfer"] = transfer_audit(self.model, new)
             tried = [row for row in info["submissions"] if row.get("file") and not row.get("adopted")]
             if info["landed_by"] is None and tried:
                 info["unlanded_candidate"] = {"model": {"path": tried[-1]["file"]}, "rule": "the last submission tried without adopt"}
@@ -665,6 +667,31 @@ def _states_limitation(final: str) -> bool:
     return any(w in text for w in LIMITATION_WORDS) and not any(w in text for w in DONE_WORDS)
 
 
+def transfer_audit(before: Path, after: Path) -> dict[str, Any]:
+    """What one file-to-file revision kept (SF): per part of the state, the ids the earlier file carried and the later one
+    lacks, the ids it added, and whether the later file names the earlier one as its parent. A parameter's value may
+    change; only a key that disappears counts as lost."""
+
+    from labs.revision_tasks import reviser
+
+    a, b = reviser.read_state_file(before, fmt="3dm"), reviser.read_state_file(after, fmt="3dm")
+
+    def ids(state: Any) -> dict[str, set[str]]:
+        record = state.record
+        return {"decisions": {str(d.get("decisionId")) for d in (state.context_pack or {}).get("scopedDecisions") or []},
+                "obligations": {o.obligation_id for o in record.obligations},
+                "relations": {r.relation_id for r in record.relations},
+                "entities": {e.entity_id for e in record.entities},
+                "parameters": {p.key for p in record.parameters}}
+
+    x, y = ids(a), ids(b)
+    return {"before_sha256": a.file_sha256, "after_sha256": b.file_sha256,
+            "parent_ok": b.binding.get("parent_file_sha256") == a.file_sha256,
+            "lost": {k: sorted(x[k] - y[k]) for k in x if x[k] - y[k]},
+            "added": {k: sorted(y[k] - x[k]) for k in x if y[k] - x[k]},
+            "counts_before": {k: len(v) for k, v in x.items()}, "counts_after": {k: len(v) for k, v in y.items()}}
+
+
 def harness_added(mode: str) -> list[str]:
     """What the lab adds to each way of working, beyond the product (recorded in every bundle)."""
 
@@ -686,6 +713,8 @@ def csv_row(bundle: dict[str, Any]) -> dict[str, Any]:
             "conditions_violated": "|".join(k for k, v in o["conditions"].items() if v == "violated"),
             "measures_failed": "|".join(k for k, v in o["measures"].items() if v != "held"),
             "changed": s["changed"], "unrequested": len(s["unrequested"]), "landed_by": first.get("landed_by"),
+            "transfer_lost": ";".join(f"{k}:{len(v)}" for k, v in (first.get("transfer") or {}).get("lost", {}).items()),
+            "transfer_parent_ok": (first.get("transfer") or {}).get("parent_ok"),
             "correction": (bundle.get("correction") or {}).get("key"), "tool_calls": s["tool_calls"],
             "input_tokens": s["tokens"]["input"], "output_tokens": s["tokens"]["output"], "cost_usd": s["cost_usd"], "seconds": s["seconds"],
             "cli_session": first["turn"].get("cli_session_id")}
