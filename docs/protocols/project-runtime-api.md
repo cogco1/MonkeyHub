@@ -376,6 +376,7 @@ One chain, and each arrow is a route.
    `GET /api/construction/model[?run=]`, the model in construction terms, and sends it back with its
    construction script (`POST /api/proposals/construction`;
    [the construction contract](../design/construction-api.md#32-the-agent-contract-after-this-change)).
+   Without `run` (or `sourceStageRef`) both answer the Working Head (§4.1).
 2. **Propose.** `POST /api/proposals` (a sentence already in the grammar) or `POST /api/intents`
    (any words; the server resolves what they are about, its agent compiles them into the grammar
    and the grammar types them). Either way the answer is the *record's* proposal: a typed
@@ -1497,7 +1498,10 @@ adopting the architect's own Sync, or the Hub Agent continuing on the user's bou
 Q3). A change the user asked for is continued that way once its result is admitted: the request is
 the Continue (#575, revising GH-234 Q2). A generated candidate, including a continuation of the base,
 is recorded and shown but never adopted by the Runtime itself (GH-234 Q1). An unreadable position falls back to the
-main line's accepted head and then the reference run, with a warning. A position whose run has a live
+main line's accepted head and then the reference run, with a warning. A request that names neither a run nor a Stage
+stands on this head too (#640): `GET /api/state`, `GET /api/construction/model` and a proposal without `sourceRunId`
+answer the working design, not the main line's last accepted Stage, so a session given no design source edits what
+the person works on. When the position cannot be read they fall back the same way and say so in `honesty`. A position whose run has a live
 rejection (§5.5) stays the head and adds a warning; only Continue moves it. Resolving it writes nothing, takes no project
 guard and never picks a newest file. A continuation keeps its source position's branch, so a
 fork's work stays on the fork although it shares the parent's earlier Stages. A candidate's

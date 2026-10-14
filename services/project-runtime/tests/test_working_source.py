@@ -105,6 +105,49 @@ class WorkingSourceTests(WorkingSourceFixture):
         self.state_of(first)
         self.assertEqual(self.working_source()["head"]["runId"], second)
 
+    def test_a_read_that_names_no_run_answers_the_working_design(self):
+        # #640: a session given no design source reads what it would edit. Once Continue has moved
+        # the working design past the line's Stage, a read and a proposal that omit the run stand
+        # on the Working Head, not on that Stage.
+        stage = self.initialize()
+        first = self.candidate_from(stage)
+        self.assertEqual(self.client.get("/api/state").json()["referenceRun"]["runId"], stage["candidateId"],
+                         "a generated result does not move what a read answers")
+        self.adopt(first)
+        head = self.working_source()["head"]
+        self.assertNotEqual(head["stateDigest"], stage["modelSource"]["stateDigest"])
+        for path in ("/api/state", "/api/construction/model"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual((response.json()["referenceRun"]["runId"], response.json()["stateDigest"]),
+                                 (first, head["stateDigest"]))
+        proposal = self.client.post("/api/proposals", json={
+            "utterance": "set height to 2.8", "elementId": "portico-base", "targetComponentId": "portico",
+            "stateDigest": head["stateDigest"]})
+        self.assertEqual(proposal.status_code, 201, proposal.text)
+        self.assertEqual(proposal.json()["sourceRunId"], first, "the change is made from the working design")
+        stale = self.client.post("/api/proposals", json={
+            "utterance": "set height to 2.8", "elementId": "portico-base", "targetComponentId": "portico",
+            "stateDigest": stage["modelSource"]["stateDigest"]})
+        self.assertEqual((stale.status_code, stale.json()["code"]), (409, "STALE_BASE"))
+        # Naming a run or the Stage still answers exactly that.
+        self.assertEqual(self.state_of(stage["candidateId"])["stateDigest"], stage["modelSource"]["stateDigest"])
+        named = self.client.get("/api/state", params={"sourceStageRef": stage["stageRef"]})
+        self.assertEqual(named.json()["referenceRun"]["runId"], stage["candidateId"])
+
+    def test_a_read_that_names_no_run_says_when_the_position_could_not_be_read(self):
+        stage = self.initialize()
+        self.repository.create_run("bare-run")
+        value, revision = self.repository.read_working_draft()
+        value["runs"]["bare-run"] = {"updatedAt": "2026-09-24T00:00:00+00:00", "sourceStageRef": None,
+                                     "branchId": None, "label": None, "automatic": False}
+        value["current"] = "bare-run"
+        self.repository.compare_and_swap_working_draft(expected_revision=revision, value=value)
+        body = self.client.get("/api/state").json()
+        self.assertEqual(body["referenceRun"]["runId"], stage["candidateId"])
+        self.assertTrue(any("working position could not be read" in line for line in body["honesty"]), body["honesty"])
+
     def test_an_explicit_position_is_followed_and_accepting_it_marks_it_accepted(self):
         stage = self.initialize()
         first = self.candidate_from(stage)
