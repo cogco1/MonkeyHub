@@ -1323,6 +1323,7 @@ export const chatCopy = {
     continuationRelease: "转到 Codex 继续",
     continuationReleaseHint: "释放 Hub 的空闲连接，再在 Codex 打开同一会话。请先保存或清空输入框。",
     nativeImport: "导入 Codex 会话",
+    nativeImportMenu: "导入 Codex 会话…",
     nativeImportChoose: "选择项目并导入",
     nativeImportSource: "Codex 会话 ID",
     nativeImportSourceHint: "粘贴 Codex 的 resume 会话 ID。",

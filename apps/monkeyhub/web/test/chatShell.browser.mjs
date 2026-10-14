@@ -2107,10 +2107,10 @@ async function nativeImport() {
     await page.setViewportSize({ width: zh ? 600 : 1440, height: zh ? 800 : 960 });
     const words = zh ? { title: "导入 Codex 会话", source: "Codex 会话 ID", project: "归入项目", preview: "查看来源", confirm: "导入并在此接续",
       consent: "我确认来源和目标项目，并已在 Codex 中结束、关闭此会话。", cancel: "取消", unavailable: "暂不能导入，请继续在 Codex 中使用。",
-      choose: "选择项目并导入", returnHere: "从 Codex 接回这里继续", release: "转到 Codex 继续" }
+      choose: "选择项目并导入", returnHere: "从 Codex 接回这里继续", release: "转到 Codex 继续", file: "文件", menu: "导入 Codex 会话…" }
       : { title: "Import Codex conversation", source: "Codex session ID", project: "Associate with project", preview: "Read source", confirm: "Import and continue here",
         consent: "I confirm this source and target project, and have finished and closed this session in Codex.", cancel: "Cancel", unavailable: "Import is unavailable; continue in Codex.",
-        choose: "Choose project and import", returnHere: "Continue here from Codex", release: "Continue in Codex" };
+        choose: "Choose project and import", returnHere: "Continue here from Codex", release: "Continue in Codex", file: "File", menu: "Import Codex conversation…" };
     const sourceId = `first-import-${language}`;
     const source = { title: `Imported original ${language}`, providerCwd: `D:\\native-source\\${language}\\original-folder`,
       sourceReferences: [{ messageId: "native-answer", uri: "file:///D:/native-source/source-only.png", name: "source-only.png", availability: "source-only" }],
@@ -2120,7 +2120,10 @@ async function nativeImport() {
     nativeImportSources.set(`${sourceId}-unsupported`, { ...source, canContinue: false });
     assert.equal(sessions.some((row) => row.continuationSessionId === sourceId || row.sourceSessionId === sourceId), false, "first import has no Hub chat row");
     await page.goto(origin);
-    const entry = page.getByRole("button", { name: words.title, exact: true });
+    // A session Hub has not seen is imported from the File menu; the conversation header keeps its room.
+    const fileMenu = page.getByRole("menuitem", { name: words.file, exact: true });
+    const entry = { click: async () => { await fileMenu.click(); await page.getByRole("menuitem", { name: words.menu, exact: true }).click(); } };
+    assert.equal(await page.locator(".chat-header").getByRole("button", { name: words.title, exact: true }).count(), 0);
     await entry.click();
     const dialog = page.getByRole("dialog", { name: words.title, exact: true });
     const read = dialog.getByRole("button", { name: words.preview, exact: true });
@@ -2185,7 +2188,7 @@ async function nativeImport() {
     await dialog.getByRole("button", { name: words.cancel, exact: true }).click();
     await dialog.waitFor({ state: "detached" });
     // Focus returns on the frame after the dialog unmounts.
-    await page.waitForFunction((label) => document.activeElement?.textContent === label, words.title, { timeout: 2000 })
+    await page.waitForFunction((label) => document.activeElement?.textContent === label, words.file, { timeout: 2000 })
       .catch(async () => assert.fail(`closing restores keyboard focus; focused: ${await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 200))}`));
 
     // Codex already presents this conversation in the Hub, but it runs outside the project:
@@ -3288,7 +3291,7 @@ try {
   await page.keyboard.press("ArrowDown");
   const fileMenu = page.getByRole("menu", { name: "File", exact: true });
   assert.deepEqual((await fileMenu.getByRole("menuitem").allInnerTexts()).map((text) => text.trim()),
-    ["New chat", "New project…", "Add existing project…", "Reload project from disk", "Export project archive…",
+    ["New chat", "New project…", "Add existing project…", "Import Codex conversation…", "Reload project from disk", "Export project archive…",
       "Restore project archive…", "Settings…"]);
   await page.keyboard.press("Escape");
   await fileMenu.waitFor({ state: "detached" });

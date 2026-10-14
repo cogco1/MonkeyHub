@@ -2042,6 +2042,8 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       { kind: "command", id: "new-chat", label: mw.newChat, onSelect: startChat },
       { kind: "command", id: "new-project", label: mw.newProject, onSelect: () => { setDialogError(null); newDialog.current?.showModal(); } },
       { kind: "command", id: "add-project", label: mw.addProject, onSelect: () => { setDialogError(null); addDialog.current?.showModal(); } },
+      { kind: "command", id: "import-codex", label: t.nativeImportMenu, disabled: busy || handoffBusy || running || !projects.length,
+        onSelect: () => openNativeImport("") },
       { kind: "command", id: "reload-project", label: t.reloadProject, disabled: !projectRuntime || reloading, onSelect: () => void reloadProject() },
       { kind: "separator", id: "archive" },
       { kind: "command", id: "export", label: mw.exportArchive, disabled: !project,
@@ -2161,8 +2163,6 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             project surface, whose bar has the chip, is on screen, so exactly one chip shows. */}
         {headerChip && <button type="button" className="chat-header__chip" aria-description={t.openInTree} title={t.openInTree}
           onClick={() => void openTool("tree")}><Icon name="tree" /><span>{headerChip}</span></button>}
-        <button type="button" className="chat-activity__open" disabled={busy || handoffBusy || running || !projects.length}
-          onClick={() => openNativeImport("")}>{t.nativeImport}</button>
         {shownChat?.provider === "codex" && shownChat.continuationSessionId && !external && !archived &&
           <button type="button" className="chat-activity__open" disabled={running || busy || handoffBusy || Boolean(draft.trim()) || attachments.length > 0}
             title={t.continuationReleaseHint} onClick={() => void handoffNative("release")}>{t.continuationRelease}</button>}

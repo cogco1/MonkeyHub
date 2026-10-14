@@ -1367,6 +1367,7 @@ export const chatCopy = {
     continuationRelease: "Continue in Codex",
     continuationReleaseHint: "Release this idle Hub connection, then open the same session in Codex. Save or clear the composer first.",
     nativeImport: "Import Codex conversation",
+    nativeImportMenu: "Import Codex conversation…",
     nativeImportChoose: "Choose project and import",
     nativeImportSource: "Codex session ID",
     nativeImportSourceHint: "Paste the session ID from Codex resume.",
