@@ -1,27 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-613",
-      "status": "active",
-      "branch": "codex/613-codex-roundtrip",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-613-codex-roundtrip",
-      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": "Move the import entry for unseen Codex sessions from the conversation header to the File menu, which CI's 390 px header check needs. The repository owner reviews and merges PR #627.",
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/web/src/ChatShell.tsx",
-        "apps/monkeyhub/web/src/i18n/messages.en.ts",
-        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs",
-        "apps/monkeyhub/README.md",
-        "docs/development/work-environment.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
