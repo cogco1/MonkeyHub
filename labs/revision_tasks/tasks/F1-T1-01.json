@@ -1,0 +1,232 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "F1-T1-01",
+  "family": "F1",
+  "task_type": "T1_legal_local",
+  "stage_context": {
+    "stage": "technical",
+    "earlier_stages": [
+      "massing",
+      "architecture"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "F1-portico",
+    "version": "1",
+    "generator": "labs/revision_tasks/fixtures.py:f1_portico",
+    "files_sha256": {
+      "labs/revision_tasks/fixtures.py": "9e2e38311067fd4b9f5c894a3cccd7ef462c6aa54bd49488a316203e7f300837"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:F1-portico@1",
+    "content_digest": "125a354db3cb58ef2849beb41f7f19c069032e71f5925872e5658fd9bb0b4b99",
+    "exact_base_digest": "61a4109433cc164f6bb2b3379871778af5b428e98b96acbec38415c4c5aea95c"
+  },
+  "history": {
+    "history_ref": null,
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "intended_change": {
+    "text_en": "Reduce the portico from six to four columns; the end columns stay where they are and the spacing stays equal.",
+    "typed_delta": [
+      {
+        "target": "parameter:column_count",
+        "parameter": "column_count",
+        "from": 6,
+        "to": 4
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "P1",
+      "kind": "contact",
+      "entities": [
+        "stylobate",
+        "columns"
+      ],
+      "tolerance_m": 0.001,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "support_contact",
+        "lower": [
+          "obj-stylobate"
+        ],
+        "upper": [
+          "obj-columns-0",
+          "obj-columns-1",
+          "obj-columns-2",
+          "obj-columns-3"
+        ],
+        "tolerance_m": 0.001
+      }
+    },
+    {
+      "id": "P2",
+      "kind": "contact",
+      "entities": [
+        "columns",
+        "entablature"
+      ],
+      "tolerance_m": 0.001,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "support_contact",
+        "each": "lower",
+        "lower": [
+          "obj-columns-0",
+          "obj-columns-1",
+          "obj-columns-2",
+          "obj-columns-3"
+        ],
+        "upper": [
+          "obj-entablature"
+        ],
+        "tolerance_m": 0.001
+      }
+    },
+    {
+      "id": "P3",
+      "kind": "equality",
+      "entities": [
+        "columns"
+      ],
+      "tolerance_m": 0.005,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "column_row",
+        "prefix": "obj-columns-",
+        "count": 4,
+        "equal_spacing_tolerance_m": 0.005
+      }
+    },
+    {
+      "id": "P4",
+      "kind": "equality",
+      "entities": [
+        "columns"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "column_row",
+        "prefix": "obj-columns-",
+        "count": 4,
+        "first_x": 0.9,
+        "last_x": 11.1,
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "P5",
+      "kind": "bound",
+      "entities": [
+        "columns",
+        "entablature"
+      ],
+      "tolerance_m": 0.0,
+      "declared_in_graph": true,
+      "source": "stage:technical/obligation:p5-clear-spacing",
+      "measure": {
+        "check": "column_row",
+        "prefix": "obj-columns-",
+        "count": 4,
+        "max_clear_spacing_m": 3.0
+      }
+    },
+    {
+      "id": "P6",
+      "kind": "contact",
+      "entities": [
+        "entablature",
+        "pediment"
+      ],
+      "tolerance_m": 0.001,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "support_contact",
+        "lower": [
+          "obj-entablature"
+        ],
+        "upper": [
+          "obj-pediment"
+        ],
+        "tolerance_m": 0.001
+      }
+    },
+    {
+      "id": "P7",
+      "kind": "equality",
+      "entities": [
+        "stylobate",
+        "entablature",
+        "pediment"
+      ],
+      "tolerance_m": 0.0,
+      "declared_in_graph": false,
+      "source": "fixture:unrelated-geometry",
+      "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+          "obj-stylobate",
+          "obj-entablature",
+          "obj-pediment"
+        ]
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [
+      "columns"
+    ],
+    "obligations_to_recheck": [
+      "P2",
+      "P3",
+      "P5"
+    ],
+    "expected_verdict": "held",
+    "acceptable_arm_outcomes": [
+      "accept"
+    ],
+    "annotated_by": "executor-draft",
+    "annotated_at": "2026-10-14T05:30:00Z",
+    "physical_basis": "Stylobate 12.0 m; end column axes at x = 0.9 and 11.1 m; four columns give spacing 3.4 m and clear spacing 2.5 m <= 3.0 m. Entablature spans the fixed end columns and does not move."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "68c43c963f09ee04f28716a5befe6f3fcd9128685efebf53fac15cdaca36fbe1",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 300,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "arm accepts and the oracle holds every protected relation",
+    "failure": "any other arm outcome, or an accepted candidate the oracle finds violated",
+    "partial": "none"
+  }
+}

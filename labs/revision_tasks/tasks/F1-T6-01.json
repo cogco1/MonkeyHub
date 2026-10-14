@@ -1,0 +1,131 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "F1-T6-01",
+  "family": "F1",
+  "task_type": "T6_contradictory",
+  "stage_context": {
+    "stage": "technical",
+    "earlier_stages": [
+      "massing",
+      "architecture"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "F1-portico",
+    "version": "1",
+    "generator": "labs/revision_tasks/fixtures.py:f1_portico",
+    "files_sha256": {
+      "labs/revision_tasks/fixtures.py": "9e2e38311067fd4b9f5c894a3cccd7ef462c6aa54bd49488a316203e7f300837"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:F1-portico@1",
+    "content_digest": "125a354db3cb58ef2849beb41f7f19c069032e71f5925872e5658fd9bb0b4b99",
+    "exact_base_digest": "61a4109433cc164f6bb2b3379871778af5b428e98b96acbec38415c4c5aea95c"
+  },
+  "history": {
+    "history_ref": null,
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "intended_change": {
+    "text_en": "Use four columns, keep the end columns fixed, and tighten the clear spacing limit to 2.0 m.",
+    "typed_delta": [
+      {
+        "target": "parameter:column_count",
+        "parameter": "column_count",
+        "from": 6,
+        "to": 4
+      },
+      {
+        "target": "parameter:max_clear_spacing",
+        "parameter": "max_clear_spacing",
+        "from": 3.0,
+        "to": 2.0
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "P4",
+      "kind": "equality",
+      "entities": [
+        "columns"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "column_row",
+        "prefix": "obj-columns-",
+        "count": 4,
+        "first_x": 0.9,
+        "last_x": 11.1,
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "P5",
+      "kind": "bound",
+      "entities": [
+        "columns",
+        "entablature"
+      ],
+      "tolerance_m": 0.0,
+      "declared_in_graph": true,
+      "source": "stage:technical/obligation:p5-clear-spacing (limit tightened to 2.0 m by this request)",
+      "measure": {
+        "check": "column_row",
+        "prefix": "obj-columns-",
+        "count": 4,
+        "max_clear_spacing_m": 2.0
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [
+      "columns"
+    ],
+    "obligations_to_recheck": [
+      "P4",
+      "P5"
+    ],
+    "expected_verdict": "refuse",
+    "acceptable_arm_outcomes": [
+      "refuse"
+    ],
+    "annotated_by": "executor-draft",
+    "annotated_at": "2026-10-14T05:30:00Z",
+    "physical_basis": "With the end column axes fixed at 0.9 and 11.1 m, four columns of 0.9 m diameter leave 2.5 m clear between columns; 2.5 m > 2.0 m, so no four-column layout satisfies the request. PROVISIONAL: manifest v1 states the limit as 2.5 m, which four columns meet exactly; 2.0 m is used until the manifest is corrected."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "68c43c963f09ee04f28716a5befe6f3fcd9128685efebf53fac15cdaca36fbe1",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 300,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "arm refuses and produces no accepted candidate",
+    "failure": "arm accepts, reopens or produces an accepted candidate",
+    "partial": "none"
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "F3-T5-01",
+  "family": "F3",
+  "task_type": "T5_missing_information",
+  "stage_context": {
+    "stage": "technical",
+    "earlier_stages": [
+      "architecture"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "F3-wall-stair",
+    "version": "1",
+    "generator": "labs/revision_tasks/fixtures.py:f3_wall_stair",
+    "files_sha256": {
+      "labs/revision_tasks/fixtures.py": "9e2e38311067fd4b9f5c894a3cccd7ef462c6aa54bd49488a316203e7f300837"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:F3-wall-stair@1",
+    "content_digest": "f3295f7b18abc05f0e870e0a77439c8aee05f32a95be7d4828e06cd0cf7562c7",
+    "exact_base_digest": "85a39b8fc61eb102c28d6bca67578f3cff03ff93013928f3759b59624b595d1f"
+  },
+  "history": {
+    "history_ref": null,
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "intended_change": {
+    "text_en": "Change the storey height and re-fit the stair to the new upper floor level (the new level is not given).",
+    "typed_delta": [
+      {
+        "target": "parameter:storey_height",
+        "parameter": "storey_height",
+        "from": 3.0,
+        "to": null
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "S1",
+      "kind": "bound",
+      "entities": [
+        "stair",
+        "slab-l2"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:technical",
+      "measure": {
+        "check": "stair",
+        "object": "obj-stair",
+        "slab": "obj-slab-l2",
+        "base_z": 0.0,
+        "top_z": 3.0,
+        "max_rise_m": 0.18,
+        "min_going_m": 0.28,
+        "min_headroom_m": 2.0
+      }
+    },
+    {
+      "id": "D1",
+      "kind": "equality",
+      "entities": [
+        "wall"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "aperture",
+        "host": "obj-wall",
+        "x": [
+          1.4,
+          2.6
+        ],
+        "z": [
+          0.0,
+          2.1
+        ],
+        "tolerance_m": 0.002
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [
+      "stair",
+      "slab-l2",
+      "wall"
+    ],
+    "obligations_to_recheck": [
+      "S1"
+    ],
+    "expected_verdict": "refuse",
+    "acceptable_arm_outcomes": [
+      "refuse",
+      "unknown"
+    ],
+    "annotated_by": "executor-draft",
+    "annotated_at": "2026-10-14T05:30:00Z",
+    "physical_basis": "The stair's rise, the wall height and the L2 slab all follow the upper floor level; without its new value there is no determinate geometry to produce."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "68c43c963f09ee04f28716a5befe6f3fcd9128685efebf53fac15cdaca36fbe1",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [
+    "new storey height / L2 elevation not given"
+  ],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 300,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "arm refuses (or reports unknown) naming the missing value, and produces no candidate",
+    "failure": "arm produces or accepts a candidate",
+    "partial": "none"
+  }
+}

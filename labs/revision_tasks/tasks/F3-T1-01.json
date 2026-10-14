@@ -1,0 +1,308 @@
+{
+  "spec_version": "TaskSpec@paper/1",
+  "task_id": "F3-T1-01",
+  "family": "F3",
+  "task_type": "T1_legal_local",
+  "stage_context": {
+    "stage": "technical",
+    "earlier_stages": [
+      "architecture"
+    ]
+  },
+  "fixture": {
+    "fixture_id": "F3-wall-stair",
+    "version": "1",
+    "generator": "labs/revision_tasks/fixtures.py:f3_wall_stair",
+    "files_sha256": {
+      "labs/revision_tasks/fixtures.py": "9e2e38311067fd4b9f5c894a3cccd7ef462c6aa54bd49488a316203e7f300837"
+    }
+  },
+  "start_state": {
+    "state_ref": "fixture:F3-wall-stair@1",
+    "content_digest": "f3295f7b18abc05f0e870e0a77439c8aee05f32a95be7d4828e06cd0cf7562c7",
+    "exact_base_digest": "85a39b8fc61eb102c28d6bca67578f3cff03ff93013928f3759b59624b595d1f"
+  },
+  "history": {
+    "history_ref": null,
+    "n_events": 0,
+    "sha256": null,
+    "tokens": 0
+  },
+  "contexts": {},
+  "intended_change": {
+    "text_en": "Widen the door opening from 1.2 m to 1.6 m about its centre; the lintel keeps 0.15 m bearing at each end.",
+    "typed_delta": [
+      {
+        "target": "parameter:door_width",
+        "parameter": "door_width",
+        "from": 1.2,
+        "to": 1.6
+      }
+    ]
+  },
+  "protected_relations": [
+    {
+      "id": "D1",
+      "kind": "equality",
+      "entities": [
+        "wall"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:architecture",
+      "measure": {
+        "check": "aperture",
+        "host": "obj-wall",
+        "x": [
+          1.2,
+          2.8
+        ],
+        "z": [
+          0.0,
+          2.1
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "D2",
+      "kind": "bound",
+      "entities": [
+        "wall",
+        "lintel"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:technical",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-lintel",
+        "min": [
+          1.05,
+          -0.2,
+          2.1
+        ],
+        "max": [
+          2.95,
+          0.0,
+          2.3
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "D3",
+      "kind": "equality",
+      "entities": [
+        "wall"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:technical",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-door-frame-wall-door-left",
+        "min": [
+          1.2,
+          -0.2,
+          0.0
+        ],
+        "max": [
+          1.25,
+          0.0,
+          2.05
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "D4",
+      "kind": "equality",
+      "entities": [
+        "wall"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:technical",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-door-frame-wall-door-right",
+        "min": [
+          2.75,
+          -0.2,
+          0.0
+        ],
+        "max": [
+          2.8,
+          0.0,
+          2.05
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "D5",
+      "kind": "equality",
+      "entities": [
+        "wall"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:technical",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-door-frame-wall-door-top",
+        "min": [
+          1.2,
+          -0.2,
+          2.05
+        ],
+        "max": [
+          2.8,
+          0.0,
+          2.1
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "D6",
+      "kind": "bound",
+      "entities": [
+        "wall"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:technical",
+      "measure": {
+        "check": "within",
+        "object": "obj-door-leaf-wall-door-0",
+        "region_min": [
+          1.25,
+          -0.2,
+          0.0
+        ],
+        "region_max": [
+          2.75,
+          0.0,
+          2.05
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "D7",
+      "kind": "equality",
+      "entities": [
+        "wall"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:technical",
+      "measure": {
+        "check": "bbox",
+        "object": "obj-door-leaf-wall-door-0",
+        "min": [
+          1.25,
+          -0.04,
+          0.01
+        ],
+        "max": [
+          2.75,
+          0.0,
+          2.045
+        ],
+        "tolerance_m": 0.002
+      }
+    },
+    {
+      "id": "S1",
+      "kind": "bound",
+      "entities": [
+        "stair",
+        "slab-l2"
+      ],
+      "tolerance_m": 0.002,
+      "declared_in_graph": true,
+      "source": "stage:technical",
+      "measure": {
+        "check": "stair",
+        "object": "obj-stair",
+        "slab": "obj-slab-l2",
+        "base_z": 0.0,
+        "top_z": 3.0,
+        "max_rise_m": 0.18,
+        "min_going_m": 0.28,
+        "min_headroom_m": 2.0
+      }
+    },
+    {
+      "id": "U1",
+      "kind": "equality",
+      "entities": [
+        "stair",
+        "slab-l2"
+      ],
+      "tolerance_m": 0.0,
+      "declared_in_graph": false,
+      "source": "fixture:unrelated-geometry",
+      "measure": {
+        "check": "geometry_unchanged",
+        "objects": [
+          "obj-stair",
+          "obj-slab-l2"
+        ]
+      }
+    }
+  ],
+  "gold": {
+    "affected_entities": [
+      "wall",
+      "lintel"
+    ],
+    "obligations_to_recheck": [
+      "D1",
+      "D2",
+      "D3",
+      "D4",
+      "D5",
+      "D6",
+      "D7"
+    ],
+    "expected_verdict": "held",
+    "acceptable_arm_outcomes": [
+      "accept"
+    ],
+    "annotated_by": "executor-draft",
+    "annotated_at": "2026-10-14T05:30:00Z",
+    "physical_basis": "Door centre at 2.0 m: opening x 1.2-2.8 m, sill 0, head 2.1 m, through the 0.2 m wall. Lintel 1.05-2.95 m (0.15 m bearing each side) at 2.1-2.3 m. Frame 0.05 m inside the opening; jambs end at 2.05 m under the head piece. Leaf 0.04 m thick on the wall's inner face, inside the frame, 0.01 m above the floor and 0.005 m under the head piece. Stair and L2 slab are untouched."
+  },
+  "oracle": {
+    "oracle_id": "geometry-readback-oracle",
+    "version": "1",
+    "sha256": "68c43c963f09ee04f28716a5befe6f3fcd9128685efebf53fac15cdaca36fbe1",
+    "method": "cold_readback_geometry",
+    "reads_metadata": false
+  },
+  "unknowns": [],
+  "backend": {
+    "kernel": "occt",
+    "versions": {}
+  },
+  "model_runtime": {
+    "model_id": null,
+    "effort": null,
+    "max_tokens": null
+  },
+  "budget": {
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "wall_clock_s": 300,
+    "usd_cap": 0
+  },
+  "rubric": {
+    "success": "arm accepts and the oracle holds every protected relation",
+    "failure": "any other arm outcome, or an accepted candidate the oracle finds violated",
+    "partial": "none"
+  }
+}
