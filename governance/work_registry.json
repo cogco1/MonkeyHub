@@ -1,25 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-644",
-      "status": "active",
-      "branch": "codex/644-admit-and-continue",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-644-admit-and-continue",
-      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": "An admission from chat says where the working design stands and can continue onto the admitted result in the same call. The repository owner reviews and merges the PR; GH-640 changes Project Runtime reads separately.",
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/chat/tool_calls.py",
-        "apps/monkeyhub/api/monkeyhub_api/chat/mcp_server.py",
-        "apps/monkeyhub/api/monkeyhub_api/chat/guides.py",
-        "apps/monkeyhub/api/tests/test_chat_admission.py"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
