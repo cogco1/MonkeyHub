@@ -32,7 +32,10 @@ _HEX = frozenset("0123456789abcdef")
 ASSET_URI_PATTERN = r"^(?![Ff][Ii][Ll][Ee]://)[A-Za-z][A-Za-z0-9+.-]*://"
 
 _URI_SCHEME = re.compile(ASSET_URI_PATTERN)
-_MAX_ITEMS = 16_384
+# How many ids or refs one list of a program may hold, among them the objects
+# one component's semantic binding delivers. A refusal names it with the
+# count that crossed it (#648).
+MAX_PROGRAM_IDS = 16_384
 
 
 class GeometryProgramError(ValueError):
@@ -163,6 +166,14 @@ class DetailMaturity(StrEnum):
 
 
 
+def _count(values: object, field: str, *, allow_empty: bool) -> None:
+    if len(values) > MAX_PROGRAM_IDS:
+        raise GeometryProgramError(f"{field} holds {len(values):,} items; a geometry program allows at most "
+                                   f"{MAX_PROGRAM_IDS:,} per list")
+    if not values and not allow_empty:
+        raise GeometryProgramError(f"{field} must not be empty")
+
+
 def _ids(
     values: object,
     field: str,
@@ -171,8 +182,7 @@ def _ids(
 ) -> tuple[str, ...]:
     if not isinstance(values, tuple):
         raise TypeError(f"{field} must be a tuple")
-    if len(values) > _MAX_ITEMS or (not values and not allow_empty):
-        raise GeometryProgramError(f"{field} has an invalid item count")
+    _count(values, field, allow_empty=allow_empty)
     for value in values:
         require_identifier(value, field)
     if values != tuple(sorted(set(values))):
@@ -193,8 +203,7 @@ def _statements(value: object) -> Mapping[str, str]:
 
     if not isinstance(value, Mapping):
         raise TypeError("statements must be a mapping")
-    if len(value) > _MAX_ITEMS:
-        raise GeometryProgramError("statements has an invalid item count")
+    _count(value, "statements", allow_empty=True)
     normalized: dict[str, str] = {}
     for key in value:
         require_identifier(key, "statement key")
@@ -213,8 +222,7 @@ def _refs(
 ) -> tuple[str, ...]:
     if not isinstance(values, tuple):
         raise TypeError(f"{field} must be a tuple")
-    if len(values) > _MAX_ITEMS or (not values and not allow_empty):
-        raise GeometryProgramError(f"{field} has an invalid item count")
+    _count(values, field, allow_empty=allow_empty)
     for value in values:
         require_logical_ref(value, field)
     if values != tuple(sorted(set(values))):
@@ -451,6 +459,10 @@ class SemanticBinding:
     def __post_init__(self) -> None:
         require_identifier(self.binding_id, "binding_id")
         require_identifier(self.component_id, "component_id")
+        if isinstance(self.object_ids, tuple) and len(self.object_ids) > MAX_PROGRAM_IDS:
+            raise GeometryProgramError(
+                f"component {self.component_id} delivers {len(self.object_ids):,} objects; one component delivers "
+                f"at most {MAX_PROGRAM_IDS:,}: split it into smaller components")
         _ids(self.object_ids, "binding object_ids")
         _refs(
             self.commitment_refs,

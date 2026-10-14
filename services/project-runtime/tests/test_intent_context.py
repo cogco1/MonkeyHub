@@ -746,5 +746,35 @@ class StudyEvidenceContextRouteTests(DesignHistoryFixture):
         self.assertEqual(evidence["reopen"]["ledgerRef"], saved["ledgerRef"])
 
 
+class FocusBoundTests(unittest.TestCase):
+    """elementIds says its bound and what to do instead (#648)."""
+
+    def test_more_than_64_elements_are_refused_with_the_way_forward(self) -> None:
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        from project_runtime.settings import StudioSettings
+        from .support import make_project, runner_state_digest
+
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        repository, _ = make_project(root)
+        with TestClient(create_app(StudioSettings(cad_export="off", project_dir=root / PROJECT_ID))) as client:
+            schema = client.get("/openapi.json").json()["components"]["schemas"]["ContextPackRequestDto"]
+            described = schema["properties"]["elementIds"]["description"]
+            self.assertIn("at most 64", described)
+            self.assertIn("leave it out", described)
+            response = client.post("/api/intents/context", json={
+                "projectId": PROJECT_ID, "sourceRunId": REFERENCE_RUN_ID,
+                "stateDigest": runner_state_digest(repository, REFERENCE_RUN_ID),
+                "utterance": "check these", "elementIds": [f"e-{index}" for index in range(65)]})
+        self.assertEqual(response.status_code, 422, response.text)
+        detail = response.json()["detail"]
+        self.assertIn("65", detail)
+        self.assertIn("at most 64", detail)
+        self.assertIn("leave elementIds out", detail)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,9 @@ from __future__ import annotations
 import tempfile
 import unittest
 from dataclasses import replace
+from unittest.mock import patch
+
+from archflow.state import state_record as state_record_module
 from pathlib import Path
 
 from archflow.project.repository import FilesystemProjectRepository
@@ -1116,6 +1119,18 @@ class StateRecordTests(unittest.TestCase):
             self.assertEqual(bound_a.digest, record.digest)
             self.assertEqual(bound_b.digest, record.digest)
             self.assertNotEqual(bound_a.state_digest, bound_b.state_digest)
+
+
+class SectionBoundRefusalTests(unittest.TestCase):
+    """A State Record section's bound is named with the count that crossed it (#648)."""
+
+    def test_a_section_over_the_bound_is_named_with_its_count(self) -> None:
+        record = _record()
+        count = len(record.entities)
+        with patch.object(state_record_module, "MAX_SECTION_ITEMS", count - 1):
+            with self.assertRaisesRegex(StateRecordError, f"entities holds {count:,} items; a State Record holds at "
+                                                          f"most {count - 1:,} per section"):
+                StateRecord("demo", "run-1", record.entities)
 
 
 if __name__ == "__main__":

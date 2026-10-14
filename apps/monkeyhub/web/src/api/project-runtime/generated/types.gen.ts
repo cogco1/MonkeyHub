@@ -2759,6 +2759,8 @@ export type ContextPackRequestDto = {
     sourceStageRef?: string | null;
     /**
      * Elementids
+     *
+     * the Element@1 ids in focus, at most 64; leave it out to ask about the whole design, and the words choose the focus through the same context compiler an intent uses
      */
     elementIds?: Array<string>;
     /**
