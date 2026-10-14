@@ -63,7 +63,9 @@ _OPENING_REFUSED = {
 
 @router.get("/construction", response_model=ConstructionVocabularyDto, response_model_by_alias=True)
 def read_construction_vocabulary() -> ConstructionVocabularyDto:
-    """The construction language: conventions, verbs, limits and one example. Nothing needs to be discovered first."""
+    """The construction language: conventions, verbs, limits and one example. Nothing needs to be discovered first.
+
+    level(id) measures from a project level. A project level is added or moved with POST /api/proposals/elevation, action set-datum with levelId and value in metres; what stands on that level follows it."""
 
     return ConstructionVocabularyDto.model_validate(vocabulary())
 

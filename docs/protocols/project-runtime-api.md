@@ -138,7 +138,7 @@ tolerate it.
 | GET | `/api/episodes/{episodeId}` | one of them | server memory + reads shared | provisional |
 | GET | `/api/candidates/{candidateId}/compare?against=` | before / after / why, from the inspection records both runs retained | reads shared | provisional |
 | GET | `/api/events` | the server-sent event stream (§7) | server memory | provisional |
-| GET | `/api/state/frame` | the record's frame: each `Level@1` and `GridAxis@1` with its role, its value, the elements whose own references name it, and the closure of changing it; `honesty[]` | reads work in progress + shared + published | provisional |
+| GET | `/api/state/frame` | the record's frame: each `Level@1` and `GridAxis@1` with its role, its value, the elements whose own references name it, and the closure of changing it; `honesty[]`. Read-only: a level is added or moved with `POST /api/proposals/elevation` `set-datum`, and what stands on it follows | reads work in progress + shared + published | provisional |
 | POST | `/api/state/closure` | what changing `changedRefs` would move, and the propagating edges that carried it. Reads only; the POST carries the list and the `stateDigest` it is asked against | reads work in progress + shared + published | provisional |
 | GET | `/api/state/volumes` | the record's `Volume@1` boxes with their levels and their own plan area, and what the massing as a whole measures (§5.3) | reads work in progress + shared + published | provisional |
 | POST | `/api/options` → 201 | one massing option: a deterministic transform of the record's own pack, measured, with the findings of the envelope the request carried (§5.3) | server memory, pack **written into shared** as its own `option-NNN` run | provisional |

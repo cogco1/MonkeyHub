@@ -215,6 +215,78 @@
         "packages/archflow/tests/test_project_repository.py"
       ],
       "status_note": "Initial input preparation is verified through real OCCT modeling and drawing tests; image interpretation is a separate task."
+    },
+    {
+      "capability_id": "frame.set_level",
+      "owner": "project_runtime.intent",
+      "execution_owner": "project_runtime.candidate",
+      "kind": "authoring",
+      "status": "PARTIAL",
+      "purpose": "Add a project level or move one to a new elevation, with whatever stands on it following through the record's own dependency edges, and run the result as a new candidate on the same exact source.",
+      "purpose_zh": "新增一个楼层，或把楼层移到新标高；站在这层上的构件按记录里的依赖一起移动，结果在同一精确来源上生成新候选。",
+      "goals": [
+        "raise a floor",
+        "lower a floor",
+        "move a level",
+        "add a level",
+        "set a level elevation",
+        "抬高楼层",
+        "降低楼层",
+        "改楼层标高",
+        "新增楼层"
+      ],
+      "aliases": [
+        "move a storey",
+        "抬高二层",
+        "楼层标高"
+      ],
+      "requires": [
+        "bound_project",
+        "exact_source: the run this candidate is edited from",
+        "stateDigest of that source"
+      ],
+      "reads": [
+        "the exact retained StateRecord",
+        "its Level@1 entities and dependency edges"
+      ],
+      "writes": [
+        "a proposal in memory; the candidate route retains the run through P036"
+      ],
+      "effects": [
+        "one Level@1 added or its elevation changed; dependent elements rebuilt by the candidate"
+      ],
+      "inputs_ref": "/openapi.json#/components/schemas/ElevationEditRequestDto",
+      "entrypoints": [
+        "GET /api/state/frame",
+        "POST /api/proposals/elevation",
+        "POST /api/proposals/{proposal_id}/candidate"
+      ],
+      "composes": [
+        "project_runtime.intent: set-datum as one edit_components proposal",
+        "project_runtime.candidate: rebuild and read back what depends on the level"
+      ],
+      "produces": [
+        "a candidate run whose levels and dependent geometry read back at the new elevation"
+      ],
+      "validators": [],
+      "estimated_cost": "One proposal and one candidate run; no model call.",
+      "works": [
+        "moving an existing level keeps its role and basis",
+        "a shape a construction script placed at level(id) follows the level",
+        "adding a new level by a new levelId"
+      ],
+      "missing": [
+        "a relative offset: read the level's elevation from GET /api/state/frame first",
+        "removing a level"
+      ],
+      "ui": {
+        "preview": "MonkeyArch"
+      },
+      "tests": [
+        "services/project-runtime/tests/test_construction_routes.py",
+        "services/project-runtime/tests/test_capabilities.py"
+      ],
+      "status_note": "The operation is the existing set-datum action of POST /api/proposals/elevation; it is described here so a goal finds it."
     }
   ],
   "modules": [

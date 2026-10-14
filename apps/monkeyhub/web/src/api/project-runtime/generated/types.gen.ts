@@ -4578,19 +4578,27 @@ export type ElevationEditRequestDto = {
     elementId?: string | null;
     /**
      * Action
+     *
+     * set-datum adds or moves a project level; the others edit one element's base, top or height
      */
     action: 'set-base' | 'set-top' | 'set-height' | 'bind-base' | 'bind-top' | 'detach-base' | 'detach-top' | 'set-datum';
     /**
      * Value
+     *
+     * metres: the level's elevation above the project's zero for set-datum, else the element's new base, top or height
      */
     value?: number | null;
     reference?: ElevationReferenceDto | null;
     /**
      * Levelid
+     *
+     * set-datum only: the level to move, as GET /api/state/frame lists it; a new id adds a level
      */
     levelId?: string | null;
     /**
      * Name
+     *
+     * set-datum only: the level's name
      */
     name?: string | null;
     /**

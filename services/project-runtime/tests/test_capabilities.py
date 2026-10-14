@@ -53,6 +53,18 @@ class CapabilityIndexTestCase(unittest.TestCase):
             self.assertEqual(entry["owner"], "project_runtime.intent")
             self.assertIn("POST /api/capabilities/{capability_id}/run", entry["entrypoints"])
 
+    def test_a_level_change_is_found_and_named_by_its_own_route(self) -> None:
+        for goal in ("raise a floor", "move a level", "抬高楼层", "改楼层标高"):
+            body = self.client.get("/api/capabilities", params={"goal": goal}).json()
+            self.assertEqual([row["capabilityId"] for row in body["capabilities"]], ["frame.set_level"], goal)
+        entry = body["capabilities"][0]
+        self.assertIn("POST /api/proposals/elevation", entry["entrypoints"])
+        refused = self.client.post("/api/capabilities/frame.set_level/run", json={
+            "stateDigest": self.client.get("/api/state").json()["stateDigest"],
+            "targetComponentId": "portico", "elementId": "portico-base", "utterance": "set height to 0.9"})
+        self.assertEqual((refused.status_code, refused.json()["code"]), (422, "CAPABILITY_NOT_RUNNABLE_HERE"), refused.text)
+        self.assertIn("POST /api/proposals/elevation", refused.json()["detail"])
+
     def test_the_whole_index_is_one_read(self) -> None:
         body = self.client.get("/api/capabilities").json()
         self.assertEqual(body["matchCount"], body["registered"])

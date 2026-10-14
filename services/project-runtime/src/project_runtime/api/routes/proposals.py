@@ -388,7 +388,14 @@ def create_push_pull_proposal(request: Request, body: PushPullRequestDto) -> Pro
 
 @router.post("/proposals/elevation", response_model=ProposalDto, response_model_by_alias=True, status_code=201)
 def create_elevation_proposal(request: Request, body: ElevationEditRequestDto) -> ProposalDto:
-    """Edit a prism's elevation or a simple datum through the same exact-base candidate chain."""
+    """Edit a prism's elevation or a project level through the same exact-base candidate chain.
+
+    set-datum adds or moves a project level - one of the levels GET /api/state/frame lists and a construction
+    script's level(id) measures from - to value metres above the project's zero. An existing level keeps its
+    role and basis; a new levelId is added with its role named after it. Whatever stands on the level follows
+    it through the record's own dependency edges: the impact lists it, and the candidate route rebuilds and
+    reads it back. The other actions edit one element's base, top or height.
+    """
 
     binding, base, projection, previous, body = _proposal_source(request, body)
     if body.state_digest != projection.state_digest:

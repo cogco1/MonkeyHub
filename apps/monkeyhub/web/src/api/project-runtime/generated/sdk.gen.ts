@@ -168,6 +168,8 @@ export const readStateApiStateGet = <ThrowOnError extends boolean = false>(optio
  *
  * The levels and axes this record positions everything against.
  *
+ * Read-only. A project level is added or moved with POST /api/proposals/elevation, action set-datum with levelId and value in metres; what stands on that level follows it.
+ *
  * Read off ``projection.record`` and nothing else, so it asks with
  * ``require_view=False`` for the same reason ``GET /api/state`` does: a
  * record the kernel would not build a bound view for still declares its own
@@ -930,7 +932,13 @@ export const createPushPullProposalApiProposalsPushPullPost = <ThrowOnError exte
 /**
  * Create Elevation Proposal
  *
- * Edit a prism's elevation or a simple datum through the same exact-base candidate chain.
+ * Edit a prism's elevation or a project level through the same exact-base candidate chain.
+ *
+ * set-datum adds or moves a project level - one of the levels GET /api/state/frame lists and a construction
+ * script's level(id) measures from - to value metres above the project's zero. An existing level keeps its
+ * role and basis; a new levelId is added with its role named after it. Whatever stands on the level follows
+ * it through the record's own dependency edges: the impact lists it, and the candidate route rebuilds and
+ * reads it back. The other actions edit one element's base, top or height.
  */
 export const createElevationProposalApiProposalsElevationPost = <ThrowOnError extends boolean = false>(options: Options<CreateElevationProposalApiProposalsElevationPostData, ThrowOnError>): RequestResult<CreateElevationProposalApiProposalsElevationPostResponses, CreateElevationProposalApiProposalsElevationPostErrors, ThrowOnError> => (options.client ?? client).post<CreateElevationProposalApiProposalsElevationPostResponses, CreateElevationProposalApiProposalsElevationPostErrors, ThrowOnError>({
     url: '/api/proposals/elevation',
@@ -986,6 +994,8 @@ export const decideProposalApiProposalsProposalIdDecisionPost = <ThrowOnError ex
  * Read Construction Vocabulary
  *
  * The construction language: conventions, verbs, limits and one example. Nothing needs to be discovered first.
+ *
+ * level(id) measures from a project level. A project level is added or moved with POST /api/proposals/elevation, action set-datum with levelId and value in metres; what stands on that level follows it.
  */
 export const readConstructionVocabularyApiConstructionGet = <ThrowOnError extends boolean = false>(options?: Options<ReadConstructionVocabularyApiConstructionGetData, ThrowOnError>): RequestResult<ReadConstructionVocabularyApiConstructionGetResponses, ReadConstructionVocabularyApiConstructionGetErrors, ThrowOnError> => (options?.client ?? client).get<ReadConstructionVocabularyApiConstructionGetResponses, ReadConstructionVocabularyApiConstructionGetErrors, ThrowOnError>({ url: '/api/construction', ...options });
 
