@@ -7200,7 +7200,7 @@
         "GET /api/chat/sessions/{id}/documents/{messageId}/{index}",
         "presentation_bind and chat_present: local MCP binding and result presentation without provider invocation; native chat_present exposes progress/assistant with streaming status only (older complete requests normalize to streaming), completed by CLI turn end; external presentation retains user/progress/assistant and caller-controlled status",
         "studio_request /api/decisions: GET latest/history, POST current-user avoid/keep feedback and POST feedback-only revoke through existing Runtime authorization; studio_schema derives the narrowed inputs from Runtime OpenAPI",
-        "studio_request POST /api/admissions (hub-chat, message-bound, with the loop's taskClass) and PUT /api/working-draft (a Continue on the user's bound words), with GET /api/admissions, /api/working-source and /api/working-draft/revision; studio_schema hides the bound fields",
+        "studio_request POST /api/admissions (hub-chat, message-bound, with the loop's taskClass; continue: true also continues the working design onto its one admitted result in the same call, and every chat admission answers workingDesign: headRunId, onWorkingDesign and a ready continueWith, #644) and PUT /api/working-draft (a Continue on the user's bound words), with GET /api/admissions, /api/working-source and /api/working-draft/revision; studio_schema hides the bound fields",
         "GET /api/updates/status",
         "GET /api/updates/restart",
         "POST /api/updates/prepare",
