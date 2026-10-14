@@ -20,6 +20,7 @@ from labs.revision_tasks import _bootstrap  # noqa: F401  (source roots first)
 
 import argparse
 import csv
+import hashlib
 import json
 import subprocess
 import sys
@@ -89,11 +90,35 @@ def tost(c: list[float], d: list[float], margin: float) -> dict[str, Any]:
     return {"mean_c_s": mean(c), "mean_d_s": mean(d), "ratio": mean(c) / mean(d), "margin": margin, "p": p, "equivalent_at_0.05": p < 0.05}
 
 
-def run(out: Path, *, sizes: tuple[int, ...], revisions: int, arms: tuple[str, ...], formats: tuple[str, ...]) -> dict[str, Any]:
+def _discard(folder: Path, stem: str) -> None:
+    """Remove one superseded revision's files and work directory (``--keep-models`` only: a compute server's own output)."""
+
+    import shutil
+
+    for path in folder.glob(f"{stem}.*"):
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+
+
+def run(out: Path, *, sizes: tuple[int, ...], revisions: int, arms: tuple[str, ...], formats: tuple[str, ...],
+        keep_models: int | None = None, min_free_gb: float | None = None) -> dict[str, Any]:
+    """``keep_models``: keep the model files of the start and the first ``keep_models`` revisions of each chain and remove
+    each later one once the next revision has read it (sizes, hashes and timings are recorded first). ``min_free_gb``:
+    stop before a revision when the output disk has less free space; what ran so far is written."""
+
+    import shutil
+
     rows: list[dict[str, Any]] = []
+    stopped = None
     for n in sizes:
+        if stopped:
+            break
         record = grid(n)
         for fmt in formats:
+            if stopped:
+                break
             chains: dict[str, tuple[Path, Path | None, dict[str, float]]] = {}
             for arm in arms:
                 folder = out / f"n{n}" / f"{arm}-{fmt}"
@@ -107,6 +132,9 @@ def run(out: Path, *, sizes: tuple[int, ...], revisions: int, arms: tuple[str, .
                              **{f"write_{k}": v for k, v in written.seconds.items()}})
                 chains[arm] = (written.path, written.sidecar, {f"h_{k}": 3.0 for k in range(n)})
             for i in range(1, revisions + 1):
+                if min_free_gb is not None and shutil.disk_usage(out).free / 1e9 < min_free_gb:
+                    stopped = f"free space below {min_free_gb} GB before n={n} {fmt} r{i:02d}"
+                    break
                 key = f"h_{(i * 7919) % n}"
                 for arm in arms:
                     path, sidecar, values = chains[arm]
@@ -122,24 +150,29 @@ def run(out: Path, *, sizes: tuple[int, ...], revisions: int, arms: tuple[str, .
                     written = revision.written
                     values[key] = new
                     chains[arm] = (written.path, written.sidecar, values)
+                    if keep_models is not None and i - 1 > keep_models:
+                        _discard(folder, f"r{i - 1:02d}")
                     seconds = revision.seconds
                     rows.append({"n": n, "arm": arm, "format": fmt, "revision": i, "claim": revision.claim, "total_s": total,
                                  "read_s": seconds.get("read_s"), "patch_s": seconds.get("patch_s"),
                                  "kernel_s": seconds.get("write_realize_s"), "write_s": seconds.get("write_write_s"),
                                  "state_bytes": state_bytes(written.path, fmt, written.sidecar), "file_bytes": written.path.stat().st_size,
                                  "rewrite_bytes": written.path.stat().st_size + (written.sidecar.stat().st_size if written.sidecar else 0),
-                                 "cold_read_s": cold_read(written.path, fmt, written.sidecar)})
+                                 "cold_read_s": cold_read(written.path, fmt, written.sidecar),
+                                 "file_sha256": hashlib.sha256(written.path.read_bytes()).hexdigest()})
                 print(f"n={n} {fmt} r{i:02d} " + " ".join(f"{r['arm']}={r['total_s']:.2f}s" for r in rows[-len(arms):]), flush=True)
     fields = ["n", "arm", "format", "revision", "claim", "total_s", "read_s", "patch_s", "kernel_s", "write_s", "cold_read_s",
-              "state_bytes", "file_bytes", "rewrite_bytes", "write_context_pack_s", "write_realize_s", "write_write_s"]
+              "state_bytes", "file_bytes", "rewrite_bytes", "file_sha256", "write_context_pack_s", "write_realize_s", "write_write_s"]
     with (out / "x7.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, restval="")
         writer.writeheader()
         writer.writerows(rows)
-    summary: dict[str, Any] = {}
+    summary: dict[str, Any] = {"stopped": stopped} if stopped else {}
     for n in sizes:
         for fmt in formats:
             cell: dict[str, Any] = {}
+            if not any(r["n"] == n and r["format"] == fmt and r["revision"] > 0 for r in rows):
+                continue
             for arm in arms:
                 chain = [r for r in rows if r["n"] == n and r["format"] == fmt and r["arm"] == arm and r["revision"] > 0]
                 cell[arm] = {k: median(r[k] for r in chain) for k in ("total_s", "read_s", "patch_s", "kernel_s", "write_s", "cold_read_s",
@@ -160,6 +193,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--revisions", type=int, default=30)
     parser.add_argument("--arms", default="C-full,D")
     parser.add_argument("--formats", default="3dm,glb")
+    parser.add_argument("--keep-models", type=int, help="keep only the start and this many revisions' model files per chain")
+    parser.add_argument("--min-free-gb", type=float, help="stop before a revision when the output disk has less free space")
     parser.add_argument("--cold-read", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--format", help=argparse.SUPPRESS)
     parser.add_argument("--sidecar", type=Path, help=argparse.SUPPRESS)
@@ -176,7 +211,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"{out} is not empty")
     out.mkdir(parents=True, exist_ok=True)
     summary = run(out, sizes=tuple(int(s) for s in args.sizes.split(",")), revisions=args.revisions,
-                  arms=tuple(args.arms.split(",")), formats=tuple(args.formats.split(",")))
+                  arms=tuple(args.arms.split(",")), formats=tuple(args.formats.split(",")), keep_models=args.keep_models,
+                  min_free_gb=args.min_free_gb)
     print(json.dumps(summary, indent=1, sort_keys=True))
     return 0
 
