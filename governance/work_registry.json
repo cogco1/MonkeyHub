@@ -1,22 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-640",
-      "status": "active",
-      "branch": "codex/640-working-design-reads",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-640-working-design-reads",
-      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": "Reads that name neither a run nor a Stage follow the Working Head. The repository owner reviews and merges the PR; GH-644 changes the Hub chat tool layer separately.",
-      "modules": [
-        "project_runtime.binding"
-      ],
-      "write_scope": [
-        "services/project-runtime/src/project_runtime/application/projection.py"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
