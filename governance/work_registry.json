@@ -1,34 +1,4 @@
 {
   "schema": "ArchFlowDevelopmentRegistry@3",
-  "items": [
-    {
-      "id": "GH-646",
-      "status": "active",
-      "branch": "codex/646-level-proposal",
-      "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\codex-646-level-proposal",
-      "base_ref": "389b054839f549501cf91b9e9518dd0930b832cd",
-      "contributor": "Claude",
-      "reviewer": null,
-      "handoff": "Moving or adding a project level already works through POST /api/proposals/elevation set-datum; the frame, the construction language, the route's own description and a written-down capability now say so, with tests that a scripted shape follows its level.",
-      "modules": [
-        "project_runtime.intent",
-        "project_runtime.binding",
-        "project_runtime.construction"
-      ],
-      "write_scope": [
-        "services/project-runtime/src/project_runtime/api/routes/proposals.py",
-        "services/project-runtime/src/project_runtime/api/dto/proposal.py",
-        "services/project-runtime/src/project_runtime/api/routes/state.py",
-        "services/project-runtime/src/project_runtime/api/routes/construction.py",
-        "services/project-runtime/tests/test_construction_routes.py",
-        "services/project-runtime/tests/test_capabilities.py",
-        "apps/monkeyhub/web/src/api/project-runtime/generated/types.gen.ts",
-        "apps/monkeyhub/web/src/api/project-runtime/generated/sdk.gen.ts",
-        "apps/monkeyhub/web/src/api/project-runtime/generated/index.ts",
-        "docs/design/construction-api.md",
-        "docs/protocols/project-runtime-api.md"
-      ],
-      "depends_on": []
-    }
-  ]
+  "items": []
 }
