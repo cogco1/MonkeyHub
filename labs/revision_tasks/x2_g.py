@@ -54,7 +54,9 @@ INTRO = PROMPTS / "g_intro.md"
 ARM = "G"
 PART = "x2_g"
 TURN_BUDGET_USD = x3.TURN_BUDGET_USD      # a runaway guard; the binding limits are the 20 calls and 600 s
-MAX_TURNS = x3.MAX_TURNS
+# G's own cap, stated in prompts/g_intro.md and frozen with it: it does not follow X3's (x3_hub.MAX_TOOL_CALLS).
+G_MAX_CALLS = 20
+MAX_TURNS = 24                            # as G was frozen: G_MAX_CALLS design calls, the presentation calls and the answer
 TIMEOUT_S = x3.REQUEST_TIMEOUT_S
 CATEGORY = {"held": "held", "violated": "blocked", "refuse": "blocked", "unknown": "unknown", "flag_rejected": "flag_rejected"}
 HARNESS_ADDED = ("tool_call_cap_20", "history_rejections_recorded_as_decisions", "prepared_context_for_working_design")
@@ -250,6 +252,13 @@ def score(answer: dict[str, Any] | None, task: dict[str, Any], family: str, judg
 
 # ---------------------------------------------------------------- one round
 
+def proxy_settings(child: dict[str, Any], log: Path) -> dict[str, Any]:
+    """The lab proxy in front of MonkeyHub's server for one G round: every tool, G's own cap (``G_MAX_CALLS``)."""
+
+    return x3_hub.proxy_settings(child, log=log, restricted=False, max_calls=G_MAX_CALLS)
+
+
+
 def run_round(task: dict[str, Any], repeat: int, start: dict[str, Any], out: Path, *, cli: str | None, ledger: x2.Ledger, part: str,
               settings_file: Path, budget_usd: float = TURN_BUDGET_USD,
               turn: Callable[..., dict[str, Any]] = x3_hub.run_turn) -> dict[str, Any]:
@@ -276,7 +285,7 @@ def run_round(task: dict[str, Any], repeat: int, start: dict[str, Any], out: Pat
         child = x3_hub.mcp_config(hub_url=services.hub_url, project_dir=services.project_dir, session_id=session)["mcpServers"][x3_hub.SERVER]
         proxy_dir = round_dir / "proxy"
         proxy_dir.mkdir()
-        settings = x3_hub.proxy_settings(child, log=proxy_dir / "calls.jsonl", restricted=False)
+        settings = proxy_settings(child, proxy_dir / "calls.jsonl")
         (proxy_dir / "proxy.json").write_text(json.dumps(settings, indent=1), encoding="utf-8", newline="\n")
         mcp = {"mcpServers": {x3_hub.SERVER: x3_hub.proxy_server_config(proxy_dir / "proxy.json")}}
         done = turn(task["utterance"], workdir=round_dir / "turn", cli=cli, ledger=ledger, part=part, hub_url=services.hub_url,
@@ -351,7 +360,7 @@ def run(out: Path, *, families: tuple[str, ...], repeats: int, first_repeat: int
     identity = {"started_at": datetime.now(timezone.utc).isoformat(), "harness": runner.harness_identity(), "arm": ARM,
                 "prompt_files_sha256": x2.prompt_files_sha256(), "model": x2.MODEL, "part": part, "limit_usd": limit_usd,
                 "turn_budget_usd": budget_usd, "spent_part_before": ledger.spent(part), "tasks": [t["task_id"] for t in chosen],
-                "repeats": list(range(first_repeat, first_repeat + repeats)), "max_tool_calls": x3_hub.MAX_TOOL_CALLS,
+                "repeats": list(range(first_repeat, first_repeat + repeats)), "max_tool_calls": G_MAX_CALLS,
                 "timeout_s": TIMEOUT_S, "max_turns": MAX_TURNS, "scripted_turn": turn is not x3_hub.run_turn,
                 "command": x3_hub.command("claude", Path("mcp.json"), max_turns=MAX_TURNS, budget_usd=budget_usd,
                                          system_prompt_file=Path("prompts/system_common.md"), settings_file=Path("settings.json"))[1:]}

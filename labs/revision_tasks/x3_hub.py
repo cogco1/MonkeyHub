@@ -307,7 +307,7 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
                 arguments = item.get("input") if isinstance(item.get("input"), dict) else {}
                 server, short = (name.split("__", 2)[1:] if name.startswith("mcp__") and name.count("__") >= 2 else (None, name))
                 call = {"name": short, "server": server}
-                for key in ("method", "path", "kind", "taskClass", "awaitSeconds", "pathPrefix", "section", "adopt"):
+                for key in ("method", "path", "kind", "taskClass", "awaitSeconds", "pathPrefix", "section", "adopt", "rebuild_from_state"):
                     if key in arguments:
                         call[key] = arguments[key]
                 if isinstance(arguments.get("body"), dict):
@@ -645,6 +645,30 @@ def continue_on(services: HubServices, run_id: str) -> dict[str, Any]:
     return {k: answer.get(k) for k in ("revisionSha256", "current")}
 
 
+def attach_model(services: HubServices, path: Path, file_name: str) -> dict[str, Any]:
+    """The architect attaches a model file: ``POST /api/model-assets`` with the file's bytes and no run or state, sent as
+    the Hub page sends a Studio write (``studio_write``). The Runtime keeps it as an external model asset (its own run
+    ``studio-model-<sha256>``, no design state); the asset is checked to be these exact bytes."""
+
+    import base64
+
+    project_id = json.loads((services.project_dir / "project.json").read_text(encoding="utf-8"))["project_id"]
+    data = Path(path).read_bytes()
+    answer = studio_write(services.hub_url, services.runtime_id, "POST", "/api/model-assets",
+                          {"projectId": project_id, "fileName": file_name, "contentBase64": base64.b64encode(data).decode("ascii")})
+    sha = hashlib.sha256(data).hexdigest()
+    if answer.get("sha256") != sha or answer.get("representation") != "external":
+        raise X3Error(f"the attached model was registered as {answer.get('representation')} {answer.get('sha256')}, not external {sha}")
+    return {key: answer.get(key) for key in ("artifactId", "runId", "fileName", "sha256", "sizeBytes", "objectCount", "representation",
+                                             "designStateDigest", "available", "receiptRef")}
+
+
+def attachment_line(attached: dict[str, Any]) -> str:
+    """The one line the request carries for an attached model: its name and the ids the Runtime gave it."""
+
+    return f"(Attached: {attached['fileName']}, model asset {attached['sha256']}, run {attached['runId']}.)"
+
+
 def transcript_bytes(session_ids: list[str], projects_root: Path | None = None) -> dict[str, Any]:
     """Read-only: the size of the CLI's transcripts for these session ids in its default projects directory (M+)."""
 
@@ -670,7 +694,12 @@ T_NOTE = ("In this session only these Studio actions are available: GET /api/con
           "POST /api/proposals/construction, GET /api/proposals/{id}, POST /api/proposals/{id}/candidate, GET /api/candidates/{id}, "
           "GET /api/candidates/{id}/compare, GET /api/jobs/{id}, POST /api/project/modeling. Every other action is refused. "
           "The guide below describes the whole Studio.\n\n")
-MAX_TOOL_CALLS = 20
+# A file hand-over (A10, B10) in T and H: the read MonkeyHub offers a client for a model asset's own objects, added for
+# that request only (harness_added "returned_file_readable"), as (method, path pattern, the path as the note names it).
+# The Runtime answers it for a state-bound asset only: an attached file's run has no exact state, so the read is refused
+# (REFERENCE_STATE_NOT_EXACT) in M as in T and H, and the index it gives carries no geometry (see README, X3 sessions).
+T_HANDOVER_REQUESTS = (("GET", r"/api/model-assets/[0-9a-f]{64}/index", "GET /api/model-assets/{assetSha256}/index"),)
+MAX_TOOL_CALLS = 30          # design calls per request (protocol calls do not count); X2's G keeps its own 20
 # MonkeyHub's presentation protocol for an external host (bind, then present the user's message and the answer): it does
 # no work on the design and SF has none, so these calls do not count toward MAX_TOOL_CALLS.
 PROTOCOL_TOOLS = ("presentation_bind", "chat_present")
@@ -683,14 +712,23 @@ def proxy_server_config(config_file: Path, python: str = sys.executable) -> dict
 
 
 def proxy_settings(child: dict[str, Any], *, log: Path, restricted: bool, max_calls: int = MAX_TOOL_CALLS,
-                   user_message: str | None = None, base_run: str | None = None) -> dict[str, Any]:
+                   user_message: str | None = None, base_run: str | None = None,
+                   extra_requests: tuple[tuple[str, str, str], ...] = ()) -> dict[str, Any]:
     """The proxy's own configuration: the child server it fronts, the call cap, and for T/H the allow-list, the
     user message it publishes into the bound conversation itself (so the agent spends no call on presentation) and
-    the run to read and write against when the agent names none (``base_run``, the Working Head)."""
+    the run to read and write against when the agent names none (``base_run``, the Working Head). ``extra_requests``
+    (T/H only, e.g. ``T_HANDOVER_REQUESTS``) widens this request's allow-list and its note."""
 
     settings: dict[str, Any] = {"child": [child["command"], *child["args"]], "log": str(log), "max_calls": max_calls}
     if restricted:
-        settings.update(tools=list(T_TOOLS), requests=[list(r) for r in T_REQUESTS], note=T_NOTE, drop_instructions=True)
+        note = T_NOTE
+        if extra_requests:
+            note = T_NOTE.replace("POST /api/project/modeling. Every other", "POST /api/project/modeling, "
+                                  + ", ".join(shown for _, _, shown in extra_requests) + ". Every other")
+        settings.update(tools=list(T_TOOLS), requests=[list(r) for r in T_REQUESTS] + [[m, p] for m, p, _ in extra_requests],
+                        note=note, drop_instructions=True)
+    elif extra_requests:
+        raise ValueError("extra_requests widen T/H's allow-list; M has no allow-list")
     if user_message is not None:
         settings["user_message"] = user_message
     if base_run is not None:

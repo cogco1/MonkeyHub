@@ -23,11 +23,18 @@ T and H, which have no landing tool, the candidate the answer names (else the tu
 harness as the architect's Continue on the Hub page; SF, the file the agent's last adopted submission wrote.
 
 Every turn: the common system prompt (``prompts/x3_system.md``), x2's fairness flags (``x3_hub.command``), at most
-20 tool calls (the lab proxy or the SF server refuses later calls) and 600 s, its cost in the shared ledger.
-One bundle per request (``<session>/<request>.bundle.json``), a session CSV and summary.
+30 design tool calls (the lab proxy or the SF server refuses later calls; MonkeyHub's presentation calls do not count)
+and 600 s, its cost in the shared ledger. One bundle per request (``<session>/<request>.bundle.json``), a session CSV
+and summary.
 
-Not built here: the file hand-over (A10/B10) in the Hub modes, which needs the returned model imported into the
-project; GH (paused).
+The file hand-over (A10, B10; ``Session.hand_over``): the harness makes the consultant's file from the design as it
+stands (``external_edit``: one named object moved, everything else kept) and keeps it beside the bundle. SF: it becomes
+the current file; ``submit_change`` refuses it (its geometry no longer matches its binding) unless the agent asks for
+``rebuild_from_state``, which discards and lists the outside change. Hub modes: the architect attaches it (an external
+model asset, ``x3_hub.attach_model``) and the request names it. MonkeyHub offers no read of an attached model's objects
+with their positions, so a Hub agent cannot see the outside change unless it finds another way (protocol 7.16: run as
+is, a measured product gap; ``HUB_HANDOVER_READY`` only switches it off). The request is judged against the design as recorded; the score adds
+``external_change_reported_auto`` and ``external_change_adopted``. GH is paused.
 """
 
 from __future__ import annotations
@@ -56,12 +63,23 @@ MODES = ("M", "M+", "T", "H", "SF")
 HUB_MODES = ("M", "M+", "T", "H")
 REQUEST_TIMEOUT_S = 600
 TURN_BUDGET_USD = 3.0          # a runaway guard, not the binding limit (manifest 7.11)
-MAX_TURNS = 24                 # 20 tool calls (the binding cap), the answer and a margin
+MAX_TURNS = 40                 # 30 design calls (the binding cap), the presentation protocol, progress messages and the answer
 OUTCOMES = ("complete", "correct_not_landed", "honest_limitation", "wrong", "asked_rightly", "asked_wrongly", "repeated_explanation", "external_change_reported")
 
 
 class NotBuilt(RuntimeError):
     """A step this harness does not perform yet; the session stops there and says so."""
+
+
+# The file hand-over (A10, B10). The consultant's file and its delivery are built in every mode; in the Hub modes the
+# session still stops at it (NotBuilt) until the protocol owner decides, because MonkeyHub gives a client no read of an
+# attached model's objects: the Runtime keeps the file as an external model asset (POST /api/model-assets, its own run
+# studio-model-<sha256> with no design state), and GET /api/model-assets/{sha256}/index requires an exact run state
+# (REFERENCE_STATE_NOT_EXACT for that run) and carries native metadata only, no geometry, by design. A dry run sets this.
+HUB_HANDOVER_READY = True
+HUB_HANDOVER_GAP = ("the file hand-over in the Hub modes is held: MonkeyHub keeps the attached file as an external model asset, "
+                    "but offers no read of its objects (the model-asset index needs an exact run state and carries no geometry)")
+HANDOVER_FILE_NAME = "model-from-consultant.3dm"
 
 
 # ---------------------------------------------------------------- the request file
@@ -185,8 +203,16 @@ def run_oracle(relations: list[dict[str, Any]], task_id: str, candidate: Path, s
     return json.loads(out.read_text(encoding="utf-8"))
 
 
-def judge(spec: dict[str, Any], request: dict[str, Any], model: Path, start: Path, before: dict[str, Path], out: Path) -> dict[str, Any]:
-    """Conditions and the request's measures on ``model``, against ``start`` (or another request's start)."""
+def judge(spec: dict[str, Any], request: dict[str, Any], model: Path, start: Path, before: dict[str, Path], out: Path, *,
+          delivered: Path | None = None, external: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Conditions and the request's measures on ``model``, against ``start`` (or another request's start).
+
+    A file hand-over is judged against the design as recorded before the consultant's edit (``start``). ``external`` is
+    the edit as made (``external_edit``'s record): the moved object's box as recorded and as the consultant left it are
+    two more oracle bbox relations, read into ``summary["external"]``. ``delivered`` is the file the agent was given when
+    it is not ``start`` (SF: the consultant's file is its current file); what the agent itself changed is then
+    measured against it (``summary["delivered"]``).
+    """
 
     names, start_names = object_names(model), object_names(start)
     own, elsewhere = [], {}
@@ -197,9 +223,21 @@ def judge(spec: dict[str, Any], request: dict[str, Any], model: Path, start: Pat
         else:
             own.append(row)
     changes = {"id": "x3-changes", "measure": {"check": "geometry_unchanged", "objects": sorted(set(names) & set(start_names))}}
-    report = run_oracle([*prepare(own, names, start_names), changes], f"{request['id']}", model, start, out)
+    outside = []
+    if external is not None:
+        for key, box in (("x3-external-recorded", external["box_before"]), ("x3-external-consultant", external["box_after"])):
+            outside.append({"id": key, "measure": {"check": "bbox", "object": external["object"], "min": box["min"], "max": box["max"],
+                                                 "tolerance_m": 0.002}})
+    report = run_oracle([*prepare(own, names, start_names), changes, *outside], f"{request['id']}", model, start, out)
     report["added"] = sorted(set(names) - set(start_names))
     report["removed"] = sorted(set(start_names) - set(names))
+    if delivered is not None and Path(delivered) != Path(start):
+        given = object_names(delivered)
+        own_change = {"id": "x3-changes-delivered", "measure": {"check": "geometry_unchanged", "objects": sorted(set(names) & set(given))}}
+        against = run_oracle([own_change], f"{request['id']}-vs-delivered", model, delivered, out.with_name(out.stem + ".vs-delivered.json"))
+        found = next((r for r in against.get("relations", []) if r["id"] == "x3-changes-delivered"), {})
+        report["delivered"] = {"status": found.get("status", "unchecked"), "changed": (found.get("measured") or {}).get("changed", []),
+                               "added": sorted(set(names) - set(given)), "removed": sorted(set(given) - set(names))}
     for rid, rows in elsewhere.items():
         other = before.get(rid)
         if other is None:
@@ -208,7 +246,7 @@ def judge(spec: dict[str, Any], request: dict[str, Any], model: Path, start: Pat
         extra = run_oracle(prepare(rows, names, object_names(other)), f"{request['id']}-vs-{rid}", model, other, out.with_name(out.stem + f".vs-{rid}.json"))
         report.setdefault("relations", []).extend(extra.get("relations", []))
     conditions = {r["id"] for r in spec["conditions"]}
-    relations = [r for r in report.get("relations", []) if r["id"] != "x3-changes"]
+    relations = [r for r in report.get("relations", []) if not r["id"].startswith("x3-")]     # the harness's own relations apart
     changed = next((r["measured"].get("changed", []) for r in report.get("relations", []) if r["id"] == "x3-changes"), [])
     report["summary"] = {
         "conditions": {r["id"]: r["status"] for r in relations if r["id"].split(":")[0] in conditions},
@@ -217,6 +255,15 @@ def judge(spec: dict[str, Any], request: dict[str, Any], model: Path, start: Pat
         "unrequested": sorted(n for n in [*changed, *report["added"], *report["removed"]] if not _matches(n, request["change"])),
         "verdict": "violated" if any(r["status"] == "violated" for r in relations) else
                    "unchecked" if any(r["status"] == "unchecked" for r in relations) else "held"}
+    if external is not None:
+        status = {r["id"]: r["status"] for r in report.get("relations", []) if r["id"].startswith("x3-external-")}
+        recorded, consultant = status.get("x3-external-recorded", "unchecked"), status.get("x3-external-consultant", "unchecked")
+        report["summary"]["external"] = {
+            "object": external["object"], "recorded": recorded, "consultant": consultant,
+            # adopted: the moved object stands where the consultant left it, not where the design recorded it
+            "adopted": True if consultant == "held" and recorded == "violated" else False if recorded == "held" else None}
+    if "delivered" in report:
+        report["summary"]["delivered"] = report["delivered"]
     return report
 
 
@@ -420,8 +467,9 @@ class Session:
         if spent + self.budget_usd > self.limit_usd:
             raise x2.CapReached(f"this run's limit: {spent:.2f} of {self.limit_usd:.2f} spent, a turn may spend {self.budget_usd:.2f}")
 
-    def turn(self, rid: str, kind: str, text: str) -> dict[str, Any]:
-        """One CLI turn in this mode; returns the turn record with the carried model after it."""
+    def turn(self, rid: str, kind: str, text: str, extra_requests: tuple[tuple[str, str, str], ...] = ()) -> dict[str, Any]:
+        """One CLI turn in this mode; returns the turn record with the carried model after it. ``extra_requests`` widen T
+        and H's allow-list for this turn (a file hand-over's ``x3_hub.T_HANDOVER_REQUESTS``)."""
 
         self._check_spend()
         self.turn_count += 1
@@ -443,7 +491,13 @@ class Session:
             new = Path(current.get("current", str(self.model)))
             info.update(landed_by="agent" if new != self.model else None, submissions=current.get("submissions", []))
             if new != self.model:
-                info["transfer"] = transfer_audit(self.model, new)
+                # the files between: each adopted submission's rebuilt file (rebuild_from_state) and every adopted file but the last
+                via: list[Path] = []
+                for row in (r for r in info["submissions"] if r.get("adopted")):
+                    if (row.get("rebuild") or {}).get("file"):
+                        via.append(Path(row["rebuild"]["file"]))
+                    via.append(Path(row["file"]))
+                info["transfer"] = transfer_audit(self.model, new, tuple(via[:-1]))
             tried = [row for row in info["submissions"] if row.get("file") and not row.get("adopted")]
             if info["landed_by"] is None and tried:
                 info["unlanded_candidate"] = {"model": {"path": tried[-1]["file"]}, "rule": "the last submission tried without adopt"}
@@ -455,7 +509,8 @@ class Session:
             restricted = self.mode in ("T", "H")
             head_before = self.head_model()
             settings = x3_hub.proxy_settings(child, log=work_cfg / "calls.jsonl", restricted=restricted, user_message=text if restricted else None,
-                                             base_run=head_before["run_id"] if restricted else None)
+                                             base_run=head_before["run_id"] if restricted else None,
+                                             extra_requests=extra_requests if restricted else ())
             (work_cfg / "proxy.json").write_text(json.dumps(settings, indent=1), encoding="utf-8", newline="\n")
             mcp = {"mcpServers": {x3_hub.SERVER: x3_hub.proxy_server_config(work_cfg / "proxy.json")}}
             allowed = tuple(f"mcp__{x3_hub.SERVER}__{t}" for t in x3_hub.T_TOOLS) if restricted else x3_hub.ALLOWED
@@ -504,34 +559,61 @@ class Session:
         return info
 
     # ---- one request
+    def hand_over(self, request: dict[str, Any]) -> dict[str, Any]:
+        """A file hand-over: the consultant's file, made from the design as it stands now (Hub modes: the Working Head's
+        model, ``head_model``; SF: its current file) by ``external_edit`` and kept in the session directory, then
+        delivered. Hub modes: attached as the architect attaches a file (``x3_hub.attach_model``: an external model
+        asset), the request carrying one line that names it. SF: the file becomes the current file. Returns the record
+        the bundle keeps (``design`` is what the request is judged against, ``delivered`` what the agent was given)."""
+
+        rid = request["id"]
+        if self.mode in HUB_MODES and not HUB_HANDOVER_READY:
+            raise NotBuilt(f"{rid}: {HUB_HANDOVER_GAP}")
+        design = Path(self.head_model()["path"]) if self.mode in HUB_MODES else Path(self.model)
+        edit = external_edit(design, request["external_edit"], self.dir / f"{rid.replace(chr(39), 'p')}.consultant.3dm")
+        record: dict[str, Any] = {"request": rid, "design": str(design), "edit": edit}
+        if self.mode in HUB_MODES:
+            attached = x3_hub.attach_model(self.services, Path(edit["file"]), HANDOVER_FILE_NAME)
+            record.update(delivery="attachment: POST /api/model-assets (external model asset), named in the request", attached=attached,
+                          attachment_line=x3_hub.attachment_line(attached), delivered=str(design),
+                          extra_requests=[list(r) for r in x3_hub.T_HANDOVER_REQUESTS] if self.mode in ("T", "H") else [])
+        else:
+            self.model = Path(edit["file"])
+            record.update(delivery="the consultant's file is the current file", delivered=edit["file"])
+        self._write(f"{rid.replace(chr(39), 'p')}.handover.json", record)
+        return record
+
     def request(self, request: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any]:
         rid = request["id"]
-        if request.get("external_edit"):
-            if self.mode != "SF":
-                raise NotBuilt(f"{rid}: the file hand-over in the Hub modes needs the consultant's model imported into the project")
-            self.model = external_edit(self.model, request["external_edit"], self.dir / f"external-{rid}.3dm")
-        start = self.model
+        handover = self.hand_over(request) if request.get("external_edit") else None
+        start = Path(handover["design"]) if handover else self.model
         self.before[rid] = start
         text = request["text"]
         if request.get("fixed_reply") and previous is not None and previous["oracle"]["summary"]["verdict"] == "violated":
             text = request.get("text_if_broken", text)
+        if handover and handover.get("attachment_line"):
+            text = text + "\n" + handover["attachment_line"]
+        extra = tuple(tuple(r) for r in (handover or {}).get("extra_requests", ()))
+        judged = dict(delivered=Path(handover["delivered"]), external=handover["edit"]) if handover else {}
         bundle: dict[str, Any] = {"building": self.building, "mode": self.mode, "repeat": self.repeat, "request": request, "sent_text": text,
-                                  "start_model": str(start), "turns": [], "harness_added": harness_added(self.mode)}
-        first = self.turn(rid, "request", text)
+                                  "start_model": str(start), "turns": [], "harness_added": harness_added(self.mode, bool(handover))}
+        if handover:
+            bundle["handover"] = handover
+        first = self.turn(rid, "request", text, extra)
         bundle["turns"].append(first)
-        report = judge(self.spec, request, self.model, start, self.before, self.dir / f"{rid.replace(chr(39), 'p')}.oracle.json")
+        report = judge(self.spec, request, self.model, start, self.before, self.dir / f"{rid.replace(chr(39), 'p')}.oracle.json", **judged)
         bundle["oracle"] = report
         if first.get("unlanded_candidate", {}).get("model"):
             path = Path(first["unlanded_candidate"]["model"]["path"])
             bundle["oracle_unlanded_candidate"] = judge(self.spec, request, path, start, self.before,
-                                                        self.dir / f"{rid.replace(chr(39), 'p')}.candidate.oracle.json")["summary"]
+                                                        self.dir / f"{rid.replace(chr(39), 'p')}.candidate.oracle.json", **judged)["summary"]
         fix = correction(self.spec, report)
         bundle["correction"] = fix
         if fix is not None:
-            second = self.turn(rid, "correction", fix["sentence"])
+            second = self.turn(rid, "correction", fix["sentence"], extra)
             bundle["turns"].append(second)
             bundle["oracle_after_correction"] = judge(self.spec, request, self.model, start, self.before,
-                                                      self.dir / f"{rid.replace(chr(39), 'p')}.corrected.oracle.json")
+                                                      self.dir / f"{rid.replace(chr(39), 'p')}.corrected.oracle.json", **judged)
         bundle["score"] = score(request, bundle)
         self._write(f"{rid.replace(chr(39), 'p')}.bundle.json", bundle)
         return bundle
@@ -586,35 +668,84 @@ def project_record(project) -> Any:
     return StateRecord.from_dict(json.loads((project.project_dir / production_project.RECORD_PATH).read_text(encoding="utf-8")))
 
 
-def external_edit(model: Path, edit: dict[str, Any], out: Path) -> Path:
-    """The consultant's change outside the design flow: one named mesh translated, every other byte of metadata kept."""
+def external_edit(model: Path, edit: dict[str, Any], out: Path) -> dict[str, Any]:
+    """The consultant's change outside the design flow: one named mesh translated in place and the file saved again.
+
+    rhino3dm reads the whole model and writes it back: every other object, each object's id, attributes and user text,
+    the document strings (an SF file's state and binding), layers and materials are kept as read. ``out`` must be new.
+    Returns what was done: both files' SHA-256, the object (name, id) and its box before and after.
+    """
 
     import rhino3dm
 
+    if out.exists():
+        raise NotBuilt(f"external edit: {out.name} exists")
     data = rhino3dm.File3dm.Read(str(model))
+    if data is None:
+        raise NotBuilt(f"external edit: rhino3dm cannot read {model.name}")
     found = [o for o in data.Objects if o.Attributes.Name == edit["object"]]
     if len(found) != 1:
         raise NotBuilt(f"external edit: {edit['object']} occurs {len(found)} times in {model.name}")
-    found[0].Geometry.Translate(rhino3dm.Vector3d(*edit["translate"]))
-    found[0].CommitChanges()
+    geometry = found[0].Geometry
+    before = _box(geometry)
+    # The geometry is the table's own object: translated here, it is written as moved (checked below on the saved file).
+    if not geometry.Translate(rhino3dm.Vector3d(*edit["translate"])):
+        raise NotBuilt(f"external edit: {edit['object']} could not be translated")
+    out.parent.mkdir(parents=True, exist_ok=True)
     if not data.Write(str(out), 8):
         raise NotBuilt(f"external edit: rhino3dm could not write {out.name}")
-    return out
+    saved = [o for o in rhino3dm.File3dm.Read(str(out)).Objects if o.Attributes.Name == edit["object"]]
+    after = _box(saved[0].Geometry)
+    expected = [round(a + d, 6) for a, d in zip(before["min"], edit["translate"])]
+    if any(abs(a - b) > 1e-6 for a, b in zip(after["min"], expected)):
+        raise NotBuilt(f"external edit: {edit['object']} was not saved moved ({after['min']} != {expected})")
+    return {"input": str(model), "input_sha256": _sha(model), "file": str(out), "sha256": _sha(out), "object": edit["object"],
+            "object_id": str(found[0].Attributes.Id), "translate": list(edit["translate"]), "box_before": before, "box_after": after}
+
+
+def _box(geometry: Any) -> dict[str, list[float]]:
+    box = geometry.GetBoundingBox()
+    return {"min": [round(box.Min.X, 6), round(box.Min.Y, 6), round(box.Min.Z, 6)],
+            "max": [round(box.Max.X, 6), round(box.Max.Y, 6), round(box.Max.Z, 6)]}
 
 
 # ---------------------------------------------------------------- scoring
 
 def score(request: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
-    """A provisional outcome class from what the harness can see; the transcript is coded by hand (``needs_coding``)."""
+    """A provisional outcome class from what the harness can see; the transcript is coded by hand (``needs_coding``).
+
+    A file hand-over (``external_edit``) is judged against the design as recorded; what the agent itself changed is
+    measured against the file it was given (SF: the consultant's file, ``summary["delivered"]``; Hub modes: the
+    design). Two items more: ``external_change_reported_auto`` (the answer names the moved object or says the returned
+    file differs; a flag for coding) and ``external_change_adopted`` (the oracle: the moved object stands where the
+    consultant left it). With no change of its own, asking first is acceptable (``asked_rightly``); carrying the outside
+    change without a word (SF's file, which is its design) is an unrequested change (``wrong``). In M and M+ an answer
+    that says its change is now the current design while the Working Head did not move is flagged
+    ``false_landing_claim_auto``.
+    """
 
     summary = bundle["oracle"]["summary"]
     turns = bundle["turns"]
     final = turns[0]["turn"]["summary"]["final_text"]
+    answers = "\n".join(t["turn"]["summary"]["final_text"] or "" for t in turns)
     changed = bool(summary["changed"] or summary["added"] or summary["removed"])
+    edit = request.get("external_edit")
+    delivered = summary.get("delivered")
+    own = bool(delivered["changed"] or delivered["added"] or delivered["removed"]) if delivered is not None else changed
+    external = summary.get("external") or {}
+    reported = _reports_external_change(answers, edit) if edit else None
+    adopted = external.get("adopted") if edit else None
     measures_ok = all(v == "held" for v in summary["measures"].values()) if summary["measures"] else True
     conditions_ok = all(v != "violated" for v in summary["conditions"].values())
     expected = request["expected"]["outcome"]
-    if "complete" in expected and request["expected"]["verdict"] in ("held",):
+    if edit and "complete" in expected:
+        if own:
+            outcome = "complete" if measures_ok and conditions_ok and not summary["unrequested"] else "wrong"
+        elif "?" in final:
+            outcome = "asked_rightly"
+        else:
+            outcome = "wrong" if adopted and not reported else "no_change"
+    elif "complete" in expected and request["expected"]["verdict"] in ("held",):
         if changed and measures_ok and conditions_ok and not summary["unrequested"]:
             outcome = "complete"
         elif changed:
@@ -629,20 +760,66 @@ def score(request: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
     would_complete = bool(unlanded) and _complete(unlanded)
     if outcome in ("no_change", "asked_wrongly") and would_complete:
         outcome = "correct_not_landed"
-    limitation = not changed and not unlanded and _states_limitation(final)
+    limitation = not own and not unlanded and _states_limitation(final)
+    false_claim = _false_landing_claim(bundle.get("mode"), turns)
     classes = [outcome]
     if limitation:
         classes.append("honest_limitation?")
     if bundle.get("correction"):
         classes.append("repeated_explanation")
+    if reported:
+        classes.append("external_change_reported?")
+    if adopted and not reported:
+        classes.append("external_change_adopted_silently?")
+    if false_claim:
+        classes.append("false_landing_claim?")
     usage = [t["turn"]["usage"]["tokens"] for t in turns]
-    return {"outcome_auto": outcome, "classes_auto": classes, "needs_coding": True, "changed": changed,
+    return {"outcome_auto": outcome, "classes_auto": classes, "needs_coding": True, "changed": own,
+            **({"changed_vs_recorded": changed} if delivered is not None else {}),
             "would_complete_if_landed": would_complete if unlanded else None, "honest_limitation_auto": limitation,
+            "external_change_reported_auto": reported, "external_change_adopted": adopted, "false_landing_claim_auto": false_claim,
             "unrequested": summary["unrequested"], "measures_held": measures_ok, "conditions_held": conditions_ok,
             "corrections": 1 if bundle.get("correction") else 0,
             "tokens": {"input": sum(u["input_tokens"] for u in usage), "output": sum(u["output_tokens"] for u in usage)},
             "cost_usd": round(sum(t["turn"]["cost_usd"] for t in turns), 4), "seconds": round(sum(t["turn"]["seconds"] for t in turns), 1),
             "tool_calls": sum(t["turn"]["tool_call_count"] for t in turns)}
+
+
+DIFFERS_WORDS = ("moved", "shifted", "displaced", "differs", "different from", "does not match", "doesn't match", "mismatch",
+                 "changed outside", "outside change", "outside the design")
+RETURNED_WORDS = ("consultant", "returned", "attached", "their model", "their file")
+
+
+def _reports_external_change(text: str, edit: dict[str, Any] | None) -> bool | None:
+    """A candidate for the hand-coded item "external change reported": the answer names the moved object (with or without
+    ``obj-``), or says, within 150 characters of the consultant or the returned file, that something moved or differs."""
+
+    if not edit:
+        return None
+    low = (text or "").lower()
+    name = edit["object"].lower()
+    if name in low or name.removeprefix("obj-") in low:
+        return True
+    for word in RETURNED_WORDS:
+        at = low.find(word)
+        while at >= 0:
+            if any(w in low[max(0, at - 150):at + len(word) + 150] for w in DIFFERS_WORDS):
+                return True
+            at = low.find(word, at + 1)
+    return False
+
+
+LANDING_CLAIMS = ("is now the current design", "made it current", "now current", "on the working design", "now the working design")
+
+
+def _false_landing_claim(mode: str, turns: list[dict[str, Any]]) -> bool | None:
+    """M and M+: a turn's answer says its change is now the current or working design, yet that turn did not move the
+    Working Head (``landed_by`` is not the agent). None in the other modes. A flag for coding."""
+
+    if mode not in ("M", "M+"):
+        return None
+    return any(any(c in (t["turn"]["summary"]["final_text"] or "").lower() for c in LANDING_CLAIMS) and t.get("landed_by") != "agent"
+               for t in turns)
 
 
 def _complete(summary: dict[str, Any]) -> bool:
@@ -667,14 +844,19 @@ def _states_limitation(final: str) -> bool:
     return any(w in text for w in LIMITATION_WORDS) and not any(w in text for w in DONE_WORDS)
 
 
-def transfer_audit(before: Path, after: Path) -> dict[str, Any]:
+def transfer_audit(before: Path, after: Path, via: tuple[Path, ...] = ()) -> dict[str, Any]:
     """What one file-to-file revision kept (SF): per part of the state, the ids the earlier file carried and the later one
-    lacks, the ids it added, and whether the later file names the earlier one as its parent. A parameter's value may
-    change; only a key that disappears counts as lost."""
+    lacks, the ids it added, and whether each file names the one before it as its parent (``via``: the files between,
+    such as a file rebuilt from its state). A parameter's value may change; only a key that disappears counts as lost.
+    An earlier file whose geometry was changed outside (the consultant's) is read with every other check."""
 
-    from labs.revision_tasks import reviser
+    from labs.revision_tasks import x3_sf_mcp
 
-    a, b = reviser.read_state_file(before, fmt="3dm"), reviser.read_state_file(after, fmt="3dm")
+    try:
+        (a, stale), (b, _) = x3_sf_mcp.carried_state(before), x3_sf_mcp.carried_state(after)
+        chain = [x3_sf_mcp.carried_state(p)[0] for p in via]
+    except Exception as exc:  # noqa: BLE001 - an unreadable file is the audit's finding, not the session's end
+        return {"error": f"{type(exc).__name__}: {exc}"[:600]}
 
     def ids(state: Any) -> dict[str, set[str]]:
         record = state.record
@@ -684,24 +866,35 @@ def transfer_audit(before: Path, after: Path) -> dict[str, Any]:
                 "entities": {e.entity_id for e in record.entities},
                 "parameters": {p.key for p in record.parameters}}
 
+    files = [a, *chain, b]
     x, y = ids(a), ids(b)
-    return {"before_sha256": a.file_sha256, "after_sha256": b.file_sha256,
-            "parent_ok": b.binding.get("parent_file_sha256") == a.file_sha256,
-            "lost": {k: sorted(x[k] - y[k]) for k in x if x[k] - y[k]},
-            "added": {k: sorted(y[k] - x[k]) for k in x if y[k] - x[k]},
-            "counts_before": {k: len(v) for k, v in x.items()}, "counts_after": {k: len(v) for k, v in y.items()}}
+    audit = {"before_sha256": a.file_sha256, "after_sha256": b.file_sha256,
+             "parent_ok": all(later.binding.get("parent_file_sha256") == earlier.file_sha256 for earlier, later in zip(files, files[1:])),
+             "lost": {k: sorted(x[k] - y[k]) for k in x if x[k] - y[k]},
+             "added": {k: sorted(y[k] - x[k]) for k in x if y[k] - x[k]},
+             "counts_before": {k: len(v) for k, v in x.items()}, "counts_after": {k: len(v) for k, v in y.items()}}
+    if via:
+        audit["via_sha256"] = [f.file_sha256 for f in chain]
+    if stale is not None:
+        audit["before_geometry_stale"] = {k: stale[k] for k in ("changed", "added", "removed")}
+    return audit
 
 
-def harness_added(mode: str) -> list[str]:
-    """What the lab adds to each way of working, beyond the product (recorded in every bundle)."""
+def harness_added(mode: str, handover: bool = False) -> list[str]:
+    """What the lab adds to each way of working, beyond the product (recorded in every bundle). A file hand-over adds the
+    consultant's file (made by the harness from the design as it stands), its attachment in the Hub modes (registered as
+    the architect's act) and, in T and H, the read of the attached asset's index on the allow-list."""
 
-    common = ["tool_call_cap_20_design_calls", "request_0_written_by_harness", "simulated_architect_correction", "tool_result_size_400k",
+    common = ["tool_call_cap_30_design_calls", "request_0_written_by_harness", "simulated_architect_correction", "tool_result_size_400k",
               "prompt_says_done_means_current"]
+    if handover:
+        common.append("consultant_file_by_harness")
     if mode in ("M", "M+"):
-        return [*common, "prepared_context_for_working_design"]       # what the Hub page gives MonkeyHub's own chat
+        return [*common, "prepared_context_for_working_design", *(["attachment_registered_by_harness"] if handover else [])]
     if mode in ("T", "H"):
-        return [*common, "proxy_names_working_run", "harness_lands_named_candidate"]
-    return [*common, "hostless_reviser_tools"]
+        return [*common, "proxy_names_working_run", "harness_lands_named_candidate",
+                *(["attachment_registered_by_harness", "returned_file_readable"] if handover else [])]
+    return [*common, "hostless_reviser_tools", "sf_rebuild_from_state"]
 
 
 def csv_row(bundle: dict[str, Any]) -> dict[str, Any]:
@@ -716,6 +909,8 @@ def csv_row(bundle: dict[str, Any]) -> dict[str, Any]:
             "changed": s["changed"], "unrequested": len(s["unrequested"]), "landed_by": first.get("landed_by"),
             "transfer_lost": ";".join(f"{k}:{len(v)}" for k, v in (first.get("transfer") or {}).get("lost", {}).items()),
             "transfer_parent_ok": (first.get("transfer") or {}).get("parent_ok"),
+            "external_change_reported_auto": s.get("external_change_reported_auto"), "external_change_adopted": s.get("external_change_adopted"),
+            "false_landing_claim_auto": s.get("false_landing_claim_auto"),
             "correction": (bundle.get("correction") or {}).get("key"), "tool_calls": s["tool_calls"],
             "input_tokens": s["tokens"]["input"], "output_tokens": s["tokens"]["output"], "cost_usd": s["cost_usd"], "seconds": s["seconds"],
             "cli_session": first["turn"].get("cli_session_id")}
