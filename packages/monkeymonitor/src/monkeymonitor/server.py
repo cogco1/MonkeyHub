@@ -144,7 +144,12 @@ class MonitorData:
             paths_for_agent = self.agent_sessions.get(agent)
             if agent == "codex" or not paths_for_agent:
                 continue
-            read = list(source.read(paths_for_agent, warnings=warnings))
+            try:
+                read = list(source.read(paths_for_agent, warnings=warnings))
+            except Exception:
+                # One reader's failure on a selected file never takes the other sources down.
+                warnings.append(f"指定的 {agent} 记录读取失败；已跳过，其他来源照常。")
+                continue
             if source.existing_ids == "reject":
                 held = {event.event_id for event in events}
                 kept = [event for event in read if event.event_id not in held]

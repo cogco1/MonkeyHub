@@ -1,19 +1,25 @@
 """Read explicitly selected Claude Code session JSONL into content-free usage events.
 
 A selected session file is read with the subagent records Claude Code keeps beside
-it, ``<session>/subagents/agent-*.jsonl``; nothing else is discovered. Every file
-must lie inside the Claude home (``CLAUDE_CONFIG_DIR``, default ``~/.claude``).
+it, ``<session>/subagents/agent-*.jsonl`` and the workflow agents'
+``<session>/subagents/workflows/<run>/agent-*.jsonl``; nothing else is discovered.
+Every file must lie inside the Claude home (``CLAUDE_CONFIG_DIR``, default
+``~/.claude``).
 
 Only ``assistant`` rows that carry ``message.usage`` count. Claude Code writes one
 row per content block, so a message's rows repeat its id with counts that grow as
 the stream completes: each count is the maximum any of its rows reports, and the
-message is one model call. Message text, tool inputs and results, the working
+message is one model call. The input and cache counts are final from the first
+row; the output count is final only on a row that also carries the message's
+``stop_reason``. When no row does, the stream's closing counts were never written
+and the output stays unknown. Message text, tool inputs and results, the working
 directory and every other field are never copied; identifiers are copied only
 when they are bounded codes.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 import json
 import os
@@ -35,6 +41,12 @@ _COUNTS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_toke
 _NESTED = ("cache_creation", "output_tokens_details")
 # A field whose rows disagree names no tier, so no standard plan can be claimed.
 _MIXED = "mixed"
+
+
+def call_id(event_id: str) -> str | None:
+    """The native message an event counts: ``claude-code:<message.id>``."""
+    prefix, _, identifier = event_id.partition(":")
+    return identifier if prefix == AGENT and _ID.fullmatch(identifier) else None
 
 
 def claude_home() -> Path:
@@ -96,28 +108,38 @@ def _code(value: object, pattern=_ID) -> str | None:
 
 
 def _files(path: Path, home: Path, notices: set[str]) -> list[Path]:
-    """The selected file and, for a session file, its own subagents; all inside home."""
-    path = path.resolve()
-    if path.suffix != ".jsonl" or not path.is_relative_to(home):
-        notices.add("指定的 Claude Code 会话不在 Claude home 内或不是 .jsonl；已跳过，未读取。")
-        return []
-    if not path.is_file():
+    """The selected file and, for a session file, its own subagents and workflow agents; all inside home."""
+    try:
+        path = path.resolve()
+        if path.suffix != ".jsonl" or not path.is_relative_to(home):
+            notices.add("指定的 Claude Code 会话不在 Claude home 内或不是 .jsonl；已跳过，未读取。")
+            return []
+        if not path.is_file():
+            raise OSError
+    except OSError:
         notices.add("指定的 Claude Code 会话暂不可读；已跳过。")
         return []
     files = [path]
-    if path.parent.name != "subagents":
-        directory = path.with_suffix("") / "subagents"
+    if path.parent.name == "subagents":
+        return files
+    directory = path.with_suffix("") / "subagents"
+    try:
         if directory.is_dir():
-            for child in sorted(directory.glob("agent-*.jsonl")):
+            children = [*sorted(directory.glob("agent-*.jsonl")), *sorted(directory.glob("workflows/*/agent-*.jsonl"))]
+            for child in children:
                 child = child.resolve()
                 if child.is_file() and child.is_relative_to(home):
                     files.append(child)
+    except OSError:
+        notices.add("Claude Code 会话的子代理目录暂不可读；只读了会话本身。")
     return files
 
 
 def _rows(path: Path, notices: set[str]) -> Iterator[dict]:
     try:
-        with path.open(encoding="utf-8-sig") as stream:
+        # Only the JSON structure and bounded codes are read: an undecodable byte
+        # spoils its own line, not the rest of the file.
+        with path.open(encoding="utf-8-sig", errors="replace") as stream:
             for line in stream:
                 if not line.strip():
                     continue
@@ -186,9 +208,10 @@ def iter_claude_code_events(paths: Iterable[str | Path], *, warnings: list[str] 
                 agent = _code(row.get("agentId"))
                 held = messages[identifier] = {
                     "usage": {}, "model": None, "first": None, "last": None, "turn": turn,
-                    "session": _code(row.get("sessionId")), "agent": agent,
+                    "session": _code(row.get("sessionId")), "agent": agent, "closed": False,
                 }
             _merge(held["usage"], message["usage"])
+            held["closed"] = held["closed"] or isinstance(message.get("stop_reason"), str)
             held["model"] = held["model"] or _code(message.get("model"), _MODEL)
             # Keep the recorder's own text for the earliest and latest row.
             stamp = (parsed, row["timestamp"])
@@ -196,13 +219,17 @@ def iter_claude_code_events(paths: Iterable[str | Path], *, warnings: list[str] 
                 held["first"] = stamp
             if held["last"] is None or parsed >= held["last"][0]:
                 held["last"] = stamp
-    events = []
+    events, unclosed = [], 0
     for identifier, held in messages.items():
         try:
             usage = tokens(held["usage"])
         except ValueError:
             notices.add("部分 Claude Code 回复的计数自相矛盾；未计入。")
             continue
+        if not held["closed"]:
+            # The opening count of a few tokens is not the message's output.
+            unclosed += 1
+            usage = replace(usage, output_tokens=None, reasoning_output_tokens=None)
         plan = billing_plan(PROVIDER, held["usage"])
         session, agent = held["session"], held["agent"]
         events.append(UsageEvent(
@@ -213,6 +240,9 @@ def iter_claude_code_events(paths: Iterable[str | Path], *, warnings: list[str] 
             session_id=agent or session, parent_session_id=session if agent else None,
             turn_id=held["turn"], details={} if plan is None else {"billing_plan": plan},
         ))
+    if unclosed:
+        notices.add(f"{unclosed} 条 Claude Code 回复没有写下结束时的计数（只有流式开头的值）；"
+                    "其输出 token 记为未知，输入与缓存计数照常计入。")
     if warnings is not None:
         warnings.extend(sorted(notice for notice in notices if notice not in warnings))
     yield from sorted(events, key=lambda event: _time(event.started_at))

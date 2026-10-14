@@ -7,7 +7,7 @@ from decimal import Decimal
 import re
 
 from .pricing import RateCard, match_rate, quote
-from .sources import token_authority
+from .sources import call_id, token_authority
 from .usage import HOST_SOURCES, TokenUsage
 
 
@@ -159,22 +159,49 @@ def _native(row):
     return token_authority(row["source"]) == "agent"
 
 
-def _usage(rows):
-    # One token authority per native session. An agent source that declares
-    # itself the authority (Codex, Claude Code) replaces the Hub's usage rows of
-    # that session: the Hub records agent activity intervals, which are not
-    # additional model calls. A source that defers to the host (an imported
-    # usage file) is not counted again where the Hub counted that session.
-    # Studio's own provider calls are separate calls and always count.
+def _hub_counted(rows):
+    """The native calls and sessions the Hub counted itself, over every selected row.
+
+    The Hub writes one usage row per native message it counted, with the event id
+    ``hub:turn:<turn>:usage:<message.id>`` (MonkeyHub's chat turn observer).
+    """
+    calls, sessions = set(), set()
+    for row in rows:
+        if row["source"] == "hub" and row.get("model_call") is True:
+            _, marker, call = row["event_id"].rpartition(":usage:")
+            if marker and call:
+                calls.add(call)
+            if row.get("session_id"):
+                sessions.add(row["session_id"])
+    return calls, sessions
+
+
+def _deferred(row, hub):
+    """A row of a source that defers to the host, for a call the Hub counted itself."""
+    if row["source"] in HOST_SOURCES or _native(row):
+        return False
+    calls, sessions = hub
+    call = call_id(row["source"], row["event_id"])
+    if call is not None:
+        return call in calls
+    return bool(sessions & {row.get("session_id"), row.get("parent_session_id")})
+
+
+def _usage(rows, hub):
+    # One token authority per native call. An agent source that declares itself
+    # the authority (Codex) replaces the Hub's usage rows of that session in its
+    # trace: the Hub records agent activity intervals, which are not additional
+    # model calls. A source that defers to the host (Claude Code, an imported
+    # usage file) is not counted where the Hub counted the call itself, whichever
+    # trace its rows fall in: call by call where its events name the native call
+    # (a copy in a forked session included), otherwise for the Hub's whole
+    # session and its subagents. Studio's own provider calls are separate calls
+    # and always count.
     calls = [row for row in rows if row.get("model_call") is True]
     native = {row.get("session_id") for row in calls if _native(row) and row.get("session_id")}
-    hosted = {row.get("session_id") for row in calls if row["source"] == "hub" and row.get("session_id")}
     measured, excluded = [], []
     for row in calls:
-        session = row.get("session_id")
-        if row["source"] == "hub" and session in native:
-            excluded.append(row["event_id"])
-        elif row["source"] not in HOST_SOURCES and not _native(row) and session in hosted:
+        if row["source"] == "hub" and row.get("session_id") in native or _deferred(row, hub):
             excluded.append(row["event_id"])
         else:
             measured.append(row)
@@ -330,6 +357,7 @@ def build_traces(rows: list[dict], *, rates: tuple[RateCard, ...] = (), now: dat
     """Aggregate current event revisions; all totals are views, never persisted."""
     clock = (now or datetime.now(timezone.utc)).timestamp() * 1000
     rows = list({row["event_id"]: row for row in rows}.values())
+    hub = _hub_counted(rows)
     warnings, traces = [], []
     for identity, group in _groups(rows, clock, warnings).items():
         group.sort(key=lambda row: row["started_at"])
@@ -369,7 +397,7 @@ def build_traces(rows: list[dict], *, rates: tuple[RateCard, ...] = (), now: dat
                           "price": _event_price(row, rates) if row.get("model_call") is True else None})
         attribution, critical, blocking, background, unknown = _timing(spans, _code(root["event_id"]) if root else None, elapsed)
         timeline = max([elapsed or 0, *(span["offset_ms"] + (span["duration_ms"] or 0) for span in spans if span["offset_ms"] is not None)])
-        measured, usage = _usage(group)
+        measured, usage = _usage(group, hub)
         model_rounds = _model_rounds(group, measured)
         first_response = [span["offset_ms"] for span in spans if span["phase"] == "first_response" and span["offset_ms"] is not None]
         visible = [span["offset_ms"] for span in spans if span["phase"] == "first_visible" and span["offset_ms"] is not None]

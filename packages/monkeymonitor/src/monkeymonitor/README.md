@@ -106,7 +106,7 @@ Token 口径：
 
 `monkeymonitor.sources` 定义 agent 用量来源接口。`AGENT_SOURCES` 是唯一登记点，键就是 agent 身份，也是这些事件的 `UsageEvent.source`。`source` 只有两个宿主写入方 `studio`、`hub`，加上这里登记的键；其他值一律拒绝。旧日志里的 `codex` 照常可读。接入一个新 agent，就是写一个读取模块，再在这里加一项。
 
-每一项声明四件事：
+每一项声明这些：
 
 | 声明 | 含义 |
 | --- | --- |
@@ -115,32 +115,36 @@ Token 口径：
 | `provider` | 计价连接，决定 `pricing.billing_plan()` 给哪个 plan；`None` 表示按每个会话或事件自己记录的连接 |
 | `token_authority` | 同一原生会话同时有 Hub 记录时，谁的 token 算数 |
 | `existing_ids` | 遇到已有记录持有的 `event_id` 时怎么办：`merge` 视为同一条记录再读一遍，`reject` 视为副本并拒收 |
+| `call_id(event_id)` | 事件对应哪一次原生模型调用（可选）。有它，`host` 来源就能和 Hub 的用量行逐次对上 |
 
 | agent | 读什么 | 计价连接 | token 权威 | 已有 id |
 | --- | --- | --- | --- | --- |
 | `codex` | 明确的 Codex rollout JSONL，及 Hub 绑定的会话（见下节） | 会话记录的 `model_provider` | `agent` | `merge` |
-| `claude-code` | 明确的 Claude Code 会话 JSONL，及同一会话的 `subagents/agent-*.jsonl` | `claude` | `agent` | `merge` |
+| `claude-code` | 明确的 Claude Code 会话 JSONL，及同一会话的子代理与 workflow agent 记录 | `claude` | `host` | `merge` |
 | `usage-file` | 明确的 `UsageEvent@1` 文件 | 每个事件自己记录的 provider | `host` | `reject` |
 
-**权威规则：每个原生会话只有一个 token 权威。**
+**权威规则：每一次模型调用只有一个 token 权威。**
 
-- `agent`：这个来源的记录替代 Hub 对同一会话写的用量行。Hub 记的是 agent 活动区间，不是额外的模型调用。
-- `host`：Hub 已经计过的会话，这个来源的行不再重复计入。
+- `agent`（Codex）：这个来源的记录替代 Hub 对同一会话写的用量行。Hub 对 Codex 只记 agent 活动区间，不是额外的模型调用。
+- `host`（Claude Code、UsageEvent 文件）：Hub 自己计过的调用，以 Hub 为准，这个来源的同一次调用不再计入，无论落在哪个 trace 里。Hub 跑 Claude 时从流的结束事件取每条 message 的最终计数，并按它实际用的连接定 plan（包括 `coding-plan`），会话记录做不到这两点。
+  - Claude Code 按 `message.id` 逐次对：Hub 的用量行是 `hub:turn:<回合>:usage:<message.id>`。同一条 message 在 Hub 的会话里、在子代理里、或被复制进分叉的会话，都只算 Hub 那一次。Hub 没计到的 message（会话后来在 Hub 外续接，或回合在写下用量前就断了）照常从会话记录计入。
+  - 不指明原生调用的事件（`usage-file` 来源）只能按会话：Hub 计过 token 的会话及其子代理（`parent_session_id`）上的行不再计入。
+- Hub 外的会话没有 Hub 记录，以各自的来源为准。归属只看 id，不看工作目录或时间。
 - Studio 自己的 provider 调用是另外的调用，始终计入。
-- 这条规则目前在 trace 汇总（`/api/traces`）里生效；`/api/events` 仍按 `event_id` 列出全部原始行。
+- 这条规则目前在 trace 汇总（`/api/traces`）里生效。`/api/events`（包括手动 `serve` 时）和 `report` 仍按 `event_id` 列出全部原始行：同时给 `--data-dir` 和 Hub 跑过的会话记录时，同一次调用会各列一行。
 
 **金额不是扣费。** 三种来源的金额都按公开价目表计算，是 API 等价值，不是实际扣费。Codex 和 Claude Code 的事件记为 `subscription_equivalent`，trace 里标“订阅 API 等价值（非实际扣款）”。Monitor 不知道某个账户用的是订阅还是 API key。
 
 ### Claude Code
 
-- **读取范围**：只读调用方给出的会话文件 `<Claude home>/projects/<目录>/<session>.jsonl`，再自动带上同一会话目录下的 `<session>/subagents/agent-*.jsonl`。
+- **读取范围**：只读调用方给出的会话文件 `<Claude home>/projects/<目录>/<session>.jsonl`，再自动带上同一会话目录下的子代理记录 `<session>/subagents/agent-*.jsonl` 和 workflow agent 记录 `<session>/subagents/workflows/<run>/agent-*.jsonl`（不读 workflow 的 `journal.jsonl`）。
   - 不扫描 `projects/`，不按工作目录或时间归属。
   - 路径必须在 Claude home（`CLAUDE_CONFIG_DIR`，默认 `~/.claude`）之内，且是 `.jsonl`；越界的路径整条拒绝，警告里不回显路径。
 - **只取元数据**：只读 `type == "assistant"` 且带 `message.usage` 的行，以及每行的 `uuid` / `parentUuid` / `promptId`，用来找到所属回合。
   - 对话正文、工具输入输出、`cwd`、分支名等字段一律不读入事件。
   - 标识和模型名只在是受限代码时才复制，否则记为 `unknown` 或跳过该行。
 - **去重**：一次回复会按内容块写成多行，这些行共享 `message.id`，计数随流式输出增长。按 `message.id` 合并，每个计数取所有行的最大值，算一次模型调用。
-  - 同一条 message 被复制进另一个选中的会话（续接、分叉）时，仍是同一次调用，归第一个被选中的会话。
+  - 同一条 message 被复制进另一个选中的会话（续接、分叉）时，仍是同一次调用，只算一次。复制品的写入时间和原件相同，分不出谁是原件，所以归第一个被选中的文件所在的会话。
   - 没有 `message.id` 的行无法去重，跳过并告警。
   - `<synthetic>` 模型的行是 Claude Code 本地写的提示，不是 provider 调用，直接跳过。
 - **口径**：
@@ -148,7 +152,7 @@ Token 口径：
   - `cached_input_tokens` = `cache_read_input_tokens`；
   - `cache_write_input_tokens` = `cache_creation_input_tokens`；
   - `cache_write_1h_input_tokens` = `cache_creation.ephemeral_1h_input_tokens`；缓存写为 0 时它按定义为 0，与 Hub、Codex 一致；
-  - `output_tokens` = `output_tokens`，已包含思考部分；
+  - `output_tokens` = `output_tokens`，已包含思考部分。只有带 `stop_reason` 的行才写着最终输出数；一条 message 的行都没有 `stop_reason` 时，记录里只有流式开头的几个 token，输出记为 `null` 并告警，输入和缓存计数照常计入。实测的记录里主会话很少出现，子代理记录约有 4% 的 message 如此；
   - `reasoning_output_tokens` = `output_tokens_details.thinking_tokens`；
   - 任一字段缺失就保持 `null`，不补 0。
 - **计价**：plan 由 `pricing.billing_plan("claude", usage)` 判定。`service_tier`、`speed` 或 `inference_geo` 报告非标准档位时不写 plan；同一条 message 的几行档位互相矛盾时也不写。
@@ -159,7 +163,7 @@ Token 口径：
   - `turn_id` 是所属用户回合的 `promptId`；
   - `source_ref` 为 `claude-code:<sessionId>`。
 - **时间**：`started_at` / `ended_at` 是这条 message 第一行和最后一行的写入时间，不是模型耗时，所以 `timing_scope` 为 `unknown`。
-- **坏行**：无法解析的行跳过并告警；末尾不完整的半行（文件可能仍在写入）跳过并告警。
+- **坏行**：无法解析的行跳过并告警；末尾不完整的半行（文件可能仍在写入）跳过并告警；无法解码的字节只影响它所在的那一行。子代理目录读不了时，只读会话本身并告警。
 
 ### UsageEvent@1 文件
 
@@ -168,7 +172,7 @@ Token 口径：
 - **文档**：`report` 写出的 `{"schema": "UsageEvent@1", "events": [...]}`；
 - **逐行文件**：每行一个 `UsageEvent@1` 对象，便于 agent 边做边追加；末尾半行跳过。
 
-每个对象就是 `UsageEvent.to_dict()`，经过同样的校验，所以带不进提示词、回答或自由文本。
+每个对象就是 `UsageEvent.to_dict()`，经过同样的校验。除时间外，每个文本字段（标识、模型名、details 里的值）都必须是受限代码：不含空格、路径、网址，不超过 480 个字符。所以文件带不进提示词、回答或工作区文本，不合格的记录整条不计入并告警。格式错误的记录或文件只产生告警，不会让读取中断。
 
 文件只是报告，不能推翻已有记录：
 
@@ -176,7 +180,8 @@ Token 口径：
 - `hub`、`studio` 行一律拒收：它们是本机当场写下的记录，副本不能冒充。
 - `event_id` 已被日志或其他来源持有的，拒收，已有记录不变。
 - 同一 `event_id` 在不同副本里内容不同的，全部拒收，不猜哪份对；内容相同的只算一次。
-- `billing_plan` 只有在它记录的连接确实给出这个 plan 时才保留；否则去掉 plan 和费率快照，费用保持未知。
+- `billing_plan` 只有在它记录的连接确实给出这个 plan 时才保留；否则去掉 plan，费用保持未知。
+- 文件里的费率快照一律不带进来，费用按本机费率目录计算。
 - 其他 schema 的文档整份跳过。
 
 ### 隐私边界

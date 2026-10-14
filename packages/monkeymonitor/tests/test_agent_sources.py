@@ -6,6 +6,7 @@ never reach a usage event, a report or a warning.
 from __future__ import annotations
 
 from contextlib import redirect_stdout
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from io import StringIO
 import json
@@ -18,6 +19,7 @@ from unittest.mock import patch
 from monkeymonitor.__main__ import main
 from monkeymonitor.claude_code import iter_claude_code_events
 from monkeymonitor.codex import iter_codex_events
+from monkeymonitor.pricing import RateCard
 from monkeymonitor.server import MonitorData
 from monkeymonitor.sources import AGENT_SOURCES
 from monkeymonitor.store import UsageLog
@@ -60,13 +62,15 @@ def user(uuid, prompt, *, parent=None, second=0, agent=None, session=SESSION):
                     "message": {"role": "user", "content": f"please {SECRET}"}}, agent, session)
 
 
-def assistant(uuid, parent, message_id, usage, *, second=1, agent=None, model="claude-test-model", session=SESSION):
+def assistant(uuid, parent, message_id, usage, *, second=1, agent=None, model="claude-test-model", session=SESSION,
+              stop="tool_use"):
+    """``stop=None`` is a row written before the message's stream said its stop reason."""
     return private({"type": "assistant", "uuid": uuid, "parentUuid": parent, "requestId": f"req_{message_id}",
                     "timestamp": at(second),
                     "message": {"id": message_id, "type": "message", "role": "assistant", "model": model,
                                 "content": [{"type": "text", "text": f"answer {SECRET}"},
                                             {"type": "tool_use", "name": "Bash", "input": {"command": SECRET}}],
-                                "usage": usage}}, agent, session)
+                                "stop_reason": stop, "usage": usage}}, agent, session)
 
 
 def lines(rows, trailing=""):
@@ -91,8 +95,10 @@ class ClaudeHome:
         path.write_text(lines(rows, trailing), encoding="utf-8")
         return path
 
-    def subagent(self, rows, *, session=SESSION, agent=AGENT, trailing=""):
+    def subagent(self, rows, *, session=SESSION, agent=AGENT, workflow=None, trailing=""):
         directory = self.folder / session / "subagents"
+        if workflow is not None:
+            directory = directory / "workflows" / workflow
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"agent-{agent}.jsonl"
         path.write_text(lines(rows, trailing), encoding="utf-8")
@@ -119,7 +125,7 @@ class AgentSourceRegistryTests(unittest.TestCase):
         self.assertIsNone(AGENT_SOURCES["codex"].provider)
         self.assertIsNone(AGENT_SOURCES["usage-file"].provider)
         self.assertEqual(AGENT_SOURCES["codex"].token_authority, "agent")
-        self.assertEqual(AGENT_SOURCES["claude-code"].token_authority, "agent")
+        self.assertEqual(AGENT_SOURCES["claude-code"].token_authority, "host")
         self.assertEqual(AGENT_SOURCES["usage-file"].token_authority, "host")
         self.assertEqual(AGENT_SOURCES["usage-file"].existing_ids, "reject")
         self.assertIs(AGENT_SOURCES["codex"].read, iter_codex_events)
@@ -196,6 +202,44 @@ class ClaudeCodeTests(unittest.TestCase):
         self.assertEqual(child.source_ref, f"claude-code:{SESSION}")
         self.assertEqual(child.tokens.output_tokens, 7)
 
+    def test_workflow_agents_of_the_selected_session_are_its_subagents_too(self):
+        path = self.home.session([user("u1", "prompt-1"), assistant("m1", "u1", "msg_main", counts())])
+        self.home.subagent([user("w1", "prompt-1", agent=AGENT),
+                            assistant("w2", "w1", "msg_workflow", counts(output=11), second=3, agent=AGENT)],
+                           workflow="wf_0001")
+        run = self.home.folder / SESSION / "subagents" / "workflows" / "wf_0001"
+        # The workflow's own journal is not an agent record and is not read.
+        (run / "journal.jsonl").write_text(lines([assistant("j1", None, "msg_journal", counts(), agent=AGENT)]),
+                                           encoding="utf-8")
+        events, warnings = read([path])
+        self.assertEqual(warnings, [])
+        by_id = {event.event_id: event for event in events}
+        self.assertEqual(set(by_id), {"claude-code:msg_main", "claude-code:msg_workflow"})
+        child = by_id["claude-code:msg_workflow"]
+        self.assertEqual((child.session_id, child.parent_session_id, child.turn_id), (AGENT, SESSION, "prompt-1"))
+        self.assertEqual(child.tokens.output_tokens, 11)
+
+    def test_a_message_whose_final_counts_were_never_written_keeps_its_output_unknown(self):
+        # Claude Code writes a row as each content block completes. When no row of a
+        # message carries its stop reason, the stream's closing counts were never
+        # written: the output there is the opening value of a few tokens.
+        path = self.home.session([
+            user("u1", "prompt-1"),
+            assistant("m1a", "u1", "msg_open", counts(output=3, thinking=1), stop=None),
+            assistant("m1b", "m1a", "msg_open", counts(output=3, thinking=1), second=2, stop=None),
+            assistant("m2a", "m1b", "msg_done", counts(output=4), second=3, stop=None),
+            assistant("m2b", "m2a", "msg_done", counts(output=260), second=5),
+        ])
+        events, warnings = read([path])
+        by_id = {event.event_id: event for event in events}
+        self.assertEqual(by_id["claude-code:msg_open"].tokens, TokenUsage(
+            input_tokens=3210, output_tokens=None, cached_input_tokens=3000, cache_write_input_tokens=200,
+            cache_write_1h_input_tokens=200, reasoning_output_tokens=None))
+        self.assertEqual(by_id["claude-code:msg_done"].tokens.output_tokens, 260)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("1 条", warnings[0])
+        self.assertIn("输出", warnings[0])
+
     def test_a_trailing_partial_line_and_a_malformed_line_are_skipped_with_warnings(self):
         path = self.home.session([user("u1", "prompt-1"), assistant("m1", "u1", "msg_kept", counts())],
                                  trailing='{"type": "assistant", "message": {"id": "msg_cut"')
@@ -209,6 +253,23 @@ class ClaudeCodeTests(unittest.TestCase):
         events, warnings = read([broken])
         self.assertEqual(sorted(event.event_id for event in events), ["claude-code:msg_after", "claude-code:msg_before"])
         self.assertTrue(any("无法解析" in warning for warning in warnings))
+
+    def test_an_undecodable_byte_spoils_only_its_own_line(self):
+        path = self.home.session([user("u1", "prompt-1"), assistant("m1", "u1", "msg_before", counts())])
+        with path.open("ab") as stream:
+            stream.write(b'{"type": "user", "message": "\xff\xfe broken"}\n')
+            stream.write((json.dumps(assistant("m2", "m1", "msg_after", counts(), second=3)) + "\n").encode("utf-8"))
+        events, warnings = read([path])
+        self.assertEqual(sorted(event.event_id for event in events), ["claude-code:msg_after", "claude-code:msg_before"])
+        self.assertEqual(warnings, [])
+
+    def test_an_unreadable_subagent_folder_still_reads_the_session(self):
+        path = self.home.session([user("u1", "prompt-1"), assistant("m1", "u1", "msg_main", counts())])
+        self.home.subagent([assistant("s1", None, "msg_child", counts(), agent=AGENT)])
+        with patch.object(Path, "is_dir", side_effect=PermissionError("denied")):
+            events, warnings = read([path])
+        self.assertEqual([event.event_id for event in events], ["claude-code:msg_main"])
+        self.assertEqual(len(warnings), 1)
 
     def test_missing_fields_stay_unknown_and_rows_without_identity_are_skipped(self):
         bare = {"input_tokens": 4, "cache_creation_input_tokens": 6, "output_tokens": 2}
@@ -338,6 +399,55 @@ class UsageFileTests(unittest.TestCase):
         self.assertEqual(plans, {"tool-a:priced": "api-standard", "tool-a:unknown-connection": None})
         self.assertTrue(warnings)
 
+    def test_a_recorded_rate_does_not_travel_with_an_imported_event(self):
+        # A file reports counts; this machine's catalog prices them.
+        rate = RateCard(provider="anthropic", model="m", billing_plan="api-standard", input="2", output="10",
+                        effective_date="2026-09-01", source_url="https://provider.example/pricing")
+        path = self.document("priced.json", [self.event("tool-a:snapshot", rate_snapshot=rate.to_dict(),
+                                                        rate_match_status="matched")])
+        (event,) = iter_usage_file_events([path])
+        self.assertEqual((event.rate_snapshot, event.rate_match_status), (None, None))
+        self.assertEqual(event.details, {"billing_plan": "api-standard"})
+
+    def test_free_text_paths_and_addresses_are_refused(self):
+        path = self.document("text.json", [
+            self.event("tool-a:prompt", session_id="please rewrite the facade"),
+            self.event("tool-a:path", source_ref="C:/Users/someone/project"),
+            self.event("tool-a:address", model="https://provider.example/model"),
+            self.event("tool-a:detail", details={"billing_plan": "api-standard", "tool_name": "read the brief"}),
+            self.event("tool-a:kept"),
+        ])
+        warnings = []
+        self.assertEqual([event.event_id for event in iter_usage_file_events([path], warnings=warnings)], ["tool-a:kept"])
+        self.assertTrue(any("4 条" in warning for warning in warnings))
+
+    def test_a_malformed_file_or_record_is_a_warning_never_an_exception(self):
+        nested = self.root / "nested.json"
+        nested.write_text("[" * 100000, encoding="utf-8")
+        lines_file = self.root / "nested.jsonl"
+        lines_file.write_text("[" * 100000 + "\n" + json.dumps(self.event("tool-a:after").to_dict()) + "\n", encoding="utf-8")
+        record = self.event("tool-a:odd-rate").to_dict()
+        record.update(rate_match_status="matched", rate_snapshot={"provider": "anthropic", "model": "m", "source_url": 5})
+        odd = self.root / "odd.json"
+        odd.write_text(json.dumps({"schema": "UsageEvent@1", "events": [record, {"event_id": 5}, "text"]}), encoding="utf-8")
+        warnings = []
+        events = list(iter_usage_file_events([nested, lines_file, odd], warnings=warnings))
+        self.assertEqual(sorted(event.event_id for event in events), ["tool-a:after", "tool-a:odd-rate"])
+        self.assertIsNone(next(event for event in events if event.event_id == "tool-a:odd-rate").rate_snapshot)
+        self.assertTrue(any("2 条" in warning for warning in warnings))
+
+    def test_a_reader_that_fails_leaves_the_snapshot_and_other_sources_standing(self):
+        def broken(paths, *, warnings):
+            raise RuntimeError("reader bug")
+            yield
+        failing = replace(AGENT_SOURCES["usage-file"], read=broken)
+        UsageLog(self.data_dir).append(self.event("evt-kept", source="studio", provider="none", model_call=False,
+                                                  tokens=TokenUsage(), details={}, billing_mode="unknown"))
+        with patch("monkeymonitor.server.AGENT_SOURCES", {**AGENT_SOURCES, "usage-file": failing}):
+            snapshot = self.snapshot(self.document("any.json", [self.event("tool-a:1")]))
+        self.assertEqual([row["event_id"] for row in snapshot["events"]], ["evt-kept"])
+        self.assertTrue(any("usage-file" in warning and "读取失败" in warning for warning in snapshot["warnings"]))
+
     def test_another_schema_is_refused_whole(self):
         path = self.document("future.json", [self.event("tool-a:1")], schema="UsageEvent@2")
         warnings = []
@@ -429,28 +539,57 @@ class TokenAuthorityTests(unittest.TestCase):
         return UsageEvent(**values).to_dict()
 
     def usage(self, rows):
-        (trace,) = build_traces(rows, now=self.START + timedelta(seconds=30))["traces"]
-        return trace["usage"]
+        """Usage over every trace: an agent's rows need not share a trace with the Hub's."""
+        traces = build_traces(rows, now=self.START + timedelta(seconds=30))["traces"]
+        return (sum(trace["usage"]["known_subtotal_tokens"]["input_tokens"] for trace in traces),
+                sorted(key for trace in traces for key in trace["usage"]["excluded_duplicate_event_ids"]))
 
-    def test_claude_code_records_replace_hub_usage_for_the_same_native_session(self):
-        rows = [self.row("root", "hub_turn", 0, 10000, timing_scope="agent_turn"),
-                self.row("hub-usage", "model_usage", 3000, 3000, parent_event_id="root", model_call=True,
-                         tokens=TokenUsage(100, 10), timing_scope="unknown"),
-                self.row("claude-code:msg_one", "agent", 2000, 2500, source="claude-code", model_call=True,
-                         tokens=TokenUsage(300, 30), turn_id="prompt-1", project_id=None, timing_scope="unknown")]
-        usage = self.usage(rows)
-        self.assertEqual(usage["tokens"]["input_tokens"], 300)
-        self.assertEqual(usage["excluded_duplicate_event_ids"], ["hub-usage"])
+    def hub_turn(self, *messages):
+        """A Hub turn and one usage row per native message the Hub counted, as its observer names them."""
+        return [self.row("hub:turn:hub-turn", "hub_turn", 0, 10000, timing_scope="agent_turn"),
+                *(self.row(f"hub:turn:hub-turn:usage:{message}", "model_usage", 3000, 3000,
+                           parent_event_id="hub:turn:hub-turn", model_call=True, tokens=TokenUsage(100, 10),
+                           timing_scope="unknown") for message in messages)]
 
-    def test_an_imported_file_defers_to_the_hub_record_of_its_session(self):
-        rows = [self.row("root", "hub_turn", 0, 10000, timing_scope="agent_turn"),
-                self.row("hub-usage", "model_usage", 3000, 3000, parent_event_id="root", model_call=True,
-                         tokens=TokenUsage(100, 10), timing_scope="unknown"),
-                self.row("tool-a:1", "agent", 3000, 3000, source="usage-file", model_call=True,
-                         tokens=TokenUsage(300, 30), timing_scope="model_call")]
-        usage = self.usage(rows)
-        self.assertEqual(usage["tokens"]["input_tokens"], 100)
-        self.assertEqual(usage["excluded_duplicate_event_ids"], ["tool-a:1"])
+    def claude(self, key, start, **extra):
+        values = dict(source="claude-code", model_call=True, tokens=TokenUsage(300, 30), turn_id="prompt-1",
+                      project_id=None, timing_scope="unknown")
+        values.update(extra)
+        return self.row(key, "agent", start, start + 500, **values)
+
+    def test_the_hub_stays_the_token_authority_of_each_call_it_counted(self):
+        # The Hub counts each message from its stream's closing usage on the connection it
+        # ran. A Claude Code record of the same message is not counted again, whether it sits
+        # in the Hub's session, in a fork that copied it, or in a subagent. A message the Hub
+        # never counted (the session continued outside the Hub, or a turn that ended before
+        # its usage was written) counts from the record.
+        fork = "77777777-6666-4555-8444-333333333333"
+        for session in (SESSION, fork):
+            with self.subTest(session=session):
+                rows = [*self.hub_turn("msg_one", "msg_child"),
+                        self.claude("claude-code:msg_one", 2000, session_id=session),
+                        self.claude("claude-code:msg_child", 2600, session_id=AGENT, parent_session_id=SESSION),
+                        self.claude("claude-code:msg_later", 20000)]
+                self.assertEqual(self.usage(rows), (500, ["claude-code:msg_child", "claude-code:msg_one"]))
+
+    def test_a_claude_session_the_hub_never_ran_counts_from_its_own_records(self):
+        other = "99999999-8888-4777-8666-555555555555"
+        rows = [*self.hub_turn("msg_one"), self.claude("claude-code:msg_far", 2000, session_id=other),
+                self.claude("claude-code:msg_far_child", 2600, session_id=AGENT, parent_session_id=other)]
+        self.assertEqual(self.usage(rows), (700, []))
+
+    def test_an_imported_file_defers_to_the_hub_by_call_or_else_by_session(self):
+        # An event that names no native call defers for the Hub's whole session.
+        for turn in ("hub-turn", "another-turn"):
+            with self.subTest(turn=turn):
+                rows = [*self.hub_turn("msg_one"),
+                        self.row("tool-a:1", "agent", 3000, 3000, source="usage-file", model_call=True, turn_id=turn,
+                                 tokens=TokenUsage(300, 30), timing_scope="model_call")]
+                self.assertEqual(self.usage(rows), (100, ["tool-a:1"]))
+        # An exported Claude Code event keeps its source and is matched call by call.
+        rows = [*self.hub_turn("msg_one"), self.claude("claude-code:msg_one", 2000, session_id="from-elsewhere"),
+                self.claude("claude-code:msg_two", 2600)]
+        self.assertEqual(self.usage(rows), (400, ["claude-code:msg_one"]))
 
 
 if __name__ == "__main__":
