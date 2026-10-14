@@ -136,3 +136,31 @@ def test_the_preview_model_is_the_runs_certified_3dm_checked_on_disk(tmp_path):
     assert x3_hub.preview_model(rows, "c1", None, tmp_path, asset_sha256="f" * 64) is None
     model.write_bytes(b"changed")
     assert x3_hub.preview_model(rows, "c1", "d1", tmp_path)["verified"] is False
+
+
+def test_an_attached_model_is_an_external_asset_of_these_exact_bytes(tmp_path, monkeypatch):
+    import base64
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "project.json").write_text(json.dumps({"project_id": "revision-tasks"}), encoding="utf-8")
+    model = tmp_path / "returned.3dm"
+    model.write_bytes(b"3D Geometry File Format consultant")
+    sha = hashlib.sha256(model.read_bytes()).hexdigest()
+    services = x3_hub.HubServices("http://hub", "http://runtime", "http://monitor", project, "rt-1", tmp_path)
+    sent = []
+    answer = {"artifactId": sha, "runId": f"studio-model-{sha}", "fileName": "returned.3dm", "sha256": sha, "sizeBytes": 34, "objectCount": 1,
+              "representation": "external", "designStateDigest": None, "available": True, "receiptRef": "project://p/r", "modelSource": None}
+    monkeypatch.setattr(x3_hub, "studio_write", lambda hub, runtime, method, path, body: sent.append((hub, runtime, method, path, body)) or answer)
+    attached = x3_hub.attach_model(services, model, "returned.3dm")
+    [(hub, runtime, method, path, body)] = sent
+    assert (hub, runtime, method, path) == ("http://hub", "rt-1", "POST", "/api/model-assets")
+    assert body == {"projectId": "revision-tasks", "fileName": "returned.3dm", "contentBase64": base64.b64encode(model.read_bytes()).decode("ascii")}
+    assert attached["sha256"] == sha and attached["runId"] == f"studio-model-{sha}" and "modelSource" not in attached
+    assert x3_hub.attachment_line(attached) == f"(Attached: returned.3dm, model asset {sha}, run studio-model-{sha}.)"
+    monkeypatch.setattr(x3_hub, "studio_write", lambda *args: {**answer, "sha256": "0" * 64})
+    with pytest.raises(x3_hub.X3Error, match="not external"):
+        x3_hub.attach_model(services, model, "returned.3dm")
+    monkeypatch.setattr(x3_hub, "studio_write", lambda *args: {**answer, "representation": "composed"})
+    with pytest.raises(x3_hub.X3Error):
+        x3_hub.attach_model(services, model, "returned.3dm")

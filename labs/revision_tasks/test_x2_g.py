@@ -173,4 +173,14 @@ def test_a_run_over_its_limit_starts_no_hub(tmp_path):
     summary = x2_g.run(out, families=("F1",), repeats=1, first_repeat=0, part="pilot", ledger=ledger, cli=None, limit_usd=0.5,
                        task_ids=("F1-T2",), budget_usd=1.0, turn=no_turn)
     assert summary["stopped"].startswith("this run's limit") and not (out / "rounds").exists() and not (out / "inputs").exists()
-    assert json.loads((out / "identity.json").read_text(encoding="utf-8"))["tasks"] == ["F1-T2"]
+    identity = json.loads((out / "identity.json").read_text(encoding="utf-8"))
+    assert identity["tasks"] == ["F1-T2"] and identity["max_tool_calls"] == 20 and identity["max_turns"] == 24
+
+
+def test_g_keeps_its_own_20_calls_when_x3s_cap_changes():
+    settings = x2_g.proxy_settings({"command": "python", "args": []}, Path("calls.jsonl"))
+    assert x2_g.G_MAX_CALLS == 20 and settings["max_calls"] == 20 and x3_hub.MAX_TOOL_CALLS != x2_g.G_MAX_CALLS
+    assert "tools" not in settings                                          # every tool, as before
+    assert x3_hub.proxy_refusal(settings, "studio_request", {"method": "GET", "path": "/api/construction/model"}, 20) is None
+    assert x3_hub.proxy_refusal(settings, "studio_request", {"method": "GET", "path": "/api/construction/model"}, 21)["code"] == "X3_TOOL_BUDGET_SPENT"
+    assert x2_g.MAX_TURNS == 24 and "at most 20 tool calls" in x2_g.INTRO.read_text(encoding="utf-8")

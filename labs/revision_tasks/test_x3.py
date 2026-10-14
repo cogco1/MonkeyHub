@@ -1,5 +1,6 @@
 """X3 pieces without a model or a Hub: the request file, measure preparation, the architect's corrections, the T/H
-proxy's refusals (also through the proxy process over a stub server), and the SF server's tools on a small fixture."""
+proxy's refusals (also through the proxy process over a stub server), the SF server's tools on a small fixture, and the
+file hand-over (the consultant's file, its delivery, the T/H allow-list, scoring, SF's rebuild_from_state)."""
 
 from __future__ import annotations
 
@@ -262,5 +263,273 @@ def test_a_stated_limitation_is_flagged_for_coding_not_counted_complete():
 
 def test_every_bundle_names_what_the_harness_added():
     assert "prepared_context_for_working_design" in x3.harness_added("M+")
-    assert "proxy_names_working_run" in x3.harness_added("T") and "tool_call_cap_20_design_calls" in x3.harness_added("SF")
-    assert x3_hub.MAX_TOOL_CALLS == 20 and x3_sf_mcp.MAX_CALLS == 20
+    assert "proxy_names_working_run" in x3.harness_added("T") and "tool_call_cap_30_design_calls" in x3.harness_added("SF")
+    assert "sf_rebuild_from_state" in x3.harness_added("SF") and "sf_rebuild_from_state" not in x3.harness_added("M")
+    assert "returned_file_readable" in x3.harness_added("H", handover=True) and "returned_file_readable" not in x3.harness_added("H")
+    assert "returned_file_readable" not in x3.harness_added("M", handover=True)
+    assert {"consultant_file_by_harness", "attachment_registered_by_harness"} <= set(x3.harness_added("M", handover=True))
+    assert "attachment_registered_by_harness" not in x3.harness_added("SF", handover=True)
+    assert x3_hub.MAX_TOOL_CALLS == 30 and x3_sf_mcp.MAX_CALLS == 30 and x3.MAX_TURNS == 40
+    assert "at most 30 tool calls" in x3.SYSTEM.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------- the file hand-over (A10, B10)
+
+A10 = next(r for r in DATA["buildings"]["BA"]["requests"] if r["id"] == "A10")
+SLAB = {"object": "obj-slab-l2", "translate": [0.0, 0.3, 0.0], "keep_metadata": True}     # F3's stand-in for A10's column
+
+
+def _objects(path):
+    import rhino3dm
+
+    model = rhino3dm.File3dm.Read(str(path))
+    rows = {}
+    for obj in model.Objects:
+        mesh = obj.Geometry
+        rows[obj.Attributes.Name] = {"id": str(obj.Attributes.Id), "user": sorted(obj.Attributes.GetUserStrings()),
+                                     "layer": obj.Attributes.LayerIndex, "visible": obj.Attributes.Visible,
+                                     "vertices": [(v.X, v.Y, v.Z) for v in mesh.Vertices], "faces": len(mesh.Faces)}
+    strings = {key: model.Strings[key] for key in ("archflow:state", "archflow:binding")}
+    return rows, strings, len(model.Layers), len(model.Materials)
+
+
+def test_the_consultants_file_differs_from_the_design_only_in_the_moved_object(state_file):
+    from labs.revision_tasks import carrier
+
+    root, path = state_file
+    edit = x3.external_edit(path, SLAB, root / "consultant-1" / "returned.3dm")
+    assert edit["input_sha256"] != edit["sha256"] and edit["object"] == "obj-slab-l2"
+    assert edit["box_after"]["min"][1] == pytest.approx(edit["box_before"]["min"][1] + 0.3)
+    (before, strings_a, layers_a, materials_a), (after, strings_b, layers_b, materials_b) = _objects(path), _objects(edit["file"])
+    assert strings_a == strings_b and (layers_a, materials_a) == (layers_b, materials_b)       # the state and binding as written
+    assert sorted(before) == sorted(after)
+    for name in before:
+        assert {k: v for k, v in after[name].items() if k != "vertices"} == {k: v for k, v in before[name].items() if k != "vertices"}, name
+        if name == "obj-slab-l2":
+            moved = [c for x, y, z in before[name]["vertices"] for c in (x, y + 0.3, z)]
+            assert [c for v in after[name]["vertices"] for c in v] == pytest.approx(moved, abs=1e-5)
+        else:
+            assert after[name]["vertices"] == before[name]["vertices"], name
+    with pytest.raises(carrier.CarrierRefused) as refused:          # the binding sees the one object, and nothing else
+        carrier.read_three_dm(Path(edit["file"]))
+    assert refused.value.code == "GEOMETRY_BINDING_STALE" and refused.value.detail.endswith("['obj-slab-l2']")
+    with pytest.raises(x3.NotBuilt):
+        x3.external_edit(path, SLAB, Path(edit["file"]))                # never over an existing file
+
+
+def _hub_session(tmp_path, mode, design):
+    from labs.revision_tasks import x2
+
+    session = x3.Session("BA", mode, 0, tmp_path / "out", cli="claude", ledger=x2.Ledger(tmp_path / "ledger.jsonl"), part="pilot",
+                         limit_usd=1.0, data=DATA)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "project.json").write_text(json.dumps({"project_id": "revision-tasks"}), encoding="utf-8")
+    session.services = x3_hub.HubServices("http://hub", "http://runtime", "http://monitor", project, "rt-1", tmp_path)
+    session.head_model = lambda: {"run_id": "stage-0-001", "state_digest": "d" * 64, "path": design}
+    return session
+
+
+class _Stop(Exception):
+    pass
+
+
+def test_the_hand_over_attaches_the_consultants_file_and_the_request_names_it(state_file, tmp_path, monkeypatch):
+    import base64
+    import hashlib
+
+    root, path = state_file
+    sent = []
+
+    def write(hub_url, runtime_id, method, route, body):
+        sent.append((method, route, body))
+        data = base64.b64decode(body["contentBase64"])
+        sha = hashlib.sha256(data).hexdigest()
+        return {"artifactId": sha, "runId": f"studio-model-{sha}", "fileName": body["fileName"], "sha256": sha, "sizeBytes": len(data),
+                "objectCount": 9, "representation": "external", "designStateDigest": None, "available": True, "receiptRef": "project://x"}
+
+    monkeypatch.setattr(x3_hub, "studio_write", write)
+    request = {**A10, "external_edit": SLAB}
+    monkeypatch.setattr(x3, "HUB_HANDOVER_READY", False)                # the switch still holds it when turned off
+    held = _hub_session(tmp_path / "held", "M", path)
+    with pytest.raises(x3.NotBuilt, match="no read of its objects"):
+        held.request(request, None)
+    assert not sent
+    monkeypatch.setattr(x3, "HUB_HANDOVER_READY", True)
+    session = _hub_session(tmp_path / "t", "T", path)
+    seen = {}
+
+    def turn(rid, kind, text, extra_requests=()):
+        seen.update(rid=rid, text=text, extra=extra_requests)
+        raise _Stop
+
+    session.turn = turn
+    with pytest.raises(_Stop):
+        session.request(request, None)
+    [(method, route, body)] = sent
+    assert (method, route) == ("POST", "/api/model-assets") and set(body) == {"projectId", "fileName", "contentBase64"}
+    record = json.loads((session.dir / "A10.handover.json").read_text(encoding="utf-8"))
+    consultant = Path(record["edit"]["file"])
+    assert consultant.parent == session.dir and base64.b64decode(body["contentBase64"]) == consultant.read_bytes()
+    assert record["edit"]["sha256"] == record["attached"]["sha256"] == hashlib.sha256(consultant.read_bytes()).hexdigest()
+    assert record["design"] == record["delivered"] == str(path)          # the Hub agent works on the design; the file is attached
+    line = f"(Attached: {x3.HANDOVER_FILE_NAME}, model asset {record['edit']['sha256']}, run studio-model-{record['edit']['sha256']}.)"
+    assert seen["text"] == A10["text"] + "\n" + line and record["attachment_line"] == line
+    assert seen["extra"] == x3_hub.T_HANDOVER_REQUESTS
+    assert session.before["A10"] == path
+
+
+def test_sf_is_handed_the_consultants_file_as_its_current_file(state_file, tmp_path):
+    from labs.revision_tasks import x2
+
+    root, path = state_file
+    session = x3.Session("BA", "SF", 0, tmp_path / "out", cli="claude", ledger=x2.Ledger(tmp_path / "ledger.jsonl"), part="pilot",
+                         limit_usd=1.0, data=DATA)
+    session.model = path
+    record = session.hand_over({**A10, "external_edit": SLAB})
+    assert session.model == Path(record["edit"]["file"]) == Path(record["delivered"]) and record["design"] == str(path)
+    assert "attachment_line" not in record
+
+
+def test_a_hand_over_lets_t_and_h_read_the_attached_assets_index_and_nothing_more():
+    sha = "a" * 64
+    index = {"method": "GET", "path": f"/api/model-assets/{sha}/index?runId=studio-model-{sha}&stateDigest={'b' * 64}&limit=50"}
+    assert x3_hub.proxy_refusal(RESTRICTED, "studio_request", index, 1)["code"] == "X3_ACTION_UNAVAILABLE"
+    handover = x3_hub.proxy_settings({"command": "python", "args": []}, log=Path("calls.jsonl"), restricted=True, user_message="Do it.",
+                                     extra_requests=x3_hub.T_HANDOVER_REQUESTS)
+    assert x3_hub.proxy_refusal(handover, "studio_request", index, 1) is None
+    assert x3_hub.proxy_refusal(handover, "studio_request", {"method": "POST", "path": "/api/proposals/construction"}, 1) is None
+    for method, path in (("GET", "/api/artifacts"), ("POST", "/api/model-assets"), ("GET", f"/api/model-assets/{sha}/preview"),
+                         ("GET", "/api/model-assets/xyz/index"), ("POST", f"/api/model-assets/{sha}/index"), ("GET", "/api/drawings/model-view"),
+                         ("POST", "/api/drawings/plans"), ("POST", "/api/admissions"), ("GET", "/api/working-source")):
+        assert x3_hub.proxy_refusal(handover, "studio_request", {"method": method, "path": path}, 1)["code"] == "X3_ACTION_UNAVAILABLE", path
+    assert "POST /api/project/modeling, GET /api/model-assets/{assetSha256}/index. Every other action is refused." in handover["note"]
+    assert RESTRICTED["note"] == x3_hub.T_NOTE
+    with pytest.raises(ValueError):
+        x3_hub.proxy_settings({"command": "python", "args": []}, log=Path("calls.jsonl"), restricted=False,
+                              extra_requests=x3_hub.T_HANDOVER_REQUESTS)
+
+
+def _summary(changed, *, unrequested=(), adopted=None, delivered=None, measures="held"):
+    summary = {"changed": list(changed), "added": [], "removed": [], "unrequested": list(unrequested), "measures": {"ring-top": measures},
+               "conditions": {"K2": "held"}, "verdict": "held",
+               "external": {"object": "obj-portico-col-R2", "adopted": adopted}}
+    if delivered is not None:
+        summary["delivered"] = {"status": "violated" if delivered else "held", "changed": list(delivered), "added": [], "removed": []}
+    return summary
+
+
+def _scored(summary, final, *, mode="M", landed_by=None, request=A10):
+    turn = {"landed_by": landed_by, "turn": {"summary": {"final_text": final}, "usage": {"tokens": {"input_tokens": 1, "output_tokens": 1}},
+                                             "cost_usd": 0.0, "seconds": 1.0, "tool_call_count": 3}}
+    return x3.score(request, {"mode": mode, "oracle": {"summary": summary}, "turns": [turn]})
+
+
+def test_a_hand_over_scores_the_request_and_the_outside_change_as_two_items():
+    dome = ["obj-dome-1", "obj-oculus-ring-1"]
+    s = _scored(_summary(dome, adopted=False), "Raised the dome. The consultant moved obj-portico-col-R2 by 0.30 m north; adopt it?",
+                landed_by="agent")
+    assert s["outcome_auto"] == "complete" and s["external_change_reported_auto"] is True and s["external_change_adopted"] is False
+    assert "external_change_reported?" in s["classes_auto"]
+    s = _scored(_summary([*dome, "obj-portico-col-R2"], unrequested=["obj-portico-col-R2"], adopted=True), "Done: the dome is 0.5 m higher.",
+                landed_by="agent")
+    assert s["outcome_auto"] == "wrong" and s["external_change_adopted"] is True and "external_change_adopted_silently?" in s["classes_auto"]
+    asked = "The returned file differs from the design: a portico column was moved 0.3 m. Keep that, or restore it before I raise the dome?"
+    s = _scored(_summary([], adopted=False), asked)
+    assert s["outcome_auto"] == "asked_rightly" and s["external_change_reported_auto"] is True        # asking first is acceptable
+    assert _scored(_summary([], adopted=False), "Nothing changed.")["outcome_auto"] == "no_change"
+    assert _scored(_summary([], adopted=False), "I raised the dome.")["external_change_reported_auto"] is False
+
+
+def test_in_sf_the_agents_own_change_is_measured_against_the_file_it_was_given():
+    r2 = ["obj-portico-col-R2"]
+    carried = _summary(r2, unrequested=r2, adopted=True, delivered=[])        # nothing submitted: the consultant's file carried on
+    s = _scored(carried, "The reviser refused the file.", mode="SF")
+    assert s["outcome_auto"] == "wrong" and s["changed"] is False and s["changed_vs_recorded"] is True
+    assert "external_change_adopted_silently?" in s["classes_auto"]
+    s = _scored(carried, "The file's obj-portico-col-R2 was moved outside the design, so the reviser refuses it.", mode="SF")
+    assert s["outcome_auto"] == "no_change" and s["external_change_reported_auto"] is True
+    assert _scored(carried, "Shall I rebuild it from its state?", mode="SF")["outcome_auto"] == "asked_rightly"
+    rebuilt = _summary(["obj-dome-1"], adopted=False, delivered=["obj-dome-1", *r2])      # rebuilt from the state: R2 back in place
+    s = _scored(rebuilt, "Raised the dome; the consultant had moved portico-col-R2 by 0.30 m, which I did not adopt.", mode="SF")
+    assert s["outcome_auto"] == "complete" and s["changed"] is True and s["external_change_adopted"] is False
+
+
+def test_an_answer_that_claims_a_landing_the_head_did_not_make_is_flagged_in_m():
+    claim = "The taller dome is now the current design."
+    s = _scored(_summary(["obj-dome-1"]), claim, request=REQUEST)
+    assert s["false_landing_claim_auto"] is True and "false_landing_claim?" in s["classes_auto"]
+    assert s["external_change_reported_auto"] is None and s["external_change_adopted"] is None       # not a hand-over
+    assert _scored(_summary(["obj-dome-1"]), claim, request=REQUEST, landed_by="agent")["false_landing_claim_auto"] is False
+    assert _scored(_summary(["obj-dome-1"]), claim, request=REQUEST, mode="M+")["false_landing_claim_auto"] is True
+    assert _scored(_summary(["obj-dome-1"]), claim, request=REQUEST, mode="T")["false_landing_claim_auto"] is None
+    assert _scored(_summary([]), "The candidate is ready for your acceptance.", request=REQUEST)["false_landing_claim_auto"] is False
+
+
+def test_the_session_csv_carries_the_new_flags():
+    summary = _summary(["obj-dome-1"], adopted=False)
+    bundle = {"building": "BA", "mode": "M", "repeat": 0, "request": A10, "oracle": {"summary": summary},
+              "turns": [{"landed_by": None, "turn": {"summary": {"final_text": "It is now current."}, "cli_session_id": "s",
+                                                     "usage": {"tokens": {"input_tokens": 1, "output_tokens": 1}}, "cost_usd": 0.0,
+                                                     "seconds": 1.0, "tool_call_count": 1}}]}
+    bundle["score"] = x3.score(A10, bundle)
+    row = x3.csv_row(bundle)
+    assert row["false_landing_claim_auto"] is True and row["external_change_adopted"] is False
+    assert row["external_change_reported_auto"] is False
+
+
+# ---------------------------------------------------------------- SF: rebuild_from_state
+
+def test_sf_refuses_a_file_changed_outside_unless_asked_to_rebuild_it_from_its_state(state_file, monkeypatch):
+    root, path = state_file
+    returned = Path(x3.external_edit(path, SLAB, root / "consultant-2" / "returned.3dm")["file"])
+    server = x3_sf_mcp.StateFileServer({"file": str(returned), "out": str(root / "out-rebuild"), "user_message": "Widen the door to 1.4 m.",
+                                        "max_calls": 8})
+    summary = server.state_read()
+    assert summary["checked"] is False and summary["refusal"].startswith("GEOMETRY_BINDING_STALE") and "obj-slab-l2" in summary["refusal"]
+    moved = server.model_objects(prefix="obj-slab")["objects"][0]
+    assert moved["min"][1] == pytest.approx(0.3)
+    plain = json.loads(server.call("submit_change", {"parameters": {"door_width": 1.4}})["content"][0]["text"])
+    assert plain["claim"] == "refuse" and plain["reasons"][0]["code"] == "GEOMETRY_BINDING_STALE" and not plain["adopted"]
+    assert "rebuild_from_state" not in plain                                          # never implicit
+    monkeypatch.setattr(x3_sf_mcp, "REBUILD_FROM_STATE_ALLOWED", False)
+    off = server.call("submit_change", {"parameters": {"door_width": 1.4}, "rebuild_from_state": True})
+    assert off["isError"] and "not available" in off["content"][0]["text"]
+    monkeypatch.setattr(x3_sf_mcp, "REBUILD_FROM_STATE_ALLOWED", True)
+    answer = json.loads(server.call("submit_change", {"parameters": {"door_width": 1.4}, "rebuild_from_state": True})["content"][0]["text"])
+    assert answer["adopted"] and answer["claim"] in ("accept", "reopen", "unknown")
+    rebuilt = answer["rebuild_from_state"]
+    assert rebuilt["needed"] and rebuilt["realized_equals_recorded"] and rebuilt["parent"] == returned.name
+    [gone] = rebuilt["discarded_outside_changes"]
+    assert gone["object"] == "obj-slab-l2" and gone["centre_shift"] == [0.0, 0.3, 0.0] and gone["size_change"] == [0.0, 0.0, 0.0]
+    assert "not adopted" in rebuilt["note"] and str(root) not in json.dumps(answer)
+    assert server.state_read()["checked"] is True
+    assert x3_sf_mcp.object_boxes(server.current)["obj-slab-l2"] == x3_sf_mcp.object_boxes(path)["obj-slab-l2"]   # where the state puts it
+    params = json.loads(server.state_read(section="parameters", limit=50000)["text"])
+    assert next(p for p in params if p["key"] == "door_width")["value"] == 1.4
+    via = Path(server.submissions[-1]["rebuild"]["file"])
+    audit = x3.transfer_audit(returned, server.current, (via,))
+    assert audit["parent_ok"] and audit["lost"] == {} and audit["before_geometry_stale"]["changed"] == ["obj-slab-l2"]
+    assert x3.transfer_audit(returned, server.current)["parent_ok"] is False          # its parent is the rebuilt file, not the returned one
+    listed = x3_sf_mcp.handle(server, {"jsonrpc": "2.0", "id": 9, "method": "tools/list"})["result"]["tools"]
+    described = next(t for t in listed if t["name"] == "submit_change")
+    assert described["inputSchema"]["properties"]["rebuild_from_state"]["default"] is False
+    assert "not adopted" in described["description"] and "proposal to confirm" in described["description"]
+
+
+def test_sf_never_rebuilds_a_file_whose_state_fails_its_own_check(state_file):
+    import rhino3dm
+
+    root, path = state_file
+    moved = Path(x3.external_edit(path, SLAB, root / "consultant-3" / "returned.3dm")["file"])
+    model = rhino3dm.File3dm.Read(str(moved))
+    bound = json.loads(model.Strings["archflow:binding"])
+    model.Strings["archflow:binding"] = json.dumps({**bound, "state_digest": "0" * 64})
+    tampered = root / "consultant-3" / "tampered.3dm"
+    assert model.Write(str(tampered), 8)
+    server = x3_sf_mcp.StateFileServer({"file": str(tampered), "out": str(root / "out-tampered"), "user_message": "Widen the door.",
+                                        "max_calls": 4})
+    answer = json.loads(server.call("submit_change", {"parameters": {"door_width": 1.4}, "rebuild_from_state": True})["content"][0]["text"])
+    assert answer["claim"] == "refuse" and answer["reasons"][0]["code"] == "STATE_DIGEST_MISMATCH" and not answer["adopted"]
+    assert answer["rebuild_from_state"]["needed"] is False and answer["rebuild_from_state"]["refusal"].startswith("STATE_DIGEST_MISMATCH")
+    assert not list((root / "out-tampered").glob("*rebuilt*"))
