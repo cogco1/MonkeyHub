@@ -96,7 +96,7 @@ deadline over interpretation and lowering. `GET /api/construction` states every 
 | `copy(obj, dx=0, dy=0, dz=0)`, `array(obj, count, dx=0, dy=0, dz=0)` | New handles with the same geometry (not its cuts); `array` returns `[obj, copy1, …]`. |
 | `pushpull(obj, distance)`, `set_height(obj, h)`, `set_base(obj, at)` | Edit a solid's height or base. |
 | `cut(host, *cutters)`, `uncut(host, *cutters)` | Remove the cutters' solids from the host, or stop removing them. A cutter keeps its id and stays in the model hidden; `uncut` shows it again, and `uncut(host)` with no cutters clears them all. A cutter may stand on its own host's top (a recess measured from the top). |
-| `level(id)`, `top(obj)` | Anchors for `at`: a project level, or the top of a solid (a dependency: it follows that solid). `anchor + number` offsets it. |
+| `level(id)`, `top(obj)` | Anchors for `at`: a project level, or the top of a solid (a dependency: it follows that solid). `anchor + number` offsets it. A script does not make or move levels: `POST /api/proposals/elevation` with `action: set-datum`, `levelId` and `value` adds or moves one, and what stands at `level(id)` follows it. |
 | `param(key)` | A project parameter, used directly as a height or an `at` offset (a binding, not a number). |
 | `bounds(obj)` | `((xmin, ymin, zmin), (xmax, ymax, zmax))` from the definition. |
 | `name(obj, id)`, `get(id)`, `delete(obj)` | Identity: name a result, reach existing geometry, remove it. |

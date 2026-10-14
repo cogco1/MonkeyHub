@@ -380,11 +380,15 @@ class ElevationEditRequestDto(BaseModel):
     source_proposal_id: str | None = Field(alias="sourceProposalId", default=None, min_length=1)
     state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
     element_id: str | None = Field(alias="elementId", default=None, min_length=1)
-    action: Literal["set-base", "set-top", "set-height", "bind-base", "bind-top", "detach-base", "detach-top", "set-datum"]
-    value: float | None = None
+    action: Literal["set-base", "set-top", "set-height", "bind-base", "bind-top", "detach-base", "detach-top", "set-datum"] = Field(
+        description="set-datum adds or moves a project level; the others edit one element's base, top or height")
+    value: float | None = Field(default=None, description=(
+        "metres: the level's elevation above the project's zero for set-datum, else the element's new base, top or "
+        "height"))
     reference: ElevationReferenceDto | None = None
-    level_id: str | None = Field(alias="levelId", default=None, min_length=1)
-    name: str | None = Field(default=None, min_length=1, max_length=120)
+    level_id: str | None = Field(alias="levelId", default=None, min_length=1, description=(
+        "set-datum only: the level to move, as GET /api/state/frame lists it; a new id adds a level"))
+    name: str | None = Field(default=None, min_length=1, max_length=120, description="set-datum only: the level's name")
     keep: list[str] = Field(default_factory=list)
     project_id: str | None = Field(alias="projectId", default=None, min_length=1)
     source_run_id: str | None = Field(alias="sourceRunId", default=None, min_length=1)
