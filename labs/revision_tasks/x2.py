@@ -196,11 +196,11 @@ def prompt_files_sha256() -> dict[str, str]:
 
 # ---------------------------------------------------------------- one call
 
-def command(cli: str, config: Path, max_turns: int = 1, tools: str = "") -> list[str]:
+def command(cli: str, config: Path, max_turns: int = 1, tools: str = "", system: Path = PROMPTS / "system_common.md") -> list[str]:
     return [cli, "-p", "--model", MODEL, "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk",
             "--setting-sources", "project,local", "--disable-slash-commands", "--max-turns", str(max_turns), "--tools", tools,
             "--disallowedTools", "WebSearch,WebFetch", "--strict-mcp-config", "--mcp-config", str(config / "mcp.json"),
-            "--append-system-prompt-file", str(PROMPTS / "system_common.md"), "--settings", str(config / "settings.json"),
+            "--append-system-prompt-file", str(system), "--settings", str(config / "settings.json"),
             "--no-session-persistence", "--max-budget-usd", str(PER_CALL_USD)]
 
 
@@ -250,12 +250,12 @@ class Ledger:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
-def call_model(prompt: str, trial: Path, *, cli: str, config: Path) -> dict[str, Any]:
+def call_model(prompt: str, trial: Path, *, cli: str, config: Path, system: Path = PROMPTS / "system_common.md") -> dict[str, Any]:
     trial.mkdir(parents=True)
     started = time.perf_counter()
     # As MonkeyHub's own chat runs the CLI: Claude Code's auto-memory off, so no memory section or memory file reaches the model.
     environment = {**os.environ, "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
-    done = subprocess.run(command(cli, config), input=prompt, cwd=trial, capture_output=True, text=True, encoding="utf-8",
+    done = subprocess.run(command(cli, config, system=system), input=prompt, cwd=trial, capture_output=True, text=True, encoding="utf-8",
                           errors="replace", timeout=900, env=environment)
     seconds = time.perf_counter() - started
     (trial.parent / f"{trial.name}.stream.jsonl").write_text(done.stdout, encoding="utf-8", newline="\n")
