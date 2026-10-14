@@ -3,5 +3,9 @@
  "B": "A readback of the model file: each object's name and its bounding box in metres (x along, y depth, z up). The file carries no other data.",
  "C": "The design state carried in the model file, written out as text.",
  "D": "The design state carried in the model file, written out as text.",
- "F": "The design state exactly as it is embedded in the model file (JSON)."
+ "F": "The design state exactly as it is embedded in the model file (JSON).",
+ "AG": "The complete design history: every event, in order, from the brief to now. Then, under its own heading, a readback of the model file: each object's name and its bounding box in metres (x along, y depth, z up). The file carries no other data.",
+ "S": "A summary of the design's current state, written from its complete design history before this request was made.",
+ "N": "The model file as IFC, written out as text: its spatial structure, then each product's class, name, GlobalId and tag, its property sets, its spatial container, the relations it takes part in, and its bounding box in metres (x along, y depth, z up).",
+ "N+S": "The model file as IFC, written out as text: its spatial structure, then each product's class, name, GlobalId and tag, its property sets, its spatial container, the relations it takes part in, and its bounding box in metres (x along, y depth, z up)."
 }
