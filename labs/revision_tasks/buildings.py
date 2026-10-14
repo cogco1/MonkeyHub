@@ -80,17 +80,18 @@ class _Walls:
         reach = o["_width_value"] / 2 + 0.15
         self.parameters.append(Parameter(f"lintel_{key}_lo", round(centre - reach, 9), "m", expr=f"{centre} - ({width} / 2 + lintel_bearing)"))
         self.parameters.append(Parameter(f"lintel_{key}_hi", round(centre + reach, 9), "m", expr=f"{centre} + ({width} / 2 + lintel_bearing)"))
-        points = {}
-        for end in ("lo", "hi"):
+        # A prism, as F3's lintel: it seats on its level at the head offset, which the producer states in its own support
+        # relation (a beam on a level offset states a support from the level that its offset cannot satisfy).
+        half = thickness / 2
+        corners = []
+        for end, side in (("lo", -1), ("hi", -1), ("hi", 1), ("lo", 1)):
             point: list[Any] = [None, None]
-            point[axis], point[1 - axis] = f"@lintel_{key}_{end}", across
-            points[end] = point
-        points["a"], points["b"] = points["lo"], points["hi"]
+            point[axis], point[1 - axis] = f"@lintel_{key}_{end}", round(across + side * half, 9)
+            corners.append(point)
         element = f"lintel-{oid}"
-        self.entities.append(_element(element, "lintels", "beam",
-                                      {"from": {"point": points["a"]}, "to": {"point": points["b"]},
-                                       "base": {"offset_from": {"level": base, "offset": o["head"]}}},
-                                      {"depth": thickness, "height": "@lintel_height"}))
+        self.entities.append(_element(element, "lintels", "prism",
+                                      {"base": {"offset_from": {"level": base, "offset": o["head"]}}},
+                                      {"profile": corners, "height": "@lintel_height"}))
         self.relations.append(Relation(f"r2-{oid}", "dependency", wall_id, element,
                                        validator=ValidatorBinding("lintel_minimum_bearing", tolerance=0.001),
                                        parameters={"opening_object_id": f"obj-{wall_id}-aperture-{oid}", "lintel_object_id": f"obj-{element}",
