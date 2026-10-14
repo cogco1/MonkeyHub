@@ -11,7 +11,8 @@
       "reviewer": null,
       "handoff": "PR2 of #632, stacked on #634: Hub-counted calls leave the snapshot, /api/sources/{agent}, the registry's lane fallback and the Usage page's per-agent sources. Hub bindings with an agent field follow once #627 is on main.",
       "modules": [
-        "monkeymonitor"
+        "monkeymonitor",
+        "hub.shell"
       ],
       "write_scope": [
         "packages/monkeymonitor/src/monkeymonitor/sources.py",
@@ -22,6 +23,7 @@
         "packages/monkeymonitor/src/monkeymonitor/__main__.py",
         "packages/monkeymonitor/src/monkeymonitor/README.md",
         "apps/monkeyhub/web/src/MonitorPage.tsx",
+        "apps/monkeyhub/web/src/MonitorPage.css",
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
         "apps/monkeyhub/web/test/monitorData.test.ts"
       ],
