@@ -18,16 +18,19 @@ Each inferred relation becomes a ``DesignObligation`` with
 ``validator:inferred-<kind>``, its two elements as subjects and its geometric
 basis in the statement; it stays open and unconfirmed. ``check_inferred``
 measures them on a candidate: a contact that opens or turns into penetration,
-a near contact that penetrates, a non-interference that is violated, or an
-alignment that breaks is a broken inference, and the decision on it is
-``ask``.
+a support whose upper element no longer rests on the lower one's top, a near
+contact that penetrates, a non-interference that is violated, or an alignment
+that breaks is a broken inference, and the decision on it is ``ask``. A role
+proposal is kept only if it holds in this sense on the start: a roof that
+touches a wall's side does not rest on it.
 
 Before execution, ``predict_inferred`` measures the same relations on the
 compiler's analytic per-object bounds (``expected_object_bounds``: compile
 only, no OCCT). A relation whose boxes cannot settle it (an element with no
-analytic bounds, or a non-interference whose boxes already overlapped at the
-start) falls back to ``crossing``: one element inside the change's closure
-and one outside. Each result names the method that decided it.
+analytic bounds, or a box test that already fails on the start, such as a
+non-interference whose boxes overlap) falls back to ``crossing``: one element
+inside the change's closure and one outside. Each result names the method that
+decided it.
 """
 
 from __future__ import annotations
@@ -240,24 +243,32 @@ def predicted_boxes(record: StateRecord) -> dict[str, Box | None]:
     return boxes
 
 
-def _box_status(kind: str, statement: str, a: Box, b: Box, a0: Box, b0: Box) -> str | None:
-    """held / broken from boxes, or None when boxes cannot settle it."""
+def _rests_on(lower: Box, upper: Box) -> bool:
+    return abs(lower[1][2] - upper[0][2]) <= CONTACT_M and _plan_overlap(lower, upper)
 
-    if a == a0 and b == b0:
-        return "held"                                   # neither element moves
+
+def _box_holds(kind: str, statement: str, a: Box, b: Box) -> bool:
     if kind == "same_level":
         match = re.search(r"face=(\w+)", statement)
         side = 1 if match and match.group(1) == "top" else 0
-        return "held" if abs(a[side][2] - b[side][2]) <= CONTACT_M else "broken"
+        return abs(a[side][2] - b[side][2]) <= CONTACT_M
     if kind == "support":
-        return "held" if abs(a[1][2] - b[0][2]) <= CONTACT_M and _plan_overlap(a, b) else "broken"
+        return _rests_on(a, b)
     if kind == "abutment":
-        return "held" if _gap(a, b) <= CONTACT_M else "broken"
+        return _gap(a, b) <= CONTACT_M
     if kind == "near":
-        return "held" if _gap(a, b) <= NEAR_M else "broken"
-    if _gap(a, b) > 0.0:                                # non_interference: apart boxes cannot meet
-        return "held"
-    return "broken" if _gap(a0, b0) > 0.0 else None     # boxes that were apart now overlap; already overlapping: unknown
+        return _gap(a, b) <= NEAR_M
+    return _gap(a, b) > 0.0                             # non_interference: boxes apart cannot meet
+
+
+def _box_status(kind: str, statement: str, a: Box, b: Box, a0: Box, b0: Box) -> str | None:
+    """held / broken from boxes, or None when boxes cannot settle it: a box test that fails on the start says nothing."""
+
+    if a == a0 and b == b0:
+        return "held"                                   # neither element moves
+    if not _box_holds(kind, statement, a0, b0):
+        return None
+    return "held" if _box_holds(kind, statement, a, b) else "broken"
 
 
 def predict_inferred(start: StateRecord, successor: StateRecord, affected: set[str]) -> list[dict[str, Any]]:
@@ -319,7 +330,9 @@ def check_inferred(record: StateRecord, realization: pipeline.Realization) -> li
         if entries is None:
             entries = read_step(realization.step_path, length_unit="meter")
         distance, volume = _pair_measure(realization, a, b, entries)
-        if kind in ("support", "abutment"):
+        if kind == "support":                   # a contact, and the upper element's bottom on the lower one's top
+            held = distance is not None and distance <= CONTACT_M and volume <= 1e-9 and _rests_on(boxes[a], boxes[b])
+        elif kind == "abutment":
             held = distance is not None and distance <= CONTACT_M and volume <= 1e-9
         elif kind == "near":
             held = distance is not None and distance <= NEAR_M and volume <= 1e-9

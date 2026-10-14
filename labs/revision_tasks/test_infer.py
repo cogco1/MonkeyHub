@@ -45,6 +45,14 @@ def test_role_rules_propose_what_geometry_cannot_see(tmp_path):
     assert ("I2", "non_interference", "wall", "stair") in {(k.layer, k.kind, k.a, k.b) for k in kept}
 
 
+def test_a_roof_against_a_wall_is_not_its_support(tmp_path):
+    start = fixtures.bound(fixtures.f2_portico_rotunda())
+    kept, dropped = infer.infer_all(start, _start(tmp_path, start))
+    pair = ("support", "rotunda-wall", "transition-roof")
+    assert pair in {(k.kind, k.a, k.b) for k in dropped} and pair not in {(k.kind, k.a, k.b) for k in kept}
+    assert ("I1", "abutment", "rotunda-wall", "transition-roof") in {(k.layer, k.kind, k.a, k.b) for k in kept}
+
+
 def test_predicted_boxes_settle_the_pediment_before_execution():
     from archflow.state.state_record import StateRecordEditKind, StateRecordOperator, apply_state_record_operator
 
