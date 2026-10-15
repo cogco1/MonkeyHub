@@ -3,6 +3,9 @@ from __future__ import annotations
 import unittest
 
 from archflow.project.refs import ProjectVersionRef
+from unittest.mock import patch
+
+from archflow.state import geometry_program
 from archflow.state.geometry_program import (
     AffineTransform,
     AssemblyKind,
@@ -316,6 +319,22 @@ class DeliveredObjectTests(unittest.TestCase):
     def test_an_operation_may_name_no_semantic_binding(self) -> None:
         operation = replace(self.proposal.operations[0], semantic_binding_ids=())
         self.assertEqual(operation.to_dict()["semantic_binding_ids"], [])
+
+
+class SizeBoundRefusalTests(unittest.TestCase):
+    """The program's id-list bound is named with the count that crossed it (#648)."""
+
+    def test_a_component_over_the_bound_is_named_with_its_count(self) -> None:
+        with patch.object(geometry_program, "MAX_PROGRAM_IDS", 2):
+            with self.assertRaisesRegex(GeometryProgramError, "component building delivers 3 objects; one component "
+                                                              "delivers at most 2: split it into smaller components"):
+                SemanticBinding("binding", "building", ("a", "b", "c"), (), (EVIDENCE,))
+            with self.assertRaisesRegex(GeometryProgramError, "binding evidence_refs holds 3 items; a geometry "
+                                                              "program allows at most 2 per list"):
+                SemanticBinding("binding", "building", ("a",), (),
+                                ("evidence:a", "evidence:b", "evidence:c"))
+        with self.assertRaisesRegex(GeometryProgramError, "binding object_ids must not be empty"):
+            SemanticBinding("binding", "building", (), (), (EVIDENCE,))
 
 
 if __name__ == "__main__":

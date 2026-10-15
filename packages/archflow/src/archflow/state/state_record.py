@@ -94,7 +94,9 @@ _REQUIRED_FIELDS: Mapping[str, tuple[str, ...]] = {
 _ENTITY_SCHEMAS = frozenset({"Level@1", "GridAxis@1", "Type@1", "Element@1", "Assembly@1", "Space@1", "Reading@1", "Component@1",
                              "MassingLevel@1", "Volume@1", "Connection@1"})   # Space@1 = a zone of the spatial option
 _EPISTEMIC = frozenset({"observed", "declared", "derived", "hypothesis", "disputed", "unknown"})
-_MAX_ITEMS = 50_000
+# How many items one section (entities, parameters, relations, obligations)
+# may hold. A refusal names it with the count that crossed it (#648).
+MAX_SECTION_ITEMS = 50_000
 
 # What a part states under its component (``Component@1.fields.part_facets``, #580): its own material, nothing else.
 PART_FACET_KEYS: tuple[str, ...] = ("material.name", "material.color")
@@ -433,8 +435,9 @@ class StateRecord:
                                   ("obligations", self.obligations, DesignObligation)):
             if not isinstance(items, tuple) or any(not isinstance(i, kind) for i in items):
                 raise StateRecordError(f"{name} must be {kind.__name__} items")
-            if len(items) > _MAX_ITEMS:
-                raise StateRecordError(f"{name} exceeds the bounded item count")
+            if len(items) > MAX_SECTION_ITEMS:
+                raise StateRecordError(f"{name} holds {len(items):,} items; a State Record holds at most "
+                                       f"{MAX_SECTION_ITEMS:,} per section")
         ids = [e.entity_id for e in self.entities]
         if len(set(ids)) != len(ids):
             raise StateRecordError(f"entity ids must be unique: {_clashing(self.entities, 'entity_id')}")
